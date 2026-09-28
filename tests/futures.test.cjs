@@ -41,6 +41,15 @@ test('월물교체 장기 예상: 스프레드 기본값 -0.5원이면 매달 �
   assert.deepEqual([...r.years].map(y => [y.years, y.rolls, y.gain]), [[1, 12, 180000], [2, 24, 360000], [3, 36, 540000]]);
 });
 
+test('월물교체 장기 예상: 연도별 총 기대수익은 현재 기대수익 + 누적 교체 이득이다', () => {
+  const ctx = load();
+  const f = futures(), current = ctx.futuresSummary(f).current;
+  assert.equal(current, 50000 + 3 * 80 * 10000);
+  const r = ctx.rollEstimate(f, 3, current);
+  assert.deepEqual([...r.years].map(y => y.total), [current + 180000, current + 360000, current + 540000]);
+  assert.equal(ctx.futuresSummary(f).current, current, '표시용 합계가 기대수익 자체를 바꾸지 않는다');
+});
+
 test('월물교체 장기 예상: 입력한 스프레드를 쓰고, 비었거나 잘못된 값이면 기본값으로 돌아간다', () => {
   const ctx = load();
   assert.equal(ctx.rollEstimate(futures({rollSpread: -0.3}), 2).years[0].gain, 72000);
