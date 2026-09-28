@@ -30,3 +30,27 @@ test('계획 계약 수를 늘리면 구간 기준가로 미매수 계약을 추
   assert.equal(l.contracts, 3);
   assert.deepEqual({...l.tranches[2]}, {price: 1420, completed: false, executionPrice: null});
 });
+
+const futures = extra => ({targetPrice: 1480, targetProfit: 0, baselinePnl: 50000, positions: [{month: '202611', contracts: 3, settlementPrice: 1400}], levels: [level(25, 2)], ...extra});
+
+test('월물교체 장기 예상: 스프레드 기본값 -0.5원이면 매달 교체 시 계약당 월 5,000원씩 쌓인다', () => {
+  const ctx = load();
+  const r = ctx.rollEstimate(futures(), 3);
+  assert.equal(r.spread, -0.5);
+  assert.equal(r.perContract, 5000);
+  assert.deepEqual([...r.years].map(y => [y.years, y.rolls, y.gain]), [[1, 12, 180000], [2, 24, 360000], [3, 36, 540000]]);
+});
+
+test('월물교체 장기 예상: 입력한 스프레드를 쓰고, 비었거나 잘못된 값이면 기본값으로 돌아간다', () => {
+  const ctx = load();
+  assert.equal(ctx.rollEstimate(futures({rollSpread: -0.3}), 2).years[0].gain, 72000);
+  assert.equal(ctx.rollEstimate(futures({rollSpread: 0.4}), 1).years[2].gain, -144000, '스프레드가 양수면 교체 비용');
+  for (const bad of [undefined, null, '', 'abc']) assert.equal(ctx.rollEstimate(futures({rollSpread: bad}), 1).spread, -0.5);
+  assert.equal(ctx.rollEstimate(futures(), 0).years[2].gain, 0);
+});
+
+test('월물교체 장기 예상은 기대수익·계획 체결 가정에 더하지 않는다(이중 계산 방지)', () => {
+  const ctx = load();
+  const base = JSON.stringify(ctx.futuresSummary(futures()));
+  for (const rollSpread of [-0.5, -3, 2]) assert.equal(JSON.stringify(ctx.futuresSummary(futures({rollSpread}))), base);
+});
