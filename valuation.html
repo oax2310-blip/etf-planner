@@ -167,6 +167,39 @@
     .battery-company input:focus { outline:2px solid #4ca699; outline-offset:1px; }
     .battery-company .company-output { font-weight:800; font-variant-numeric:tabular-nums; }
     .battery-warn { min-height:22px; color:#a64328; font-weight:750; margin:8px 0 0; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    .nav-save { margin-left:auto; display:flex; align-items:center; gap:10px; }
+    .nav-save-state { color:var(--muted); font-size:.78rem; font-weight:650; }
+    .nav-save button { border:1px solid var(--dark); background:var(--dark); color:#fff; border-radius:999px; padding:5px 13px; font-size:.8rem; font-weight:800; line-height:1.4; }
+    .saves-dialog { width:min(560px,calc(100% - 28px)); max-height:calc(100vh - 40px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; border:1px solid var(--border); border-radius:19px; padding:0; color:var(--ink); background:var(--white); box-shadow:0 24px 70px #0b1f2638; }
+    .saves-dialog::backdrop { background:#0b1f2666; }
+    .saves-body { padding:22px; }
+    .saves-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .saves-close { border:0; background:transparent; color:var(--muted); font-size:1.5rem; line-height:1; padding:2px 6px; }
+    .saves-current { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; margin-top:14px; padding:10px 13px; background:#f3f9f6; border-radius:11px; font-size:.86rem; }
+    .saves-current strong { color:#0c6e63; }
+    .saves-form { display:flex; gap:8px; margin:14px 0 0; }
+    .saves-form input { flex:1; min-width:0; border:1px solid #bad0d0; border-radius:10px; padding:8px 11px; color:var(--ink); background:#fff; }
+    .saves-form input:focus { outline:2px solid #4ca699; outline-offset:1px; }
+    .btn-dark { border:1px solid var(--dark); background:var(--dark); color:#fff; border-radius:10px; padding:8px 14px; font-weight:800; white-space:nowrap; }
+    .btn-line { border:1px solid #c8d9db; background:#fff; color:#315762; border-radius:9px; padding:5px 11px; font-size:.82rem; font-weight:800; white-space:nowrap; }
+    .btn-line.danger { color:#a64328; border-color:#ecc9bc; }
+    .saves-status { min-height:1.4em; margin:8px 0 0; color:#0c6e63; font-weight:700; }
+    .saves-subhead { margin:10px 0 0; font-size:.9rem; }
+    .saves-list { list-style:none; margin:8px 0 0; padding:0; border-top:1px solid var(--border); }
+    .saves-list li { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+    .saves-list .saves-meta { flex:1; min-width:0; }
+    .saves-list strong { display:block; overflow-wrap:anywhere; }
+    .saves-list small { display:block; color:var(--muted); font-size:.76rem; line-height:1.45; }
+    .saves-list .saves-actions { display:flex; gap:6px; flex:none; }
+    .saves-empty { color:var(--muted); font-size:.85rem; margin:10px 0 0; }
+    .saves-foot { display:flex; justify-content:flex-end; margin-top:16px; }
+    .saves-sync { margin-top:16px; padding:11px 13px; border:1px solid var(--border); border-radius:11px; }
+    .saves-sync-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font-size:.86rem; }
+    .saves-sync-row strong { color:#0c6e63; }
+    .saves-sync-row button { margin-left:auto; }
+    .saves-sync p { margin:6px 0 0; }
+    .saves-sync-error { color:#a64328; font-weight:700; }
     footer { color:#6c8189; font-size:.78rem; margin-top:30px; padding-top:18px; border-top:1px solid var(--border); }
     @media (max-width:760px) {
       .shell { width:min(100% - 28px,1120px); }
@@ -211,6 +244,11 @@
       .mobile-valuation-cell small { display:block; color:#3d7066; font-size:.75rem; line-height:1.2; white-space:nowrap; }
       .mobile-valuation-cell strong { display:block; font-size:.84rem; line-height:1.35; font-weight:850; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
       .mobile-valuation-note { margin:5px 0 0; font-size:.75rem; line-height:1.2; color:#3d7066; }
+      .nav-save-state { display:none; }
+      .saves-body { padding:17px 16px; }
+      .saves-form { flex-wrap:wrap; }
+      .saves-form input { flex-basis:100%; }
+      .saves-form .btn-dark { width:100%; }
     }
     .top { padding:18px 0 16px; }
     .top:before,.headline-stats { display:none; }
@@ -256,6 +294,7 @@
 </header>
 <nav class="nav" aria-label="문서 내 이동"><div class="shell">
   <a href="#sdi">삼성SDI</a><a href="#battery-etfs">배터리 ETF</a><a href="#humn">HUMN 가치</a>
+  <div class="nav-save"><span class="nav-save-state" id="saveState">기본값</span><button type="button" id="openSaves" aria-haspopup="dialog">가정 저장</button></div>
 </div></nav>
 <main class="shell">
   <section id="sdi">
@@ -576,6 +615,26 @@
     </div></details>
   </section>
 </main>
+<dialog id="savesDialog" class="saves-dialog" aria-labelledby="savesTitle">
+  <div class="saves-body">
+    <div class="saves-head"><h3 id="savesTitle" style="margin:0">내 가정 저장</h3><button type="button" class="saves-close" id="closeSaves" aria-label="닫기">×</button></div>
+    <p class="small muted" style="margin:6px 0 0">가정을 바꾸면 이 브라우저에 바로 저장되어 페이지를 다시 열어도 이어집니다. 여러 시나리오를 비교하려면 이름을 붙여 저장해 두세요.</p>
+    <div class="saves-current"><span class="muted">현재 조정</span><strong id="currentSummary">모두 기본값</strong></div>
+    <form class="saves-form" id="scenarioForm"><label class="sr-only" for="scenarioName">저장 이름</label><input id="scenarioName" type="text" maxlength="40" autocomplete="off" placeholder="예: 로봇 1억 대 · 낙관"><button type="submit" class="btn-dark">현재 가정 저장</button></form>
+    <p class="small saves-status" id="savesStatus" role="status"></p>
+    <h4 class="saves-subhead">저장한 가정</h4>
+    <ul class="saves-list" id="scenarioList"></ul>
+    <p class="saves-empty" id="scenarioEmpty">아직 저장한 가정이 없습니다.</p>
+    <div class="saves-foot"><button type="button" class="btn-line danger" id="resetAssumptions">모든 가정 기본값으로</button></div>
+    <div class="saves-sync">
+      <div class="saves-sync-row"><span class="muted">기기 간 동기화</span><strong id="scenarioSyncStatus">연결 안 됨</strong><button type="button" class="btn-line" id="scenarioSyncNow" hidden>지금 동기화</button></div>
+      <p class="tiny saves-sync-error" id="scenarioSyncError" role="status" hidden></p>
+      <p class="tiny" id="scenarioSyncOff"><a href="index.html">메인 플래너</a>의 <b>기기 간 동기화</b>에서 비공개 데이터 저장소를 연결하면, 이 페이지의 가정도 같은 저장소에 함께 동기화됩니다.</p>
+      <p class="tiny" id="scenarioSyncOn" hidden><span id="scenarioSyncRepo"></span> 저장소의 etf-planner-scenarios.json에 저장합니다. 여러 기기에서 만든 저장본은 합쳐지고, 현재 조정값은 가장 나중에 바꾼 기기의 값을 따릅니다.</p>
+    </div>
+    <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다.</p>
+  </div>
+</dialog>
 <script>
   "use strict";
   const ids = ["robotM","robotKwh","evShare","robotShare","discount","carM","evPct","evKwh","robotUSD","evASP","robotASP","evMargin","robotMargin","otherOP","affiliate","pe"];
@@ -584,6 +643,7 @@
     base:{evShare:5,robotShare:15,evMargin:8,robotMargin:12,otherOP:.8,affiliate:.8,pe:16},
     high:{evShare:8,robotShare:25,evMargin:10,robotMargin:20,otherOP:1,affiliate:.9,pe:18}
   };
+  const sdiPresetLabels={low:"보수적 시나리오",base:"기본 시나리오",high:"낙관적 시나리오"};
   const names = {robotM:"만 대",robotKwh:" kWh",evShare:"%",robotShare:"%",discount:"%",carM:"만 대",evPct:"%",evKwh:" kWh",robotUSD:"천 달러",evASP:"천 원/kWh",robotASP:"천 원/kWh",evMargin:"%",robotMargin:"%",otherOP:"조 원",affiliate:"조 원",pe:"배"};
   const el = id => document.getElementById(id);
   const num = n => new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}).format(n);
@@ -645,7 +705,7 @@
       el(id).value=(id in presets[key])?presets[key][id]:defaults[id];
     });
     document.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("active",b===button));
-    el("presetLabel").textContent={low:"보수적 시나리오",base:"기본 시나리오",high:"낙관적 시나리오"}[key];
+    el("presetLabel").textContent=sdiPresetLabels[key];
     render();
   }));
   render();
@@ -804,6 +864,7 @@
     base:{batYear:2035,batCarM:80,batEvPct:50,batEvKwh:55,batRobotM:80,batRobotKwh:2.5,batEssGwh:1500,batEvAsp:120,batRobotAsp:200,batEssAsp:90,batEvMargin:8,batRobotMargin:12,batEssMargin:8,batNetRate:70,batPE:16,batRequired:10,chinaFx:0},
     high:{batYear:2035,batCarM:95,batEvPct:75,batEvKwh:65,batRobotM:110,batRobotKwh:4,batEssGwh:2600,batEvAsp:130,batRobotAsp:230,batEssAsp:110,batEvMargin:11,batRobotMargin:16,batEssMargin:12,batNetRate:75,batPE:22,batRequired:10,chinaFx:0}
   };
+  const batteryPresetLabels={low:"보수적 가정",base:"기본 가정",high:"낙관적 가정"};
   const inputCell=(company,key,title,step,min,max)=>'<input type="number" id="bc-'+company.id+'-'+key+'" aria-label="'+company.name+' '+title+'" value="'+company[key]+'" min="'+min+'" max="'+max+'" step="'+step+'">';
   el("batteryCompanyRows").innerHTML=batteryCompanies.map(company=>'<tr><td><strong>'+company.name+'</strong><small>'+(company.fund==="rise"?"RISE":"KODEX 지수")+'</small></td>'+
     '<td>'+inputCell(company,"weight","ETF 편입 비중",.01,0,100)+'</td><td>'+inputCell(company,"ev","전기차 점유율",.5,0,100)+'</td><td>'+inputCell(company,"robot","로봇 점유율",.5,0,100)+'</td><td>'+inputCell(company,"ess","ESS 점유율",.5,0,100)+'</td><td>'+inputCell(company,"cap","2026 시가총액",.01,.01,10000)+'</td><td>'+inputCell(company,"other","미래 기타사업 가치",.1,0,5000)+'</td><td class="company-output" id="bc-'+company.id+'-revenue">—</td><td class="company-output" id="bc-'+company.id+'-profit">—</td></tr>').join("");
@@ -914,7 +975,7 @@
     const preset=batteryPresetValues[button.dataset.batteryPreset];
     for(const [id,value] of Object.entries(preset)) el(id).value=value;
     document.querySelectorAll("[data-battery-preset]").forEach(b=>b.classList.toggle("active",b===button));
-    el("batteryPresetLabel").textContent={low:"보수적 가정",base:"기본 가정",high:"낙관적 가정"}[button.dataset.batteryPreset];
+    el("batteryPresetLabel").textContent=batteryPresetLabels[button.dataset.batteryPreset];
     renderBatteryEtfs();
   }));
   renderBatteryEtfs();
@@ -929,6 +990,285 @@
     new MutationObserver(update).observe(source,{childList:true,characterData:true,subtree:true});
     update();
   });
+  // 가정 저장: 기본값과 다른 입력만 이 브라우저 localStorage에 저장하고, 열 때 복원한다.
+  // 바꾸지 않은 입력(기준 종가·시총 등)은 저장하지 않으므로 페이지 기준값이 갱신되면 새 값을 따른다.
+  const ASSUMPTION_KEY="etf-planner-valuation-current-v1";
+  const SCENARIO_LIST_KEY="etf-planner-valuation-scenarios-v1";
+  const DELETED_KEY="etf-planner-valuation-deleted-v1"; // 삭제한 저장본 id → 삭제 시각. 다른 기기에 삭제를 전파한다
+  const assumptionGroups=[["삼성SDI",ids],["배터리 ETF",[...batteryInputs,...companyInputIds,...groupInputIds]],["HUMN",[...humnControlIds,...terControlIds]]];
+  const assumptionIds=assumptionGroups.flatMap(([,list])=>list);
+  const assumptionIdSet=new Set(assumptionIds);
+  const assumptionDefaults=Object.fromEntries(assumptionIds.map(id=>{
+    const node=el(id);
+    return [id,node.tagName==="SELECT"?([...node.options].find(option=>option.defaultSelected)||node.options[0]).value:node.defaultValue];
+  }));
+  const presetControls={
+    sdi:{selector:"[data-preset]",data:"preset",label:"presetLabel",names:sdiPresetLabels},
+    battery:{selector:"[data-battery-preset]",data:"batteryPreset",label:"batteryPresetLabel",names:batteryPresetLabels}
+  };
+  const owns=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
+  const readStored=(key,fallback)=>{ try { const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; } catch (_) { return fallback; } };
+  const writeStored=(key,value)=>{ try { localStorage.setItem(key,JSON.stringify(value)); return true; } catch (_) { return false; } };
+  const validValues=values=>values&&typeof values==="object"&&!Array.isArray(values)?values:{};
+  // 입력 중인 빈칸·범위 밖 값은 저장하지 않고 직전에 저장한 값을 유지한다.
+  function collectAssumptions(previous){
+    const values={},kept=validValues(previous);
+    assumptionIds.forEach(id=>{
+      const node=el(id),value=Number(node.value);
+      if(node.value.trim()===""||!node.checkValidity()||!Number.isFinite(value)){ if(owns(kept,id)) values[id]=kept[id]; return; }
+      if(value!==Number(assumptionDefaults[id])) values[id]=value;
+    });
+    const presets={};
+    for(const [key,control] of Object.entries(presetControls)) presets[key]=document.querySelector(control.selector+".active")?.dataset[control.data]||"";
+    return {values,presets};
+  }
+  function applyAssumptions(saved){
+    const values=validValues(saved?.values);
+    assumptionIds.forEach(id=>{
+      const node=el(id),fallback=assumptionDefaults[id],value=values[id];
+      node.value=owns(values,id)&&typeof value==="number"&&Number.isFinite(value)?String(value):fallback;
+      if(node.value===""||!node.checkValidity()) node.value=fallback;
+    });
+    for(const [key,control] of Object.entries(presetControls)){
+      const chosen=saved?.presets?.[key],known=typeof chosen==="string"&&owns(control.names,chosen);
+      document.querySelectorAll(control.selector).forEach(button=>button.classList.toggle("active",known&&button.dataset[control.data]===chosen));
+      el(control.label).textContent=known?control.names[chosen]:"직접 조정";
+    }
+    render(); renderHumn(); renderBatteryEtfs();
+  }
+  const changedCount=values=>assumptionIds.filter(id=>owns(values,id)).length;
+  function describeAssumptions(values){
+    const parts=assumptionGroups.map(([name,list])=>[name,list.filter(id=>owns(values,id)).length]).filter(([,count])=>count>0).map(([name,count])=>name+" "+count+"개");
+    return parts.length?parts.join(" · ")+" 변경":"모두 기본값";
+  }
+  const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,timer:null};
+  const numericValues=values=>{ const source=validValues(values); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="number"&&Number.isFinite(source[id])).map(id=>[id,source[id]])); };
+  const presetPair=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:""});
+  const assumptionKey=saved=>JSON.stringify([numericValues(saved?.values),presetPair(saved?.presets)]);
+  // savedAt은 값이 실제로 바뀔 때만 새로 적는다. 기기 간에는 더 나중에 바꾼 쪽의 현재 조정값을 쓰므로
+  // 열어 보기만 한 기기(savedAt 없음)가 다른 기기에서 바꾼 조정값을 덮어쓰지 않는다.
+  let currentAssumptions={...collectAssumptions({}),savedAt:""}, assumptionSaveTimer=null, assumptionStorageOk=true;
+  function adoptAssumptions(saved){
+    applyAssumptions(saved);
+    currentAssumptions={...collectAssumptions({}),savedAt:typeof saved?.savedAt==="string"?saved.savedAt:""};
+  }
+  function showAssumptionState(){
+    const values=validValues(currentAssumptions.values),count=changedCount(values);
+    const sync={pending:" · 동기화 대기",busy:" · 동기화 중",done:" · 동기화됨",error:" · 동기화 오류"}[scenarioSync.state]||(count?" · 자동 저장됨":"");
+    el("saveState").textContent=!assumptionStorageOk?"저장 안 됨":(count?"조정 "+count+"개":"기본값")+sync;
+    el("currentSummary").textContent=(assumptionStorageOk?"":"이 브라우저에 저장할 수 없습니다 · ")+describeAssumptions(values);
+  }
+  function saveAssumptions(){
+    clearTimeout(assumptionSaveTimer); assumptionSaveTimer=null;
+    const next=collectAssumptions(currentAssumptions.values);
+    if(assumptionKey(next)!==assumptionKey(currentAssumptions)){
+      currentAssumptions={...next,savedAt:new Date().toISOString()};
+      assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions);
+      scheduleScenarioSync(5000);
+    }
+    showAssumptionState();
+  }
+  function scheduleAssumptionSave(){ clearTimeout(assumptionSaveTimer); assumptionSaveTimer=setTimeout(saveAssumptions,300); }
+  document.addEventListener("input",event=>{ if(assumptionIdSet.has(event.target.id)) scheduleAssumptionSave(); });
+  document.addEventListener("change",event=>{ if(assumptionIdSet.has(event.target.id)) saveAssumptions(); });
+  document.addEventListener("click",event=>{ if(event.target.closest?.("[data-preset],[data-battery-preset]")) saveAssumptions(); });
+  document.addEventListener("visibilitychange",()=>{ if(document.hidden&&assumptionSaveTimer) saveAssumptions(); });
+  window.addEventListener("pagehide",()=>{ if(assumptionSaveTimer) saveAssumptions(); });
+  const storedAssumptions=readStored(ASSUMPTION_KEY,null);
+  if(storedAssumptions&&typeof storedAssumptions==="object"&&!Array.isArray(storedAssumptions)) adoptAssumptions(storedAssumptions);
+  showAssumptionState();
+
+  const readScenarios=()=>{ const list=readStored(SCENARIO_LIST_KEY,[]); return Array.isArray(list)?list.filter(item=>item&&typeof item.id==="string"&&typeof item.name==="string"):[]; };
+  const sameValues=(a,b)=>assumptionIds.every(id=>(owns(a,id)?a[id]:null)===(owns(b,id)?b[id]:null));
+  const savedTime=iso=>{ const date=new Date(iso); return Number.isNaN(date.getTime())?"":date.toLocaleString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); };
+  const setSavesStatus=message=>{ el("savesStatus").textContent=message; };
+  function renderScenarioList(){
+    const list=readScenarios(),host=el("scenarioList");
+    host.replaceChildren(...list.map(item=>{
+      const row=document.createElement("li"),meta=document.createElement("div"),name=document.createElement("strong"),detail=document.createElement("small"),actions=document.createElement("div");
+      meta.className="saves-meta"; actions.className="saves-actions";
+      name.textContent=item.name;
+      detail.textContent=[savedTime(item.savedAt),describeAssumptions(validValues(item.values))].filter(Boolean).join(" · ");
+      meta.append(name,detail);
+      for(const [action,text,extra] of [["load","불러오기",""],["delete","삭제"," danger"]]){
+        const button=document.createElement("button");
+        button.type="button"; button.className="btn-line"+extra; button.textContent=text;
+        button.dataset.scenarioAction=action; button.dataset.scenarioId=item.id;
+        button.setAttribute("aria-label",item.name+" "+text);
+        actions.append(button);
+      }
+      row.append(meta,actions);
+      return row;
+    }));
+    el("scenarioEmpty").hidden=list.length>0;
+  }
+  // 저장본에 없는 조정값을 덮어쓰기 전에 확인한다.
+  function confirmReplaceCurrent(){
+    saveAssumptions();
+    const values=validValues(currentAssumptions.values);
+    if(!changedCount(values)||readScenarios().some(item=>sameValues(validValues(item.values),values))) return true;
+    return confirm("지금 조정한 가정은 저장한 목록에 없습니다. 계속하면 현재 조정값이 바뀝니다. 계속할까요?");
+  }
+  el("openSaves").addEventListener("click",()=>{ saveAssumptions(); renderScenarioList(); setSavesStatus(""); el("savesDialog").showModal(); syncScenarios(); });
+  el("closeSaves").addEventListener("click",()=>el("savesDialog").close());
+  el("savesDialog").addEventListener("click",event=>{ if(event.target===el("savesDialog")) el("savesDialog").close(); });
+  el("scenarioForm").addEventListener("submit",event=>{
+    event.preventDefault();
+    const name=el("scenarioName").value.trim().slice(0,40);
+    if(!name){ setSavesStatus("저장할 이름을 입력하세요."); el("scenarioName").focus(); return; }
+    saveAssumptions();
+    const list=readScenarios(),existing=list.findIndex(item=>item.name===name);
+    if(existing>=0&&!confirm("'"+name+"' 저장본을 현재 가정으로 덮어쓸까요?")) return;
+    const entry={id:existing>=0?list[existing].id:(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()),name,savedAt:new Date().toISOString(),values:currentAssumptions.values,presets:currentAssumptions.presets};
+    if(existing>=0) list.splice(existing,1);
+    list.unshift(entry);
+    if(!writeStored(SCENARIO_LIST_KEY,list)){ setSavesStatus("이 브라우저에 저장하지 못했습니다. 개인정보 보호 모드나 저장 공간을 확인하세요."); return; }
+    el("scenarioName").value="";
+    renderScenarioList();
+    setSavesStatus("'"+name+"'(으)로 저장했습니다.");
+    scheduleScenarioSync(300);
+  });
+  el("scenarioList").addEventListener("click",event=>{
+    const button=event.target.closest?.("[data-scenario-action]");
+    if(!button) return;
+    const list=readScenarios(),item=list.find(entry=>entry.id===button.dataset.scenarioId);
+    if(!item){ renderScenarioList(); return; }
+    if(button.dataset.scenarioAction==="load"){
+      if(!confirmReplaceCurrent()) return;
+      applyAssumptions(item); saveAssumptions();
+      el("savesDialog").close();
+    } else {
+      if(!confirm("'"+item.name+"' 저장본을 삭제할까요?")) return;
+      if(!writeStored(SCENARIO_LIST_KEY,list.filter(entry=>entry.id!==item.id))||!writeStored(DELETED_KEY,{...readDeleted(),[item.id]:new Date().toISOString()})){ setSavesStatus("삭제하지 못했습니다."); return; }
+      renderScenarioList();
+      setSavesStatus("'"+item.name+"'을(를) 삭제했습니다.");
+      scheduleScenarioSync(300);
+    }
+  });
+  el("resetAssumptions").addEventListener("click",()=>{
+    if(!confirmReplaceCurrent()) return;
+    applyAssumptions({values:{},presets:{sdi:"base",battery:"base"}}); saveAssumptions();
+    el("savesDialog").close();
+  });
+
+  // 기기 간 동기화: 메인 플래너(index.html)에서 연결한 GitHub 비공개 데이터 저장소를 같이 쓴다.
+  // 저장소·토큰은 같은 사이트 localStorage의 index.html 키를 읽기만 하고, 기록 파일과 섞지 않도록 별도 파일에 저장한다.
+  // 저장본은 id별로 합치고(같은 id는 나중에 저장한 쪽), 삭제는 deleted 기록으로 전파한다.
+  // 현재 조정값은 더 나중에 바꾼 기기의 값을 쓰므로 충돌 확인 창이 필요 없다.
+  const SCENARIO_FILE="etf-planner-scenarios.json";
+  const SYNC_REPO_KEY="etf-planner-data-repo", SYNC_TOKEN_KEY="etf-planner-github-token";
+  function cleanDeleted(value){ const source=validValues(value); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="string").map(id=>[id,source[id]])); }
+  const readDeleted=()=>cleanDeleted(readStored(DELETED_KEY,{}));
+  const cleanSaved=item=>({values:numericValues(item.values),presets:presetPair(item.presets),savedAt:typeof item.savedAt==="string"?item.savedAt:""});
+  function cleanScenarioData(data){
+    if(!data||typeof data!=="object"||Array.isArray(data)||!Array.isArray(data.scenarios)||(data.version!==undefined&&data.version!==1)) return null;
+    const current=data.current&&typeof data.current==="object"&&typeof data.current.savedAt==="string"&&data.current.savedAt?cleanSaved(data.current):null;
+    const scenarios=data.scenarios.filter(item=>item&&typeof item.id==="string"&&typeof item.name==="string").map(item=>({id:item.id,name:item.name.slice(0,40),...cleanSaved(item)}));
+    return {version:1,current,scenarios,deleted:cleanDeleted(data.deleted)};
+  }
+  const localScenarioData=()=>cleanScenarioData({current:currentAssumptions,scenarios:readScenarios(),deleted:readDeleted()});
+  function mergeScenarioData(local,remote){
+    const deleted={...remote.deleted};
+    Object.entries(local.deleted).forEach(([id,at])=>{ if(!(deleted[id]>=at)) deleted[id]=at; });
+    const byId=new Map();
+    [...remote.scenarios,...local.scenarios].forEach(item=>{ const seen=byId.get(item.id); if(!seen||item.savedAt>seen.savedAt) byId.set(item.id,item); });
+    const scenarios=[...byId.values()].filter(item=>!(deleted[item.id]>=item.savedAt)).sort((a,b)=>a.savedAt<b.savedAt?1:a.savedAt>b.savedAt?-1:0);
+    const current=remote.current&&(!local.current||remote.current.savedAt>=local.current.savedAt)?remote.current:local.current;
+    return {version:1,current,scenarios,deleted:cleanDeleted(deleted)};
+  }
+  function readSyncConfig(){
+    try {
+      const repo=(localStorage.getItem(SYNC_REPO_KEY)||"").trim(),token=localStorage.getItem(SYNC_TOKEN_KEY)||"";
+      return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null;
+    } catch (_) { return null; }
+  }
+  const toB64=text=>{ const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
+  const fromB64=b64=>new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+  async function scenarioGh(config,path,options={}){
+    const response=await fetch("https://api.github.com"+path,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:"Bearer "+config.token,...options.headers}});
+    if(response.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
+    if(response.status===403) throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
+    return response;
+  }
+  async function checkScenarioRepo(config){
+    const response=await scenarioGh(config,"/repos/"+config.repo);
+    if(response.status===404) throw Error("저장소 "+config.repo+"를 찾을 수 없습니다. 메인 플래너의 동기화 설정을 확인해 주세요.");
+    if(!response.ok) throw Error("저장소 확인 실패 ("+response.status+")");
+    if(!(await response.json()).private) throw Error(config.repo+"는 공개 저장소라 가정을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.");
+  }
+  async function readRemoteScenarios(config){
+    const path="/repos/"+config.repo+"/contents/"+SCENARIO_FILE,response=await scenarioGh(config,path);
+    if(response.status===404) return {sha:"",data:null};
+    if(!response.ok) throw Error("가정 읽기 실패 ("+response.status+")");
+    const meta=await response.json();
+    let text=meta.encoding==="base64"&&meta.content?fromB64(meta.content):null;
+    if(text===null){ const raw=await scenarioGh(config,path,{headers:{Accept:"application/vnd.github.raw+json"}}); if(!raw.ok) throw Error("가정 읽기 실패 ("+raw.status+")"); text=await raw.text(); }
+    let data=null; try { data=cleanScenarioData(JSON.parse(text)); } catch (_) { data=null; }
+    if(!data) throw Error("저장소의 "+SCENARIO_FILE+" 형식을 확인할 수 없어 자동으로 덮어쓰지 않았습니다.");
+    return {sha:meta.sha,data};
+  }
+  async function writeRemoteScenarios(config,data,sha){
+    const body={message:"시나리오 가정 동기화 "+new Date().toISOString(),content:toB64(JSON.stringify(data,null,2)+"\n"),...(sha?{sha}:{})};
+    const response=await scenarioGh(config,"/repos/"+config.repo+"/contents/"+SCENARIO_FILE,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(response.status===409||response.status===422){ const error=Error("다른 기기가 먼저 저장했습니다."); error.stale=true; throw error; }
+    if(!response.ok) throw Error("가정 저장 실패 ("+response.status+")");
+  }
+  function setScenarioSyncState(state,message=""){
+    const config=readSyncConfig();
+    scenarioSync.state=state; scenarioSync.message=message;
+    if(state==="done") scenarioSync.at=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
+    el("scenarioSyncStatus").textContent={off:"연결 안 됨",pending:"잠시 후 동기화",busy:"동기화 중…",done:"동기화 완료 · "+scenarioSync.at,error:"동기화 오류 · 이 기기에는 저장됨"}[state];
+    el("scenarioSyncError").textContent=message; el("scenarioSyncError").hidden=!message;
+    el("scenarioSyncNow").hidden=!config; el("scenarioSyncOff").hidden=!!config; el("scenarioSyncOn").hidden=!config;
+    el("scenarioSyncRepo").textContent=config?config.repo:"";
+    showAssumptionState();
+  }
+  function adoptMergedScenarios(merged,local){
+    writeStored(SCENARIO_LIST_KEY,merged.scenarios); writeStored(DELETED_KEY,merged.deleted);
+    if(merged.current&&merged.current.savedAt>(local.current?.savedAt||"")){ adoptAssumptions(merged.current); assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions); }
+    if(el("savesDialog").open) renderScenarioList();
+  }
+  async function syncScenarios(){
+    const config=readSyncConfig();
+    if(!config){ clearTimeout(scenarioSync.timer); scenarioSync.timer=null; setScenarioSyncState("off"); return; }
+    if(scenarioSync.busy){ scenarioSync.again=true; return; }
+    scenarioSync.busy=true; scenarioSync.again=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null;
+    setScenarioSyncState("busy");
+    try {
+      if(scenarioSync.checked!==config.repo){ await checkScenarioRepo(config); scenarioSync.checked=config.repo; }
+      for(let attempt=1;;attempt++){
+        const remote=await readRemoteScenarios(config);
+        if(assumptionSaveTimer) saveAssumptions();
+        const local=localScenarioData(),merged=mergeScenarioData(local,remote.data||{current:null,scenarios:[],deleted:{}});
+        adoptMergedScenarios(merged,local);
+        const empty=!merged.current&&!merged.scenarios.length&&!Object.keys(merged.deleted).length;
+        if(remote.data?JSON.stringify(merged)===JSON.stringify(remote.data):empty) break;
+        try { await writeRemoteScenarios(config,merged,remote.sha); break; }
+        catch (error) { if(!error.stale||attempt>=3) throw error; }
+      }
+      setScenarioSyncState(scenarioSync.timer?"pending":"done");
+    } catch (error) {
+      setScenarioSyncState("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error));
+    } finally {
+      scenarioSync.busy=false;
+      if(scenarioSync.again) scheduleScenarioSync(300);
+    }
+  }
+  function scheduleScenarioSync(delay){
+    if(!readSyncConfig()) return;
+    clearTimeout(scenarioSync.timer);
+    scenarioSync.timer=setTimeout(()=>{ scenarioSync.timer=null; syncScenarios(); },delay);
+    if(!scenarioSync.busy) setScenarioSyncState("pending");
+  }
+  el("scenarioSyncNow").addEventListener("click",()=>{ scenarioSync.checked=""; syncScenarios(); });
+  setInterval(()=>{ if(!document.hidden&&!scenarioSync.busy&&readSyncConfig()) syncScenarios(); },45000);
+  document.addEventListener("visibilitychange",()=>{
+    if(!readSyncConfig()) return;
+    if(!document.hidden) syncScenarios();
+    else if(scenarioSync.timer) syncScenarios(); // 앱 전환·탭 닫기 전에 대기 중인 변경을 바로 올린다
+  });
+  window.addEventListener("storage",event=>{ if(event.key===null||event.key===SYNC_REPO_KEY||event.key===SYNC_TOKEN_KEY){ scenarioSync.checked=""; syncScenarios(); } });
+  const scenarioSyncReady=syncScenarios();
   // Page-scoped structured action for supported browsers; it uses the same controls as the reader.
   if (document.modelContext?.registerTool) {
     const bounds = {robotMillionUnits:["robotM",0,160,5],robotBatteryKwh:["robotKwh",1,10,.5],evSharePercent:["evShare",0,15,.5],robotSharePercent:["robotShare",0,40,1],discountPercent:["discount",6,18,.5]};
