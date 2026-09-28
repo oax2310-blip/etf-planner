@@ -2,14 +2,14 @@
 <!--
   HANDOFF (Claude ↔ GPT 인수인계 메모 — 사이트 소스로 공개되므로 금액·보유 종목 같은 개인정보는 적지 말 것)
   - 정본: GitHub 저장소 main 브랜치의 index.html. 수정은 바뀌는 부분만 → PR → 병합하면 GitHub Pages가 자동 게시.
-  - 공개 저장소: 보유 수량·손익·평가액 같은 실제 데이터를 코드 기본값에 넣지 말 것. 데이터는 브라우저 저장 + JSON 백업/복원으로만.
+  - 공개 저장소: 보유 수량·손익·평가액 같은 실제 데이터를 코드 기본값에 넣지 말 것. 기록은 브라우저 + 선택한 구글 드라이브의 앱 데이터 폴더에만 저장.
   - 저장: localStorage 키 "etf-exit-planner-standalone-v1". 키·기존 필드 구조를 바꾸지 말 것(바꿀 땐 기존 데이터 이전 코드 포함).
   - 2026-09-28 Claude: 달러선물 구간 매수 체크 → 고른 보유 월물에 가중평균으로 합산(tranche.mergedMonth), 체크 해제 시 되돌림.
     예전에 체크된 계약(mergedMonth 없음)은 자동 이관하지 않고 '월물로 옮기기' 버튼으로 수동 이관.
     월물교체 기능 추가(futures.rolls 기록, 실현손익 → baselinePnl, 마지막 교체 되돌리기).
     '계획 전부 체결 가정' = 현재 기대수익 + 미매수 계획분(가격 미입력 제외)으로 수정 — 이전엔 기존 보유분이 빠져 있었음.
   - 2026-09-28 Claude: GitHub 이전용으로 기본값(seed)의 실제 데이터 제거.
-  - 다음 할 일: 없음
+  - 구글 드라이브 연동: GOOGLE_CLIENT_ID는 공개 OAuth 웹 클라이언트 ID이며 비밀키가 아니다. 토큰은 메모리에만 둔다. 동기화 구현과 설정은 README.md 참조.
 -->
 <html lang="ko">
 <head>
@@ -33,6 +33,7 @@
     dialog{border:1px solid #49636b;border-radius:18px;background:#12232c;color:var(--text);width:min(760px,calc(100vw - 24px));max-height:92vh;padding:0;box-shadow:0 30px 90px #000b}dialog::backdrop{background:#0009}.dialog-inner{padding:22px}.dialog-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.dialog-head h2{margin:0;font-size:21px}.dialog-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:15px}.dialog-wide{grid-column:1/-1}.dialog-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.hint{font-size:12px;color:var(--muted);margin:4px 0 0}
     .futures .heading{margin-bottom:18px}.futures-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-bottom:16px}.future-metric{padding:17px 19px}.future-metric label{font-size:12px;color:var(--muted)}.future-metric strong{display:block;font-size:26px;margin-top:6px}.future-metric small{font-size:12px;color:#b2c7c1}.future-panel{margin-bottom:18px}.future-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.future-panel-head h2{margin:0;font-size:17px}.positions{display:grid;gap:8px}.position-row{display:grid;grid-template-columns:1fr .75fr 1fr 56px;gap:9px;align-items:end;padding:10px;border:1px solid #355158;background:#183037;border-radius:10px}.position-row label,.tranche label{display:grid;gap:4px;color:#bfd0ce;font-size:12px;font-weight:700}.position-row input,.tranche input{min-height:37px;background:#0c1921;border:1px solid #3b5760;border-radius:8px;color:var(--text);padding:7px 8px}.remove{background:transparent;border:0;color:#f0b6aa;padding:7px}.help{color:var(--muted);font-size:12px;margin:12px 0 0}.level{border:1px solid var(--line);border-radius:13px;overflow:hidden;margin-bottom:10px}.level-head{display:grid;grid-template-columns:115px minmax(130px,1fr) 120px auto;gap:11px;align-items:end;padding:13px 15px;background:#213a3b}.level-title strong,.level-title small{display:block}.level-title small{font-size:11px;color:#bcd5a0;margin-top:3px}.level-head label,.level-head .qty{display:grid;gap:4px;font-size:12px;color:#c1d0cc;font-weight:700}.level-head input{min-height:35px}.level-head .qty input{width:100%}.level-progress{font-size:12px;color:#d9f09b;white-space:nowrap;align-self:center}.tranches{display:grid}.tranche{display:grid;grid-template-columns:120px minmax(140px,1fr) 160px 230px;gap:12px;align-items:center;padding:10px 15px;border-top:1px solid #2a4148}.tranche.completed{background:#1b332f}.tranche-name strong,.tranche-name small{display:block}.tranche-name small{color:#9fb6b6;font-size:11px}.gain small,.gain strong{display:block}.gain small{font-size:11px;color:#a7baba}.gain strong{font-size:15px;color:#e1f4d3}.tranche-check{display:flex;align-items:center;gap:7px;justify-content:flex-end;white-space:nowrap}.tranche-check input{width:19px;height:19px;accent-color:var(--accent)}.total-bar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 16px;background:#1b3433;color:#d8eece;font-size:13px}.warning{padding:12px 14px;border:1px solid #80643f;background:#382e23;color:#ffdda7;border-radius:12px;margin-bottom:16px;font-size:13px}.actions-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.action-row{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;border-top:1px solid #2c454d;padding:12px 0}.action-row:first-child{border-top:0}.action-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.action-fields label{font-size:12px;color:#bcd0cd;display:grid;gap:4px}.action-fields input{background:#0d1921;border:1px solid #38515a;border-radius:8px;color:var(--text);padding:7px}.small-note{font-size:12px;color:var(--muted)}
     .tranche-act{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap}.tranche-act input.month{width:92px;min-height:34px;background:#0c1921;border:1px solid #3b5760;border-radius:8px;color:var(--text);padding:6px 8px}.merged-tag{font-size:12px;color:#bfe8bd;white-space:nowrap}.btn.mini{padding:5px 9px;font-size:12px}.roll{margin-top:16px;padding:14px;border:1px solid #355158;border-radius:12px;background:#152a31}.roll h3,.roll-log h3{margin:0 0 4px;font-size:15px}.roll-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-top:10px}.roll-grid label{display:grid;gap:4px;font-size:12px;color:#bfd0ce;font-weight:700}.roll-grid input,.roll-grid select{min-width:0;min-height:37px;background:#0c1921;border:1px solid #3b5760;border-radius:8px;color:var(--text);padding:7px 8px}.roll-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}.roll-log{margin-top:14px}.roll-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #2c454d;font-size:13px;color:#c9dbd6}
+    .sync-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sync-status{font-size:12px;color:var(--muted);max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sync-details{font-size:13px;color:var(--muted);line-height:1.7}.sync-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.sync-controls .btn{flex:1;min-width:110px}
     .hidden{display:none!important}@media(max-width:1000px){.layout{grid-template-columns:1fr}.side{position:static}.plan-list{grid-template-columns:repeat(3,minmax(0,1fr))}.side .btn{width:auto}.table-head,.sale-row{grid-template-columns:55px minmax(100px,1fr) minmax(110px,1fr) 120px}.table-head>:last-child,.sale-row>:last-child{display:none}.tranche{grid-template-columns:100px minmax(130px,1fr) 140px 220px}.roll-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.level-head{grid-template-columns:105px 1fr 105px}.level-progress{grid-column:1/-1;justify-self:end}}@media(max-width:700px){main{padding-top:20px}.top{align-items:flex-start;flex-direction:column}.tabs{width:100%}.tab{flex:1}.plan-list{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics,.futures-metrics,.control-grid,.actions-grid{grid-template-columns:1fr}.metric+.metric{border-left:0;border-top:1px solid var(--line)}.table-head{display:none}.sale-row{grid-template-columns:55px 1fr;gap:6px 10px;padding:14px}.sale-row>:nth-child(2){grid-column:2}.sale-row>:nth-child(3){grid-column:2}.sale-row>:nth-child(4){grid-column:2}.status{justify-self:start}.position-row,.tranche{grid-template-columns:1fr 1fr}.tranche-name{grid-column:1/-1}.tranche .gain{grid-column:1/-1}.tranche-check{justify-content:flex-start}.tranche-act{grid-column:1/-1;justify-content:flex-start}.roll-grid{grid-template-columns:1fr 1fr}.level-head{grid-template-columns:1fr 1fr}.level-title{grid-column:1/-1}.level-progress{grid-column:1/-1;justify-self:start}.dialog-grid{grid-template-columns:1fr}.dialog-wide{grid-column:auto}}
   </style>
 </head>
@@ -44,6 +45,7 @@
       <button class="tab" data-tab="futures">달러선물 매수</button>
       <button class="tab" data-tab="actions">이번 주 체크</button>
     </nav>
+    <div class="sync-head"><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini" id="syncBtn" type="button">구글 드라이브 연결</button></div>
   </header>
 
   <main>
@@ -55,7 +57,7 @@
           <button class="btn primary" id="addPlanBtn">＋ 새 계획 추가</button>
           <button class="btn ghost" id="exportBtn">JSON 백업</button>
           <label class="btn ghost" for="importInput" style="display:block;text-align:center">JSON 복원<input id="importInput" type="file" accept="application/json" hidden /></label>
-          <p class="hint">이 HTML은 서버 없이 브라우저의 localStorage에 저장됩니다. Claude에서 코드를 수정해도 같은 방식으로 계속 테스트할 수 있습니다.</p>
+          <p class="hint">입력 내용은 이 기기에 즉시 저장됩니다. 구글 드라이브를 연결하면 다른 기기와도 동기화됩니다. JSON 백업도 주기적으로 보관하세요.</p>
         </aside>
         <section id="planMain"></section>
       </div>
@@ -87,14 +89,33 @@
     <div class="dialog-foot"><button class="btn" value="cancel">취소</button><button class="btn primary" id="savePlanBtn" value="default">저장</button></div>
   </form></dialog>
 
+  <dialog id="syncDialog"><div class="dialog-inner">
+    <div class="dialog-head"><h2>구글 드라이브 동기화</h2><button class="btn ghost" id="closeSync" type="button">닫기</button></div>
+    <p class="sync-details">연결 중에는 변경 내용을 드라이브의 앱 전용 저장 공간에 자동 저장하고, 다른 기기에서 변경한 내용도 불러옵니다. 현재 기기의 기록은 계속 보관됩니다. 구글 권한이 만료되면 다시 연결해야 합니다.</p>
+    <label class="field"><span>OAuth 웹 클라이언트 ID</span><input id="googleClientId" type="text" spellcheck="false" autocomplete="off" placeholder="예: 123456.apps.googleusercontent.com" /></label>
+    <p class="hint">최초 설정은 저장소의 README.md를 참고하세요. 사이트 소스에 ID를 등록하면 각 기기에서 다시 입력할 필요가 없습니다.</p>
+    <div class="sync-controls"><button class="btn primary" id="connectGoogle" type="button">구글 계정 연결</button><button class="btn" id="syncNow" type="button">지금 동기화</button><button class="btn ghost" id="disconnectGoogle" type="button">연결 해제</button></div>
+    <p class="sync-details" id="syncDialogStatus" role="status"></p>
+    <button class="btn ghost" id="downloadSyncBackup" type="button" hidden>동기화 충돌 시 보관한 기록 내려받기</button>
+  </div></dialog>
+
+  <dialog id="conflictDialog"><div class="dialog-inner">
+    <div class="dialog-head"><h2>기록이 서로 다릅니다</h2></div>
+    <p class="sync-details" id="conflictMessage"></p>
+    <p class="sync-details">어느 기록을 쓸지 선택하세요. 덮어쓰기 전 다른 기록은 이 기기에 복구용 JSON으로 보관합니다.</p>
+    <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepDrive" type="button">드라이브 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
+  </div></dialog>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     /*
       Claude에서 이어서 수정하기 쉽도록 외부 라이브러리 없이 작성한 단일 파일입니다.
-      - 모든 기록은 localStorage에 저장됩니다.
+      - 모든 기록은 localStorage에 저장되며, 연결한 구글 드라이브에도 동기화합니다.
       - 매도/매수 체크는 가격이 양수이면 항상 활성화됩니다.
-      - JSON 백업으로 다른 브라우저에 옮길 수 있습니다.
+      - JSON 백업으로 복원할 수도 있습니다.
     */
     const STORAGE_KEY = "etf-exit-planner-standalone-v1";
+    const GOOGLE_CLIENT_ID = ""; // 설정 후 이곳에 OAuth 웹 클라이언트 ID를 입력해 게시해도 됩니다. 비밀키는 넣지 마세요.
     const futuresDays = [25,32,42,60,80,125,150];
     const contractSize = 10000;
     const won = new Intl.NumberFormat("ko-KR", {maximumFractionDigits:0});
@@ -112,6 +133,7 @@
     const defaultFutures = () => ({targetPrice:1480,targetProfit:0,baselinePnl:0,positions:[],levels:futuresDays.map(days=>({days,price:0,confirmed:false,contracts:0,tranches:[]})),note:""});
     const defaultActions = () => ({coveredCallName:"S&P500 커버드콜",buys:[1,2,3].map((day,i)=>({id:id(),day,plannedKrw:200000,actualKrw:null,completed:false})),adobeSales:[{id:id(),plannedShares:null,soldShares:null,priceUsd:null,completed:false}],allocation:{completed:false,targetNasdaqPct:null,targetCoveredCallPct:null,note:""},buyNote:"",adobeNote:""});
     const seeded = {plans:[],futures:defaultFutures(),actions:defaultActions(),selectedPlan:null,tab:"plans"}; // 공개 저장소용: 실제 데이터는 JSON 복원으로만
+    const hadStoredState = localStorage.getItem(STORAGE_KEY) !== null;
     let state;
     try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || seeded; } catch { state = seeded; }
     function normalize(){
@@ -122,7 +144,118 @@
       state.tab = state.tab || "plans";
     }
     normalize();
-    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    const initialSnapshot = dataSnapshot();
+    const SYNC_FILE = "etf-planner-sync-v1.json";
+    const CLIENT_ID_KEY = "etf-planner-google-client-id";
+    const SYNC_BASE_KEY = "etf-planner-sync-base:";
+    const LAST_ACCOUNT_KEY = "etf-planner-last-google-account";
+    const RECOVERY_KEY = "etf-planner-sync-recovery";
+    const sync = {token:"",expires:0,email:"",fileId:"",remote:"",base:"",busy:false,again:false,blocked:false,timer:null};
+    function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions});}
+    function syncStatus(message){document.getElementById("syncStatus").textContent=message;document.getElementById("syncDialogStatus").textContent=message;document.getElementById("syncBtn").textContent=sync.email?"동기화 설정":"구글 드라이브 연결";}
+    function authorized(){if(sync.token && Date.now()<sync.expires)return true;if(sync.token){sync.token="";syncStatus("연결 만료 · 다시 연결 필요");}return false;}
+    function scheduleSync(){if(!authorized()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),900);}
+    function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));if(sync.email && dataSnapshot()!==sync.base) scheduleSync();}
+    function backupRecord(json,reason){localStorage.setItem(RECOVERY_KEY,JSON.stringify({...JSON.parse(json),recoveryReason:reason,exportedAt:new Date().toISOString()}));document.getElementById("downloadSyncBackup").hidden=false;}
+    function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+    async function driveRequest(url,options={}){
+      const response=await fetch(url,{...options,headers:{Authorization:`Bearer ${sync.token}`,...options.headers}});
+      if(response.status===401){sync.token="";throw Error("구글 연결이 만료되었습니다. 다시 연결해 주세요.");}
+      if(!response.ok)throw Error(`드라이브 요청 실패 (${response.status}). Google Cloud 설정과 권한을 확인해 주세요.`);
+      return response.json();
+    }
+    async function readDrive(){
+      const query=new URLSearchParams({spaces:"appDataFolder",q:`name = '${SYNC_FILE}' and trashed = false`,fields:"nextPageToken,files(id,name,version)",pageSize:"100"});
+      const listing=await driveRequest(`https://www.googleapis.com/drive/v3/files?${query}`);
+      if(listing.nextPageToken||(listing.files||[]).length>1)throw Error("드라이브에 동기화 파일이 여러 개 있습니다. 자동으로 덮어쓰지 않았습니다.");
+      const file=listing.files?.[0];
+      if(!file)return {file:null,snapshot:null};
+      const data=await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`);
+      if(!Array.isArray(data.plans)||!data.futures||!data.actions)throw Error("드라이브 동기화 파일 형식을 확인할 수 없습니다. 자동으로 덮어쓰지 않았습니다.");
+      return {file,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions})};
+    }
+    async function writeDrive(snapshot,file){
+      const url=file?`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.id)}?uploadType=media`:
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id";
+      let body=snapshot,contentType="application/json; charset=UTF-8";
+      if(!file){const boundary=`etf_planner_${id().replace(/[^a-zA-Z0-9]/g,"")}`;contentType=`multipart/related; boundary=${boundary}`;
+        body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:SYNC_FILE,mimeType:"application/json",parents:["appDataFolder"]})}\r\n--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${snapshot}\r\n--${boundary}--`;}
+      const result=await driveRequest(url,{method:file?"PATCH":"POST",headers:{"Content-Type":contentType},body});
+      sync.fileId=file?.id||result.id;
+      return result;
+    }
+    function markSynced(snapshot){sync.remote=snapshot;sync.base=snapshot;localStorage.setItem(SYNC_BASE_KEY+sync.email,snapshot);localStorage.setItem(LAST_ACCOUNT_KEY,sync.email);syncStatus(`동기화 완료 · ${sync.email}`);}
+    function applyDrive(snapshot){state={...state,...JSON.parse(snapshot)};normalize();localStorage.setItem(STORAGE_KEY,JSON.stringify(state));render();}
+    function chooseConflict(local,remote){return new Promise(resolve=>{
+      const dialog=document.getElementById("conflictDialog"),summary=json=>{const d=JSON.parse(json);return `${d.plans.length}개 계획 · 달러선물 ${d.futures.positions?.length||0}개 월물`;};
+      document.getElementById("conflictMessage").textContent=`이 기기: ${summary(local)} / 드라이브: ${summary(remote)}. 먼저 JSON 백업을 내려받아 두면 더 안전합니다.`;
+      let done=false;const finish=value=>{if(done)return;done=true;dialog.close();resolve(value);};
+      document.getElementById("keepLocal").onclick=()=>finish("local");document.getElementById("keepDrive").onclick=()=>finish("drive");document.getElementById("conflictLater").onclick=()=>finish("later");
+      dialog.onclose=()=>finish("later");dialog.showModal();
+    });}
+    async function syncNow(){
+      if(!authorized())return;
+      if(sync.busy){sync.again=true;return;}
+      const account=sync.email,token=sync.token;
+      const sameConnection=()=>sync.email===account&&sync.token===token;
+      sync.busy=true;sync.again=false;clearTimeout(sync.timer);syncStatus(`동기화 확인 중 · ${sync.email}`);
+      try{
+        const {file,snapshot:remote}=await readDrive();sync.fileId=file?.id||"";
+        if(!sameConnection())return;
+        const local=dataSnapshot(),base=sync.base;
+        if(remote===local){markSynced(local);sync.blocked=false;}
+        else if(remote===null){
+          const lastAccount=localStorage.getItem(LAST_ACCOUNT_KEY);
+          if(lastAccount&&lastAccount!==sync.email&&!confirm(`이전에 연결한 계정(${lastAccount})과 다릅니다. 현재 기기 기록을 ${sync.email}의 드라이브에 복사할까요?`)){
+            sync.blocked=true;syncStatus("다른 계정 확인 전 · 이 기기에만 저장 중");return;
+          }
+          await writeDrive(local,null);if(!sameConnection())return;markSynced(local);sync.blocked=false;
+        }
+        else if(local===base||(!base&&!hadStoredState&&local===initialSnapshot)){applyDrive(remote);markSynced(remote);sync.blocked=false;}
+        else if(remote===base){await writeDrive(local,file);markSynced(local);sync.blocked=false;}
+        else{
+          sync.blocked=true;syncStatus("기록 차이 확인 필요 · 자동 저장 대기");
+          const choice=await chooseConflict(local,remote);
+          if(!sameConnection())return;
+          if(choice==="drive"){backupRecord(dataSnapshot(),"드라이브 기록을 선택하기 전 이 기기 기록");applyDrive(remote);markSynced(remote);sync.blocked=false;}
+          else if(choice==="local"){
+            const latest=await readDrive();if(latest.snapshot!==remote)throw Error("선택하는 동안 드라이브 기록이 바뀌었습니다. 다시 동기화해 주세요.");
+            if(!sameConnection())return;
+            backupRecord(remote,"이 기기 기록을 선택하기 전 드라이브 기록");
+            const current=dataSnapshot();await writeDrive(current,latest.file);if(!sameConnection())return;markSynced(current);sync.blocked=false;
+          }
+          else syncStatus("기록 차이 확인 전 · 이 기기에만 저장 중");
+        }
+      }catch(error){syncStatus(`이 기기 저장됨 · ${error.message}`);}
+      finally{sync.busy=false;if(sync.again&&!sync.blocked) scheduleSync();else if(authorized()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
+    }
+    document.getElementById("syncBtn").onclick=()=>document.getElementById("syncDialog").showModal();
+    document.getElementById("closeSync").onclick=()=>document.getElementById("syncDialog").close();
+    document.getElementById("googleClientId").value=GOOGLE_CLIENT_ID||localStorage.getItem(CLIENT_ID_KEY)||"";
+    document.getElementById("downloadSyncBackup").hidden=!localStorage.getItem(RECOVERY_KEY);
+    document.getElementById("downloadSyncBackup").onclick=()=>{const raw=localStorage.getItem(RECOVERY_KEY);if(raw)downloadJson(JSON.parse(raw),`etf-planner-recovery-${new Date().toISOString().slice(0,10)}.json`);};
+    document.getElementById("connectGoogle").onclick=()=>{
+      if(sync.busy){syncStatus("현재 동기화가 끝나면 다시 연결해 주세요.");return;}
+      const clientId=document.getElementById("googleClientId").value.trim();
+      if(!/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId)){syncStatus("OAuth 웹 클라이언트 ID를 입력해 주세요.");return;}
+      if(!window.google?.accounts?.oauth2){syncStatus("구글 연결 스크립트를 불러오는 중입니다. 잠시 후 다시 눌러 주세요.");return;}
+      localStorage.setItem(CLIENT_ID_KEY,clientId);
+      const client=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:"https://www.googleapis.com/auth/drive.appdata",callback:async response=>{
+        if(!response?.access_token){syncStatus(`구글 연결 실패: ${response?.error||"권한을 확인해 주세요."}`);return;}
+        sync.token=response.access_token;sync.expires=Date.now()+Math.max(0,Number(response.expires_in||3600)-60)*1000;
+        try{
+          const account=await driveRequest("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)");
+          const email=account.user?.emailAddress;if(!email)throw Error("구글 계정을 확인하지 못했습니다.");
+          sync.email=email;sync.base=localStorage.getItem(SYNC_BASE_KEY+email)||"";sync.remote="";sync.blocked=false;
+          syncStatus(`연결됨 · ${email}`);await syncNow();
+        }catch(error){syncStatus(`이 기기 저장됨 · ${error.message}`);}
+      }});
+      client.requestAccessToken();
+    };
+    document.getElementById("syncNow").onclick=()=>{sync.blocked=false;if(authorized())syncNow();else syncStatus("구글 계정을 다시 연결해 주세요.");};
+    document.getElementById("disconnectGoogle").onclick=()=>{clearTimeout(sync.timer);sync.token="";sync.email="";sync.base="";sync.remote="";sync.blocked=false;syncStatus("이 기기에만 저장 중");};
+    setInterval(()=>{if(authorized()&&!sync.blocked&&!document.hidden)syncNow();},45000);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authorized()&&!sync.blocked)syncNow();});
     function selected(){ return state.plans.find(p=>p.id===state.selectedPlan) || state.plans[0] || null; }
     function openTab(tab){ state.tab=tab; save(); document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","futures","actions"].forEach(x=>document.getElementById(x+"View").classList.toggle("hidden",x!==tab)); render(); }
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>openTab(b.dataset.tab)));
@@ -141,7 +274,7 @@
         <div class="metrics card"><div class="metric"><label>현재 계획 상태</label><strong>${esc(status)}</strong><small>${done} / ${p.stages}회 완료 · ${value}</small></div><div class="metric"><label>첫 매도 기준가</label><strong>${priceText(p.startPrice,p.currency)}</strong><small>${p.currency==="USD"?fxText(p.startPrice*p.fx):""}</small></div><div class="metric"><label>마지막 매도 기준가</label><strong>${priceText(p.endPrice,p.currency)}</strong><small>${p.currency==="USD"?fxText(p.endPrice*p.fx):""}</small></div></div>
         <div class="control-grid"><section class="card panel"><h2>현재 가격과 시작 상태</h2><p>가격을 바꾼 뒤 저장하면 도달 회차가 다시 계산됩니다.</p><div class="inline-fields"><label class="field"><span>현재 가격</span><input id="currentPrice" type="number" step="any" value="${esc(p.currentPrice)}"></label><div class="toggle"><label for="started">계획 시작</label><input id="started" type="checkbox" ${p.started?"checked":""}></div></div><div class="actions" style="margin-top:12px"><button class="btn primary" id="savePrice">현재 값 저장</button></div></section><section class="card panel"><h2>계산 요약</h2><p>주수는 정수로 균등 분배하며, 평가액만 입력한 계획은 회차별 금액으로 표시합니다.</p><div class="inline-fields"><div><div class="sub">회차당 가격 하락폭</div><strong>${priceText(gap,p.currency)}</strong></div><div><div class="sub">예상 1회 주문 비중</div><strong>${p.stages?decimal.format(100/p.stages):"—"}%</strong></div></div></section></div>
         <section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount">${(p.note||"").length.toLocaleString("ko-KR")} / 4,000자</span></div><textarea id="planNote" maxlength="4000" style="margin-top:10px;width:100%;background:#0d1921;border:1px solid #38515a;border-radius:9px;color:var(--text);padding:10px;min-height:100px">${esc(p.note||"")}</textarea><div class="actions" style="justify-content:flex-end;margin-top:9px"><button class="btn" id="saveNote">메모 저장</button></div></section>
-        <div class="section-heading"><h2>분할매도 체크</h2><span>${done} / ${p.stages}회 완료</span></div><section class="card table-card"><div class="table-head"><span>체크</span><span>회차 / 기준가</span><span>원화 환산</span><span>예상 매도량</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>{const price=stagePrice(p,i), checked=p.checked[i], dueNow=p.started&&!checked&&p.currentPrice<=price;const qty=p.holdings.map(h=>`${esc(h.name)} ${sharesAt(h.shares,i,p.stages)}주`).filter(Boolean).join(" · ") || (p.valueKrw!=null?`약 ${decimal.format(p.valueKrw/p.stages)}만원`:"보유량 입력 필요");const amount=p.valueKrw!=null?`약 ${decimal.format(p.valueKrw/p.stages)}만원`:"";return `<div class="sale-row ${checked?"done":""} ${dueNow?"due":""}"><label class="check"><input type="checkbox" data-stage="${i}" ${checked?"checked":""}>${i+1}회</label><div><div class="price">${priceText(price,p.currency)}</div><div class="sub">${esc(i===0?p.startLabel:i===p.stages-1?p.endLabel:`${p.startLabel} → ${p.endLabel}`)}</div></div><div><div class="price">${p.currency==="USD"?fxText(price*p.fx):"—"}</div><div class="sub">${amount}</div></div><div><div class="shares">${qty}</div><div class="sub">${p.valueKrw!=null?"평가액 기준":"정수 주수 균등"}</div></div><div class="status ${checked?"done":dueNow?"due":""}">${checked?"매도 완료":dueNow?"매도 시점":"대기"}</div></div>`;}).join("")}</div></section><p class="footnote">체크는 기록용입니다. 실제 주문은 증권사에서 직접 실행하세요. 이 독립형 HTML의 저장 위치는 현재 브라우저입니다.</p>`;
+        <div class="section-heading"><h2>분할매도 체크</h2><span>${done} / ${p.stages}회 완료</span></div><section class="card table-card"><div class="table-head"><span>체크</span><span>회차 / 기준가</span><span>원화 환산</span><span>예상 매도량</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>{const price=stagePrice(p,i), checked=p.checked[i], dueNow=p.started&&!checked&&p.currentPrice<=price;const qty=p.holdings.map(h=>`${esc(h.name)} ${sharesAt(h.shares,i,p.stages)}주`).filter(Boolean).join(" · ") || (p.valueKrw!=null?`약 ${decimal.format(p.valueKrw/p.stages)}만원`:"보유량 입력 필요");const amount=p.valueKrw!=null?`약 ${decimal.format(p.valueKrw/p.stages)}만원`:"";return `<div class="sale-row ${checked?"done":""} ${dueNow?"due":""}"><label class="check"><input type="checkbox" data-stage="${i}" ${checked?"checked":""}>${i+1}회</label><div><div class="price">${priceText(price,p.currency)}</div><div class="sub">${esc(i===0?p.startLabel:i===p.stages-1?p.endLabel:`${p.startLabel} → ${p.endLabel}`)}</div></div><div><div class="price">${p.currency==="USD"?fxText(price*p.fx):"—"}</div><div class="sub">${amount}</div></div><div><div class="shares">${qty}</div><div class="sub">${p.valueKrw!=null?"평가액 기준":"정수 주수 균등"}</div></div><div class="status ${checked?"done":dueNow?"due":""}">${checked?"매도 완료":dueNow?"매도 시점":"대기"}</div></div>`;}).join("")}</div></section><p class="footnote">체크는 기록용입니다. 실제 주문은 증권사에서 직접 실행하세요. 구글 드라이브 연결 시 다른 기기에도 동기화됩니다.</p>`;
       document.getElementById("currentPrice").onchange=e=>{p.currentPrice=Number(e.target.value)||0;save();renderPlans();};
       document.getElementById("started").onchange=e=>{p.started=e.target.checked;save();renderPlans();};
       document.getElementById("savePrice").onclick=()=>{p.currentPrice=Number(document.getElementById("currentPrice").value)||p.currentPrice;save();renderPlans();};
