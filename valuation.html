@@ -171,7 +171,7 @@
     .nav-save { margin-left:auto; display:flex; align-items:center; gap:10px; }
     .nav-save-state { color:var(--muted); font-size:.78rem; font-weight:650; }
     .nav-save button { border:1px solid var(--dark); background:var(--dark); color:#fff; border-radius:999px; padding:5px 13px; font-size:.8rem; font-weight:800; line-height:1.4; }
-    .saves-dialog { width:min(560px,calc(100% - 28px)); max-height:calc(100vh - 40px); border:1px solid var(--border); border-radius:19px; padding:0; color:var(--ink); background:var(--white); box-shadow:0 24px 70px #0b1f2638; }
+    .saves-dialog { width:min(560px,calc(100% - 28px)); max-height:calc(100vh - 40px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; border:1px solid var(--border); border-radius:19px; padding:0; color:var(--ink); background:var(--white); box-shadow:0 24px 70px #0b1f2638; }
     .saves-dialog::backdrop { background:#0b1f2666; }
     .saves-body { padding:22px; }
     .saves-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
@@ -194,6 +194,12 @@
     .saves-list .saves-actions { display:flex; gap:6px; flex:none; }
     .saves-empty { color:var(--muted); font-size:.85rem; margin:10px 0 0; }
     .saves-foot { display:flex; justify-content:flex-end; margin-top:16px; }
+    .saves-sync { margin-top:16px; padding:11px 13px; border:1px solid var(--border); border-radius:11px; }
+    .saves-sync-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font-size:.86rem; }
+    .saves-sync-row strong { color:#0c6e63; }
+    .saves-sync-row button { margin-left:auto; }
+    .saves-sync p { margin:6px 0 0; }
+    .saves-sync-error { color:#a64328; font-weight:700; }
     footer { color:#6c8189; font-size:.78rem; margin-top:30px; padding-top:18px; border-top:1px solid var(--border); }
     @media (max-width:760px) {
       .shell { width:min(100% - 28px,1120px); }
@@ -620,7 +626,13 @@
     <ul class="saves-list" id="scenarioList"></ul>
     <p class="saves-empty" id="scenarioEmpty">아직 저장한 가정이 없습니다.</p>
     <div class="saves-foot"><button type="button" class="btn-line danger" id="resetAssumptions">모든 가정 기본값으로</button></div>
-    <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다. 이 브라우저에만 저장되며 다른 기기와는 동기화되지 않습니다.</p>
+    <div class="saves-sync">
+      <div class="saves-sync-row"><span class="muted">기기 간 동기화</span><strong id="scenarioSyncStatus">연결 안 됨</strong><button type="button" class="btn-line" id="scenarioSyncNow" hidden>지금 동기화</button></div>
+      <p class="tiny saves-sync-error" id="scenarioSyncError" role="status" hidden></p>
+      <p class="tiny" id="scenarioSyncOff"><a href="index.html">메인 플래너</a>의 <b>기기 간 동기화</b>에서 비공개 데이터 저장소를 연결하면, 이 페이지의 가정도 같은 저장소에 함께 동기화됩니다.</p>
+      <p class="tiny" id="scenarioSyncOn" hidden><span id="scenarioSyncRepo"></span> 저장소의 etf-planner-scenarios.json에 저장합니다. 여러 기기에서 만든 저장본은 합쳐지고, 현재 조정값은 가장 나중에 바꾼 기기의 값을 따릅니다.</p>
+    </div>
+    <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다.</p>
   </div>
 </dialog>
 <script>
@@ -982,6 +994,7 @@
   // 바꾸지 않은 입력(기준 종가·시총 등)은 저장하지 않으므로 페이지 기준값이 갱신되면 새 값을 따른다.
   const ASSUMPTION_KEY="etf-planner-valuation-current-v1";
   const SCENARIO_LIST_KEY="etf-planner-valuation-scenarios-v1";
+  const DELETED_KEY="etf-planner-valuation-deleted-v1"; // 삭제한 저장본 id → 삭제 시각. 다른 기기에 삭제를 전파한다
   const assumptionGroups=[["삼성SDI",ids],["배터리 ETF",[...batteryInputs,...companyInputIds,...groupInputIds]],["HUMN",[...humnControlIds,...terControlIds]]];
   const assumptionIds=assumptionGroups.flatMap(([,list])=>list);
   const assumptionIdSet=new Set(assumptionIds);
@@ -1028,16 +1041,31 @@
     const parts=assumptionGroups.map(([name,list])=>[name,list.filter(id=>owns(values,id)).length]).filter(([,count])=>count>0).map(([name,count])=>name+" "+count+"개");
     return parts.length?parts.join(" · ")+" 변경":"모두 기본값";
   }
-  let currentAssumptions=readStored(ASSUMPTION_KEY,null), assumptionSaveTimer=null, assumptionStorageOk=true;
+  const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,timer:null};
+  const numericValues=values=>{ const source=validValues(values); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="number"&&Number.isFinite(source[id])).map(id=>[id,source[id]])); };
+  const presetPair=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:""});
+  const assumptionKey=saved=>JSON.stringify([numericValues(saved?.values),presetPair(saved?.presets)]);
+  // savedAt은 값이 실제로 바뀔 때만 새로 적는다. 기기 간에는 더 나중에 바꾼 쪽의 현재 조정값을 쓰므로
+  // 열어 보기만 한 기기(savedAt 없음)가 다른 기기에서 바꾼 조정값을 덮어쓰지 않는다.
+  let currentAssumptions={...collectAssumptions({}),savedAt:""}, assumptionSaveTimer=null, assumptionStorageOk=true;
+  function adoptAssumptions(saved){
+    applyAssumptions(saved);
+    currentAssumptions={...collectAssumptions({}),savedAt:typeof saved?.savedAt==="string"?saved.savedAt:""};
+  }
   function showAssumptionState(){
-    const values=validValues(currentAssumptions?.values),count=changedCount(values);
-    el("saveState").textContent=!assumptionStorageOk?"저장 안 됨":count?"조정 "+count+"개 · 자동 저장됨":"기본값";
+    const values=validValues(currentAssumptions.values),count=changedCount(values);
+    const sync={pending:" · 동기화 대기",busy:" · 동기화 중",done:" · 동기화됨",error:" · 동기화 오류"}[scenarioSync.state]||(count?" · 자동 저장됨":"");
+    el("saveState").textContent=!assumptionStorageOk?"저장 안 됨":(count?"조정 "+count+"개":"기본값")+sync;
     el("currentSummary").textContent=(assumptionStorageOk?"":"이 브라우저에 저장할 수 없습니다 · ")+describeAssumptions(values);
   }
   function saveAssumptions(){
     clearTimeout(assumptionSaveTimer); assumptionSaveTimer=null;
-    currentAssumptions=collectAssumptions(currentAssumptions?.values);
-    assumptionStorageOk=writeStored(ASSUMPTION_KEY,{...currentAssumptions,savedAt:new Date().toISOString()});
+    const next=collectAssumptions(currentAssumptions.values);
+    if(assumptionKey(next)!==assumptionKey(currentAssumptions)){
+      currentAssumptions={...next,savedAt:new Date().toISOString()};
+      assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions);
+      scheduleScenarioSync(5000);
+    }
     showAssumptionState();
   }
   function scheduleAssumptionSave(){ clearTimeout(assumptionSaveTimer); assumptionSaveTimer=setTimeout(saveAssumptions,300); }
@@ -1046,7 +1074,8 @@
   document.addEventListener("click",event=>{ if(event.target.closest?.("[data-preset],[data-battery-preset]")) saveAssumptions(); });
   document.addEventListener("visibilitychange",()=>{ if(document.hidden&&assumptionSaveTimer) saveAssumptions(); });
   window.addEventListener("pagehide",()=>{ if(assumptionSaveTimer) saveAssumptions(); });
-  if(currentAssumptions&&typeof currentAssumptions==="object"&&!Array.isArray(currentAssumptions)) applyAssumptions(currentAssumptions);
+  const storedAssumptions=readStored(ASSUMPTION_KEY,null);
+  if(storedAssumptions&&typeof storedAssumptions==="object"&&!Array.isArray(storedAssumptions)) adoptAssumptions(storedAssumptions);
   showAssumptionState();
 
   const readScenarios=()=>{ const list=readStored(SCENARIO_LIST_KEY,[]); return Array.isArray(list)?list.filter(item=>item&&typeof item.id==="string"&&typeof item.name==="string"):[]; };
@@ -1080,7 +1109,7 @@
     if(!changedCount(values)||readScenarios().some(item=>sameValues(validValues(item.values),values))) return true;
     return confirm("지금 조정한 가정은 저장한 목록에 없습니다. 계속하면 현재 조정값이 바뀝니다. 계속할까요?");
   }
-  el("openSaves").addEventListener("click",()=>{ saveAssumptions(); renderScenarioList(); setSavesStatus(""); el("savesDialog").showModal(); });
+  el("openSaves").addEventListener("click",()=>{ saveAssumptions(); renderScenarioList(); setSavesStatus(""); el("savesDialog").showModal(); syncScenarios(); });
   el("closeSaves").addEventListener("click",()=>el("savesDialog").close());
   el("savesDialog").addEventListener("click",event=>{ if(event.target===el("savesDialog")) el("savesDialog").close(); });
   el("scenarioForm").addEventListener("submit",event=>{
@@ -1097,6 +1126,7 @@
     el("scenarioName").value="";
     renderScenarioList();
     setSavesStatus("'"+name+"'(으)로 저장했습니다.");
+    scheduleScenarioSync(300);
   });
   el("scenarioList").addEventListener("click",event=>{
     const button=event.target.closest?.("[data-scenario-action]");
@@ -1109,9 +1139,10 @@
       el("savesDialog").close();
     } else {
       if(!confirm("'"+item.name+"' 저장본을 삭제할까요?")) return;
-      if(!writeStored(SCENARIO_LIST_KEY,list.filter(entry=>entry.id!==item.id))){ setSavesStatus("삭제하지 못했습니다."); return; }
+      if(!writeStored(SCENARIO_LIST_KEY,list.filter(entry=>entry.id!==item.id))||!writeStored(DELETED_KEY,{...readDeleted(),[item.id]:new Date().toISOString()})){ setSavesStatus("삭제하지 못했습니다."); return; }
       renderScenarioList();
       setSavesStatus("'"+item.name+"'을(를) 삭제했습니다.");
+      scheduleScenarioSync(300);
     }
   });
   el("resetAssumptions").addEventListener("click",()=>{
@@ -1119,6 +1150,125 @@
     applyAssumptions({values:{},presets:{sdi:"base",battery:"base"}}); saveAssumptions();
     el("savesDialog").close();
   });
+
+  // 기기 간 동기화: 메인 플래너(index.html)에서 연결한 GitHub 비공개 데이터 저장소를 같이 쓴다.
+  // 저장소·토큰은 같은 사이트 localStorage의 index.html 키를 읽기만 하고, 기록 파일과 섞지 않도록 별도 파일에 저장한다.
+  // 저장본은 id별로 합치고(같은 id는 나중에 저장한 쪽), 삭제는 deleted 기록으로 전파한다.
+  // 현재 조정값은 더 나중에 바꾼 기기의 값을 쓰므로 충돌 확인 창이 필요 없다.
+  const SCENARIO_FILE="etf-planner-scenarios.json";
+  const SYNC_REPO_KEY="etf-planner-data-repo", SYNC_TOKEN_KEY="etf-planner-github-token";
+  function cleanDeleted(value){ const source=validValues(value); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="string").map(id=>[id,source[id]])); }
+  const readDeleted=()=>cleanDeleted(readStored(DELETED_KEY,{}));
+  const cleanSaved=item=>({values:numericValues(item.values),presets:presetPair(item.presets),savedAt:typeof item.savedAt==="string"?item.savedAt:""});
+  function cleanScenarioData(data){
+    if(!data||typeof data!=="object"||Array.isArray(data)||!Array.isArray(data.scenarios)||(data.version!==undefined&&data.version!==1)) return null;
+    const current=data.current&&typeof data.current==="object"&&typeof data.current.savedAt==="string"&&data.current.savedAt?cleanSaved(data.current):null;
+    const scenarios=data.scenarios.filter(item=>item&&typeof item.id==="string"&&typeof item.name==="string").map(item=>({id:item.id,name:item.name.slice(0,40),...cleanSaved(item)}));
+    return {version:1,current,scenarios,deleted:cleanDeleted(data.deleted)};
+  }
+  const localScenarioData=()=>cleanScenarioData({current:currentAssumptions,scenarios:readScenarios(),deleted:readDeleted()});
+  function mergeScenarioData(local,remote){
+    const deleted={...remote.deleted};
+    Object.entries(local.deleted).forEach(([id,at])=>{ if(!(deleted[id]>=at)) deleted[id]=at; });
+    const byId=new Map();
+    [...remote.scenarios,...local.scenarios].forEach(item=>{ const seen=byId.get(item.id); if(!seen||item.savedAt>seen.savedAt) byId.set(item.id,item); });
+    const scenarios=[...byId.values()].filter(item=>!(deleted[item.id]>=item.savedAt)).sort((a,b)=>a.savedAt<b.savedAt?1:a.savedAt>b.savedAt?-1:0);
+    const current=remote.current&&(!local.current||remote.current.savedAt>=local.current.savedAt)?remote.current:local.current;
+    return {version:1,current,scenarios,deleted:cleanDeleted(deleted)};
+  }
+  function readSyncConfig(){
+    try {
+      const repo=(localStorage.getItem(SYNC_REPO_KEY)||"").trim(),token=localStorage.getItem(SYNC_TOKEN_KEY)||"";
+      return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null;
+    } catch (_) { return null; }
+  }
+  const toB64=text=>{ const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
+  const fromB64=b64=>new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+  async function scenarioGh(config,path,options={}){
+    const response=await fetch("https://api.github.com"+path,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:"Bearer "+config.token,...options.headers}});
+    if(response.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
+    if(response.status===403) throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
+    return response;
+  }
+  async function checkScenarioRepo(config){
+    const response=await scenarioGh(config,"/repos/"+config.repo);
+    if(response.status===404) throw Error("저장소 "+config.repo+"를 찾을 수 없습니다. 메인 플래너의 동기화 설정을 확인해 주세요.");
+    if(!response.ok) throw Error("저장소 확인 실패 ("+response.status+")");
+    if(!(await response.json()).private) throw Error(config.repo+"는 공개 저장소라 가정을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.");
+  }
+  async function readRemoteScenarios(config){
+    const path="/repos/"+config.repo+"/contents/"+SCENARIO_FILE,response=await scenarioGh(config,path);
+    if(response.status===404) return {sha:"",data:null};
+    if(!response.ok) throw Error("가정 읽기 실패 ("+response.status+")");
+    const meta=await response.json();
+    let text=meta.encoding==="base64"&&meta.content?fromB64(meta.content):null;
+    if(text===null){ const raw=await scenarioGh(config,path,{headers:{Accept:"application/vnd.github.raw+json"}}); if(!raw.ok) throw Error("가정 읽기 실패 ("+raw.status+")"); text=await raw.text(); }
+    let data=null; try { data=cleanScenarioData(JSON.parse(text)); } catch (_) { data=null; }
+    if(!data) throw Error("저장소의 "+SCENARIO_FILE+" 형식을 확인할 수 없어 자동으로 덮어쓰지 않았습니다.");
+    return {sha:meta.sha,data};
+  }
+  async function writeRemoteScenarios(config,data,sha){
+    const body={message:"시나리오 가정 동기화 "+new Date().toISOString(),content:toB64(JSON.stringify(data,null,2)+"\n"),...(sha?{sha}:{})};
+    const response=await scenarioGh(config,"/repos/"+config.repo+"/contents/"+SCENARIO_FILE,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(response.status===409||response.status===422){ const error=Error("다른 기기가 먼저 저장했습니다."); error.stale=true; throw error; }
+    if(!response.ok) throw Error("가정 저장 실패 ("+response.status+")");
+  }
+  function setScenarioSyncState(state,message=""){
+    const config=readSyncConfig();
+    scenarioSync.state=state; scenarioSync.message=message;
+    if(state==="done") scenarioSync.at=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
+    el("scenarioSyncStatus").textContent={off:"연결 안 됨",pending:"잠시 후 동기화",busy:"동기화 중…",done:"동기화 완료 · "+scenarioSync.at,error:"동기화 오류 · 이 기기에는 저장됨"}[state];
+    el("scenarioSyncError").textContent=message; el("scenarioSyncError").hidden=!message;
+    el("scenarioSyncNow").hidden=!config; el("scenarioSyncOff").hidden=!!config; el("scenarioSyncOn").hidden=!config;
+    el("scenarioSyncRepo").textContent=config?config.repo:"";
+    showAssumptionState();
+  }
+  function adoptMergedScenarios(merged,local){
+    writeStored(SCENARIO_LIST_KEY,merged.scenarios); writeStored(DELETED_KEY,merged.deleted);
+    if(merged.current&&merged.current.savedAt>(local.current?.savedAt||"")){ adoptAssumptions(merged.current); assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions); }
+    if(el("savesDialog").open) renderScenarioList();
+  }
+  async function syncScenarios(){
+    const config=readSyncConfig();
+    if(!config){ clearTimeout(scenarioSync.timer); scenarioSync.timer=null; setScenarioSyncState("off"); return; }
+    if(scenarioSync.busy){ scenarioSync.again=true; return; }
+    scenarioSync.busy=true; scenarioSync.again=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null;
+    setScenarioSyncState("busy");
+    try {
+      if(scenarioSync.checked!==config.repo){ await checkScenarioRepo(config); scenarioSync.checked=config.repo; }
+      for(let attempt=1;;attempt++){
+        const remote=await readRemoteScenarios(config);
+        if(assumptionSaveTimer) saveAssumptions();
+        const local=localScenarioData(),merged=mergeScenarioData(local,remote.data||{current:null,scenarios:[],deleted:{}});
+        adoptMergedScenarios(merged,local);
+        const empty=!merged.current&&!merged.scenarios.length&&!Object.keys(merged.deleted).length;
+        if(remote.data?JSON.stringify(merged)===JSON.stringify(remote.data):empty) break;
+        try { await writeRemoteScenarios(config,merged,remote.sha); break; }
+        catch (error) { if(!error.stale||attempt>=3) throw error; }
+      }
+      setScenarioSyncState(scenarioSync.timer?"pending":"done");
+    } catch (error) {
+      setScenarioSyncState("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error));
+    } finally {
+      scenarioSync.busy=false;
+      if(scenarioSync.again) scheduleScenarioSync(300);
+    }
+  }
+  function scheduleScenarioSync(delay){
+    if(!readSyncConfig()) return;
+    clearTimeout(scenarioSync.timer);
+    scenarioSync.timer=setTimeout(()=>{ scenarioSync.timer=null; syncScenarios(); },delay);
+    if(!scenarioSync.busy) setScenarioSyncState("pending");
+  }
+  el("scenarioSyncNow").addEventListener("click",()=>{ scenarioSync.checked=""; syncScenarios(); });
+  setInterval(()=>{ if(!document.hidden&&!scenarioSync.busy&&readSyncConfig()) syncScenarios(); },45000);
+  document.addEventListener("visibilitychange",()=>{
+    if(!readSyncConfig()) return;
+    if(!document.hidden) syncScenarios();
+    else if(scenarioSync.timer) syncScenarios(); // 앱 전환·탭 닫기 전에 대기 중인 변경을 바로 올린다
+  });
+  window.addEventListener("storage",event=>{ if(event.key===null||event.key===SYNC_REPO_KEY||event.key===SYNC_TOKEN_KEY){ scenarioSync.checked=""; syncScenarios(); } });
+  const scenarioSyncReady=syncScenarios();
   // Page-scoped structured action for supported browsers; it uses the same controls as the reader.
   if (document.modelContext?.registerTool) {
     const bounds = {robotMillionUnits:["robotM",0,160,5],robotBatteryKwh:["robotKwh",1,10,.5],evSharePercent:["evShare",0,15,.5],robotSharePercent:["robotShare",0,40,1],discountPercent:["discount",6,18,.5]};
