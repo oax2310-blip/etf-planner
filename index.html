@@ -9,7 +9,9 @@
     월물교체 기능 추가(futures.rolls 기록, 실현손익 → baselinePnl, 마지막 교체 되돌리기).
     '계획 전부 체결 가정' = 현재 기대수익 + 미매수 계획분(가격 미입력 제외)으로 수정 — 이전엔 기존 보유분이 빠져 있었음.
   - 2026-09-28 Claude: GitHub 이전용으로 기본값(seed)의 실제 데이터 제거.
-  - 구글 드라이브 연동: GOOGLE_CLIENT_ID는 공개 OAuth 웹 클라이언트 ID이며 비밀키가 아니다. 토큰은 메모리에만 둔다. 동기화 구현과 설정은 README.md 참조.
+  - 구글 드라이브 연동: GOOGLE_CLIENT_ID는 공개 OAuth 웹 클라이언트 ID이며 비밀키가 아니다. 동기화 구현과 설정은 README.md 참조.
+  - 2026-09-28 Claude: 새로 열 때 자동 동기화 — 연결 계정(CONNECTED_KEY)을 해제 전까지 기억하고, 접근 토큰(TOKEN_KEY, drive.appdata 전용)은
+    만료(최대 1시간)까지 이 기기 localStorage에 보관. 만료 뒤엔 상단 '탭해서 동기화' 한 번(prompt ""+login_hint). 구글 정책상 새 토큰은 사용자 동작이 필요.
 -->
 <html lang="ko">
 <head>
@@ -150,17 +152,19 @@
     const SYNC_BASE_KEY = "etf-planner-sync-base:";
     const LAST_ACCOUNT_KEY = "etf-planner-last-google-account";
     const RECOVERY_KEY = "etf-planner-sync-recovery";
+    const CONNECTED_KEY = "etf-planner-google-connected"; // 이 기기에서 연결한 구글 계정(연결 해제 전까지 기억)
+    const TOKEN_KEY = "etf-planner-google-token"; // {email,token,expires}: drive.appdata 전용 접근 토큰, 만료(최대 1시간)까지만 보관
     const sync = {token:"",expires:0,email:"",fileId:"",remote:"",base:"",busy:false,again:false,blocked:false,timer:null};
     function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions});}
-    function syncStatus(message){document.getElementById("syncStatus").textContent=message;document.getElementById("syncDialogStatus").textContent=message;document.getElementById("syncBtn").textContent=sync.email?"동기화 설정":"구글 드라이브 연결";}
-    function authorized(){if(sync.token && Date.now()<sync.expires)return true;if(sync.token){sync.token="";syncStatus("연결 만료 · 다시 연결 필요");}return false;}
+    function syncStatus(message){document.getElementById("syncStatus").textContent=message;document.getElementById("syncDialogStatus").textContent=message;const b=document.getElementById("syncBtn"),tap=sync.email&&!(sync.token&&Date.now()<sync.expires);b.textContent=tap?"탭해서 동기화":sync.email?"동기화 설정":"구글 드라이브 연결";b.className=tap?"btn mini primary":"btn mini";}
+    function authorized(){if(sync.token && Date.now()<sync.expires)return true;if(sync.token){sync.token="";localStorage.removeItem(TOKEN_KEY);syncStatus("연결 만료 · 버튼을 눌러 다시 연결");}return false;}
     function scheduleSync(){if(!authorized()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),900);}
     function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));if(sync.email && dataSnapshot()!==sync.base) scheduleSync();}
     function backupRecord(json,reason){localStorage.setItem(RECOVERY_KEY,JSON.stringify({...JSON.parse(json),recoveryReason:reason,exportedAt:new Date().toISOString()}));document.getElementById("downloadSyncBackup").hidden=false;}
     function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
     async function driveRequest(url,options={}){
       const response=await fetch(url,{...options,headers:{Authorization:`Bearer ${sync.token}`,...options.headers}});
-      if(response.status===401){sync.token="";throw Error("구글 연결이 만료되었습니다. 다시 연결해 주세요.");}
+      if(response.status===401){sync.token="";localStorage.removeItem(TOKEN_KEY);throw Error("구글 연결이 만료되었습니다. 다시 연결해 주세요.");}
       if(!response.ok)throw Error(`드라이브 요청 실패 (${response.status}). Google Cloud 설정과 권한을 확인해 주세요.`);
       return response.json();
     }
@@ -229,33 +233,45 @@
       }catch(error){syncStatus(`이 기기 저장됨 · ${error.message}`);}
       finally{sync.busy=false;if(sync.again&&!sync.blocked) scheduleSync();else if(authorized()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
     }
-    document.getElementById("syncBtn").onclick=()=>document.getElementById("syncDialog").showModal();
+    document.getElementById("syncBtn").onclick=()=>{if(sync.email&&!(sync.token&&Date.now()<sync.expires)&&savedClientId())startGoogleAuth(savedClientId(),sync.email);else document.getElementById("syncDialog").showModal();};
     document.getElementById("closeSync").onclick=()=>document.getElementById("syncDialog").close();
     document.getElementById("googleClientId").value=GOOGLE_CLIENT_ID||localStorage.getItem(CLIENT_ID_KEY)||"";
     document.getElementById("downloadSyncBackup").hidden=!localStorage.getItem(RECOVERY_KEY);
     document.getElementById("downloadSyncBackup").onclick=()=>{const raw=localStorage.getItem(RECOVERY_KEY);if(raw)downloadJson(JSON.parse(raw),`etf-planner-recovery-${new Date().toISOString().slice(0,10)}.json`);};
-    document.getElementById("connectGoogle").onclick=()=>{
+    function startGoogleAuth(clientId,hint){
       if(sync.busy){syncStatus("현재 동기화가 끝나면 다시 연결해 주세요.");return;}
-      const clientId=document.getElementById("googleClientId").value.trim();
-      if(!/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId)){syncStatus("OAuth 웹 클라이언트 ID를 입력해 주세요.");return;}
+      if(!/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(clientId)){syncStatus("OAuth 웹 클라이언트 ID를 입력해 주세요.");document.getElementById("syncDialog").showModal();return;}
       if(!window.google?.accounts?.oauth2){syncStatus("구글 연결 스크립트를 불러오는 중입니다. 잠시 후 다시 눌러 주세요.");return;}
       localStorage.setItem(CLIENT_ID_KEY,clientId);
-      const client=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:"https://www.googleapis.com/auth/drive.appdata",callback:async response=>{
+      const client=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:"https://www.googleapis.com/auth/drive.appdata",...(hint?{prompt:"",login_hint:hint}:{}),
+        error_callback:e=>syncStatus(e?.type==="popup_failed_to_open"?"팝업이 차단됐습니다 · 이 사이트의 팝업을 허용해 주세요":"구글 연결 취소됨 · 버튼을 눌러 다시 연결"),
+        callback:async response=>{
         if(!response?.access_token){syncStatus(`구글 연결 실패: ${response?.error||"권한을 확인해 주세요."}`);return;}
         sync.token=response.access_token;sync.expires=Date.now()+Math.max(0,Number(response.expires_in||3600)-60)*1000;
         try{
           const account=await driveRequest("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)");
           const email=account.user?.emailAddress;if(!email)throw Error("구글 계정을 확인하지 못했습니다.");
           sync.email=email;sync.base=localStorage.getItem(SYNC_BASE_KEY+email)||"";sync.remote="";sync.blocked=false;
+          localStorage.setItem(CONNECTED_KEY,email);localStorage.setItem(TOKEN_KEY,JSON.stringify({email,token:sync.token,expires:sync.expires}));
           syncStatus(`연결됨 · ${email}`);await syncNow();
         }catch(error){syncStatus(`이 기기 저장됨 · ${error.message}`);}
       }});
       client.requestAccessToken();
-    };
+    }
+    const savedClientId=()=>GOOGLE_CLIENT_ID||localStorage.getItem(CLIENT_ID_KEY)||"";
+    document.getElementById("connectGoogle").onclick=()=>startGoogleAuth(document.getElementById("googleClientId").value.trim(),sync.email);
     document.getElementById("syncNow").onclick=()=>{sync.blocked=false;if(authorized())syncNow();else syncStatus("구글 계정을 다시 연결해 주세요.");};
-    document.getElementById("disconnectGoogle").onclick=()=>{clearTimeout(sync.timer);sync.token="";sync.email="";sync.base="";sync.remote="";sync.blocked=false;syncStatus("이 기기에만 저장 중");};
+    document.getElementById("disconnectGoogle").onclick=()=>{clearTimeout(sync.timer);sync.token="";sync.email="";sync.base="";sync.remote="";sync.blocked=false;localStorage.removeItem(CONNECTED_KEY);localStorage.removeItem(TOKEN_KEY);syncStatus("이 기기에만 저장 중");};
     setInterval(()=>{if(authorized()&&!sync.blocked&&!document.hidden)syncNow();},45000);
     document.addEventListener("visibilitychange",()=>{if(!document.hidden&&authorized()&&!sync.blocked)syncNow();});
+    function restoreConnection(){
+      const email=localStorage.getItem(CONNECTED_KEY);if(!email)return Promise.resolve();
+      sync.email=email;sync.base=localStorage.getItem(SYNC_BASE_KEY+email)||"";
+      let saved=null;try{saved=JSON.parse(localStorage.getItem(TOKEN_KEY)||"null");}catch{}
+      if(saved&&saved.email===email&&saved.token&&Date.now()<saved.expires){sync.token=saved.token;sync.expires=saved.expires;syncStatus(`연결됨 · ${email}`);return syncNow();}
+      localStorage.removeItem(TOKEN_KEY);syncStatus("최신 확인 전 · 버튼을 눌러 동기화");return Promise.resolve();
+    }
+    const restored=restoreConnection();
     function selected(){ return state.plans.find(p=>p.id===state.selectedPlan) || state.plans[0] || null; }
     function openTab(tab){ state.tab=tab; save(); document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","futures","actions"].forEach(x=>document.getElementById(x+"View").classList.toggle("hidden",x!==tab)); render(); }
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>openTab(b.dataset.tab)));
