@@ -1,54 +1,39 @@
 <!doctype html>
 <!--
-  HANDOFF (Claude ↔ GPT 인수인계 메모 — 사이트 소스로 공개되므로 금액·보유 종목 같은 개인정보는 적지 말 것)
-  - 정본: GitHub 저장소 main 브랜치의 index.html. 수정은 바뀌는 부분만 → PR → 병합하면 GitHub Pages가 자동 게시.
-  - 공개 저장소: 보유 수량·손익·평가액 같은 실제 데이터를 코드 기본값에 넣지 말 것. 기록은 브라우저 + 연결한 GitHub 비공개 데이터 저장소(etf-planner-data.json)에만 저장.
-  - 저장: localStorage 키 "etf-exit-planner-standalone-v1". 키·기존 필드 구조를 바꾸지 말 것(바꿀 땐 기존 데이터 이전 코드 포함).
-  - 2026-09-28 Claude: 달러선물 구간 매수 체크 → 고른 보유 월물에 가중평균으로 합산(tranche.mergedMonth), 체크 해제 시 되돌림.
-    예전에 체크된 계약(mergedMonth 없음)은 자동 이관하지 않고 '월물로 옮기기' 버튼으로 수동 이관. → 버튼은 아래 항목에서 삭제됨.
-    월물교체 기능 추가(futures.rolls 기록, 실현손익 → baselinePnl, 마지막 교체 되돌리기). → 아래 항목에서 삭제됨.
-    '계획 전부 체결 가정' = 현재 기대수익 + 미매수 계획분(가격 미입력 제외)으로 수정 — 이전엔 기존 보유분이 빠져 있었음.
-  - 2026-09-28 Claude: GitHub 이전용으로 기본값(seed)의 실제 데이터 제거.
-  - 2026-09-28 Claude: 구글 드라이브 동기화를 GitHub 비공개 데이터 저장소 동기화로 교체(Google Cloud 설정 불필요).
-    토큰은 각 기기 localStorage에만 둔다(코드·저장소 금지). 열 때·45초마다·탭 복귀 시 동기화, 저장 충돌은 sha(409)로 감지, 공개 저장소면 업로드 거부.
-    데이터를 사이트 저장소에 저장하지 말 것(저장할 때마다 Pages 재게시). 설정 방법은 README.md.
-  - 2026-09-28 Claude: 달러선물 매수 구간이 전부 매수 완료되면 한 줄 요약으로 접음(펼치기/접기). 펼침 상태는 openLevels(메모리)라 저장·동기화 안 함.
-  - 2026-09-28 Claude: 달러선물 계획 계약 수를 줄여도 체크한 계약은 지우지 않음(resizeTranches: 뒤쪽 미매수부터 삭제).
-  - 2026-09-28 Codex: 달러선물 현재 기대수익 카드에 목표 환율을 표시하도록 문구 수정.
-  - 2026-09-28 Claude: 시나리오 페이지(valuation.html)도 이 동기화의 저장소·토큰 키(REPO_KEY, TOKEN_KEY)를 읽어
-    같은 데이터 저장소의 별도 파일 etf-planner-scenarios.json에 가정을 동기화함. 두 키 이름을 바꾸면 valuation.html도 같이 바꿀 것.
-  - 2026-09-28 Claude: 모바일에서 보유 월물 줄이 화면 밖으로 넘치던 문제 수정. 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%로 둘 것
-    (1fr + 기본 폭 input이면 칸이 input 기본 폭(약 20자) 밑으로 줄지 않아 페이지 전체가 가로로 넘침).
-  - 2026-09-28 Claude: 달러선물 월물교체 기능 삭제 — 교체 후 보유 월물·누적 정산손익은 계좌를 보고 직접 입력.
-    예전에 저장된 futures.rolls는 지우지 않고 그대로 둠(화면·계산에 쓰지 않음, isBlank 판정에만 남김).
-    보유 월물 가격 칸 이름 '정산 기준가' → '단순평균가'(계좌 잔고 화면 용어). 필드명 settlementPrice는 그대로.
-  - 2026-09-28 Claude: 달러선물 기대수익 카드 안(아래쪽)에 '월물교체 장기 예상'(rollEstimate) 추가. 스프레드(원월물 − 근월물) 입력칸, 기본 −0.5원,
-    매달 교체 가정 1·2·3년 뒤 총 기대수익(= 현재 기대수익 + 누적 교체 이득)을 작게 표시. 표시용일 뿐 카드의 기대수익 숫자·목표·계획 체결 가정 등
-    다른 손익(futuresSummary)에는 더하지 않음(실제 교체 후 단순평균가를 고치면 이미 반영되므로 이중 계산).
-    futures.rollSpread는 입력했을 때만 저장(normalize에서 채우지 않음 — 기존 기기 동기화 스냅샷이 바뀌지 않게).
-  - 2026-09-29 Claude: 이번 주 체크에서 '어도비 일부 분할손절' 칸 삭제. 기본값(defaultActions)에서도 adobeSales·adobeNote를 뺌.
-    예전에 저장된 actions.adobeSales·adobeNote는 지우지 않고 그대로 둠(화면에 쓰지 않음, isBlank 판정에만 남김 — 동기화 스냅샷이 바뀌지 않게).
-  - 2026-09-29 Claude: 이번 주 체크 위쪽 큰 숫자 카드 3개(진행 상황·커버드콜 계획·입력한 실제 매수액)를 진행 상황 한 줄(.progress-line)로 줄임.
-  - 2026-09-29 Claude: 모바일(700px 이하) 규칙이 '.metrics,.futures-metrics,.control-grid,.metric+.metric{border…}'로 합쳐져 있어
-    카드 줄이 한 칸으로 안 바뀌던 문제 수정(달러선물 카드 3개가 좁게 눌려 가로로 넘침). 제목 옆 '변경 저장' 버튼은 줄바꿈 안 함(.heading>.btn), 제목·설명은 낱말 단위로 줄바꿈(keep-all).
-  - 2026-09-29 Claude: 달러선물 계산 기준 입력칸 3개(목표 환율·목표 수익·누적 정산손익)를 한 줄로(.future-panel .inline-fields), → 목표 수익은 아래 항목에서 삭제돼 2개.
-    모바일에서도 보유 월물 줄(월물·계약 수·단순평균가·삭제)을 두 줄로 나누지 않고 한 줄로 둠.
-  - 2026-09-29 Claude: 모바일에서 이동평균선별 매수 계약 줄(이름·매수가·도달 시 손익·월물·체크)을 한 줄로 표시(.tranche를 flex로, 입력칸은 6.4ch 폭).
-    더 좁으면 월물·체크만 다음 줄로 넘어감. 모바일에선 '· 매수 예정가', '· 보유 월물에 포함'을 숨김(.hide-mobile), 입력칸 스핀·목록 화살표 숨김.
-    '.tranche label'(display:grid)이 '.tranche-check'(flex)를 덮어 체크박스와 '미매수' 글자가 위아래로 갈라지던 문제도 수정.
-  - 2026-09-29 Claude: 달러선물 '월물로 옮기기' 버튼(data-tranche-merge)과 그 줄의 월물 입력칸 삭제 — 월물 이동은 직접 함.
-    예전에 체크된 계약(mergedMonth 없음)은 '월물 밖' 표시만 하고 계속 따로 계산. 합치려면 체크를 풀고 월물을 고른 뒤 다시 체크.
-  - 2026-09-29 Claude: 달러선물 '목표 수익' 삭제(카드·계산 기준 입력칸·'목표보다 부족' 경고). 기본값(defaultFutures)에서도 targetProfit을 뺌.
-    예전에 저장된 futures.targetProfit은 지우지 않고 그대로 둠(화면·계산에 쓰지 않음, isBlank 판정에만 남김 — 동기화 스냅샷이 바뀌지 않게).
-    그 자리에 '환율 N원 도달 시 손익' 카드(lossCheck) 추가: 환율 입력칸(futures.lossPrice, 기본 1,320원, 입력했을 때만 저장)에서의 손익은
-    기대수익과 같은 계산(보유 월물 + 누적 정산손익 + 월물 밖 매수)에 가격만 바꾼 값. 손실률은 보유 계약 매수금액(단순평균가 × 1만 달러 × 계약 수) 대비
-    보유분 손익(누적 정산손익 제외, 계좌 수익률과 같은 기준). 아래에 월물교체 1·2·3년 뒤 총 손익과 손실 상쇄 비율(rollEstimate와 같은 스프레드·가정). 표시용.
-  - 2026-09-29 Claude: 기대수익 카드의 월물교체 장기 예상에도 연도별 '+N% 추가'(rollEstimate의 extra = 누적 교체 이득 ÷ 현재 기대수익) 표시.
-    기대수익이 0 이하이거나 교체 비용(스프레드 양수)이면 표시 안 함. 표시용.
-  - 2026-09-29 Claude: 월물교체 장기 예상의 '+N% 추가'를 '기대수익 대비 +N% (투자금 대비 +M%)'로 표시. 투자금 = 계약 수 × 1만 달러 × 목표 환율
-    (rollEstimate의 investedExtra = 누적 교체 이득 ÷ 투자금, 소수 첫째 자리). 손익 계산에는 더하지 않는 표시용.
-  - 2026-09-29 Claude: 월물교체 장기 예상 표시를 '투자금 대비 +X.X%'만 남김. '기대수익 대비' 비율(rollEstimate의 extra)과 줄바꿈 방지 span 삭제.
-  - 2026-09-29 Claude: 글이 길어 '투자금 대비' 글자를 빼고 '+X.X%'만 표시(값은 그대로 투자금 대비 비율).
+  HANDOFF (Claude ↔ GPT 인수인계 규칙 — 사이트 소스로 공개되므로 금액·보유 종목 같은 개인정보는 적지 말 것)
+  이 주석에는 지금도 지켜야 할 규칙만 둔다. 날짜별 변경 기록은 쌓지 말고(이력은 git log/PR), 규칙이 바뀌면 해당 줄을 고치거나 지울 것.
+  [작업·공개]
+  - 정본: GitHub main 브랜치의 index.html. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs
+  - 공개 저장소: 실제 보유 수량·손익·평가액을 코드 기본값(seed·defaultFutures·defaultActions)에 넣지 말 것.
+  [저장·동기화]
+  - localStorage 키 "etf-exit-planner-standalone-v1". 키·기존 필드 구조를 바꾸지 말 것(바꿀 땐 기존 데이터 이전 코드 포함).
+  - 기록은 브라우저 + GitHub 비공개 데이터 저장소의 etf-planner-data.json에만. 사이트 저장소에 저장 금지(저장마다 Pages 재게시). 설정은 README.md.
+  - 토큰은 각 기기 localStorage에만(코드·저장소 금지). 열 때·45초마다·탭 복귀 시 동기화, 충돌은 sha(409)로 감지, 공개 저장소면 업로드 거부.
+  - REPO_KEY·TOKEN_KEY 이름은 valuation.html도 읽음(같은 데이터 저장소의 etf-planner-scenarios.json 동기화). 바꾸면 두 파일 같이.
+  - normalize()에서 새 필드를 채우지 말 것(기존 기기의 동기화 스냅샷이 바뀜). 새 입력값은 입력했을 때만 저장, 비우면 delete:
+    futures.rollSpread(없으면 −0.5원), futures.lossPrice(없거나 0 이하면 1,320원).
+  - 화면 상태(openLevels: 펼친 매수 완료 구간)는 메모리에만 — 저장·동기화 안 함.
+  [남겨둔 옛 필드 — 지우지 말 것, 화면·계산에 쓰지 않고 isBlank 판정에만 남김]
+  - futures.rolls, futures.targetProfit, actions.adobeSales, actions.adobeNote. 기본값(defaultFutures·defaultActions)에 다시 넣지 말 것.
+  [필드명 유지]
+  - 보유 월물 가격: 화면 이름은 '단순평균가'(계좌 잔고 용어)지만 필드명은 settlementPrice 그대로.
+  - futures.baselinePnl = 누적 정산손익(직접 입력). 월물교체는 기능 없이 계좌를 보고 보유 월물·누적 정산손익을 직접 고침.
+  [달러선물 계산]
+  - 구간 매수 체크 → 고른 보유 월물에 가중평균으로 합산(tranche.mergedMonth), 체크 해제 시 되돌림.
+    mergedMonth 없는 옛 체크 계약은 자동 이관하지 않고 '월물 밖'으로 따로 계산(합치려면 체크 해제 → 월물 선택 → 다시 체크).
+  - 계획 계약 수를 줄여도 체크한 계약은 남김(resizeTranches: 뒤쪽 미매수부터 삭제). 전부 매수 완료된 구간은 한 줄 요약으로 접음.
+  - 기대수익(futuresSummary) = 보유 월물 + 누적 정산손익 + 월물 밖 매수. '계획 전부 체결 가정' = 기대수익 + 미매수 계획분(가격 미입력 제외).
+  - lossCheck: 같은 계산에 가격만 lossPrice로. 손실률 = 보유분 손익(누적 정산손익 제외) ÷ 보유 계약 매수금액(단순평균가 × 1만 달러 × 계약 수).
+  - 표시용 계산(다른 손익·futuresSummary에 더하지 말 것 — 실제 교체 후 단순평균가를 고치면 이미 반영돼 이중 계산):
+    rollEstimate(매달 교체, 1·2·3년, 계약 수·스프레드 고정; 표시는 '+X.X%' = investedExtra = 누적 교체 이득 ÷ 투자금(계약 수 × 1만 달러 × 목표 환율)),
+    lossCheck의 years(교체 후 총 손익)·offset(교체 이득 ÷ 손실).
+  [모바일 CSS(700px 이하) 주의점]
+  - 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%(1fr + 기본 폭 input이면 약 20자 밑으로 안 줄어 페이지가 가로로 넘침).
+  - '.metrics,.futures-metrics,.control-grid{1fr}'와 '.metric+.metric{border…}'는 따로 둘 것(한 규칙에 합치면 카드 줄이 한 칸으로 안 바뀜).
+  - 제목 옆 '변경 저장' 버튼은 줄바꿈 안 함(.heading>.btn), 제목·설명은 keep-all.
+  - 보유 월물 줄(월물·계약 수·단순평균가·삭제)과 계산 기준 입력칸(.future-panel .inline-fields)은 한 줄 유지.
+  - 매수 계약 줄(.tranche)은 flex, 입력칸 6.4ch 폭·스핀/목록 화살표 숨김, 좁으면 월물·체크만 다음 줄. '.hide-mobile'은 모바일에서 숨김.
+  - '.tranche label'(grid)이 '.tranche-check'(flex)를 덮지 않게 할 것(체크박스와 '미매수' 글자가 갈라짐).
 -->
 <html lang="ko">
 <head>
