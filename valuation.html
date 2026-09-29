@@ -6,8 +6,8 @@
   - 동기화: index.html의 저장소·토큰 키(etf-planner-data-repo, etf-planner-github-token)를 읽기만 함. 두 키 이름은 index.html과 같이 바꿀 것.
     파일은 같은 데이터 저장소의 etf-planner-scenarios.json(기록 파일과 분리). 저장본은 id별 병합(나중 저장 우선), 삭제는 deleted로 전파,
     현재 조정값은 savedAt이 더 늦은 기기 우선(savedAt은 값이 바뀔 때만 갱신 — 보기만 한 기기가 덮어쓰지 않게). 공개 저장소면 업로드 거부.
-  - 테스트(tests/valuation.test.cjs)가 스크립트의 '가정 저장:' 주석부터 'Page-scoped structured action' 주석 앞까지 잘라 실행함.
-    두 주석 줄을 지우거나 바꾸지 말고, 이 기준 문구를 들여쓰기·// 포함 그대로 다른 곳(이 주석 포함)에 적지 말 것(먼저 찾혀 테스트가 깨짐).
+  - 테스트(tests/valuation.test.cjs)가 스크립트의 '가정 저장:' 주석부터 스크립트 끝까지 잘라 실행함. 이 주석 줄을 지우거나 바꾸지 말고,
+    같은 문구를 들여쓰기·// 포함 그대로 앞쪽에 적지 말 것(먼저 찾혀 테스트가 깨짐). 새 계산 코드는 이 주석 앞에 둘 것(뒤에 두면 테스트에서도 실행됨).
   - 기준 자료 주석의 조회일·출처(예: Roundhill 공개 명세 조회일)는 자료 출처라 남길 것.
 -->
 <html lang="ko">
@@ -26,21 +26,16 @@
     button,input { font:inherit; }
     button { cursor:pointer; }
     .shell { width:min(1120px,calc(100% - 36px)); margin:auto; }
-    .top { background:var(--dark); color:#eaf4f2; padding:44px 0 36px; overflow:hidden; position:relative; }
-    .top:before { content:""; width:550px; height:550px; border:1px solid #8cc7b525; border-radius:50%; position:absolute; right:-125px; top:-275px; box-shadow:0 0 0 65px #8cc7b510,0 0 0 130px #8cc7b50a; pointer-events:none; }
+    .top { background:var(--dark); color:#eaf4f2; padding:18px 0 16px; overflow:hidden; position:relative; }
     .eyebrow { color:#79d7c3; text-transform:uppercase; letter-spacing:.13em; font-size:.76rem; font-weight:800; }
-    h1 { font-size:clamp(2rem,5vw,3.7rem); line-height:1.13; letter-spacing:-.055em; margin:15px 0 20px; max-width:900px; }
+    h1 { font-size:clamp(1.45rem,3vw,2rem); line-height:1.23; letter-spacing:-.055em; margin:5px 0 3px; max-width:900px; }
     h1 em { color:#8de0c5; font-style:normal; }
-    .subtitle { font-size:1.08rem; max-width:760px; color:#cadcdd; margin:0; }
-    .headline-stats { display:flex; flex-wrap:wrap; gap:11px; margin-top:32px; }
-    .headline-stats .stat { min-width:180px; padding:15px 19px; border:1px solid #ffffff29; background:#ffffff0d; border-radius:13px; }
-    .stat small { display:block; color:#bdd1d2; font-size:.75rem; }
-    .stat b { display:block; font-size:1.3rem; letter-spacing:-.04em; }
+    .subtitle { font-size:.9rem; max-width:760px; color:#cadcdd; margin:0; }
     .nav { background:white; border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5; }
     .nav .shell { display:flex; align-items:center; gap:22px; overflow:auto; white-space:nowrap; min-height:51px; font-size:.88rem; font-weight:700; }
     .nav a { color:#46626a; text-decoration:none; }
     .nav a:hover,.nav a:focus { color:var(--teal); }
-    main { padding:32px 0 70px; }
+    main { padding:20px 0 70px; }
     section { scroll-margin-top:68px; margin-top:35px; }
     section:first-child { margin-top:0; }
     h2 { font-size:clamp(1.45rem,3vw,2.1rem); letter-spacing:-.045em; line-height:1.25; margin:0 0 12px; }
@@ -50,7 +45,6 @@
     .card { background:var(--white); border:1px solid var(--border); border-radius:19px; padding:25px; box-shadow:0 8px 34px #15364008; }
     .accent-card { background:linear-gradient(112deg,#e8f5ef,#f8fbf7); border-color:#c5e6d9; }
     .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:17px; }
-    .grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:17px; }
     .callout { border-left:4px solid var(--teal); padding:5px 0 5px 17px; color:#243e45; }
     .muted { color:var(--muted); }
     .small { font-size:.84rem; }
@@ -87,32 +81,7 @@
     .result-sub b { display:block; font-size:1.05rem; }
     .result-sub small { display:block; font-size:.73rem; color:#afcaca; }
     .equation { background:#eff6f4; border:1px solid #d5e8e1; border-radius:12px; padding:12px 15px; font-size:.81rem; line-height:1.7; margin-top:16px; }
-    .etf-layout { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
-    .etf { border-radius:18px; background:white; border:1px solid var(--border); padding:23px; }
-    .etf.feature { border-color:#8acbbb; box-shadow:inset 0 4px 0 #0b8579; }
-    .etf h3 { margin:10px 0 4px; font-size:1.2rem; }
-    .etf h3 span { color:#617c85; font-size:.83rem; letter-spacing:0; }
-    .etf .details { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:17px 0; }
-    .etf .details div { background:#f4f7f6; border-radius:9px; padding:8px 10px; }
-    .etf .details small { display:block; color:#70858c; font-size:.71rem; }
-    .etf .details b { font-variant-numeric:tabular-nums; font-size:.95rem; }
-    .etf .why { min-height:4.9em; }
-    .etf .risk { color:#8a5846; font-size:.84rem; border-top:1px solid var(--border); padding-top:13px; }
-    .etf a { font-size:.8rem; font-weight:800; }
-    .decision { background:var(--dark); color:#f2fbf7; border-radius:20px; padding:25px; margin-bottom:16px; }
-    .decision h3 { color:#96e2c8; }
-    .decision p:last-child { margin:0; }
-    .numbered { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
-    .numbered .card { padding:19px; }
-    .numbered .step { font-size:.74rem; font-weight:850; color:var(--teal); letter-spacing:.09em; }
-    .source-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 28px; padding-left:20px; font-size:.82rem; }
-    .source-list li { padding:3px 0; }
     .table-wrap { overflow:auto; background:white; border:1px solid var(--border); border-radius:17px; margin-top:16px; }
-    .makers { width:100%; border-collapse:collapse; min-width:740px; font-size:.88rem; }
-    .makers th,.makers td { text-align:left; padding:13px 16px; border-bottom:1px solid var(--border); vertical-align:top; }
-    .makers th { background:#edf5f2; color:#2a5252; white-space:nowrap; }
-    .makers tr:last-child td { border-bottom:0; }
-    .makers td:first-child { font-weight:800; white-space:nowrap; }
     .market-folder { margin:22px 0 0; padding:0; background:#fff; border-radius:19px; box-shadow:0 8px 34px #15364008; }
     .market-folder > summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 23px; color:var(--ink); font-size:1rem; }
     .market-folder > summary::-webkit-details-marker { display:none; }
@@ -161,7 +130,6 @@
     .battery-results { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:17px 0; }
     .battery-result { min-width:0; }
     .battery-result .metric { color:#9be0ca; }
-    .battery-result .result-sub { grid-template-columns:1fr 1fr; }
     .battery-result .result-sub b { font-size:.96rem; }
     .battery-result .result-sub small { font-size:.76rem; }
     .battery-result .result-sub div { min-width:0; }
@@ -216,22 +184,18 @@
     footer { color:#6c8189; font-size:.78rem; margin-top:30px; padding-top:18px; border-top:1px solid var(--border); }
     @media (max-width:760px) {
       .shell { width:min(100% - 28px,1120px); }
-      .headline-stats .stat { flex:1; min-width:140px; }
-      .card,.etf { padding:16px; }
-      .grid,.grid3,.controls,.results,.etf-layout,.numbered,.source-list { grid-template-columns:1fr; }
-      .etf .why { min-height:0; }
-      .result-sub,.etf .details { grid-template-columns:1fr 1fr; }
+      .top { padding:14px 0 12px; }
+      main { padding-top:14px; }
+      .card { padding:16px; }
+      .grid,.controls,.results { grid-template-columns:1fr; }
       .nav .shell { gap:12px; min-height:46px; font-size:.82rem; }
-      .humn-controls { grid-template-columns:1fr; }
-      .battery-inputs,.battery-results { grid-template-columns:1fr; }
-      .battery-detail-inputs { grid-template-columns:1fr; }
-      .battery-result .result-sub { grid-template-columns:1fr 1fr; }
+      .battery-inputs,.battery-results,.battery-detail-inputs { grid-template-columns:1fr; }
       .battery-summary .row { align-items:flex-start; }
       section { margin-top:27px; scroll-margin-top:55px; }
       section h2 { margin-bottom:8px; }
       .results,.battery-results { gap:11px; margin-top:11px; }
       .result-highlight { padding:17px; }
-      .humn-controls { gap:10px; margin:13px 0; }
+      .humn-controls { grid-template-columns:1fr; gap:10px; margin:13px 0; }
       .presets { margin:12px 0; }
       .controls { gap:12px; }
       .control label { flex-wrap:wrap; }
@@ -263,15 +227,6 @@
       .saves-form input { flex-basis:100%; }
       .saves-form .btn-dark { width:100%; }
     }
-    .top { padding:18px 0 16px; }
-    .top:before,.headline-stats { display:none; }
-    .top h1 { font-size:clamp(1.45rem,3vw,2rem); line-height:1.23; margin:5px 0 3px; }
-    .top .subtitle { font-size:.9rem; }
-    main { padding-top:20px; }
-    @media (max-width:760px) {
-      .top { padding:14px 0 12px; }
-      main { padding-top:14px; }
-    }
     @media print {
       .mobile-valuation { display:none !important; }
       .mobile-fold { display:none !important; }
@@ -279,13 +234,11 @@
       body { background:white; color:#14252e; }
       .nav,.home-link { display:none; }
       .top { background:#fff; color:#122d36; padding:14px 0 20px; }
-      .top:before { display:none; }
       .top .eyebrow,.top h1 em { color:#087e77; }
-      .top .subtitle,.top .stat small { color:#56707c; }
-      .top .stat { border-color:#ddd; background:#f5f7f5; }
-      .card,.etf { break-inside:avoid; box-shadow:none; }
-      .result-highlight,.decision { background:#edf6f3; color:#14252e; }
-      .result-highlight .metric,.decision h3 { color:#087e77; }
+      .top .subtitle { color:#56707c; }
+      .card { break-inside:avoid; box-shadow:none; }
+      .result-highlight { background:#edf6f3; color:#14252e; }
+      .result-highlight .metric { color:#087e77; }
       .result-highlight .tiny,.result-sub small { color:#56707c; }
       .result-sub div { border-color:#9cb5ae; }
       section { break-inside:avoid; }
@@ -299,11 +252,6 @@
     <div class="eyebrow">장기 투자 시나리오 · 자료 기준 2026.09.27</div>
     <h1>삼성SDI · <em>로봇·배터리 ETF 가치 시나리오</em></h1>
     <p class="subtitle">전기차·로봇 판매 가정을 바꾸고 기업과 ETF의 조건부 가격을 계산합니다.</p>
-    <div class="headline-stats">
-      <div class="stat"><small>자동차 판매 기준</small><b>연 8,000만 대</b></div>
-      <div class="stat"><small>가정한 로봇 판매</small><b>연 8,000만 대</b></div>
-      <div class="stat"><small>기본 가정의 SDI 2026 환산가치</small><b id="heroPv">약 21.5만 원</b></div>
-    </div>
   </div>
 </header>
 <nav class="nav" aria-label="문서 내 이동"><div class="shell">
@@ -375,9 +323,6 @@
       </details>
       <div class="equation">고정 가정: 영업이익 대비 연결 순이익 비율 70% · 유통 주식 약 8,220만 주(보통주·우선주 합산) · 2035년까지 9년 할인. 중간 배당, 자본 조달·희석, 사업별 자본적 지출은 별도 반영하지 않습니다. <a href="https://ir.gsifn.io/samsungsdi/ir3_stock_listing.html?koreng=2" target="_blank" rel="noopener noreferrer">발행 주식 수 ↗</a></div>
     </div>
-
-
-
     <div class="card fold-card" style="margin-top:17px">
       <button type="button" class="mobile-fold" aria-controls="sdiHurdleBody" aria-expanded="false">삼성SDI 가정의 허들</button>
       <div class="mobile-fold-body" id="sdiHurdleBody">
@@ -698,7 +643,6 @@
     el("evBar").style.width=(evGlobal/max*100).toFixed(1)+"%";
     el("robotBar").style.width=(robotGlobal/max*100).toFixed(1)+"%";
     el("robotRevenue").textContent="연 "+num(v.robotM*v.robotUSD/1000)+"조 달러";
-    if (el("heroPv")) el("heroPv").textContent=wonMan(pv);
     el("futurePrice").textContent=wonMan(future);
     el("pvPrice").textContent=wonMan(pv);
     el("sdiGuideFuture").textContent=wonMan(future);
@@ -728,61 +672,16 @@
     render();
   }));
   render();
-  // Roundhill 공개 명세 2026-09-27 조회. 반올림된 양의 44개 항목 총합은 108.68%.
-  const humnStocks=[
-    ["United States Treasury Bill 10/08/2026","912797UJ4",8.11],
-    ["Tesla Inc","TSLA",5.92],
-    ["Harmonic Drive Systems","6324 JP",5.49],
-    ["Yushu Technology equity swap","BSHRRF3 TRS 022328 GS",4.62],
-    ["UBTech Robotics","9880 HK",4.36],
-    ["Rainbow Robotics","277810 KS",4.34],
-    ["Robotis","108490 KS",4.17],
-    ["Leader Harmonious Drive Systems","688017 C1",3.25],
-    ["Doosan Robotics","454910 KS",3.11],
-    ["NVIDIA","NVDA",3.01],
-    ["Hyundai Motor","005380 KS",2.88],
-    ["Teradyne","TER",2.86],
-    ["Hexagon","HEXAB SS",2.80],
-    ["ABB","ABB SS",2.51],
-    ["Ouster","OUST",2.46],
-    ["Nabtesco","6268 JP",2.33],
-    ["Shenzhen Dobot","2432 HK",2.26],
-    ["Infineon","IFX GR",2.22],
-    ["Churchill Capital Corp XI","CCXI",2.19],
-    ["China Leadshine","002979 C2",2.04],
-    ["Minth","425 HK",1.97],
-    ["Hesai","HSAI",1.97],
-    ["Xiaomi","1810 HK",1.96],
-    ["Hiwin","2049 TT",1.95],
-    ["RoboSense","2498 HK",1.89],
-    ["Vishay Precision","VPG",1.89],
-    ["Shenzhen Zhaowei","2692 HK",1.80],
-    ["Allient","ALNT",1.70],
-    ["FANUC","6954 JP",1.68],
-    ["Estun","2715 HK",1.64],
-    ["XPeng","XPEV",1.64],
-    ["Ambarella","AMBA",1.57],
-    ["Novanta","NOVT",1.55],
-    ["Schaeffler","SHA0 GR",1.55],
-    ["Yaskawa","6506 JP",1.47],
-    ["Kawasaki Heavy","7012 JP",1.44],
-    ["NIDEC","6594 JP",1.42],
-    ["Zhejiang Sanhua","2050 HK",1.37],
-    ["Zhejiang Shuanghuan","002472 C2",1.35],
-    ["THK","6481 JP",1.33],
-    ["Money Market Fund","FGXXX",1.33],
-    ["Shenzhen Inovance","300124 C2",1.32],
-    ["Ningbo Tuopu","601689 C1",1.26],
-    ["SKF","SKFB SS",0.70]
-  ];
+  // Roundhill 공개 명세 2026-09-27 조회. 반올림된 양의 44개 항목 총합은 108.68%(국채 8.11%·머니마켓 1.33% 포함).
+  // 완제품 관련 8개 노출(주식·스와프): 테슬라·유니트리 스와프·유비테크·레인보우·두산로보틱스·현대차·도봇·샤오펑 비중(%).
+  const humnMakerWeights=[5.92,4.62,4.36,4.34,3.11,2.88,2.26,1.64];
+  // 그 밖의 34종목 비중(%), 명세 순서. 국채·머니마켓 제외.
+  const humnOtherWeights=[5.49,4.17,3.25,3.01,2.86,2.80,2.51,2.46,2.33,2.22,2.19,2.04,1.97,1.97,1.96,1.95,1.89,1.89,1.80,1.70,1.68,1.64,1.57,1.55,1.55,1.47,1.44,1.42,1.37,1.35,1.33,1.32,1.26,0.70];
   const humnBasePrice=29.67, humnAnnualFee=.0075;
   const money=v=>"$"+new Intl.NumberFormat("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
   const usdBillions=v=>num(v/1e9)+"십억 달러";
-  // Direct manufacturers, an equity swap and diversified carmakers making humanoids.
-  const makerIndices=[1,3,4,5,8,10,16,30];
-  const makerWeight=makerIndices.reduce((sum,index)=>sum+humnStocks[index][2]/100,0);
-  const makerIndexSet=new Set(makerIndices);
-  const otherWeight=humnStocks.reduce((sum,stock,index)=>sum+(makerIndexSet.has(index)||index===0||index===40?0:stock[2]/100),0);
+  const makerWeight=humnMakerWeights.reduce((sum,w)=>sum+w/100,0);
+  const otherWeight=humnOtherWeights.reduce((sum,w)=>sum+w/100,0);
   // The positive disclosed positions sum to >100%; cash and collateral net of the
   // undisclosed balancing adjustment are the residual, not gross T-bill holdings.
   const humnNetCash=1-makerWeight-otherWeight;
@@ -1311,41 +1210,6 @@
   });
   window.addEventListener("storage",event=>{ if(event.key===null||event.key===SYNC_REPO_KEY||event.key===SYNC_TOKEN_KEY){ scenarioSync.checked=""; syncScenarios(); } });
   const scenarioSyncReady=syncScenarios();
-  // Page-scoped structured action for supported browsers; it uses the same controls as the reader.
-  if (document.modelContext?.registerTool) {
-    const bounds = {robotMillionUnits:["robotM",0,160,5],robotBatteryKwh:["robotKwh",1,10,.5],evSharePercent:["evShare",0,15,.5],robotSharePercent:["robotShare",0,40,1],discountPercent:["discount",6,18,.5]};
-    try {
-      void Promise.resolve(document.modelContext.registerTool({
-        name:"set_robot_scenario",
-        title:"로봇·삼성SDI 시나리오 조정",
-        description:"화면의 로봇 판매량, 배터리 용량, 삼성SDI 점유율과 연 요구수익률을 조정하고 추정 결과를 읽습니다.",
-        inputSchema:{type:"object",properties:{
-          preset:{type:"string",enum:["low","base","high"]},
-          robotMillionUnits:{type:"number",minimum:0,maximum:160},
-          robotBatteryKwh:{type:"number",minimum:1,maximum:10},
-          evSharePercent:{type:"number",minimum:0,maximum:15},
-          robotSharePercent:{type:"number",minimum:0,maximum:40},
-          discountPercent:{type:"number",minimum:6,maximum:18}
-        },additionalProperties:false},
-        annotations:{readOnlyHint:false,untrustedContentHint:false},
-        execute(input){
-          if (!input || typeof input!=="object" || Array.isArray(input) || !Object.keys(input).length) throw new Error("조정할 값을 입력하세요.");
-          for (const [key,value] of Object.entries(input)) {
-            if (key==="preset") { if (!["low","base","high"].includes(value)) throw new Error("시나리오가 올바르지 않습니다."); continue; }
-            if (!Object.prototype.hasOwnProperty.call(bounds,key)) throw new Error("지원하지 않는 항목입니다.");
-            const [,min,max,step]=bounds[key];
-            if (typeof value!=="number" || !Number.isFinite(value) || value<min || value>max || Math.abs((value-min)/step-Math.round((value-min)/step))>1e-8) throw new Error(key+" 범위 또는 간격이 올바르지 않습니다.");
-          }
-          if (input.preset) document.querySelector('[data-preset="'+input.preset+'"]')?.click();
-          for (const [key,value] of Object.entries(input)) {
-            if (key==="preset") continue;
-            const [id]=bounds[key]; el(id).value=String(value); el(id).dispatchEvent(new Event("input",{bubbles:true}));
-          }
-          return {scenario:el("presetLabel").textContent,robotBatteryDemand:el("robotMarket").textContent,operatingProfit:el("allOP").textContent,shareValue2035:el("futurePrice").textContent,discountedValue2026:el("pvPrice").textContent};
-        }
-      })).catch(()=>{});
-    } catch (_) { /* The page and calculator work without this optional browser feature. */ }
-  }
 </script>
 </body>
 </html>

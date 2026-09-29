@@ -6,9 +6,8 @@ const vm = require('node:vm');
 const html = fs.readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
 const source = html.slice(html.indexOf('    const defaultRebuy = '), html.indexOf('    function renderRebuy(){'));
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
-const sharesAt = html.match(/const sharesAt = .*;/)[0];
 
-const load = () => { const context = vm.createContext({}); vm.runInContext(`${sharesAt}\n${source}`, context); return context; };
+const load = () => { const context = vm.createContext({}); vm.runInContext(source, context); return context; };
 const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
 const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };

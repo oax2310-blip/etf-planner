@@ -32,7 +32,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
-    document: {getElementById: element, addEventListener() {}, hidden: false},
+    $: element, document: {addEventListener() {}, hidden: false},
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob,
     setTimeout: () => 1, clearTimeout() {}, setInterval() {},
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,

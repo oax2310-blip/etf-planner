@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const html = fs.readFileSync(require('node:path').join(__dirname, '../valuation.html'), 'utf8');
-const source = html.slice(html.indexOf('  // 가정 저장:'), html.indexOf('  // Page-scoped structured action'));
+const start = html.indexOf('  // 가정 저장:'), source = html.slice(start, html.indexOf('</script>', start));
 if (!source.includes('function applyAssumptions(')) throw Error('가정 저장 구현을 찾지 못했습니다.');
 
 const CURRENT = 'etf-planner-valuation-current-v1';
