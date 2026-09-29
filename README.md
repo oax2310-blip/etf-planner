@@ -1,4 +1,4 @@
-# ETF 분할매매 플래너
+# 매매 플래너
 
 공개 페이지: https://oax2310-blip.github.io/etf-planner/
 
