@@ -63,3 +63,57 @@ test('월물교체 장기 예상은 기대수익·계획 체결 가정에 더하
   const base = JSON.stringify(ctx.futuresSummary(futures()));
   for (const rollSpread of [-0.5, -3, 2]) assert.equal(JSON.stringify(ctx.futuresSummary(futures({rollSpread}))), base);
 });
+
+test('환율 도달 시 손익: 기본 1,320원, 기대수익과 같은 계산에 가격만 바꾼다', () => {
+  const ctx = load();
+  const f = futures();
+  const r = ctx.lossCheck(f);
+  assert.equal(r.price, 1320);
+  assert.equal(r.pnl, 50000 + 3 * (1320 - 1400) * 10000);
+  assert.equal(r.pnl, ctx.futuresSummary(f, 1320).current);
+  assert.equal(r.held, 3 * (1320 - 1400) * 10000, '보유분 손익은 누적 정산손익을 빼고 계산');
+  assert.equal(r.contracts, 3);
+  assert.equal(r.avg, 1400);
+  assert.equal(r.rate, (1320 - 1400) / 1400, '손실률은 매수금액 대비');
+  assert.equal(ctx.futuresSummary(f).current, 50000 + 3 * 80 * 10000, '목표 환율 기대수익은 그대로');
+});
+
+test('환율 도달 시 손익: 입력한 환율을 쓰고, 비었거나 0 이하면 1,320원으로 돌아간다', () => {
+  const ctx = load();
+  assert.equal(ctx.lossCheck(futures({lossPrice: 1350})).held, 3 * -50 * 10000);
+  for (const bad of [undefined, null, '', 'abc', 0, -5]) assert.equal(ctx.lossCheck(futures({lossPrice: bad})).price, 1320);
+});
+
+test('환율 도달 시 손익: 여러 월물과 월물 밖 매수를 매수금액 가중평균으로 묶는다', () => {
+  const ctx = load();
+  const l = level(25, 2);
+  l.tranches[0] = {price: 1380, completed: true, executionPrice: 1380};
+  const f = futures({baselinePnl: 0, positions: [{month: '202611', contracts: 1, settlementPrice: 1400}, {month: '202612', contracts: 2, settlementPrice: 1430}], levels: [l]});
+  const r = ctx.lossCheck(f);
+  assert.equal(r.contracts, 4);
+  assert.equal(r.invested, (1400 + 2 * 1430 + 1380) * 10000);
+  assert.equal(r.avg, (1400 + 2 * 1430 + 1380) / 4);
+  assert.equal(r.held, ((1320 - 1400) + 2 * (1320 - 1430) + (1320 - 1380)) * 10000);
+  assert.ok(Math.abs(r.rate - (1320 - r.avg) / r.avg) < 1e-12);
+});
+
+test('환율 도달 시 손익: 월물교체 이득으로 손실이 상쇄되는 비율을 연도별로 계산한다', () => {
+  const ctx = load();
+  const r = ctx.lossCheck(futures({baselinePnl: 0}));
+  const loss = 3 * 80 * 10000;
+  assert.deepEqual([...r.years].map(y => y.total), [-loss + 180000, -loss + 360000, -loss + 540000]);
+  assert.deepEqual([...r.years].map(y => y.offset), [180000 / loss, 360000 / loss, 540000 / loss]);
+  const big = ctx.lossCheck(futures({baselinePnl: 0, lossPrice: 1395}));
+  assert.ok(big.years[2].offset >= 1, '교체 이득이 손실보다 크면 1 이상');
+  assert.equal(ctx.lossCheck(futures({baselinePnl: 0, lossPrice: 1450})).years[0].offset, null, '손실이 아니면 상쇄 비율 없음');
+  assert.equal(ctx.lossCheck(futures({baselinePnl: 0, rollSpread: 0.5})).years[0].offset, null, '교체 비용이면 상쇄 비율 없음');
+});
+
+test('보유 계약이 없으면 손실률·평균가 없이 누적 정산손익만 남는다', () => {
+  const ctx = load();
+  const r = ctx.lossCheck(futures({positions: []}));
+  assert.equal(r.contracts, 0);
+  assert.equal(r.avg, null);
+  assert.equal(r.rate, null);
+  assert.equal(r.pnl, 50000);
+});
