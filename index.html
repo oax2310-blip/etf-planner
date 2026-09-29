@@ -48,6 +48,7 @@
   - 2026-09-29 Claude: 월물교체 장기 예상의 '+N% 추가'를 '기대수익 대비 +N% (투자금 대비 +M%)'로 표시. 투자금 = 계약 수 × 1만 달러 × 목표 환율
     (rollEstimate의 investedExtra = 누적 교체 이득 ÷ 투자금, 소수 첫째 자리). 손익 계산에는 더하지 않는 표시용.
   - 2026-09-29 Claude: 월물교체 장기 예상 표시를 '투자금 대비 +X.X%'만 남김. '기대수익 대비' 비율(rollEstimate의 extra)과 줄바꿈 방지 span 삭제.
+  - 2026-09-29 Claude: 글이 길어 '투자금 대비' 글자를 빼고 '+X.X%'만 표시(값은 그대로 투자금 대비 비율).
 -->
 <html lang="ko">
 <head>
@@ -399,7 +400,7 @@
     function renderFutures(){
       const f=state.futures,s=futuresSummary(f),tr=f.levels.flatMap(l=>l.tranches),completed=tr.filter(t=>t.completed).length,total=f.levels.reduce((a,l)=>a+l.contracts,0),target=decimal.format(f.targetPrice),near=nearestMonth(f),months=[...new Set(f.positions.map(p=>String(p.month)).filter(monthOk))].sort();
       const roll=rollEstimate(f,s.posContracts+s.legacyCount,s.current);
-      const loss=lossCheck(f), pct=v=>`${v>0?"+":""}${(v*100).toFixed(2)}%`, offsetText=o=>o==null?"":` · ${o>=1?"손실 전부 상쇄":`${Math.round(o*100)}% 상쇄`}`, extraText=y=>y.investedExtra==null?"":` · 투자금 대비 +${(y.investedExtra*100).toFixed(1)}%`;
+      const loss=lossCheck(f), pct=v=>`${v>0?"+":""}${(v*100).toFixed(2)}%`, offsetText=o=>o==null?"":` · ${o>=1?"손실 전부 상쇄":`${Math.round(o*100)}% 상쇄`}`, extraText=y=>y.investedExtra==null?"":` · +${(y.investedExtra*100).toFixed(1)}%`;
       const lossCard=`<div class="card future-metric"><label class="loss-head">환율<input id="flossPrice" type="number" step="1" min="0" value="${shown(loss.price)}" title="손익을 확인할 환율 (원)">원 도달 시 손익</label><strong class="${loss.pnl<0?"neg":""}">${money(loss.pnl)}</strong><small>${loss.contracts?`보유 ${loss.contracts}계약 · 평균 ${decimal.format(loss.avg)}원 대비 <b class="loss-rate">${loss.rate==null?"—":pct(loss.rate)}</b>`:"보유 계약 없음"}${Number(f.baselinePnl)?`${loss.contracts?` · 보유분 ${money(loss.held)}`:""} + 누적 정산손익 ${money(f.baselinePnl)}`:""}</small><div class="roll-est"><div class="roll-est-head"><span>월물교체로 상쇄 · 총 손익</span><span>스프레드 ${shown(roll.spread)}원 기준</span></div><div class="roll-est-years">${loss.years.map(y=>`<div><small>${y.years}년 후${offsetText(y.offset)}</small><strong>${money(y.total)}</strong></div>`).join("")}</div></div></div>`;
       const rollEst=`<div class="roll-est"><div class="roll-est-head"><span>월물교체 장기 예상 · 총 기대수익</span><label>스프레드<input id="frollSpread" type="number" step="0.1" value="${shown(roll.spread)}" title="원월물 − 근월물 (원)">원</label></div><div class="roll-est-years">${roll.years.map(y=>`<div><small>${y.years}년 후${extraText(y)}</small><strong>${money(y.total)}</strong></div>`).join("")}</div></div>`;
       const trancheRow=(l,li,t,ti)=>{const merged=t.completed&&t.mergedMonth, execP=Number(t.executionPrice??t.price), p=t.completed?execP:Number(t.price), key=`${li}:${ti}`, monthInput=`<input class="month" data-tranche-month="${key}" list="posMonths" inputmode="numeric" placeholder="YYYYMM" title="합칠 보유 월물" value="${esc(t.month||near)}">`;
