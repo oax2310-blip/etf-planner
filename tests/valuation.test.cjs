@@ -83,7 +83,8 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     b.classList = {toggle: (name, on) => { b.active = on; }};
     return b;
   };
-  const presetButtons = {'[data-preset]': ['low', 'base', 'high'].map(k => button('preset', k)), '[data-battery-preset]': ['low', 'base', 'high'].map(k => button('batteryPreset', k))};
+  const presetAttrs = {'[data-preset]': 'preset', '[data-battery-preset]': 'batteryPreset', '[data-humn-preset]': 'humnPreset'};
+  const presetButtons = Object.fromEntries(Object.entries(presetAttrs).map(([sel, attr]) => [sel, ['low', 'base', 'high'].map(k => button(attr, k))]));
   const confirms = [];
   const timers = new Map();
   let timerId = 0;
@@ -92,6 +93,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     el, ids: ['robotM', 'evShare'], batteryInputs: ['batYear', 'batCarM'], companyInputIds: ['bc-lg-ev'], groupInputIds: [], humnControlIds: ['humnUnits'], terControlIds: ['terPE'],
     sdiPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
     batteryPresetLabels: {low: '보수적 가정', base: '기본 가정', high: '낙관적 가정'},
+    humnPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
     render() { renders.count++; }, renderHumn() {}, renderBatteryEtfs() {},
     localStorage: {
       getItem: key => { if (brokenStorage) throw Error('blocked'); return storage.get(key) ?? null; },
@@ -116,11 +118,11 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
   // 계산기 쪽 입력 처리처럼 프리셋 선택을 풀고 input 이벤트를 보낸다.
   const adjust = (id, value) => {
     el(id).value = value;
-    const preset = ['robotM', 'evShare'].includes(id) ? '[data-preset]' : ['batYear', 'batCarM', 'bc-lg-ev'].includes(id) ? '[data-battery-preset]' : null;
+    const preset = ['robotM', 'evShare'].includes(id) ? '[data-preset]' : ['batYear', 'batCarM', 'bc-lg-ev'].includes(id) ? '[data-battery-preset]' : id === 'humnUnits' ? '[data-humn-preset]' : null;
     if (preset) presetButtons[preset].forEach(b => { b.active = false; });
     fire('input', el(id));
   };
-  const clickPreset = (sel, key) => { presetButtons[sel].forEach(b => { b.active = b.dataset[sel === '[data-preset]' ? 'preset' : 'batteryPreset'] === key; }); fire('click', {closest: () => ({})}); };
+  const clickPreset = (sel, key) => { presetButtons[sel].forEach(b => { b.active = b.dataset[presetAttrs[sel]] === key; }); fire('click', {closest: () => ({})}); };
   const submit = name => { el('scenarioName').value = name; el('scenarioForm').listeners.submit[0]({preventDefault() {}}); };
   const listAction = (action, index = 0) => {
     const row = el('scenarioList').children[index];
@@ -170,6 +172,32 @@ test('프리셋을 누르면 선택한 프리셋 이름까지 복원한다', () 
   assert.equal(reopened.el('batteryPresetLabel').textContent, '기본 가정');
   assert.equal(reopened.el('evShare').value, '8');
   assert.ok(reopened.presetButtons['[data-preset]'].find(b => b.dataset.preset === 'high').active);
+});
+
+test('HUMN 프리셋도 선택한 이름을 복원하고, 직접 조정하면 선택이 풀린다', () => {
+  const first = page();
+  first.el('humnUnits').value = 120;
+  first.clickPreset('[data-humn-preset]', 'high');
+  assert.equal(first.stored(CURRENT).presets.humn, 'high');
+  const reopened = page({storage: first.storage});
+  assert.equal(reopened.el('humnPresetLabel').textContent, '낙관적 시나리오');
+  assert.equal(reopened.el('presetLabel').textContent, '기본 시나리오');
+  assert.equal(reopened.el('humnUnits').value, '120');
+  assert.ok(reopened.presetButtons['[data-humn-preset]'].find(b => b.dataset.humnPreset === 'high').active);
+
+  reopened.adjust('humnUnits', 60); reopened.flush();
+  assert.equal(reopened.stored(CURRENT).presets.humn, '');
+  assert.equal(page({storage: reopened.storage}).el('humnPresetLabel').textContent, '직접 조정');
+});
+
+test('HUMN 프리셋 이전 저장본은 HUMN 입력이 기본값일 때만 기본 시나리오로 연다', () => {
+  const untouched = page({storage: new Map([[CURRENT, JSON.stringify({values: {robotM: 120}, presets: {sdi: '', battery: 'base'}, savedAt: '2026-09-01T00:00:00.000Z'})]])});
+  assert.equal(untouched.el('humnPresetLabel').textContent, '기본 시나리오');
+  assert.ok(untouched.presetButtons['[data-humn-preset]'].find(b => b.dataset.humnPreset === 'base').active);
+
+  const adjusted = page({storage: new Map([[CURRENT, JSON.stringify({values: {humnUnits: 60}, presets: {sdi: '', battery: 'base'}, savedAt: '2026-09-01T00:00:00.000Z'})]])});
+  assert.equal(adjusted.el('humnPresetLabel').textContent, '직접 조정');
+  assert.ok(adjusted.presetButtons['[data-humn-preset]'].every(b => !b.active));
 });
 
 test('입력 중인 빈칸이나 범위 밖 값은 저장하지 않고 직전 값을 유지한다', () => {
@@ -249,6 +277,7 @@ test('기본값으로 되돌리면 모든 조정과 프리셋 표시가 처음�
   assert.equal(h.el('batYear').value, '2035');
   assert.equal(h.el('presetLabel').textContent, '기본 시나리오');
   assert.equal(h.el('batteryPresetLabel').textContent, '기본 가정');
+  assert.equal(h.el('humnPresetLabel').textContent, '기본 시나리오');
   assert.deepEqual({...h.stored(CURRENT).values}, {});
   assert.equal(h.el('saveState').textContent, '기본값');
 });
@@ -287,7 +316,8 @@ test('처음 연결하면 이 기기의 현재 조정값과 저장본을 저장�
   await h.ready();
   assert.equal(server.puts.length, 1);
   assert.equal(server.puts[0].sha, undefined);
-  assert.deepEqual(server.data(), remoteFile({current: saved({robotM: 120}, T1), scenarios: [scenario('a', '낙관', T1)]}));
+  // HUMN 프리셋 이전 조정값은 HUMN 입력이 기본값이면 기본 시나리오로 올린다. 저장본은 받은 그대로 둔다.
+  assert.deepEqual(server.data(), remoteFile({current: saved({robotM: 120}, T1, {sdi: '', battery: 'base', humn: 'base'}), scenarios: [scenario('a', '낙관', T1)]}));
   assert.match(h.el('scenarioSyncStatus').textContent, /^동기화 완료/);
   assert.equal(h.el('saveState').textContent, '조정 1개 · 동기화됨');
   assert.equal(h.el('scenarioSyncRepo').textContent, REPO);
@@ -311,7 +341,7 @@ test('이 기기에서 나중에 바꾼 조정값은 저장소에 올리고 다�
   const h = page({server, storage: connectedStorage({[CURRENT]: saved({robotM: 120}, T2)})});
   await h.ready();
   assert.equal(h.el('robotM').value, '120');
-  assert.deepEqual(server.data().current, saved({robotM: 120}, T2));
+  assert.deepEqual(server.data().current, saved({robotM: 120}, T2, {sdi: '', battery: 'base', humn: 'base'}));
   assert.deepEqual(server.data().scenarios.map(s => s.id), ['b']);
   assert.deepEqual(h.stored(LIST).map(s => s.id), ['b']);
 });
