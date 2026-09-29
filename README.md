@@ -11,7 +11,7 @@
    - **Repository access** → **Only select repositories** → `etf-planner-data`만 선택
    - **Permissions → Repository permissions → Contents** → **Read and write**
    - **Generate token** 후 값 복사(한 번만 보임).
-3. 사이트 위쪽 **기기 간 동기화**에서 저장소(`oax2310-blip/etf-planner-data`) 확인 → 토큰 붙여넣기 → **연결**. 다른 기기도 처음 한 번 같은 토큰을 넣습니다.
+3. 사이트 오른쪽 위 **동기화** 버튼에서 저장소(`oax2310-blip/etf-planner-data`) 확인 → 토큰 붙여넣기 → **연결**. 다른 기기도 처음 한 번 같은 토큰을 넣습니다.
 
 ## 규칙
 
