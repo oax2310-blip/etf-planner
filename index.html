@@ -4,6 +4,8 @@
   이 주석에는 지금도 지켜야 할 규칙만 둔다. 날짜별 변경 기록은 쌓지 말고(이력은 git log/PR), 규칙이 바뀌면 해당 줄을 고치거나 지울 것. README.md도 같은 방식.
   [작업·공개]
   - 정본: GitHub main 브랜치의 index.html. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs
+  - 작업 순서(토큰 절약): 요청을 모아 한 브랜치에서 작업하고 병합은 마지막에 한 번. 화면이 바뀌면 병합 전에 확인용 캡처(바뀐 뒤 화면만,
+    전/후 비교 이미지는 따로 만들지 않음)를 사용자에게 보내 확인받고 고친 뒤 PR → 병합. 글자만 바꾸는 작은 변경은 캡처 없이 바로 병합해도 됨.
   - 테스트가 코드 줄을 기준점으로 잘라 실행함: 'const monthOk = '~'function renderFutures(){'(futures), 'const initialSnapshot = dataSnapshot();'~'function selected(){'(sync), 'const defaultRebuy = '~'function renderRebuy(){'(rebuy). 이 줄들을 지우거나 이름을 바꾸지 말고, 같은 문구를 들여쓰기 포함 그대로 앞쪽에 적지 말 것(먼저 찾혀 테스트가 깨짐).
   - 공개 저장소: 실제 보유 수량·손익·평가액을 코드 기본값(seed·defaultFutures·defaultActions·defaultRebuy)에 넣지 말 것.
   [저장·동기화]
