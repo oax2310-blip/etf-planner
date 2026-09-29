@@ -60,6 +60,19 @@ test('월물교체 장기 예상: 누적 교체 이득이 현재 기대수익에
   assert.equal(ctx.rollEstimate(futures({rollSpread: 0.5}), 3, current).years[0].extra, null, '교체 비용이면 비율 없음');
 });
 
+test('월물교체 장기 예상: 누적 교체 이득을 투자금(계약 수 × 1만 달러 × 목표 환율) 대비 비율로도 계산한다', () => {
+  const ctx = load();
+  const f = futures(), current = ctx.futuresSummary(f).current, invested = 3 * 10000 * 1480;
+  const r = ctx.rollEstimate(f, 3, current);
+  assert.equal(r.invested, invested);
+  assert.deepEqual([...r.years].map(y => y.investedExtra), [180000 / invested, 360000 / invested, 540000 / invested]);
+  assert.deepEqual([...r.years].map(y => y.total), [current + 180000, current + 360000, current + 540000], '투자금 비율은 손익에 더하지 않는다');
+  assert.equal(ctx.futuresSummary(f).current, current);
+  assert.equal(ctx.rollEstimate(f, 3, -100000).years[0].investedExtra, 180000 / invested, '기대수익이 음수여도 투자금 비율은 계산');
+  assert.equal(ctx.rollEstimate(f, 0, current).years[0].investedExtra, null, '계약이 없으면 비율 없음');
+  assert.equal(ctx.rollEstimate(futures({rollSpread: 0.5}), 3, current).years[0].investedExtra, null, '교체 비용이면 비율 없음');
+});
+
 test('월물교체 장기 예상: 입력한 스프레드를 쓰고, 비었거나 잘못된 값이면 기본값으로 돌아간다', () => {
   const ctx = load();
   assert.equal(ctx.rollEstimate(futures({rollSpread: -0.3}), 2).years[0].gain, 72000);
