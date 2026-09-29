@@ -544,10 +544,15 @@
         <div class="humn-result-pair"><span>2026.09.25 시장 종가</span><strong id="humnClose">$29.67</strong></div>
       </div>
       <div class="card">
-        <h3>시장과 ETF 연결 가정</h3>
+        <div class="row"><h3 style="margin:0">시장과 ETF 연결 가정</h3><span class="pill" id="humnPresetLabel">기본 시나리오</span></div>
         <div class="mobile-valuation" aria-label="HUMN 가격과 테라다인 보조지표" aria-live="off">
           <div class="mobile-valuation-line"><strong class="mobile-valuation-asset">HUMN</strong><span class="mobile-valuation-cell"><small>목표가</small><strong data-mirror="humnFuture">—</strong></span><span class="mobile-valuation-cell"><small>환산가치</small><strong data-mirror="humnPV">—</strong></span><span class="mobile-valuation-cell"><small>종가</small><strong data-mirror="humnClose">—</strong></span></div>
           <div class="mobile-valuation-line" aria-label="테라다인 개별주 보조지표"><strong class="mobile-valuation-asset">TER<small>보조</small></strong><span class="mobile-valuation-cell"><small>미래가치</small><strong data-mirror="terFuture">—</strong></span><span class="mobile-valuation-cell"><small>환산가치</small><strong data-mirror="terPV">—</strong></span><span class="mobile-valuation-cell"><small>종가</small><strong data-mirror="terClose">—</strong></span></div>
+        </div>
+        <div class="presets" role="group" aria-label="HUMN 시나리오 선택">
+          <button type="button" data-humn-preset="low">보수적</button>
+          <button type="button" class="active" data-humn-preset="base">기본</button>
+          <button type="button" data-humn-preset="high">낙관적</button>
         </div>
         <div class="humn-controls">
           <div class="humn-control"><label for="humnYear">로봇 보급 시점</label><select id="humnYear"><option value="2035">2035년</option><option value="2040" selected>2040년</option><option value="2045">2045년</option></select></div>
@@ -782,6 +787,13 @@
   // undisclosed balancing adjustment are the residual, not gross T-bill holdings.
   const humnNetCash=1-makerWeight-otherWeight;
   const humnControlIds=["humnYear","humnUnits","humnASP","humnPortfolioShare","humnRequired","humnMargin","humnNetRate","humnPER","humnMakerCap","humnExisting","humnDilution","humnRestMultiple"];
+  // 기본 = 페이지 기본값. 합산 시총(humnMakerCap)은 관측 근사치라 프리셋이 바꾸지 않고, 시점·요구수익률은 세 프리셋이 같다.
+  const humnPresetValues={
+    low:{humnYear:2040,humnUnits:40,humnASP:10,humnPortfolioShare:3,humnRequired:10,humnMargin:8,humnNetRate:65,humnPER:14,humnExisting:80,humnDilution:30,humnRestMultiple:.8},
+    base:{humnYear:2040,humnUnits:100,humnASP:15,humnPortfolioShare:6,humnRequired:10,humnMargin:12,humnNetRate:70,humnPER:20,humnExisting:100,humnDilution:20,humnRestMultiple:1},
+    high:{humnYear:2040,humnUnits:120,humnASP:20,humnPortfolioShare:10,humnRequired:10,humnMargin:18,humnNetRate:75,humnPER:28,humnExisting:120,humnDilution:10,humnRestMultiple:1.5}
+  };
+  const humnPresetLabels={low:"보수적 시나리오",base:"기본 시나리오",high:"낙관적 시나리오"};
   function renderHumn(){
     const read=id=>Number(el(id).value);
     const year=read("humnYear"), years=year-2026;
@@ -852,8 +864,19 @@
     el("terPEOut").textContent=num(read("terPE"))+"배";
     el("terEquation").textContent="로봇 사업: 세계 연간 매출 $"+two(worldRevenue/1e12)+"조 × 테라다인 매출 점유율 "+two(read("terMarketShare"))+"% = $"+two(robotRevenue/1e9)+"bn. 검사 사업: 2026년 상반기 매출 연 환산 $4.84bn × (1 + 연 성장률 "+num(read("terTestGrowth"))+"%)^"+years+" = $"+two(testRevenue/1e9)+"bn. 각 사업 매출 × 목표 이익률 × 순이익 비중 "+num(read("terNetRate"))+"% × PER "+num(read("terPE"))+"배 ÷ 미래 주식 수 "+two(targetShares/1e6)+"백만 주 = "+year+"년 주당 "+money(future)+". 연 요구수익률 "+num(read("humnRequired"))+"%로 "+years+"년 환산 = "+money(future/discountFactor)+".";
   }
-  humnControlIds.forEach(id=>el(id).addEventListener("input",renderHumn));
+  humnControlIds.forEach(id=>el(id).addEventListener("input",()=>{
+    document.querySelectorAll("[data-humn-preset]").forEach(b=>b.classList.remove("active"));
+    el("humnPresetLabel").textContent="직접 조정";
+    renderHumn();
+  }));
   terControlIds.forEach(id=>el(id).addEventListener("input",renderHumn));
+  document.querySelectorAll("[data-humn-preset]").forEach(button=>button.addEventListener("click",()=>{
+    const key=button.dataset.humnPreset;
+    for(const [id,value] of Object.entries(humnPresetValues[key])) el(id).value=value;
+    document.querySelectorAll("[data-humn-preset]").forEach(b=>b.classList.toggle("active",b===button));
+    el("humnPresetLabel").textContent=humnPresetLabels[key];
+    renderHumn();
+  }));
   renderHumn();
   // ETF model: index weights are measured, market shares and terminal earnings are scenarios.
   const batteryCompanies=[
@@ -1018,7 +1041,8 @@
   }));
   const presetControls={
     sdi:{selector:"[data-preset]",data:"preset",label:"presetLabel",names:sdiPresetLabels},
-    battery:{selector:"[data-battery-preset]",data:"batteryPreset",label:"batteryPresetLabel",names:batteryPresetLabels}
+    battery:{selector:"[data-battery-preset]",data:"batteryPreset",label:"batteryPresetLabel",names:batteryPresetLabels},
+    humn:{selector:"[data-humn-preset]",data:"humnPreset",label:"humnPresetLabel",names:humnPresetLabels}
   };
   const owns=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
   const readStored=(key,fallback)=>{ try { const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; } catch (_) { return fallback; } };
@@ -1043,8 +1067,11 @@
       node.value=owns(values,id)&&typeof value==="number"&&Number.isFinite(value)?String(value):fallback;
       if(node.value===""||!node.checkValidity()) node.value=fallback;
     });
+    // HUMN 프리셋 이전 저장본에는 humn이 없다. HUMN 입력이 모두 기본값이면 기본 시나리오로 본다.
+    const presets={...saved?.presets};
+    if(typeof presets.humn!=="string") presets.humn=humnControlIds.every(id=>Number(el(id).value)===Number(assumptionDefaults[id]))?"base":"";
     for(const [key,control] of Object.entries(presetControls)){
-      const chosen=saved?.presets?.[key],known=typeof chosen==="string"&&owns(control.names,chosen);
+      const chosen=presets[key],known=typeof chosen==="string"&&owns(control.names,chosen);
       document.querySelectorAll(control.selector).forEach(button=>button.classList.toggle("active",known&&button.dataset[control.data]===chosen));
       el(control.label).textContent=known?control.names[chosen]:"직접 조정";
     }
@@ -1057,8 +1084,9 @@
   }
   const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,timer:null};
   const numericValues=values=>{ const source=validValues(values); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="number"&&Number.isFinite(source[id])).map(id=>[id,source[id]])); };
-  const presetPair=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:""});
-  const assumptionKey=saved=>JSON.stringify([numericValues(saved?.values),presetPair(saved?.presets)]);
+  // humn은 있을 때만 남긴다. 옛 저장본·옛 코드 기기가 올린 기록은 humn 없이 그대로 두어야 동기화 때 불필요하게 다시 쓰지 않는다.
+  const presetChoices=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:"",...(typeof presets?.humn==="string"?{humn:presets.humn}:{})});
+  const assumptionKey=saved=>JSON.stringify([numericValues(saved?.values),presetChoices(saved?.presets)]);
   // savedAt은 값이 실제로 바뀔 때만 새로 적는다. 기기 간에는 더 나중에 바꾼 쪽의 현재 조정값을 쓰므로
   // 열어 보기만 한 기기(savedAt 없음)가 다른 기기에서 바꾼 조정값을 덮어쓰지 않는다.
   let currentAssumptions={...collectAssumptions({}),savedAt:""}, assumptionSaveTimer=null, assumptionStorageOk=true;
@@ -1085,7 +1113,7 @@
   function scheduleAssumptionSave(){ clearTimeout(assumptionSaveTimer); assumptionSaveTimer=setTimeout(saveAssumptions,300); }
   document.addEventListener("input",event=>{ if(assumptionIdSet.has(event.target.id)) scheduleAssumptionSave(); });
   document.addEventListener("change",event=>{ if(assumptionIdSet.has(event.target.id)) saveAssumptions(); });
-  document.addEventListener("click",event=>{ if(event.target.closest?.("[data-preset],[data-battery-preset]")) saveAssumptions(); });
+  document.addEventListener("click",event=>{ if(event.target.closest?.("[data-preset],[data-battery-preset],[data-humn-preset]")) saveAssumptions(); });
   document.addEventListener("visibilitychange",()=>{ if(document.hidden&&assumptionSaveTimer) saveAssumptions(); });
   window.addEventListener("pagehide",()=>{ if(assumptionSaveTimer) saveAssumptions(); });
   const storedAssumptions=readStored(ASSUMPTION_KEY,null);
@@ -1161,7 +1189,7 @@
   });
   el("resetAssumptions").addEventListener("click",()=>{
     if(!confirmReplaceCurrent()) return;
-    applyAssumptions({values:{},presets:{sdi:"base",battery:"base"}}); saveAssumptions();
+    applyAssumptions({values:{},presets:{sdi:"base",battery:"base",humn:"base"}}); saveAssumptions();
     el("savesDialog").close();
   });
 
@@ -1173,7 +1201,7 @@
   const SYNC_REPO_KEY="etf-planner-data-repo", SYNC_TOKEN_KEY="etf-planner-github-token";
   function cleanDeleted(value){ const source=validValues(value); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="string").map(id=>[id,source[id]])); }
   const readDeleted=()=>cleanDeleted(readStored(DELETED_KEY,{}));
-  const cleanSaved=item=>({values:numericValues(item.values),presets:presetPair(item.presets),savedAt:typeof item.savedAt==="string"?item.savedAt:""});
+  const cleanSaved=item=>({values:numericValues(item.values),presets:presetChoices(item.presets),savedAt:typeof item.savedAt==="string"?item.savedAt:""});
   function cleanScenarioData(data){
     if(!data||typeof data!=="object"||Array.isArray(data)||!Array.isArray(data.scenarios)||(data.version!==undefined&&data.version!==1)) return null;
     const current=data.current&&typeof data.current==="object"&&typeof data.current.savedAt==="string"&&data.current.savedAt?cleanSaved(data.current):null;
