@@ -97,7 +97,7 @@
   </main>
 
   <dialog id="planDialog"><form method="dialog" class="dialog-inner" id="planForm">
-    <div class="dialog-head"><h2 id="dialogTitle">새 매도 계획</h2><button class="btn ghost" value="cancel">닫기</button></div>
+    <div class="dialog-head"><h2 id="dialogTitle">새 매도 계획</h2><button class="btn ghost" type="button" data-close-plan>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>종목 코드</span><input name="ticker" required placeholder="예: SPY" /></label>
       <label class="field"><span>계획 이름</span><input name="title" required placeholder="예: S&amp;P500 추종 ETF" /></label>
@@ -115,7 +115,7 @@
       <label class="field"><span>기준일</span><input name="asOf" type="date" /></label>
       <p class="hint dialog-wide">주식 수량을 입력하면 회차별 주수를 정수로 자동 분배합니다. 평가액을 입력하면 회차별 매도액을 계산합니다. 원하는 분할 비율은 ‘분할 횟수’로 조정하세요.</p>
     </div>
-    <div class="dialog-foot"><button class="btn" value="cancel">취소</button><button class="btn primary" id="savePlanBtn" value="default">저장</button></div>
+    <div class="dialog-foot"><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
 
   <dialog id="syncDialog"><div class="dialog-inner">
@@ -322,6 +322,7 @@
     const planDialog=document.getElementById("planDialog"); let editingId=null;
     function openPlanDialog(p){editingId=p?.id||null; const form=document.getElementById("planForm");form.reset();document.getElementById("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 매도 계획";if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,currency:p.currency,startLabel:p.startLabel,endLabel:p.endLabel,startPrice:p.startPrice,endPrice:p.endPrice,currentPrice:p.currentPrice,stages:p.stages,valueKrw:p.valueKrw??"",basisPrice:p.basisPrice??"",fx:p.fx,asOf:p.asOf||""})){if(form.elements[k])form.elements[k].value=v;}form.elements.shares.value=p.holdings[0]?.shares||"";}planDialog.showModal();}
     document.getElementById("addPlanBtn").onclick=()=>openPlanDialog();
+    planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
     document.getElementById("planForm").addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim();const ticker=val("ticker").toUpperCase(), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;const shares=Number(val("shares"));const p=old||defaultPlan(ticker,val("title"),{});Object.assign(p,{ticker,title:val("title"),currency:val("currency")==="KRW"?"KRW":"USD",startLabel:val("startLabel"),endLabel:val("endLabel"),startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),currentPrice:Number(val("currentPrice")),stages,valueKrw:val("valueKrw")===""?null:Number(val("valueKrw")),basisPrice:val("basisPrice")===""?null:Number(val("basisPrice")),fx:Number(val("fx"))||1354.91,asOf:val("asOf"),holdings:Number.isSafeInteger(shares)&&shares>0?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});if(!old)state.plans.push(p);state.selectedPlan=p.id;save();planDialog.close();render();});
     document.getElementById("exportBtn").onclick=()=>{const blob=new Blob([JSON.stringify({...state,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
     document.getElementById("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=JSON.parse(await file.text());if(!Array.isArray(incoming.plans)||!incoming.futures)throw Error("플래너 백업 형식이 아닙니다.");state={...state,...incoming};normalize();save();render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
