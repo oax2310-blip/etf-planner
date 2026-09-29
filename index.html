@@ -56,8 +56,8 @@
   - 첫 매도 기준가(startPrice)는 지표 카드 숫자를 바로 눌러 수정(.metric-edit: 숫자처럼 보이는 입력칸 + 연필, 폭은 글자 수에 맞춤).
     Enter·칸 벗어나면 저장하고 회차별 기준가를 다시 계산, 0 이하·빈 값은 무시, Esc는 취소. 수정 창의 '시작 기준가'도 같은 값.
   - 분할매도 계산 요약·메모는 .control-grid 두 칸(재매수 탭도 두 칸으로 씀 — 열 수를 바꾸지 말 것). 메모 저장 버튼은 메모 제목 줄, 입력칸은 칸 높이에 맞춤.
-  - 분할매도 표 예상 매도량(모바일): 보유 종목이 하나면 줄 안 이름(.one-name)은 숨기고 'N주' 아래 작은 이름(.one-sub, 최대 11.5em 말줄임 — 가격 쪽으로 길게 붙지 않게), 표 위 머리줄(.m-head)에
-    '이름 매도량'(이름 최대 12em). 여럿이면 머리줄은 '예상 매도량'. PC는 머리줄(.table-head)·'이름 N주' 그대로. 긴 이름은 모든 폭에서 줄바꿈(keep-all).
+  - 분할매도 표 예상 매도량(모바일): 보유 종목이 하나면 줄 안 이름(.one-name)은 숨기고 'N주' 아래 작은 이름(.one-sub, 최대 11.5em — 가격 쪽으로 길게 붙지 않게), 표 위 머리줄(.m-head)에
+    '이름 매도량'(이름 최대 12em). 둘 다 fitNames()가 칸 폭에 맞춰 글자를 잘라 '…'를 붙임(오른쪽 끝에 맞춤, 렌더·resize 때). 여럿이면 머리줄은 '예상 매도량'. PC는 머리줄(.table-head)·'이름 N주' 그대로. 긴 이름은 모든 폭에서 줄바꿈(keep-all).
   - 저장된 계획 카드(.plan-row)는 종목·회차를 한 줄 유지(좁으면 종목만 말줄임), 모바일은 '회'(.plan-unit)를 숨겨 자리 확보.
   - 보유 월물 줄(월물·계약 수·단순평균가·삭제)과 계산 기준 입력칸(.future-panel .inline-fields)은 한 줄 유지.
   - 매수 계약 줄(.tranche)은 flex, 입력칸 6.4ch 폭·스핀/목록 화살표 숨김, 좁으면 월물·체크만 다음 줄. '.hide-mobile'은 모바일에서 숨김.
@@ -330,6 +330,26 @@
     function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
     fitTop(); addEventListener("resize",fitTop);
     function render(){ if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="actions") renderActions(); if(state.tab==="rebuy") renderRebuy(); }
+    // 모바일 표 이름 말줄임: CSS 말줄임은 잘린 뒤 남는 여백이 '…' 오른쪽에 생겨 끝이 안 맞는다. 칸에 들어가는 만큼 글자를 잘라 '…'를 붙여
+    // 오른쪽 끝(수량·'매도량')에 붙인다. 같은 폭은 한 번만 계산. CSS text-overflow는 예비로 둔다.
+    function fitNames(){
+      const range=document.createRange();
+      for(const sel of [".one-sub",".m-head b"]){
+        const els=[...document.querySelectorAll(`#planMain ${sel}`)], memo=new Map();
+        els.forEach(e=>e.textContent=e.dataset.full??=e.textContent);
+        els.map(e=>[e,e.getBoundingClientRect().width,e.scrollWidth>e.clientWidth]).forEach(([e,box,over])=>{
+          if(!box||!over) return;
+          const key=Math.round(box*10);
+          if(!memo.has(key)){
+            const full=e.dataset.full, cut=m=>full.slice(0,m).trimEnd()+"…", fits=t=>{e.textContent=t;range.selectNodeContents(e);return range.getBoundingClientRect().width<=box-.5;};
+            let lo=0,hi=full.length-1; while(lo<hi){const m=(lo+hi+1)>>1; if(fits(cut(m)))lo=m; else hi=m-1;}
+            memo.set(key,cut(lo));
+          }
+          e.textContent=memo.get(key);
+        });
+      }
+    }
+    addEventListener("resize",fitNames);
     function renderPlans(){
       const list=document.getElementById("planList");
       list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, title=String(p.title||"").trim();return `<button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(title||p.ticker)} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(p.ticker)}</strong><span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span>${title&&title!==String(p.ticker).trim()?`<span class="plan-title">${esc(title)}</span>`:""}<span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button>`;}).join(""):"<div class='empty'>계획 없음</div>";
@@ -353,6 +373,7 @@
       const note=document.getElementById("planNote"); note.oninput=()=>document.getElementById("memoCount").textContent=`${note.value.length.toLocaleString("ko-KR")} / 4,000자`; document.getElementById("saveNote").onclick=()=>{p.note=note.value;save();renderPlans();};
       main.querySelectorAll("[data-stage]").forEach(input=>input.onchange=()=>{p.checked[Number(input.dataset.stage)]=input.checked;save();renderPlans();});
       document.getElementById("editPlan").onclick=()=>openPlanDialog(p);
+      fitNames();
     }
     const planDialog=document.getElementById("planDialog"); let editingId=null;
     function openPlanDialog(p){editingId=p?.id||null; const form=document.getElementById("planForm");form.reset();document.getElementById("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";document.getElementById("deletePlanBtn").classList.toggle("hidden",!p);if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,currency:p.currency,startLabel:p.startLabel,endLabel:p.endLabel,startPrice:p.startPrice,endPrice:p.endPrice,stages:p.stages,valueKrw:p.valueKrw??"",basisPrice:p.basisPrice??"",fx:p.fx,asOf:p.asOf||""})){if(form.elements[k])form.elements[k].value=v;}form.elements.shares.value=p.holdings[0]?.shares||"";}planDialog.showModal();}
