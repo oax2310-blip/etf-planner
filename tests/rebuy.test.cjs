@@ -9,8 +9,9 @@ if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계
 const sharesAt = html.match(/const sharesAt = .*;/)[0];
 
 const load = () => { const context = vm.createContext({}); vm.runInContext(`${sharesAt}\n${source}`, context); return context; };
-const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, shares: 1000, ...extra});
+const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
+const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
 
 test('손절: 신저점 대비 -1%, -2% …마다 그때 남은 수량의 0.5%를 정수 주로 판다', () => {
   const ctx = load();
@@ -25,7 +26,7 @@ test('손절: 신저점 대비 -1%, -2% …마다 그때 남은 수량의 0.5%�
 
 test('손절: 보유 수량이 적어도 정수 주로 나누고 누적 합계가 맞는다', () => {
   const ctx = load();
-  const cuts = ctx.cutPlan(plan(ctx, {shares: 100}));
+  const cuts = ctx.cutPlan(plan(ctx, {amount: 100}));
   assert.ok(cuts.every(c => Number.isInteger(c.qty) && c.qty >= 0));
   assert.equal(cuts.reduce((a, c) => a + c.qty, 0), 100 - Math.round(100 * 0.995 ** 30));
 });
@@ -92,5 +93,29 @@ test('재매수: 체결가를 비운 단계는 평균·차익 계산에서 뺀�
 test('기본값에는 실제 보유 수량·가격을 넣지 않는다', () => {
   const ctx = load();
   const d = plain(vm.runInContext('defaultRebuy()', ctx));
-  assert.deepEqual([d.lowPrice, d.shares, d.currentPrice, d.cuts, d.stepPct, d.sellPct], [0, 0, 0, [], 1, 0.5]);
+  assert.deepEqual([d.lowPrice, d.amount, d.currentPrice, d.cuts, d.stepPct, d.sellPct], [0, 0, 0, [], 1, 0.5]);
+  assert.equal(d.shares, undefined);
+});
+
+test('보유량: 이탈 전 보유 금액(만원) ÷ 신저점 가격을 내림한 주 수로 계산한다', () => {
+  const ctx = load();
+  assert.equal(hold(ctx, plan(ctx)), 1000);
+  assert.equal(hold(ctx, plan(ctx, {amount: 1234.5, lowPrice: 9870})), Math.floor(12345000 / 9870));
+  assert.equal(hold(ctx, plan(ctx, {amount: 1000, lowPrice: 0})), 0, '신저점 없이는 계산하지 않는다');
+  assert.equal(ctx.cutPlan(plan(ctx, {amount: 500, lowPrice: 12500}))[0].left, Math.round(400 * 0.995));
+});
+
+test('보유량: 금액 입력 전에 넣은 보유 수량(shares)은 금액이 없을 때만 쓴다', () => {
+  const ctx = load();
+  const legacy = {...plan(ctx), amount: undefined, shares: 800};
+  assert.equal(hold(ctx, legacy), 800);
+  assert.equal(ctx.rebuySummary(legacy).held, 800);
+  assert.equal(hold(ctx, {...legacy, amount: 1000}), 1000, '금액이 있으면 금액 기준');
+});
+
+test('손절 금액: 체크한 회차의 체결가 × 수량을 더한다', () => {
+  const ctx = load();
+  const s = ctx.rebuySummary(plan(ctx, {cuts: [{shares: 5, price: 9900}, {shares: 5, price: null}]}));
+  assert.equal(s.sold, 10);
+  assert.equal(s.sellValue, 49500, '체결가를 비운 회차는 금액에서 뺀다');
 });
