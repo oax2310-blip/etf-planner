@@ -182,6 +182,8 @@
     .nav-save { margin-left:auto; display:flex; align-items:center; gap:10px; }
     .nav-save-state { color:var(--muted); font-size:.78rem; font-weight:650; }
     .nav-save button { border:1px solid var(--dark); background:var(--dark); color:#fff; border-radius:999px; padding:5px 13px; font-size:.8rem; font-weight:800; line-height:1.4; }
+    .home-link { display:inline-block; margin-bottom:8px; padding:3px 12px; border:1px solid #ffffff40; border-radius:999px; color:#dff1ec; font-size:.8rem; font-weight:800; line-height:1.4; text-decoration:none; }
+    .home-link:hover,.home-link:focus { background:#ffffff14; border-color:#8de0c5; color:#fff; }
     .saves-dialog { width:min(560px,calc(100% - 28px)); max-height:calc(100vh - 40px); max-height:calc(100dvh - 32px); overflow:auto; overscroll-behavior:contain; border:1px solid var(--border); border-radius:19px; padding:0; color:var(--ink); background:var(--white); box-shadow:0 24px 70px #0b1f2638; }
     .saves-dialog::backdrop { background:#0b1f2666; }
     .saves-body { padding:22px; }
@@ -275,7 +277,7 @@
       .mobile-fold { display:none !important; }
       .mobile-fold-body { display:block !important; }
       body { background:white; color:#14252e; }
-      .nav { display:none; }
+      .nav,.home-link { display:none; }
       .top { background:#fff; color:#122d36; padding:14px 0 20px; }
       .top:before { display:none; }
       .top .eyebrow,.top h1 em { color:#087e77; }
@@ -293,6 +295,7 @@
 <body>
 <header class="top">
   <div class="shell">
+    <a class="home-link" href="index.html">← 매매 플래너</a>
     <div class="eyebrow">장기 투자 시나리오 · 자료 기준 2026.09.27</div>
     <h1>삼성SDI · <em>로봇·배터리 ETF 가치 시나리오</em></h1>
     <p class="subtitle">전기차·로봇 판매 가정을 바꾸고 기업과 ETF의 조건부 가격을 계산합니다.</p>
