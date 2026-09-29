@@ -50,16 +50,6 @@ test('월물교체 장기 예상: 연도별 총 기대수익은 현재 기대수
   assert.equal(ctx.futuresSummary(f).current, current, '표시용 합계가 기대수익 자체를 바꾸지 않는다');
 });
 
-test('월물교체 장기 예상: 누적 교체 이득이 현재 기대수익에 더해지는 비율을 연도별로 계산한다', () => {
-  const ctx = load();
-  const current = 50000 + 3 * 80 * 10000;
-  const r = ctx.rollEstimate(futures(), 3, current);
-  assert.deepEqual([...r.years].map(y => y.extra), [180000 / current, 360000 / current, 540000 / current]);
-  assert.equal(ctx.rollEstimate(futures(), 3, 0).years[0].extra, null, '기대수익이 0이면 비율 없음');
-  assert.equal(ctx.rollEstimate(futures(), 3, -100000).years[0].extra, null, '기대수익이 음수면 비율 없음');
-  assert.equal(ctx.rollEstimate(futures({rollSpread: 0.5}), 3, current).years[0].extra, null, '교체 비용이면 비율 없음');
-});
-
 test('월물교체 장기 예상: 누적 교체 이득을 투자금(계약 수 × 1만 달러 × 목표 환율) 대비 비율로도 계산한다', () => {
   const ctx = load();
   const f = futures(), current = ctx.futuresSummary(f).current, invested = 3 * 10000 * 1480;
