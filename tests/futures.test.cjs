@@ -3,8 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
-const source = html.slice(html.indexOf('    const monthOk = '), html.indexOf('    function renderFutures(){'));
+const source = fs.readFileSync(require('node:path').join(__dirname, '../js/futures.js'), 'utf8');
 if (!source.includes('function resizeTranches(')) throw Error('계획 계약 수 조정 구현을 찾지 못했습니다.');
 
 const load = () => { const context = vm.createContext({futuresDays: [25, 32, 42, 60, 80, 125, 150], contractSize: 10000}); vm.runInContext(source, context); return context; };

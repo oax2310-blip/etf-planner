@@ -3,8 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
-const source = html.slice(html.indexOf('    const defaultRebuy = '), html.indexOf('    function renderRebuy(){'));
+const source = fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
 
 const load = () => { const context = vm.createContext({}); vm.runInContext(source, context); return context; };

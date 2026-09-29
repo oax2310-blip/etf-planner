@@ -1,0 +1,14 @@
+// 체크목록(이번 주 매수 체크, state.actions)
+const openBuys = new Set(); // 매수 완료한 날 중 펼쳐 둔 것(화면 상태라 저장·동기화하지 않음)
+function renderActions(){const a=state.actions,buys=a.buys||[],done=buys.filter(x=>x.completed).length,label=(b,i)=>`${b.day??i+1}일차 매수`,
+    row=(b,i)=>{const folded=b.completed&&!openBuys.has(i),toggle=b.completed?`<button class="btn mini" data-buy-toggle="${i}">${folded?"펼치기":"접기"}</button>`:"";
+      return folded?`<div class="action-row folded"><input type="checkbox" data-buy="${i}" checked><div class="action-title"><strong>${label(b,i)}</strong><span class="action-sum">${b.actualKrw?`실제 ${money(b.actualKrw)}`:"실제 매수액 미입력"}</span>${toggle}</div></div>`
+        :`<div class="action-row"><input type="checkbox" data-buy="${i}" ${b.completed?"checked":""}><div><div class="action-title"><strong>${label(b,i)}</strong>${toggle}</div><div class="action-fields"><label>계획 금액<input data-buy-amount="${i}" type="number" value="${b.plannedKrw}"></label><label>실제 매수액<input data-buy-actual="${i}" type="number" placeholder="매수 후 입력" value="${b.actualKrw??""}"></label></div></div></div>`;};
+  $("actionsView").innerHTML=`<div class="heading"><div><div class="eyebrow">WEEKLY CHECKLIST</div><h1>이번 주 매매 체크</h1><p>S&P500 커버드콜 3일 매수를 기록합니다. 매수 완료한 날은 한 줄로 접힙니다.</p></div>${buys.length?`<button class="btn" id="aSave">변경 저장</button>`:""}</div>${buys.length?`<div class="card progress-line">진행 상황 <b>${done}건 완료</b> · 커버드콜 ${done}/${buys.length}</div><section class="card panel"><div class="action-head"><div><h2>S&P500 커버드콜</h2><p>20만원씩 3일에 나눠 매수합니다.</p></div><button class="btn mini danger" id="ccDelete">목록 삭제</button></div><label class="field"><span>실제 매수 ETF 이름</span><input id="ccName" value="${esc(a.coveredCallName)}"></label><div style="margin-top:12px">${buys.map(row).join("")}</div><label class="field" style="margin-top:10px"><span>매수 메모</span><textarea id="buyNote">${esc(a.buyNote)}</textarea></label></section>`:`<div class="card panel small-note">이번 주에 체크할 항목이 없습니다.</div>`}`;
+  if(!buys.length)return;
+  $("aSave").onclick=()=>{a.coveredCallName=$("ccName").value;a.buyNote=$("buyNote").value;save();renderActions();};
+  $("ccDelete").onclick=()=>{const left=buys.length-done;if(!confirm(`S&P500 커버드콜 목록을 삭제할까요?\n${buys.length}일 매수 체크가 모두 사라집니다.${left?`\n아직 매수 완료 체크하지 않은 날이 ${left}일 남아 있습니다.`:""}`))return;a.buys=[];openBuys.clear();save();renderActions();};
+  onEdit("[data-buy]",(v,x)=>{const i=Number(x.dataset.buy);a.buys[i].completed=x.checked;openBuys.delete(i);},renderActions);
+  onEdit("[data-buy-amount]",(v,x)=>{a.buys[Number(x.dataset.buyAmount)].plannedKrw=Number(v)||0;},renderActions);onEdit("[data-buy-actual]",(v,x)=>{a.buys[Number(x.dataset.buyActual)].actualKrw=Number(v)||null;},renderActions);
+  $$("[data-buy-toggle]").forEach(x=>x.onclick=()=>{const i=Number(x.dataset.buyToggle);if(openBuys.has(i))openBuys.delete(i);else openBuys.add(i);renderActions();});
+}

@@ -3,7 +3,7 @@
   HANDOFF (Claude ↔ GPT 인수인계 규칙 — 공개 소스. 규칙만 두고 날짜별 변경 기록은 쌓지 말 것, 이력은 git log/PR. 공통 규칙은 index.html HANDOFF)
   - 가정은 기본값과 다른 입력만 저장(바꾸지 않은 기준 종가·시총은 페이지 기준값 갱신을 따름). 입력 중 빈칸·범위 밖 값은 저장하지 않음.
   - localStorage 키 etf-planner-valuation-current-v1 / -scenarios-v1 / -deleted-v1 이름·구조 유지(바꿀 땐 이전 코드 포함).
-  - 동기화: index.html의 저장소·토큰 키(etf-planner-data-repo, etf-planner-github-token)를 읽기만 함. 두 키 이름은 index.html과 같이 바꿀 것.
+  - 동기화: 메인 플래너(js/sync.js)의 저장소·토큰 키(etf-planner-data-repo, etf-planner-github-token)를 읽기만 함. 두 키 이름은 js/sync.js와 같이 바꿀 것.
     파일은 같은 데이터 저장소의 etf-planner-scenarios.json(기록 파일과 분리). 저장본은 id별 병합(나중 저장 우선), 삭제는 deleted로 전파,
     현재 조정값은 savedAt이 더 늦은 기기 우선(savedAt은 값이 바뀔 때만 갱신 — 보기만 한 기기가 덮어쓰지 않게). 공개 저장소면 업로드 거부.
   - 테스트(tests/valuation.test.cjs)가 스크립트의 '가정 저장:' 주석부터 스크립트 끝까지 잘라 실행함. 이 주석 줄을 지우거나 바꾸지 말고,
