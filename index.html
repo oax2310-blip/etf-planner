@@ -82,7 +82,7 @@
   <header class="top">
     <div class="brand"><b>↘</b> ETF 분할매매 플래너</div>
     <nav class="tabs" aria-label="화면 선택">
-      <button class="tab active" data-tab="plans">ETF 매도 계획</button>
+      <button class="tab active" data-tab="plans">분할매도 계획</button>
       <button class="tab" data-tab="futures">달러선물 매수</button>
       <button class="tab" data-tab="actions">이번 주 체크</button>
       <button class="tab" data-tab="rebuy">손절 후 재매수</button>
@@ -108,7 +108,7 @@
   </main>
 
   <dialog id="planDialog"><form method="dialog" class="dialog-inner" id="planForm">
-    <div class="dialog-head"><h2 id="dialogTitle">새 매도 계획</h2><button class="btn ghost" type="button" data-close-plan>닫기</button></div>
+    <div class="dialog-head"><h2 id="dialogTitle">새 분할매도 계획</h2><button class="btn ghost" type="button" data-close-plan>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>종목 코드</span><input name="ticker" required placeholder="예: SPY" /></label>
       <label class="field"><span>계획 이름</span><input name="title" required placeholder="예: S&amp;P500 추종 ETF" /></label>
@@ -313,7 +313,7 @@
       list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, title=String(p.title||"").trim();return `<button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(title||p.ticker)} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(p.ticker)}</strong><span class="plan-count">${n}/${p.stages}회</span></span>${title&&title!==String(p.ticker).trim()?`<span class="plan-title">${esc(title)}</span>`:""}<span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button>`;}).join(""):"<div class='empty'>계획 없음</div>";
       list.querySelectorAll("[data-plan]").forEach(b=>b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();});
       const p=selected(); const main=document.getElementById("planMain");
-      if(!p){main.innerHTML="<div class='card empty'><h2>매도 계획을 추가하세요</h2></div>";return;}
+      if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
       const done=p.checked.filter(Boolean).length, shares=p.holdings.reduce((s,h)=>s+Number(h.shares||0),0), gap=(p.startPrice-p.endPrice)/Math.max(p.stages-1,1);
       const currentTarget=stagePrice(p,0); const due=p.started?p.checked.filter((x,i)=>!x && p.currentPrice<=stagePrice(p,i)).length:0;
       const status=done===p.stages?"전량 매도 완료":!p.started?"시작 전":due?`${due}회 매도 기준 도달`:"진행 중";
@@ -331,7 +331,7 @@
       document.getElementById("editPlan").onclick=()=>openPlanDialog(p); document.getElementById("deletePlan").onclick=()=>{if(confirm(`${p.ticker} 계획을 삭제할까요?`)){state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();render();}};
     }
     const planDialog=document.getElementById("planDialog"); let editingId=null;
-    function openPlanDialog(p){editingId=p?.id||null; const form=document.getElementById("planForm");form.reset();document.getElementById("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 매도 계획";if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,currency:p.currency,startLabel:p.startLabel,endLabel:p.endLabel,startPrice:p.startPrice,endPrice:p.endPrice,currentPrice:p.currentPrice,stages:p.stages,valueKrw:p.valueKrw??"",basisPrice:p.basisPrice??"",fx:p.fx,asOf:p.asOf||""})){if(form.elements[k])form.elements[k].value=v;}form.elements.shares.value=p.holdings[0]?.shares||"";}planDialog.showModal();}
+    function openPlanDialog(p){editingId=p?.id||null; const form=document.getElementById("planForm");form.reset();document.getElementById("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,currency:p.currency,startLabel:p.startLabel,endLabel:p.endLabel,startPrice:p.startPrice,endPrice:p.endPrice,currentPrice:p.currentPrice,stages:p.stages,valueKrw:p.valueKrw??"",basisPrice:p.basisPrice??"",fx:p.fx,asOf:p.asOf||""})){if(form.elements[k])form.elements[k].value=v;}form.elements.shares.value=p.holdings[0]?.shares||"";}planDialog.showModal();}
     document.getElementById("addPlanBtn").onclick=()=>openPlanDialog();
     planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
     document.getElementById("planForm").addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim();const ticker=val("ticker").toUpperCase(), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;const shares=Number(val("shares"));const p=old||defaultPlan(ticker,val("title"),{});Object.assign(p,{ticker,title:val("title"),currency:val("currency")==="KRW"?"KRW":"USD",startLabel:val("startLabel"),endLabel:val("endLabel"),startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),currentPrice:Number(val("currentPrice")),stages,valueKrw:val("valueKrw")===""?null:Number(val("valueKrw")),basisPrice:val("basisPrice")===""?null:Number(val("basisPrice")),fx:Number(val("fx"))||1354.91,asOf:val("asOf"),holdings:Number.isSafeInteger(shares)&&shares>0?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});if(!old)state.plans.push(p);state.selectedPlan=p.id;save();planDialog.close();render();});
