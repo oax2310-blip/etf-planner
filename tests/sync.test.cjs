@@ -198,3 +198,34 @@ test('연결 해제하면 이 기기에서 토큰을 지운다', async () => {
   assert.equal(vm.runInContext('connected()', h.context), false);
   assert.match(h.status(), /이 기기에만/);
 });
+
+test('손절 후 재매수 기록도 저장소에 올리고 다른 기기에서 가져온다', async () => {
+  const local = {plans: [], futures: {positions: []}, actions: {}, rebuy: {name: '니프티50', lowPrice: 10000, cuts: [{shares: 5, price: 9900}]}};
+  const h = harness({local});
+  await h.restored();
+  assert.equal(h.server.writes, 1, h.status());
+  assert.deepEqual(h.remoteData().rebuy, local.rebuy);
+  const other = harness({remote: h.remoteData()});
+  await other.restored();
+  assert.equal(other.server.writes, 0);
+  assert.deepEqual(JSON.parse(other.items.get('test-state')).rebuy, local.rebuy);
+});
+
+test('손절 후 재매수 기록이 없으면 스냅샷이 예전 형식과 같다', async () => {
+  const h = harness({remote: empty(), base: snap(empty())});
+  await h.restored();
+  assert.equal(vm.runInContext('dataSnapshot()', h.context), snap(empty()));
+  assert.equal(h.server.writes, 0);
+});
+
+test('손절 후 재매수만 입력한 기기는 빈 기기로 보지 않고 저장소 기록으로 덮어쓰기 전에 묻는다', async () => {
+  const local = {...empty(), rebuy: {lowPrice: 10000}};
+  const remote = {plans: [{id: 'repo'}], futures: {positions: []}, actions: {}};
+  const h = harness({local, remote});
+  const work = h.restored();
+  await waitFor(() => h.elements.get('conflictLater')?.onclick);
+  h.elements.get('conflictLater').onclick();
+  await work;
+  assert.equal(h.server.writes, 0);
+  assert.deepEqual(vm.runInContext('state.rebuy', h.context), local.rebuy);
+});
