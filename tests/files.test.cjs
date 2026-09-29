@@ -1,0 +1,23 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const root = path.join(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const refs = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)\?v=(\d+)"/g)];
+const scripts = refs.map(r => r[1]).filter(f => f.startsWith('js/'));
+
+test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불러온다', () => {
+  assert.equal(new Set(refs.map(r => r[2])).size, 1, '모든 ?v= 숫자가 같아야 한다(css·js를 고치면 같이 올림)');
+  for (const [, f] of refs) assert.ok(fs.existsSync(path.join(root, f)), `${f} 파일이 없다`);
+  const onDisk = ['css', 'js'].flatMap(d => fs.readdirSync(path.join(root, d)).map(f => `${d}/${f}`));
+  assert.deepEqual(refs.map(r => r[1]).sort(), onDisk.sort(), 'index.html에서 불러오지 않는 파일이 있다');
+  assert.deepEqual(scripts.slice(0, 2), ['js/core.js', 'js/sync.js'], 'core·sync를 먼저 불러와야 한다');
+});
+
+test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름이 없다', () => {
+  // 일반 <script>는 맨 위 이름을 함께 쓰므로, 이어 붙여 한 번에 해석하면 겹치는 const·let이 오류로 드러난다.
+  assert.doesNotThrow(() => new vm.Script(scripts.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
+});

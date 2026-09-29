@@ -3,8 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
-const source = html.slice(html.indexOf('    const initialSnapshot = dataSnapshot();'), html.indexOf('    function selected(){'));
+const source = fs.readFileSync(require('node:path').join(__dirname, '../js/sync.js'), 'utf8');
 if (!source.includes('async function syncNow()')) throw Error('동기화 구현을 찾지 못했습니다.');
 
 const REPO = 'me/data';
@@ -32,7 +31,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
-    document: {getElementById: element, addEventListener() {}, hidden: false},
+    $: element, document: {addEventListener() {}, hidden: false},
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob,
     setTimeout: () => 1, clearTimeout() {}, setInterval() {},
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
@@ -57,6 +56,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     }
   });
   vm.runInContext(source, context);
+  vm.runInContext('var restored = startSync();', context); // index.html 맨 끝처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
