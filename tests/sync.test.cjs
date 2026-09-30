@@ -4,16 +4,19 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/sync.js'), 'utf8');
+const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
 if (!source.includes('async function syncNow()')) throw Error('동기화 구현을 찾지 못했습니다.');
 
 const REPO = 'me/data';
 const FILE = `/repos/${REPO}/contents/etf-planner-data.json`;
+const PRICE_FILE = `/repos/${REPO}/contents/etf-planner-prices.json`;
 const empty = () => ({plans: [], futures: {positions: []}, actions: {}});
 const snap = value => JSON.stringify({plans: value.plans, futures: value.futures, actions: value.actions});
 const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60})/g, '$1\n');
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
-function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0} = {}) {
+// 시세 파일(prices)은 있으면 ETag와 함께 돌려주고, 같은 ETag로 물으면 304. priceStatus를 주면 시세 파일 요청만 그 상태로 실패.
+function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0} = {}) {
   const items = new Map(Object.entries(stored));
   if (connect) {
     items.set('etf-planner-data-repo', REPO);
@@ -22,12 +25,13 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   }
   const elements = new Map();
   let version = 1;
-  const server = {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null};
+  const server = {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
+    prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: []};
   const element = name => {
     if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }});
     return elements.get(name);
   };
-  const reply = (status, body) => ({ok: status >= 200 && status < 300, status, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
+  const reply = (status, body, headers = {}) => ({ok: status >= 200 && status < 300, status, headers: {get: name => headers[name.toLowerCase()] ?? null}, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
@@ -41,6 +45,14 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
       if (failStatus) return reply(failStatus, {message: 'fail'});
       const path = new URL(url).pathname;
       if (path === `/repos/${REPO}`) return reply(200, {private: isPrivate});
+      if (path === PRICE_FILE) {
+        assert.equal(options.method ?? 'GET', 'GET', '시세 파일은 읽기만 한다');
+        server.priceAsks.push(options.headers?.['If-None-Match'] ?? null);
+        if (server.priceStatus) return reply(server.priceStatus, {message: 'fail'});
+        if (!server.prices) return reply(404, {message: 'Not Found'});
+        if (options.headers?.['If-None-Match'] === server.prices.etag) return reply(304, '');
+        return reply(200, server.prices.text, {etag: server.prices.etag});
+      }
       if (path !== FILE) throw Error(`예상하지 못한 요청: ${url}`);
       if (options.method === 'PUT') {
         if (server.beforePut) { const hook = server.beforePut; server.beforePut = null; hook(); }
@@ -56,11 +68,12 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     }
   });
   vm.runInContext(source, context);
+  vm.runInContext(pricesSource, context);
   vm.runInContext('var restored = startSync();', context); // index.html 맨 끝처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
-const waitFor = async (check) => { for (let i = 0; i < 50 && !check(); i++) await Promise.resolve(); };
+const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 
 test('기존 기기에서 처음 연결하면 현재 기록을 저장소에 올린다', async () => {
   const local = {plans: [{id: 'abc'}], futures: {positions: []}, actions: {}};
@@ -228,4 +241,83 @@ test('손절 후 재매수만 입력한 기기는 빈 기기로 보지 않고 �
   await work;
   assert.equal(h.server.writes, 0);
   assert.deepEqual(vm.runInContext('state.rebuy', h.context), local.rebuy);
+});
+
+// 시세 자동 채우기(데이터 저장소 etf-planner-prices.json). 종목 코드·가격은 모두 가짜 값.
+const AT = '2026-09-30T13:28:09+09:00';
+const PRICES = {updatedAt: AT, stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 130.5, ma: {'60일선': 120.4567, '25개월선': 90.1}, daily: [['2026-09-29', 1, 2, 0, 130.5, 10]]}}, futures: {}};
+const plan = extra => ({id: 'p1', ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 100, endPrice: 80, stages: 30, ...extra});
+const withPlan = p => ({plans: [p], futures: {positions: []}, actions: {}});
+const filledPlan = extra => plan({startPrice: 120.46, endPrice: 90.1, ...extra, auto: {at: AT, startPrice: 120.46, endPrice: 90.1}});
+const statePlan = h => JSON.parse(vm.runInContext('dataSnapshot()', h.context)).plans[0];
+
+test('시세 파일의 이동평균으로 기준가를 채우고 저장소에도 올린다', async () => {
+  const local = withPlan(plan());
+  const h = harness({local, remote: local, base: snap(local), prices: PRICES});
+  await h.restored();
+  assert.deepEqual(statePlan(h), filledPlan());
+  assert.equal(h.server.writes, 1, h.status());
+  assert.deepEqual(h.remoteData().plans[0], filledPlan());
+  assert.match(h.status(), /동기화 완료/);
+  const cached = JSON.parse(h.items.get('etf-planner-prices'));
+  assert.equal(cached.stocks.AAA.daily, undefined, '봉 기록은 이 기기에 두지 않는다');
+  assert.equal(cached.etag, '"p1"');
+  assert.match(h.elements.get('priceStatus').textContent, /종목 1개/);
+});
+
+test('다른 기기가 같은 시세로 먼저 채워 올렸어도 이 기기 수정과 기록 차이 창이 뜨지 않는다', async () => {
+  const before = withPlan(plan());
+  const local = withPlan(plan({note: '이 기기 메모'}));
+  const h = harness({local, remote: withPlan(filledPlan()), base: snap(before), prices: PRICES});
+  await h.restored();
+  assert.equal(h.elements.get('conflictDialog')?.open, undefined, h.status());
+  assert.equal(h.server.writes, 1);
+  assert.deepEqual(h.remoteData().plans[0], {...plan({note: '이 기기 메모'}), startPrice: 120.46, endPrice: 90.1, auto: {at: AT, startPrice: 120.46, endPrice: 90.1}});
+});
+
+test('다른 기기 기록을 가져올 때도 시세를 채우고, 채운 기록을 올린다', async () => {
+  const before = withPlan(plan());
+  const remote = withPlan(plan({note: '다른 기기 메모'}));
+  const h = harness({local: before, remote, base: snap(before), prices: PRICES});
+  await h.restored();
+  assert.deepEqual(statePlan(h), {...plan({note: '다른 기기 메모'}), startPrice: 120.46, endPrice: 90.1, auto: {at: AT, startPrice: 120.46, endPrice: 90.1}});
+  assert.equal(h.server.writes, 1);
+  assert.deepEqual(h.remoteData().plans[0], statePlan(h));
+});
+
+test('직접 고친 기준가는 다음 시세 갱신까지 두고, 시세가 바뀌면 덮어쓴다(바뀌지 않은 시세는 304로 다시 받지 않음)', async () => {
+  const local = withPlan(filledPlan({startPrice: 111}));
+  const h = harness({local, remote: local, base: snap(local), prices: PRICES});
+  await h.restored();
+  assert.equal(statePlan(h).startPrice, 111);
+  assert.equal(h.server.writes, 0);
+  await h.run();
+  assert.deepEqual(h.server.priceAsks, [null, '"p1"']);
+  assert.equal(statePlan(h).startPrice, 111);
+  const next = {...PRICES, updatedAt: '2026-09-30T14:10:00+09:00', stocks: {AAA: {...PRICES.stocks.AAA, ma: {'60일선': 125, '25개월선': 90.1}}}};
+  h.server.prices = {etag: '"p2"', text: JSON.stringify(next)};
+  await h.run();
+  assert.equal(statePlan(h).startPrice, 125);
+  assert.deepEqual(statePlan(h).auto, {at: '2026-09-30T14:10:00+09:00', startPrice: 125, endPrice: 90.1});
+  assert.equal(h.server.writes, 1);
+  assert.equal(h.remoteData().plans[0].startPrice, 125);
+});
+
+test('늦게 읽은 옛 시세로는 다른 기기가 채운 새 시세를 되돌리지 않는다', async () => {
+  const newer = withPlan(plan({startPrice: 130, endPrice: 91, auto: {at: '2026-10-01T09:10:00+09:00', startPrice: 130, endPrice: 91}}));
+  const h = harness({local: newer, remote: newer, base: snap(newer), prices: PRICES});
+  await h.restored();
+  assert.equal(statePlan(h).startPrice, 130);
+  assert.equal(h.server.writes, 0);
+});
+
+test('시세 파일을 읽지 못해도 기록 동기화는 그대로 하고 알림만 남긴다', async () => {
+  const old = empty();
+  const local = withPlan(plan());
+  const h = harness({local, remote: old, base: snap(old), priceStatus: 500});
+  await h.restored();
+  assert.equal(h.server.writes, 1);
+  assert.deepEqual(h.remoteData().plans[0], plan());
+  assert.match(h.status(), /동기화 완료/);
+  assert.match(h.elements.get('priceStatus').textContent, /시세 확인 실패/);
 });

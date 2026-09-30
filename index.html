@@ -3,11 +3,11 @@
   HANDOFF (Claude ↔ GPT 인수인계 — 공개 소스라 금액·보유 종목 등 개인정보 금지. 지금 지킬 규칙만 두고 변경 기록은 쌓지 말 것(이력은 git log/PR). README.md도 같음)
   [작업·파일]
   - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음.
-  - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·JSON 백업/복원),
-    js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
-  - 일반 <script>로 core → sync → plans → futures → actions → rebuy 순서로 불러오고 index.html 맨 끝 한 줄(startSync·openTab)로 시작.
-    파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 두 파일의 함수 밖에서 화면을 건드리지 말 것.
-    sync 테스트는 core.js 대신 가짜 값($·state 등)을 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
+  - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·시세 파일 읽기·JSON 백업/복원),
+    js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
+  - 일반 <script>로 core → sync → prices → plans → futures → actions → rebuy 순서로 불러오고 index.html 맨 끝 한 줄(startSync·openTab)로 시작.
+    파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
+    sync 테스트는 core.js 대신 가짜 값($·state 등)과 prices.js를 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
   - css·js를 고치면 index.html의 ?v= 숫자를 모든 태그에서 같이 1 올릴 것(배포 직후 옛 파일 캐시 방지). tests/files.test.cjs가 파일·숫자 일치를 확인.
   - 입력칸 저장은 onEdit(선택자, 값 넣기, 다시 그리기)로: 값 넣기가 false를 돌려주면 저장하지 않고 다시 그려 원래 값으로.
   - 작업 순서(토큰 절약): 요청을 모아 한 브랜치에서 작업하고 병합은 마지막에 한 번. 화면이 바뀌면 병합 전에 바뀐 뒤 화면 캡처만(전/후 비교 이미지 없이)
@@ -24,6 +24,12 @@
   - rebuy는 dataSnapshot·readRemote에서 actions 뒤(없으면 JSON에서 빠져 옛 스냅샷과 같음). applyRemote는 병합이라 저장소에 rebuy가 없으면
     이 기기 값 유지. isBlank: rebuy가 있으면 빈 기기가 아님.
   - 화면 상태(openLevels·openBuys: 펼친 매수 완료 구간·날)는 메모리에만 — 저장·동기화 안 함.
+  [시세 자동 채우기]
+  - 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions가 평일마다 한국투자증권 시세로 갱신)을 동기화 때 읽기만 한다(ETag, 이 기기 localStorage에 필요한 값만).
+    대상 종목은 그 저장소 scripts/kis_prices.py가 plans[].ticker·rebuy.ticker·보유 월물에서 고름 — 채우는 칸이나 기준선 이름 규칙을 바꾸면 그 스크립트도 같이.
+  - 채우는 칸·규칙은 prices.js 맨 위 주석이 기준(시세 우선: 직접 고친 값은 다음 시세 갱신 때 덮어씀, 칸마다 지난번 채운 값은 plans[]·futures·rebuy의 auto).
+    채우기는 같은 기록 + 같은 시세면 결과가 같아야 한다 — syncNow가 저장소·지난 동기화 기록에도 채운 뒤 비교해 시세만으로 기록 차이 창이 뜨지 않게 함.
+  - 시세 기준일은 작게(priceStamp), PRICE_STALE_DAYS(3)일 넘게 지나면 경고(priceWarning). 분할매도·달러선물 현재가는 화면에만(저장 안 함).
   [남겨둔 옛 필드 — 지우지 말고, 기본값·새 계획·수정 창에 다시 넣지 말 것]
   - futures.rolls·targetProfit, actions.adobeSales·adobeNote·allocation(비중 조정): 화면·계산에 안 쓰고 isBlank 판정에만.
   - plans[].currentPrice·started: 기능 삭제, 값은 두고 안 씀. 계획 상태는 체크 수로(0 '시작 전', 1회 이상 '진행 중', 전부 '전량 매도 완료').
@@ -44,7 +50,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=1" />
+  <link rel="stylesheet" href="css/app.css?v=2" />
 </head>
 <body>
   <header class="top">
@@ -91,7 +97,7 @@
       <label class="field"><span>평가액 (만원, 선택)</span><input name="valueKrw" type="number" step="any" placeholder="예: 1000" /></label>
       <label class="field"><span>평가액 기준 가격 (선택)</span><input name="basisPrice" type="number" step="any" placeholder="평가액을 입력했다면 필요" /></label>
       <label class="field"><span>달러/원 환율</span><input name="fx" type="number" step="any" value="1354.91" required /></label>
-      <p class="hint dialog-wide">주식 수량을 입력하면 회차별 주수를 정수로 자동 분배합니다. 평가액을 입력하면 회차별 매도액을 계산합니다. 원하는 분할 비율은 ‘분할 횟수’로 조정하세요.</p>
+      <p class="hint dialog-wide">주식 수량을 입력하면 회차별 주수를 정수로 자동 분배합니다. 평가액을 입력하면 회차별 매도액을 계산합니다. 원하는 분할 비율은 ‘분할 횟수’로 조정하세요. 동기화를 연결하면 기준선 이름이 60일선·25개월선처럼 N일선·N주선·N개월선인 기준가는 시세로 자동으로 채웁니다(직접 고친 값은 다음 시세 갱신 때 덮어씀).</p>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
@@ -104,6 +110,7 @@
     <p class="hint">처음 설정 방법은 사이트 저장소의 README.md를 참고하세요. 토큰에는 데이터 저장소 한 곳의 Contents 읽기·쓰기 권한만 주세요.</p>
     <div class="sync-controls"><button class="btn primary" id="connectRepo" type="button">연결</button><button class="btn" id="syncNow" type="button">지금 동기화</button><button class="btn ghost" id="disconnectRepo" type="button">연결 해제</button></div>
     <p class="sync-details" id="syncDialogStatus" role="status"></p>
+    <p class="sync-details" id="priceStatus"></p>
     <button class="btn ghost" id="downloadSyncBackup" type="button" hidden>동기화 충돌 시 보관한 기록 내려받기</button>
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
@@ -115,12 +122,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=1"></script>
-  <script src="js/sync.js?v=1"></script>
-  <script src="js/plans.js?v=1"></script>
-  <script src="js/futures.js?v=1"></script>
-  <script src="js/actions.js?v=1"></script>
-  <script src="js/rebuy.js?v=1"></script>
+  <script src="js/core.js?v=2"></script>
+  <script src="js/sync.js?v=2"></script>
+  <script src="js/prices.js?v=2"></script>
+  <script src="js/plans.js?v=2"></script>
+  <script src="js/futures.js?v=2"></script>
+  <script src="js/actions.js?v=2"></script>
+  <script src="js/rebuy.js?v=2"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>
