@@ -7,7 +7,10 @@ const TOKEN_KEY = "etf-planner-github-token"; // 이 기기 브라우저에만 �
 const SYNC_BASE_KEY = "etf-planner-sync-base:";
 const LAST_REPO_KEY = "etf-planner-last-data-repo";
 const RECOVERY_KEY = "etf-planner-sync-recovery";
-const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null};
+const PRICE_FILE = "etf-planner-prices.json"; // 데이터 저장소 Actions(KIS 시세 수집)가 올리는 시세 파일. 읽기만 한다(채우는 규칙은 prices.js)
+const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우기·표시에 쓰는 값과 ETag만). 이 기기에만 두고 동기화 기록에는 넣지 않는다
+let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
+const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false};
 function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions,rebuy:state.rebuy});}
 const repoOk = r => /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r);
 const connected = () => !!(sync.token && sync.repo);
@@ -55,6 +58,21 @@ async function writeRemote(snapshot,sha){
   const result=await response.json();sync.sha=result.content?.sha||"";
   return result;
 }
+// 시세 파일 읽기: ETag로 바뀌었을 때만 받는다(안 바뀌면 304). 실패해도 동기화는 계속하고 지난 시세를 쓴다. 시세가 바뀌었으면 true.
+async function readPrices(){
+  try{
+    const response=await gh(`/repos/${sync.repo}/contents/${PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(priceData?.etag?{"If-None-Match":priceData.etag}:{})}});
+    if(response.status===304){priceStatus();return false;}
+    if(response.status===404){const had=!!priceData;priceData=null;localStorage.removeItem(PRICE_KEY);priceStatus("데이터 저장소에 시세 파일(etf-planner-prices.json)이 없어 현재가·기준가를 채우지 않습니다.");return had;}
+    if(!response.ok)throw Error(`시세 읽기 실패 (${response.status})`);
+    let doc;try{doc=JSON.parse(await response.text());}catch{throw Error("시세 파일을 읽을 수 없습니다.");}
+    const next={...slimPrices(doc),etag:response.headers?.get?.("ETag")||""},plain=d=>JSON.stringify({...d,etag:""}),changed=!priceData||plain(priceData)!==plain(next);
+    priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));priceStatus();return changed;
+  }catch(error){priceStatus(`시세 확인 실패 · ${error.message}`);return false;}
+}
+function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt);$("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${Object.keys(d.stocks).length}개 · 달러선물 ${Object.keys(d.futures).length}개 월물. 현재가·이동평균선 기준가를 자동으로 채웁니다.`:"");}
+// 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
+function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
 function applyRemote(snapshot){state={...state,...JSON.parse(snapshot)};normalize();localStorage.setItem(STORAGE_KEY,JSON.stringify(state));render();}
 function chooseConflict(local,remote){return new Promise(resolve=>{
@@ -71,10 +89,16 @@ async function syncNow(){
   sync.busy=true;sync.again=false;sync.failed=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
   try{
     if(!sync.checked){await checkRepo();if(!same())return;}
-    const {sha,snapshot:remote}=await readRemote();if(!same())return;
+    const {sha,snapshot:raw}=await readRemote();if(!same())return;
+    if(await readPrices())sync.redraw=true;
+    if(!same())return;
+    if(fillPrices(state,priceData)){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));sync.redraw=true;}
     sync.sha=sha;
-    const local=dataSnapshot(),base=sync.base;
-    if(remote===local){markSynced(local,sha);sync.blocked=false;}
+    // 시세로 채우는 칸은 어느 기기든 같은 시세 파일로 똑같이 채우므로, 저장소 기록(raw)·지난 동기화 기록도 같은 시세로 채운 뒤 비교한다
+    // (시세 갱신만으로 기록 차이 창이 뜨지 않게). 저장소 파일에 아직 안 채운 시세가 있으면 채운 기록을 올린다(settle).
+    const remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
+    const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha);if(!same())return;markSynced(json);}sync.blocked=false;};
+    if(remote===local)await settle(local);
     else if(remote===null){
       const last=localStorage.getItem(LAST_REPO_KEY);
       if(last&&last!==repo&&!confirm(`이전에 쓰던 저장소(${last})와 다릅니다. 이 기기 기록을 ${repo}에 새로 저장할까요?`)){
@@ -82,23 +106,23 @@ async function syncNow(){
       }
       await writeRemote(local,"");if(!same())return;markSynced(local);sync.blocked=false;
     }
-    else if(local===base||(!base&&(isBlank(local)||(!hadStoredState&&local===initialSnapshot)))){applyRemote(remote);markSynced(remote,sha);sync.blocked=false;}
-    else if(remote===base){await writeRemote(local,sha);if(!same())return;markSynced(local);sync.blocked=false;}
+    else if(local===base||(!base&&(isBlank(local)||(!hadStoredState&&local===initialSnapshot)))){applyRemote(remote);await settle(remote);}
+    else if(remote===base)await settle(local);
     else{
       sync.blocked=true;syncStatus("기록 차이 확인 필요 · 자동 저장 대기");
       const choice=await chooseConflict(local,remote);
       if(!same())return;
-      if(choice==="remote"){backupRecord(dataSnapshot(),"저장소 기록을 선택하기 전 이 기기 기록");applyRemote(remote);markSynced(remote,sha);sync.blocked=false;}
+      if(choice==="remote"){backupRecord(dataSnapshot(),"저장소 기록을 선택하기 전 이 기기 기록");applyRemote(remote);await settle(remote);}
       else if(choice==="local"){
-        const latest=await readRemote();if(latest.snapshot!==remote)throw Error("선택하는 동안 저장소 기록이 바뀌었습니다. 다시 동기화해 주세요.");
+        const latest=await readRemote();if(latest.snapshot!==raw)throw Error("선택하는 동안 저장소 기록이 바뀌었습니다. 다시 동기화해 주세요.");
         if(!same())return;
-        backupRecord(remote,"이 기기 기록을 선택하기 전 저장소 기록");
+        backupRecord(raw,"이 기기 기록을 선택하기 전 저장소 기록");
         const current=dataSnapshot();await writeRemote(current,latest.sha);if(!same())return;markSynced(current);sync.blocked=false;
       }
       else syncStatus("기록 차이 확인 전 · 이 기기에만 저장 중");
     }
   }catch(error){if(error.stale){sync.again=true;syncStatus("다른 기기 저장 확인 중…");}else{sync.failed=true;syncStatus(`이 기기 저장됨 · ${error.message}`);}}
-  finally{sync.busy=false;syncBadge();if(sync.failed)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
+  finally{sync.busy=false;syncBadge();if(sync.redraw)redrawIdle();if(sync.failed)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
 }
 function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.checked=false;sync.blocked=false;}
 function refreshTokenField(){$("githubToken").placeholder=localStorage.getItem(TOKEN_KEY)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 값";}
@@ -119,7 +143,7 @@ $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncS
 $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);loadConfig();refreshTokenField();syncStatus("이 기기에만 저장 중");};
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
-loadConfig();refreshTokenField();
+loadConfig();refreshTokenField();priceStatus();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
 $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=JSON.parse(await file.text());if(!Array.isArray(incoming.plans)||!incoming.futures)throw Error("플래너 백업 형식이 아닙니다.");state={...state,...incoming};normalize();save();render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
 function startSync(){ return connected()?syncNow():Promise.resolve(); } // index.html 맨 끝에서 부름(모든 파일을 불러온 뒤 동기화 시작)
