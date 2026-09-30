@@ -50,7 +50,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=2" />
+  <link rel="stylesheet" href="css/app.css?v=3" />
 </head>
 <body>
   <header class="top">
@@ -97,7 +97,7 @@
       <label class="field"><span>평가액 (만원, 선택)</span><input name="valueKrw" type="number" step="any" placeholder="예: 1000" /></label>
       <label class="field"><span>평가액 기준 가격 (선택)</span><input name="basisPrice" type="number" step="any" placeholder="평가액을 입력했다면 필요" /></label>
       <label class="field"><span>달러/원 환율</span><input name="fx" type="number" step="any" value="1354.91" required /></label>
-      <p class="hint dialog-wide">주식 수량을 입력하면 회차별 주수를 정수로 자동 분배합니다. 평가액을 입력하면 회차별 매도액을 계산합니다. 원하는 분할 비율은 ‘분할 횟수’로 조정하세요. 동기화를 연결하면 기준선 이름이 60일선·25개월선처럼 N일선·N주선·N개월선인 기준가는 시세로 자동으로 채웁니다(직접 고친 값은 다음 시세 갱신 때 덮어씀).</p>
+      <p class="hint dialog-wide">주식 수량을 입력하면 회차별 주수를 정수로 자동 분배합니다. 평가액을 입력하면 회차별 매도액을 계산합니다. 원하는 분할 비율은 ‘분할 횟수’로 조정하세요. 동기화를 연결하면 기준선 이름이 60일선·25개월선처럼 N일선·N주선·N개월선인 기준가와 달러 계획의 환율(달러선물 근월물 종가)은 시세로 자동으로 채웁니다(직접 고친 값은 다음 시세 갱신 때 덮어씀).</p>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
@@ -122,13 +122,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=2"></script>
-  <script src="js/sync.js?v=2"></script>
-  <script src="js/prices.js?v=2"></script>
-  <script src="js/plans.js?v=2"></script>
-  <script src="js/futures.js?v=2"></script>
-  <script src="js/actions.js?v=2"></script>
-  <script src="js/rebuy.js?v=2"></script>
+  <script src="js/core.js?v=3"></script>
+  <script src="js/sync.js?v=3"></script>
+  <script src="js/prices.js?v=3"></script>
+  <script src="js/plans.js?v=3"></script>
+  <script src="js/futures.js?v=3"></script>
+  <script src="js/actions.js?v=3"></script>
+  <script src="js/rebuy.js?v=3"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>

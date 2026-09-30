@@ -57,6 +57,28 @@ test('분할매도: 직접 고친 값은 시세가 그대로면 두고, 그 칸 
   assert.equal(p.startPrice, 121);
 });
 
+test('분할매도: 달러 계획 환율은 달러선물 보유 근월물 종가로 채우고, 원화 계획·보유 월물이 없으면 그대로 둔다', () => {
+  const ctx = load();
+  const usd = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 1, endPrice: 1, fx: 1354.91};
+  const noQuote = {ticker: 'ZZZ', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2, fx: 1354.91};
+  const krw = {ticker: '900001', currency: 'KRW', startLabel: '25일선', endLabel: '25개월선', startPrice: 1, endPrice: 1, fx: 1354.91};
+  const futures = {positions: [{month: '202612', contracts: 1}]};
+  assert.equal(ctx.fillPrices({plans: [usd, noQuote, krw], futures}, prices()), true);
+  assert.deepEqual(plain([usd.fx, usd.auto, noQuote.fx, noQuote.auto, krw.fx, 'fx' in krw.auto]), [
+    1398.2, {at: AT, startPrice: 120.46, endPrice: 90.1, fx: 1398.2},
+    1398.2, {at: AT, fx: 1398.2}, // 시세 파일에 없는 종목도 환율은 채운다
+    1354.91, false]);
+  usd.fx = 1400; // 직접 고친 환율은 종가가 그대로면 둔다
+  assert.equal(ctx.fillPrices({plans: [usd], futures}, prices()), false);
+  assert.equal(usd.fx, 1400);
+  const next = prices(); next.updatedAt = '2026-10-01T09:10:00+09:00'; next.futures['202612'].close = 1402.456;
+  assert.equal(ctx.fillPrices({plans: [usd], futures}, next), true);
+  assert.equal(usd.fx, 1402.46);
+  const alone = {ticker: 'ZZZ', currency: 'USD', fx: 1354.91};
+  assert.equal(ctx.fillPrices({plans: [alone], futures: {positions: []}}, prices()), false, '달러선물 보유 월물이 없으면 환율을 채우지 않는다');
+  assert.deepEqual([alone.fx, 'auto' in alone], [1354.91, false]);
+});
+
 test('달러선물: 보유 근월물 이동평균으로 N일선 구간 기준가와 안 산 계약 매수가를 채운다', () => {
   const ctx = load();
   const tranche = (completed, price) => ({price, completed, executionPrice: completed ? price : null});
