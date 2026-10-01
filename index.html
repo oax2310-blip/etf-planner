@@ -23,7 +23,7 @@
     (futures.rollSpread·lossPrice, state.rebuy는 처음 입력할 때 editRebuy()가 만듦).
   - rebuy는 dataSnapshot·readRemote에서 actions 뒤(없으면 JSON에서 빠져 옛 스냅샷과 같음). applyRemote는 병합이라 저장소에 rebuy가 없으면
     이 기기 값 유지. isBlank: rebuy가 있으면 빈 기기가 아님.
-  - 화면 상태(openLevels·openBuys: 펼친 매수 완료 구간·날)는 메모리에만 — 저장·동기화 안 함.
+  - 화면 상태(openLevels·openBuys: 펼친 매수 완료 구간·날, rebuyUnit: 재매수 보유 입력 단위만 바꾼 것)는 메모리에만 — 저장·동기화 안 함.
   [시세 자동 채우기]
   - 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions가 평일마다 한국투자증권 시세로 갱신)을 동기화 때 읽기만 한다(ETag, 이 기기 localStorage에 필요한 값만).
     대상 종목은 그 저장소 scripts/kis_prices.py가 plans[].ticker·rebuy.ticker·보유 월물에서 고름 — 채우는 칸이나 기준선 이름 규칙을 바꾸면 그 스크립트도 같이.
@@ -50,7 +50,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=3" />
+  <link rel="stylesheet" href="css/app.css?v=4" />
 </head>
 <body>
   <header class="top">
@@ -122,13 +122,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=3"></script>
-  <script src="js/sync.js?v=3"></script>
-  <script src="js/prices.js?v=3"></script>
-  <script src="js/plans.js?v=3"></script>
-  <script src="js/futures.js?v=3"></script>
-  <script src="js/actions.js?v=3"></script>
-  <script src="js/rebuy.js?v=3"></script>
+  <script src="js/core.js?v=4"></script>
+  <script src="js/sync.js?v=4"></script>
+  <script src="js/prices.js?v=4"></script>
+  <script src="js/plans.js?v=4"></script>
+  <script src="js/futures.js?v=4"></script>
+  <script src="js/actions.js?v=4"></script>
+  <script src="js/rebuy.js?v=4"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>
