@@ -23,9 +23,10 @@ function fitNames(){
   }
 }
 addEventListener("resize",fitNames);
+// 저장된 계획 카드: 원화(국내) 계획은 계획 이름, 달러(미국) 계획은 종목 코드를 굵게(이름이 비면 종목 코드). 나머지 하나는 PC에서만 아래 작게.
 function renderPlans(){
   const list=$("planList");
-  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, title=String(p.title||"").trim(), ticker=String(p.ticker||"").trim();return `<button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(title||ticker)}${title&&ticker&&title!==ticker?` (${esc(ticker)})`:""} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(title||ticker)}</strong><span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span>${title&&ticker&&title!==ticker?`<span class="plan-title">${esc(ticker)}</span>`:""}<span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button>`;}).join(""):"<div class='empty'>계획 없음</div>";
+  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, title=String(p.title||"").trim(), ticker=String(p.ticker||"").trim(), [main,sub]=p.currency==="KRW"&&title?[title,ticker]:[ticker,title];return `<button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span>${sub&&sub!==main?`<span class="plan-title">${esc(sub)}</span>`:""}<span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button>`;}).join(""):"<div class='empty'>계획 없음</div>";
   list.querySelectorAll("[data-plan]").forEach(b=>b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();});
   const p=selected(); const main=$("planMain");
   if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
