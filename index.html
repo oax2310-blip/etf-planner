@@ -40,7 +40,7 @@
   - 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%(1fr + 기본 폭 input이면 안 줄어 페이지가 가로로 넘침).
   - '.metrics,.futures-metrics,.control-grid{1fr}'와 '.metric+.metric{border…}'는 따로 둘 것(한 규칙에 합치면 카드 줄이 한 칸으로 안 바뀜).
   - '.tranche label'(grid)이 '.tranche-check'(flex)를 덮지 않게 할 것(체크박스와 글자가 갈라짐).
-  - 한 줄 유지: 보유 월물 줄, 계산 기준 입력칸, 저장된 계획 카드(.plan-row, 모바일은 '회' 숨김), 제목 옆 '변경 저장'(.heading>.btn). 제목·설명·긴 이름은 keep-all.
+  - 한 줄 유지: 보유 월물 줄, 계산 기준 입력칸, 저장된 계획 카드(.plan-row: 카드 이름(plans[].cardName, 비우면 delete), 없으면 종목 코드 — 규칙은 renderPlans 위 주석, 모바일은 '회' 숨김), 제목 옆 '변경 저장'(.heading>.btn). 제목·설명·긴 이름은 keep-all.
   - 분할매도: 제목 옆 연필(.title-row)로 수정 창, 계획 삭제는 창 아래 왼쪽. 첫 매도 기준가·달러 계획 환율은 카드 숫자에서 바로 수정(inlineEdit) —
     수정 창의 같은 칸과 같은 값. 계산 요약·메모는 .control-grid 두 칸(재매수 탭도 같이 씀), 계산 요약에 칸을 늘리지 말 것.
   - 분할매도 표(모바일): 종목이 하나(또는 평가액만)면 이름을 머리줄(.m-head)과 수량 아래(.one-sub)에 표시, fitNames()가 칸 폭에 맞춰 자름.
@@ -50,7 +50,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=4" />
+  <link rel="stylesheet" href="css/app.css?v=5" />
 </head>
 <body>
   <header class="top">
@@ -86,8 +86,10 @@
     <div class="dialog-grid">
       <label class="field"><span>종목 코드</span><input name="ticker" required placeholder="예: SPY" /></label>
       <label class="field"><span>계획 이름</span><input name="title" required placeholder="예: S&amp;P500 추종 ETF" /></label>
+      <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" placeholder="저장된 계획 목록에 표시, 비우면 종목 코드" /></label>
       <label class="field"><span>통화</span><select name="currency"><option value="USD">달러(USD)</option><option value="KRW">원화(KRW)</option></select></label>
       <label class="field"><span>보유 수량 (주)</span><input name="shares" type="number" min="0" step="1" placeholder="평가액만 있으면 비워도 됩니다" /></label>
+      <label class="field"><span>달러/원 환율</span><input name="fx" type="number" step="any" value="1354.91" required /></label>
       <label class="field"><span>시작 기준선 이름</span><input name="startLabel" required value="60일선" /></label>
       <label class="field"><span>종료 기준선 이름</span><input name="endLabel" required value="25개월선" /></label>
       <label class="field"><span>시작 기준가</span><input name="startPrice" type="number" step="any" required /></label>
@@ -96,7 +98,6 @@
       <label class="field"><span>기준일</span><input name="asOf" type="date" /></label>
       <label class="field"><span>평가액 (만원, 선택)</span><input name="valueKrw" type="number" step="any" placeholder="예: 1000" /></label>
       <label class="field"><span>평가액 기준 가격 (선택)</span><input name="basisPrice" type="number" step="any" placeholder="평가액을 입력했다면 필요" /></label>
-      <label class="field"><span>달러/원 환율</span><input name="fx" type="number" step="any" value="1354.91" required /></label>
       <p class="hint dialog-wide">주식 수량을 입력하면 회차별 주수를 정수로 자동 분배합니다. 평가액을 입력하면 회차별 매도액을 계산합니다. 원하는 분할 비율은 ‘분할 횟수’로 조정하세요. 동기화를 연결하면 기준선 이름이 60일선·25개월선처럼 N일선·N주선·N개월선인 기준가와 달러 계획의 환율(달러선물 근월물 종가)은 시세로 자동으로 채웁니다(직접 고친 값은 다음 시세 갱신 때 덮어씀).</p>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
@@ -122,13 +123,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=4"></script>
-  <script src="js/sync.js?v=4"></script>
-  <script src="js/prices.js?v=4"></script>
-  <script src="js/plans.js?v=4"></script>
-  <script src="js/futures.js?v=4"></script>
-  <script src="js/actions.js?v=4"></script>
-  <script src="js/rebuy.js?v=4"></script>
+  <script src="js/core.js?v=5"></script>
+  <script src="js/sync.js?v=5"></script>
+  <script src="js/prices.js?v=5"></script>
+  <script src="js/plans.js?v=5"></script>
+  <script src="js/futures.js?v=5"></script>
+  <script src="js/actions.js?v=5"></script>
+  <script src="js/rebuy.js?v=5"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>
