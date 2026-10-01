@@ -199,12 +199,54 @@ test('보유량: 이탈 전 보유 금액(만원) ÷ 신저점 가격을 내림�
   assert.equal(ctx.cutPlan(plan(ctx, {amount: 500, lowPrice: 12500}))[0].left, Math.round(400 * 0.995));
 });
 
-test('보유량: 금액 입력 전에 넣은 보유 수량(shares)은 금액이 없을 때만 쓴다', () => {
+test('보유량: 수량(shares, 주)으로 넣으면 그 주 수를 쓰고, 옛 기록처럼 금액도 있으면 금액 기준', () => {
   const ctx = load();
   const legacy = {...plan(ctx), amount: undefined, shares: 800};
   assert.equal(hold(ctx, legacy), 800);
   assert.equal(ctx.rebuySummary(legacy).held, 800);
   assert.equal(hold(ctx, {...legacy, amount: 1000}), 1000, '금액이 있으면 금액 기준');
+});
+
+test('보유 입력: 금액(만원)·수량(주) 중 넣은 쪽만 남기고, 0·빈칸이면 둘 다 지운다', () => {
+  const ctx = load();
+  const r = plan(ctx);
+  const unit = () => { ctx.target = r; return vm.runInContext('holdUnit(target)', ctx); };
+  assert.equal(unit(), 'amount');
+  ctx.setHold(r, 'shares', '800.7');
+  assert.deepEqual([r.amount, r.shares, hold(ctx, r), unit()], [undefined, 800, 800, 'shares'], '수량은 정수 주, 금액은 지움');
+  ctx.setHold(r, 'amount', '500');
+  assert.deepEqual([r.amount, r.shares, hold(ctx, r), unit()], [500, undefined, 500, 'amount']);
+  assert.equal(ctx.setHold(r, 'shares', 'abc'), false);
+  assert.equal(ctx.setHold(r, 'shares', '-1'), false);
+  assert.equal(r.amount, 500, '잘못된 값이면 바꾸지 않는다');
+  ctx.setHold(r, 'shares', '');
+  assert.deepEqual([r.amount, r.shares, hold(ctx, r)], [undefined, undefined, 0]);
+});
+
+test('기준 입력: 현재가·신저점·보유 칸이 저장에 연결되고, 단위를 주로 바꾸면 수량으로 저장한다', () => {
+  // DOM 없이 화면을 그려 입력칸마다 등록한 저장 처리(onEdit)를 모은다
+  const handlers = {}, els = {}, el = id => els[id] ||= {id, value: '', focus() {}};
+  const ctx = vm.createContext({
+    state: {}, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; },
+    esc: v => String(v ?? ''), money: v => `${v}원`, won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
+    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '',
+  });
+  vm.runInContext(source, ctx);
+  ctx.renderRebuy();
+  for (const sel of ['#rCurrent', '#rLow', '#rHold']) assert.equal(typeof handlers[sel], 'function', `${sel} 저장 처리가 없다`);
+  handlers['#rCurrent']('9500');
+  handlers['#rLow']('10000');
+  handlers['#rHold']('1000');
+  assert.deepEqual([ctx.state.rebuy.currentPrice, ctx.state.rebuy.lowPrice, ctx.state.rebuy.amount, ctx.state.rebuy.shares], [9500, 10000, 1000, undefined]);
+  ctx.renderRebuy();
+  els.rHoldUnit.onchange({target: {value: 'shares'}});
+  assert.match(els.rebuyView.innerHTML, /<option value="shares" selected>/);
+  assert.match(els.rebuyView.innerHTML, /id="rHold"[^>]*value=""[^>]*placeholder="≈1,000주"/, '단위만 바꾸면 값은 그대로, 환산 주 수를 흐리게');
+  handlers['#rHold']('800');
+  assert.deepEqual([ctx.state.rebuy.amount, ctx.state.rebuy.shares], [undefined, 800]);
+  ctx.renderRebuy();
+  assert.match(els.rebuyView.innerHTML, /id="rHold"[^>]*value="800"/);
+  assert.match(els.rebuyView.innerHTML, /보유 수량 800주로 계산합니다/);
 });
 
 test('손절 금액: 체크한 회차의 체결가 × 수량을 더하고, 체결가를 비우면 손절가로 계산한다', () => {
