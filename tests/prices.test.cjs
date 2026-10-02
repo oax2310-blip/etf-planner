@@ -42,6 +42,15 @@ test('분할매도: 통화가 맞는 계획만 종료 기준가를 채우고(시
   assert.equal(ctx.fillPrices(data, prices()), false, '같은 시세로 다시 채우면 바뀌는 것이 없다');
 });
 
+test('분할매도: 시작 기준선을 일·주·개월선으로 고른 계획(startAuto)만 시작 기준가도 채운다', () => {
+  const ctx = load();
+  const auto = {ticker: 'AAA', currency: 'USD', startAuto: true, startLabel: '20주선', endLabel: '25개월선', startPrice: 1, endPrice: 1};
+  const own = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 1, endPrice: 1, auto: {at: '2026-09-01T00:00:00+09:00', startPrice: 1}};
+  assert.equal(ctx.fillPrices({plans: [auto, own]}, prices()), true);
+  assert.deepEqual(plain([auto.startPrice, auto.endPrice, auto.auto]), [110, 90.1, {at: AT, startPrice: 110, endPrice: 90.1}]);
+  assert.deepEqual([own.startPrice, own.endPrice], [1, 90.1], '직접(startAuto 없음)이면 옛 auto.startPrice가 있어도 채우지 않는다');
+});
+
 test('분할매도: 직접 고친 값은 시세가 그대로면 두고, 그 칸 시세가 바뀌면 덮어쓴다', () => {
   const ctx = load();
   const p = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 1, endPrice: 1};
