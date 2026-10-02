@@ -126,9 +126,47 @@ test('시세 파일에서 채우기·표시에 쓰는 값만 남기고, 형식�
   const ctx = load();
   const slim = plain(ctx.slimPrices({updatedAt: AT, columns: [], stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}, daily: [[1]], monthly: [[1]]},
     BAD: {error: '조회 실패'}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true, error: 'x'}}}));
-  assert.deepEqual(slim, {updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}});
+  assert.deepEqual(slim, {format: 2, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}});
   assert.equal(vm.runInContext('stockEntry', ctx)(slim, 'bad'), null, '기준일 없는 항목(조회만 실패)은 쓰지 않는다');
   assert.throws(() => ctx.slimPrices({plans: []}), /형식/);
+});
+
+// 봉: 시세 파일 columns(date·open·high·low·close·volume) 순서. 9/14·9/21·9/28이 있는 주(월~일)로 주봉을 만든다.
+const COLUMNS = ['date', 'open', 'high', 'low', 'close', 'volume'];
+const bar = (date, close) => [date, 1, 1, 1, close, 100];
+const daily = [bar('2026-09-17', 10), bar('2026-09-18', 11), bar('2026-09-21', 12), bar('2026-09-25', 13), bar('2026-09-28', 14), bar('2026-09-30', 15)];
+const monthly = [bar('2026-08-31', 20), bar('2026-09-30', 30)];
+
+test('시세 파일 봉 기록에서 종목 종가만 남기고, 주봉이 없으면 일봉을 주마다 묶어 만든다', () => {
+  const ctx = load();
+  const slim = plain(ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {
+    AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {}, daily, monthly},
+    BBB: {kind: '국내', asOf: '2026-09-30', close: 15, ma: {}, daily, weekly: [bar('2026-09-21', 7), bar('2026-09-28', 8)]},
+  }, futures: {'202612': {kind: '달러선물', asOf: '2026-09-30', close: 1398.2, ma: {}, daily}}}));
+  assert.deepEqual(slim.stocks.AAA.closes, {D: [10, 11, 12, 13, 14, 15], W: [11, 13, 15], M: [20, 30]});
+  assert.deepEqual(slim.stocks.BBB.closes, {D: [10, 11, 12, 13, 14, 15], W: [7, 8]}, '시세 파일 주봉이 있으면 그대로 쓴다');
+  assert.equal(slim.futures['202612'].closes, undefined, '달러선물은 파일 ma만 쓴다');
+  const moved = plain(ctx.slimPrices({updatedAt: AT, columns: ['close', 'date'], stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {}, daily: [[10, '2026-09-29'], [15, '2026-09-30']]}}}));
+  assert.deepEqual(moved.stocks.AAA.closes, {D: [10, 15], W: [15]}, 'columns 순서를 따른다');
+});
+
+test('이동평균: 시세 파일 ma에 있으면 그 값, 없으면 보관한 종가로 계산하고 봉이 모자라면 비운다', () => {
+  const ctx = load();
+  const e = plain(ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {'3일선': 99, '4일선': null}, daily, monthly}}})).stocks.AAA;
+  assert.deepEqual(['3일선', '2일선', '4일선', '2주선', '3 주선', '2개월선', '1달선', '3개월선', '7일선', '25분봉'].map(label => ctx.maValue(e, label)),
+    [99, 14.5, 13.5, 14, 13, 25, 30, null, null, null]);
+  assert.equal(ctx.maValue({kind: '국내', asOf: '2026-09-30', close: 1, ma: {'60일선': 5}}, '60일선'), 5, '종가가 없는 옛 시세도 ma는 쓴다');
+});
+
+test('분할매도: 새로 고른 기준선(시세 파일 ma에 아직 없음)도 보관한 종가로 바로 채운다', () => {
+  const ctx = load();
+  const slim = ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {'60일선': 120.4567}, daily, monthly}}});
+  const p = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '2주선', startPrice: 1, endPrice: 1};
+  assert.equal(ctx.fillPrices({plans: [p]}, slim), true);
+  assert.deepEqual(plain([p.startPrice, p.endPrice, p.auto]), [120.46, 14, {at: AT, startPrice: 120.46, endPrice: 14}]);
+  p.endLabel = '12개월선'; // 월봉이 모자라면 그대로(다음 수집 때 스크립트가 채움)
+  assert.equal(ctx.fillPrices({plans: [p]}, slim), false);
+  assert.equal(p.endPrice, 14);
 });
 
 test('시세 기준일은 작게 표시하고, 3일 넘게 지났으면 경고한다', () => {
