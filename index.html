@@ -40,7 +40,8 @@
   - 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%(1fr + 기본 폭 input이면 안 줄어 페이지가 가로로 넘침).
   - '.metrics,.futures-metrics,.control-grid{1fr}'와 '.metric+.metric{border…}'는 따로 둘 것(한 규칙에 합치면 카드 줄이 한 칸으로 안 바뀜).
   - '.tranche label'(grid)이 '.tranche-check'(flex)를 덮지 않게 할 것(체크박스와 글자가 갈라짐).
-  - 한 줄 유지: 보유 월물 줄, 계산 기준 입력칸, 저장된 계획 카드(.plan-row: 카드 이름(plans[].cardName, 비우면 delete), 없으면 종목 코드 — 규칙은 renderPlans 위 주석, 모바일은 '회' 숨김), 제목 옆 '변경 저장'(.heading>.btn). 제목·설명·긴 이름은 keep-all.
+  - 한 줄 유지: 보유 월물 줄, 계산 기준 입력칸, 저장된 계획 카드(.plan-row: 카드 이름(plans[].cardName, 비우면 delete), 없으면 종목 코드 — 규칙은 renderPlans 위 주석, 모바일은 '회' 숨김.
+    카드 이름만 고치는 창(nameDialog): 터치는 카드 길게 누르기, 마우스(PC)는 .plan-rename 연필 — 카드가 button이라 연필은 바깥 .plan-cell에), 제목 옆 '변경 저장'(.heading>.btn). 제목·설명·긴 이름은 keep-all.
   - 분할매도: 제목 옆 연필(.title-row)로 수정 창, 계획 삭제는 창 아래 왼쪽. 첫 매도 기준가·달러 계획 환율은 카드 숫자에서 바로 수정(inlineEdit) —
     수정 창의 같은 칸과 같은 값. 계산 요약·메모는 .control-grid 두 칸(재매수 탭도 같이 씀), 계산 요약에 칸을 늘리지 말 것.
   - 분할매도 표(모바일): 종목이 하나(또는 평가액만)면 이름을 머리줄(.m-head)과 수량 아래(.one-sub)에 표시, fitNames()가 칸 폭에 맞춰 자름.
@@ -50,7 +51,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=5" />
+  <link rel="stylesheet" href="css/app.css?v=6" />
 </head>
 <body>
   <header class="top">
@@ -103,6 +104,12 @@
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
 
+  <dialog id="nameDialog"><form method="dialog" class="dialog-inner" id="nameForm">
+    <div class="dialog-head"><h2 id="nameTitle">카드 이름</h2><button class="btn ghost" type="button" data-close-name>닫기</button></div>
+    <label class="field"><input name="cardName" maxlength="40" aria-label="카드 이름" autocomplete="off" enterkeyhint="done" /></label>
+    <div class="dialog-foot"><button class="btn primary" type="submit">저장</button></div>
+  </form></dialog>
+
   <dialog id="syncDialog"><div class="dialog-inner">
     <div class="dialog-head"><h2>기기 간 동기화</h2><button class="btn ghost" id="closeSync" type="button">닫기</button></div>
     <p class="sync-details">기록을 내 GitHub의 <b>비공개</b> 데이터 저장소에 저장하고, 페이지를 열 때마다 다른 기기에서 바꾼 내용을 자동으로 불러옵니다. 토큰은 이 기기 브라우저에만 저장됩니다. 연결하면 시나리오 페이지의 가정도 같은 저장소에 함께 동기화됩니다.</p>
@@ -123,13 +130,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=5"></script>
-  <script src="js/sync.js?v=5"></script>
-  <script src="js/prices.js?v=5"></script>
-  <script src="js/plans.js?v=5"></script>
-  <script src="js/futures.js?v=5"></script>
-  <script src="js/actions.js?v=5"></script>
-  <script src="js/rebuy.js?v=5"></script>
+  <script src="js/core.js?v=6"></script>
+  <script src="js/sync.js?v=6"></script>
+  <script src="js/prices.js?v=6"></script>
+  <script src="js/plans.js?v=6"></script>
+  <script src="js/futures.js?v=6"></script>
+  <script src="js/actions.js?v=6"></script>
+  <script src="js/rebuy.js?v=6"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>

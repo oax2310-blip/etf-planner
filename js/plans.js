@@ -23,18 +23,30 @@ function fitNames(){
   }
 }
 addEventListener("resize",fitNames);
-// 저장된 계획 카드: 카드 이름(cardName, 수정 창에서 입력)을 굵게, 없으면 종목 코드. PC에서만 아래 작게 — 카드 이름이 있으면 종목 코드, 없으면 계획 이름.
+// 저장된 계획 카드: 카드 이름(cardName)을 굵게, 없으면 종목 코드. PC에서만 아래 작게 — 카드 이름이 있으면 종목 코드, 없으면 계획 이름.
+// 카드 이름은 이름만 고치는 작은 창(nameDialog)으로도 바꾼다: 터치는 카드를 0.5초 누르고 있으면(손 떼기 전에) 열리고, 마우스(PC)는 카드 오른쪽 아래 연필(.plan-rename).
+// 수정 창의 카드 이름 칸과 같은 값(비우면 cardName을 지워 종목 코드로). 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
 function renderPlans(){
-  const list=$("planList");
-  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()];return `<button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span>${sub&&sub!==main?`<span class="plan-title">${esc(sub)}</span>`:""}<span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button>`;}).join(""):"<div class='empty'>계획 없음</div>";
-  list.querySelectorAll("[data-plan]").forEach(b=>b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();});
+  const list=$("planList"), pencil='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()];
+    return `<div class="plan-cell"><button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span><span class="plan-title">${sub&&sub!==main?esc(sub):""}</span><span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button><button class="plan-rename" type="button" data-rename="${esc(p.id)}" aria-label="${esc(main)} 카드 이름 변경" title="카드 이름 변경">${pencil}</button></div>`;}).join(""):"<div class='empty'>계획 없음</div>";
+  list.querySelectorAll("[data-plan]").forEach(b=>{b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();};
+    // 길게 누르기(터치만): 0.5초 또는 안드로이드 길게 누르기 메뉴(contextmenu) 중 먼저 오는 때에 이름 창을 연다. 10px 넘게 움직이면(스크롤) 취소.
+    // 창을 연 뒤 손을 뗄 때의 클릭·움직임은 막는다(창 바깥을 누른 것으로 처리되거나 화면이 밀리지 않게).
+    let timer=0,opened=false,x=0,y=0; const stop=()=>{clearTimeout(timer);timer=0;}, open=()=>{stop();opened=true;openNameDialog(b.dataset.plan);};
+    b.ontouchstart=e=>{({clientX:x,clientY:y}=e.touches[0]);opened=false;timer=setTimeout(open,500);};
+    b.ontouchmove=e=>{const t=e.touches[0];if(opened){if(e.cancelable)e.preventDefault();}else if(timer&&Math.hypot(t.clientX-x,t.clientY-y)>10)stop();};
+    b.ontouchcancel=stop;
+    b.ontouchend=e=>{stop();if(opened){opened=false;e.preventDefault();}};
+    b.oncontextmenu=e=>{if(timer){e.preventDefault();open();}else if(opened)e.preventDefault();};
+  });
+  list.querySelectorAll("[data-rename]").forEach(b=>b.onclick=()=>openNameDialog(b.dataset.rename));
   const p=selected(); const main=$("planMain");
   if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
   const done=p.checked.filter(Boolean).length, shares=p.holdings.reduce((s,h)=>s+Number(h.shares||0),0), gap=(p.startPrice-p.endPrice)/Math.max(p.stages-1,1);
   const status=done===p.stages?"전량 매도 완료":done?"진행 중":"시작 전"; // 1회라도 체크하면 시작
   const startText=p.currency==="USD"&&Number.isInteger(Math.round(p.startPrice*1e6)/1e4)?Number(p.startPrice).toFixed(2):String(p.startPrice); // 달러는 소수 둘째 자리까지면 $80.00처럼
   const oneName=esc(p.holdings.length===1?p.holdings[0].name:!p.holdings.length&&p.valueKrw!=null?p.title:""); // 종목이 하나(또는 평가액만 입력)면 모바일 표는 머리줄·줄마다 작은 글씨로 이름
-  const pencil='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
   const pe=stockEntry(priceData,p.ticker), px=pe&&pe.kind===(p.currency==="KRW"?"국내":"해외")?pe:null; // 시세 파일(통화가 맞을 때만): 기준일은 제목 위에 작게, 현재 가격은 설명 줄에
   const fxe=futuresEntry(priceData,state.futures), fxAuto=fxe&&p.auto?.fx===p.fx?`달러선물 ${priceMonth(state.futures)} 종가(시세 ${fxe.asOf})로 자동 · `:""; // 달러 계획 환율(prices.js)
   const value = p.valueKrw!=null ? `₩${won.format(p.valueKrw)}만원` : shares?`${won.format(shares)}주 보유`:"보유 수량 미입력";
@@ -57,4 +69,8 @@ function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm");form.
 $("addPlanBtn").onclick=()=>openPlanDialog();
 $("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
+const nameDialog=$("nameDialog"); let namingId=null; // 카드 이름만 고치는 창(규칙은 renderPlans 위 주석)
+function openNameDialog(pid){const p=state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;const input=$("nameForm").elements.cardName;$("nameTitle").textContent=`${p.ticker} 카드 이름`;input.value=p.cardName??"";input.placeholder=String(p.ticker||"").trim();nameDialog.showModal();input.focus();input.select();}
+nameDialog.querySelector("[data-close-name]").onclick=()=>nameDialog.close();
+$("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.plans.find(x=>x.id===namingId),v=String(e.target.elements.cardName.value).trim();nameDialog.close();if(!p||v===String(p.cardName||"").trim())return;if(v)p.cardName=v;else delete p.cardName;save();renderPlans();});
 $("planForm").addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim();const ticker=val("ticker").toUpperCase(), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;const shares=Number(val("shares")), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.startLabel!==val("startLabel")||old.endLabel!==val("endLabel")||old.currency!==currency);const p=old||defaultPlan(ticker,val("title"),{});Object.assign(p,{ticker,title:val("title"),currency,startLabel:val("startLabel"),endLabel:val("endLabel"),startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw:val("valueKrw")===""?null:Number(val("valueKrw")),basisPrice:val("basisPrice")===""?null:Number(val("basisPrice")),fx:Number(val("fx"))||1354.91,asOf:val("asOf"),holdings:Number.isSafeInteger(shares)&&shares>0?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;if(moved)delete p.auto;if(!old)state.plans.push(p);state.selectedPlan=p.id;save();planDialog.close();render();});
