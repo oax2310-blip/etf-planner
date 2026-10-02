@@ -73,29 +73,40 @@ function renderPlans(){
   fitNames();
 }
 const planDialog=$("planDialog"); let editingId=null, dialogBase={};
-// 수정 창 실시간 채우기: 종목 코드·통화·종료 기준선을 바꾸면 그 기준선 이동평균(maValue)으로 종료 기준가를 바로 바꾼다(시세에 없으면 창을 열 때 값).
-// 시작 기준가(첫 매도 기준가)는 사용자가 정하는 값이라 시세로 채우지 않는다(prices.js도 같음).
-// 종료 기준선은 숫자 + 일선·주선·개월선(endN·endUnit → "25개월선", 데이터 저장소 수집 스크립트 LABEL_RE와 같은 이름). 기준가는 직접 고칠 수 있다(시세 우선 규칙 그대로).
+// 수정 창 실시간 채우기: 종목 코드·통화·기준선을 바꾸면 그 기준선 이동평균(maValue)으로 기준가를 바로 바꾼다(시세에 없으면 창을 열 때 값).
+// 기준선은 숫자 + 일선·주선·개월선(endN·endUnit → "25개월선", 데이터 저장소 수집 스크립트 LABEL_RE와 같은 이름). 기준가는 직접 고칠 수 있다(시세 우선 규칙 그대로).
+// 시작 기준선은 '직접'(기본)이 더 있다: 이름만 적고 시작 기준가는 사용자가 정함(시세로 안 채움). 일·주·개월선을 고르면 plans[].startAuto=true(직접이면 delete)로
+// 종료 기준가처럼 채운다(prices.js). 옛 기록(startAuto 없음)은 직접.
 // 평가액 칸: 보유 수량이 있으면 보유 수량 × 현재가(× 환율)로 자동(읽기 전용, 저장 안 함), 없으면 직접 입력(valueKrw — 평가액만 있는 계획).
-const endLine = f => `${Math.round(Number(f.endN.value))||""}${f.endUnit.value}`;
-function planLive(fill=false){
+const lineOf = (f, k) => `${Math.round(Number(f[k+"N"].value))||""}${f[k+"Unit"].value}`; // k: "start"·"end"
+// 시작 기준선 칸: 직접이면 이름 칸, 일·주·개월선이면 숫자 칸(보이는 칸만 필수). 직접으로 바꾸면 이름은 고르던 기준선 이름으로 둔다.
+function startMode(f, switched){const auto=!!f.startUnit.value;if(switched&&!auto&&f.startN.value)f.startLabel.value=`${Math.round(Number(f.startN.value))}${f.startUnit.dataset.last||"일선"}`;
+  if(switched&&auto&&!f.startLabel.hidden){const m=/^(\d+)/.exec(maKey(f.startLabel.value));if(m)f.startN.value=m[1];}
+  if(auto)f.startUnit.dataset.last=f.startUnit.value;f.startLabel.hidden=auto;f.startLabel.required=!auto;f.startN.hidden=!auto;f.startN.required=auto;}
+function planLive(fill=[]){
   const f=$("planForm").elements, currency=f.currency.value, q=planQuote(f.ticker.value,currency), auto=q?`시세 ${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))} 자동`:"";
-  const label=endLine(f), v=q?priceRound(maValue(q,label),currency==="KRW"?0:2):null;
-  if(fill)f.endPrice.value=v??dialogBase.endPrice??"";
-  $("endNote").textContent=v!=null&&Number(f.endPrice.value)===v?auto:priceData&&maKey(label)&&v==null?"다음 시세 수집 때 자동":"";
+  for(const k of ["start","end"]){
+    const price=f[k+"Price"], note=$(k+"Note");
+    if(k==="start"&&!f.startUnit.value){note.textContent="";continue;}
+    const label=lineOf(f,k), v=q?priceRound(maValue(q,label),currency==="KRW"?0:2):null;
+    if(fill.includes(k))price.value=v??dialogBase[k]??"";
+    note.textContent=v!=null&&Number(price.value)===v?auto:priceData&&maKey(label)&&v==null?"다음 시세 수집 때 자동":"";
+  }
   const shares=Number(f.shares.value), held=Number.isSafeInteger(shares)&&shares>0, worth=held?planWorth(shares,q?.close,currency,f.fx.value):null, el=f.valueKrw;
   if(held!==el.readOnly){if(held)el.dataset.typed=el.value;else el.value=el.dataset.typed||"";el.readOnly=held;}
   if(held)el.value=worth!=null?Math.round(worth*10)/10:"";
   el.placeholder=held?"시세가 들어오면 자동":"보유 수량 없이 평가액만 있을 때";
   $("worthNote").textContent=worth!=null?"보유 수량 × 현재가 자동":"";
 }
-$("planForm").addEventListener("input",e=>planLive(["ticker","currency","endN","endUnit"].includes(e.target.name)));
+$("planForm").addEventListener("input",e=>{const n=e.target.name;if(n==="startUnit")startMode(e.target.form.elements,true);
+  planLive(n==="ticker"||n==="currency"?["start","end"]:n==="startN"||n==="startUnit"?["start"]:n==="endN"||n==="endUnit"?["end"]:[]);});
 function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=form.elements;form.reset();$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
   f.valueKrw.readOnly=false;f.valueKrw.dataset.typed="";
   if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,cardName:p.cardName??"",currency:p.currency,startLabel:p.startLabel,startPrice:p.startPrice,endPrice:p.endPrice,stages:p.stages,valueKrw:p.valueKrw??"",fx:p.fx})){if(f[k])f[k].value=v;}f.shares.value=p.holdings[0]?.shares||"";
-    const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"개월선";}
+    const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"개월선";
+    const s=p.startAuto&&/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.startLabel));if(s){f.startN.value=s[1];f.startUnit.value=s[2];}}
   else{const fx=priceRound(futuresEntry(priceData,state.futures)?.close,2);if(fx)f.fx.value=fx;} // 새 달러 계획 환율은 달러선물 근월물 종가로
-  dialogBase={endPrice:f.endPrice.value};planLive();planDialog.showModal();}
+  startMode(f);dialogBase={start:f.startPrice.value,end:f.endPrice.value};planLive();planDialog.showModal();}
 $("addPlanBtn").onclick=()=>openPlanDialog();
 $("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
@@ -103,7 +114,7 @@ const nameDialog=$("nameDialog"); let namingId=null; // 카드 이름만 고치�
 function openNameDialog(pid){const p=state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;const input=$("nameForm").elements.cardName;$("nameTitle").textContent=`${p.ticker} 카드 이름`;input.value=p.cardName??"";input.placeholder=String(p.ticker||"").trim();nameDialog.showModal();input.focus();input.select();}
 nameDialog.querySelector("[data-close-name]").onclick=()=>nameDialog.close();
 $("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.plans.find(x=>x.id===namingId),v=String(e.target.elements.cardName.value).trim();nameDialog.close();if(!p||v===String(p.cardName||"").trim())return;if(v)p.cardName=v;else delete p.cardName;save();renderPlans();});
-// 저장: 종목·종료 기준선·통화를 바꿨거나 새 계획이면 auto를 지금 시세 기준으로 다시 표시한다(창에서 채운 값과 같음 — 창에서 직접 고친 기준가는 그 칸 시세가 다음에 바뀔 때까지 둠).
-$("planForm").addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim();const ticker=val("ticker").toUpperCase(), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;const shares=Number(val("shares")), held=Number.isSafeInteger(shares)&&shares>0, endLabel=endLine(e.target.elements), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency);const p=old||defaultPlan(ticker,val("title"),{});Object.assign(p,{ticker,title:val("title"),currency,startLabel:val("startLabel"),endLabel,startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw:held||val("valueKrw")===""?null:Number(val("valueKrw")),fx:Number(val("fx"))||1354.91,holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;
+// 저장: 종목·자동 기준선·통화를 바꿨거나 새 계획이면 auto를 지금 시세 기준으로 다시 표시한다(창에서 채운 값과 같음 — 창에서 직접 고친 기준가는 그 칸 시세가 다음에 바뀔 때까지 둠).
+$("planForm").addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim();const ticker=val("ticker").toUpperCase(), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;const shares=Number(val("shares")), held=Number.isSafeInteger(shares)&&shares>0, endLabel=lineOf(e.target.elements,"end"), startAuto=!!val("startUnit"), startLabel=startAuto?lineOf(e.target.elements,"start"):val("startLabel"), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency||!!old.startAuto!==startAuto||startAuto&&old.startLabel!==startLabel);const p=old||defaultPlan(ticker,val("title"),{});Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw:held||val("valueKrw")===""?null:Number(val("valueKrw")),fx:Number(val("fx"))||1354.91,holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;if(startAuto)p.startAuto=true;else delete p.startAuto;
   if(moved||!old){delete p.auto;const mark=JSON.parse(JSON.stringify(p));if(fillPrices({plans:[mark],futures:state.futures},priceData))p.auto=mark.auto;}
   if(!old)state.plans.push(p);state.selectedPlan=p.id;save();planDialog.close();render();});

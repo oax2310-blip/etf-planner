@@ -2,7 +2,8 @@
 // 파일 읽기·채우는 때는 sync.js(readPrices·syncNow), 마지막으로 읽은 시세는 전역 priceData(sync.js). DOM 없이 불러와 테스트하므로 함수 밖에서 화면을 건드리지 말 것.
 // 채우는 칸(시세 우선):
 //   분할매도 종료 기준가 ← stocks[종목 코드]의 종료 기준선 이름(N일선·N주선·N개월선) 이동평균(maValue) (국내=원화 계획, 해외=달러 계획일 때만).
-//     시작 기준가(첫 매도 기준가)는 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
+//     시작 기준가(첫 매도 기준가)는 수정 창에서 시작 기준선을 일·주·개월선으로 고른 계획(startAuto=true)만 같은 방식으로 채운다.
+//     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
 //   분할매도 달러 계획 환율 ← 달러선물 보유 근월물 종가(원화 환산 표시에만 쓰여 현물 환율과의 차이 몇 원은 무시. 보유 월물이 없으면 그대로)
 //   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
 //   재매수 현재가·N일선 단계 기준가 ← stocks[재매수 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
@@ -67,7 +68,7 @@ function fillPrices(data, prices){
   for(const p of Array.isArray(data.plans)?data.plans:[]){
     if(!p||typeof p!=="object")continue;
     const usd=p.currency!=="KRW", e=stockEntry(prices,p.ticker), ok=e?.kind===(usd?"해외":"국내"), ma=label=>ok?priceRound(maValue(e,label),usd?2:0):null;
-    changed=fillMarked(p,at,[["endPrice",ma(p.endLabel),v=>p.endPrice=v],...(usd?[["fx",fx,v=>p.fx=v]]:[])])||changed;
+    changed=fillMarked(p,at,[...(p.startAuto===true?[["startPrice",ma(p.startLabel),v=>p.startPrice=v]]:[]),["endPrice",ma(p.endLabel),v=>p.endPrice=v],...(usd?[["fx",fx,v=>p.fx=v]]:[])])||changed;
   }
   if(fe&&Array.isArray(f.levels)){
     const rows=[...new Set(f.levels.map(l=>Number(l?.days)).filter(d=>Number.isInteger(d)&&d>0))].map(days=>[`${days}일선`,priceRound(fe.ma[`${days}일선`],2),v=>f.levels.forEach(l=>{
