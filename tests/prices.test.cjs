@@ -119,6 +119,17 @@ test('재매수: 국내 종목 코드를 넣었을 때만 현재가와 N일선 �
   assert.deepEqual(['auto' in us, 'auto' in none, none.currentPrice], [false, false, 7]);
 });
 
+test('재매수 종목 목록(rebuy.items): 종목마다 자기 종목 코드 시세로 채운다', () => {
+  const ctx = load();
+  const stages = () => [{name: '25분봉', price: 0}, {name: '25일선', price: 0}];
+  const a = {id: 'a', ticker: '900001', currentPrice: 0, stages: stages()}, b = {id: 'b', currentPrice: 7, stages: stages()}, c = {id: 'c', ticker: 'AAA', currentPrice: 0, stages: stages()};
+  assert.equal(ctx.fillPrices({plans: [], rebuy: {items: [a, b, c, null]}}, prices()), true);
+  assert.deepEqual(plain([a.currentPrice, a.stages.map(x => x.price), a.auto]), [10234, [0, 10100], {at: AT, currentPrice: 10234, '25일선': 10100}]);
+  assert.deepEqual(['auto' in b, b.currentPrice, 'auto' in c, c.currentPrice], [false, 7, false, 0], '코드 없는 종목·해외 종목은 그대로');
+  assert.equal(ctx.fillPrices({plans: [], rebuy: {items: [a]}}, prices()), false, '같은 시세로 다시 채우면 바뀌는 칸이 없다');
+  assert.equal(ctx.fillPrices({plans: [], rebuy: {items: []}}, prices()), false);
+});
+
 test('동기화 기록(JSON)에 채운 결과는 같은 기록을 직접 채운 것과 같고, 바꿀 것이 없으면 받은 문자열 그대로다', () => {
   const ctx = load();
   const data = {plans: [{ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 1, endPrice: 1}], futures: {positions: []}, actions: {}};

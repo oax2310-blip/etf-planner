@@ -223,30 +223,87 @@ test('보유 입력: 금액(만원)·수량(주) 중 넣은 쪽만 남기고, 0�
   assert.deepEqual([r.amount, r.shares, hold(ctx, r)], [undefined, undefined, 0]);
 });
 
-test('기준 입력: 현재가·신저점·보유 칸이 저장에 연결되고, 단위를 주로 바꾸면 수량으로 저장한다', () => {
-  // DOM 없이 화면을 그려 입력칸마다 등록한 저장 처리(onEdit)를 모은다
-  const handlers = {}, els = {}, el = id => els[id] ||= {id, value: '', focus() {}};
+// DOM 없이 화면을 그려 입력칸마다 등록한 저장 처리(onEdit)를 모은다. 종목 추가·수정 창은 form.onsubmit·버튼 onclick을 직접 부른다.
+function ui(state = {}) {
+  const handlers = {}, els = {};
+  const el = id => els[id] ||= {id, value: '', textContent: '', focus() {}, reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
+    classList: {toggle(name, on) { el(id)[name] = on; }}, querySelectorAll: () => [], elements: {name: {value: '', focus() {}}, ticker: {value: ''}}};
+  let n = 0;
   const ctx = vm.createContext({
-    state: {}, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; },
+    state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
     esc: v => String(v ?? ''), money: v => `${v}원`, won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
     shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '',
   });
   vm.runInContext(source, ctx);
   ctx.renderRebuy();
+  // 종목 추가(edit 없음) 또는 연필(rEdit)로 연 창에 이름·코드를 넣고 저장
+  const submit = (opener, name, ticker = '') => { opener(); const f = els.rebuyForm.elements; f.name.value = name; f.ticker.value = ticker; els.rebuyForm.onsubmit({preventDefault() {}}); };
+  return {ctx, handlers, els, add: (name, ticker) => submit(() => els.addRebuyBtn.onclick(), name, ticker), rename: (name, ticker) => submit(() => els.rEdit.onclick(), name, ticker)};
+}
+
+test('기준 입력: 현재가·신저점·보유 칸이 저장에 연결되고, 단위를 주로 바꾸면 수량으로 저장한다', () => {
+  const {ctx, handlers, els} = ui({rebuy: {items: [{id: 'a', name: '테스트 ETF'}]}});
   for (const sel of ['#rCurrent', '#rLow', '#rHold']) assert.equal(typeof handlers[sel], 'function', `${sel} 저장 처리가 없다`);
   handlers['#rCurrent']('9500');
   handlers['#rLow']('10000');
   handlers['#rHold']('1000');
-  assert.deepEqual([ctx.state.rebuy.currentPrice, ctx.state.rebuy.lowPrice, ctx.state.rebuy.amount, ctx.state.rebuy.shares], [9500, 10000, 1000, undefined]);
+  const r = () => ctx.state.rebuy.items[0];
+  assert.deepEqual([r().currentPrice, r().lowPrice, r().amount, r().shares], [9500, 10000, 1000, undefined]);
   ctx.renderRebuy();
   els.rHoldUnit.onchange({target: {value: 'shares'}});
-  assert.match(els.rebuyView.innerHTML, /<option value="shares" selected>/);
-  assert.match(els.rebuyView.innerHTML, /id="rHold"[^>]*value=""[^>]*placeholder="≈1,000주"/, '단위만 바꾸면 값은 그대로, 환산 주 수를 흐리게');
+  assert.match(els.rebuyMain.innerHTML, /<option value="shares" selected>/);
+  assert.match(els.rebuyMain.innerHTML, /id="rHold"[^>]*value=""[^>]*placeholder="≈1,000주"/, '단위만 바꾸면 값은 그대로, 환산 주 수를 흐리게');
   handlers['#rHold']('800');
-  assert.deepEqual([ctx.state.rebuy.amount, ctx.state.rebuy.shares], [undefined, 800]);
+  assert.deepEqual([r().amount, r().shares], [undefined, 800]);
   ctx.renderRebuy();
-  assert.match(els.rebuyView.innerHTML, /id="rHold"[^>]*value="800"/);
-  assert.match(els.rebuyView.innerHTML, /보유 수량 800주로 계산합니다/);
+  assert.match(els.rebuyMain.innerHTML, /id="rHold"[^>]*value="800"/);
+  assert.match(els.rebuyMain.innerHTML, /보유 수량 800주로 계산합니다/);
+});
+
+test('제목: 작은 글씨에 손절 후 재매수·종목 코드, 큰 글씨(h1)에 종목 이름', () => {
+  const {els} = ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', ticker: '900001'}]}});
+  assert.match(els.rebuyMain.innerHTML, /<div class="eyebrow">손절 후 재매수 · 900001<\/div>/);
+  assert.match(els.rebuyMain.innerHTML, /<h1>테스트 ETF<\/h1>/);
+  assert.doesNotMatch(els.rebuyMain.innerHTML, /id="rName"|id="rTicker"/, '이름·코드는 연필 창에서만 고친다');
+});
+
+test('종목 목록: 옛 기록(rebuy에 종목 하나)은 한 종목으로 보여 주고, 처음 고칠 때만 {items:[…]}로 바꾼다', () => {
+  const legacy = {name: '옛 ETF', ticker: '900001', lowPrice: 10000, shares: 500, cuts: [{shares: 3, price: 9900}], note: '메모', auto: {at: 'x', currentPrice: 1}};
+  const {ctx, handlers, els} = ui({rebuy: structuredClone(legacy)});
+  assert.match(els.rebuyList.innerHTML, /<strong>옛 ETF<\/strong>/);
+  assert.match(els.rebuyMain.innerHTML, /<h1>옛 ETF<\/h1>/);
+  assert.deepEqual(plain(ctx.state.rebuy), legacy, '그리기만 해서는 기록(동기화 기록)이 바뀌지 않는다');
+  handlers['#rLow']('9000');
+  assert.equal(ctx.state.rebuy.items.length, 1);
+  assert.deepEqual(Object.keys(ctx.state.rebuy), ['items'], '옛 칸은 종목 안으로 옮긴다');
+  const {id, stages, ...moved} = plain(ctx.state.rebuy.items[0]);
+  assert.deepEqual([id, ctx.state.selectedRebuy, stages.length], ['id-1', 'id-1', 14]);
+  assert.deepEqual(moved, {...legacy, lowPrice: 9000});
+});
+
+test('종목 목록: 추가한 종목을 고르고 그 종목만 고치며, 삭제하면 남은 첫 종목을 보여 준다', () => {
+  const {ctx, handlers, els, add, rename} = ui();
+  assert.match(els.rebuyList.innerHTML, /종목 없음/);
+  assert.match(els.rebuyMain.innerHTML, /재매수 종목을 추가하세요/);
+  assert.equal(ctx.state.rebuy, undefined, '종목을 추가하기 전에는 재매수 기록을 만들지 않는다');
+  add('가 ETF', ' 900001 ');
+  add('나 ETF');
+  const [a, b] = ctx.state.rebuy.items;
+  assert.deepEqual([a.name, a.ticker, b.name, 'ticker' in b, ctx.state.selectedRebuy], ['가 ETF', '900001', '나 ETF', false, b.id], '새 종목을 고른다');
+  assert.deepEqual(plain(b.stages).map(x => x.name), plain(vm.runInContext('defaultRebuy().stages', ctx)).map(x => x.name), '새 종목은 기본 단계');
+  assert.match(els.rebuyMain.innerHTML, /<h1>나 ETF<\/h1>/);
+  handlers['#rLow']('5000');
+  assert.deepEqual([a.lowPrice, b.lowPrice], [0, 5000], '고른 종목만 바뀐다');
+  ctx.state.selectedRebuy = a.id; ctx.renderRebuy();
+  assert.match(els.rebuyList.innerHTML, /class="plan-item active"[^>]*data-rebuy="0"/);
+  a.auto = {at: 'x', currentPrice: 1};
+  rename('가 ETF 2', '900002');
+  assert.deepEqual([a.name, a.ticker, 'auto' in a], ['가 ETF 2', '900002', false], '종목 코드를 바꾸면 다음 동기화 때 새 시세로 채운다');
+  els.rEdit.onclick(); els.deleteRebuyBtn.onclick();
+  assert.deepEqual([ctx.state.rebuy.items.length, ctx.state.rebuy.items[0].name, ctx.state.selectedRebuy], [1, '나 ETF', b.id]);
+  els.rEdit.onclick(); els.deleteRebuyBtn.onclick();
+  assert.deepEqual(plain(ctx.state.rebuy), {items: []}, '다 지워도 rebuy는 남겨 다른 기기에도 삭제가 간다');
+  assert.match(els.rebuyMain.innerHTML, /재매수 종목을 추가하세요/);
 });
 
 test('손절 금액: 체크한 회차의 체결가 × 수량을 더하고, 체결가를 비우면 손절가로 계산한다', () => {
