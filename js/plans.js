@@ -24,34 +24,23 @@ function fitNames(){
 }
 addEventListener("resize",fitNames);
 // 저장된 계획 카드: 카드 이름(cardName)을 굵게, 없으면 종목 코드. PC에서만 아래 작게 — 카드 이름이 있으면 종목 코드, 없으면 계획 이름.
-// 카드 이름은 수정 창 말고 카드에서 바로 고친다: 터치는 카드를 0.5초 길게 눌렀다 떼면, 마우스(PC)는 카드 오른쪽 아래 연필(.plan-rename).
-// 그 카드만 입력칸으로 바뀌고 Enter·칸 벗어나면 저장, Esc는 취소, 비우면 cardName을 지워 종목 코드로. 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
-let renaming=null; // 이름 고치는 카드의 계획 id(화면 상태라 저장·동기화하지 않음)
+// 카드 이름은 이름만 고치는 작은 창(nameDialog)으로도 바꾼다: 터치는 카드를 0.5초 누르고 있으면(손 떼기 전에) 열리고, 마우스(PC)는 카드 오른쪽 아래 연필(.plan-rename).
+// 수정 창의 카드 이름 칸과 같은 값(비우면 cardName을 지워 종목 코드로). 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
 function renderPlans(){
   const list=$("planList"), pencil='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-  const typing=$("planName"), typingFocus=typing&&document.activeElement===typing; if(typing)typing.onblur=null; // 고치는 중에 다시 그려지면(다른 기기 기록 반영) 쓰던 글자·커서를 새 입력칸으로
-  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()], cls=`plan-item ${p.id===state.selectedPlan?"active":""}`,
-      body=name=>`<span class="plan-row">${name}<span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span><span class="plan-title">${sub&&sub!==main?esc(sub):""}</span><span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span>`;
-    return `<div class="plan-cell">${p.id===renaming?`<div class="${cls} renaming">${body(`<input id="planName" data-name="${esc(p.id)}" maxlength="40" value="${esc(card)}" placeholder="${esc(ticker)}" aria-label="카드 이름" enterkeyhint="done" autocomplete="off">`)}</div>`
-      :`<button class="${cls}" data-plan="${esc(p.id)}" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${p.stages}회 완료">${body(`<strong>${esc(main)}</strong>`)}</button><button class="plan-rename" type="button" data-rename="${esc(p.id)}" aria-label="${esc(main)} 카드 이름 변경" title="카드 이름 변경">${pencil}</button>`}</div>`;}).join(""):"<div class='empty'>계획 없음</div>";
-  const rename=pid=>{renaming=pid;renderPlans();const el=$("planName");el?.focus();el?.select();};
+  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()];
+    return `<div class="plan-cell"><button class="plan-item ${p.id===state.selectedPlan?"active":""}" data-plan="${esc(p.id)}" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${p.stages}회 완료"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count">${n}/${p.stages}<span class="plan-unit">회</span></span></span><span class="plan-title">${sub&&sub!==main?esc(sub):""}</span><span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button><button class="plan-rename" type="button" data-rename="${esc(p.id)}" aria-label="${esc(main)} 카드 이름 변경" title="카드 이름 변경">${pencil}</button></div>`;}).join(""):"<div class='empty'>계획 없음</div>";
   list.querySelectorAll("[data-plan]").forEach(b=>{b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();};
-    // 길게 누르기(터치만): 0.5초 지나면 테두리로 알리고 손을 뗄 때 입력칸을 연다(뗄 때 열어야 휴대폰 키보드가 뜸). 10px 넘게 움직이면(스크롤) 취소.
-    let timer=0,held=false,x=0,y=0; const stop=()=>{clearTimeout(timer);timer=0;b.classList.remove("held");};
-    b.ontouchstart=e=>{({clientX:x,clientY:y}=e.touches[0]);held=false;timer=setTimeout(()=>{held=true;b.classList.add("held");},500);};
-    b.ontouchmove=e=>{const t=e.touches[0];if(Math.hypot(t.clientX-x,t.clientY-y)>10){stop();held=false;}};
-    b.ontouchcancel=()=>{stop();held=false;};
-    b.ontouchend=e=>{stop();if(held){held=false;e.preventDefault();rename(b.dataset.plan);}};
-    b.oncontextmenu=e=>{if(timer||held)e.preventDefault();}; // 안드로이드 길게 누르기 메뉴·글자 선택 막기
+    // 길게 누르기(터치만): 0.5초 또는 안드로이드 길게 누르기 메뉴(contextmenu) 중 먼저 오는 때에 이름 창을 연다. 10px 넘게 움직이면(스크롤) 취소.
+    // 창을 연 뒤 손을 뗄 때의 클릭·움직임은 막는다(창 바깥을 누른 것으로 처리되거나 화면이 밀리지 않게).
+    let timer=0,opened=false,x=0,y=0; const stop=()=>{clearTimeout(timer);timer=0;}, open=()=>{stop();opened=true;openNameDialog(b.dataset.plan);};
+    b.ontouchstart=e=>{({clientX:x,clientY:y}=e.touches[0]);opened=false;timer=setTimeout(open,500);};
+    b.ontouchmove=e=>{const t=e.touches[0];if(opened){if(e.cancelable)e.preventDefault();}else if(timer&&Math.hypot(t.clientX-x,t.clientY-y)>10)stop();};
+    b.ontouchcancel=stop;
+    b.ontouchend=e=>{stop();if(opened){opened=false;e.preventDefault();}};
+    b.oncontextmenu=e=>{if(timer){e.preventDefault();open();}else if(opened)e.preventDefault();};
   });
-  list.querySelectorAll("[data-rename]").forEach(b=>b.onclick=()=>rename(b.dataset.rename));
-  const nameInput=$("planName");
-  if(nameInput){const cardOf=state.plans.find(x=>x.id===renaming), before=nameInput.value;
-    if(typing&&typing.dataset.name===renaming){nameInput.value=typing.value;if(typingFocus)nameInput.focus();}
-    nameInput.onkeydown=e=>{if(e.key==="Enter")nameInput.blur();if(e.key==="Escape"){nameInput.value=before;nameInput.blur();}};
-    nameInput.onblur=()=>{if(renaming!==cardOf.id)return;renaming=null;renderPlans();}; // 그대로 두고 벗어나면 change가 없으니 여기서 닫음
-    onEdit("#planName",v=>{renaming=null;v=v.trim();if(v===String(cardOf.cardName||"").trim())return false;if(v)cardOf.cardName=v;else delete cardOf.cardName;},renderPlans);
-  }
+  list.querySelectorAll("[data-rename]").forEach(b=>b.onclick=()=>openNameDialog(b.dataset.rename));
   const p=selected(); const main=$("planMain");
   if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
   const done=p.checked.filter(Boolean).length, shares=p.holdings.reduce((s,h)=>s+Number(h.shares||0),0), gap=(p.startPrice-p.endPrice)/Math.max(p.stages-1,1);
@@ -80,4 +69,8 @@ function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm");form.
 $("addPlanBtn").onclick=()=>openPlanDialog();
 $("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
+const nameDialog=$("nameDialog"); let namingId=null; // 카드 이름만 고치는 창(규칙은 renderPlans 위 주석)
+function openNameDialog(pid){const p=state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;const input=$("nameForm").elements.cardName;$("nameTitle").textContent=`${p.ticker} 카드 이름`;input.value=p.cardName??"";input.placeholder=String(p.ticker||"").trim();nameDialog.showModal();input.focus();input.select();}
+nameDialog.querySelector("[data-close-name]").onclick=()=>nameDialog.close();
+$("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.plans.find(x=>x.id===namingId),v=String(e.target.elements.cardName.value).trim();nameDialog.close();if(!p||v===String(p.cardName||"").trim())return;if(v)p.cardName=v;else delete p.cardName;save();renderPlans();});
 $("planForm").addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim();const ticker=val("ticker").toUpperCase(), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;const shares=Number(val("shares")), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.startLabel!==val("startLabel")||old.endLabel!==val("endLabel")||old.currency!==currency);const p=old||defaultPlan(ticker,val("title"),{});Object.assign(p,{ticker,title:val("title"),currency,startLabel:val("startLabel"),endLabel:val("endLabel"),startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw:val("valueKrw")===""?null:Number(val("valueKrw")),basisPrice:val("basisPrice")===""?null:Number(val("basisPrice")),fx:Number(val("fx"))||1354.91,asOf:val("asOf"),holdings:Number.isSafeInteger(shares)&&shares>0?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;if(moved)delete p.auto;if(!old)state.plans.push(p);state.selectedPlan=p.id;save();planDialog.close();render();});
