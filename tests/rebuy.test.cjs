@@ -6,35 +6,47 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
 
+// 화면이 쓰는 기준선 이름 판정(maKey)은 prices.js 것을 그대로 쓴다
+const maKey = vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8').match(/^function maKey\(.*$/m)[0] + ';maKey');
+
 const load = () => { const context = vm.createContext({}); vm.runInContext(source, context); return context; };
 const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
 const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
 
-test('손절: 신저점 대비 -1%, -2% …마다 그때 남은 수량의 0.5%를 정수 주로 판다', () => {
+test('손절: 신저점 대비 -1%, -2% …마다 이탈 전 보유 수량의 0.5%를 정수 주로 판다', () => {
   const ctx = load();
   const cuts = ctx.cutPlan(plan(ctx));
   assert.equal(cuts.length, 30, '기본 30회(-30%)까지 표시');
   assert.deepEqual(plain(cuts.slice(0, 3)).map(c => [c.k, c.drop, Math.round(c.price), c.qty, c.left]), [[1, 1, 9900, 5, 995], [2, 2, 9800, 5, 990], [3, 3, 9700, 5, 985]]);
-  // 남은 수량 기준이라 누적 잔량은 1000 × 0.995^k를 반올림한 값과 같다
-  cuts.forEach(c => assert.equal(c.left, Math.round(1000 * 0.995 ** c.k)));
-  assert.ok(cuts.every(c => c.qty <= 5), '회차가 늘수록 파는 수량이 늘지 않는다');
-  assert.equal(cuts.at(-1).left, 860);
+  // 이탈 전 보유 기준이라 회차마다 같은 수량(1,000주 × 0.5% = 5주), k회까지 누적 5k주
+  cuts.forEach(c => assert.deepEqual([c.qty, c.left], [5, 1000 - 5 * c.k]));
+  assert.equal(cuts.at(-1).left, 850);
 });
 
-test('손절: 보유 수량이 적어도 정수 주로 나누고 누적 합계가 맞는다', () => {
+test('손절: 회당 수량이 정수로 안 나눠지면 누적 예정 수량을 반올림해 나눈다', () => {
   const ctx = load();
-  const cuts = ctx.cutPlan(plan(ctx, {amount: 100}));
-  assert.ok(cuts.every(c => Number.isInteger(c.qty) && c.qty >= 0));
-  assert.equal(cuts.reduce((a, c) => a + c.qty, 0), 100 - Math.round(100 * 0.995 ** 30));
+  let cuts = ctx.cutPlan(plan(ctx, {amount: 100})); // 100주 × 0.5% = 0.5주
+  assert.ok(cuts.every(c => Number.isInteger(c.qty) && c.qty >= 0 && c.qty <= 1));
+  assert.equal(cuts.reduce((a, c) => a + c.qty, 0), 15);
+  cuts = ctx.cutPlan(plan(ctx, {amount: undefined, shares: 1234})); // 6.17주
+  assert.ok(cuts.every(c => c.qty === 6 || c.qty === 7));
+  cuts.forEach(c => assert.equal(1234 - c.left, Math.round(1234 * 0.005 * c.k)));
 });
 
-test('손절: 체크한 회차는 기록한 수량을 쓰고, 다음 회차는 실제 남은 수량으로 다시 계산한다', () => {
+test('손절: 체크한 회차는 기록한 수량을 쓰고, 다음 회차 예정 수량은 그대로 둔다', () => {
   const ctx = load();
   const cuts = ctx.cutPlan(plan(ctx, {cuts: [{shares: 10, price: 9880}]}));
   assert.deepEqual([cuts[0].done, cuts[0].qty, cuts[0].left, cuts[0].execPrice], [true, 10, 990, 9880]);
-  assert.equal(cuts[1].qty, 990 - Math.round(990 * 0.995));
-  assert.equal(cuts[2].left, Math.round(990 * 0.995 ** 2));
+  assert.deepEqual([cuts[1].qty, cuts[1].left, cuts[2].qty, cuts[2].left], [5, 985, 5, 980]);
+});
+
+test('손절: 남은 수량보다 많이 팔지 않는다', () => {
+  const ctx = load();
+  let cuts = ctx.cutPlan(plan(ctx, {sellPct: 10})); // 10회면 이탈 전 보유를 다 판다
+  assert.deepEqual(plain(cuts.slice(8, 12)).map(c => [c.qty, c.left]), [[100, 100], [100, 0], [0, 0], [0, 0]]);
+  cuts = ctx.cutPlan(plan(ctx, {cuts: [{shares: 997, price: 9900}]}));
+  assert.deepEqual(plain(cuts.slice(1, 3)).map(c => [c.qty, c.left]), [[3, 0], [0, 0]]);
 });
 
 test('손절: 표시 회차를 줄여도 체크한 회차는 계속 보이고 합계에 들어간다', () => {
@@ -224,7 +236,7 @@ test('보유 입력: 금액(만원)·수량(주) 중 넣은 쪽만 남기고, 0�
 });
 
 // DOM 없이 화면을 그려 입력칸마다 등록한 저장 처리(onEdit)를 모은다. 종목 추가·수정 창은 form.onsubmit·버튼 onclick을 직접 부른다.
-function ui(state = {}) {
+function ui(state = {}, env = {}) {
   const handlers = {}, els = {};
   const el = id => els[id] ||= {id, value: '', textContent: '', focus() {}, reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
     classList: {toggle(name, on) { el(id)[name] = on; }}, querySelectorAll: () => [], elements: {name: {value: '', focus() {}}, ticker: {value: ''}}};
@@ -232,7 +244,7 @@ function ui(state = {}) {
   const ctx = vm.createContext({
     state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
     esc: v => String(v ?? ''), money: v => `${v}원`, won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
-    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '',
+    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '', maKey, ...env,
   });
   vm.runInContext(source, ctx);
   ctx.renderRebuy();
@@ -265,6 +277,27 @@ test('제목: 작은 글씨에 손절 후 재매수·종목 코드, 큰 글씨(h
   assert.match(els.rebuyMain.innerHTML, /<div class="eyebrow">손절 후 재매수 · 900001<\/div>/);
   assert.match(els.rebuyMain.innerHTML, /<h1>테스트 ETF<\/h1>/);
   assert.doesNotMatch(els.rebuyMain.innerHTML, /id="rName"|id="rTicker"/, '이름·코드는 연필 창에서만 고친다');
+});
+
+test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일선 기준가 이름 옆에 작은 (자동)', () => {
+  const tag = '<small class="auto-tag">(자동)</small>', count = html => html.split(tag).length - 1;
+  const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
+  const view = (item, env) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', stages, ...item}]}}, env).els.rebuyMain.innerHTML;
+  const domestic = () => ({kind: '국내', asOf: '2026-10-01', ma: {}}), foreign = () => ({kind: '해외', asOf: '2026-10-01', ma: {}});
+  // 기본 단계 14개 중 N일선 7개 + 현재가 + 마지막 단계(150일선) 가격 칸. 분봉 단계에는 붙이지 않는다
+  let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
+  assert.equal(count(html), 9);
+  assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150일선 가격 (원)${tag}</span>`));
+  assert.ok(html.includes(`aria-label="150일선 기준가">원${tag}`) && !html.includes(`aria-label="25분봉 기준가">원${tag}`));
+  // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
+  html = view({ticker: '900001'}, {priceData: {stocks: {}}});
+  assert.equal(count(html), 9);
+  assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·일선 기준가를 채웁니다\./);
+  assert.doesNotMatch(html, /시세 파일에 아직 없는/);
+  // 채우지 않는 경우: 해외 종목, 종목 코드 없음, 시세 파일을 못 읽음
+  assert.equal(count(view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: foreign})), 0);
+  assert.equal(count(view({}, {priceData: {stocks: {}}, stockEntry: domestic})), 0);
+  assert.equal(count(view({ticker: '900001'}, {})), 0);
 });
 
 test('종목 목록: 옛 기록(rebuy에 종목 하나)은 한 종목으로 보여 주고, 처음 고칠 때만 {items:[…]}로 바꾼다', () => {

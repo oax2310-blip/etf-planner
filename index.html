@@ -51,6 +51,7 @@
     수정 창의 같은 칸과 같은 값. 계산 요약·메모는 .control-grid 두 칸(재매수 탭도 같이 씀), 계산 요약에 칸을 늘리지 말 것.
   - 재매수 화면도 왼쪽(모바일은 위) 종목 목록 — 분할매도 카드 클래스(.plan-list·.plan-item) 그대로, 짧은 상태는 오른쪽(모바일은 이름 아래 — 이름이 안 잘리게). 제목은 작은 글씨(.eyebrow) '손절 후 재매수 · 종목 코드',
     큰 글씨(h1) 종목 이름 + 연필(rebuyDialog: 이름·종목 코드·종목 삭제). 기준 입력에는 이름·코드 칸을 두지 않음.
+    시세로 채우는 칸(현재가·N일선 기준가) 이름 옆에는 아주 작고 흐린 '(자동)'(.auto-tag, 국내 종목 코드가 있을 때만).
   - 분할매도 표(모바일): 종목이 하나(또는 평가액만)면 이름을 머리줄(.m-head)과 수량 아래(.one-sub)에 표시, fitNames()가 칸 폭에 맞춰 자름.
   - 윗줄(.top)은 모바일에서 음수 top(--tuck, fitTop())으로 붙여 스크롤하면 탭 줄만 남음. 탭을 누르면 맨 위로.
 --><html lang="ko">
@@ -58,7 +59,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=9" />
+  <link rel="stylesheet" href="css/app.css?v=10" />
 </head>
 <body>
   <header class="top">
@@ -153,13 +154,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=9"></script>
-  <script src="js/sync.js?v=9"></script>
-  <script src="js/prices.js?v=9"></script>
-  <script src="js/plans.js?v=9"></script>
-  <script src="js/futures.js?v=9"></script>
-  <script src="js/actions.js?v=9"></script>
-  <script src="js/rebuy.js?v=9"></script>
+  <script src="js/core.js?v=10"></script>
+  <script src="js/sync.js?v=10"></script>
+  <script src="js/prices.js?v=10"></script>
+  <script src="js/plans.js?v=10"></script>
+  <script src="js/futures.js?v=10"></script>
+  <script src="js/actions.js?v=10"></script>
+  <script src="js/rebuy.js?v=10"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>
