@@ -14,30 +14,39 @@ const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPri
 const plain = value => JSON.parse(JSON.stringify(value));
 const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
 
-test('손절: 신저점 대비 -1%, -2% …마다 그때 남은 수량의 0.5%를 정수 주로 판다', () => {
+test('손절: 신저점 대비 -1%, -2% …마다 이탈 전 보유 수량의 0.5%를 정수 주로 판다', () => {
   const ctx = load();
   const cuts = ctx.cutPlan(plan(ctx));
   assert.equal(cuts.length, 30, '기본 30회(-30%)까지 표시');
   assert.deepEqual(plain(cuts.slice(0, 3)).map(c => [c.k, c.drop, Math.round(c.price), c.qty, c.left]), [[1, 1, 9900, 5, 995], [2, 2, 9800, 5, 990], [3, 3, 9700, 5, 985]]);
-  // 남은 수량 기준이라 누적 잔량은 1000 × 0.995^k를 반올림한 값과 같다
-  cuts.forEach(c => assert.equal(c.left, Math.round(1000 * 0.995 ** c.k)));
-  assert.ok(cuts.every(c => c.qty <= 5), '회차가 늘수록 파는 수량이 늘지 않는다');
-  assert.equal(cuts.at(-1).left, 860);
+  // 이탈 전 보유 기준이라 회차마다 같은 수량(1,000주 × 0.5% = 5주), k회까지 누적 5k주
+  cuts.forEach(c => assert.deepEqual([c.qty, c.left], [5, 1000 - 5 * c.k]));
+  assert.equal(cuts.at(-1).left, 850);
 });
 
-test('손절: 보유 수량이 적어도 정수 주로 나누고 누적 합계가 맞는다', () => {
+test('손절: 회당 수량이 정수로 안 나눠지면 누적 예정 수량을 반올림해 나눈다', () => {
   const ctx = load();
-  const cuts = ctx.cutPlan(plan(ctx, {amount: 100}));
-  assert.ok(cuts.every(c => Number.isInteger(c.qty) && c.qty >= 0));
-  assert.equal(cuts.reduce((a, c) => a + c.qty, 0), 100 - Math.round(100 * 0.995 ** 30));
+  let cuts = ctx.cutPlan(plan(ctx, {amount: 100})); // 100주 × 0.5% = 0.5주
+  assert.ok(cuts.every(c => Number.isInteger(c.qty) && c.qty >= 0 && c.qty <= 1));
+  assert.equal(cuts.reduce((a, c) => a + c.qty, 0), 15);
+  cuts = ctx.cutPlan(plan(ctx, {amount: undefined, shares: 1234})); // 6.17주
+  assert.ok(cuts.every(c => c.qty === 6 || c.qty === 7));
+  cuts.forEach(c => assert.equal(1234 - c.left, Math.round(1234 * 0.005 * c.k)));
 });
 
-test('손절: 체크한 회차는 기록한 수량을 쓰고, 다음 회차는 실제 남은 수량으로 다시 계산한다', () => {
+test('손절: 체크한 회차는 기록한 수량을 쓰고, 다음 회차 예정 수량은 그대로 둔다', () => {
   const ctx = load();
   const cuts = ctx.cutPlan(plan(ctx, {cuts: [{shares: 10, price: 9880}]}));
   assert.deepEqual([cuts[0].done, cuts[0].qty, cuts[0].left, cuts[0].execPrice], [true, 10, 990, 9880]);
-  assert.equal(cuts[1].qty, 990 - Math.round(990 * 0.995));
-  assert.equal(cuts[2].left, Math.round(990 * 0.995 ** 2));
+  assert.deepEqual([cuts[1].qty, cuts[1].left, cuts[2].qty, cuts[2].left], [5, 985, 5, 980]);
+});
+
+test('손절: 남은 수량보다 많이 팔지 않는다', () => {
+  const ctx = load();
+  let cuts = ctx.cutPlan(plan(ctx, {sellPct: 10})); // 10회면 이탈 전 보유를 다 판다
+  assert.deepEqual(plain(cuts.slice(8, 12)).map(c => [c.qty, c.left]), [[100, 100], [100, 0], [0, 0], [0, 0]]);
+  cuts = ctx.cutPlan(plan(ctx, {cuts: [{shares: 997, price: 9900}]}));
+  assert.deepEqual(plain(cuts.slice(1, 3)).map(c => [c.qty, c.left]), [[3, 0], [0, 0]]);
 });
 
 test('손절: 표시 회차를 줄여도 체크한 회차는 계속 보이고 합계에 들어간다', () => {
