@@ -6,6 +6,9 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
 
+// 화면이 쓰는 기준선 이름 판정(maKey)은 prices.js 것을 그대로 쓴다
+const maKey = vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8').match(/^function maKey\(.*$/m)[0] + ';maKey');
+
 const load = () => { const context = vm.createContext({}); vm.runInContext(source, context); return context; };
 const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -224,7 +227,7 @@ test('보유 입력: 금액(만원)·수량(주) 중 넣은 쪽만 남기고, 0�
 });
 
 // DOM 없이 화면을 그려 입력칸마다 등록한 저장 처리(onEdit)를 모은다. 종목 추가·수정 창은 form.onsubmit·버튼 onclick을 직접 부른다.
-function ui(state = {}) {
+function ui(state = {}, env = {}) {
   const handlers = {}, els = {};
   const el = id => els[id] ||= {id, value: '', textContent: '', focus() {}, reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
     classList: {toggle(name, on) { el(id)[name] = on; }}, querySelectorAll: () => [], elements: {name: {value: '', focus() {}}, ticker: {value: ''}}};
@@ -232,7 +235,7 @@ function ui(state = {}) {
   const ctx = vm.createContext({
     state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
     esc: v => String(v ?? ''), money: v => `${v}원`, won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
-    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '',
+    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '', maKey, ...env,
   });
   vm.runInContext(source, ctx);
   ctx.renderRebuy();
@@ -265,6 +268,27 @@ test('제목: 작은 글씨에 손절 후 재매수·종목 코드, 큰 글씨(h
   assert.match(els.rebuyMain.innerHTML, /<div class="eyebrow">손절 후 재매수 · 900001<\/div>/);
   assert.match(els.rebuyMain.innerHTML, /<h1>테스트 ETF<\/h1>/);
   assert.doesNotMatch(els.rebuyMain.innerHTML, /id="rName"|id="rTicker"/, '이름·코드는 연필 창에서만 고친다');
+});
+
+test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일선 기준가 이름 옆에 작은 (자동)', () => {
+  const tag = '<small class="auto-tag">(자동)</small>', count = html => html.split(tag).length - 1;
+  const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
+  const view = (item, env) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', stages, ...item}]}}, env).els.rebuyMain.innerHTML;
+  const domestic = () => ({kind: '국내', asOf: '2026-10-01', ma: {}}), foreign = () => ({kind: '해외', asOf: '2026-10-01', ma: {}});
+  // 기본 단계 14개 중 N일선 7개 + 현재가 + 마지막 단계(150일선) 가격 칸. 분봉 단계에는 붙이지 않는다
+  let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
+  assert.equal(count(html), 9);
+  assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150일선 가격 (원)${tag}</span>`));
+  assert.ok(html.includes(`aria-label="150일선 기준가">원${tag}`) && !html.includes(`aria-label="25분봉 기준가">원${tag}`));
+  // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
+  html = view({ticker: '900001'}, {priceData: {stocks: {}}});
+  assert.equal(count(html), 9);
+  assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·일선 기준가를 채웁니다\./);
+  assert.doesNotMatch(html, /시세 파일에 아직 없는/);
+  // 채우지 않는 경우: 해외 종목, 종목 코드 없음, 시세 파일을 못 읽음
+  assert.equal(count(view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: foreign})), 0);
+  assert.equal(count(view({}, {priceData: {stocks: {}}, stockEntry: domestic})), 0);
+  assert.equal(count(view({ticker: '900001'}, {})), 0);
 });
 
 test('종목 목록: 옛 기록(rebuy에 종목 하나)은 한 종목으로 보여 주고, 처음 고칠 때만 {items:[…]}로 바꾼다', () => {
