@@ -11,6 +11,7 @@ const money = value => `${won.format(Math.round(value || 0))}원`;
 const priceText = (value, currency) => currency === "USD" ? `$${usd.format(value)}` : money(value);
 const memoCount = text => `${String(text||"").length.toLocaleString("ko-KR")} / 4,000자`;
 const fxText = value => `≈ ₩${won.format(Math.round(value || 0))}`;
+const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'; // 수정 연필 아이콘(분할매도·재매수)
 const shown = v => Number.isFinite(Number(v)) ? String(Math.round(Number(v)*1e4)/1e4) : "";
 // 입력칸 공통 처리: 값이 바뀌면 set(입력값, 칸)을 부르고 저장한 뒤 redraw로 다시 그린다.
 // set이 false를 돌려주면(잘못된 값) 저장하지 않고 다시 그려 원래 값으로 되돌린다. redraw가 없으면 다시 그리지 않는다.

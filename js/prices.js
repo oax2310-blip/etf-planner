@@ -6,7 +6,7 @@
 //     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
 //   분할매도 달러 계획 환율 ← 달러선물 보유 근월물 종가(원화 환산 표시에만 쓰여 현물 환율과의 차이 몇 원은 무시. 보유 월물이 없으면 그대로)
 //   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
-//   재매수 현재가·N일선 단계 기준가 ← stocks[재매수 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
+//   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선 단계 기준가 ← stocks[그 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
 //   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.
 // 규칙: 칸마다 지난번 채운 값을 auto에 두고 파일 값이 그와 다를 때만 덮어쓴다 → 직접 고친 값은 다음 시세 갱신 때 덮어쓴다.
@@ -60,7 +60,7 @@ function fillMarked(obj, at, rows){
   if(hit)obj.auto={...mark,at};
   return hit;
 }
-// data = {plans, futures, rebuy}(state 또는 저장소 기록). 바꾼 칸이 있으면 true.
+// data = {plans, futures, rebuy}(state 또는 저장소 기록, rebuy는 {items:[…]} 또는 옛 기록의 종목 하나). 바꾼 칸이 있으면 true.
 function fillPrices(data, prices){
   if(!prices||!data)return false;
   const at=String(prices.updatedAt||"");let changed=false;
@@ -75,8 +75,10 @@ function fillPrices(data, prices){
       if(Number(l?.days)!==days)return; l.price=v; (Array.isArray(l.tranches)?l.tranches:[]).forEach(t=>{if(!t.completed)t.price=v;}); })]);
     changed=fillMarked(f,at,rows)||changed;
   }
-  const r=data.rebuy, re=r&&typeof r==="object"?stockEntry(prices,r.ticker):null;
-  if(re&&re.kind==="국내"){
+  const rb=data.rebuy, items=rb&&typeof rb==="object"?(Array.isArray(rb.items)?rb.items:[rb]):[];
+  for(const r of items){
+    const re=r&&typeof r==="object"?stockEntry(prices,r.ticker):null;
+    if(!re||re.kind!=="국내")continue;
     const stages=Array.isArray(r.stages)?r.stages:[];
     changed=fillMarked(r,at,[["currentPrice",priceRound(re.close,0),v=>r.currentPrice=v],
       ...stages.filter(x=>x&&maKey(x.name)).map(x=>[String(x.name),priceRound(maValue(re,x.name),0),v=>x.price=v])])||changed;

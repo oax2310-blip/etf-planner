@@ -21,12 +21,15 @@
   - REPO_KEY·TOKEN_KEY 이름은 valuation.html도 읽음(같은 저장소의 etf-planner-scenarios.json 동기화) — 바꾸면 두 파일 같이.
   - normalize()에서 새 필드를 채우지 말 것(기존 기기의 동기화 스냅샷이 바뀜). 새 값은 입력했을 때만 저장하고 비우면 delete
     (futures.rollSpread·lossPrice, state.rebuy는 처음 입력할 때 editRebuy()가 만듦).
+  - 재매수는 종목 목록 state.rebuy = {items:[…]}(규칙은 rebuy.js 맨 위 주석). 옛 기록(rebuy에 종목 하나)은 고칠 때만 editRebuy가 목록으로 바꿈 —
+    normalize·불러올 때 바꾸지 말 것(기기마다 다른 id → 기록 차이 창). 종목을 다 지워도 rebuy는 {items:[]}로 남김.
   - rebuy는 dataSnapshot·readRemote에서 actions 뒤(없으면 JSON에서 빠져 옛 스냅샷과 같음). applyRemote는 병합이라 저장소에 rebuy가 없으면
     이 기기 값 유지. isBlank: rebuy가 있으면 빈 기기가 아님.
   - 화면 상태(openLevels·openBuys: 펼친 매수 완료 구간·날, rebuyUnit: 재매수 보유 입력 단위만 바꾼 것)는 메모리에만 — 저장·동기화 안 함.
+    고른 계획·종목(selectedPlan·selectedRebuy)은 이 기기 state에만(dataSnapshot 밖).
   [시세 자동 채우기]
   - 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions가 평일마다 한국투자증권 시세로 갱신)을 동기화 때 읽기만 한다(ETag, 이 기기 localStorage에 필요한 값만).
-    대상 종목은 그 저장소 scripts/kis_prices.py가 plans[].ticker·rebuy.ticker·보유 월물에서 고름 — 채우는 칸이나 기준선 이름 규칙을 바꾸면 그 스크립트도 같이.
+    대상 종목은 그 저장소 scripts/kis_prices.py가 plans[].ticker·rebuy.items[].ticker(옛 기록 rebuy.ticker)·보유 월물에서 고름 — 채우는 칸이나 기준선 이름 규칙을 바꾸면 그 스크립트도 같이.
   - 채우는 칸·규칙은 prices.js 맨 위 주석이 기준(시세 우선: 직접 고친 값은 다음 시세 갱신 때 덮어씀, 칸마다 지난번 채운 값은 plans[]·futures·rebuy의 auto).
     채우기는 같은 기록 + 같은 시세면 결과가 같아야 한다 — syncNow가 저장소·지난 동기화 기록에도 채운 뒤 비교해 시세만으로 기록 차이 창이 뜨지 않게 함.
   - 시세 기준일은 작게(priceStamp), PRICE_STALE_DAYS(3)일 넘게 지나면 경고(priceWarning). 분할매도·달러선물 현재가, 분할매도 평가액(보유 수량 × 현재가)은 화면에만(저장 안 함).
@@ -46,6 +49,8 @@
   - 분할매도 수정 창: 기준선은 숫자 + 일선·주선·개월선(.hold-input, 시작은 '직접'도), 종료 기준가·평가액 칸 이름 옆 작은 글씨(.field-note)에 자동 여부. 평가액 직접 입력(valueKrw)은 보유 수량 없는 계획만.
   - 분할매도: 제목 옆 연필(.title-row)로 수정 창, 계획 삭제는 창 아래 왼쪽. 첫 매도 기준가·달러 계획 환율은 카드 숫자에서 바로 수정(inlineEdit) —
     수정 창의 같은 칸과 같은 값. 계산 요약·메모는 .control-grid 두 칸(재매수 탭도 같이 씀), 계산 요약에 칸을 늘리지 말 것.
+  - 재매수 화면도 왼쪽(모바일은 위) 종목 목록 — 분할매도 카드 클래스(.plan-list·.plan-item) 그대로, 짧은 상태는 오른쪽(모바일은 이름 아래 — 이름이 안 잘리게). 제목은 작은 글씨(.eyebrow) '손절 후 재매수 · 종목 코드',
+    큰 글씨(h1) 종목 이름 + 연필(rebuyDialog: 이름·종목 코드·종목 삭제). 기준 입력에는 이름·코드 칸을 두지 않음.
   - 분할매도 표(모바일): 종목이 하나(또는 평가액만)면 이름을 머리줄(.m-head)과 수량 아래(.one-sub)에 표시, fitNames()가 칸 폭에 맞춰 자름.
   - 윗줄(.top)은 모바일에서 음수 top(--tuck, fitTop())으로 붙여 스크롤하면 탭 줄만 남음. 탭을 누르면 맨 위로.
 --><html lang="ko">
@@ -53,7 +58,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=8" />
+  <link rel="stylesheet" href="css/app.css?v=9" />
 </head>
 <body>
   <header class="top">
@@ -81,7 +86,15 @@
 
     <section id="futuresView" class="futures hidden"></section>
     <section id="actionsView" class="hidden"></section>
-    <section id="rebuyView" class="rebuy hidden"></section>
+    <section id="rebuyView" class="rebuy hidden">
+      <div class="layout">
+        <aside class="side card">
+          <div class="side-head"><h2>재매수 종목</h2><button class="btn primary mini" id="addRebuyBtn" type="button" aria-label="새 재매수 종목 추가">＋ 추가</button></div>
+          <div id="rebuyList" class="plan-list"></div>
+        </aside>
+        <section id="rebuyMain"></section>
+      </div>
+    </section>
   </main>
 
   <dialog id="planDialog"><form method="dialog" class="dialog-inner" id="planForm">
@@ -110,6 +123,16 @@
     <div class="dialog-foot"><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
+  <dialog id="rebuyDialog"><form method="dialog" class="dialog-inner" id="rebuyForm">
+    <div class="dialog-head"><h2 id="rebuyTitle">새 재매수 종목</h2><button class="btn ghost" type="button" data-close-rebuy>닫기</button></div>
+    <div class="dialog-grid">
+      <label class="field"><span>종목 이름</span><input name="name" required maxlength="40" autocomplete="off" placeholder="예: 니프티50 ETF" /></label>
+      <label class="field"><span>종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="예: 069500" /></label>
+      <p class="hint dialog-wide">국내 상장 종목 코드를 넣으면 동기화할 때 현재가·일선 단계 기준가를 시세로 채웁니다. 신저점·보유·손절 규칙은 화면의 기준 입력에서 넣습니다.</p>
+    </div>
+    <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deleteRebuyBtn">종목 삭제</button><button class="btn" type="button" data-close-rebuy>취소</button><button class="btn primary" type="submit">저장</button></div>
+  </form></dialog>
+
   <dialog id="syncDialog"><div class="dialog-inner">
     <div class="dialog-head"><h2>기기 간 동기화</h2><button class="btn ghost" id="closeSync" type="button">닫기</button></div>
     <p class="sync-details">기록을 내 GitHub의 <b>비공개</b> 데이터 저장소에 저장하고, 페이지를 열 때마다 다른 기기에서 바꾼 내용을 자동으로 불러옵니다. 토큰은 이 기기 브라우저에만 저장됩니다. 연결하면 시나리오 페이지의 가정도 같은 저장소에 함께 동기화됩니다.</p>
@@ -130,13 +153,13 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=8"></script>
-  <script src="js/sync.js?v=8"></script>
-  <script src="js/prices.js?v=8"></script>
-  <script src="js/plans.js?v=8"></script>
-  <script src="js/futures.js?v=8"></script>
-  <script src="js/actions.js?v=8"></script>
-  <script src="js/rebuy.js?v=8"></script>
+  <script src="js/core.js?v=9"></script>
+  <script src="js/sync.js?v=9"></script>
+  <script src="js/prices.js?v=9"></script>
+  <script src="js/plans.js?v=9"></script>
+  <script src="js/futures.js?v=9"></script>
+  <script src="js/actions.js?v=9"></script>
+  <script src="js/rebuy.js?v=9"></script>
   <script>startSync(); openTab(state.tab); save();</script>
 </body>
 </html>
