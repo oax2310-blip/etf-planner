@@ -22,7 +22,7 @@ test('기준선 이름을 시세 파일 이동평균 이름으로 바꾼다(데�
     ['60일선', '25개월선', '12개월선', '20주선', '150일선', '', '', '', '', '']);
 });
 
-test('분할매도: 통화가 맞는 계획만 시작·종료 기준가를 채우고, 달러는 센트·원화는 원 단위로 반올림한다', () => {
+test('분할매도: 통화가 맞는 계획만 종료 기준가를 채우고(시작 기준가는 직접 정하는 값이라 그대로), 달러는 센트·원화는 원 단위로 반올림한다', () => {
   const ctx = load();
   const data = {plans: [
     {ticker: ' aaa ', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 100, endPrice: 80},
@@ -33,8 +33,8 @@ test('분할매도: 통화가 맞는 계획만 시작·종료 기준가를 채�
   ], futures: {positions: []}};
   assert.equal(ctx.fillPrices(data, prices()), true);
   assert.deepEqual(data.plans.map(p => plain([p.startPrice, p.endPrice, p.auto ?? 'auto 없음'])), [
-    [120.46, 90.1, {at: AT, startPrice: 120.46, endPrice: 90.1}],
-    [10100, 8001, {at: AT, startPrice: 10100, endPrice: 8001}],
+    [100, 90.1, {at: AT, endPrice: 90.1}], // 시작 기준선이 60일선이어도 시작 기준가는 채우지 않는다
+    [1, 8001, {at: AT, endPrice: 8001}],
     [5, 4, 'auto 없음'], // 국내 종목인데 달러 계획이면 채우지 않는다
     [77.65, 110, {at: AT, endPrice: 110}], // 이동평균이 아닌 기준선은 직접 입력한 값 그대로
     [3, 2, 'auto 없음'], // 시세 파일에 없는 종목은 새 필드도 만들지 않는다
@@ -47,14 +47,14 @@ test('분할매도: 직접 고친 값은 시세가 그대로면 두고, 그 칸 
   const p = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 1, endPrice: 1};
   const data = {plans: [p]};
   ctx.fillPrices(data, prices());
-  p.startPrice = 111; p.endPrice = 88;
+  p.endPrice = 88;
   assert.equal(ctx.fillPrices(data, {...prices(), updatedAt: '2026-09-30T17:00:00+09:00'}), false);
-  assert.deepEqual([p.startPrice, p.endPrice], [111, 88]);
-  const next = prices(); next.updatedAt = '2026-10-01T06:40:00+09:00'; next.stocks.AAA.ma['60일선'] = 121;
+  assert.equal(p.endPrice, 88);
+  const next = prices(); next.updatedAt = '2026-10-01T06:40:00+09:00'; next.stocks.AAA.ma['25개월선'] = 91; next.stocks.AAA.ma['60일선'] = 121;
   assert.equal(ctx.fillPrices(data, next), true);
-  assert.deepEqual(plain([p.startPrice, p.endPrice, p.auto]), [121, 88, {at: '2026-10-01T06:40:00+09:00', startPrice: 121, endPrice: 90.1}]);
+  assert.deepEqual(plain([p.startPrice, p.endPrice, p.auto]), [1, 91, {at: '2026-10-01T06:40:00+09:00', endPrice: 91}]);
   assert.equal(ctx.fillPrices(data, prices()), false, '채운 시각보다 오래된 시세로는 되돌리지 않는다');
-  assert.equal(p.startPrice, 121);
+  assert.equal(p.endPrice, 91);
 });
 
 test('분할매도: 달러 계획 환율은 달러선물 보유 근월물 종가로 채우고, 원화 계획·보유 월물이 없으면 그대로 둔다', () => {
@@ -65,7 +65,7 @@ test('분할매도: 달러 계획 환율은 달러선물 보유 근월물 종가
   const futures = {positions: [{month: '202612', contracts: 1}]};
   assert.equal(ctx.fillPrices({plans: [usd, noQuote, krw], futures}, prices()), true);
   assert.deepEqual(plain([usd.fx, usd.auto, noQuote.fx, noQuote.auto, krw.fx, 'fx' in krw.auto]), [
-    1398.2, {at: AT, startPrice: 120.46, endPrice: 90.1, fx: 1398.2},
+    1398.2, {at: AT, endPrice: 90.1, fx: 1398.2},
     1398.2, {at: AT, fx: 1398.2}, // 시세 파일에 없는 종목도 환율은 채운다
     1354.91, false]);
   usd.fx = 1400; // 직접 고친 환율은 종가가 그대로면 둔다
@@ -126,9 +126,47 @@ test('시세 파일에서 채우기·표시에 쓰는 값만 남기고, 형식�
   const ctx = load();
   const slim = plain(ctx.slimPrices({updatedAt: AT, columns: [], stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}, daily: [[1]], monthly: [[1]]},
     BAD: {error: '조회 실패'}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true, error: 'x'}}}));
-  assert.deepEqual(slim, {updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}});
+  assert.deepEqual(slim, {format: 2, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}});
   assert.equal(vm.runInContext('stockEntry', ctx)(slim, 'bad'), null, '기준일 없는 항목(조회만 실패)은 쓰지 않는다');
   assert.throws(() => ctx.slimPrices({plans: []}), /형식/);
+});
+
+// 봉: 시세 파일 columns(date·open·high·low·close·volume) 순서. 9/14·9/21·9/28이 있는 주(월~일)로 주봉을 만든다.
+const COLUMNS = ['date', 'open', 'high', 'low', 'close', 'volume'];
+const bar = (date, close) => [date, 1, 1, 1, close, 100];
+const daily = [bar('2026-09-17', 10), bar('2026-09-18', 11), bar('2026-09-21', 12), bar('2026-09-25', 13), bar('2026-09-28', 14), bar('2026-09-30', 15)];
+const monthly = [bar('2026-08-31', 20), bar('2026-09-30', 30)];
+
+test('시세 파일 봉 기록에서 종목 종가만 남기고, 주봉이 없으면 일봉을 주마다 묶어 만든다', () => {
+  const ctx = load();
+  const slim = plain(ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {
+    AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {}, daily, monthly},
+    BBB: {kind: '국내', asOf: '2026-09-30', close: 15, ma: {}, daily, weekly: [bar('2026-09-21', 7), bar('2026-09-28', 8)]},
+  }, futures: {'202612': {kind: '달러선물', asOf: '2026-09-30', close: 1398.2, ma: {}, daily}}}));
+  assert.deepEqual(slim.stocks.AAA.closes, {D: [10, 11, 12, 13, 14, 15], W: [11, 13, 15], M: [20, 30]});
+  assert.deepEqual(slim.stocks.BBB.closes, {D: [10, 11, 12, 13, 14, 15], W: [7, 8]}, '시세 파일 주봉이 있으면 그대로 쓴다');
+  assert.equal(slim.futures['202612'].closes, undefined, '달러선물은 파일 ma만 쓴다');
+  const moved = plain(ctx.slimPrices({updatedAt: AT, columns: ['close', 'date'], stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {}, daily: [[10, '2026-09-29'], [15, '2026-09-30']]}}}));
+  assert.deepEqual(moved.stocks.AAA.closes, {D: [10, 15], W: [15]}, 'columns 순서를 따른다');
+});
+
+test('이동평균: 시세 파일 ma에 있으면 그 값, 없으면 보관한 종가로 계산하고 봉이 모자라면 비운다', () => {
+  const ctx = load();
+  const e = plain(ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {'3일선': 99, '4일선': null}, daily, monthly}}})).stocks.AAA;
+  assert.deepEqual(['3일선', '2일선', '4일선', '2주선', '3 주선', '2개월선', '1달선', '3개월선', '7일선', '25분봉'].map(label => ctx.maValue(e, label)),
+    [99, 14.5, 13.5, 14, 13, 25, 30, null, null, null]);
+  assert.equal(ctx.maValue({kind: '국내', asOf: '2026-09-30', close: 1, ma: {'60일선': 5}}, '60일선'), 5, '종가가 없는 옛 시세도 ma는 쓴다');
+});
+
+test('분할매도: 새로 고른 기준선(시세 파일 ma에 아직 없음)도 보관한 종가로 바로 채운다', () => {
+  const ctx = load();
+  const slim = ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {'60일선': 120.4567}, daily, monthly}}});
+  const p = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '2주선', startPrice: 1, endPrice: 1};
+  assert.equal(ctx.fillPrices({plans: [p]}, slim), true);
+  assert.deepEqual(plain([p.startPrice, p.endPrice, p.auto]), [1, 14, {at: AT, endPrice: 14}]);
+  p.endLabel = '12개월선'; // 월봉이 모자라면 그대로(다음 수집 때 스크립트가 채움)
+  assert.equal(ctx.fillPrices({plans: [p]}, slim), false);
+  assert.equal(p.endPrice, 14);
 });
 
 test('시세 기준일은 작게 표시하고, 3일 넘게 지났으면 경고한다', () => {

@@ -248,7 +248,7 @@ const AT = '2026-09-30T13:28:09+09:00';
 const PRICES = {updatedAt: AT, stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 130.5, ma: {'60일선': 120.4567, '25개월선': 90.1}, daily: [['2026-09-29', 1, 2, 0, 130.5, 10]]}}, futures: {}};
 const plan = extra => ({id: 'p1', ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 100, endPrice: 80, stages: 30, ...extra});
 const withPlan = p => ({plans: [p], futures: {positions: []}, actions: {}});
-const filledPlan = extra => plan({startPrice: 120.46, endPrice: 90.1, ...extra, auto: {at: AT, startPrice: 120.46, endPrice: 90.1}});
+const filledPlan = extra => plan({endPrice: 90.1, ...extra, auto: {at: AT, endPrice: 90.1}}); // 시작 기준가는 직접 정하는 값이라 채우지 않는다
 const statePlan = h => JSON.parse(vm.runInContext('dataSnapshot()', h.context)).plans[0];
 
 test('시세 파일의 이동평균으로 기준가를 채우고 저장소에도 올린다', async () => {
@@ -261,6 +261,7 @@ test('시세 파일의 이동평균으로 기준가를 채우고 저장소에도
   assert.match(h.status(), /동기화 완료/);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
   assert.equal(cached.stocks.AAA.daily, undefined, '봉 기록은 이 기기에 두지 않는다');
+  assert.deepEqual(cached.stocks.AAA.closes, {D: [130.5], W: [130.5]}, '종가만 둔다(새로 고른 기준선 계산용)');
   assert.equal(cached.etag, '"p1"');
   assert.match(h.elements.get('priceStatus').textContent, /종목 1개/);
 });
@@ -272,7 +273,7 @@ test('다른 기기가 같은 시세로 먼저 채워 올렸어도 이 기기 �
   await h.restored();
   assert.equal(h.elements.get('conflictDialog')?.open, undefined, h.status());
   assert.equal(h.server.writes, 1);
-  assert.deepEqual(h.remoteData().plans[0], {...plan({note: '이 기기 메모'}), startPrice: 120.46, endPrice: 90.1, auto: {at: AT, startPrice: 120.46, endPrice: 90.1}});
+  assert.deepEqual(h.remoteData().plans[0], {...plan({note: '이 기기 메모'}), endPrice: 90.1, auto: {at: AT, endPrice: 90.1}});
 });
 
 test('다른 기기 기록을 가져올 때도 시세를 채우고, 채운 기록을 올린다', async () => {
@@ -280,34 +281,47 @@ test('다른 기기 기록을 가져올 때도 시세를 채우고, 채운 기�
   const remote = withPlan(plan({note: '다른 기기 메모'}));
   const h = harness({local: before, remote, base: snap(before), prices: PRICES});
   await h.restored();
-  assert.deepEqual(statePlan(h), {...plan({note: '다른 기기 메모'}), startPrice: 120.46, endPrice: 90.1, auto: {at: AT, startPrice: 120.46, endPrice: 90.1}});
+  assert.deepEqual(statePlan(h), {...plan({note: '다른 기기 메모'}), endPrice: 90.1, auto: {at: AT, endPrice: 90.1}});
   assert.equal(h.server.writes, 1);
   assert.deepEqual(h.remoteData().plans[0], statePlan(h));
 });
 
 test('직접 고친 기준가는 다음 시세 갱신까지 두고, 시세가 바뀌면 덮어쓴다(바뀌지 않은 시세는 304로 다시 받지 않음)', async () => {
-  const local = withPlan(filledPlan({startPrice: 111}));
+  const local = withPlan(filledPlan({endPrice: 88}));
   const h = harness({local, remote: local, base: snap(local), prices: PRICES});
   await h.restored();
-  assert.equal(statePlan(h).startPrice, 111);
+  assert.equal(statePlan(h).endPrice, 88);
   assert.equal(h.server.writes, 0);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"']);
-  assert.equal(statePlan(h).startPrice, 111);
-  const next = {...PRICES, updatedAt: '2026-09-30T14:10:00+09:00', stocks: {AAA: {...PRICES.stocks.AAA, ma: {'60일선': 125, '25개월선': 90.1}}}};
+  assert.equal(statePlan(h).endPrice, 88);
+  const next = {...PRICES, updatedAt: '2026-09-30T14:10:00+09:00', stocks: {AAA: {...PRICES.stocks.AAA, ma: {'60일선': 125, '25개월선': 91}}}};
   h.server.prices = {etag: '"p2"', text: JSON.stringify(next)};
   await h.run();
-  assert.equal(statePlan(h).startPrice, 125);
-  assert.deepEqual(statePlan(h).auto, {at: '2026-09-30T14:10:00+09:00', startPrice: 125, endPrice: 90.1});
+  assert.deepEqual([statePlan(h).startPrice, statePlan(h).endPrice], [100, 91]);
+  assert.deepEqual(statePlan(h).auto, {at: '2026-09-30T14:10:00+09:00', endPrice: 91});
   assert.equal(h.server.writes, 1);
-  assert.equal(h.remoteData().plans[0].startPrice, 125);
+  assert.equal(h.remoteData().plans[0].endPrice, 91);
+});
+
+test('이 기기에 둔 시세가 옛 형식(종가 없음)이면 ETag 없이 다시 받는다', async () => {
+  const local = withPlan(filledPlan());
+  const old = {updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 130.5, ma: PRICES.stocks.AAA.ma}}, futures: {}, etag: '"p1"'};
+  const h = harness({local, remote: local, base: snap(local), prices: PRICES, stored: {'etf-planner-prices': JSON.stringify(old)}});
+  await h.restored();
+  assert.deepEqual(h.server.priceAsks, [null]);
+  const cached = JSON.parse(h.items.get('etf-planner-prices'));
+  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [2, [130.5]]);
+  await h.run();
+  assert.deepEqual(h.server.priceAsks, [null, '"p1"'], '새 형식이면 다시 ETag로 묻는다');
+  assert.equal(h.server.writes, 0);
 });
 
 test('늦게 읽은 옛 시세로는 다른 기기가 채운 새 시세를 되돌리지 않는다', async () => {
-  const newer = withPlan(plan({startPrice: 130, endPrice: 91, auto: {at: '2026-10-01T09:10:00+09:00', startPrice: 130, endPrice: 91}}));
+  const newer = withPlan(plan({endPrice: 91, auto: {at: '2026-10-01T09:10:00+09:00', endPrice: 91}}));
   const h = harness({local: newer, remote: newer, base: snap(newer), prices: PRICES});
   await h.restored();
-  assert.equal(statePlan(h).startPrice, 130);
+  assert.equal(statePlan(h).endPrice, 91);
   assert.equal(h.server.writes, 0);
 });
 

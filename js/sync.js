@@ -58,10 +58,10 @@ async function writeRemote(snapshot,sha){
   const result=await response.json();sync.sha=result.content?.sha||"";
   return result;
 }
-// 시세 파일 읽기: ETag로 바뀌었을 때만 받는다(안 바뀌면 304). 실패해도 동기화는 계속하고 지난 시세를 쓴다. 시세가 바뀌었으면 true.
+// 시세 파일 읽기: ETag로 바뀌었을 때만 받는다(안 바뀌면 304, 이 기기에 둔 시세가 옛 형식(PRICE_FORMAT)이면 다시 받음). 실패해도 동기화는 계속하고 지난 시세를 쓴다. 시세가 바뀌었으면 true.
 async function readPrices(){
   try{
-    const response=await gh(`/repos/${sync.repo}/contents/${PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(priceData?.etag?{"If-None-Match":priceData.etag}:{})}});
+    const response=await gh(`/repos/${sync.repo}/contents/${PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(priceData?.etag&&priceData.format===PRICE_FORMAT?{"If-None-Match":priceData.etag}:{})}});
     if(response.status===304){priceStatus();return false;}
     if(response.status===404){const had=!!priceData;priceData=null;localStorage.removeItem(PRICE_KEY);priceStatus("데이터 저장소에 시세 파일(etf-planner-prices.json)이 없어 현재가·기준가를 채우지 않습니다.");return had;}
     if(!response.ok)throw Error(`시세 읽기 실패 (${response.status})`);
