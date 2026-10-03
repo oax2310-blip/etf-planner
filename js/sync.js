@@ -70,7 +70,7 @@ async function readPrices(){
     priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));priceStatus();return changed;
   }catch(error){priceStatus(`시세 확인 실패 · ${error.message}`);return false;}
 }
-function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt);$("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${Object.keys(d.stocks).length}개 · 달러선물 ${Object.keys(d.futures).length}개 월물. 현재가·이동평균선 기준가를 자동으로 채웁니다.`:"");}
+function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt),fx=fxEntry(d);$("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${Object.keys(d.stocks).length}개 · 달러선물 ${Object.keys(d.futures).length}개 월물 · ${fx?`현물 환율 ${priceRound(fx.close,2)}원 (${fx.asOf}${fx.stale?" · 조회 실패":""}${priceOld(fx)?" · 지난 시세":""})`:"현물 환율 없음(기존 값 유지)"}. 현재가·이동평균선 기준가·달러 계획 환율을 자동으로 채웁니다.`:"");}
 // 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
@@ -143,7 +143,7 @@ $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncS
 $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);loadConfig();refreshTokenField();syncStatus("이 기기에만 저장 중");};
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
-loadConfig();refreshTokenField();priceStatus();
+loadConfig();refreshTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
 $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=JSON.parse(await file.text());if(!Array.isArray(incoming.plans)||!incoming.futures)throw Error("플래너 백업 형식이 아닙니다.");state={...state,...incoming};normalize();save();render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
-function startSync(){ return connected()?syncNow():Promise.resolve(); } // index.html 맨 끝에서 부름(모든 파일을 불러온 뒤 동기화 시작)
+function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // index.html 맨 끝에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)

@@ -311,10 +311,32 @@ test('이 기기에 둔 시세가 옛 형식(종가 없음)이면 ETag 없이 �
   await h.restored();
   assert.deepEqual(h.server.priceAsks, [null]);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [2, [130.5]]);
+  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [3, [130.5]]);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"'], '새 형식이면 다시 ETag로 묻는다');
   assert.equal(h.server.writes, 0);
+});
+
+test('현물 환율 도입으로 옛 시세 캐시를 다시 받고, 다른 기기와 같은 값으로 채워 충돌하지 않는다', async () => {
+  const before = withPlan(plan({fx: 1398.2, auto: {at: AT, fx: 1398.2}}));
+  const spot = {kind: '현물환율', asOf: '2026-09-30', close: 1388.456, ma: {}};
+  const prices = {...PRICES, fx: {USDKRW: spot}};
+  const filled = {...plan({fx: 1388.46}), endPrice: 90.1, auto: {at: AT, fx: 1388.46, endPrice: 90.1}};
+  const oldCache = {...PRICES, format: 2, etag: '"p1"'};
+  const h = harness({local: {...before, plans: [{...before.plans[0], note: '이 기기 메모'}]}, remote: withPlan(filled), base: snap(before),
+    prices, stored: {'etf-planner-prices': JSON.stringify(oldCache)}});
+  await h.restored();
+  assert.deepEqual(h.server.priceAsks, [null], '시세 파일 ETag가 같아도 형식 2는 다시 받는다');
+  assert.equal(h.elements.get('conflictDialog')?.open, undefined, h.status());
+  assert.equal(statePlan(h).fx, 1388.46);
+  assert.equal(statePlan(h).note, '이 기기 메모');
+  assert.equal(h.server.writes, 1);
+  const cached = JSON.parse(h.items.get('etf-planner-prices'));
+  assert.deepEqual([cached.format, cached.fx.USDKRW], [3, spot]);
+  assert.match(h.elements.get('priceStatus').textContent, /현물 환율 1388.46원/);
+  await h.run();
+  assert.deepEqual(h.server.priceAsks, [null, '"p1"']);
+  assert.equal(h.server.writes, 1, '같은 현물 환율로 반복해서 저장하지 않는다');
 });
 
 test('늦게 읽은 옛 시세로는 다른 기기가 채운 새 시세를 되돌리지 않는다', async () => {

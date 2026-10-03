@@ -4,7 +4,7 @@
 //   분할매도 종료 기준가 ← stocks[종목 코드]의 종료 기준선 이름(N일선·N주선·N개월선) 이동평균(maValue) (국내=원화 계획, 해외=달러 계획일 때만).
 //     시작 기준가(첫 매도 기준가)는 수정 창에서 시작 기준선을 일·주·개월선으로 고른 계획(startAuto=true)만 같은 방식으로 채운다.
 //     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
-//   분할매도 달러 계획 환율 ← 달러선물 보유 근월물 종가(원화 환산 표시에만 쓰여 현물 환율과의 차이 몇 원은 무시. 보유 월물이 없으면 그대로)
+//   분할매도 달러 계획 환율 ← fx.USDKRW의 현물 환율(달러선물 보유와 무관). 조회 값이 없으면 마지막 환율 그대로.
 //   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
 //   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선 단계 기준가 ← stocks[그 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
@@ -13,11 +13,12 @@
 //   auto.at(채운 시세 파일의 updatedAt)보다 오래된 시세로는 채우지 않는다(늦게 읽은 기기가 옛 시세로 되돌리지 않게).
 //   같은 기록 + 같은 시세면 어느 기기에서 채워도 결과가 같아야 한다(sync.js가 저장소·지난 동기화 기록도 채워 비교해, 시세만으로 기록 차이 창이 뜨지 않게).
 const PRICE_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 경고
-const PRICE_FORMAT = 2; // slimPrices 결과 형식. 바꾸면 올릴 것 — 이 기기에 둔 옛 형식 시세는 ETag 없이 다시 받는다(sync.js readPrices)
+const PRICE_FORMAT = 3; // slimPrices 결과 형식. 바꾸면 올릴 것 — 이 기기에 둔 옛 형식 시세는 ETag 없이 다시 받는다(sync.js readPrices)
 // 기준선 이름 → 시세 파일 ma 이름. 데이터 저장소 scripts/kis_prices.py의 LABEL_RE·ma_name과 같게("60 일선"→"60일선", "12달선"→"12개월선")
 function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|달)\s*선/.exec(String(label||"")); return m&&Number(m[1])>=1?`${Number(m[1])}${{일:"일선",주:"주선",개월:"개월선",달:"개월선"}[m[2]]}`:""; }
 const priceEntry = e => e&&typeof e==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(e.asOf)&&e.ma&&typeof e.ma==="object" ? e : null;
 const stockEntry = (prices, ticker) => priceEntry(prices?.stocks?.[String(ticker||"").trim().toUpperCase()]);
+const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&Number.isFinite(Number(e.close))&&Number(e.close)>0?e:null; };
 // 달러선물은 보유 근월물(계약 수 > 0인 가장 가까운 월물, futures.js nearestMonth와 같음)의 시세
 function priceMonth(f){ return (Array.isArray(f?.positions)?f.positions:[]).filter(p=>Number(p.contracts)>0&&/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.month))).map(p=>String(p.month)).sort()[0]||""; }
 const futuresEntry = (prices, f) => priceEntry(prices?.futures?.[priceMonth(f)]);
@@ -39,7 +40,7 @@ function slimPrices(doc){
   if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object")throw Error("시세 파일 형식을 확인할 수 없습니다.");
   const pick=(group,bars)=>Object.fromEntries(Object.entries(group&&typeof group==="object"?group:{}).filter(([,e])=>e&&typeof e==="object")
     .map(([k,e])=>{const closes=bars&&barCloses(e,doc.columns);return [k,{kind:e.kind,asOf:e.asOf,close:e.close,ma:e.ma,...(closes?{closes}:{}),...(e.stale?{stale:true}:{})}];}));
-  return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,false)};
+  return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,false),fx:pick(doc.fx,false)};
 }
 // 기준선 이름(N일선·N주선·N개월선)의 이동평균: 시세 파일 ma에 있으면 그 값, 없으면 보관한 종가로 계산(스크립트처럼 소수 넷째 자리). 없으면 null.
 function maValue(e, label){
@@ -64,7 +65,7 @@ function fillMarked(obj, at, rows){
 function fillPrices(data, prices){
   if(!prices||!data)return false;
   const at=String(prices.updatedAt||"");let changed=false;
-  const f=data.futures, fe=futuresEntry(prices,f), fx=priceRound(fe?.close,2);
+  const f=data.futures, fe=futuresEntry(prices,f), fx=priceRound(fxEntry(prices)?.close,2);
   for(const p of Array.isArray(data.plans)?data.plans:[]){
     if(!p||typeof p!=="object")continue;
     const usd=p.currency!=="KRW", e=stockEntry(prices,p.ticker), ok=e?.kind===(usd?"해외":"국내"), ma=label=>ok?priceRound(maValue(e,label),usd?2:0):null;
