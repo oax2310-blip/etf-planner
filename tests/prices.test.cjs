@@ -66,26 +66,46 @@ test('분할매도: 직접 고친 값은 시세가 그대로면 두고, 그 칸 
   assert.equal(p.endPrice, 91);
 });
 
-test('분할매도: 달러 계획 환율은 달러선물 보유 근월물 종가로 채우고, 원화 계획·보유 월물이 없으면 그대로 둔다', () => {
+const withFx = (doc = prices()) => ({...doc, fx: {USDKRW: {kind: '현물환율', asOf: '2026-09-30', close: 1388.456, ma: {}}}});
+
+test('분할매도: 달러 계획은 현물 환율로 채우고, 원화 계획은 그대로 둔다', () => {
   const ctx = load();
   const usd = {ticker: 'AAA', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 1, endPrice: 1, fx: 1354.91};
   const noQuote = {ticker: 'ZZZ', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2, fx: 1354.91};
   const krw = {ticker: '900001', currency: 'KRW', startLabel: '25일선', endLabel: '25개월선', startPrice: 1, endPrice: 1, fx: 1354.91};
   const futures = {positions: [{month: '202612', contracts: 1}]};
-  assert.equal(ctx.fillPrices({plans: [usd, noQuote, krw], futures}, prices()), true);
+  assert.equal(ctx.fillPrices({plans: [usd, noQuote, krw], futures}, withFx()), true);
   assert.deepEqual(plain([usd.fx, usd.auto, noQuote.fx, noQuote.auto, krw.fx, 'fx' in krw.auto]), [
-    1398.2, {at: AT, endPrice: 90.1, fx: 1398.2},
-    1398.2, {at: AT, fx: 1398.2}, // 시세 파일에 없는 종목도 환율은 채운다
+    1388.46, {at: AT, endPrice: 90.1, fx: 1388.46},
+    1388.46, {at: AT, fx: 1388.46}, // 시세 파일에 없는 종목도 환율은 채운다
     1354.91, false]);
-  usd.fx = 1400; // 직접 고친 환율은 종가가 그대로면 둔다
-  assert.equal(ctx.fillPrices({plans: [usd], futures}, prices()), false);
+  usd.fx = 1400; // 직접 고친 환율은 현물 시세가 그대로면 둔다
+  const futuresOnly = withFx(); futuresOnly.futures['202612'].close = 1500;
+  assert.equal(ctx.fillPrices({plans: [usd], futures}, futuresOnly), false, '선물 종가가 바뀌어도 환율을 바꾸지 않는다');
   assert.equal(usd.fx, 1400);
-  const next = prices(); next.updatedAt = '2026-10-01T09:10:00+09:00'; next.futures['202612'].close = 1402.456;
+  const next = withFx(); next.updatedAt = '2026-10-01T09:10:00+09:00'; next.fx.USDKRW.close = 1402.456;
   assert.equal(ctx.fillPrices({plans: [usd], futures}, next), true);
   assert.equal(usd.fx, 1402.46);
   const alone = {ticker: 'ZZZ', currency: 'USD', fx: 1354.91};
-  assert.equal(ctx.fillPrices({plans: [alone], futures: {positions: []}}, prices()), false, '달러선물 보유 월물이 없으면 환율을 채우지 않는다');
-  assert.deepEqual([alone.fx, 'auto' in alone], [1354.91, false]);
+  assert.equal(ctx.fillPrices({plans: [alone], futures: {positions: []}}, withFx()), true, '달러선물 보유 월물이 없어도 현물 환율을 채운다');
+  assert.deepEqual(plain([alone.fx, alone.auto]), [1388.46, {at: AT, fx: 1388.46}]);
+  assert.equal(ctx.fillPrices({plans: [usd]}, withFx()), false, '늦게 읽은 옛 시세로 새 환율을 되돌리지 않는다');
+  assert.equal(usd.fx, 1402.46);
+});
+
+test('현물 환율이 없거나 잘못됐으면 마지막 환율을 유지하고 선물 종가로 대체하지 않는다', () => {
+  const ctx = load();
+  const p = {ticker: 'ZZZ', currency: 'USD', fx: 1354.91, auto: {at: AT, fx: 1398.2}};
+  for (const entry of [null, {error: '조회 실패'}, ...[0, -1, NaN, Infinity, ''].map(close => ({...withFx().fx.USDKRW, close})),
+    {...withFx().fx.USDKRW, kind: '달러선물'}, {...withFx().fx.USDKRW, asOf: ''}]) {
+    const doc = prices(); doc.fx = {USDKRW: entry};
+    assert.equal(ctx.fillPrices({plans: [p], futures: {positions: [{month: '202612', contracts: 1}]}}, doc), false);
+    assert.deepEqual(plain(p), {ticker: 'ZZZ', currency: 'USD', fx: 1354.91, auto: {at: AT, fx: 1398.2}});
+  }
+  assert.equal(ctx.fillPrices({plans: [p]}, withFx()), true, '기존 선물 환율 기록도 현물 값으로 바뀐다');
+  assert.equal(p.fx, 1388.46);
+  const stale = withFx(); stale.fx.USDKRW.stale = true;
+  assert.equal(ctx.fillPrices({plans: [p]}, stale), false, '조회 실패 시 보관한 현물 값은 그대로 쓴다');
 });
 
 test('달러선물: 보유 근월물 이동평균으로 N일선 구간 기준가와 안 산 계약 매수가를 채운다', () => {
@@ -146,9 +166,17 @@ test('시세 파일에서 채우기·표시에 쓰는 값만 남기고, 형식�
   const ctx = load();
   const slim = plain(ctx.slimPrices({updatedAt: AT, columns: [], stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}, daily: [[1]], monthly: [[1]]},
     BAD: {error: '조회 실패'}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true, error: 'x'}}}));
-  assert.deepEqual(slim, {format: 2, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}});
+  assert.deepEqual(slim, {format: 3, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
   assert.equal(vm.runInContext('stockEntry', ctx)(slim, 'bad'), null, '기준일 없는 항목(조회만 실패)은 쓰지 않는다');
   assert.throws(() => ctx.slimPrices({plans: []}), /형식/);
+});
+
+test('현물 환율은 기준일·가격·조회 실패 표시를 캐시에 보관한다', () => {
+  const ctx = load();
+  const doc = withFx(); doc.fx.USDKRW.stale = true; doc.fx.USDKRW.error = '조회 실패';
+  const slim = plain(ctx.slimPrices(doc));
+  assert.deepEqual(slim.fx.USDKRW, {kind: '현물환율', asOf: '2026-09-30', close: 1388.456, ma: {}, stale: true});
+  assert.equal(vm.runInContext('fxEntry', ctx)(slim).close, 1388.456);
 });
 
 // 봉: 시세 파일 columns(date·open·high·low·close·volume) 순서. 9/14·9/21·9/28이 있는 주(월~일)로 주봉을 만든다.
