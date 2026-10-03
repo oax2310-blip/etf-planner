@@ -36,4 +36,4 @@ $$(".tab").forEach(b=>b.addEventListener("click",()=>{ openTab(b.dataset.tab); s
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
-function render(){ if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="actions") renderActions(); if(state.tab==="rebuy") renderRebuy(); }
+function render(){ if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="actions") renderActions(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }
