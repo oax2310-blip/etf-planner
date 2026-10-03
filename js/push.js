@@ -64,6 +64,7 @@ function renderPushSetup(){
   const status=pushConfig?.repo===sync.repo?pushConfig.status:"";
   if(status==="delivery-error")message+=" 최근 발송에 실패했습니다. 다음 수집 때 다시 시도합니다.";
   if(status==="collection-unavailable")message+=" 최근 시세 수집에 실패했습니다. 새 시세를 받은 뒤 발송을 재개합니다.";
+  if(status==="linked-alerts-unavailable")message+=" 매매 기준 알림 계산을 확인 중입니다. 다음 수집에서 계산을 마치면 발송을 재개합니다.";
   const disabled=pushBusy||!supported||!ready||sync.blocked||Notification.permission==="denied";
   target.innerHTML=`<h3>이 휴대폰으로 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy?"연결 중…":saved?"알림 연결 확인":"알림 받기"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. 잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다.</p>`;
   $("enablePhonePush").onclick=enablePhonePush;
