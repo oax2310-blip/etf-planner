@@ -75,6 +75,23 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 
+test('알림 조건과 휴대폰 구독을 다른 기기에서 손실 없이 가져온다', async () => {
+  const local=empty(), remote={...empty(),alerts:{rules:[{id:'rule-1',ticker:'AAA',period:60,unit:'일선',tolerancePct:0.5,enabled:true}],subscriptions:[{id:'device-1',subscription:{endpoint:'https://fcm.googleapis.com/test-only',keys:{p256dh:'fake-public-key',auth:'fake-auth'}}}]}};
+  const h=harness({local,remote,base:snap(local)});
+  await h.restored();
+  assert.deepEqual(JSON.parse(h.items.get('test-state')).alerts,remote.alerts);
+  assert.deepEqual(JSON.parse(vm.runInContext('dataSnapshot()',h.context)).alerts,remote.alerts);
+  assert.equal(h.server.writes,0);
+});
+
+test('알림을 설정한 기기는 새 빈 기기로 취급하지 않는다', async () => {
+  const alerts={rules:[{id:'alert-1',ticker:'AAA',period:20,unit:'주선',tolerancePct:0.5,enabled:true}]};
+  const h=harness({local:{...empty(),alerts}});
+  await h.restored();
+  assert.deepEqual(h.remoteData().alerts,alerts);
+  assert.equal(vm.runInContext('isBlank(dataSnapshot())',h.context),false);
+});
+
 test('기존 기기에서 처음 연결하면 현재 기록을 저장소에 올린다', async () => {
   const local = {plans: [{id: 'abc'}], futures: {positions: []}, actions: {}};
   const h = harness({local});
