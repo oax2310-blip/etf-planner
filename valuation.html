@@ -152,6 +152,7 @@
     .ai-table th:first-child,.ai-table td:first-child { text-align:left; }
     .ai-table tr:last-child td { border-bottom:0; }
     .ai-loss { color:#ffba9b !important; }
+    .ai-controls input[type=range] { min-height:26px; }
     .ai-value { display:flex; flex-wrap:wrap; gap:12px 32px; margin-top:15px; }
     .ai-value strong { display:block; color:#087269; font-size:1.4rem; font-variant-numeric:tabular-nums; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
@@ -604,16 +605,16 @@
     <div class="card" style="margin-top:17px">
       <div class="row"><h3 style="margin:0">구독료·규모·운영비</h3><span class="pill" id="aiPresetLabel">기준 원가</span></div>
       <div class="presets" role="group" aria-label="AI 구독사업 원가 시나리오"><button type="button" data-ai-preset="high">효율화 · 월 2천 원</button><button type="button" class="active" data-ai-preset="base">기준 · 월 4천 원</button><button type="button" data-ai-preset="low">고사용량 · 월 7천 원</button></div>
-      <div class="battery-inputs">
-        <div class="battery-field"><label for="aiPrice">월 소비자 요금</label><input id="aiPrice" type="number" min="500" max="100000" step="100" value="12000"><span class="unit">원</span></div>
-        <div class="battery-field"><label for="aiReferenceM">비교용 이용 인원</label><input id="aiReferenceM" type="number" min="1" max="1000" step="1" value="125"><span class="unit">백만 명</span></div>
-        <div class="battery-field"><label for="aiPaidRatio">결제계정 환산율</label><input id="aiPaidRatio" type="number" min="1" max="100" step="1" value="100"><span class="unit">%</span></div>
-        <div class="battery-field"><label for="aiInference">계정당 월 추론비</label><input id="aiInference" type="number" min="0" max="100000" step="100" value="4000"><span class="unit">원</span></div>
-        <div class="battery-field"><label for="aiOther">계정당 기타 월 비용</label><input id="aiOther" type="number" min="0" max="100000" step="100" value="1000"><span class="unit">원</span></div>
-        <div class="battery-field"><label for="aiFixed">연간 고정비</label><input id="aiFixed" type="number" min="0" max="100" step="0.1" value="5"><span class="unit">조 원</span></div>
+      <div class="controls ai-controls">
+        <div class="control"><label for="aiPrice">월 소비자 요금 <output id="aiPriceOut" for="aiPrice">12,000원</output></label><input id="aiPrice" type="range" min="500" max="50000" step="100" value="12000" data-slider-max="50000" data-saved-max="100000"></div>
+        <div class="control"><label for="aiReferenceM">비교용 이용 인원 <output id="aiReferenceMOut" for="aiReferenceM">1.25억 명</output></label><input id="aiReferenceM" type="range" min="1" max="500" step="1" value="125" data-slider-max="500" data-saved-max="1000"></div>
+        <div class="control"><label for="aiPaidRatio">결제계정 환산율 <output id="aiPaidRatioOut" for="aiPaidRatio">100%</output></label><input id="aiPaidRatio" type="range" min="1" max="100" step="1" value="100"></div>
+        <div class="control"><label for="aiInference">계정당 월 추론비 <output id="aiInferenceOut" for="aiInference">4,000원</output></label><input id="aiInference" type="range" min="0" max="20000" step="100" value="4000" data-slider-max="20000" data-saved-max="100000"></div>
+        <div class="control"><label for="aiOther">계정당 기타 월 비용 <output id="aiOtherOut" for="aiOther">1,000원</output></label><input id="aiOther" type="range" min="0" max="10000" step="100" value="1000" data-slider-max="10000" data-saved-max="100000"></div>
+        <div class="control"><label for="aiFixed">연간 고정비 <output id="aiFixedOut" for="aiFixed">5조 원</output></label><input id="aiFixed" type="range" min="0" max="30" step="0.1" value="5" data-slider-max="30" data-saved-max="100"></div>
       </div>
       <p class="small muted" style="margin:12px 0 0">계정 수는 12개월 동안의 평균입니다. 추론비는 유료계정 전체의 평균 서비스 원가, 기타 비용은 저장·지원·무료 서비스 지원비의 계정당 배부액 등입니다. 고정비는 연구개발·훈련·인건비·마케팅 등 연간 비용이며 <strong>5조 원은 실제 기업의 공시값이 아닙니다.</strong> 장비 감가상각은 해당 원가 또는 고정비에 포함하고 중복 계산하지 않습니다.</p>
-      <details><summary>부가세·수수료 조정</summary><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="aiVat">요금에 포함된 세율</label><input id="aiVat" type="number" min="0" max="30" step="1" value="10"><span class="unit">%</span></div><div class="battery-field"><label for="aiFee">결제·유통 수수료</label><input id="aiFee" type="number" min="0" max="50" step="1" value="3"><span class="unit">%</span></div></div><p class="small muted" style="margin:10px 0 0">월 12,000원은 부가세 10% 포함으로 두고, 수수료는 부가세 제외 매출의 3%로 계산합니다. 전 세계에 같은 원화 요금·세율을 적용하는 단순 비교입니다. 앱마켓 비중이 높거나 실제 수수료가 세금 포함 결제액 기준이면 유효 수수료율을 높여 보세요.</p></details>
+      <details><summary>부가세·수수료 조정</summary><div class="controls ai-controls"><div class="control"><label for="aiVat">요금에 포함된 세율 <output id="aiVatOut" for="aiVat">10%</output></label><input id="aiVat" type="range" min="0" max="30" step="1" value="10"></div><div class="control"><label for="aiFee">결제·유통 수수료 <output id="aiFeeOut" for="aiFee">3%</output></label><input id="aiFee" type="range" min="0" max="50" step="1" value="3"></div></div><p class="small muted" style="margin:10px 0 0">월 12,000원은 부가세 10% 포함으로 두고, 수수료는 부가세 제외 매출의 3%로 계산합니다. 전 세계에 같은 원화 요금·세율을 적용하는 단순 비교입니다. 앱마켓 비중이 높거나 실제 수수료가 세금 포함 결제액 기준이면 유효 수수료율을 높여 보세요.</p></details>
       <p class="battery-warn small" id="aiInputWarning" role="status"></p>
       <div class="equation" id="aiEquation"></div>
     </div>
@@ -622,7 +623,7 @@
     <div class="table-wrap"><table class="ai-table"><caption class="sr-only">AI 구독사업 원가별 연간 영업이익과 손익분기 계정</caption><thead><tr><th scope="col">비교 가정</th><th scope="col">월 추론비 / 계정</th><th scope="col">연 고정비</th><th scope="col">연 영업이익</th><th scope="col">이익률</th><th scope="col">손익분기 계정</th></tr></thead><tbody id="aiScenarioRows"></tbody></table></div>
     <div class="card accent-card" style="margin-top:17px"><h3>3만 원에서 가격을 낮출 때 필요한 규모</h3><p class="small" id="aiPriceComparison"></p><p class="tiny">계정당 원가·고정비·세율·수수료가 같다는 조건입니다. 가격 인하 후 사용량이나 고객 구성, 설비 투자 규모가 바뀌면 이 배수도 바뀝니다.</p></div>
     <details class="market-folder"><summary>구독사업 영업가치 연결 <span>이익 배수·목표 시점 조정</span></summary><div class="market-folder-body">
-      <div class="battery-inputs"><div class="battery-field"><label for="aiYear">규모 달성 연도</label><select id="aiYear"><option value="2026">2026</option><option value="2030" selected>2030</option><option value="2035">2035</option><option value="2040">2040</option></select></div><div class="battery-field"><label for="aiMultiple">영업이익 배수</label><input id="aiMultiple" type="number" min="5" max="50" step="1" value="20"><span class="unit">배</span></div><div class="battery-field"><label for="aiRequired">연 요구수익률</label><input id="aiRequired" type="number" min="0" max="30" step="1" value="12"><span class="unit">%</span></div></div>
+      <div class="controls ai-controls"><div class="humn-control"><label for="aiYear">규모 달성 연도</label><select id="aiYear"><option value="2026">2026</option><option value="2030" selected>2030</option><option value="2035">2035</option><option value="2040">2040</option></select></div><div class="control"><label for="aiMultiple">영업이익 배수 <output id="aiMultipleOut" for="aiMultiple">20배</output></label><input id="aiMultiple" type="range" min="5" max="50" step="1" value="20"></div><div class="control"><label for="aiRequired">연 요구수익률 <output id="aiRequiredOut" for="aiRequired">12%</output></label><input id="aiRequired" type="range" min="0" max="30" step="1" value="12"></div></div>
       <div class="ai-value" aria-live="polite"><div><span class="small muted">목표연도 정상 영업가치 · EV/EBIT</span><strong id="aiFutureValue"></strong></div><div><span class="small muted">2026년으로 할인한 해당 가치</span><strong id="aiPresentValue"></strong></div></div>
       <p class="small muted" id="aiValueEquation" style="margin-top:12px"></p><p class="small muted">배수 20배는 가정입니다. 목표 시점에 이 규모와 원가를 달성한 정상 이익을 자본화합니다. 달성 전 손실·투자·중간 현금흐름을 포함하지 않아 완전한 DCF가 아닙니다. 현금·부채를 반영한 주주가치나 OpenAI·Anthropic 전체 기업가치와도 다릅니다. 적자이면 이익 배수로 가치를 산출하지 않습니다.</p>
     </div></details>
@@ -995,6 +996,8 @@
     const v={};
     for(const id of aiControlIds){ const node=el(id); if(node.value.trim()===""||!node.checkValidity()||!Number.isFinite(Number(node.value))){ el("aiInputWarning").textContent="범위에 맞는 값을 입력하세요. 결과는 마지막 유효 입력 기준입니다."; return; } v[id]=Number(node.value); }
     el("aiInputWarning").textContent="";
+    const displayed={aiPrice:aiWon(v.aiPrice),aiReferenceM:aiAccountText(v.aiReferenceM*1e6).replace("계정","명"),aiPaidRatio:num(v.aiPaidRatio)+"%",aiInference:aiWon(v.aiInference),aiOther:aiWon(v.aiOther),aiFixed:num(v.aiFixed)+"조 원",aiVat:num(v.aiVat)+"%",aiFee:num(v.aiFee)+"%",aiMultiple:num(v.aiMultiple)+"배",aiRequired:num(v.aiRequired)+"%"};
+    for(const [id,text] of Object.entries(displayed)){ el(id+"Out").textContent=text; el(id).setAttribute("aria-valuetext",text); }
     const result=calculateAiSubscription(v);
     el("aiProfit").textContent=aiTrillion(result.profit); el("aiProfit").classList.toggle("ai-loss",result.profit<0);
     el("aiRevenue").textContent=aiTrillion(result.annualRevenue); el("aiMargin").textContent=num(result.margin*100)+"%";
@@ -1017,7 +1020,7 @@
     el("aiValueEquation").textContent=result.futureValue===null?"적자는 기업가치가 0이라는 뜻이 아닙니다. 다른 사업의 가치나 미래 흑자 전환을 별도로 평가해야 합니다.":v.aiYear+"년 정상 영업이익 "+aiTrillion(result.profit)+" × "+num(v.aiMultiple)+"배 = "+aiTrillion(result.futureValue)+". 이를 "+(v.aiYear-2026)+"년간 연 "+num(v.aiRequired)+"%로 할인한 값은 "+aiTrillion(result.presentValue)+"입니다.";
   }
   aiControlIds.forEach(id=>el(id).addEventListener("input",()=>{ document.querySelectorAll("[data-ai-preset]").forEach(button=>button.classList.toggle("active",false)); el("aiPresetLabel").textContent="직접 조정"; renderAiSubscription(); }));
-  document.querySelectorAll("[data-ai-preset]").forEach(button=>button.addEventListener("click",()=>{ for(const [id,value] of Object.entries(aiPresetValues[button.dataset.aiPreset])) el(id).value=value; document.querySelectorAll("[data-ai-preset]").forEach(b=>b.classList.toggle("active",b===button)); el("aiPresetLabel").textContent=aiPresetLabels[button.dataset.aiPreset]; renderAiSubscription(); }));
+  document.querySelectorAll("[data-ai-preset]").forEach(button=>button.addEventListener("click",()=>{ for(const [id,value] of Object.entries(aiPresetValues[button.dataset.aiPreset])){ const node=el(id); if(node.dataset.sliderMax) node.max=node.dataset.sliderMax; node.value=value; } document.querySelectorAll("[data-ai-preset]").forEach(b=>b.classList.toggle("active",b===button)); el("aiPresetLabel").textContent=aiPresetLabels[button.dataset.aiPreset]; renderAiSubscription(); }));
   renderAiSubscription();
   document.querySelectorAll(".mobile-fold").forEach(button=>button.addEventListener("click",()=>{
     const expanded=button.getAttribute("aria-expanded")!=="true";
@@ -1068,6 +1071,8 @@
     const values=validValues(saved?.values);
     assumptionIds.forEach(id=>{
       const node=el(id),fallback=assumptionDefaults[id],value=values[id];
+      // 보통 쓰는 값은 드래그로 미세 조정하고, 예전 저장본의 큰 값은 원래 범위를 열어 그대로 복원한다.
+      if(node.dataset?.sliderMax) node.max=typeof value==="number"&&Number.isFinite(value)&&value>Number(node.dataset.sliderMax)?node.dataset.savedMax:node.dataset.sliderMax;
       node.value=owns(values,id)&&typeof value==="number"&&Number.isFinite(value)?String(value):fallback;
       if(node.value===""||!node.checkValidity()) node.value=fallback;
     });
