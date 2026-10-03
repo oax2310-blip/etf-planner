@@ -64,7 +64,10 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     control('batCarM', {type: 'number', value: 80, min: 20, max: 150}),
     control('bc-lg-ev', {type: 'number', value: 8, max: 100}),
     control('humnUnits', {value: 100, max: 120}),
-    control('terPE', {value: 20, max: 40})
+    control('terPE', {value: 20, max: 40}),
+    control('aiInference', {type: 'number', value: defaults.aiInference ?? 4000, max: 100000}),
+    control('aiPaidRatio', {type: 'number', value: 100, min: 1, max: 100}),
+    control('aiFixed', {type: 'number', value: 5, max: 100})
   ];
   const elements = new Map(controls.map(c => [c.id, c]));
   const listeners = {};
@@ -83,18 +86,19 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     b.classList = {toggle: (name, on) => { b.active = on; }};
     return b;
   };
-  const presetAttrs = {'[data-preset]': 'preset', '[data-battery-preset]': 'batteryPreset', '[data-humn-preset]': 'humnPreset'};
+  const presetAttrs = {'[data-preset]': 'preset', '[data-battery-preset]': 'batteryPreset', '[data-humn-preset]': 'humnPreset', '[data-ai-preset]': 'aiPreset'};
   const presetButtons = Object.fromEntries(Object.entries(presetAttrs).map(([sel, attr]) => [sel, ['low', 'base', 'high'].map(k => button(attr, k))]));
   const confirms = [];
   const timers = new Map();
   let timerId = 0;
   const renders = {count: 0};
   const context = vm.createContext({
-    el, ids: ['robotM', 'evShare'], batteryInputs: ['batYear', 'batCarM'], companyInputIds: ['bc-lg-ev'], groupInputIds: [], humnControlIds: ['humnUnits'], terControlIds: ['terPE'],
+    el, ids: ['robotM', 'evShare'], batteryInputs: ['batYear', 'batCarM'], companyInputIds: ['bc-lg-ev'], groupInputIds: [], humnControlIds: ['humnUnits'], terControlIds: ['terPE'], aiControlIds: ['aiInference', 'aiPaidRatio', 'aiFixed'],
     sdiPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
     batteryPresetLabels: {low: '보수적 가정', base: '기본 가정', high: '낙관적 가정'},
     humnPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
-    render() { renders.count++; }, renderHumn() {}, renderBatteryEtfs() {},
+    aiPresetLabels: {low: '고사용량 원가', base: '기준 원가', high: '효율화 원가'},
+    render() { renders.count++; }, renderHumn() {}, renderBatteryEtfs() {}, renderAiSubscription() {},
     localStorage: {
       getItem: key => { if (brokenStorage) throw Error('blocked'); return storage.get(key) ?? null; },
       setItem: (key, value) => { if (brokenStorage) throw Error('blocked'); storage.set(key, String(value)); }
@@ -118,7 +122,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
   // 계산기 쪽 입력 처리처럼 프리셋 선택을 풀고 input 이벤트를 보낸다.
   const adjust = (id, value) => {
     el(id).value = value;
-    const preset = ['robotM', 'evShare'].includes(id) ? '[data-preset]' : ['batYear', 'batCarM', 'bc-lg-ev'].includes(id) ? '[data-battery-preset]' : id === 'humnUnits' ? '[data-humn-preset]' : null;
+    const preset = ['robotM', 'evShare'].includes(id) ? '[data-preset]' : ['batYear', 'batCarM', 'bc-lg-ev'].includes(id) ? '[data-battery-preset]' : id === 'humnUnits' ? '[data-humn-preset]' : id.startsWith('ai') ? '[data-ai-preset]' : null;
     if (preset) presetButtons[preset].forEach(b => { b.active = false; });
     fire('input', el(id));
   };
@@ -172,6 +176,32 @@ test('프리셋을 누르면 선택한 프리셋 이름까지 복원한다', () 
   assert.equal(reopened.el('batteryPresetLabel').textContent, '기본 가정');
   assert.equal(reopened.el('evShare').value, '8');
   assert.ok(reopened.presetButtons['[data-preset]'].find(b => b.dataset.preset === 'high').active);
+});
+
+test('AI 가정과 원가 프리셋을 저장·복원하고 기본값 갱신을 따른다', () => {
+  const first = page();
+  first.el('aiInference').value = 7000;
+  first.clickPreset('[data-ai-preset]', 'low');
+  const reopened = page({storage: first.storage});
+  assert.equal(reopened.el('aiInference').value, '7000');
+  assert.equal(reopened.el('aiPresetLabel').textContent, '고사용량 원가');
+  reopened.adjust('aiPaidRatio', 80); reopened.flush();
+  reopened.submit('AI 결제계정 80%');
+  assert.deepEqual({...reopened.stored(LIST)[0].values}, {aiInference: 7000, aiPaidRatio: 80});
+  const untouched = page({storage: new Map([[CURRENT, JSON.stringify({values: {robotM: 120}, presets: {sdi: '', battery: 'base'}})]]), defaults: {aiInference: 4500}});
+  assert.equal(untouched.el('aiInference').value, '4500');
+  assert.equal(untouched.el('aiPresetLabel').textContent, '기준 원가');
+});
+
+test('AI의 잘못된 입력은 저장하지 않고 옛 시나리오를 불러오면 AI는 기본값으로 돌아간다', () => {
+  const h = page({storage: new Map([[LIST, JSON.stringify([{id: 'old', name: '옛 가정', values: {robotM: 100}, presets: {sdi: '', battery: 'base'}, savedAt: ''}])]])});
+  h.adjust('aiInference', 7000); h.flush();
+  h.adjust('aiInference', ''); h.flush();
+  assert.equal(h.stored(CURRENT).values.aiInference, 7000);
+  h.el('openSaves').listeners.click[0]();
+  h.listAction('load');
+  assert.equal(h.el('aiInference').value, '4000');
+  assert.equal(h.el('aiPresetLabel').textContent, '기준 원가');
 });
 
 test('HUMN 프리셋도 선택한 이름을 복원하고, 직접 조정하면 선택이 풀린다', () => {
@@ -317,7 +347,7 @@ test('처음 연결하면 이 기기의 현재 조정값과 저장본을 저장�
   assert.equal(server.puts.length, 1);
   assert.equal(server.puts[0].sha, undefined);
   // HUMN 프리셋 이전 조정값은 HUMN 입력이 기본값이면 기본 시나리오로 올린다. 저장본은 받은 그대로 둔다.
-  assert.deepEqual(server.data(), remoteFile({current: saved({robotM: 120}, T1, {sdi: '', battery: 'base', humn: 'base'}), scenarios: [scenario('a', '낙관', T1)]}));
+  assert.deepEqual(server.data(), remoteFile({current: saved({robotM: 120}, T1, {sdi: '', battery: 'base', humn: 'base', ai: 'base'}), scenarios: [scenario('a', '낙관', T1)]}));
   assert.match(h.el('scenarioSyncStatus').textContent, /^동기화 완료/);
   assert.equal(h.el('saveState').textContent, '조정 1개 · 동기화됨');
   assert.equal(h.el('scenarioSyncRepo').textContent, REPO);
@@ -341,7 +371,7 @@ test('이 기기에서 나중에 바꾼 조정값은 저장소에 올리고 다�
   const h = page({server, storage: connectedStorage({[CURRENT]: saved({robotM: 120}, T2)})});
   await h.ready();
   assert.equal(h.el('robotM').value, '120');
-  assert.deepEqual(server.data().current, saved({robotM: 120}, T2, {sdi: '', battery: 'base', humn: 'base'}));
+  assert.deepEqual(server.data().current, saved({robotM: 120}, T2, {sdi: '', battery: 'base', humn: 'base', ai: 'base'}));
   assert.deepEqual(server.data().scenarios.map(s => s.id), ['b']);
   assert.deepEqual(h.stored(LIST).map(s => s.id), ['b']);
 });

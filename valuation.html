@@ -15,8 +15,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>삼성SDI · 배터리 ETF · HUMN 가치 시나리오</title>
-  <meta name="description" content="삼성SDI, 한국·중국 배터리 ETF, HUMN과 테라다인의 가정을 직접 바꾸며 장기 가치를 살펴봅니다.">
+  <title>AI 구독 · 삼성SDI · ETF 가치 시나리오</title>
+  <meta name="description" content="AI 구독사업, 삼성SDI, 한국·중국 배터리 ETF와 HUMN의 가정을 직접 바꾸며 수익성과 장기 가치를 살펴봅니다.">
   <style>
     :root { --ink:#14252e; --muted:#56707c; --border:#d8e4e7; --paper:#f5f7f5; --white:#fff; --teal:#087e77; --teal2:#d8f2eb; --orange:#d56843; --orange2:#fff0e9; --blue:#e7eef5; --dark:#122d36; }
     * { box-sizing:border-box; }
@@ -146,6 +146,14 @@
     .battery-company input:focus { outline:2px solid #4ca699; outline-offset:1px; }
     .battery-company .company-output { font-weight:800; font-variant-numeric:tabular-nums; }
     .battery-warn { min-height:22px; color:#a64328; font-weight:750; margin:8px 0 0; }
+    .ai-table { width:100%; border-collapse:collapse; min-width:640px; font-size:.84rem; }
+    .ai-table th,.ai-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:right; font-variant-numeric:tabular-nums; }
+    .ai-table th { background:#edf5f2; white-space:nowrap; }
+    .ai-table th:first-child,.ai-table td:first-child { text-align:left; }
+    .ai-table tr:last-child td { border-bottom:0; }
+    .ai-loss { color:#ffba9b !important; }
+    .ai-value { display:flex; flex-wrap:wrap; gap:12px 32px; margin-top:15px; }
+    .ai-value strong { display:block; color:#087269; font-size:1.4rem; font-variant-numeric:tabular-nums; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
     .nav-save { margin-left:auto; display:flex; align-items:center; gap:10px; }
     .nav-save-state { color:var(--muted); font-size:.78rem; font-weight:650; }
@@ -249,13 +257,13 @@
 <header class="top">
   <div class="shell">
     <a class="home-link" href="index.html">← 매매 플래너</a>
-    <div class="eyebrow">장기 투자 시나리오 · 자료 기준 2026.09.27</div>
-    <h1>삼성SDI · <em>로봇·배터리 ETF 가치 시나리오</em></h1>
-    <p class="subtitle">전기차·로봇 판매 가정을 바꾸고 기업과 ETF의 조건부 가격을 계산합니다.</p>
+    <div class="eyebrow">장기 투자 시나리오 · 자료 기준은 각 항목 참고</div>
+    <h1>AI 구독 · <em>로봇·배터리 가치 시나리오</em></h1>
+    <p class="subtitle">월 구독료·운영비와 전기차·로봇 판매 가정을 바꾸고 수익성과 조건부 가치를 계산합니다.</p>
   </div>
 </header>
 <nav class="nav" aria-label="문서 내 이동"><div class="shell">
-  <a href="#sdi">삼성SDI</a><a href="#battery-etfs">배터리 ETF</a><a href="#humn">HUMN 가치</a>
+  <a href="#sdi">삼성SDI</a><a href="#battery-etfs">배터리 ETF</a><a href="#humn">HUMN 가치</a><a href="#ai-subscription">AI 구독</a>
   <div class="nav-save"><span class="nav-save-state" id="saveState">기본값</span><button type="button" id="openSaves" aria-haspopup="dialog">가정 저장</button></div>
 </div></nav>
 <main class="shell">
@@ -576,6 +584,52 @@
       <p><a href="https://www.roundhillinvestments.com/etf/humn/" target="_blank" rel="noopener noreferrer">HUMN 운용사 편입명세·연 경비율 0.75% ↗</a> (2026.09.27 조회), <a href="https://www.investing.com/etfs/humn-historical-data" target="_blank" rel="noopener noreferrer">2026.09.25 시장 종가 $29.67 ↗</a>. 공개된 44개 항목의 반올림 비중 합계는 108.68%입니다. 국채 8.11%와 머니마켓 1.33%를 포함한 양의 항목 합계에서 <strong>–8.68%를 산술 상계</strong>해 100%로 맞췄습니다. 이 –8.68%가 실제 공시된 특정 부채의 비중이라는 뜻은 아닙니다.</p>
       <p>8개 기업의 2026년 9월 무렵 합산 시가총액은 달러 환산으로 약 <strong>$1,600bn</strong>, 그중 테슬라 약 $1,470bn입니다. 테슬라는 <a href="https://www.sec.gov/Archives/edgar/data/1318605/000162828026049270/tsla-20260630.htm" target="_blank" rel="noopener noreferrer">공시 주식 수 ↗</a> × <a href="https://stockanalysis.com/stocks/tsla/history/" target="_blank" rel="noopener noreferrer">9월 25일 종가 ↗</a>로 근사했습니다. 나머지는 <a href="https://stockanalysis.com/quote/sha/688836/market-cap/" target="_blank" rel="noopener noreferrer">유니트리 ↗</a>, <a href="https://companiesmarketcap.com/ubtech-robotics/marketcap/" target="_blank" rel="noopener noreferrer">유비테크 ↗</a>, <a href="https://companiesmarketcap.com/rainbow-robotics/marketcap/" target="_blank" rel="noopener noreferrer">레인보우 ↗</a>, <a href="https://companiesmarketcap.com/doosan-robotics/marketcap/" target="_blank" rel="noopener noreferrer">두산로보틱스 ↗</a>, <a href="https://companiesmarketcap.com/hyundai/marketcap/" target="_blank" rel="noopener noreferrer">현대차 ↗</a>, <a href="https://stockanalysis.com/quote/hkg/2432/market-cap/" target="_blank" rel="noopener noreferrer">도봇 ↗</a>, <a href="https://stockanalysis.com/stocks/xpev/market-cap/" target="_blank" rel="noopener noreferrer">샤오펑 ↗</a>의 근삿값을 더했습니다. 통화·기준일이 서로 달라 직접 조정할 수 있게 두었으며 이는 ETF의 순자산 총액이 아닙니다.</p>
       <p>평균 로봇 가격·합산 판매 점유율·이익률·PER·다른 종목의 가격 배수는 운용사 전망이 아닌 사용자 가정입니다. 유니트리 연동 스와프에는 별도의 계약·상대방 위험이 있으며, 0.75% 연 보수는 장기간 일정하다고 단순화했습니다.</p>
+    </div></details>
+  </section>
+  <section id="ai-subscription">
+    <h2>04. 월 1.2만 원 AI 구독사업 시나리오</h2>
+    <p class="section-desc">일반 사무 업무에 충분한 AI가 유튜브 유료 서비스 규모로 보급될 때의 수익성입니다. 기본값은 <strong>연평균 1.25억 결제계정</strong>이 월 12,000원을 내는 가정이며, 추론 원가·연구개발비와 유료계정 환산율을 바꿔 비교할 수 있습니다.</p>
+    <div class="callout small"><strong>규모와 비용은 별개입니다.</strong> 유튜브가 2025년 3월 발표한 Music·Premium 1.25억 명은 무료 체험을 포함한 과거 기준입니다. 이용 인원과 가족요금제의 결제 단위도 다를 수 있어, 이를 AI의 실제 유료 결제계정 수로 보장할 수 없습니다. AI 원가는 모두 시나리오 입력값입니다.</div>
+    <div class="results">
+      <div class="result-highlight" aria-live="polite">
+        <div class="small">연간 영업이익 · 구독사업 단독</div><div class="metric" id="aiProfit">3.37조 원</div>
+        <div class="result-sub"><div><small>부가세 제외 연 매출</small><b id="aiRevenue">16.36조 원</b></div><div><small>영업이익률</small><b id="aiMargin">20.6%</b></div><div><small>연평균 결제계정</small><b id="aiAccounts">1.25억 계정</b></div><div><small>소비자 연 결제액</small><b id="aiGross">18.00조 원</b></div></div>
+      </div>
+      <div class="result-highlight" aria-live="polite">
+        <div class="small">손익분기 결제계정 · 현재 원가 유지</div><div class="metric" id="aiBreakEven">7,465만 계정</div>
+        <div class="result-sub"><div><small>계정당 월 공헌이익</small><b id="aiContribution">5,582원</b></div><div><small>흑자를 위한 월 추론비 상한</small><b id="aiCostCap">6,248원</b></div></div>
+        <p class="humn-result-note" id="aiThresholdNote"></p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:17px">
+      <div class="row"><h3 style="margin:0">구독료·규모·운영비</h3><span class="pill" id="aiPresetLabel">기준 원가</span></div>
+      <div class="presets" role="group" aria-label="AI 구독사업 원가 시나리오"><button type="button" data-ai-preset="high">효율화 · 월 2천 원</button><button type="button" class="active" data-ai-preset="base">기준 · 월 4천 원</button><button type="button" data-ai-preset="low">고사용량 · 월 7천 원</button></div>
+      <div class="battery-inputs">
+        <div class="battery-field"><label for="aiPrice">월 소비자 요금</label><input id="aiPrice" type="number" min="500" max="100000" step="100" value="12000"><span class="unit">원</span></div>
+        <div class="battery-field"><label for="aiReferenceM">비교용 이용 인원</label><input id="aiReferenceM" type="number" min="1" max="1000" step="1" value="125"><span class="unit">백만 명</span></div>
+        <div class="battery-field"><label for="aiPaidRatio">결제계정 환산율</label><input id="aiPaidRatio" type="number" min="1" max="100" step="1" value="100"><span class="unit">%</span></div>
+        <div class="battery-field"><label for="aiInference">계정당 월 추론비</label><input id="aiInference" type="number" min="0" max="100000" step="100" value="4000"><span class="unit">원</span></div>
+        <div class="battery-field"><label for="aiOther">계정당 기타 월 비용</label><input id="aiOther" type="number" min="0" max="100000" step="100" value="1000"><span class="unit">원</span></div>
+        <div class="battery-field"><label for="aiFixed">연간 고정비</label><input id="aiFixed" type="number" min="0" max="100" step="0.1" value="5"><span class="unit">조 원</span></div>
+      </div>
+      <p class="small muted" style="margin:12px 0 0">계정 수는 12개월 동안의 평균입니다. 추론비는 유료계정 전체의 평균 서비스 원가, 기타 비용은 저장·지원·무료 서비스 지원비의 계정당 배부액 등입니다. 고정비는 연구개발·훈련·인건비·마케팅 등 연간 비용이며 <strong>5조 원은 실제 기업의 공시값이 아닙니다.</strong> 장비 감가상각은 해당 원가 또는 고정비에 포함하고 중복 계산하지 않습니다.</p>
+      <details><summary>부가세·수수료 조정</summary><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="aiVat">요금에 포함된 세율</label><input id="aiVat" type="number" min="0" max="30" step="1" value="10"><span class="unit">%</span></div><div class="battery-field"><label for="aiFee">결제·유통 수수료</label><input id="aiFee" type="number" min="0" max="50" step="1" value="3"><span class="unit">%</span></div></div><p class="small muted" style="margin:10px 0 0">월 12,000원은 부가세 10% 포함으로 두고, 수수료는 부가세 제외 매출의 3%로 계산합니다. 전 세계에 같은 원화 요금·세율을 적용하는 단순 비교입니다. 앱마켓 비중이 높거나 실제 수수료가 세금 포함 결제액 기준이면 유효 수수료율을 높여 보세요.</p></details>
+      <p class="battery-warn small" id="aiInputWarning" role="status"></p>
+      <div class="equation" id="aiEquation"></div>
+    </div>
+    <h3 style="margin-top:22px">원가가 바뀌면 흑자도 달라집니다</h3>
+    <p class="small muted">현재 요금·계정 수·기타 비용·수수료를 유지하고 추론비 또는 고정비만 바꿉니다. 원가가 내려가도 같은 업무 품질을 유지할 수 있다는 조건입니다.</p>
+    <div class="table-wrap"><table class="ai-table"><caption class="sr-only">AI 구독사업 원가별 연간 영업이익과 손익분기 계정</caption><thead><tr><th scope="col">비교 가정</th><th scope="col">월 추론비 / 계정</th><th scope="col">연 고정비</th><th scope="col">연 영업이익</th><th scope="col">이익률</th><th scope="col">손익분기 계정</th></tr></thead><tbody id="aiScenarioRows"></tbody></table></div>
+    <div class="card accent-card" style="margin-top:17px"><h3>3만 원에서 가격을 낮출 때 필요한 규모</h3><p class="small" id="aiPriceComparison"></p><p class="tiny">계정당 원가·고정비·세율·수수료가 같다는 조건입니다. 가격 인하 후 사용량이나 고객 구성, 설비 투자 규모가 바뀌면 이 배수도 바뀝니다.</p></div>
+    <details class="market-folder"><summary>구독사업 영업가치 연결 <span>이익 배수·목표 시점 조정</span></summary><div class="market-folder-body">
+      <div class="battery-inputs"><div class="battery-field"><label for="aiYear">규모 달성 연도</label><select id="aiYear"><option value="2026">2026</option><option value="2030" selected>2030</option><option value="2035">2035</option><option value="2040">2040</option></select></div><div class="battery-field"><label for="aiMultiple">영업이익 배수</label><input id="aiMultiple" type="number" min="5" max="50" step="1" value="20"><span class="unit">배</span></div><div class="battery-field"><label for="aiRequired">연 요구수익률</label><input id="aiRequired" type="number" min="0" max="30" step="1" value="12"><span class="unit">%</span></div></div>
+      <div class="ai-value" aria-live="polite"><div><span class="small muted">목표연도 정상 영업가치 · EV/EBIT</span><strong id="aiFutureValue"></strong></div><div><span class="small muted">2026년으로 할인한 해당 가치</span><strong id="aiPresentValue"></strong></div></div>
+      <p class="small muted" id="aiValueEquation" style="margin-top:12px"></p><p class="small muted">배수 20배는 가정입니다. 목표 시점에 이 규모와 원가를 달성한 정상 이익을 자본화합니다. 달성 전 손실·투자·중간 현금흐름을 포함하지 않아 완전한 DCF가 아닙니다. 현금·부채를 반영한 주주가치나 OpenAI·Anthropic 전체 기업가치와도 다릅니다. 적자이면 이익 배수로 가치를 산출하지 않습니다.</p>
+    </div></details>
+    <details class="market-folder"><summary>가정의 근거와 해석 <span>공개치·추정치 구분</span></summary><div class="market-folder-body small">
+      <p>규모 기준은 <a href="https://blog.youtube/news-and-events/youtube-music-premium-125-million-subscribers/" target="_blank" rel="noopener noreferrer">YouTube Music·Premium 1.25억 명 발표 ↗</a>(2025년 3월, 무료 체험 포함)입니다. 이번 환경에서는 원문 재조회가 제한되어 최신 구독자 수로 확인한 값이 아닙니다. 결제계정 환산율 100%는 동일 규모를 비교하기 위한 가정이며, 무료 체험·가족요금제·이탈을 조정하려면 낮춰 입력하세요.</p>
+      <p>월 12,000원과 충분한 사무 업무 성능은 사용자 가정입니다. 월 추론비 2천·4천·7천·1만 원과 연 고정비 5조·10조 원은 실제 모델별 원가나 기업 전망이 아닙니다. 시중 API 요금은 공급자의 마진이 포함된 판매가여서 자체 모델 운영 원가와 동일하게 볼 수 없습니다.</p>
+      <p>이 계산은 소비자 구독사업만 다룹니다. 기업용·API 매출이나 광고 수익은 넣지 않았습니다. 전체 회사 수익성을 평가하려면 해당 매출과 추가 비용, 무료 이용자 부담, 지속적인 성능 경쟁에 필요한 전체 연구개발·훈련비를 함께 확인해야 합니다. 흑자는 현금흐름을 보장하지 않으며 설비 투자와 운전자본은 별도로 분석해야 합니다.</p>
     </div></details>
   </section>
 </main>
@@ -915,6 +969,56 @@
     renderBatteryEtfs();
   }));
   renderBatteryEtfs();
+  // AI 구독사업 계산: 금액은 원, 비교 인원은 백만 명, 연 고정비는 조 원. 결제계정은 연평균으로 둔다.
+  const aiControlIds=["aiPrice","aiReferenceM","aiPaidRatio","aiInference","aiOther","aiFixed","aiVat","aiFee","aiYear","aiMultiple","aiRequired"];
+  const aiPresetLabels={low:"고사용량 원가",base:"기준 원가",high:"효율화 원가"};
+  const aiBaseInputs={aiPrice:12000,aiReferenceM:125,aiPaidRatio:100,aiInference:4000,aiOther:1000,aiFixed:5,aiVat:10,aiFee:3};
+  const aiPresetValues={low:{...aiBaseInputs,aiInference:7000},base:{...aiBaseInputs},high:{...aiBaseInputs,aiInference:2000}};
+  function calculateAiSubscription(v){
+    const accounts=v.aiReferenceM*1e6*v.aiPaidRatio/100,netMonthly=v.aiPrice/(1+v.aiVat/100),feeMonthly=netMonthly*v.aiFee/100;
+    const contribution=netMonthly-feeMonthly-v.aiInference-v.aiOther,annualRevenue=accounts*12*netMonthly,fixedCost=v.aiFixed*1e12;
+    const annualFees=accounts*12*feeMonthly,annualInference=accounts*12*v.aiInference,annualOther=accounts*12*v.aiOther;
+    const profit=annualRevenue-annualFees-annualInference-annualOther-fixedCost;
+    const futureValue=profit>0?profit*v.aiMultiple:null,presentValue=futureValue===null?null:futureValue/Math.pow(1+v.aiRequired/100,v.aiYear-2026);
+    return {accounts,netMonthly,contribution,annualRevenue,annualGross:accounts*12*v.aiPrice,annualFees,annualInference,annualOther,fixedCost,profit,
+      margin:annualRevenue>0?profit/annualRevenue:null,breakEven:contribution>0?fixedCost/(contribution*12):null,
+      inferenceCap:accounts>0?netMonthly-feeMonthly-v.aiOther-fixedCost/(accounts*12):null,
+      margin20Cap:accounts>0?netMonthly-feeMonthly-netMonthly*.2-v.aiOther-fixedCost/(accounts*12):null,
+      minimumPrice:accounts>0?(v.aiInference+v.aiOther+fixedCost/(accounts*12))*(1+v.aiVat/100)/(1-v.aiFee/100):null,
+      futureValue,presentValue};
+  }
+  // AI 구독사업 계산 함수 끝. 이익이 없거나 공헌이익이 0 이하면 양의 이익 배수·손익분기 계정을 제시하지 않는다.
+  const aiTrillion=value=>two(value/1e12)+"조 원";
+  const aiWon=value=>new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0}).format(value)+"원";
+  const aiAccountText=value=>value>=1e8?two(value/1e8)+"억 계정":new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0}).format(value/1e4)+"만 계정";
+  function renderAiSubscription(){
+    const v={};
+    for(const id of aiControlIds){ const node=el(id); if(node.value.trim()===""||!node.checkValidity()||!Number.isFinite(Number(node.value))){ el("aiInputWarning").textContent="범위에 맞는 값을 입력하세요. 결과는 마지막 유효 입력 기준입니다."; return; } v[id]=Number(node.value); }
+    el("aiInputWarning").textContent="";
+    const result=calculateAiSubscription(v);
+    el("aiProfit").textContent=aiTrillion(result.profit); el("aiProfit").classList.toggle("ai-loss",result.profit<0);
+    el("aiRevenue").textContent=aiTrillion(result.annualRevenue); el("aiMargin").textContent=num(result.margin*100)+"%";
+    el("aiAccounts").textContent=aiAccountText(result.accounts); el("aiGross").textContent=aiTrillion(result.annualGross);
+    el("aiBreakEven").textContent=result.breakEven===null?"규모 확대만으로 불가":aiAccountText(result.breakEven);
+    el("aiBreakEven").classList.toggle("ai-loss",result.breakEven===null);
+    el("aiContribution").textContent=aiWon(result.contribution); el("aiCostCap").textContent=result.inferenceCap<0?"현 조건으로 불가":aiWon(result.inferenceCap);
+    el("aiThresholdNote").textContent=result.margin20Cap>=0?"영업이익률 20%를 내려면 월 추론비가 "+aiWon(result.margin20Cap)+" 이하여야 합니다. 손익분기점에서는 영업이익이 0입니다.":"현재 규모에서는 추론비를 0원으로 낮춰도 영업이익률 20%를 달성하기 어렵습니다.";
+    el("aiEquation").textContent="연 영업이익 = 부가세 제외 매출 "+aiTrillion(result.annualRevenue)+" − 수수료 "+aiTrillion(result.annualFees)+" − 추론비 "+aiTrillion(result.annualInference)+" − 기타 변동비 "+aiTrillion(result.annualOther)+" − 고정비 "+aiTrillion(result.fixedCost)+" = "+aiTrillion(result.profit)+". 손익분기 월 소비자 요금은 "+aiWon(result.minimumPrice)+"입니다.";
+    const comparisons=[["효율화",2000,v.aiFixed],["기준 원가",4000,v.aiFixed],["고사용량",7000,v.aiFixed],["매우 높은 사용량",10000,v.aiFixed],["고정비 10조 원",v.aiInference,10]];
+    el("aiScenarioRows").replaceChildren(...comparisons.map(([label,inference,fixed])=>{
+      const item=calculateAiSubscription({...v,aiInference:inference,aiFixed:fixed}),row=document.createElement("tr");
+      for(const value of [label,aiWon(inference),aiTrillion(item.fixedCost),aiTrillion(item.profit),num(item.margin*100)+"%",item.breakEven===null?"규모 확대만으로 불가":aiAccountText(item.breakEven)]){ const cell=document.createElement("td"); cell.textContent=value; row.append(cell); }
+      return row;
+    }));
+    const oldContribution=30000/(1+v.aiVat/100)*(1-v.aiFee/100)-v.aiInference-v.aiOther;
+    el("aiPriceComparison").textContent="월 30,000원에서 "+aiWon(v.aiPrice)+"으로 조정하면 같은 매출에 필요한 결제계정은 "+two(30000/v.aiPrice)+"배입니다. "+(result.contribution>0&&oldContribution>0?"같은 영업이익을 유지하려면 "+two(oldContribution/result.contribution)+"배의 계정이 필요합니다.":"공헌이익이 0 이하인 요금에서는 규모 확대만으로 기존 영업이익을 유지할 수 없습니다.");
+    el("aiFutureValue").textContent=result.futureValue===null?"흑자 전환 후 평가":aiTrillion(result.futureValue);
+    el("aiPresentValue").textContent=result.presentValue===null?"이익 배수 적용 불가":aiTrillion(result.presentValue);
+    el("aiValueEquation").textContent=result.futureValue===null?"적자는 기업가치가 0이라는 뜻이 아닙니다. 다른 사업의 가치나 미래 흑자 전환을 별도로 평가해야 합니다.":v.aiYear+"년 정상 영업이익 "+aiTrillion(result.profit)+" × "+num(v.aiMultiple)+"배 = "+aiTrillion(result.futureValue)+". 이를 "+(v.aiYear-2026)+"년간 연 "+num(v.aiRequired)+"%로 할인한 값은 "+aiTrillion(result.presentValue)+"입니다.";
+  }
+  aiControlIds.forEach(id=>el(id).addEventListener("input",()=>{ document.querySelectorAll("[data-ai-preset]").forEach(button=>button.classList.toggle("active",false)); el("aiPresetLabel").textContent="직접 조정"; renderAiSubscription(); }));
+  document.querySelectorAll("[data-ai-preset]").forEach(button=>button.addEventListener("click",()=>{ for(const [id,value] of Object.entries(aiPresetValues[button.dataset.aiPreset])) el(id).value=value; document.querySelectorAll("[data-ai-preset]").forEach(b=>b.classList.toggle("active",b===button)); el("aiPresetLabel").textContent=aiPresetLabels[button.dataset.aiPreset]; renderAiSubscription(); }));
+  renderAiSubscription();
   document.querySelectorAll(".mobile-fold").forEach(button=>button.addEventListener("click",()=>{
     const expanded=button.getAttribute("aria-expanded")!=="true";
     button.setAttribute("aria-expanded",String(expanded));
@@ -931,7 +1035,7 @@
   const ASSUMPTION_KEY="etf-planner-valuation-current-v1";
   const SCENARIO_LIST_KEY="etf-planner-valuation-scenarios-v1";
   const DELETED_KEY="etf-planner-valuation-deleted-v1"; // 삭제한 저장본 id → 삭제 시각. 다른 기기에 삭제를 전파한다
-  const assumptionGroups=[["삼성SDI",ids],["배터리 ETF",[...batteryInputs,...companyInputIds,...groupInputIds]],["HUMN",[...humnControlIds,...terControlIds]]];
+  const assumptionGroups=[["삼성SDI",ids],["배터리 ETF",[...batteryInputs,...companyInputIds,...groupInputIds]],["HUMN",[...humnControlIds,...terControlIds]],["AI 구독",aiControlIds]];
   const assumptionIds=assumptionGroups.flatMap(([,list])=>list);
   const assumptionIdSet=new Set(assumptionIds);
   const assumptionDefaults=Object.fromEntries(assumptionIds.map(id=>{
@@ -941,7 +1045,8 @@
   const presetControls={
     sdi:{selector:"[data-preset]",data:"preset",label:"presetLabel",names:sdiPresetLabels},
     battery:{selector:"[data-battery-preset]",data:"batteryPreset",label:"batteryPresetLabel",names:batteryPresetLabels},
-    humn:{selector:"[data-humn-preset]",data:"humnPreset",label:"humnPresetLabel",names:humnPresetLabels}
+    humn:{selector:"[data-humn-preset]",data:"humnPreset",label:"humnPresetLabel",names:humnPresetLabels},
+    ai:{selector:"[data-ai-preset]",data:"aiPreset",label:"aiPresetLabel",names:aiPresetLabels}
   };
   const owns=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
   const readStored=(key,fallback)=>{ try { const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; } catch (_) { return fallback; } };
@@ -969,12 +1074,13 @@
     // HUMN 프리셋 이전 저장본에는 humn이 없다. HUMN 입력이 모두 기본값이면 기본 시나리오로 본다.
     const presets={...saved?.presets};
     if(typeof presets.humn!=="string") presets.humn=humnControlIds.every(id=>Number(el(id).value)===Number(assumptionDefaults[id]))?"base":"";
+    if(typeof presets.ai!=="string") presets.ai=aiControlIds.every(id=>Number(el(id).value)===Number(assumptionDefaults[id]))?"base":"";
     for(const [key,control] of Object.entries(presetControls)){
       const chosen=presets[key],known=typeof chosen==="string"&&owns(control.names,chosen);
       document.querySelectorAll(control.selector).forEach(button=>button.classList.toggle("active",known&&button.dataset[control.data]===chosen));
       el(control.label).textContent=known?control.names[chosen]:"직접 조정";
     }
-    render(); renderHumn(); renderBatteryEtfs();
+    render(); renderHumn(); renderBatteryEtfs(); renderAiSubscription();
   }
   const changedCount=values=>assumptionIds.filter(id=>owns(values,id)).length;
   function describeAssumptions(values){
@@ -983,8 +1089,8 @@
   }
   const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,timer:null};
   const numericValues=values=>{ const source=validValues(values); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="number"&&Number.isFinite(source[id])).map(id=>[id,source[id]])); };
-  // humn은 있을 때만 남긴다. 옛 저장본·옛 코드 기기가 올린 기록은 humn 없이 그대로 두어야 동기화 때 불필요하게 다시 쓰지 않는다.
-  const presetChoices=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:"",...(typeof presets?.humn==="string"?{humn:presets.humn}:{})});
+  // 추가 프리셋은 있을 때만 남긴다. 옛 저장본·옛 코드 기기가 올린 기록에는 없는 필드를 보태지 않는다.
+  const presetChoices=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:"",...(typeof presets?.humn==="string"?{humn:presets.humn}:{}),...(typeof presets?.ai==="string"?{ai:presets.ai}:{})});
   const assumptionKey=saved=>JSON.stringify([numericValues(saved?.values),presetChoices(saved?.presets)]);
   // savedAt은 값이 실제로 바뀔 때만 새로 적는다. 기기 간에는 더 나중에 바꾼 쪽의 현재 조정값을 쓰므로
   // 열어 보기만 한 기기(savedAt 없음)가 다른 기기에서 바꾼 조정값을 덮어쓰지 않는다.
@@ -1012,7 +1118,7 @@
   function scheduleAssumptionSave(){ clearTimeout(assumptionSaveTimer); assumptionSaveTimer=setTimeout(saveAssumptions,300); }
   document.addEventListener("input",event=>{ if(assumptionIdSet.has(event.target.id)) scheduleAssumptionSave(); });
   document.addEventListener("change",event=>{ if(assumptionIdSet.has(event.target.id)) saveAssumptions(); });
-  document.addEventListener("click",event=>{ if(event.target.closest?.("[data-preset],[data-battery-preset],[data-humn-preset]")) saveAssumptions(); });
+  document.addEventListener("click",event=>{ if(event.target.closest?.("[data-preset],[data-battery-preset],[data-humn-preset],[data-ai-preset]")) saveAssumptions(); });
   document.addEventListener("visibilitychange",()=>{ if(document.hidden&&assumptionSaveTimer) saveAssumptions(); });
   window.addEventListener("pagehide",()=>{ if(assumptionSaveTimer) saveAssumptions(); });
   const storedAssumptions=readStored(ASSUMPTION_KEY,null);
@@ -1088,7 +1194,7 @@
   });
   el("resetAssumptions").addEventListener("click",()=>{
     if(!confirmReplaceCurrent()) return;
-    applyAssumptions({values:{},presets:{sdi:"base",battery:"base",humn:"base"}}); saveAssumptions();
+    applyAssumptions({values:{},presets:{sdi:"base",battery:"base",humn:"base",ai:"base"}}); saveAssumptions();
     el("savesDialog").close();
   });
 
