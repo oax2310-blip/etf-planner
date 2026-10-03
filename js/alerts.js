@@ -65,11 +65,12 @@ function alertRuleCard(rule){
 function renderAlerts(){
   const list=$("alertsList");if(!list)return;
   const rules=alertRules();
+  if(typeof renderTradeAlertSummary==="function")renderTradeAlertSummary();
   list.innerHTML=rules.length?rules.map(alertRuleCard).join(""):'<p class="alert-empty">등록한 알림이 없습니다. 종목과 기준선을 추가하세요.</p>';
   $("alertsCount").textContent=`${rules.length}개`;
   const status=$("alertsSaveStatus"), linked=connected();
   status.classList.toggle("warning",!linked||sync.blocked||sync.failed);
-  status.textContent=!linked?"동기화가 연결되지 않았습니다. 규칙은 이 기기에만 저장됩니다. 휴대폰 알림을 받으려면 동기화와 아래 수신 설정을 완료하세요.":sync.blocked||sync.failed?"동기화를 확인해 주세요. 변경한 규칙이 수집 작업에 아직 전달되지 않았을 수 있습니다.":"규칙은 이 기기에 즉시 저장되고 비공개 데이터 저장소와 동기화됩니다. 휴대폰 수신은 아래에서 별도로 연결해야 합니다.";
+  status.textContent=!linked?"동기화가 연결되지 않았습니다. 규칙은 이 기기에만 저장됩니다. 휴대폰 알림을 받으려면 동기화와 아래 수신 설정을 완료하세요.":sync.blocked||sync.failed?"동기화를 확인해 주세요. 변경한 규칙이 수집 작업에 아직 전달되지 않았을 수 있습니다.":"알림 ON/OFF는 비공개 기록과 동기화됩니다. 휴대폰 수신은 아래에서 한 번 연결하세요.";
   onEdit("[data-alert-enabled]",(v,el)=>setAlertRuleEnabled(el.dataset.alertEnabled,el.checked),renderAlerts);
   $$("[data-edit-alert]").forEach(button=>button.onclick=()=>openAlertEditor(button.dataset.editAlert));
   $$("[data-remove-alert]").forEach(button=>button.onclick=()=>{if(removeAlertRule(button.dataset.removeAlert)){if(editingAlertId===button.dataset.removeAlert)closeAlertEditor();save();renderAlerts();}});
