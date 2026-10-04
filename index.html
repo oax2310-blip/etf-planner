@@ -2,14 +2,15 @@
 <!--
   HANDOFF (Claude ↔ GPT 인수인계 — 공개 소스라 금액·보유 종목 등 개인정보 금지. 지금 지킬 규칙만 두고 변경 기록은 쌓지 말 것(이력은 git log/PR). README.md도 같음)
   [작업·파일]
-  - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음.
+  - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음(글꼴 Pretendard만 jsDelivr CSS 한 줄 — 못 받으면 시스템 글꼴).
   - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·시세 파일 읽기·JSON 백업/복원),
     js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수),
-    js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰 브라우저 알림 연결), push-sw.js(닫힌 화면의 푸시 수신). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
-  - 일반 <script>로 core → sync → prices → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서로 불러오고 index.html 맨 끝 한 줄(startSync·openTab·initializeAlerts·initializePush)로 시작.
+    js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰 브라우저 알림 연결), push-sw.js(닫힌 화면의 푸시 수신),
+    js/theme.js(화면 모드 — valuation.html도 씀). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
+  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서로 불러오고 index.html 맨 끝 한 줄(startSync·openTab·initializeAlerts·initializePush)로 시작.
     파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
     sync 테스트는 core.js 대신 가짜 값($·state 등)과 prices.js를 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
-  - css·js를 고치면 index.html의 ?v= 숫자를 모든 태그에서 같이 1 올릴 것(배포 직후 옛 파일 캐시 방지). tests/files.test.cjs가 파일·숫자 일치를 확인.
+  - css·js를 고치면 index.html의 ?v= 숫자를 모든 태그에서 같이 1 올릴 것(배포 직후 옛 파일 캐시 방지, valuation.html의 theme.js 숫자도). tests/files.test.cjs가 파일·숫자 일치를 확인.
   - 입력칸 저장은 onEdit(선택자, 값 넣기, 다시 그리기)로: 값 넣기가 false를 돌려주면 저장하지 않고 다시 그려 원래 값으로.
   - 작업 순서(토큰 절약): 요청을 모아 한 브랜치에서 작업하고 병합은 마지막에 한 번. 화면이 바뀌면 병합 전에 바뀐 뒤 화면 캡처만(전/후 비교 이미지 없이)
     사용자에게 보내 확인받고 PR → 병합. 글자만 바꾸는 작은 변경은 캡처 없이 병합해도 됨.
@@ -45,6 +46,13 @@
   [필드명·용어]
   - positions[].settlementPrice = 화면 '단순평균가'. futures.baselinePnl = 누적 정산손익(직접 입력). 월물교체는 기능 없이 계좌를 보고 직접 고침.
   - 체크목록 '목록 삭제'는 actions.buys=[]만(coveredCallName·buyNote 남김, 되살리기는 JSON 복원·데이터 저장소 커밋 기록).
+  [디자인]
+  - 색·그림자는 app.css 맨 위 토큰(:root = 밝은 화면, :root[data-theme=dark] = 어두운 모드)만 쓰고 새 규칙에 색 코드를 직접 적지 말 것.
+    화면 모드는 js/theme.js가 <html data-theme>에 넣음: PC(hover:hover·pointer:fine)는 윗줄 버튼으로 고른 값(이 브라우저 localStorage etf-planner-theme, 동기화 밖),
+    휴대폰·태블릿(터치)은 고른 값과 상관없이 기기 설정. 버튼은 [data-theme-pick] 자리에 그림(PC에서만 보임).
+    valuation.html 맨 위 토큰도 같은 값 — 바꾸면 두 파일 같이. 강조색(--accent)은 버튼·선택·알림 ON, 초록(--good)은 완료, 주황(--warn)은 도달·오래된 시세, 빨강(--danger)은 삭제·손실.
+  - 완료 체크박스(.check·.tranche-check·.action-row>input)와 알림 스위치(.trade-alert-toggle·.alert-switch)는 input[type=checkbox]를 직접 그린 것 —
+    선택자에 [type=checkbox]를 붙여 칸 공통 input 규칙(.tranche input·.field input 등)보다 구체적으로 둘 것(아니면 입력칸처럼 늘어남).
   [모바일 CSS(700px 이하)]
   - 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%(1fr + 기본 폭 input이면 안 줄어 페이지가 가로로 넘침).
   - '.metrics,.futures-metrics,.control-grid{1fr}'와 '.metric+.metric{border…}'는 따로 둘 것(한 규칙에 합치면 카드 줄이 한 칸으로 안 바뀜).
@@ -63,8 +71,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0c10" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=13" />
+  <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <script src="js/theme.js?v=15"></script>
+  <link rel="stylesheet" href="css/app.css?v=15" />
 </head>
 <body>
   <header class="top">
@@ -75,7 +90,7 @@
       <button class="tab" data-tab="actions">체크목록</button>
       <button class="tab" data-tab="rebuy">재매수</button>
     </nav>
-    <div class="sync-head"><a class="btn mini scenario-link" href="valuation.html">시나리오</a><button class="btn mini" id="alertsBtn" type="button">알림</button><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini sync-btn off" id="syncBtn" type="button" title="이 기기에 저장 중"><span class="sync-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.3L3 9M3 4v5h5M4 13a8 8 0 0 0 14.3 4.3L21 15M21 20v-5h-5"/></svg></span>동기화</button></div>
+    <div class="sync-head"><a class="btn mini scenario-link" href="valuation.html">시나리오</a><button class="btn mini" id="alertsBtn" type="button">알림</button><span data-theme-pick></span><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini sync-btn off" id="syncBtn" type="button" title="이 기기에 저장 중"><span class="sync-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.3L3 9M3 4v5h5M4 13a8 8 0 0 0 14.3 4.3L21 15M21 20v-5h-5"/></svg></span>동기화</button></div>
   </header>
 
   <main>
@@ -184,16 +199,16 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=13"></script>
-  <script src="js/sync.js?v=13"></script>
-  <script src="js/prices.js?v=13"></script>
-  <script src="js/trade-alerts.js?v=13"></script>
-  <script src="js/plans.js?v=13"></script>
-  <script src="js/futures.js?v=13"></script>
-  <script src="js/actions.js?v=13"></script>
-  <script src="js/rebuy.js?v=13"></script>
-  <script src="js/alerts.js?v=13"></script>
-  <script src="js/push.js?v=13"></script>
+  <script src="js/core.js?v=15"></script>
+  <script src="js/sync.js?v=15"></script>
+  <script src="js/prices.js?v=15"></script>
+  <script src="js/trade-alerts.js?v=15"></script>
+  <script src="js/plans.js?v=15"></script>
+  <script src="js/futures.js?v=15"></script>
+  <script src="js/actions.js?v=15"></script>
+  <script src="js/rebuy.js?v=15"></script>
+  <script src="js/alerts.js?v=15"></script>
+  <script src="js/push.js?v=15"></script>
   <script>startSync(); openTab(state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
