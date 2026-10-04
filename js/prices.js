@@ -6,6 +6,7 @@
 //     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
 //   분할매도 달러 계획 환율 ← fx.USDKRW의 현물 환율(달러선물 보유와 무관). 조회 값이 없으면 마지막 환율 그대로.
 //   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
+//   달러선물 손절 후 재매수(futures.rebuy가 있는 경우만) 현재가·N일선 단계 기준가 ← 같은 보유 근월물. 신저점·손절 하단·이탈 전 계약 수는 직접 정한다.
 //   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선 단계 기준가 ← stocks[그 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
 //   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.
@@ -75,6 +76,11 @@ function fillPrices(data, prices){
     const rows=[...new Set(f.levels.map(l=>Number(l?.days)).filter(d=>Number.isInteger(d)&&d>0))].map(days=>[`${days}일선`,priceRound(fe.ma[`${days}일선`],2),v=>f.levels.forEach(l=>{
       if(Number(l?.days)!==days)return; l.price=v; (Array.isArray(l.tranches)?l.tranches:[]).forEach(t=>{if(!t.completed)t.price=v;}); })]);
     changed=fillMarked(f,at,rows)||changed;
+  }
+  if(fe&&f.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)){
+    const r=f.rebuy,stages=Array.isArray(r.stages)?r.stages:[];
+    changed=fillMarked(r,at,[["currentPrice",priceRound(fe.close,2),v=>r.currentPrice=v],
+      ...stages.filter(x=>x&&maKey(x.name)).map(x=>[String(x.name),priceRound(maValue(fe,x.name),2),v=>x.price=v])])||changed;
   }
   const rb=data.rebuy, items=rb&&typeof rb==="object"?(Array.isArray(rb.items)?rb.items:[rb]):[];
   for(const r of items){
