@@ -2,7 +2,7 @@
 <!--
   HANDOFF (Claude ↔ GPT 인수인계 — 공개 소스라 금액·보유 종목 등 개인정보 금지. 지금 지킬 규칙만 두고 변경 기록은 쌓지 말 것(이력은 git log/PR). README.md도 같음)
   [작업·파일]
-  - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음.
+  - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음(글꼴 Pretendard만 jsDelivr CSS 한 줄 — 못 받으면 시스템 글꼴).
   - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·시세 파일 읽기·JSON 백업/복원),
     js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수),
     js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰 브라우저 알림 연결), push-sw.js(닫힌 화면의 푸시 수신). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
@@ -45,6 +45,11 @@
   [필드명·용어]
   - positions[].settlementPrice = 화면 '단순평균가'. futures.baselinePnl = 누적 정산손익(직접 입력). 월물교체는 기능 없이 계좌를 보고 직접 고침.
   - 체크목록 '목록 삭제'는 actions.buys=[]만(coveredCallName·buyNote 남김, 되살리기는 JSON 복원·데이터 저장소 커밋 기록).
+  [디자인]
+  - 색·그림자는 app.css 맨 위 토큰(:root = 밝은 화면, @media screen and (prefers-color-scheme:dark) = 어두운 모드)만 쓰고 새 규칙에 색 코드를 직접 적지 말 것.
+    valuation.html 맨 위 토큰도 같은 값 — 바꾸면 두 파일 같이. 강조색(--accent)은 버튼·선택·알림 ON, 초록(--good)은 완료, 주황(--warn)은 도달·오래된 시세, 빨강(--danger)은 삭제·손실.
+  - 완료 체크박스(.check·.tranche-check·.action-row>input)와 알림 스위치(.trade-alert-toggle·.alert-switch)는 input[type=checkbox]를 직접 그린 것 —
+    선택자에 [type=checkbox]를 붙여 칸 공통 input 규칙(.tranche input·.field input 등)보다 구체적으로 둘 것(아니면 입력칸처럼 늘어남).
   [모바일 CSS(700px 이하)]
   - 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%(1fr + 기본 폭 input이면 안 줄어 페이지가 가로로 넘침).
   - '.metrics,.futures-metrics,.control-grid{1fr}'와 '.metric+.metric{border…}'는 따로 둘 것(한 규칙에 합치면 카드 줄이 한 칸으로 안 바뀜).
@@ -63,8 +68,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0c10" />
   <title>매매 플래너 (독립형)</title>
-  <link rel="stylesheet" href="css/app.css?v=13" />
+  <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="css/app.css?v=14" />
 </head>
 <body>
   <header class="top">
@@ -184,16 +195,16 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=13"></script>
-  <script src="js/sync.js?v=13"></script>
-  <script src="js/prices.js?v=13"></script>
-  <script src="js/trade-alerts.js?v=13"></script>
-  <script src="js/plans.js?v=13"></script>
-  <script src="js/futures.js?v=13"></script>
-  <script src="js/actions.js?v=13"></script>
-  <script src="js/rebuy.js?v=13"></script>
-  <script src="js/alerts.js?v=13"></script>
-  <script src="js/push.js?v=13"></script>
+  <script src="js/core.js?v=14"></script>
+  <script src="js/sync.js?v=14"></script>
+  <script src="js/prices.js?v=14"></script>
+  <script src="js/trade-alerts.js?v=14"></script>
+  <script src="js/plans.js?v=14"></script>
+  <script src="js/futures.js?v=14"></script>
+  <script src="js/actions.js?v=14"></script>
+  <script src="js/rebuy.js?v=14"></script>
+  <script src="js/alerts.js?v=14"></script>
+  <script src="js/push.js?v=14"></script>
   <script>startSync(); openTab(state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
