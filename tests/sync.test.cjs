@@ -92,6 +92,15 @@ test('알림을 설정한 기기는 새 빈 기기로 취급하지 않는다', a
   assert.equal(vm.runInContext('isBlank(dataSnapshot())',h.context),false);
 });
 
+test('달러 손절·재매수만 설정한 기기도 빈 기기로 보지 않고 체결 기록을 다른 기기로 보낸다', async () => {
+  const local=empty();local.futures.rebuy={lowPrice:1400,floorPrice:1300,contracts:20,buyMode:'sellPrice',cuts:[{contracts:3,price:1399.7,targetPrice:1400}],returns:[{done:true,contracts:1,execPrice:1399.8}],notify:{buys:true}};
+  const h=harness({local});await h.restored();
+  assert.equal(vm.runInContext('isBlank(dataSnapshot())',h.context),false);
+  assert.deepEqual(h.remoteData().futures.rebuy,local.futures.rebuy);
+  const other=harness({remote:h.remoteData(),hadStoredState:false});await other.restored();
+  assert.deepEqual(JSON.parse(other.items.get('test-state')).futures.rebuy,local.futures.rebuy);
+});
+
 test('기존 기기에서 처음 연결하면 현재 기록을 저장소에 올린다', async () => {
   const local = {plans: [{id: 'abc'}], futures: {positions: []}, actions: {}};
   const h = harness({local});
