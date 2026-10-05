@@ -7,8 +7,10 @@
     js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수),
     js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰·PC 브라우저 알림 연결 — 기기마다 따로, 안내 문구만 PC/휴대폰 구분), push-sw.js(닫힌 화면의 푸시 수신),
     js/theme.js(화면 모드 — valuation.html·assets.html도 씀). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
-    자산 현황 페이지(assets.html: css/assets.css·js/assets-calc.js·js/assets.js, 규칙은 그 파일 HANDOFF)는 app.css·theme.js를 같이 쓰므로 ?v=를 올릴 때 assets.html도 같이.
-  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서로 불러오고 index.html 맨 끝 한 줄(startSync·openTab·initializeAlerts·initializePush)로 시작.
+    분할매수는 js/purchases.js·css/purchases.css, 자산 현황 페이지(assets.html)는 css/assets.css·js/assets.js. js/assets-calc.js·js/assets-store.js는 두 페이지가 계산·기록·동기화를 공유한다(규칙은 assets.html HANDOFF).
+    app.css·theme.js를 같이 쓰므로 ?v=를 올릴 때 assets.html도 같이.
+  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → assets-calc → assets-store → purchases → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서.
+    index.html 맨 끝에서 purchasePlanner.initialize·startSync·openTab·initializeAlerts·initializePush로 시작한다.
     파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
     sync 테스트는 core.js 대신 가짜 값($·state 등)과 prices.js를 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
   - css·js를 고치면 index.html의 ?v= 숫자를 모든 태그에서 같이 1 올릴 것(배포 직후 옛 파일 캐시 방지, valuation.html의 theme.js 숫자도). tests/files.test.cjs가 파일·숫자 일치를 확인.
@@ -20,6 +22,8 @@
   [저장·동기화]
   - localStorage 키 "etf-exit-planner-standalone-v1"과 기존 필드 구조 유지(바꿀 땐 기존 데이터 이전 코드 포함).
   - 기록은 브라우저 + 비공개 데이터 저장소의 etf-planner-data.json에만(사이트 저장소 금지 — 저장마다 Pages 재게시). 설정은 README.md.
+  - 분할매수는 플래너의 buys 탭. 자산 배분 종목의 buyPlan으로 연결해 기존 etf-planner-assets.json·etf-planner-assets-v1에 저장한다(메인 state 스냅샷과 별도).
+    동기화 연결은 같고 기기 간 병합·시세는 assets-store.js를 공유한다. 분할매수·자산 JSON 백업/복원·복구 기록은 플래너 동기화 창에도 있다.
   - 토큰은 각 기기 localStorage에만. 열 때·45초마다·탭 복귀 시 동기화, 충돌은 sha(409)로 감지, 공개 저장소면 업로드 거부.
   - REPO_KEY·TOKEN_KEY 이름은 valuation.html도 읽음(같은 저장소의 etf-planner-scenarios.json 동기화) — 바꾸면 두 파일 같이.
   - normalize()에서 새 필드를 채우지 말 것(기존 기기의 동기화 스냅샷이 바뀜). 새 값은 입력했을 때만 저장하고 비우면 delete
@@ -87,14 +91,16 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=23"></script>
-  <link rel="stylesheet" href="css/app.css?v=23" />
+  <script src="js/theme.js?v=25"></script>
+  <link rel="stylesheet" href="css/app.css?v=25" />
+  <link rel="stylesheet" href="css/purchases.css?v=25" />
 </head>
 <body>
   <header class="top">
     <div class="brand"><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 11v8M12 6v10M18 3v10"/><rect x="4.5" y="13" width="3" height="4" rx=".5"/><rect x="10.5" y="8" width="3" height="5" rx=".5"/><rect x="16.5" y="5" width="3" height="5" rx=".5"/></svg></b> 매매 플래너</div>
     <nav class="tabs" aria-label="화면 선택">
       <button class="tab active" data-tab="plans">분할매도</button>
+      <button class="tab" data-tab="buys" type="button">분할매수</button>
       <button class="tab" data-tab="futures">달러선물</button>
       <button class="tab" data-tab="actions">체크목록</button>
       <button class="tab" data-tab="rebuy">재매수</button>
@@ -115,6 +121,7 @@
       </div>
     </section>
 
+    <section id="buysView" class="hidden"></section>
     <section id="futuresView" class="futures hidden"></section>
     <section id="actionsView" class="hidden"></section>
     <section id="rebuyView" class="rebuy hidden">
@@ -127,6 +134,16 @@
       </div>
     </section>
   </main>
+
+  <dialog id="purchaseDialog"><form method="dialog" class="dialog-inner" id="purchaseForm">
+    <div class="dialog-head"><h2 id="purchaseTitle">분할매수 계획</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
+    <label class="field"><span>종목</span><select name="item" required></select><small class="field-hint">자산 배분의 종목과 연결됩니다. 이름·목표 비중은 종목별에서 수정하세요.</small></label>
+    <div class="section-heading"><h3>매수 회차</h3><button class="btn mini" type="button" id="addPurchaseStage">＋ 회차</button></div>
+    <div id="purchaseStageRows" class="purchase-stage-rows"></div>
+    <label class="field"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
+    <p class="hint">날짜와 조건은 선택 사항입니다. 완료한 회차는 체결 금액을 고칠 수 있습니다. 실제 보유 금액·수량은 자산 배분에서 수정하세요.</p>
+    <div class="dialog-foot"><button class="btn danger" type="button" id="purchaseDelete">계획 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
+  </form></dialog>
 
   <dialog id="planDialog"><form method="dialog" class="dialog-inner" id="planForm">
     <div class="dialog-head"><h2 id="dialogTitle">새 분할매도 계획</h2><button class="btn ghost" type="button" data-close-plan>닫기</button></div>
@@ -203,6 +220,9 @@
     <div class="sync-controls"><button class="btn primary" id="connectRepo" type="button">연결</button><button class="btn" id="syncNow" type="button">지금 동기화</button><button class="btn ghost" id="disconnectRepo" type="button">연결 해제</button></div>
     <p class="sync-details" id="syncDialogStatus" role="status"></p>
     <p class="sync-details" id="priceStatus"></p>
+    <p class="sync-details" id="purchaseSyncDialogStatus" role="status"></p>
+    <button class="btn ghost" id="purchaseRecovery" type="button" hidden>분할매수·자산 동기화 때 보관한 기록 내려받기</button>
+    <p class="file-tools">분할매수·자산 JSON <button class="text-link" id="purchaseExport" type="button">백업</button> · <label class="text-link" for="purchaseImport">복원<input id="purchaseImport" type="file" accept="application/json" hidden /></label></p>
     <button class="btn ghost" id="downloadSyncBackup" type="button" hidden>동기화 충돌 시 보관한 기록 내려받기</button>
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
@@ -214,16 +234,19 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=23"></script>
-  <script src="js/sync.js?v=23"></script>
-  <script src="js/prices.js?v=23"></script>
-  <script src="js/trade-alerts.js?v=23"></script>
-  <script src="js/plans.js?v=23"></script>
-  <script src="js/futures.js?v=23"></script>
-  <script src="js/actions.js?v=23"></script>
-  <script src="js/rebuy.js?v=23"></script>
-  <script src="js/alerts.js?v=23"></script>
-  <script src="js/push.js?v=23"></script>
-  <script>startSync(); openTab(state.tab); save(); initializeAlerts(); initializePush();</script>
+  <script src="js/core.js?v=25"></script>
+  <script src="js/sync.js?v=25"></script>
+  <script src="js/prices.js?v=25"></script>
+  <script src="js/assets-calc.js?v=25"></script>
+  <script src="js/assets-store.js?v=25"></script>
+  <script src="js/purchases.js?v=25"></script>
+  <script src="js/trade-alerts.js?v=25"></script>
+  <script src="js/plans.js?v=25"></script>
+  <script src="js/futures.js?v=25"></script>
+  <script src="js/actions.js?v=25"></script>
+  <script src="js/rebuy.js?v=25"></script>
+  <script src="js/alerts.js?v=25"></script>
+  <script src="js/push.js?v=25"></script>
+  <script>purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

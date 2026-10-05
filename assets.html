@@ -3,7 +3,7 @@
   HANDOFF (Claude ↔ GPT 인수인계 규칙 — 공개 소스라 금액·보유 종목 등 개인정보 금지. 규칙만 두고 날짜별 변경 기록은 쌓지 말 것, 이력은 git log/PR. 공통 규칙은 index.html HANDOFF)
   - 자산 현황: 엑셀로 관리하던 자산 배분(Sheet2·분할 정리)·월별 손익(손익)·저축 계획(복리 저축 계산 등)을 옮긴 페이지. 메인 플래너와 따로 저장한다.
   - 파일: assets.html(뼈대·창), css/assets.css(이 페이지만), js/assets-calc.js(계산·병합 — DOM 없이 tests/assets.test.cjs가 불러옴, 함수 밖에서 화면을 건드리지 말 것),
-    js/assets.js(화면·동기화·시세). 공통 글꼴·색 토큰·버튼·카드는 css/app.css, 화면 모드는 js/theme.js(?v=는 index.html과 같은 숫자 — tests/files.test.cjs가 확인).
+    js/assets-store.js(자산 현황과 플래너 분할매수의 공유 기록·동기화·시세), js/assets.js(이 페이지 화면). 공통 글꼴·색 토큰·버튼·카드는 css/app.css, 화면 모드는 js/theme.js(?v=는 index.html과 같은 숫자 — tests/files.test.cjs가 확인).
   - 저장: 이 기기 localStorage(etf-planner-assets-v1) + 메인 플래너가 연결한 비공개 데이터 저장소의 etf-planner-assets.json(기록 파일과 분리).
     저장소·토큰 키(etf-planner-data-repo, etf-planner-github-token)는 js/sync.js와 같은 이름을 읽기만 함 — 바꾸면 같이.
     구역(allocation·ledger·savings)마다 savedAt을 두고, 한쪽만 바뀐 구역은 그쪽, 둘 다 바뀌면 나중 저장 우선(버린 쪽은 이 기기에 보관 → 동기화 창에서 내려받기). 공개 저장소면 업로드 거부.
@@ -11,6 +11,8 @@
   - 시세: 같은 저장소의 etf-planner-prices.json을 ETag로 읽기만 함(이 기기 etf-planner-assets-prices에 종가·환율만). 수집 대상·시각은 데이터 저장소 scripts/kis_prices.py
     (자산 배분 종목 코드는 마감 후 하루 한 번 종가만 — Actions 사용 시간). 평가액 규칙은 js/assets-calc.js itemValue 위 주석. 금액만 넣은 종목의 기준 가격(base)은 금액을 넣을 때·처음 시세를 볼 때 정함.
   - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%). 기준 총자산은 억·만원으로 표시·입력하며 숫자만 입력하면 만원으로 저장한다.
+  - 투자구성은 지역·분류 합계, 자산 배분은 종목·현금. 목표는 종목 → 소분류 → 그룹 → 분류 합산(하위 목표가 전부 없으면 기존 직접 입력값). 합계 계산만으로 기록을 바꾸지 말 것.
+    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan={stages:[{id,date,condition,amount,done,actual}],note}. 금액은 만원. 완료 체크는 계획 기록만 바꾸고 보유 금액·수량이나 종목의 비중 조정 완료(done)는 바꾸지 않는다.
   - 화면 상태(고른 탭·연도·시나리오)는 이 기기 etf-planner-assets-ui에만(동기화 안 함). 입력 중에는 시세·동기화로 다시 그리지 않음.
 -->
 <html lang="ko">
@@ -24,14 +26,15 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=23"></script>
-  <link rel="stylesheet" href="css/app.css?v=23" />
-  <link rel="stylesheet" href="css/assets.css?v=23" />
+  <script src="js/theme.js?v=25"></script>
+  <link rel="stylesheet" href="css/app.css?v=25" />
+  <link rel="stylesheet" href="css/assets.css?v=25" />
 </head>
 <body class="assets-page">
   <header class="top">
     <div class="brand"><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 11v8M12 6v10M18 3v10"/><rect x="4.5" y="13" width="3" height="4" rx=".5"/><rect x="10.5" y="8" width="3" height="5" rx=".5"/><rect x="16.5" y="5" width="3" height="5" rx=".5"/></svg></b> 자산 현황</div>
     <nav class="tabs" aria-label="화면 선택">
+      <button class="tab" data-tab="strategy" type="button">투자구성</button>
       <button class="tab active" data-tab="alloc" type="button">자산 배분</button>
       <button class="tab" data-tab="ledger" type="button">월별 손익</button>
       <button class="tab" data-tab="savings" type="button">저축 계획</button>
@@ -40,6 +43,7 @@
   </header>
 
   <main>
+    <section id="strategyView" class="hidden"></section>
     <section id="allocView"></section>
     <section id="ledgerView" class="hidden"></section>
     <section id="savingsView" class="hidden"></section>
@@ -54,8 +58,8 @@
       <label class="field"><span>금액 (만원)</span><input name="amount" type="number" step="any" inputmode="decimal" /></label>
       <label class="field"><span>시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
       <label class="field"><span>보유 수량 (선택)</span><input name="shares" type="number" min="0" step="any" inputmode="decimal" placeholder="넣으면 수량 × 현재가" /></label>
-      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
-      <label class="field check-field"><span>완료</span><span class="check"><input name="done" type="checkbox" /> 비중 맞춤 완료</span></label>
+      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 소분류·그룹·분류 목표에 자동 합산</small></label>
+      <label class="field check-field"><span>조정 기록</span><span class="check"><input name="done" type="checkbox" /> 비중 조정 완료</span><small class="field-hint">조정을 끝냈다는 직접 표시입니다. 비중을 자동 판정하지 않으며 계산에는 영향을 주지 않습니다.</small></label>
       <label class="field dialog-wide"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
       <p class="hint dialog-wide" id="itemHint">보유 수량을 넣으면 수량 × 현재가로, 금액만 넣으면 넣은 금액이 그때부터 시세 변동을 따라갑니다(국내 ETF가 추종하는 미국 ETF 코드를 넣어도 됩니다). 종목 코드가 없으면 넣은 금액 그대로입니다.</p>
     </div>
@@ -67,7 +71,7 @@
     <div class="dialog-grid">
       <label class="field"><span>그룹 이름</span><input name="name" required maxlength="60" autocomplete="off" /></label>
       <label class="field"><span>큰 분류</span><select name="classId"></select></label>
-      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
+      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" aria-describedby="groupTargetHint" /><small class="field-hint" id="groupTargetHint"></small></label>
       <div class="field" id="sectionTargets"></div>
       <label class="field dialog-wide"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
     </div>
@@ -79,7 +83,7 @@
     <div class="dialog-grid">
       <label class="field"><span>이름</span><input name="name" required maxlength="40" autocomplete="off" /></label>
       <label class="field"><span>지역</span><input name="region" required maxlength="20" list="regionList" autocomplete="off" /><datalist id="regionList"></datalist></label>
-      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
+      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" aria-describedby="classTargetHint" /><small class="field-hint" id="classTargetHint"></small></label>
       <label class="field check-field"><span>현금 합계</span><span class="check"><input name="cash" type="checkbox" /> 아래 현금 목록 합계를 이 분류에 더함</span></label>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="classDelete">분류 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
@@ -124,7 +128,8 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/assets-calc.js?v=23"></script>
-  <script src="js/assets.js?v=23"></script>
+  <script src="js/assets-calc.js?v=25"></script>
+  <script src="js/assets-store.js?v=25"></script>
+  <script src="js/assets.js?v=25"></script>
 </body>
 </html>

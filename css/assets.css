@@ -2,7 +2,7 @@
 .assets-page .neg{color:var(--danger)}.assets-page .metric strong.neg{color:var(--danger)}
 .assets-page .section-heading>.btn{margin-left:auto}.field>.unit-input{font-size:15px;font-weight:400;color:var(--text)}.field-hint{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.group-head .gap{white-space:nowrap}
 .assets-empty{display:grid;justify-items:center;gap:10px}.assets-empty p{margin:0;max-width:52ch;font-size:13.5px;line-height:1.6;word-break:keep-all}
-/* 큰 그림: 지역 카드 · 분류 줄(이름 · 평가액 · 현재/목표 비중 · 막대 · 목표까지 차이) */
+/* 투자구성: 지역 카드 · 분류 줄(이름 · 평가액 · 현재/목표 비중 · 막대 · 목표까지 차이) */
 .region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:14px}
 .region-card{padding:14px 14px 8px;min-width:0}.region-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;padding:2px 4px 10px;border-bottom:1px solid var(--line)}.region-head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.02em}.region-head b{font-size:16px;font-variant-numeric:tabular-nums}.region-head span{margin-left:auto;font-size:13px;font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}.region-head small{font-weight:500;color:var(--text-3)}
 .class-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:2px 12px;width:100%;padding:10px 6px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;border-radius:8px}.class-row:last-child{border-bottom:0}.class-row:hover{background:var(--surface-2)}
@@ -39,6 +39,7 @@
 .check-field .check input[type=checkbox]::before,.account-row .check input[type=checkbox]::before{content:"";width:11px;height:11px;background:var(--on-good);clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0%,43% 62%);transform:scale(0);transition:transform .12s}
 .check-field .check input[type=checkbox]:checked,.account-row .check input[type=checkbox]:checked{background:var(--good);border-color:var(--good)}.check-field .check input[type=checkbox]:checked::before,.account-row .check input[type=checkbox]:checked::before{transform:scale(1)}
 #sectionTargets{align-content:start}.sub-target{display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:center;gap:8px;font-size:13px;color:var(--text-2)}.sub-target input{min-height:34px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);width:100%}
+.assets-page input:disabled{opacity:1;background:var(--surface-2);color:var(--text-3);cursor:default}.assets-page .field-hint{line-height:1.5;word-break:keep-all}
 /* 저축 계획: 가정 칸 · 나이별 변경·할부 줄 · 표 */
 .param-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 6px}.unit-input{position:relative;display:block}.unit-input input{padding-right:34px!important}.unit-input em{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-style:normal;font-size:12.5px;color:var(--text-3);pointer-events:none}
 .sub-title{margin:20px 0 8px;font-size:14.5px;font-weight:700}.sub-title small{margin-left:6px;font-size:12px;font-weight:500;color:var(--text-3)}

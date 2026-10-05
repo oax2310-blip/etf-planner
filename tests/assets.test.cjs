@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationSummary,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -15,6 +15,47 @@ const prices = {stocks: {
   'BTC-USD': {kind: '코인', asOf: '2026-01-03', close: 100},
   BAD: {error: true},
 }, fx: {close: 1000, asOf: '2026-01-02'}};
+
+test('목표 비중: 종목 수정·이동·삭제가 소분류·그룹·분류·지역 합계에 반영되고 기존 기록은 보존한다', () => {
+  const alloc = {classes: [{id:'c',region:'국내',target:80},{id:'cash',region:'현금',target:20,cash:true}],cash:[],
+    groups:[{id:'g',classId:'c',target:70,sections:[{name:'배당',target:40}],items:[{id:'a',amount:10,target:3.3,section:'배당'},{id:'b',amount:10,target:6.7,section:'배당'},{id:'z',target:0},{id:'blank'}]},
+      {id:'legacy',classId:'c',target:5,items:[]}]};
+  const before = JSON.stringify(alloc), t = c.allocationTargets(alloc);
+  assert.deepEqual(t.section('g','배당'),{target:10,linked:true});
+  assert.deepEqual(t.groups.get('g'),{target:10,linked:true});
+  assert.deepEqual(t.classes.get('c'),{target:15,linked:true});
+  assert.deepEqual(t.classes.get('cash'),{target:20,linked:false});
+  assert.equal(JSON.stringify(alloc),before,'계산만으로 상위 목표나 동기화 기록을 변경하지 않는다');
+  alloc.groups[0].items[0].target=4;
+  assert.equal(c.allocationSummary(alloc,null).regions.find(r=>r.name==='국내').target,15.7,'종목 목표 수정 연동');
+  const moved=alloc.groups[0].items.splice(1,1)[0];delete moved.section;alloc.groups[1].items.push(moved);
+  assert.equal(c.allocationTargets(alloc).groups.get('legacy').target,6.7,'그룹 이동은 새 그룹에서 합산');
+  alloc.groups[1].items=[];
+  assert.equal(c.allocationTargets(alloc).groups.get('legacy').target,5,'하위 목표가 없으면 기존 직접 입력 목표');
+  delete alloc.groups[0].items[0].target;
+  assert.equal(c.allocationTargets(alloc).section('g','배당').target,40,'소분류도 기존 직접 입력 목표 유지');
+  assert.equal(c.allocationTargets({groups:[{id:'zero',target:20,items:[{target:0}]}]}).groups.get('zero').target,0,'0%는 입력된 목표');
+});
+
+test('분할매수: 실제 체결 금액과 남은 회차 예정액을 따로 합산하고 완료 해제도 반영한다', () => {
+  const plan={stages:[{amount:30,done:true,actual:25},{amount:40,done:true},{amount:50},{amount:10,done:true,actual:0}]};
+  assert.deepEqual(c.purchaseSummary(plan),{count:4,done:3,planned:130,actual:65,remaining:50});
+  plan.stages[0].done=false;
+  assert.deepEqual(c.purchaseSummary(plan),{count:4,done:2,planned:130,actual:40,remaining:80});
+  assert.deepEqual(c.purchaseSummary(null),{count:0,done:0,planned:0,actual:0,remaining:0});
+  assert.equal(c.purchaseSummary({stages:[{amount:-10},{amount:'bad'},{amount:10,done:true,actual:-1}]}).actual,0,'음수·잘못된 금액은 합계에 더하지 않는다');
+});
+
+test('분할매수 계획은 JSON 복원과 기기 간 병합에서 체결 기록을 보존하고 보유량·조정 기록과 독립적이다', () => {
+  const base={version:1,allocation:{savedAt:'2026-01-01',classes:[{id:'c',region:'국내'}],cash:[],groups:[{id:'g',classId:'c',items:[{id:'a',amount:100,target:10,done:true,buyPlan:{stages:[{id:'s',amount:30}],note:'예시 계획'}}]}]}};
+  const remote=JSON.parse(JSON.stringify(base));remote.allocation.savedAt='2026-01-02';
+  const item=remote.allocation.groups[0].items[0];item.buyPlan.stages[0].done=true;item.buyPlan.stages[0].actual=25;
+  const restored=c.cleanAssets(JSON.parse(JSON.stringify(remote))),merged=c.mergeAssets(base,restored,base);
+  assert.deepEqual(merged.doc,remote,'완료·실제 금액·메모가 복원·구역 병합에서 유지된다');
+  assert.equal(merged.doc.allocation.groups[0].items[0].done,true,'종목 비중 조정 완료는 별도 기록');
+  assert.equal(c.allocationSummary(merged.doc.allocation,null).invest,c.allocationSummary(base.allocation,null).invest,'매수 완료 체크는 평가액에 반영하지 않는다');
+  assert.equal(c.allocationTargets(merged.doc.allocation).classes.get('c').target,10,'목표도 그대로 유지한다');
+});
 
 test('기준 총자산: 억·만원 입력을 기존 만원 숫자로 저장하고 소수 금액도 유지한다', () => {
   for (const [text, amount] of [['13567.89', 13567.89], ['13,567.89만원', 13567.89], ['1억 3,567.89만원', 13567.89], ['1.5억원', 15000], ['1억', 10000], ['350만', 350], ['1억5000원', 10000.5], ['5000원', 0.5]])
