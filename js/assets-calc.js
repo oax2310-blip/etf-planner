@@ -76,17 +76,19 @@ function monthTotals(year, m){
   return {total, noLoan:acc.some(a=>a?.loan)?free:null};
 }
 // 연 요약: 실현손익 합계(선물옵션 포함), 월 수익률 합(엑셀 '연환산 %'와 같은 방식: 달마다 실현손익 ÷ 그 달 총자산, 선물옵션은 마지막 달 총자산으로),
+// 대출 계좌가 있는 해는 같은 방식의 대출 제외 수익률(엑셀 '대출 미 포함' 줄, rateNoLoan — 없으면 null),
 // 연환산(월 수익률 합 × 12 ÷ 실현손익을 넣은 달 수, 선물옵션 제외), 마지막 달 총자산.
 function yearSummary(year){
-  let pnl=0,rate=0,months=0,interest=0,hasInterest=false,last=null;
+  let pnl=0,rate=0,rateFree=0,months=0,interest=0,hasInterest=false,last=null;
   for(const m of [...(year?.months||[])].sort((a,b)=>a.m-b.m)){
     const t=monthTotals(year,m), p=finite(m.pnl);
     if(t.total>0)last={m:m.m,...t};
-    if(p!==null){pnl+=p;months++;if(t.total>0)rate+=p/t.total*100;}
+    if(p!==null){pnl+=p;months++;if(t.total>0)rate+=p/t.total*100;if(t.noLoan>0)rateFree+=p/t.noLoan*100;}
     if(finite(m.interest)!==null){interest+=Number(m.interest);hasInterest=true;}
   }
-  const fut=finite(year?.futures), futRate=fut!==null&&last?.total>0?fut/last.total*100:0;
-  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:rate+futRate, annual:months?rate*12/months:null, interest:hasInterest?interest:null, last};
+  const fut=finite(year?.futures), futRate=fut!==null&&last?.total>0?fut/last.total*100:0, loan=(year?.accounts||[]).some(a=>a?.loan);
+  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:rate+futRate, rateNoLoan:loan?rateFree+(fut!==null&&last?.noLoan>0?fut/last.noLoan*100:0):null,
+    annual:months?rate*12/months:null, interest:hasInterest?interest:null, last};
 }
 
 // ---------- 저축 계획 ----------
@@ -101,6 +103,13 @@ function savingsStage(sc, age){
   for(const s of [...(sc.stages||[])].filter(s=>finite(s.age)!==null&&Number(s.age)<=age).sort((a,b)=>a.age-b.age))
     for(const k of ["salary","growth","returnRate"])if(finite(s[k])!==null)p[k]=Number(s[k]);
   return p;
+}
+// 실제 기록의 첫 달과 마지막 달 사이에 빠진 달(YYYY-MM)
+function missingActual(sv){
+  const ns=new Set((sv?.actual||[]).map(a=>finite(a.total)!==null?ymNum(a.ym):null).filter(n=>n!==null));
+  if(!ns.size)return [];
+  const out=[];for(let n=Math.min(...ns);n<=Math.max(...ns);n++)if(!ns.has(n))out.push(ymText(n));
+  return out;
 }
 function simulateSavings(sv, sc){
   const actual=(sv?.actual||[]).map(a=>({n:ymNum(a.ym),total:finite(a.total)})).filter(a=>a.n!==null&&a.total!==null).sort((a,b)=>a.n-b.n);

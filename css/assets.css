@@ -25,7 +25,7 @@
 /* 현금 */
 .cash-card{overflow:hidden}.cash-row{display:grid;grid-template-columns:90px minmax(0,1fr) auto minmax(80px,auto);gap:10px;align-items:center;width:100%;padding:10px 16px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;font-variant-numeric:tabular-nums}.cash-row:hover{background:var(--surface-2)}
 .cash-place{font-size:12px;color:var(--text-3)}.cash-row strong{font-size:14px;font-weight:600;min-width:0;overflow-wrap:anywhere}.cash-amt{font-size:13px;color:var(--text-2)}.cash-row b{text-align:right}.cash-total{display:flex;justify-content:space-between;padding:12px 16px;background:var(--surface-2);font-weight:700;font-variant-numeric:tabular-nums}
-.assets-memo{margin-top:22px}
+.assets-memo{margin-top:22px}.same-tag{color:var(--warn)!important}.event-note{grid-column:1/-1;margin:0;font-size:12px;color:var(--warn);word-break:keep-all}.missing-note{margin:10px 0 0;color:var(--warn)}
 /* 연도·시나리오 고르기 */
 .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}.chip{border:1px solid var(--line-strong);background:var(--surface);color:var(--text-2);border-radius:99px;padding:6px 14px;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}.chip:hover{background:var(--surface-2);color:var(--text)}.chip.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
 /* 월별 손익 표 */
@@ -49,6 +49,7 @@
 .data-table th:first-child,.data-table td:first-child{text-align:left}.data-table tbody th{font-weight:600}.data-table small{display:block;font-size:11px;font-weight:500;color:var(--text-3)}.data-table tr.active th,.data-table tr.active td{background:var(--accent-soft)}.data-table tr.actual td,.data-table tr.actual th{color:var(--text-2)}.data-table.years tbody th small{display:inline;margin-left:4px}
 .actual-panel{margin-top:22px}.actual-panel>summary{cursor:pointer;font-size:16px;font-weight:700}.actual-panel>summary small{margin-left:6px;font-size:12px;font-weight:500;color:var(--text-3)}
 .actual-list{display:grid;gap:6px;margin-top:12px}.actual-row{display:grid;grid-template-columns:76px minmax(0,180px) minmax(0,1fr) auto;gap:10px;align-items:center;font-size:13.5px;font-variant-numeric:tabular-nums}.actual-row small{color:var(--text-3)}.actual-row input{width:100%;min-height:34px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text)}
+.param-grid .field{align-content:start}.actual-row.add .btn{justify-self:start}
 .actual-row.add{grid-template-columns:minmax(0,150px) minmax(0,180px) auto;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line-strong)}
 @media(max-width:900px){.param-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
