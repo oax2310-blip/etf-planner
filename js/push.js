@@ -1,9 +1,11 @@
-// 휴대폰 웹 푸시: 구독은 비공개 기록에만, 발송키는 서버에만 둔다. 알림 권한은 사용자 버튼으로 요청한다.
+// 휴대폰·PC 웹 푸시: 구독은 비공개 기록에만, 발송키는 서버에만 둔다. 알림 권한은 사용자 버튼으로 요청한다.
+// 기기마다 따로 연결하고 연결·발송 방식은 같다. 안내 문구만 PC(theme.js와 같은 마우스 기준)와 휴대폰으로 나눈다.
 const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
 let pushConfig = null, pushSubscription = null, pushBusy = false, pushMessage = "";
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
+function pushOnPc(){try{return typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches;}catch{return false;}}
 function pushSupported(){return window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;}
 function pushPublicBytes(key){
   const raw=atob(String(key).replace(/-/g,"+").replace(/_/g,"/"));
@@ -52,21 +54,21 @@ async function readPushConfig(){
 }
 function renderPushSetup(){
   const target=$("pushSetup");if(!target)return;
-  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady();
-  let message=!connected()?"동기화를 연결하면 알림 조건과 이 휴대폰의 연결 정보를 비공개 저장소에 저장합니다.":
-    !supported?"이 브라우저는 웹 푸시를 지원하지 않습니다. 안드로이드 Chrome에서 사이트를 열어 주세요.":
+  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),pc=pushOnPc(),device=pc?"PC":"휴대폰";
+  let message=!connected()?`동기화를 연결하면 알림 조건과 이 ${device}의 연결 정보를 비공개 저장소에 저장합니다.`:
+    !supported?"이 브라우저는 웹 푸시를 지원하지 않습니다. 휴대폰은 안드로이드 Chrome, PC는 Chrome·Edge·Firefox·Safari에서 사이트를 열어 주세요.":
     Notification.permission==="denied"?"알림이 차단되어 있습니다. 브라우저의 이 사이트 설정에서 알림을 허용해 주세요.":
-    !ready?"휴대폰 알림 연결을 준비 중입니다. 발송 설정이 적용된 뒤 동기화하고 이 휴대폰에서 알림을 허용해 주세요.":
-    saved?(pushRemoteHas(pushSubscription.endpoint)?"이 휴대폰이 연결되어 있습니다. 플래너를 닫아도 조건에 맞는 새 알림을 받습니다.":"이 휴대폰 연결을 저장했습니다. 동기화가 끝나면 발송 서버에 반영됩니다."):"이 휴대폰에서 한 번 알림을 허용하면 플래너를 닫아도 받을 수 있습니다.";
-  if(saved && ready && !pushKeyMatches(pushSubscription,pushConfig.publicKey))message="알림 연결키가 바뀌었습니다. 알림 받기를 다시 눌러 이 휴대폰을 연결해 주세요.";
-  if(saved && pushDeviceExpired())message="이 휴대폰의 알림 연결이 만료되었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.";
-  if(saved && (sync.blocked||sync.failed))message="이 휴대폰 연결은 저장되어 있습니다. 동기화를 완료해야 발송 서버에 반영됩니다.";
+    !ready?`알림 연결을 준비 중입니다. 발송 설정이 적용된 뒤 동기화하고 이 ${device}에서 알림을 허용해 주세요.`:
+    saved?(pushRemoteHas(pushSubscription.endpoint)?`이 ${device}에 알림이 연결되어 있습니다. 플래너를 닫아도 조건에 맞는 새 알림을 받습니다.`:`이 ${device}의 연결을 저장했습니다. 동기화가 끝나면 발송 서버에 반영됩니다.`):`이 ${device}에서 한 번 알림을 허용하면 플래너를 닫아도 받을 수 있습니다.`;
+  if(saved && ready && !pushKeyMatches(pushSubscription,pushConfig.publicKey))message="알림 연결키가 바뀌었습니다. 알림 받기를 다시 눌러 연결해 주세요.";
+  if(saved && pushDeviceExpired())message=`이 ${device}의 알림 연결이 만료되었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.`;
+  if(saved && (sync.blocked||sync.failed))message=`이 ${device}의 연결은 저장되어 있습니다. 동기화를 완료해야 발송 서버에 반영됩니다.`;
   const status=pushConfig?.repo===sync.repo?pushConfig.status:"";
   if(status==="delivery-error")message+=" 최근 발송에 실패했습니다. 다음 수집 때 다시 시도합니다.";
   if(status==="collection-unavailable")message+=" 최근 시세 수집에 실패했습니다. 새 시세를 받은 뒤 발송을 재개합니다.";
   if(status==="linked-alerts-unavailable")message+=" 매매 기준 알림 계산을 확인 중입니다. 다음 수집에서 계산을 마치면 발송을 재개합니다.";
   const disabled=pushBusy||!supported||!ready||sync.blocked||Notification.permission==="denied";
-  target.innerHTML=`<h3>이 휴대폰으로 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy?"연결 중…":saved?"알림 연결 확인":"알림 받기"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. 잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다.</p>`;
+  target.innerHTML=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy?"연결 중…":saved?"알림 연결 확인":"알림 받기"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. ${pc?"PC는 브라우저가 켜져 있을 때 받습니다(플래너 탭은 닫아도 됨). 브라우저를 완전히 닫아 두면 다시 켤 때 밀린 알림(최대 24시간)이 옵니다. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
   $("enablePhonePush").onclick=enablePhonePush;
   const disable=$("disablePhonePush");if(disable){disable.disabled=pushBusy;disable.onclick=disablePhonePush;}
 }
@@ -96,7 +98,7 @@ async function enablePhonePush(){
     await syncNow();
     pushMessage=sync.repo!==repo?"동기화 연결이 바뀌었습니다. 현재 저장소에서 알림 연결을 다시 확인해 주세요.":
       !pushIsSaved()?"동기화에서 다른 기록을 선택해 이 기기의 연결이 저장되지 않았습니다. 알림 받기를 다시 눌러 주세요.":
-      !pushRemoteHas(subscription.endpoint)?"이 기기에는 저장했습니다. 동기화를 완료하면 휴대폰 알림이 연결됩니다.":"이 휴대폰 알림을 연결했습니다. 다음 시세 수집부터 조건을 확인합니다.";
+      !pushRemoteHas(subscription.endpoint)?"이 기기에는 저장했습니다. 동기화를 완료하면 알림이 연결됩니다.":`이 ${pushOnPc()?"PC":"휴대폰"}에 알림을 연결했습니다. 다음 시세 수집부터 조건을 확인합니다.`;
   }catch(error){pushMessage=error?.name==="NotAllowedError"?"브라우저에서 알림 연결을 허용해 주세요.":error?.name==="AbortError"?"알림 서비스를 연결하지 못했습니다. 잠시 뒤 다시 눌러 주세요.":"알림 연결을 완료하지 못했습니다. 동기화 상태와 브라우저 알림 설정을 확인해 주세요.";}
   finally{pushBusy=false;renderPushSetup();}
 }

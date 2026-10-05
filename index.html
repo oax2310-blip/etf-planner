@@ -5,7 +5,7 @@
   - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음(글꼴 Pretendard만 jsDelivr CSS 한 줄 — 못 받으면 시스템 글꼴).
   - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·시세 파일 읽기·JSON 백업/복원),
     js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수),
-    js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰 브라우저 알림 연결), push-sw.js(닫힌 화면의 푸시 수신),
+    js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰·PC 브라우저 알림 연결 — 기기마다 따로, 안내 문구만 PC/휴대폰 구분), push-sw.js(닫힌 화면의 푸시 수신),
     js/theme.js(화면 모드 — valuation.html도 씀). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
   - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서로 불러오고 index.html 맨 끝 한 줄(startSync·openTab·initializeAlerts·initializePush)로 시작.
     파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
@@ -84,8 +84,8 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=18"></script>
-  <link rel="stylesheet" href="css/app.css?v=18" />
+  <script src="js/theme.js?v=19"></script>
+  <link rel="stylesheet" href="css/app.css?v=19" />
 </head>
 <body>
   <header class="top">
@@ -161,7 +161,7 @@
   </form></dialog>
 
   <dialog id="alertsDialog" aria-labelledby="alertsTitle"><div class="dialog-inner">
-    <div class="dialog-head"><h2 id="alertsTitle">휴대폰 알림</h2><button class="btn ghost" id="closeAlerts" type="button">닫기</button></div>
+    <div class="dialog-head"><h2 id="alertsTitle">알림</h2><button class="btn ghost" id="closeAlerts" type="button">닫기</button></div>
     <p class="sync-details">분할매도·달러선물·재매수 화면에서 가격 옆의 <b>알림 ON</b>을 켜세요. 종목과 기준가를 다시 입력할 필요가 없습니다.</p>
     <div id="tradeAlertsSummary"></div>
     <p class="sync-details" id="alertsSaveStatus" role="status"></p>
@@ -205,16 +205,16 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=18"></script>
-  <script src="js/sync.js?v=18"></script>
-  <script src="js/prices.js?v=18"></script>
-  <script src="js/trade-alerts.js?v=18"></script>
-  <script src="js/plans.js?v=18"></script>
-  <script src="js/futures.js?v=18"></script>
-  <script src="js/actions.js?v=18"></script>
-  <script src="js/rebuy.js?v=18"></script>
-  <script src="js/alerts.js?v=18"></script>
-  <script src="js/push.js?v=18"></script>
+  <script src="js/core.js?v=19"></script>
+  <script src="js/sync.js?v=19"></script>
+  <script src="js/prices.js?v=19"></script>
+  <script src="js/trade-alerts.js?v=19"></script>
+  <script src="js/plans.js?v=19"></script>
+  <script src="js/futures.js?v=19"></script>
+  <script src="js/actions.js?v=19"></script>
+  <script src="js/rebuy.js?v=19"></script>
+  <script src="js/alerts.js?v=19"></script>
+  <script src="js/push.js?v=19"></script>
   <script>startSync(); openTab(state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
