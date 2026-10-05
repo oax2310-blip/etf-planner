@@ -1,0 +1,374 @@
+// 자산 현황 화면·동기화·시세(규칙은 assets.html 맨 위 HANDOFF, 계산은 js/assets-calc.js). 불러오는 순서 theme → assets-calc → assets
+const A_KEY = "etf-planner-assets-v1", A_BASE_KEY = "etf-planner-assets-sync-base:", A_RECOVERY_KEY = "etf-planner-assets-recovery";
+const A_PRICE_KEY = "etf-planner-assets-prices", A_UI_KEY = "etf-planner-assets-ui";
+const A_FILE = "etf-planner-assets.json", A_PRICE_FILE = "etf-planner-prices.json";
+const A_REPO_KEY = "etf-planner-data-repo", A_TOKEN_KEY = "etf-planner-github-token"; // js/sync.js REPO_KEY·TOKEN_KEY와 같은 이름(읽기만)
+const A_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 주황색(js/prices.js PRICE_STALE_DAYS와 같음)
+const el = id => document.getElementById(id), all = sel => document.querySelectorAll(sel);
+const escA = v => String(v ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
+const nf0 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0}), nf1 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}), nf2 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:2});
+const man = v => `${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`;
+const wonA = v => `${nf0.format(Math.round(Number(v)||0))}원`;
+const pc = v => v===null||v===undefined||!Number.isFinite(Number(v)) ? "—" : `${(Math.abs(v)<1?nf2:nf1).format(Number(v))}%`;
+// 원 → '2억 1,615만원'(만원 아래 반올림)
+function eok(v){ if(v===null||v===undefined||!Number.isFinite(Number(v)))return "—"; const m=Math.round(Math.abs(v)/1e4), s=v<0?"−":"";
+  if(m>=1e4){const e=Math.floor(m/1e4),r=m%1e4;return `${s}${nf0.format(e)}억${r?` ${nf0.format(r)}만원`:"원"}`;} return m?`${s}${nf0.format(m)}만원`:wonA(v); }
+const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const readJson = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v ?? d; } catch { return d; } };
+const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
+const newId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+const numIn = v => { const s=String(v??"").trim(); return s===""?null:finite(s); };
+
+let doc = cleanAssets(readJson(A_KEY, null)) || {version:1};
+let prices = readJson(A_PRICE_KEY, null);
+const ui = {tab:"alloc", year:null, scenario:null, ...readJson(A_UI_KEY, {})};
+const setUi = patch => { Object.assign(ui, patch); writeJson(A_UI_KEY, ui); };
+// 바꾼 구역의 savedAt을 새로 찍고 저장 → 잠시 뒤 동기화
+function saveSection(section){ if(doc[section]) doc[section].savedAt = new Date().toISOString(); writeJson(A_KEY, doc); scheduleAssetSync(1500); }
+
+// ---------- 탭 ----------
+const TABS = ["alloc","ledger","savings"];
+function openTab(tab){ if(!TABS.includes(tab)) tab="alloc"; setUi({tab}); all(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); TABS.forEach(t=>el(t+"View").classList.toggle("hidden",t!==tab)); render(); }
+all(".tab").forEach(b=>b.addEventListener("click",()=>{ openTab(b.dataset.tab); scrollTo(0,0); }));
+function render(){ if(ui.tab==="alloc") renderAlloc(); if(ui.tab==="ledger") renderLedger(); if(ui.tab==="savings") renderSavings(); }
+// 시세·동기화로 다시 그릴 때 입력 중인 칸이 있으면 미룬다(쓰던 값이 지워지지 않게)
+let redrawLater = false;
+function redrawIdle(){ const a=document.activeElement; if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&!a.closest("dialog")){ redrawLater=true; return; } redrawLater=false; render(); }
+document.addEventListener("focusout",()=>setTimeout(()=>{ if(redrawLater) redrawIdle(); },0));
+// 칸 공통: 바뀌면 set(값, 칸) → false가 아니면 저장 → 다시 그림
+const onChange = (sel, section, set) => all(sel).forEach(x=>x.onchange=()=>{ if(set(x.value,x)!==false) saveSection(section); render(); });
+function emptyCard(title, text, button){ return `<div class="card empty assets-empty"><h2>${title}</h2><p>${text}</p>${button}</div>`; }
+const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n=new Date(); return Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(y,m-1,d))/864e5); };
+const quoteText = q => !q ? "" : `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} <span class="price-date${q.stale||priceDays(q.asOf)>A_STALE_DAYS?" old":""}">${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))}${q.stale?" · 조회 실패":""}</span>`;
+
+// ---------- 자산 배분 ----------
+// 큰 분류(classes, 엑셀 '분할 정리') → 그룹(groups, Sheet2의 굵은 제목) → 종목(items, 소분류 section은 그룹 안 작은 제목)
+function renderAlloc(){
+  const a=doc.allocation, view=el("allocView");
+  if(!a){ view.innerHTML=emptyCard("자산 배분 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다. 동기화 창의 JSON 복원으로 넣거나 새로 시작할 수 있습니다.",`<button class="btn primary" id="startAlloc" type="button">새로 시작</button>`);
+    el("startAlloc").onclick=()=>{ doc.allocation={savedAt:"",total:null,cashFx:null,memo:"",classes:[{id:newId(),region:"미국",name:"주식"},{id:newId(),region:"국내",name:"주식"},{id:newId(),region:"현금",name:"현금",cash:true}],groups:[],cash:[]}; saveSection("allocation"); render(); }; return; }
+  const s=allocationSummary(a,prices), rows=[...s.items.values()], live=rows.filter(r=>r.how!=="amount").length, count=rows.length;
+  const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
+  const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
+  const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
+  const bar=(cur,t)=>{ const top=Math.max(cur,finite(t)||0,.01); return `<span class="bar" aria-hidden="true"><i style="width:${Math.min(100,cur/top*100)}%"></i>${finite(t)!==null?`<em style="left:${Math.min(100,t/top*100)}%"></em>`:""}</span>`; };
+  const classOf=id=>a.classes.find(c=>c.id===id);
+  const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
+    ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${finite(c.target)!==null?`목표 ${pc(c.target)}`:"목표 없음"}</small></span>${bar(cur,finite(c.target))}${gap(c.target,v)}</button>`;}).join("")}</div>`).join("");
+  const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[String(it.ticker||"").trim().toUpperCase()];
+    const how=r.how==="shares"?`<small class="how live">수량 × 현재가</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?`<small class="how">${stock?.error?"시세 조회 실패":"시세 대기"}</small>`:"";
+    return `<div class="asset-row${it.done?" done":""}"><label class="check" title="완료"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 완료"></label>
+      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),plus(it.shares)?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
+      <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct">${pc(cur)}<small>${t!==null?`목표 ${pc(t)}`:""}</small></span></div>`; };
+  const groupCard=g=>{ const v=s.groups.get(g.id)||0, t=finite(g.target), plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
+    const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=finite(meta.target);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st!==null?` / 목표 ${pc(st)}`:""}</span>${meta.note?`<small>${escA(meta.note)}</small>`:""}</div>`;};
+    return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${escA(g.name)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
+      <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} (${man(t/100*s.base)})`:""} ${gap(t,v)}</p></div>
+      ${g.note?`<details class="group-note"><summary>메모</summary><p>${escA(g.note)}</p></details>`:""}
+      ${plain.map(itemRow).join("")}${names.map(n=>sec(n)+g.items.filter(it=>it.section===n).map(itemRow).join("")).join("")}
+      ${g.items.length?"":`<p class="group-empty">종목 없음</p>`}<div class="group-foot"><button class="btn mini ghost" type="button" data-add-item="${escA(g.id)}">＋ 종목</button></div></section>`; };
+  const detail=s.regions.map(r=>r.classes.map(c=>{const gs=a.groups.filter(g=>g.classId===c.id);return gs.length?`<div class="class-label">${escA(r.name)} · ${escA(c.name)}</div>${gs.map(groupCard).join("")}`:"";}).join("")).join("")
+    +a.groups.filter(g=>!classOf(g.classId)).map(g=>`<div class="class-label">분류 없음</div>${groupCard(g)}`).join("");
+  const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">자산 배분 · 엑셀 Sheet2 · 분할 정리</div><h1>자산 배분</h1><p>금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 코드가 있으면 시세로 평가액을 계산합니다(보유 종목 시세는 장 마감 후 하루 한 번 갱신).</p></div></div>
+    <div class="card metrics"><div class="metric"><label for="allocTotal">기준 총자산 (비중 기준)</label><label class="metric-edit"><input id="allocTotal" type="number" step="any" inputmode="decimal" value="${a.total??""}" placeholder="${Math.round(s.grand)}" style="width:${Math.max(3,String(a.total??Math.round(s.grand)).length)+.6}ch">만원${PEN}</label><small>종목 + 현금 합계 ${man(s.grand)}${plus(a.total)?` · 차이 ${s.grand>=a.total?"+":"−"}${man(Math.abs(s.grand-a.total))}`:" · 비우면 합계 기준"}</small></div>
+      <div class="metric"><label>투자 평가액</label><strong>${man(s.invest)}</strong><small>시세 반영 ${live} / ${count}개 종목${prices?.updatedAt?` · 시세 파일 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}</small></div>
+      <div class="metric"><label>현금</label><strong>${man(s.cash)}</strong><small>${usd?`달러 $${nf2.format(usd)} · `:""}${fxNote}</small></div></div>
+    <div class="section-heading"><h2>큰 그림</h2><span>엑셀 분할 정리 · 지역별 합계와 목표</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
+    <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
+    <div class="section-heading"><h2>종목별</h2><span>엑셀 Sheet2 · 그룹 ${a.groups.length}개 · 종목 ${count}개</span><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div>
+    ${detail||`<div class="card empty">그룹이 없습니다</div>`}
+    <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
+    <section class="card cash-card">${cashRows||`<p class="group-empty">현금 항목 없음</p>`}<div class="cash-total"><span>합계</span><b>${man(s.cash)}</b></div></section>
+    <section class="card panel memo assets-memo"><div class="memo-head"><h2>메모</h2></div><textarea id="allocMemo" maxlength="4000">${escA(a.memo||"")}</textarea></section>`;
+  onChange("#allocTotal","allocation",v=>{const n=numIn(v);if(n!==null&&n<0)return false;a.total=n&&n>0?n:null;});
+  onChange("#allocMemo","allocation",v=>{a.memo=v;});
+  onChange("[data-done]","allocation",(v,x)=>{const it=findItem(x.dataset.done)?.it;if(!it)return false;if(x.checked)it.done=true;else delete it.done;});
+  all("[data-item]").forEach(b=>b.onclick=()=>openItem(b.dataset.item));
+  all("[data-add-item]").forEach(b=>b.onclick=()=>openItem(null,b.dataset.addItem));
+  all("[data-group]").forEach(b=>b.onclick=()=>openGroup(b.dataset.group));
+  all("[data-class]").forEach(b=>b.onclick=()=>openClass(b.dataset.class));
+  all("[data-cash]").forEach(b=>b.onclick=()=>openCash(b.dataset.cash));
+  el("addGroup").onclick=()=>openGroup(null); el("addClass").onclick=()=>openClass(null); el("addCash").onclick=()=>openCash(null);
+}
+function findItem(id){ for(const g of doc.allocation?.groups||[]){ const it=g.items.find(x=>x.id===id); if(it) return {g,it}; } return null; }
+const dlg = id => el(id);
+all("dialog [data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
+const setNum = (obj, key, v) => { const n=numIn(v); if(n===null) delete obj[key]; else obj[key]=n; };
+const setText = (obj, key, v) => { const t=String(v??"").trim(); if(t) obj[key]=t; else delete obj[key]; };
+function openItem(id, groupId){
+  const a=doc.allocation, found=id?findItem(id):null, it=found?.it||{}, f=el("itemForm");
+  el("itemTitle").textContent=found?"종목 수정":"새 종목";
+  f.group.innerHTML=a.groups.map(g=>`<option value="${escA(g.id)}">${escA(g.name)}</option>`).join("");
+  f.group.value=found?.g.id||groupId||a.groups[0]?.id||"";
+  const fillSections=()=>{const g=a.groups.find(x=>x.id===f.group.value);el("sectionList").innerHTML=[...new Set([...(g?.sections||[]).map(x=>x.name),...(g?.items||[]).map(x=>x.section).filter(Boolean)])].map(n=>`<option value="${escA(n)}">`).join("");};
+  f.group.onchange=fillSections; fillSections();
+  f.name.value=it.name||""; f.section.value=it.section||""; f.amount.value=it.amount??""; f.ticker.value=it.ticker||""; f.shares.value=it.shares??""; f.target.value=it.target??""; f.done.checked=!!it.done; f.note.value=it.note||"";
+  el("itemDelete").hidden=!found;
+  el("itemDelete").onclick=()=>{ if(!confirm(`'${it.name}' 종목을 삭제할까요?`)) return; found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault(); if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
+    const target=found?.it||{id:newId(), amount:0}, before=JSON.stringify([target.amount,target.ticker,target.shares]);
+    target.name=f.name.value.trim()||"이름 없음"; setText(target,"section",f.section.value); target.amount=numIn(f.amount.value)??0; setText(target,"ticker",f.ticker.value.toUpperCase()); setNum(target,"shares",f.shares.value); setNum(target,"target",f.target.value);
+    if(f.done.checked) target.done=true; else delete target.done; setText(target,"note",f.note.value);
+    if(!plus(target.shares)) delete target.shares;
+    if(!found||before!==JSON.stringify([target.amount,target.ticker,target.shares])) resetBase(target,prices,a);
+    const g=a.groups.find(x=>x.id===f.group.value);
+    if(found&&found.g!==g) found.g.items=found.g.items.filter(x=>x!==target);
+    if(!g.items.includes(target)) g.items.push(target);
+    saveSection("allocation"); dlg("itemDialog").close(); render(); };
+  dlg("itemDialog").showModal();
+}
+function openGroup(id){
+  const a=doc.allocation, g=id?a.groups.find(x=>x.id===id):null, f=el("groupForm");
+  if(!a.classes.length){ alert("먼저 큰 분류를 추가하세요."); return; }
+  el("groupTitle").textContent=g?"그룹 수정":"새 그룹";
+  f.classId.innerHTML=a.classes.map(c=>`<option value="${escA(c.id)}">${escA(c.region||"기타")} · ${escA(c.name)}</option>`).join("");
+  f.name.value=g?.name||""; f.classId.value=g?.classId||a.classes[0].id; f.target.value=g?.target??""; f.note.value=g?.note||"";
+  const names=g?[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(x=>x.section).filter(Boolean)])]:[];
+  el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%)</span>${names.map((n,i)=>`<label class="sub-target">${escA(n)}<input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${(g.sections||[]).find(x=>x.name===n)?.target??""}"></label>`).join("")}`:"";
+  el("groupDelete").hidden=!g;
+  el("groupDelete").onclick=()=>{ if(!confirm(`'${g.name}' 그룹${g.items.length?`과 종목 ${g.items.length}개`:""}를 삭제할까요?`)) return; a.groups=a.groups.filter(x=>x!==g); saveSection("allocation"); dlg("groupDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault(); const t=g||{id:newId(),items:[]};
+    t.name=f.name.value.trim()||"이름 없음"; t.classId=f.classId.value; setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
+    if(names.length){ const old=t.sections||[]; t.sections=names.map((n,i)=>{const prev=old.find(x=>x.name===n)||{},o={...prev,name:n};setNum(o,"target",f.querySelector(`[data-sec="${i}"]`).value);return o;}); }
+    if(!g) a.groups.push(t); saveSection("allocation"); dlg("groupDialog").close(); render(); };
+  dlg("groupDialog").showModal();
+}
+function openClass(id){
+  const a=doc.allocation, c=id?a.classes.find(x=>x.id===id):null, f=el("classForm");
+  el("classTitle").textContent=c?"큰 분류 수정":"새 큰 분류";
+  el("regionList").innerHTML=[...new Set([...ASSET_REGIONS,...a.classes.map(x=>x.region).filter(Boolean)])].map(r=>`<option value="${escA(r)}">`).join("");
+  f.name.value=c?.name||""; f.region.value=c?.region||""; f.target.value=c?.target??""; f.cash.checked=!!c?.cash;
+  const used=c?a.groups.filter(g=>g.classId===c.id).length:0;
+  el("classDelete").hidden=!c;
+  el("classDelete").onclick=()=>{ if(used){ alert(`이 분류에 그룹 ${used}개가 있습니다. 그룹을 다른 분류로 옮기거나 지운 뒤 삭제하세요.`); return; } if(!confirm(`'${c.name}' 분류를 삭제할까요?`)) return; a.classes=a.classes.filter(x=>x!==c); saveSection("allocation"); dlg("classDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
+    t.name=f.name.value.trim()||"이름 없음"; t.region=f.region.value.trim()||"기타"; setNum(t,"target",f.target.value); if(f.cash.checked) t.cash=true; else delete t.cash;
+    if(!c) a.classes.push(t); saveSection("allocation"); dlg("classDialog").close(); render(); };
+  dlg("classDialog").showModal();
+}
+function openCash(id){
+  const a=doc.allocation, c=id?a.cash.find(x=>x.id===id):null, f=el("cashForm");
+  el("cashTitle").textContent=c?"현금 수정":"새 현금 항목";
+  f.place.value=c?.place||""; f.name.value=c?.name||""; f.amount.value=c?.amount??""; f.currency.value=c?.currency||"KRW"; f.minus.checked=!!c?.minus;
+  el("cashDelete").hidden=!c;
+  el("cashDelete").onclick=()=>{ if(!confirm(`'${c.name}' 항목을 삭제할까요?`)) return; a.cash=a.cash.filter(x=>x!==c); saveSection("allocation"); dlg("cashDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
+    setText(t,"place",f.place.value); t.name=f.name.value.trim()||"이름 없음"; t.amount=numIn(f.amount.value)??0; t.currency=f.currency.value==="USD"?"USD":"KRW"; if(f.minus.checked) t.minus=true; else delete t.minus;
+    if(!c) a.cash.push(t); saveSection("allocation"); dlg("cashDialog").close(); render(); };
+  dlg("cashDialog").showModal();
+}
+
+// ---------- 월별 손익 ----------
+function renderLedger(){
+  const L=doc.ledger, view=el("ledgerView");
+  if(!L||!L.years.length){ view.innerHTML=emptyCard("월별 손익 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startLedger" type="button">올해부터 시작</button>`);
+    el("startLedger").onclick=()=>{ doc.ledger={savedAt:"",years:[{year:new Date().getFullYear(),accounts:[],months:[]}]}; saveSection("ledger"); render(); }; return; }
+  const years=[...L.years].sort((a,b)=>a.year-b.year), y=years.find(x=>x.year===ui.year)||years[years.length-1], ys=yearSummary(y);
+  const hasInterest=y.months.some(m=>finite(m.interest)!==null), hasLoan=y.accounts.some(x=>x.loan);
+  const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=finite(m?.pnl), r=p!==null&&t.total>0?p/t.total*100:null;
+    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}</span><span class="${r<0?"neg":""}">${r!==null?pc(r):"—"}</span><span>${t.total>0?eok(t.total):"—"}${hasLoan&&t.noLoan!==null?`<small>대출 제외 ${eok(t.noLoan)}</small>`:""}</span>${hasInterest?`<span class="hide-m">${finite(m?.interest)!==null?wonA(m.interest):"—"}</span>`:""}</button>`; };
+  const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${x.year}"><span>${x.year}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}</span><span>${t.last?eok(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">월별 손익 · 엑셀 손익 시트</div><h1>월별 손익</h1><p>달마다 실현손익과 계좌 잔액을 적습니다. 수익률은 엑셀처럼 실현손익 ÷ 그 달 총자산(대출 계좌 포함)이고, 선물옵션은 한 해 합계를 마지막 달 총자산으로 나눕니다.</p></div><button class="btn" id="addYear" type="button">＋ 연도</button></div>
+    <div class="chip-row" role="tablist">${years.map(x=>`<button class="chip${x===y?" active":""}" type="button" data-pick-year="${x.year}">${x.year}</button>`).join("")}</div>
+    <div class="card metrics"><div class="metric"><label>${y.year}년 실현손익</label><strong class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</strong><small>${ys.months}개월${ys.futures!==null?` · 선물옵션 ${wonA(ys.futures)} 포함`:""}${ys.interest!==null?` · 이자 ${wonA(ys.interest)}`:""}</small></div>
+      <div class="metric"><label>연 수익률 (월 합)</label><strong class="${ys.rate<0?"neg":""}">${pc(ys.rate)}</strong><small>연환산 ${pc(ys.annual)} (선물옵션 제외, 실현손익 ${ys.months}개월 기준)</small></div>
+      <div class="metric"><label>마지막 총자산</label><strong>${ys.last?eok(ys.last.total):"—"}</strong><small>${ys.last?`${ys.last.m}월 · 대출 포함${ys.last.noLoan!==null?` · 대출 제외 ${eok(ys.last.noLoan)}`:""}`:"계좌 잔액을 넣으세요"}</small></div></div>
+    <div class="section-heading"><h2>${y.year}년</h2><span>줄을 누르면 그 달 실현손익·계좌 잔액을 고칩니다. 계좌 ${y.accounts.length}개</span><button class="btn mini" type="button" id="editYear">연도 설정</button></div>
+    <section class="card ledger-table${hasInterest?" with-interest":""}"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span>${hasInterest?`<span class="hide-m">이자</span>`:""}</div>
+      ${Array.from({length:12},(_,i)=>monthRow(i+1)).join("")}
+      ${ys.futures!==null?`<div class="ledger-row foot"><span>선물옵션</span><span class="${ys.futures<0?"neg":""}">${wonA(ys.futures)}</span><span>${ys.last?.total>0?pc(ys.futures/ys.last.total*100):"—"}</span><span></span>${hasInterest?`<span class="hide-m"></span>`:""}</div>`:""}
+      <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}</span><span></span>${hasInterest?`<span class="hide-m">${ys.interest!==null?wonA(ys.interest):""}</span>`:""}</div></section>
+    ${y.note?`<p class="footnote">${escA(y.note)}</p>`:""}
+    <div class="section-heading"><h2>연도별 요약</h2><span>실현손익(선물옵션 포함) · 연 수익률 · 마지막 총자산</span></div>
+    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}</section>`;
+  all("[data-pick-year]").forEach(b=>b.onclick=()=>{ setUi({year:Number(b.dataset.pickYear)}); renderLedger(); });
+  all("[data-month]").forEach(b=>b.onclick=()=>openMonth(y,Number(b.dataset.month)));
+  el("editYear").onclick=()=>openYear(y);
+  el("addYear").onclick=()=>{ const next=Math.max(...years.map(x=>x.year))+1, last=years[years.length-1];
+    if(!confirm(`${next}년을 추가할까요? 계좌 목록은 ${last.year}년과 같게 시작합니다.`)) return;
+    L.years.push({year:next,accounts:last.accounts.map(x=>({...x})),months:[]}); setUi({year:next}); saveSection("ledger"); render(); };
+}
+function openMonth(y, n){
+  const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[];
+  el("monthTitle").textContent=`${y.year}년 ${n}월`;
+  el("monthFields").innerHTML=`<label class="field"><span>실현손익 (원)</span><input name="pnl" type="number" step="any" inputmode="decimal" value="${m.pnl??""}"></label>
+    <label class="field"><span>이자 (원, 선택 · 비용은 −)</span><input name="interest" type="number" step="any" inputmode="decimal" value="${m.interest??""}"></label>
+    ${y.accounts.length?y.accounts.map((acc,i)=>`<label class="field"><span>${escA(acc.name)}${acc.loan?` <small class="loan-tag">대출</small>`:""}</span><input name="bal${i}" type="number" step="any" inputmode="decimal" value="${bal[i]??""}"></label>`).join("")
+      :`<label class="field"><span>총자산 (원)</span><input name="total" type="number" step="any" inputmode="decimal" value="${m.total??""}"></label>`}
+    <p class="hint dialog-wide">${y.accounts.length?"총자산은 계좌 잔액 합계입니다(대출 계좌 포함). 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
+  el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>x.m!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault(); const t={m:n}; setNum(t,"pnl",f.pnl.value); setNum(t,"interest",f.interest.value);
+    if(y.accounts.length){ const b=y.accounts.map((_,i)=>numIn(f[`bal${i}`].value)); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) t.balances=b; }
+    else setNum(t,"total",f.total.value);
+    y.months=y.months.filter(x=>x.m!==n); if(Object.keys(t).length>1){ y.months.push(t); y.months.sort((a,b)=>a.m-b.m); }
+    saveSection("ledger"); dlg("monthDialog").close(); render(); };
+  dlg("monthDialog").showModal();
+}
+function openYear(y){
+  const f=el("yearForm"); el("yearTitle").textContent=`${y.year}년 설정`;
+  f.futures.value=y.futures??""; f.note.value=y.note||"";
+  let rows=y.accounts.map((a,i)=>({from:i,name:a.name,loan:!!a.loan}));
+  const draw=()=>{ el("accountRows").innerHTML=rows.map((r,i)=>`<div class="account-row"><input data-acc-name="${i}" value="${escA(r.name)}" maxlength="40" aria-label="계좌 이름"><label class="check"><input type="checkbox" data-acc-loan="${i}"${r.loan?" checked":""}> 대출</label><button class="remove" type="button" data-acc-del="${i}" aria-label="계좌 삭제">삭제</button></div>`).join("")||`<p class="hint">계좌 없음 · 총자산만 적습니다</p>`;
+    all("[data-acc-name]").forEach(x=>x.oninput=()=>{rows[Number(x.dataset.accName)].name=x.value;});
+    all("[data-acc-loan]").forEach(x=>x.onchange=()=>{rows[Number(x.dataset.accLoan)].loan=x.checked;});
+    all("[data-acc-del]").forEach(x=>x.onclick=()=>{const r=rows[Number(x.dataset.accDel)];if(r.from!==null&&y.months.some(m=>finite(m.balances?.[r.from])!==null)&&!confirm(`'${r.name}' 계좌를 지우면 이 해의 그 계좌 잔액도 지워집니다. 계속할까요?`))return;rows.splice(Number(x.dataset.accDel),1);draw();}); };
+  draw(); el("addAccount").onclick=()=>{ rows.push({from:null,name:"",loan:false}); draw(); el("accountRows").querySelector(`[data-acc-name="${rows.length-1}"]`)?.focus(); };
+  el("yearDelete").onclick=()=>{ if(!confirm(`${y.year}년 손익 기록을 모두 지울까요?`)) return; doc.ledger.years=doc.ledger.years.filter(x=>x!==y); setUi({year:null}); saveSection("ledger"); dlg("yearDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault(); setNum(y,"futures",f.futures.value); setText(y,"note",f.note.value);
+    rows=rows.filter(r=>r.name.trim()); y.accounts=rows.map(r=>({name:r.name.trim(),...(r.loan?{loan:true}:{})}));
+    y.months.forEach(m=>{ if(!Array.isArray(m.balances)) return; const b=rows.map(r=>r.from===null?null:m.balances[r.from]??null); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) m.balances=b; else delete m.balances; });
+    saveSection("ledger"); dlg("yearDialog").close(); render(); };
+  dlg("yearDialog").showModal();
+}
+
+// ---------- 저축 계획 ----------
+const KEY_AGES = [35,40,45,50,60,70,80,90];
+let savingsAllYears = false; // 연도별 표를 모두 펼쳤는지(화면 상태, 저장 안 함)
+function renderSavings(){
+  const S=doc.savings, view=el("savingsView");
+  if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
+    el("startSavings").onclick=()=>{ const y=new Date().getFullYear(); doc.savings={savedAt:"",startYear:y,startAge:30,actual:[],scenarios:[{id:newId(),name:"기본",salary:0,giving:0,spending:0,spendingYear:y,growth:2,returnRate:5,endAge:60,stages:[]}]}; saveSection("savings"); render(); }; return; }
+  const sc=S.scenarios.find(x=>x.id===ui.scenario)||S.scenarios[0], sim=sc?simulateSavings(S,sc):null;
+  const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" type="number" step="any" inputmode="decimal" value="${sc[key]??""}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
+  const stageRow=(st,i)=>`<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${st.age??""}"></label><label><span>월급 (원)</span><input data-stage="${i}" data-k="salary" type="number" step="any" value="${st.salary??""}" placeholder="그대로"></label><label><span>사용금액 (원)</span><input data-stage="${i}" data-k="spending" type="number" step="any" value="${st.spending??""}" placeholder="그대로"></label><label><span>증가율 (%)</span><input data-stage="${i}" data-k="growth" type="number" step="any" value="${st.growth??""}" placeholder="그대로"></label><label><span>수익률 (%)</span><input data-stage="${i}" data-k="returnRate" type="number" step="any" value="${st.returnRate??""}" placeholder="그대로"></label><button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
+  const eventRow=(ev,i)=>`<div class="plan-line event"><label class="wide"><span>이름</span><input data-event="${i}" data-k="name" value="${escA(ev.name||"")}" maxlength="40"></label><label><span>시작 달</span><input data-event="${i}" data-k="start" type="month" value="${escA(ev.start||"")}"></label><label><span>선수금 (원)</span><input data-event="${i}" data-k="down" type="number" step="any" value="${ev.down??""}"></label><label><span>월 할부 (원)</span><input data-event="${i}" data-k="monthly" type="number" step="any" value="${ev.monthly??""}"></label><label><span>개월</span><input data-event="${i}" data-k="months" type="number" step="1" min="0" value="${ev.months??""}"></label><button class="remove" type="button" data-event-del="${i}" aria-label="할부 삭제">삭제</button></div>`;
+  const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
+  const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?eok(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
+  const shownRows=sim?sim.rows.filter((r,i)=>savingsAllYears||r.actual||i===sim.rows.length-1||r.age%5===0||sim.rows.slice(0,i).filter(x=>!x.actual).length<10):[];
+  const yearRows=sim?shownRows.map(r=>`<tr class="${r.actual?"actual":""}"><th scope="row">${r.year} <small>${r.age}세</small></th><td><b>${eok(r.end)}</b>${r.actual?`<small>실제 ${r.endYm.slice(5)}월</small>`:""}</td><td>${r.actual?"—":eok(r.returns)}</td><td class="hide-m">${r.actual?"—":eok(r.salary)}</td><td class="hide-m">${r.actual?"—":eok(r.spending)}</td><td class="hide-m">${r.payments?eok(r.payments):"—"}</td></tr>`).join(""):"";
+  const endRow=sim?.rows[sim.rows.length-1], at40=sim?.rows.find(r=>r.age===40&&!r.actual);
+  const actual=[...S.actual].sort((a,b)=>String(a.ym).localeCompare(String(b.ym)));
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">저축 계획 · 엑셀 복리 저축 계산 시트(보이는 시트만)</div><h1>저축 계획</h1><p>매달 월급 − 기부 − 사용금액 − 할부를 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></div><button class="btn" id="copyScenario" type="button">＋ 시나리오 복사</button></div>
+    <div class="chip-row">${S.scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
+    ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?eok(sim.last.total):"—"}</strong><small>${sim?`${sim.last.ym.replace("-","년 ")}월`:"아래 실제 기록을 한 달 이상 넣으세요"}</small></div>
+      <div class="metric"><label>40세 말 (예상)</label><strong>${at40?eok(at40.end):"—"}</strong><small>${at40?`${at40.year}년 12월`:"계산 범위 밖"}</small></div>
+      <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?eok(endRow.end):"—"}</strong><small>${endRow?`${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
+    <section class="card panel"><div class="future-panel-head"><h2>${escA(sc.name)} 가정</h2><button class="btn mini danger" type="button" id="deleteScenario"${S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
+      <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
+      <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 빈칸은 그대로 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
+      <h3 class="sub-title">할부·큰 지출 <small>시작 달에 선수금(일시불), 시작 달부터 개월 수만큼 월 할부</small></h3><div class="plan-lines">${(sc.events||[]).map(eventRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addEvent">＋ 할부·지출</button>
+      <label class="field scenario-note"><span>메모</span><textarea data-param="note" maxlength="2000">${escA(sc.note||"")}</textarea></label></section>`:""}
+    <div class="section-heading"><h2>시나리오 비교</h2><span>나이별 연말 저축총액</span></div>
+    <section class="card table-scroll"><table class="data-table"><thead><tr><th>시나리오</th>${ages.map(a=>`<th>${a}세</th>`).join("")}</tr></thead><tbody>${compare}</tbody></table></section>
+    ${sim?`<div class="section-heading"><h2>${escA(sc.name)} · 연도별</h2><span>실제 기록 연도는 그해 마지막 기록, 계산한 해는 12월 기준${savingsAllYears?"":" · 처음 10년 뒤로는 5년마다"}</span></div>
+    <section class="card table-scroll"><table class="data-table years"><thead><tr><th>연도</th><th>연말 저축총액</th><th>투자수익</th><th class="hide-m">월급</th><th class="hide-m">사용금액</th><th class="hide-m">할부</th></tr></thead><tbody>${yearRows}</tbody></table>${sim.rows.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${sim.rows.length}년)`}</button></div>`:""}</section>`:""}
+    <details class="card panel actual-panel"${S.actual.length?"":" open"}><summary>실제 저축총액 기록 <small>${S.actual.length}개월${actual.length?` · ${actual[0].ym} ~ ${actual[actual.length-1].ym}`:""}</small></summary>
+      <div class="param-grid"><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label></div>
+      <div class="actual-list">${actual.map(r=>`<div class="actual-row"><span>${escA(r.ym)}</span><input data-actual="${escA(r.ym)}" type="number" step="any" inputmode="decimal" value="${r.total??""}" aria-label="${escA(r.ym)} 저축총액"><small>${eok(r.total)}</small><button class="remove" type="button" data-actual-del="${escA(r.ym)}">삭제</button></div>`).join("")}</div>
+      <div class="actual-row add"><input id="newActualYm" type="month" aria-label="기록할 달"><input id="newActualTotal" type="number" step="any" inputmode="decimal" placeholder="저축총액 (원)"><button class="btn mini" type="button" id="addActual">추가</button></div></details>`;
+  all("[data-scenario]").forEach(b=>b.onclick=()=>{ setUi({scenario:b.dataset.scenario}); renderSavings(); });
+  if(el("toggleYears")) el("toggleYears").onclick=()=>{ savingsAllYears=!savingsAllYears; renderSavings(); };
+  el("copyScenario").onclick=()=>{ const base=sc||{}; const copy=JSON.parse(JSON.stringify({...base,id:newId(),name:`${base.name||"시나리오"} 복사`})); S.scenarios.push(copy); setUi({scenario:copy.id}); saveSection("savings"); render(); };
+  onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null) return false; S[x.dataset.base]=Math.round(n); });
+  onChange("[data-actual]","savings",(v,x)=>{ const n=numIn(v); const r=S.actual.find(a=>a.ym===x.dataset.actual); if(!r||n===null) return false; r.total=n; });
+  all("[data-actual-del]").forEach(b=>b.onclick=()=>{ if(!confirm(`${b.dataset.actualDel} 기록을 지울까요?`)) return; S.actual=S.actual.filter(a=>a.ym!==b.dataset.actualDel); saveSection("savings"); render(); });
+  el("addActual").onclick=()=>{ const ym=el("newActualYm").value, n=numIn(el("newActualTotal").value); if(ymNum(ym)===null||n===null){ alert("달과 저축총액을 넣어 주세요."); return; }
+    S.actual=S.actual.filter(a=>a.ym!==ym); S.actual.push({ym,total:n}); S.actual.sort((a,b)=>a.ym.localeCompare(b.ym)); saveSection("savings"); render(); };
+  if(!sc) return;
+  onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
+    const n=numIn(v); if(n===null) return false; sc[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
+  onChange("[data-stage]","savings",(v,x)=>{ const st=sc.stages[Number(x.dataset.stage)]; if(x.dataset.k==="age"&&numIn(v)===null) return false; setNum(st,x.dataset.k,v); sc.stages.sort((a,b)=>a.age-b.age); });
+  onChange("[data-event]","savings",(v,x)=>{ const ev=sc.events[Number(x.dataset.event)], k=x.dataset.k; if(k==="name"||k==="start") setText(ev,k,v); else setNum(ev,k,v); });
+  all("[data-stage-del]").forEach(b=>b.onclick=()=>{ sc.stages.splice(Number(b.dataset.stageDel),1); saveSection("savings"); render(); });
+  all("[data-event-del]").forEach(b=>b.onclick=()=>{ sc.events.splice(Number(b.dataset.eventDel),1); if(!sc.events.length) delete sc.events; saveSection("savings"); render(); });
+  el("addStage").onclick=()=>{ sc.stages=sc.stages||[]; const last=sc.stages[sc.stages.length-1]; sc.stages.push({age:(finite(last?.age)??(finite(S.startAge)||30))+5}); saveSection("savings"); render(); };
+  el("addEvent").onclick=()=>{ sc.events=sc.events||[]; const n=new Date(); sc.events.push({name:"할부",start:ymText(n.getFullYear()*12+n.getMonth()+1),months:12}); saveSection("savings"); render(); };
+  el("deleteScenario").onclick=()=>{ if(!confirm(`'${sc.name}' 시나리오를 삭제할까요?`)) return; S.scenarios=S.scenarios.filter(x=>x!==sc); setUi({scenario:S.scenarios[0]?.id||null}); saveSection("savings"); render(); };
+}
+
+// ---------- 동기화(메인 플래너가 연결한 비공개 데이터 저장소) ----------
+const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", message:"", at:"", remote:null};
+function assetConfig(){ try { const repo=(localStorage.getItem(A_REPO_KEY)||"").trim(), token=localStorage.getItem(A_TOKEN_KEY)||""; return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null; } catch { return null; } }
+const toB64A = text => { const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
+const fromB64A = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+async function aGh(cfg, path, options={}){
+  const r=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${cfg.token}`,...options.headers}});
+  if(r.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
+  if(r.status===403) throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
+  return r;
+}
+async function readAssetRemote(cfg){
+  const path=`/repos/${cfg.repo}/contents/${A_FILE}`, last=aSync.remote?.repo===cfg.repo?aSync.remote:null;
+  const r=await aGh(cfg,path,{headers:last?.etag?{"If-None-Match":last.etag}:{}}); // 바뀌지 않았으면 304(요청 한도에 세지 않음)
+  if(r.status===304&&last) return last;
+  if(r.status===404) return (aSync.remote={repo:cfg.repo,sha:"",doc:null,etag:""});
+  if(!r.ok) throw Error(`기록 읽기 실패 (${r.status})`);
+  const meta=await r.json(); let text=meta.encoding==="base64"&&meta.content?fromB64A(meta.content):null;
+  if(text===null){ const raw=await aGh(cfg,path,{headers:{Accept:"application/vnd.github.raw+json"}}); if(!raw.ok) throw Error(`기록 읽기 실패 (${raw.status})`); text=await raw.text(); }
+  let data=null; try { data=cleanAssets(JSON.parse(text)); } catch { data=null; }
+  if(!data) throw Error(`저장소의 ${A_FILE} 형식을 확인할 수 없어 자동으로 덮어쓰지 않았습니다.`);
+  return (aSync.remote={repo:cfg.repo,sha:meta.sha,doc:data,etag:r.headers.get("ETag")||""});
+}
+async function writeAssetRemote(cfg, data, sha){
+  const body={message:`자산 현황 동기화 ${new Date().toISOString()}`,content:toB64A(JSON.stringify(data,null,2)+"\n"),...(sha?{sha}:{})};
+  const r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_FILE}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(r.status===409||r.status===422){ const e=Error("다른 기기가 먼저 저장했습니다."); e.stale=true; throw e; }
+  if(!r.ok) throw Error(`기록 저장 실패 (${r.status})`);
+  const res=await r.json(); aSync.remote={repo:cfg.repo,sha:res.content?.sha||"",doc:JSON.parse(JSON.stringify(data)),etag:""};
+}
+// 시세 파일: 바뀌었을 때만 받는다(ETag). 종가·환율만 이 기기에 둔다. 시세가 바뀌었으면 true.
+async function readAssetPrices(cfg){
+  try{
+    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(same&&prices.etag?{"If-None-Match":prices.etag}:{})}});
+    if(r.status===304){ priceLine(); return false; }
+    if(r.status===404){ const had=!!prices; prices=null; localStorage.removeItem(A_PRICE_KEY); priceLine("데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다."); return had; }
+    if(!r.ok) throw Error(`시세 읽기 실패 (${r.status})`);
+    const d=JSON.parse(await r.text()), stocks={};
+    for(const [k,e] of Object.entries(d?.stocks||{})){ if(!e||typeof e!=="object") continue; stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true}; }
+    const fx=d?.fx?.USDKRW, next={repo:cfg.repo,etag:r.headers.get("ETag")||"",updatedAt:String(d?.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf}:null};
+    const changed=JSON.stringify({...prices,etag:""})!==JSON.stringify({...next,etag:""}); prices=next; writeJson(A_PRICE_KEY,prices); priceLine(); return changed;
+  }catch(error){ priceLine(`시세 확인 실패 · ${error.message}`); return false; }
+}
+function priceLine(message){ const n=prices?Object.values(prices.stocks).filter(e=>e.close).length:0; el("assetPriceStatus").textContent=message||(prices?`시세 파일 ${prices.updatedAt?new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""} · 종목 ${n}개${prices.fx?` · 현물 환율 ${nf2.format(prices.fx.close)}원`:""}. 자산 배분 종목 코드는 데이터 저장소 수집 작업이 장 마감 후 하루 한 번(국내 16:40·미국 06:40) 종가를 받습니다.`:""); }
+function setAssetSync(state, message=""){
+  const cfg=assetConfig(); aSync.state=state; aSync.message=message; if(state==="done") aSync.at=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
+  const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${aSync.at}`,error:`이 기기 저장됨 · ${message}`}[state];
+  el("syncStatus").textContent=text; el("syncDialogStatus").textContent=text; el("syncBtn").title=text;
+  el("syncBtn").className="btn mini sync-btn "+(!cfg?"off":state==="error"?"warn":state==="busy"?"busy":"ok");
+  el("syncOff").hidden=!!cfg; el("syncOn").hidden=!cfg; el("syncRepo").textContent=cfg?.repo||""; el("syncNowBtn").hidden=!cfg;
+}
+function keepLost(lost){ if(!lost.length) return; const list=readJson(A_RECOVERY_KEY,[]); lost.forEach(x=>list.push({...x,keptAt:new Date().toISOString()})); writeJson(A_RECOVERY_KEY,list.slice(-20)); el("downloadRecovery").hidden=false; }
+async function syncAssets(){
+  const cfg=assetConfig();
+  if(!cfg){ clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("off"); return; }
+  if(aSync.busy){ aSync.again=true; return; }
+  aSync.busy=true; aSync.again=false; clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("busy");
+  try{
+    if(aSync.checked!==cfg.repo){ const r=await aGh(cfg,`/repos/${cfg.repo}`); if(r.status===404) throw Error(`저장소 ${cfg.repo}를 찾을 수 없습니다.`); if(!r.ok) throw Error(`저장소 확인 실패 (${r.status})`); if(!(await r.json()).private) throw Error(`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`); aSync.checked=cfg.repo; }
+    let redraw=await readAssetPrices(cfg);
+    for(let attempt=1;;attempt++){
+      const remote=await readAssetRemote(cfg), base=cleanAssets(readJson(A_BASE_KEY+cfg.repo,null)), {doc:merged,lost}=mergeAssets(doc,remote.doc,base);
+      keepLost(lost);
+      if(JSON.stringify(merged)!==JSON.stringify(doc)){ doc=JSON.parse(JSON.stringify(merged)); writeJson(A_KEY,doc); redraw=true; } // 복사: 화면에서 고칠 때 받아 둔 저장소 기록(aSync.remote)이 같이 바뀌지 않게
+      if(doc.allocation&&prices&&fillBases(doc.allocation,prices)){ doc.allocation.savedAt=new Date().toISOString(); writeJson(A_KEY,doc); redraw=true; }
+      if(remote.doc?JSON.stringify(doc)===JSON.stringify(remote.doc):assetsBlank(doc)){ writeJson(A_BASE_KEY+cfg.repo,doc); break; }
+      try{ await writeAssetRemote(cfg,doc,remote.sha); writeJson(A_BASE_KEY+cfg.repo,doc); break; }
+      catch(error){ if(!error.stale||attempt>=3) throw error; aSync.remote=null; }
+    }
+    if(redraw) redrawIdle();
+    setAssetSync(aSync.timer?"pending":"done");
+  }catch(error){ setAssetSync("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error)); }
+  finally{ aSync.busy=false; if(aSync.again) scheduleAssetSync(300); }
+}
+function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync.timer); aSync.timer=setTimeout(()=>{ aSync.timer=null; syncAssets(); },delay); if(!aSync.busy) setAssetSync("pending"); }
+el("syncBtn").onclick=()=>el("syncDialog").showModal();
+el("syncNowBtn").onclick=()=>{ aSync.checked=""; syncAssets(); };
+el("downloadRecovery").hidden=!readJson(A_RECOVERY_KEY,[]).length;
+const downloadA = (value, name) => { const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}), a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
+el("downloadRecovery").onclick=()=>downloadA(readJson(A_RECOVERY_KEY,[]),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
+el("exportBtn").onclick=()=>downloadA({...doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
+el("importInput").onchange=async e=>{ const file=e.target.files?.[0]; if(!file) return;
+  try{ const incoming=cleanAssets(JSON.parse(await file.text())); if(!incoming||assetsBlank(incoming)) throw Error("자산 현황 백업 형식이 아닙니다.");
+    const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"자산 배분",ledger:"월별 손익",savings:"저축 계획"}[s]));
+    if(!confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.`)) return;
+    keepLost(ASSET_SECTIONS.filter(s=>incoming[s]&&doc[s]).map(s=>({section:s,data:doc[s]})));
+    const now=new Date().toISOString(); ASSET_SECTIONS.forEach(s=>{ if(incoming[s]){ doc[s]={...incoming[s],savedAt:now}; } });
+    writeJson(A_KEY,doc); scheduleAssetSync(300); render(); alert("복원했습니다."); }
+  catch(err){ alert(`복원 실패: ${err.message}`); }
+  e.target.value=""; };
+setInterval(()=>{ if(!document.hidden&&!aSync.busy&&assetConfig()) syncAssets(); },45000);
+document.addEventListener("visibilitychange",()=>{ if(!assetConfig()) return; if(!document.hidden||aSync.timer) syncAssets(); }); // 앱 전환·탭 닫기 전에 기다리던 변경을 바로 올린다
+addEventListener("storage",e=>{ if(e.key===null||e.key===A_REPO_KEY||e.key===A_TOKEN_KEY){ aSync.checked=""; aSync.remote=null; syncAssets(); } });
+if(doc.allocation&&prices&&fillBases(doc.allocation,prices)) saveSection("allocation"); // 이 기기에 둔 시세로 금액만 넣은 종목의 기준 가격을 먼저 정함
+priceLine(); setAssetSync(assetConfig()?"pending":"off"); openTab(ui.tab); syncAssets();
