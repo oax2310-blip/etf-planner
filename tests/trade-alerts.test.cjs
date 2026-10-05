@@ -39,6 +39,18 @@ test('자동 시세 갱신은 같은 알림 이력, 직접 기준가 변경은 �
   const overridden=get(quote({'60일선':100,'25개월선':80}));assert.equal(overridden.targetPrice,98);assert.notEqual(overridden.revision,first.revision);
   const later=get(quote({'60일선':101,'25개월선':81}));assert.equal(later.targetPrice,101);
 });
+test('비트코인 분할매도 알림은 BTC-USD 코인 시세와 자동 기준가를 사용한다',()=>{
+  const ctx=load(),p=sale({ticker:'비트코인',startAuto:true,startLabel:'60일선',notify:{start:true,sales:true},checked:[false,true,false]}),q=quote();
+  q.stocks['BTC-USD']={kind:'코인',asOf:'2026-10-02',close:61000,ma:{'60일선':60000,'25개월선':50000}};
+  const before=JSON.stringify(p),rules=plain(ctx.buildTradeAlertRules({plans:[p]},q));
+  assert.deepEqual(rules.map(r=>[r.ticker,r.quoteKey,r.quoteKind,r.targetPrice,r.condition]),[
+    ['BTC-USD','BTC-USD','코인',60000,'down'],['BTC-USD','BTC-USD','코인',50000,'down'],
+  ]);
+  assert.equal(JSON.stringify(p),before);
+  assert.equal(ctx.buildTradeAlertRules({plans:[{...p,currency:'KRW'}]},q).length,0);
+  const etf=ctx.buildTradeAlertRules({plans:[{...p,ticker:'BTC'}]},q);
+  assert.ok(etf.every(r=>r.quoteKind==='해외'&&r.ticker==='BTC'),'BTC 심볼은 미국 ETF로 남긴다');
+});
 test('원시 봉과 브라우저 종가 캐시로 계산한 기준가가 같다',()=>{
   const ctx=load(),p=sale({startAuto:true,startLabel:'2일선',endLabel:'직접',notify:{start:true}}),q=quote();
   q.stocks.AAA.daily=[['2026-10-01',0,0,0,98,0],['2026-10-02',0,0,0,102,0]];

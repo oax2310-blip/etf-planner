@@ -1,7 +1,7 @@
 // 시세 자동 채우기: 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions 'KIS 시세 수집'이 평일마다 갱신)으로 현재가·이동평균선 기준가를 채운다.
 // 파일 읽기·채우는 때는 sync.js(readPrices·syncNow), 마지막으로 읽은 시세는 전역 priceData(sync.js). DOM 없이 불러와 테스트하므로 함수 밖에서 화면을 건드리지 말 것.
 // 채우는 칸(시세 우선):
-//   분할매도 종료 기준가 ← stocks[종목 코드]의 종료 기준선 이름(N일선·N주선·N개월선) 이동평균(maValue) (국내=원화 계획, 해외=달러 계획일 때만).
+//   분할매도 종료 기준가 ← stocks[종목 코드]의 종료 기준선 이름(N일선·N주선·N개월선) 이동평균(maValue) (국내=원화 계획, 해외·비트코인=달러 계획일 때만).
 //     시작 기준가(첫 매도 기준가)는 수정 창에서 시작 기준선을 일·주·개월선으로 고른 계획(startAuto=true)만 같은 방식으로 채운다.
 //     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
 //   분할매도 달러 계획 환율 ← fx.USDKRW의 현물 환율(달러선물 보유와 무관). 조회 값이 없으면 마지막 환율 그대로.
@@ -9,7 +9,7 @@
 //   달러선물 손절 후 재매수(futures.rebuy가 있는 경우만) 현재가·N일선 단계 기준가 ← 같은 보유 근월물. 신저점·손절 하단·이탈 전 계약 수는 직접 정한다.
 //   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선 단계 기준가 ← stocks[그 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
 // 비트코인은 stocks["BTC-USD"](kind "코인", Coinbase 달러·UTC 일봉 — 데이터 저장소 scripts/kis_prices.py CRYPTO)로 매 수집에 들어 있다.
-//   동기화 창 시세 줄(sync.js priceStatus)과 직접 추가 알림(alerts.js)에만 쓰고 위 칸은 채우지 않는다(분할매도·재매수는 국내·해외 kind만).
+//   동기화 창 시세 줄·직접 추가 알림과 달러 분할매도에 쓴다. 재매수는 국내 종목만 채운다.
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
 //   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.
 // 규칙: 칸마다 지난번 채운 값을 auto에 두고 파일 값이 그와 다를 때만 덮어쓴다 → 직접 고친 값은 다음 시세 갱신 때 덮어쓴다.
@@ -23,6 +23,10 @@ const priceEntry = e => e&&typeof e==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(e.asO
 const stockEntry = (prices, ticker) => priceEntry(prices?.stocks?.[String(ticker||"").trim().toUpperCase()]);
 const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&Number.isFinite(Number(e.close))&&Number(e.close)>0?e:null; };
 const BTC_KEY = "BTC-USD";
+// 분할매도에서 '비트코인'도 받되 저장할 때는 수집 스크립트와 같은 BTC-USD로 둔다. BTC는 미국 ETF 심볼이므로 바꾸지 않는다.
+const planTicker = ticker => { const t=String(ticker||"").trim().toUpperCase();return t==="비트코인"?BTC_KEY:t; };
+const isBitcoinTicker = ticker => planTicker(ticker)===BTC_KEY;
+const planQuoteKind = (ticker, currency) => currency==="KRW"?"국내":isBitcoinTicker(ticker)?"코인":"해외";
 const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&Number(e.close)>0?e:null; };
 // 시세 통화: 해외 종목·비트코인은 달러, 그 밖(국내)은 원화
 const quoteCurrency = e => e?.kind==="해외"||e?.kind==="코인" ? "USD" : "KRW";
@@ -75,7 +79,7 @@ function fillPrices(data, prices){
   const f=data.futures, fe=futuresEntry(prices,f), fx=priceRound(fxEntry(prices)?.close,2);
   for(const p of Array.isArray(data.plans)?data.plans:[]){
     if(!p||typeof p!=="object")continue;
-    const usd=p.currency!=="KRW", e=stockEntry(prices,p.ticker), ok=e?.kind===(usd?"해외":"국내"), ma=label=>ok?priceRound(maValue(e,label),usd?2:0):null;
+    const usd=p.currency!=="KRW", e=stockEntry(prices,planTicker(p.ticker)), ok=e?.kind===planQuoteKind(p.ticker,p.currency), ma=label=>ok?priceRound(maValue(e,label),usd?2:0):null;
     changed=fillMarked(p,at,[...(p.startAuto===true?[["startPrice",ma(p.startLabel),v=>p.startPrice=v]]:[]),["endPrice",ma(p.endLabel),v=>p.endPrice=v],...(usd?[["fx",fx,v=>p.fx=v]]:[])])||changed;
   }
   if(fe&&Array.isArray(f.levels)){

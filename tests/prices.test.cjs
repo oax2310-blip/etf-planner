@@ -230,17 +230,44 @@ test('시세 기준일은 작게 표시하고, 3일 넘게 지났으면 경고�
   assert.equal(ctx.priceStamp(null, now), '');
 });
 
-test('비트코인(BTC-USD, kind 코인)은 시세 줄·알림용이고 분할매도·재매수 칸은 채우지 않는다', () => {
+test('비트코인 시세는 달러 분할매도의 자동 기준가를 채우고 원화 계획·재매수는 그대로 둔다', () => {
   const ctx = load();
   const btc = {kind: '코인', market: 'Coinbase', asOf: '2026-09-30', close: 65432.1, ma: {'60일선': 60000, '25개월선': 50000}};
-  const data = {plans: [{ticker: 'btc-usd', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2}],
+  const data = {plans: [
+    {ticker: ' btc-usd ', currency: 'USD', startAuto: true, startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2},
+    {ticker: '비트코인', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2},
+    {ticker: 'BTC-USD', currency: 'KRW', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2},
+    {ticker: 'BTC', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2},
+  ],
     rebuy: {items: [{ticker: 'BTC-USD', stages: [{name: '60일선', price: 1}]}]}, futures: {positions: []}};
   const before = plain(data);
-  assert.equal(ctx.fillPrices(data, {...prices(), stocks: {...prices().stocks, 'BTC-USD': btc}}), false);
-  assert.deepEqual(plain(data), before);
+  const doc = {...prices(), stocks: {...prices().stocks, 'BTC-USD': btc}};
+  assert.equal(ctx.fillPrices(data, doc), true);
+  assert.deepEqual(plain(data.plans.slice(0, 2).map(p => [p.startPrice, p.endPrice, p.auto])), [
+    [60000, 50000, {at: AT, startPrice: 60000, endPrice: 50000}],
+    [3, 50000, {at: AT, endPrice: 50000}],
+  ]);
+  assert.equal(data.plans[1].ticker, '비트코인', '시세 채우기만으로 저장된 코드를 바꾸지 않는다');
+  assert.deepEqual(plain(data.plans.slice(2)), before.plans.slice(2));
+  assert.deepEqual(plain(data.rebuy), before.rebuy);
+  assert.equal(ctx.fillPrices(data, doc), false, '같은 시세로 다시 채우면 변경되지 않는다');
+  data.plans[0].endPrice = 49000;
+  assert.equal(ctx.fillPrices(data, doc), false);
+  assert.equal(data.plans[0].endPrice, 49000, '직접 고친 기준가는 해당 시세가 바뀔 때까지 유지한다');
+  doc.updatedAt = '2026-10-01T00:00:00Z';doc.stocks['BTC-USD'].ma['25개월선'] = 50123.4567;
+  assert.equal(ctx.fillPrices(data, doc), true);
+  assert.equal(data.plans[0].endPrice, 50123.46);
   const btcEntry = vm.runInContext('btcEntry', ctx), quoteCurrency = vm.runInContext('quoteCurrency', ctx);
   assert.equal(btcEntry({stocks: {'BTC-USD': btc}}).close, 65432.1);
   for (const bad of [{...btc, kind: '해외'}, {...btc, close: 0}, {...btc, asOf: '9/30'}, undefined])
     assert.equal(btcEntry({stocks: {'BTC-USD': bad}}), null);
   assert.deepEqual([{kind: '코인'}, {kind: '해외'}, {kind: '국내'}, null].map(quoteCurrency), ['USD', 'USD', 'KRW', 'KRW']);
+});
+
+test('비트코인 분할매도의 새 주·개월선도 종가 캐시에서 계산한다', () => {
+  const ctx = load(), doc = ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {
+    'BTC-USD': {kind: '코인', asOf: '2026-09-30', close: 15, ma: {}, daily, monthly},
+  }}), p = {ticker: 'BTC-USD', currency: 'USD', startAuto: true, startLabel: '2주선', endLabel: '2개월선', startPrice: 1, endPrice: 1};
+  assert.equal(ctx.fillPrices({plans: [p]}, doc), true);
+  assert.deepEqual([p.startPrice, p.endPrice], [14, 25]);
 });
