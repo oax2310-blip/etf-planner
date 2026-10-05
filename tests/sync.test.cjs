@@ -292,6 +292,17 @@ test('시세 파일의 이동평균으로 기준가를 채우고 저장소에도
   assert.match(h.elements.get('priceStatus').textContent, /종목 1개/);
 });
 
+test('시세 줄에 비트코인(BTC-USD) 달러 가격을 보여 주고 종목 수에서는 뺀다', async () => {
+  const local = withPlan(plan());
+  const btc = {kind: '코인', market: 'Coinbase', asOf: '2026-09-30', close: 65432.1, ma: {'60일선': 60000}, daily: [['2026-09-30', 1, 2, 0, 65432.1, 3]]};
+  const h = harness({local, remote: local, base: snap(local), prices: {...PRICES, stocks: {...PRICES.stocks, 'BTC-USD': btc}}});
+  await h.restored();
+  const text = h.elements.get('priceStatus').textContent;
+  assert.match(text, /종목 1개/);
+  assert.match(text, /비트코인 \$65,432\.10 \(2026-09-30 UTC/);
+  assert.deepEqual(statePlan(h), filledPlan(), '비트코인이 있어도 다른 종목 채우기는 같다');
+});
+
 test('다른 기기가 같은 시세로 먼저 채워 올렸어도 이 기기 수정과 기록 차이 창이 뜨지 않는다', async () => {
   const before = withPlan(plan());
   const local = withPlan(plan({note: '이 기기 메모'}));

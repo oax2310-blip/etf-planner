@@ -5,14 +5,14 @@
 let editingAlertId = null;
 let alertsInitialized = false;
 const alertRules = () => Array.isArray(state.alerts?.rules) ? state.alerts.rules.filter(r=>r&&typeof r==="object") : [];
-// scripts/kis_prices.py classify와 같음. 국내 A 접두사도 시세 파일 키에는 그대로 남긴다.
+// scripts/kis_prices.py classify와 같음. 국내 A 접두사도 시세 파일 키에는 그대로 남긴다. 비트코인 BTC-USD는 미국 심볼 형식으로 통과하고 수집 스크립트가 Coinbase에서 따로 받는다.
 function alertTickerValid(ticker){
   const t=String(ticker||"").trim().toUpperCase();
   return /^A\d{6}$/.test(t)||/^Q\d{6}$/.test(t)||/^\d[0-9A-Z]{5}$/.test(t)||/^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t);
 }
 function alertRuleInput(input){
   const ticker=String(input.ticker||"").trim().toUpperCase(), period=Number(input.period), tolerancePct=Number(input.tolerancePct);
-  if(!alertTickerValid(ticker))return {error:"국내 종목 코드 또는 미국 종목 심볼을 확인해 주세요."};
+  if(!alertTickerValid(ticker))return {error:"국내 종목 코드·미국 종목 심볼(비트코인은 BTC-USD)을 확인해 주세요."};
   if(!String(input.period??"").trim()||!Number.isInteger(period)||period<1||period>400)return {error:"기준선 숫자는 1~400의 정수로 넣어 주세요."};
   if(!["일선","주선","개월선"].includes(input.unit))return {error:"일선·주선·개월선 중 하나를 골라 주세요."};
   if(!String(input.tolerancePct??"").trim()||!Number.isFinite(tolerancePct)||tolerancePct<0||tolerancePct>10)return {error:"허용 범위는 0~10%로 넣어 주세요."};
@@ -50,7 +50,7 @@ function alertQuoteInfo(rule, prices){
   return {quote,current:close,line:ma,gapPct,near:gapPct!==null&&Math.abs(gapPct)<=Number(rule.tolerancePct)+1e-10};
 }
 function alertRuleCard(rule){
-  const info=alertQuoteInfo(rule,priceData), currency=info.quote?.kind==="해외"?"USD":"KRW", lineName=`${rule.period}${rule.unit}`;
+  const info=alertQuoteInfo(rule,priceData), currency=quoteCurrency(info.quote), lineName=`${rule.period}${rule.unit}`;
   const price=value=>value===null?"—":priceText(value,currency);
   const gap=info.gapPct===null?"—":`${info.gapPct>0?"+":""}${info.gapPct.toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2})}%`;
   const relation=info.gapPct===null?"시세 대기":info.near?"선 근처":info.gapPct>0?"선 위":"선 아래";
