@@ -62,9 +62,36 @@ function resetBase(it, prices, alloc){
 }
 // 현금(만원): 원화는 그대로, 달러는 × 환율(시세 → 직접 넣은 환율), minus는 빼는 항목(예: 선물 증거금)
 function cashValue(c, fx){ const a=finite(c?.amount)||0, krw=c?.currency==="USD"?a*(fx||0):a; return (c?.minus?-krw:krw)/1e4; }
+// 목표 비중은 모두 기준 총자산 대비 %. 종목 → 소분류 → 그룹 → 큰 분류 순서로 합산한다.
+// 하위 목표가 하나라도 있으면 그 합계가 우선이고, 전부 비어 있으면 기존 직접 입력 목표를 쓴다.
+// 저장된 상위 목표는 건드리지 않는다(읽기만 해도 동기화 기록이 달라지거나 기존 목표가 사라지지 않게).
+function allocationTargets(alloc){
+  const groups=new Map(), classes=new Map(), sections=new Map();
+  const total=values=>values.some(v=>v!==null)?Math.round(values.reduce((s,v)=>s+(v??0),0)*1e8)/1e8:null;
+  const resolve=(values,fallback)=>{const sum=total(values);return {target:sum??finite(fallback),linked:sum!==null};};
+  for(const g of alloc?.groups||[]){
+    const names=[...new Set([...(g.sections||[]).map(s=>s.name),...(g.items||[]).map(it=>it.section).filter(Boolean)])];
+    const values=(g.items||[]).filter(it=>!it.section).map(it=>finite(it.target));
+    for(const name of names){
+      const result=resolve((g.items||[]).filter(it=>it.section===name).map(it=>finite(it.target)),(g.sections||[]).find(s=>s.name===name)?.target);
+      sections.set(`${g.id}\u0000${name}`,result);values.push(result.target);
+    }
+    groups.set(g.id,resolve(values,g.target));
+  }
+  for(const c of alloc?.classes||[])classes.set(c.id,resolve((alloc?.groups||[]).filter(g=>g.classId===c.id).map(g=>groups.get(g.id).target),c.target));
+  return {groups,classes,section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||{target:null,linked:false}};
+}
+// 분할매수 회차는 계획·체결 기록만 관리한다. 완료 체크로 보유 금액·수량을 자동 변경하지 않는다.
+// 완료 회차의 실제 금액이 비어 있으면 예정액을 쓰고, 실제 0은 0으로 유지한다. 남은 예정액은 미완료 회차의 합계.
+function purchaseSummary(plan){
+  const stages=Array.isArray(plan?.stages)?plan.stages:[];
+  const amount=s=>Math.max(0,finite(s.amount)||0), done=stages.filter(s=>s.done);
+  return {count:stages.length,done:done.length,planned:stages.reduce((n,s)=>n+amount(s),0),
+    actual:done.reduce((n,s)=>n+Math.max(0,finite(s.actual)??amount(s)),0),remaining:stages.filter(s=>!s.done).reduce((n,s)=>n+amount(s),0)};
+}
 // 화면에 쓰는 합계. base = 비중 기준(직접 넣은 기준 총자산, 없으면 종목+현금 합계)
 function allocationSummary(alloc, prices){
-  const fx=assetFx(prices,alloc), items=new Map(), groups=new Map(), classes=new Map(), sections=new Map();
+  const fx=assetFx(prices,alloc), items=new Map(), groups=new Map(), classes=new Map(), sections=new Map(), targets=allocationTargets(alloc);
   let invest=0;
   for(const g of alloc?.groups||[]){
     let sum=0;
@@ -79,8 +106,8 @@ function allocationSummary(alloc, prices){
   const grand=invest+cash, base=plus(alloc?.total)||grand;
   const regions=[...new Set([...ASSET_REGIONS,...(alloc?.classes||[]).map(c=>c.region||"기타")])]
     .map(name=>({name,classes:(alloc?.classes||[]).filter(c=>(c.region||"기타")===name)})).filter(r=>r.classes.length)
-    .map(r=>({...r,value:r.classes.reduce((s,c)=>s+(classes.get(c.id)||0),0),target:r.classes.some(c=>finite(c.target)!==null)?r.classes.reduce((s,c)=>s+(finite(c.target)||0),0):null}));
-  return {fx, invest, cash, grand, base, items, groups, classes, regions, section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||0, pct:v=>base>0?v/base*100:0};
+    .map(r=>({...r,value:r.classes.reduce((s,c)=>s+(classes.get(c.id)||0),0),target:r.classes.some(c=>targets.classes.get(c.id).target!==null)?r.classes.reduce((s,c)=>s+(targets.classes.get(c.id).target??0),0):null}));
+  return {fx, invest, cash, grand, base, items, groups, classes, regions, targets, section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||0, pct:v=>base>0?v/base*100:0};
 }
 
 // ---------- 월별 손익 ----------
