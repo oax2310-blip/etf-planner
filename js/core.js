@@ -32,7 +32,7 @@ function normalize(){
 }
 normalize();
 function openTab(tab){ state.tab=tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","futures","actions","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); render(); }
-$$(".tab").forEach(b=>b.addEventListener("click",()=>{ openTab(b.dataset.tab); scrollTo(0,0); }));
+$$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ openTab(b.dataset.tab); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
