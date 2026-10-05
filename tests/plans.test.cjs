@@ -20,7 +20,7 @@ function load(){
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),
     priceData:{updatedAt:'2026-10-02T12:00:00Z',stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-02',close:60000,ma:{'25개월선':50000}},
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
-    id:()=> 'test-plan',FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.value;}}});
+    id:()=> 'test-plan',FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
   for(const file of ['prices.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
   const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
@@ -48,12 +48,14 @@ test('완료 체크의 남은 비트코인 수량을 정확히 빼고 전량 완
 });
 
 test('비트코인 소수점 입력은 평가액을 계산하고 원래 정밀도로 BTC-USD에 저장한다',()=>{
-  const {api,ctx,fields,node,submit}=load();api.planLive();
+  const {api,ctx,fields,node,submit}=load();fields.currency.value='KRW';fields.endPrice.value='1';api.planLive();
+  assert.equal(fields.currency.value,'USD');assert.equal(fields.currency.disabled,true);
+  assert.equal(fields.endPrice.value,50000,'USD로 전환한 뒤 달러 기준가를 채운다');
   assert.equal(fields.shares.step,'0.00000001');assert.equal(fields.shares.inputMode,'decimal');
   assert.equal(node('sharesLabel').textContent,'보유 수량 (BTC)');assert.equal(fields.valueKrw.readOnly,true);
   assert.equal(Number(fields.valueKrw.value),74.1);
   submit();assert.equal(ctx.state.plans.length,1);
-  const p=ctx.state.plans[0];assert.equal(p.ticker,'BTC-USD');assert.equal(p.holdings[0].shares,0.01234567);assert.equal(p.valueKrw,null);
+  const p=ctx.state.plans[0];assert.equal(p.ticker,'BTC-USD');assert.equal(p.currency,'USD');assert.equal(p.holdings[0].shares,0.01234567);assert.equal(p.valueKrw,null);
   assert.equal(p.valueBase,undefined);
   assert.equal(api.planQuote('비트코인','USD').kind,'코인');assert.equal(api.planQuote('BTC-USD','KRW'),null);
   assert.equal(api.planQuote('BTC','USD').kind,'해외');
@@ -65,7 +67,8 @@ test('정밀도 초과·잘못된 수량은 저장을 막고 수정하면 정상
   fields.shares.value='0.012345678';submit();assert.equal(ctx.state.plans.length,0);assert.match(fields.shares.validityMessage,/8자리/);
   fields.ticker.value='AAA';fields.shares.value='1.5';submit();assert.equal(ctx.state.plans.length,0);assert.match(fields.shares.validityMessage,/정수/);
   assert.equal(fields.shares.step,'1');assert.equal(fields.shares.inputMode,'numeric');
-  fields.shares.value='10';submit();assert.equal(ctx.state.plans[0].holdings[0].shares,10);
+  fields.shares.value='10';fields.currency.value='KRW';submit();assert.equal(ctx.state.plans[0].holdings[0].shares,10);
+  assert.equal(fields.currency.disabled,false);assert.equal(ctx.state.plans[0].currency,'KRW','일반 종목의 원화 선택은 유지한다');
   assert.equal(fields.shares.validityMessage,'');
 });
 

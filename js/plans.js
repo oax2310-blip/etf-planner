@@ -95,7 +95,11 @@ function startMode(f, switched){const auto=!!f.startUnit.value;if(switched&&!aut
   if(switched&&auto&&!f.startLabel.hidden){const m=/^(\d+)/.exec(maKey(f.startLabel.value));if(m)f.startN.value=m[1];}
   if(auto)f.startUnit.dataset.last=f.startUnit.value;f.startLabel.hidden=auto;f.startLabel.required=!auto;f.startN.hidden=!auto;f.startN.required=auto;}
 function planLive(fill=[]){
-  const f=$("planForm").elements, currency=f.currency.value, q=planQuote(f.ticker.value,currency), auto=q?`시세 ${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))} 자동`:"";
+  const f=$("planForm").elements, btc=isBitcoinTicker(f.ticker.value), changedCurrency=btc&&f.currency.value!=="USD";
+  // 비트코인은 Coinbase 달러 시세만 사용한다. 원화 선택 상태에서 입력해도 조회 전에 USD로 바꾸고, 통화 선택은 고정한다.
+  if(btc)f.currency.value="USD";f.currency.disabled=btc;
+  if(changedCurrency)fill=["start","end"];
+  const currency=f.currency.value, q=planQuote(f.ticker.value,currency), auto=q?`시세 ${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))} 자동`:"";
   for(const k of ["start","end"]){
     const price=f[k+"Price"], note=$(k+"Note");
     if(k==="start"&&!f.startUnit.value){note.textContent="";continue;}
@@ -103,10 +107,10 @@ function planLive(fill=[]){
     if(fill.includes(k))price.value=v??dialogBase[k]??"";
     note.textContent=v!=null&&Number(price.value)===v?auto:priceData&&maKey(label)&&v==null?"다음 시세 수집 때 자동":"";
   }
-  const btc=isBitcoinTicker(f.ticker.value), shares=Number(f.shares.value), held=hasPlanShares(f.ticker.value,shares), worth=held?planWorth(shares,q?.close,currency,f.fx.value):null, el=f.valueKrw;
+  const shares=Number(f.shares.value), held=hasPlanShares(f.ticker.value,shares), worth=held?planWorth(shares,q?.close,currency,f.fx.value):null, el=f.valueKrw;
   f.shares.step=btc?"0.00000001":"1";f.shares.inputMode=btc?"decimal":"numeric";
   $("sharesLabel").textContent=btc?"보유 수량 (BTC)":"보유 수량 (주)";
-  $("tickerNote").textContent=btc?"BTC-USD · 달러(USD) 시세":"";
+  $("tickerNote").textContent=btc?"달러(USD) 자동":"";
   f.shares.setCustomValidity(f.shares.value!==""&&shares!==0&&!held?btc?"비트코인 수량은 소수점 8자리까지 입력해 주세요.":"보유 수량은 정수로 입력해 주세요.":"");
   if(held!==el.readOnly){if(held)el.dataset.typed=el.value;else el.value=el.dataset.typed||"";el.readOnly=held;}
   if(held)el.value=worth!=null?Math.round(worth*10)/10:"";
