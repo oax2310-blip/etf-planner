@@ -59,7 +59,6 @@ test('반등 단계는 싼 환율에서도 판 계약 수만 복원하고 재매
   assert.equal(ctx.futureRebuySummary(f).plan.reduce((a,b)=>a+b,0),sold);
   assert.notEqual(ctx.setFutureBuyDone(f,0,true),false);
   assert.equal(ctx.setFutureCutDone(f,2,true),false);
-  assert.equal(ctx.setFutureRebuyMode(f,'sellPrice'),false);
   assert.equal(ctx.setFutureBuyQty(f,0,String(sold+1)),false);
   ctx.setFutureBuyDone(f,1,true);
   const s=ctx.futureRebuySummary(f);assert.equal(s.rest,0);assert.equal(s.rebought,s.sold);assert.equal(s.held,20);
@@ -74,35 +73,57 @@ test('반등 배분은 환율 복귀 시 다음 단계로 모이며 비운 기�
   assert.deepEqual(plain(s.plan),[s.rest,0,0]);assert.equal(s.due,s.rest);
 });
 
-test('손절 환율 복귀는 실제 손절 체결 환율을 쓰고 각 손절분을 독립적으로 복원한다',()=>{
-  const ctx=load(),f=futures({buyMode:'sellPrice',currentPrice:1349.8});
+test('반등 단계로 준비하다 실제 손절 환율에 먼저 돌아온 분량은 다음 단계에서 지금 되산다',()=>{
+  const ctx=load(),f=futures({currentPrice:1349.8,stages:[{name:'25분봉',price:1320},{name:'25일선',price:1380}]});
   ctx.setFutureCutDone(f,0,true);ctx.setFutureCutDone(f,1,true);
   f.rebuy.cuts[0].price=1399.7;f.rebuy.cuts[1].price=1349.8;
-  let s=ctx.futureRebuySummary(f);assert.deepEqual(plain(s.stages).map(x=>x.price),[1349.8,1399.7]);assert.equal(s.due,4);
-  ctx.setFutureBuyDone(f,0,true);s=ctx.futureRebuySummary(f);
-  assert.equal(s.lots.find(l=>l.k===2).left,0);assert.equal(s.lots.find(l=>l.k===1).left,3);
-  assert.equal(ctx.setFutureCutDone(f,1,false),false,'이미 복원한 손절분을 제거하지 못한다');
-  assert.equal(ctx.setFutureBuyQty(f,0,'5'),false,'다른 손절분의 계약까지 해당 회차에 넣지 못한다');
-  assert.notEqual(ctx.setFutureBuyQty(f,0,'2'),false);
-  s=ctx.futureRebuySummary(f);assert.equal(s.lots.find(l=>l.k===2).left,2);assert.equal(s.lots.find(l=>l.k===1).left,3);assert.equal(s.due,2);
+  let s=ctx.futureRebuySummary(f);
+  assert.deepEqual(plain(s.lots).map(l=>[l.k,l.price,l.due]),[[2,1349.8,true],[1,1399.7,false]],'기한은 실제 체결 환율이고 낮은 손절가 분량부터 채운다');
+  assert.equal(s.due,4);assert.deepEqual(plain(s.plan),[6,1],'복귀한 4계약은 다음 단계에, 나머지는 판 환율보다 싼 단계에 나눈다');
+  assert.deepEqual(plain(s.lots.find(l=>l.k===1).stages),[0,1]);
+  assert.notEqual(ctx.setFutureBuyDone(f,0,true),false);
+  assert.deepEqual([f.rebuy.stages[0].contracts,f.rebuy.stages[0].execPrice],[6,1349.8],'환율 복귀로 사는 단계는 기준가가 아니라 현재 환율로 기록한다');
+  s=ctx.futureRebuySummary(f);
+  assert.equal(s.lots.find(l=>l.k===2).left,0);assert.equal(s.lots.find(l=>l.k===1).left,1);assert.equal(s.due,0);assert.deepEqual(plain(s.plan),[6,1]);
+  f.rebuy.currentPrice=1400;s=ctx.futureRebuySummary(f);
+  assert.equal(s.due,1);assert.equal(s.plan[1],1);
+  assert.equal(ctx.setFutureCutDone(f,1,false),false,'이미 되산 손절분을 지우지 못한다');
+  assert.equal(ctx.setFutureBuyQty(f,0,'8'),false,'판 계약 수를 넘겨 기록하지 못한다');
 });
 
-test('손절 시작·회차·복귀 재매수 알림은 보유 근월물과 절반 계획에 연결되고 완료·미배분 회차를 제외한다',()=>{
-  const ctx=load(),f=futures({buyMode:'sellPrice',notify:{breakdown:true,cuts:true,buys:true}}),data={futures:f},before=JSON.stringify(data);
+test('예전 손절 환율 복귀 방식 기록은 다음 반등 단계에서 산 것으로 이어 보고 처음 고칠 때 옮긴다',()=>{
+  const ctx=load(),f=futures({buyMode:'sellPrice',currentPrice:1380,cuts:[{contracts:3,price:1399.7,targetPrice:1400},{contracts:4,price:1349.8,targetPrice:1350}],returns:[null,{done:true,contracts:3,execPrice:1350},{done:false,contracts:null,execPrice:null}]});
+  f.rebuy.returns[0]={done:true,contracts:1,execPrice:1356};
+  const before=JSON.stringify(f);let s=ctx.futureRebuySummary(f);
+  assert.equal(JSON.stringify(f),before,'읽기만 하면 기록을 바꾸지 않는다');
+  assert.equal(s.rebought,4);assert.equal(s.rest,3);assert.ok(s.started);
+  assert.deepEqual([s.stages[0].name,s.stages[0].done,s.stages[0].contracts,s.stages[0].execPrice],['25분봉',true,4,1351.5]);
+  assert.equal(ctx.setFutureCutDone(f,1,false),false);
+  assert.notEqual(ctx.setFutureRebuyField(f,'currentPrice','1390'),false);
+  assert.equal(f.rebuy.returns,undefined);assert.equal(f.rebuy.buyMode,undefined);
+  assert.deepEqual([f.rebuy.stages[0].done,f.rebuy.stages[0].contracts,f.rebuy.stages[0].execPrice],[true,4,1351.5]);
+  s=ctx.futureRebuySummary(f);assert.equal(s.rebought,4);assert.equal(s.lots.find(l=>l.k===1).left,3);
+  assert.notEqual(ctx.setFutureBuyDone(f,0,false),false);assert.equal(ctx.futureRebuySummary(f).rebought,0);
+});
+
+test('손절 시작·회차·반등 단계·환율 복귀 알림은 보유 근월물과 절반 계획에 연결되고 완료·미배분 회차를 제외한다',()=>{
+  const ctx=load(),f=futures({stages:[{name:'25분봉',price:1380}],notify:{breakdown:true,cuts:true,buys:true,deadlines:true}}),data={futures:f},before=JSON.stringify(data);
   let rules=plain(ctx.buildTradeAlertRules(data,quote()));
-  assert.deepEqual(rules.map(x=>x.targetPrice),[1400,1400,1350,1300]);
+  assert.deepEqual(rules.map(x=>x.targetPrice),[1400,1400,1350,1300],'손절 전에는 배분이 없어 재매수 알림을 만들지 않는다');
   assert.ok(rules.every(x=>x.quoteGroup==='futures'&&x.quoteKey==='202612'&&x.condition==='down'));
   assert.equal(JSON.stringify(data),before);
   ctx.setFutureCutDone(f,0,true);f.rebuy.cuts[0].price=1399.7;
-  rules=plain(ctx.buildTradeAlertRules(data,quote(1399.7)));
-  const buy=rules.find(x=>x.condition==='up');assert.equal(buy.targetPrice,1399.7);
-  ctx.setFutureBuyDone(f,0,true);assert.equal(ctx.buildTradeAlertRules(data,quote()).length,0);
+  rules=plain(ctx.buildTradeAlertRules(data,quote(1360)));
+  assert.deepEqual(rules.filter(x=>x.condition==='up').map(x=>[x.id,x.targetPrice]),[['trade:future-rebuy:buy:stage:0',1380],['trade:future-rebuy:deadline:0',1399.7]]);
+  ctx.setFutureBuyDone(f,0,true);assert.equal(f.rebuy.stages[0].execPrice,1380);assert.equal(ctx.buildTradeAlertRules(data,quote()).length,0);
   assert.ok(!JSON.stringify(rules).includes('contracts'),'발송 규칙에 보유·거래 수량을 담지 않는다');
 });
 
-test('부분 복귀 재매수는 남은 계약의 알림을 유지하며 다 복원하면 끈다',()=>{
-  const ctx=load(),f=futures({buyMode:'sellPrice',currentPrice:1400,notify:{buys:true}});
-  ctx.setFutureCutDone(f,0,true);ctx.setFutureBuyDone(f,0,true);ctx.setFutureBuyQty(f,0,'1');
+test('부분 재매수는 남은 계약의 환율 복귀 알림을 유지하며 다 복원하면 끈다',()=>{
+  const ctx=load(),f=futures({currentPrice:1400,stages:[{name:'25분봉',price:1390}],notify:{deadlines:true}});
+  ctx.setFutureCutDone(f,0,true);ctx.setFutureBuyDone(f,0,true);
+  assert.equal(f.rebuy.stages[0].execPrice,1400);
+  ctx.setFutureBuyQty(f,0,'1');
   assert.equal(ctx.buildTradeAlertRules({futures:f},quote(1400)).length,1);
   ctx.setFutureBuyQty(f,0,'3');assert.equal(ctx.buildTradeAlertRules({futures:f},quote(1400)).length,0);
 });

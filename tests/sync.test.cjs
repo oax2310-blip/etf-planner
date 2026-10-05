@@ -93,7 +93,7 @@ test('알림을 설정한 기기는 새 빈 기기로 취급하지 않는다', a
 });
 
 test('달러 손절·재매수만 설정한 기기도 빈 기기로 보지 않고 체결 기록을 다른 기기로 보낸다', async () => {
-  const local=empty();local.futures.rebuy={lowPrice:1400,floorPrice:1300,contracts:20,buyMode:'sellPrice',cuts:[{contracts:3,price:1399.7,targetPrice:1400}],returns:[{done:true,contracts:1,execPrice:1399.8}],notify:{buys:true}};
+  const local=empty();local.futures.rebuy={lowPrice:1400,floorPrice:1300,contracts:20,cuts:[{contracts:3,price:1399.7,targetPrice:1400}],stages:[{name:'25분봉',price:0,done:true,contracts:1,execPrice:1399.8}],notify:{buys:true}};
   const h=harness({local});await h.restored();
   assert.equal(vm.runInContext('isBlank(dataSnapshot())',h.context),false);
   assert.deepEqual(h.remoteData().futures.rebuy,local.futures.rebuy);

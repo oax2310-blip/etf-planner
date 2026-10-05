@@ -54,13 +54,21 @@ function stageEstimates(stages,start){
 // 최초 입력 때 이탈 전 계약 수를 고정한다. 신저점~직접 정한 하단을 고르게 나눠 floor(계약 수/2)까지만 손절한다.
 // 정수 계약으로 나누므로 회차는 손절 목표 계약 수 이하. 한 회차뿐이면 하단에서 손절한다.
 // 실제 손절 수량을 고치면 남은 목표를 미완료 회차의 원래 비중으로 다시 나눈다. 체결 기록은 그대로 남긴다.
-// buyMode='sellPrice'면 각 손절분을 실제 손절 환율로 되산다(returns[손절 회차]). 기본은 기존 반등 단계.
-// 반등 단계 재매수는 낮은 손절가 분량부터 채우고, 더 싼 것으로 예상되는 미완료 단계에 정수 계약으로 배분한다.
-// 가격을 모르는 단계도 후보. 계약이 모자라면 앞 단계부터 배분한다. 손절가에 다시 오면 다음 단계에 잔여분을 모은다.
+// 재매수는 ETF 재매수(rebuySummary)와 같은 흐름: 기존 반등 단계로 준비하되, 손절분마다 실제 손절 환율이 기한이다.
+// 낮은 손절가 분량부터 채우고, 더 싼 것으로 예상되는 미완료 단계에 정수 계약으로 배분한다(가격을 모르는 단계도 후보, 없으면 다음 단계).
+// 반등 단계보다 손절 환율 복귀(현재 환율 ≥ 판 환율)가 먼저 오면 그 분량은 다음 단계에서 바로 되산다.
 // 재매수를 시작하면 손절을 멈춘다. 체크는 이 계획에만 반영하며 보유 월물·정산손익은 계좌 기준으로 직접 고친다.
 const futureRebuyQty = v => Number.isFinite(Number(v)) ? Math.max(0,Math.floor(Number(v))) : 0;
 const futureRebuyOf = f => f?.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)?f.rebuy:{};
-const futureRebuyStages = r => Array.isArray(r.stages)?r.stages:defaultRebuy().stages;
+// 예전 '손절 환율 복귀' 방식(buyMode·returns[손절 회차])으로 체크한 재매수는 환율 복귀 때 다음 반등 단계에서 산 것과 같다.
+// 읽을 때는 첫 미완료 단계에 합쳐 보여 주기만 하고(기록은 그대로), 처음 고칠 때 editFutureRebuy가 stages로 옮긴다.
+function futureRebuyStages(r){
+  const stages=Array.isArray(r.stages)?r.stages:defaultRebuy().stages,old=(Array.isArray(r.returns)?r.returns:[]).filter(x=>x?.done&&futureRebuyQty(x.contracts)>0);
+  if(!old.length)return stages;
+  const qty=old.reduce((n,x)=>n+futureRebuyQty(x.contracts),0),priced=old.filter(x=>Number(x.execPrice)>0),pq=priced.reduce((n,x)=>n+futureRebuyQty(x.contracts),0);
+  const rec={done:true,contracts:qty,execPrice:pq?priced.reduce((n,x)=>n+futureRebuyQty(x.contracts)*Number(x.execPrice),0)/pq:null},i=stages.findIndex(x=>!x.done);
+  return i<0?[...stages,{name:"손절 환율 복귀",price:0,...rec}]:stages.map((x,j)=>j===i?{...x,...rec}:x);
+}
 function futureRebuyHold(f){
   const r=futureRebuyOf(f);if(Object.hasOwn(r,"contracts"))return futureRebuyQty(r.contracts);
   const held=(Array.isArray(f?.positions)?f.positions:[]).reduce((n,p)=>n+futureRebuyQty(p.contracts),0);
@@ -82,36 +90,34 @@ function futureCutPlan(f){
   });
 }
 function futureRebuySummary(f){
-  const r=futureRebuyOf(f),hold=futureRebuyHold(f),goal=Math.floor(hold/2),cuts=futureCutPlan(f),done=cuts.filter(c=>c.done),mode=r.buyMode==="sellPrice"?"sellPrice":"stages",cur=Number(r.currentPrice)||0;
-  const stages=mode==="sellPrice"?done.filter(c=>c.qty>0).sort((a,b)=>(a.execPrice||a.price)-(b.execPrice||b.price)).map(c=>({...r.returns?.[c.k-1],name:`${c.k}회 손절 환율`,price:c.execPrice||c.price,cutIndex:c.k-1})):futureRebuyStages(r),bought=stages.filter(x=>x.done);
+  const r=futureRebuyOf(f),hold=futureRebuyHold(f),goal=Math.floor(hold/2),cuts=futureCutPlan(f),done=cuts.filter(c=>c.done),cur=Number(r.currentPrice)||0;
+  const stages=futureRebuyStages(r),bought=stages.filter(x=>x.done);
   const sold=done.reduce((n,c)=>n+c.qty,0),rebought=bought.reduce((n,x)=>n+futureRebuyQty(x.contracts),0),rest=Math.max(0,sold-rebought);
   let pool=rebought;
   const lots=done.filter(c=>c.qty>0).map(c=>({k:c.k,price:c.execPrice||c.price,qty:c.qty})).sort((a,b)=>a.price-b.price||a.k-b.k).map(l=>{
-    const covered=Math.min(l.qty,mode==="sellPrice"?futureRebuyQty(r.returns?.[l.k-1]?.done?r.returns[l.k-1].contracts:0):pool),left=l.qty-covered;pool-=covered;
-    return {...l,covered,left,open:left>0,due:left>0&&cur>0&&cur>=l.price};
+    const covered=Math.min(l.qty,pool),left=l.qty-covered;pool-=covered;
+    return {...l,covered,left,open:left>0,due:left>0&&cur>0&&cur>=l.price,stages:[]};
   });
   const lastBuy=[...bought].reverse().find(x=>Number(x.execPrice)>0),start=cur>0?cur:lastBuy?Number(lastBuy.execPrice):lots[0]?.price||0,est=stageEstimates(stages,start);
   const open=stages.map((x,i)=>x.done?-1:i).filter(i=>i>=0),plan=stages.map(x=>x.done?futureRebuyQty(x.contracts):0);
   for(const l of lots){
-    if(mode==="sellPrice"){const i=stages.findIndex(x=>x.cutIndex===l.k-1);if(i>=0)plan[i]=l.left;continue;}
     if(!l.open||!open.length)continue;
     const cheaper=l.due?[]:open.filter(i=>est[i]==null||est[i]<l.price),targets=cheaper.length?cheaper:[open[0]];
-    targets.forEach((i,j)=>plan[i]+=Math.floor(l.left/targets.length)+(j<l.left%targets.length?1:0));
+    targets.forEach((i,j)=>{const qty=Math.floor(l.left/targets.length)+(j<l.left%targets.length?1:0);if(qty){plan[i]+=qty;l.stages.push(i);}});
   }
-  return {mode,hold,goal,cuts,stages,lots,est,plan,sold,rebought,rest,started:bought.length>0,held:Math.max(0,hold-sold+rebought),due:lots.filter(l=>l.due).reduce((n,l)=>n+l.left,0),doneCuts:done.length,doneStages:bought.length,
+  return {hold,goal,cuts,stages,lots,est,plan,sold,rebought,rest,started:bought.length>0,held:Math.max(0,hold-sold+rebought),due:lots.filter(l=>l.due).reduce((n,l)=>n+l.left,0),doneCuts:done.length,doneStages:bought.length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
 }
-const futureRebuyOpen = (s,i) => !s.stages[i].done||s.mode==="sellPrice"&&s.lots.some(l=>l.k===s.stages[i].cutIndex+1&&l.open);
 function editFutureRebuy(f){
   const hold=futureRebuyHold(f);
   if(f.rebuy!==futureRebuyOf(f))f.rebuy={};
   const r=f.rebuy;if(!Object.hasOwn(r,"contracts"))r.contracts=hold;
-  if(!Array.isArray(r.cuts))r.cuts=[];if(!Array.isArray(r.stages))r.stages=defaultRebuy().stages;
+  if(!Array.isArray(r.cuts))r.cuts=[];
+  r.stages=futureRebuyStages(r);delete r.returns;delete r.buyMode; // 예전 환율 복귀 방식 기록을 반등 단계로 옮김
   return r;
 }
-function futureRebuyBought(f){const r=futureRebuyOf(f);return futureRebuyStages(r).some(x=>x.done)||(Array.isArray(r.returns)?r.returns:[]).some(x=>x?.done);}
+function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(x=>x.done);}
 function futureRebuyLocked(f){const r=futureRebuyOf(f);return (Array.isArray(r.cuts)?r.cuts:[]).some(Boolean)||futureRebuyBought(f);}
-function setFutureRebuyMode(f,mode){if(!["stages","sellPrice"].includes(mode)||futureRebuyBought(f))return false;const r=editFutureRebuy(f);if(mode==="stages")delete r.buyMode;else r.buyMode=mode;}
 function setFutureRebuyField(f,key,text){
   if(!["lowPrice","floorPrice","contracts","steps","currentPrice"].includes(key)||key!=="currentPrice"&&futureRebuyLocked(f))return false;
   const v=text.trim()===""?0:Number(text);if(!Number.isFinite(v)||v<0)return false;
@@ -123,26 +129,26 @@ function setFutureRebuyField(f,key,text){
 function setFutureCutDone(f,i,on){
   const s=futureRebuySummary(f),c=s.cuts[i];if(!c)return false;
   if(on){if(s.started||c.done||c.qty<1||s.sold+c.qty>s.goal)return false;editFutureRebuy(f).cuts[i]={contracts:c.qty,price:c.price,targetPrice:c.price};}
-  else{if(!c.done||s.sold-c.qty<s.rebought||futureRebuyOf(f).returns?.[i]?.done)return false;editFutureRebuy(f).cuts[i]=null;}
+  else{if(!c.done||s.sold-c.qty<s.rebought)return false;editFutureRebuy(f).cuts[i]=null;}
 }
 function setFutureCutQty(f,i,text){
   const qty=Number(text),s=futureRebuySummary(f),c=s.cuts[i];
-  if(!c?.done||text.trim()===""||!Number.isInteger(qty)||qty<1||s.sold-c.qty+qty>s.goal||s.sold-c.qty+qty<s.rebought||futureRebuyQty(futureRebuyOf(f).returns?.[i]?.contracts)>qty)return false;
+  if(!c?.done||text.trim()===""||!Number.isInteger(qty)||qty<1||s.sold-c.qty+qty>s.goal||s.sold-c.qty+qty<s.rebought)return false;
   editFutureRebuy(f).cuts[i].contracts=qty;
 }
+// 체크하면 단계 기준가(없으면 현재 환율·추정가)로 기록한다. 손절 환율 복귀로 바로 사는 다음 단계는 현재 환율로 기록한다.
 function setFutureBuyDone(f,i,on){
   const s=futureRebuySummary(f),x=s.stages[i];if(!x)return false;
   if(on){
-    const qty=s.plan[i],cur=Number(futureRebuyOf(f).currentPrice)||0,price=s.mode==="sellPrice"?(cur>0?cur:x.price):Number(x.price)>0?Number(x.price):cur>0?cur:s.est[i];
+    const qty=s.plan[i],cur=Number(futureRebuyOf(f).currentPrice)||0,back=s.due>0&&cur>0&&i===s.stages.findIndex(y=>!y.done),price=back?cur:Number(x.price)>0?Number(x.price):cur>0?cur:s.est[i];
     if(x.done||qty<1||qty>s.rest||!(price>0)||!Number.isFinite(price))return false;
-    Object.assign(editFutureBuyStage(f,s,i),{done:true,contracts:qty,execPrice:price});
-  }else Object.assign(editFutureBuyStage(f,s,i),{done:false,contracts:null,execPrice:null});
+    Object.assign(editFutureRebuy(f).stages[i],{done:true,contracts:qty,execPrice:price});
+  }else Object.assign(editFutureRebuy(f).stages[i],{done:false,contracts:null,execPrice:null});
 }
-function editFutureBuyStage(f,s,i){const r=editFutureRebuy(f);if(s.mode!=="sellPrice")return r.stages[i];if(!Array.isArray(r.returns))r.returns=[];return r.returns[s.stages[i].cutIndex]??={};}
 function setFutureBuyQty(f,i,text){
   const qty=Number(text),s=futureRebuySummary(f),x=s.stages[i];
-  if(!x?.done||text.trim()===""||!Number.isInteger(qty)||qty<1||s.rebought-futureRebuyQty(x.contracts)+qty>s.sold||s.mode==="sellPrice"&&qty>s.cuts[x.cutIndex].qty)return false;
-  editFutureBuyStage(f,s,i).contracts=qty;
+  if(!x?.done||text.trim()===""||!Number.isInteger(qty)||qty<1||s.rebought-futureRebuyQty(x.contracts)+qty>s.sold)return false;
+  editFutureRebuy(f).stages[i].contracts=qty;
 }
 function rebuySummary(r){
   const cuts=cutPlan(r), stages=stagesOf(r), done=cuts.filter(c=>c.done), bought=stages.filter(x=>x.done), cur=Number(r.currentPrice)||0;

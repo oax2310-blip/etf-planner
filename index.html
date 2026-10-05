@@ -24,9 +24,10 @@
   - normalize()에서 새 필드를 채우지 말 것(기존 기기의 동기화 스냅샷이 바뀜). 새 값은 입력했을 때만 저장하고 비우면 delete
     (futures.rollSpread·lossPrice, state.rebuy는 처음 입력할 때 editRebuy()가 만듦).
   - 달러선물 신저점 손절·재매수는 futures.rebuy에 입력할 때만 저장(editFutureRebuy). 계산은 rebuy.js futureCutPlan·futureRebuySummary,
-    화면은 futures.js renderFutureRebuy. 이탈 전 계약 수를 고정해 하단까지 floor(계약 수/2)만 손절하고 판 계약 수만 복원.
-    buyMode='sellPrice'는 실제 손절 환율 복귀(returns[손절 회차]), 없으면 기존 반등 단계(stages). 체크로 보유 월물·정산손익을 바꾸지 말 것.
-    현재가·일선 단계는 보유 근월물 시세, 신저점·하단은 직접. 알림은 futures.rebuy.notify에 입력할 때만(반등 단계·환율 복귀 키를 구분).
+    화면은 futures.js renderFutureRebuy(체크 기록 전엔 한 줄로 접음, futureRebuyExpanded는 저장 안 하는 화면 상태). 이탈 전 계약 수를 고정해 하단까지 floor(계약 수/2)만 손절하고 판 계약 수만 복원.
+    재매수는 ETF 재매수(rebuySummary)와 같은 흐름: 반등 단계(stages)로 준비하고, 실제 손절 환율 복귀가 먼저 오면 그 분량을 다음 단계에서 바로 되삼.
+    예전 buyMode='sellPrice'·returns 기록은 futureRebuyStages가 첫 미완료 단계에 합쳐 읽고 editFutureRebuy가 옮김. 체크로 보유 월물·정산손익을 바꾸지 말 것.
+    현재가·일선 단계는 보유 근월물 시세, 신저점·하단은 직접. 알림은 futures.rebuy.notify에 입력할 때만(단계는 stage:i, 환율 복귀는 deadlines).
   - 연결 알림은 plans[].notify(첫 매도 start·회차 sales와 saleOverrides), futures.notify.levels·levels[].notify, rebuy.items[].notify(이탈 breakdown·손절 cuts·재매수 buys·기한 deadlines, 회차 Overrides)·stages[].notify에 버튼을 누를 때만 저장. 완료 회차는 제외. trade-alerts.js의 buildTradeAlertRules를 비공개 수집 작업도 prices.js·rebuy.js와 함께 실행해 같은 기준가·배분을 사용.
   - 기준선 알림은 state.alerts={rules:[{id,ticker,period,unit,tolerancePct,enabled}],…수신 설정}. alerts는 입력할 때만 만들고 마지막 규칙을 지워도 rules:[]로 남김.
     알림 설정·수신 설정은 비공개 기록에만 저장, 시세·발송 판정은 데이터 저장소의 수집 작업. 화면에서 알림 규칙을 여는 것만으로 저장 기록을 바꾸지 말 것.
@@ -82,8 +83,8 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=16"></script>
-  <link rel="stylesheet" href="css/app.css?v=16" />
+  <script src="js/theme.js?v=17"></script>
+  <link rel="stylesheet" href="css/app.css?v=17" />
 </head>
 <body>
   <header class="top">
@@ -203,16 +204,16 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=16"></script>
-  <script src="js/sync.js?v=16"></script>
-  <script src="js/prices.js?v=16"></script>
-  <script src="js/trade-alerts.js?v=16"></script>
-  <script src="js/plans.js?v=16"></script>
-  <script src="js/futures.js?v=16"></script>
-  <script src="js/actions.js?v=16"></script>
-  <script src="js/rebuy.js?v=16"></script>
-  <script src="js/alerts.js?v=16"></script>
-  <script src="js/push.js?v=16"></script>
+  <script src="js/core.js?v=17"></script>
+  <script src="js/sync.js?v=17"></script>
+  <script src="js/prices.js?v=17"></script>
+  <script src="js/trade-alerts.js?v=17"></script>
+  <script src="js/plans.js?v=17"></script>
+  <script src="js/futures.js?v=17"></script>
+  <script src="js/actions.js?v=17"></script>
+  <script src="js/rebuy.js?v=17"></script>
+  <script src="js/alerts.js?v=17"></script>
+  <script src="js/push.js?v=17"></script>
   <script>startSync(); openTab(state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
