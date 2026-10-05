@@ -229,3 +229,18 @@ test('시세 기준일은 작게 표시하고, 3일 넘게 지났으면 경고�
   assert.match(ctx.priceStamp({...entry('2026-10-02'), stale: true}, now), /class="price-date old".*조회 실패/);
   assert.equal(ctx.priceStamp(null, now), '');
 });
+
+test('비트코인(BTC-USD, kind 코인)은 시세 줄·알림용이고 분할매도·재매수 칸은 채우지 않는다', () => {
+  const ctx = load();
+  const btc = {kind: '코인', market: 'Coinbase', asOf: '2026-09-30', close: 65432.1, ma: {'60일선': 60000, '25개월선': 50000}};
+  const data = {plans: [{ticker: 'btc-usd', currency: 'USD', startLabel: '60일선', endLabel: '25개월선', startPrice: 3, endPrice: 2}],
+    rebuy: {items: [{ticker: 'BTC-USD', stages: [{name: '60일선', price: 1}]}]}, futures: {positions: []}};
+  const before = plain(data);
+  assert.equal(ctx.fillPrices(data, {...prices(), stocks: {...prices().stocks, 'BTC-USD': btc}}), false);
+  assert.deepEqual(plain(data), before);
+  const btcEntry = vm.runInContext('btcEntry', ctx), quoteCurrency = vm.runInContext('quoteCurrency', ctx);
+  assert.equal(btcEntry({stocks: {'BTC-USD': btc}}).close, 65432.1);
+  for (const bad of [{...btc, kind: '해외'}, {...btc, close: 0}, {...btc, asOf: '9/30'}, undefined])
+    assert.equal(btcEntry({stocks: {'BTC-USD': bad}}), null);
+  assert.deepEqual([{kind: '코인'}, {kind: '해외'}, {kind: '국내'}, null].map(quoteCurrency), ['USD', 'USD', 'KRW', 'KRW']);
+});

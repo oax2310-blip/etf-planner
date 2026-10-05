@@ -8,6 +8,8 @@
 //   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
 //   달러선물 손절 후 재매수(futures.rebuy가 있는 경우만) 현재가·N일선 단계 기준가 ← 같은 보유 근월물. 신저점·손절 하단·이탈 전 계약 수는 직접 정한다.
 //   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선 단계 기준가 ← stocks[그 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
+// 비트코인은 stocks["BTC-USD"](kind "코인", Coinbase 달러·UTC 일봉 — 데이터 저장소 scripts/kis_prices.py CRYPTO)로 매 수집에 들어 있다.
+//   동기화 창 시세 줄(sync.js priceStatus)과 직접 추가 알림(alerts.js)에만 쓰고 위 칸은 채우지 않는다(분할매도·재매수는 국내·해외 kind만).
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
 //   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.
 // 규칙: 칸마다 지난번 채운 값을 auto에 두고 파일 값이 그와 다를 때만 덮어쓴다 → 직접 고친 값은 다음 시세 갱신 때 덮어쓴다.
@@ -20,6 +22,10 @@ function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|달)\s*선/.exec(Str
 const priceEntry = e => e&&typeof e==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(e.asOf)&&e.ma&&typeof e.ma==="object" ? e : null;
 const stockEntry = (prices, ticker) => priceEntry(prices?.stocks?.[String(ticker||"").trim().toUpperCase()]);
 const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&Number.isFinite(Number(e.close))&&Number(e.close)>0?e:null; };
+const BTC_KEY = "BTC-USD";
+const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&Number(e.close)>0?e:null; };
+// 시세 통화: 해외 종목·비트코인은 달러, 그 밖(국내)은 원화
+const quoteCurrency = e => e?.kind==="해외"||e?.kind==="코인" ? "USD" : "KRW";
 // 달러선물은 보유 근월물(계약 수 > 0인 가장 가까운 월물, futures.js nearestMonth와 같음)의 시세
 function priceMonth(f){ return (Array.isArray(f?.positions)?f.positions:[]).filter(p=>Number(p.contracts)>0&&/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.month))).map(p=>String(p.month)).sort()[0]||""; }
 const futuresEntry = (prices, f) => priceEntry(prices?.futures?.[priceMonth(f)]);

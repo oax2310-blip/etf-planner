@@ -84,3 +84,14 @@ test('마지막 시세의 가격·기준선·간격을 표시하고 허용 범�
   rule.period=3;assert.equal(ctx.alertQuoteInfo(rule,data).line,null);
   assert.equal(ctx.alertQuoteInfo(rule,null).current,null);
 });
+
+test('비트코인 BTC-USD를 알림 종목으로 받고 가격을 달러로 표시한다',()=>{
+  const ctx=load();
+  assert.equal(ctx.writeAlertRule(valid({ticker:' btc-usd ',period:20,unit:'주선'})).value.ticker,'BTC-USD');
+  assert.match(ctx.alertRuleInput(valid({ticker:'비트코인'})).error,/BTC-USD/);
+  Object.assign(ctx,{esc:v=>String(v),priceText:(v,c)=>`${c} ${v}`,priceStamp:()=>'',
+    priceData:{stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-03',close:65432.1,ma:{'20주선':65000}}}}});
+  const html=ctx.alertRuleCard(ctx.state.alerts.rules[0]);
+  assert.match(html,/USD 65432\.1/);
+  assert.match(html,/USD 65000/);
+});
