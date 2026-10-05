@@ -5,6 +5,17 @@
 let editingAlertId = null;
 let alertsInitialized = false;
 const alertRules = () => Array.isArray(state.alerts?.rules) ? state.alerts.rules.filter(r=>r&&typeof r==="object") : [];
+const krOpenReminderEnabled = () => state.alerts?.krOpenReminder===true;
+function setKrOpenReminder(enabled){
+  if(krOpenReminderEnabled()===enabled)return false;
+  editAlerts().krOpenReminder=enabled;return true;
+}
+function renderKrOpenReminder(){
+  const toggle=$("krOpenReminder");if(!toggle)return;
+  toggle.checked=krOpenReminderEnabled();
+  $("krOpenReminderStatus").textContent=toggle.checked?"ON":"OFF";
+  onEdit("#krOpenReminder",(v,el)=>setKrOpenReminder(el.checked),renderKrOpenReminder);
+}
 // scripts/kis_prices.py classify와 같음. 국내 A 접두사도 시세 파일 키에는 그대로 남긴다. 비트코인 BTC-USD는 미국 심볼 형식으로 통과하고 수집 스크립트가 Coinbase에서 따로 받는다.
 function alertTickerValid(ticker){
   const t=String(ticker||"").trim().toUpperCase();
@@ -65,6 +76,7 @@ function alertRuleCard(rule){
 function renderAlerts(){
   const list=$("alertsList");if(!list)return;
   const rules=alertRules();
+  renderKrOpenReminder();
   if(typeof renderTradeAlertSummary==="function")renderTradeAlertSummary();
   list.innerHTML=rules.length?rules.map(alertRuleCard).join(""):'<p class="alert-empty">등록한 알림이 없습니다. 종목과 기준선을 추가하세요.</p>';
   $("alertsCount").textContent=`${rules.length}개`;

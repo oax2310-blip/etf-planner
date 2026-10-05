@@ -39,6 +39,37 @@ test('잘못된 알림 저장은 새 필드도 만들지 않고 기존 수신 �
   assert.equal(JSON.stringify(ctx.state),before);
 });
 
+test('한국장 재알림은 기본 OFF이며 읽기·렌더링은 기록을 만들지 않는다',()=>{
+  const ctx=load({plans:[]}),before=JSON.stringify(ctx.state);
+  const nodes={krOpenReminder:{},krOpenReminderStatus:{}};
+  ctx.$=name=>nodes[name];ctx.onEdit=()=>{};
+  assert.equal(vm.runInContext('krOpenReminderEnabled()',ctx),false);
+  ctx.renderKrOpenReminder();
+  assert.equal(nodes.krOpenReminder.checked,false);
+  assert.equal(nodes.krOpenReminderStatus.textContent,'OFF');
+  assert.equal(ctx.setKrOpenReminder(false),false);
+  assert.equal(JSON.stringify(ctx.state),before);
+});
+
+test('한국장 재알림 설정은 규칙·기기 구독을 보존하고 켜고 끌 수 있다',()=>{
+  const configured={rules:[{id:'r1',...valid()}],subscriptions:[{endpoint:'https://push.example.test/one'}],futureSetting:'keep'};
+  const ctx=load({alerts:plain(configured)});
+  assert.equal(ctx.setKrOpenReminder(true),true);
+  assert.equal(vm.runInContext('krOpenReminderEnabled()',ctx),true);
+  assert.equal(ctx.setKrOpenReminder(true),false);
+  const nodes={krOpenReminder:{},krOpenReminderStatus:{}};
+  let binding;
+  ctx.$=name=>nodes[name];ctx.onEdit=(selector,write,redraw)=>{binding={selector,write,redraw};};
+  ctx.renderKrOpenReminder();
+  assert.equal(nodes.krOpenReminder.checked,true);
+  assert.equal(nodes.krOpenReminderStatus.textContent,'ON');
+  assert.equal(binding.selector,'#krOpenReminder');
+  assert.equal(binding.write('',{checked:false}),true);
+  binding.redraw();
+  assert.equal(nodes.krOpenReminder.checked,false);
+  assert.deepEqual(plain(ctx.state.alerts),{...configured,krOpenReminder:false});
+});
+
 test('수집기가 지원하는 국내 코드와 미국 심볼을 저장하고 공백·대소문자를 맞춘다',()=>{
   const ctx=load();
   for(const ticker of ['000001','A000001','Q000001','1AB2CD','TEST','TEST.A','TEST-A','TEST/A'])assert.equal(ctx.alertTickerValid(ticker),true,ticker);
