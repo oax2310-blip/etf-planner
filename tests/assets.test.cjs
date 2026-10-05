@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {itemValue,fillBases,resetBase,cashValue,allocationSummary,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationSummary,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -15,6 +15,20 @@ const prices = {stocks: {
   'BTC-USD': {kind: '코인', asOf: '2026-01-03', close: 100},
   BAD: {error: true},
 }, fx: {close: 1000, asOf: '2026-01-02'}};
+
+test('기준 총자산: 억·만원 입력을 기존 만원 숫자로 저장하고 소수 금액도 유지한다', () => {
+  for (const [text, amount] of [['13567.89', 13567.89], ['13,567.89만원', 13567.89], ['1억 3,567.89만원', 13567.89], ['1.5억원', 15000], ['1억', 10000], ['350만', 350], ['1억5000원', 10000.5], ['5000원', 0.5]])
+    assert.equal(c.parseAllocationTotal(text), amount, text);
+  assert.equal(c.parseAllocationTotal('  '), null, '비우면 합계 기준');
+  for (const text of ['-1', 'abc', '1억 잘못입력', '1억5000', 'NaN', 'Infinity', '만원'])
+    assert.ok(Number.isNaN(c.parseAllocationTotal(text)), `${text}: 잘못된 입력을 빈칸으로 처리해 기준을 지우지 않음`);
+  assert.equal(c.allocationTotalText(13567.89), '1억 3,567.89만원');
+  assert.equal(c.allocationTotalText(10000), '1억원');
+  assert.equal(c.allocationTotalText(350.5), '350.5만원');
+  assert.equal(c.allocationTotalText(null), '');
+  for (const amount of [0, 0.000005, 9999.9999, 10000, 10000.0001, 13567.89, 1000000.123456])
+    assert.equal(c.parseAllocationTotal(c.allocationTotalText(amount)), amount, `${amount}: 표시를 다시 입력해도 금액 유지`);
+});
 
 test('종목 평가액: 수량 × 현재가(달러는 × 환율) → 금액 × 시세 변동 → 넣은 금액', () => {
   near(c.itemValue({shares: 30, ticker: '111111'}, prices, 1000).value, 30, '국내 30주 × 1만원 = 30만원');
