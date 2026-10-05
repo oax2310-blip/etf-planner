@@ -19,6 +19,23 @@ const assetFx = (prices, alloc) => plus(prices?.fx?.close) || plus(alloc?.cashFx
 const krwPrice = (q, fx) => !q ? null : q.currency==="USD" ? (fx ? q.close*fx : null) : q.close;
 
 // ---------- 자산 배분 ----------
+// 기준 총자산 입력: 숫자만 넣으면 기존처럼 만원. 억·만원·원 표기는 만원 숫자로 환산하며, 빈칸(null)과 잘못된 입력(NaN)을 구분한다.
+function parseAllocationTotal(value){
+  const text=String(value??"").replace(/[\s,]/g,"");
+  if(!text)return null;
+  const e=text.match(/^(\d+(?:\.\d*)?|\.\d+)억(?:원|(\d+(?:\.\d*)?|\.\d+)(만원?|원))?$/);
+  const m=e?null:text.match(/^(\d+(?:\.\d*)?|\.\d+)(만원?|원)?$/);
+  const total=e?Number(e[1])*1e4+Number(e[2]||0)/(e[3]==="원"?1e4:1):m?Number(m[1])/(m[2]==="원"?1e4:1):NaN;
+  return Number.isFinite(total)?total:NaN;
+}
+const allocationTotalFormat=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:20});
+// 저장된 만원 숫자 → 억·만원 표기. 소수부를 따로 붙여 억 단위를 뺄 때의 부동소수점 오차를 표시하지 않는다.
+function allocationTotalText(value){
+  const n=finite(value);if(n===null||n<0)return "";
+  const text=allocationTotalFormat.format(n);if(n<1e4)return `${text}만원`;
+  const [whole,fraction=""]=text.replace(/,/g,"").split("."), e=Number(whole.slice(0,-4)), m=Number(`${whole.slice(-4)}.${fraction}`);
+  return `${allocationTotalFormat.format(e)}억${m?` ${allocationTotalFormat.format(m)}만원`:"원"}`;
+}
 // 종목 평가액(만원): ① 보유 수량 × 현재가(달러는 × 환율) ② 금액만 넣었으면 금액 × (지금 원화 가격 ÷ 금액을 넣을 때 원화 가격 base)
 // ③ 시세가 없으면 넣은 금액 그대로. 미국 ETF를 따라가는 국내 ETF는 ticker에 따라가는 미국 ETF를 넣어 ②로 따라간다.
 function itemValue(item, prices, fx){

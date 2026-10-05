@@ -70,8 +70,9 @@ function renderAlloc(){
   const detail=s.regions.map(r=>r.classes.map(c=>{const gs=a.groups.filter(g=>g.classId===c.id);return gs.length?`<div class="class-label">${escA(r.name)} · ${escA(c.name)}</div>${gs.map(groupCard).join("")}`:"";}).join("")).join("")
     +a.groups.filter(g=>!classOf(g.classId)).map(g=>`<div class="class-label">분류 없음</div>${groupCard(g)}`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
+  const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(s.grand), totalWidth=v=>`${Math.max(3,v.replace(/[억만원]/g,"00").length)+.6}ch`;
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">자산 배분 · 엑셀 Sheet2 · 분할 정리</div><h1>자산 배분</h1><p>금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 코드가 있으면 시세로 평가액을 계산합니다(보유 종목 시세는 장 마감 후 하루 한 번 갱신).</p></div></div>
-    <div class="card metrics"><div class="metric"><label for="allocTotal">기준 총자산 (비중 기준)</label><label class="metric-edit"><input id="allocTotal" type="number" step="any" inputmode="decimal" value="${a.total??""}" placeholder="${Math.round(s.grand)}" style="width:${Math.max(3,String(a.total??Math.round(s.grand)).length)+.6}ch">만원${PEN}</label><small>종목 + 현금 합계 ${man(s.grand)}${plus(a.total)?` · 차이 ${s.grand>=a.total?"+":"−"}${man(Math.abs(s.grand-a.total))}`:" · 비우면 합계 기준"}</small></div>
+    <div class="card metrics"><div class="metric"><label for="allocTotal">기준 총자산 (비중 기준)</label><label class="metric-edit"><input id="allocTotal" type="text" enterkeyhint="done" autocomplete="off" spellcheck="false" value="${totalText}" placeholder="${totalPlaceholder}" aria-describedby="allocTotalHint" style="width:${totalWidth(totalText||totalPlaceholder)}">${PEN}</label><small id="allocTotalHint">억·만원으로 입력 · 숫자만 넣으면 만원</small><small>종목 + 현금 합계 ${man(s.grand)}${plus(a.total)?` · 차이 ${s.grand>=a.total?"+":"−"}${man(Math.abs(s.grand-a.total))}`:" · 비우면 합계 기준"}</small></div>
       <div class="metric"><label>투자 평가액</label><strong>${man(s.invest)}</strong><small>시세 반영 ${live} / ${count}개 종목${prices?.updatedAt?` · 시세 파일 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}</small></div>
       <div class="metric"><label>현금</label><strong>${man(s.cash)}</strong><small>${usd?`달러 $${nf2.format(usd)} · `:""}${fxNote}</small></div></div>
     <div class="section-heading"><h2>큰 그림</h2><span>엑셀 분할 정리 · 지역별 합계와 목표</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
@@ -81,7 +82,12 @@ function renderAlloc(){
     <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
     <section class="card cash-card">${cashRows||`<p class="group-empty">현금 항목 없음</p>`}<div class="cash-total"><span>합계</span><b>${man(s.cash)}</b></div></section>
     <section class="card panel memo assets-memo"><div class="memo-head"><h2>메모</h2></div><textarea id="allocMemo" maxlength="4000">${escA(a.memo||"")}</textarea></section>`;
-  onChange("#allocTotal","allocation",v=>{const n=numIn(v);if(n!==null&&n<0)return false;a.total=n&&n>0?n:null;});
+  const totalInput=el("allocTotal");
+  totalInput.oninput=()=>{totalInput.setCustomValidity("");totalInput.style.width=totalWidth(totalInput.value||totalPlaceholder);};
+  totalInput.onchange=()=>{const n=parseAllocationTotal(totalInput.value);
+    if(Number.isNaN(n)){totalInput.setCustomValidity("0 이상의 금액을 억·만원 단위로 입력하세요. 숫자만 넣으면 만원입니다.");totalInput.reportValidity();return;}
+    const next=plus(n);if(next!==(doc.allocation.total??null)){doc.allocation.total=next;saveSection("allocation");}render();};
+  totalInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();totalInput.blur();}if(e.key==="Escape"){e.preventDefault();render();}};
   onChange("#allocMemo","allocation",v=>{a.memo=v;});
   onChange("[data-done]","allocation",(v,x)=>{const it=findItem(x.dataset.done)?.it;if(!it)return false;if(x.checked)it.done=true;else delete it.done;});
   all("[data-item]").forEach(b=>b.onclick=()=>openItem(b.dataset.item));

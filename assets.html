@@ -10,7 +10,7 @@
     기본값에 실제 금액·종목을 넣지 말 것(첫 기록은 데이터 저장소 파일 또는 JSON 복원으로만).
   - 시세: 같은 저장소의 etf-planner-prices.json을 ETag로 읽기만 함(이 기기 etf-planner-assets-prices에 종가·환율만). 수집 대상·시각은 데이터 저장소 scripts/kis_prices.py
     (자산 배분 종목 코드는 마감 후 하루 한 번 종가만 — Actions 사용 시간). 평가액 규칙은 js/assets-calc.js itemValue 위 주석. 금액만 넣은 종목의 기준 가격(base)은 금액을 넣을 때·처음 시세를 볼 때 정함.
-  - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%).
+  - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%). 기준 총자산은 억·만원으로 표시·입력하며 숫자만 입력하면 만원으로 저장한다.
   - 화면 상태(고른 탭·연도·시나리오)는 이 기기 etf-planner-assets-ui에만(동기화 안 함). 입력 중에는 시세·동기화로 다시 그리지 않음.
 -->
 <html lang="ko">
@@ -24,9 +24,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=21"></script>
-  <link rel="stylesheet" href="css/app.css?v=21" />
-  <link rel="stylesheet" href="css/assets.css?v=21" />
+  <script src="js/theme.js?v=22"></script>
+  <link rel="stylesheet" href="css/app.css?v=22" />
+  <link rel="stylesheet" href="css/assets.css?v=22" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -124,7 +124,7 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/assets-calc.js?v=21"></script>
-  <script src="js/assets.js?v=21"></script>
+  <script src="js/assets-calc.js?v=22"></script>
+  <script src="js/assets.js?v=22"></script>
 </body>
 </html>
