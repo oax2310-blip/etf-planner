@@ -54,7 +54,7 @@
     분할매도 시작 기준가는 시작 기준선 '직접'(기본, startAuto 없음)이면 사용자가 정함, 일·주·개월선이면 startAuto=true로 시세 채움. 이동평균은 파일 ma, 없으면 이 기기에 둔 종가(closes)로 계산(maValue) — 수정 창에서 종료 기준선을 바꾸면 종료 기준가가 바로 바뀜. slimPrices 형식을 바꾸면 PRICE_FORMAT을 올릴 것.
   [남겨둔 옛 필드 — 지우지 말고, 기본값·새 계획·수정 창에 다시 넣지 말 것]
   - futures.rolls·targetProfit, actions.adobeSales·adobeNote·allocation(비중 조정): 화면·계산에 안 쓰고 isBlank 판정에만.
-  - plans[].currentPrice·started·asOf(기준일)·basisPrice(평가액 기준 가격): 기능 삭제, 값은 두고 안 씀. 계획 상태는 체크 수로(0 '시작 전', 1회 이상 '진행 중', 전부 '전량 매도 완료').
+  - plans[].currentPrice·started·asOf(기준일)·basisPrice(평가액 기준 가격): 기능 삭제, 값은 두고 안 씀. 계획 상태는 체크 수로(0 '시작 전', 1회 이상 '진행 중', 전부 '전량 매도 완료' — 매도 비중이 100% 아래면 '계획 매도 완료').
   [필드명·용어]
   - positions[].settlementPrice = 화면 '단순평균가'. futures.baselinePnl = 누적 정산손익(직접 입력). 월물교체는 기능 없이 계좌를 보고 직접 고침.
   - 체크목록 '목록 삭제'는 actions.buys=[]만(coveredCallName·buyNote 남김, 되살리기는 JSON 복원·데이터 저장소 커밋 기록).
@@ -72,7 +72,8 @@
   - 한 줄 유지: 보유 월물 줄, 계산 기준 입력칸, 저장된 계획 카드(.plan-row: 카드 이름(plans[].cardName, 비우면 delete), 없으면 종목 코드 — 규칙은 renderPlans 위 주석, 모바일은 '회' 숨김.
     카드 이름만 고치는 창(nameDialog): 터치는 카드 길게 누르기, 마우스(PC)는 .plan-rename 연필 — 카드가 button이라 연필은 바깥 .plan-cell에), 제목 옆 '변경 저장'(.heading>.btn). 제목·설명·긴 이름은 keep-all.
   - 분할매도 수정 창: 기준선은 숫자 + 일선·주선·개월선(.hold-input, 시작은 '직접'도), 종료 기준가·평가액 칸 이름 옆 작은 글씨(.field-note)에 자동 여부. 평가액 직접 입력(valueKrw)은 보유 수량 없는 계획만.
-    회차 배분은 주식 1주·비트코인 0.00000001 BTC 단위로 균등 배분. 분할매도의 '비트코인' 입력은 BTC-USD로 인식하고 통화는 USD로 고정한다(BTC는 미국 ETF 심볼).
+    회차 배분은 주식 1주·비트코인 0.00000001 BTC 단위로 균등 배분. 매도 비중(plans[].salePct, 1~99 정수, 100%면 delete)은 보유 수량을 최소 단위로 내림한 만큼(평가액만 넣은 계획은 평가액의 그 비중)만 나누고 나머지는 남긴다(plans.js planSalePct 위 주석).
+    긴 입력 설명은 기본으로 접는다(.dialog-help). 창 높이는 dvh로(휴대폰 브라우저 주소창·아래 도구 막대에 버튼이 가리지 않게). 분할매도의 '비트코인' 입력은 BTC-USD로 인식하고 통화는 USD로 고정한다(BTC는 미국 ETF 심볼).
     평가액만 넣으면 같은 수량을 가정해 회차 금액을 기준가에 비례시킨다(plans.js stageWorth 위 주석, plans[].valueBase는 저장할 때만 정하고 옛 basisPrice와 다름).
   - 분할매도: 제목 옆 연필(.title-row)로 수정 창, 계획 삭제는 창 아래 왼쪽. 첫 매도 기준가·달러 계획 환율은 카드 숫자에서 바로 수정(inlineEdit) —
     수정 창의 같은 칸과 같은 값. 계산 요약·메모는 .control-grid 두 칸(재매수 탭도 같이 씀), 계산 요약에 칸을 늘리지 말 것.
@@ -92,9 +93,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=27"></script>
-  <link rel="stylesheet" href="css/app.css?v=27" />
-  <link rel="stylesheet" href="css/purchases.css?v=27" />
+  <script src="js/theme.js?v=28"></script>
+  <link rel="stylesheet" href="css/app.css?v=28" />
+  <link rel="stylesheet" href="css/purchases.css?v=28" />
 </head>
 <body>
   <header class="top">
@@ -160,8 +161,9 @@
       <label class="field"><span>시작 기준가<small class="field-note" id="startNote"></small></span><input name="startPrice" type="number" step="any" required /></label>
       <label class="field"><span>종료 기준가<small class="field-note" id="endNote"></small></span><input name="endPrice" type="number" step="any" required /></label>
       <label class="field"><span>분할 횟수</span><input name="stages" type="number" min="2" max="250" step="1" value="30" required /></label>
+      <label class="field"><span>매도 비중 (%)<small class="field-note" id="saleNote"></small></span><input name="salePct" type="number" min="1" max="100" step="1" inputmode="numeric" value="100" placeholder="100 = 전량" /></label>
       <label class="field"><span>평가액 (만원)<small class="field-note" id="worthNote"></small></span><input name="valueKrw" type="number" step="any" /></label>
-      <p class="hint dialog-wide">종목 코드에 비트코인을 입력하면 달러(USD) 시세를 자동으로 불러옵니다. BTC-USD도 같은 방식으로 사용할 수 있습니다. 수량은 소수점 8자리까지 입력할 수 있습니다. 주식은 1주, 비트코인은 0.00000001 BTC 단위로 회차에 고르게 나누고, 평가액은 보유 수량 × 현재가로 자동 계산합니다. 수량 없이 평가액만 넣으면 회차별 매도액으로 나눕니다. 시작 기준선이 ‘직접’이면 시작 기준가는 직접 정하고, 일선·주선·개월선을 고르면 종료 기준가처럼 시세로 채웁니다. 동기화를 연결하면 종료 기준가(종료 기준선의 이동평균)와 달러 계획의 현물 USD/KRW 환율을 시세로 채웁니다. 자동으로 채우는 칸을 직접 고치면 그 칸 시세가 다음에 바뀔 때 덮어씁니다.</p>
+      <details class="dialog-wide dialog-help"><summary>입력 설명</summary><p class="hint">종목 코드에 비트코인을 입력하면 달러(USD) 시세를 자동으로 불러옵니다. BTC-USD도 같은 방식으로 사용할 수 있습니다. 수량은 소수점 8자리까지 입력할 수 있습니다. 주식은 1주, 비트코인은 0.00000001 BTC 단위로 회차에 고르게 나누고, 평가액은 보유 수량 × 현재가로 자동 계산합니다. 수량 없이 평가액만 넣으면 회차별 매도액으로 나눕니다. 매도 비중을 100% 아래로 두면 보유 수량(또는 평가액)의 그 비중만 회차에 나눠 팔고 나머지는 남깁니다(수량은 최소 단위로 내림). 시작 기준선이 ‘직접’이면 시작 기준가는 직접 정하고, 일선·주선·개월선을 고르면 종료 기준가처럼 시세로 채웁니다. 동기화를 연결하면 종료 기준가(종료 기준선의 이동평균)와 달러 계획의 현물 USD/KRW 환율을 시세로 채웁니다. 자동으로 채우는 칸을 직접 고치면 그 칸 시세가 다음에 바뀔 때 덮어씁니다.</p></details>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
@@ -235,19 +237,19 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=27"></script>
-  <script src="js/sync.js?v=27"></script>
-  <script src="js/prices.js?v=27"></script>
-  <script src="js/assets-calc.js?v=27"></script>
-  <script src="js/assets-store.js?v=27"></script>
-  <script src="js/purchases.js?v=27"></script>
-  <script src="js/trade-alerts.js?v=27"></script>
-  <script src="js/plans.js?v=27"></script>
-  <script src="js/futures.js?v=27"></script>
-  <script src="js/actions.js?v=27"></script>
-  <script src="js/rebuy.js?v=27"></script>
-  <script src="js/alerts.js?v=27"></script>
-  <script src="js/push.js?v=27"></script>
+  <script src="js/core.js?v=28"></script>
+  <script src="js/sync.js?v=28"></script>
+  <script src="js/prices.js?v=28"></script>
+  <script src="js/assets-calc.js?v=28"></script>
+  <script src="js/assets-store.js?v=28"></script>
+  <script src="js/purchases.js?v=28"></script>
+  <script src="js/trade-alerts.js?v=28"></script>
+  <script src="js/plans.js?v=28"></script>
+  <script src="js/futures.js?v=28"></script>
+  <script src="js/actions.js?v=28"></script>
+  <script src="js/rebuy.js?v=28"></script>
+  <script src="js/alerts.js?v=28"></script>
+  <script src="js/push.js?v=28"></script>
   <script>purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
