@@ -9,7 +9,7 @@ const publicBytes = Uint8Array.from({length:65}, (_, i) => i === 0 ? 4 : i);
 const publicKey = Buffer.from(publicBytes).toString('base64url');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true}={}){
+function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
   const nodes = {pushSetup:{},enablePhonePush:{},disablePhonePush:{}};
   const storage = new Map();
@@ -40,7 +40,8 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     document:{baseURI:'https://example.test/etf-planner/'},URL,Uint8Array,atob,
     $:name=>nodes[name],id:()=> 'device-test',esc:value=>String(value),
     connected:()=>!!ctx.sync.token,
-    save:()=>{calls.save++;}
+    save:()=>{calls.save++;},
+    ...(pc?{matchMedia:query=>({matches:query==='(hover:hover) and (pointer:fine)'})}:{})
   });
   ctx.syncNow=async()=>{
     if(syncMode==='busy'){ctx.sync.again=true;return;}
@@ -73,7 +74,7 @@ test('충돌에서 다른 기록을 선택해 구독을 버렸으면 연결 성�
   assert.equal(ctx.pushRemoteHas('https://push.example.test/device'),false);
   assert.match(message(),/연결이 저장되지 않았습니다/);
   assert.doesNotMatch(message(),/알림을 연결했습니다/);
-  assert.doesNotMatch(nodes.pushSetup.innerHTML,/이 휴대폰이 연결되어 있습니다/);
+  assert.doesNotMatch(nodes.pushSetup.innerHTML,/이 휴대폰에 알림이 연결되어 있습니다/);
 });
 
 test('업로드 실패 후에는 기기 저장만 안내하고 원격 반영 뒤에 연결 완료를 표시한다',async()=>{
@@ -84,7 +85,7 @@ test('업로드 실패 후에는 기기 저장만 안내하고 원격 반영 뒤
   ctx.sync.failed=false;
   ctx.sync.base=JSON.stringify(ctx.state);
   ctx.renderPushSetup();
-  assert.match(nodes.pushSetup.innerHTML,/이 휴대폰이 연결되어 있습니다/);
+  assert.match(nodes.pushSetup.innerHTML,/이 휴대폰에 알림이 연결되어 있습니다/);
 });
 
 test('발송 서버 준비 상태만으로 기기에 저장된 미동기화 구독을 연결 완료로 표시하지 않는다',async()=>{
@@ -152,4 +153,25 @@ test('이 기기 알림을 해제해도 서버 기록이 남아 있으면 동기
   assert.equal(ctx.pushIsSaved(),false);
   assert.deepEqual(plain(ctx.state.alerts.subscriptions),[]);
   assert.match(message(),/저장소에도 반영하려면 동기화를 완료/);
+});
+
+test('PC(마우스 기기)에서는 같은 방식으로 연결하고 PC 기준으로 안내한다',async()=>{
+  const {ctx,calls,nodes,message}=load({permission:'default',existing:false,pc:true});
+  ctx.renderPushSetup();
+  assert.match(nodes.pushSetup.innerHTML,/이 PC에서 알림 받기/);
+  assert.match(nodes.pushSetup.innerHTML,/브라우저가 켜져 있을 때/);
+  assert.match(nodes.pushSetup.innerHTML,/Edge로 연결/);
+  assert.doesNotMatch(nodes.pushSetup.innerHTML,/휴대폰에서|이 휴대폰/);
+  await nodes.enablePhonePush.onclick();
+  assert.deepEqual(calls.order,['permission','register','subscribe']);
+  assert.match(message(),/이 PC에 알림을 연결했습니다/);
+  assert.match(nodes.pushSetup.innerHTML,/이 PC에 알림이 연결되어 있습니다/);
+  assert.deepEqual(plain(ctx.state.alerts.subscriptions.map(s=>s.id)),['device-test']);
+});
+
+test('휴대폰에서는 PC도 따로 연결할 수 있다고 안내한다',()=>{
+  const {ctx,nodes}=load({existing:false});
+  ctx.renderPushSetup();
+  assert.match(nodes.pushSetup.innerHTML,/이 휴대폰에서 알림 받기/);
+  assert.match(nodes.pushSetup.innerHTML,/PC에서도 받으려면/);
 });
