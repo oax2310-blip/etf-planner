@@ -160,6 +160,7 @@ test('PC(마우스 기기)에서는 같은 방식으로 연결하고 PC 기준�
   ctx.renderPushSetup();
   assert.match(nodes.pushSetup.innerHTML,/이 PC에서 알림 받기/);
   assert.match(nodes.pushSetup.innerHTML,/브라우저가 켜져 있을 때/);
+  assert.match(nodes.pushSetup.innerHTML,/Edge로 연결/);
   assert.doesNotMatch(nodes.pushSetup.innerHTML,/휴대폰에서|이 휴대폰/);
   await nodes.enablePhonePush.onclick();
   assert.deepEqual(calls.order,['permission','register','subscribe']);
