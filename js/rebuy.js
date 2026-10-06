@@ -312,7 +312,8 @@ function renderRebuy(){
   const holdHint=(amount&&low>0?`${manwon(amount)} ÷ 신저점 ${P(low)} ≈ ${won.format(shares)}주로 계산합니다.`:qtyIn?`보유 수량 ${won.format(qtyIn)}주로 계산합니다.`:amount?"신저점 가격을 넣으면 보유 금액을 신저점 가격으로 나눈 주 수(정수)로 계산합니다.":`보유 금액(${holdWord})을 넣으면 신저점 가격으로 나눈 주 수(정수)로, 수량(주)을 넣으면 그 주 수로 손절 수량을 계산합니다.`)
     +(inQty&&amount?" 주 수를 넣으면 수량 기준으로 바뀝니다.":!inQty&&qtyIn?" 금액을 넣으면 금액 기준으로 바뀝니다.":"");
   // 분할 안내: 회차 수와 범위, 평균 손절가 기준. 예: 5분할 (25선 1차~32선 2차, 평균 손절가 10,000원 이하 회차)
-  const trName=x=>`${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":` ${x.t+1}차`}`, firstTr=s.tranches[0], lastTr=s.tranches.at(-1), firstPx=Number(s.stages[0]?.price)||0;
+  // 회차 이름: 단계 이름 뒤에 작은 회차 번호(25선₁). 화면 읽기용 이름(trText)은 '25선 2회차'
+  const trName=x=>`<span class="tr-name">${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":`<span class="tr-no">${x.t+1}</span>`}</span>`, trText=x=>`${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":` ${x.t+1}회차`}`, firstTr=s.tranches[0], lastTr=s.tranches.at(-1), firstPx=Number(s.stages[0]?.price)||0;
   const splitText=!s.sellAvg||!firstTr?"":`${s.tranches.length>1?`${s.tranches.length}분할 (${trName(firstTr)}~${trName(lastTr)}`:`한 번에 (${trName(firstTr)}`}, ${!firstPx?`${esc(first)} 기준가 없음`:firstPx<=s.sellAvg?`평균 손절가 ${P(s.sellAvg)} 이하 회차`:`평균 손절가 ${P(s.sellAvg)}보다 ${esc(first)} 기준가가 높아 ${esc(first)} 회차만`})`;
   const trAt=x=>x.price>0?` · ${x.est?"≈":""}${P(x.price)} 이상`:"";
   const next=!ready?"신저점 가격과 이탈 전 보유 금액(또는 수량)을 입력하면 손절 회차가 계산됩니다."
@@ -330,11 +331,11 @@ function renderRebuy(){
     if(!own.length)return `<div class="sale-row"><label class="check"><input type="checkbox" data-tranche-done="${i}:0">${esc(st.name)}</label><div class="stage-price">${priceInput}</div><div class="shares">${s.sold?"—":"손절 후 계산"}</div><div class="status">대기</div></div>`;
     return rows.map((x,k)=>{
       const due=!x.skip&&!x.done&&x.amount>0&&cur>0&&x.price>0&&cur>=x.price, nextUp=x===nextTr, ref=x.price||cur;
-      const where=x.step?`${esc(st.name)}→${nextName} ${x.t}/${TRANCHES}`:x.t?"1차와 같은 가격":"";
+      const where=x.step?`${esc(st.name)}→${nextName} ${x.t}/${TRANCHES}`:x.t?"단계 가격과 같음":"";
       const pricePart=k===0?priceInput:`<span class="price">${x.price>0?`${x.est?"≈":""}${P(x.price)}`:"—"}</span><span class="krw">${where}</span>`;
       // 계획 밖 회차(평균 손절가 위·추정 가격)는 사지 않는다
       if(x.skip)return `<div class="sale-row"><label class="check"><input type="checkbox" disabled>${trName(x)}</label><div class="stage-price">${pricePart}</div><div class="shares">—<div class="sub">${x.est?"추정 가격이라 제외":s.sellAvg&&x.price>s.sellAvg?"평균 손절가 위":"계획 밖"}</div></div><div class="status">안 삼</div></div>`;
-      const shares=x.done?`<span class="exec-fields"><input class="qty" data-tranche-qty="${i}:${x.t}" type="number" min="0" step="1" value="${x.qty}" aria-label="${trName(x)} 재매수 수량">주 <input data-tranche-exec="${i}:${x.t}" type="number" min="0" step="any" value="${opt(x.execPrice)}" placeholder="체결가" aria-label="${trName(x)} 체결가">${unitWord}</span><div class="sub">${amt(1,x.amount)}</div>`
+      const shares=x.done?`<span class="exec-fields"><input class="qty" data-tranche-qty="${i}:${x.t}" type="number" min="0" step="1" value="${x.qty}" aria-label="${trText(x)} 재매수 수량">주 <input data-tranche-exec="${i}:${x.t}" type="number" min="0" step="any" value="${opt(x.execPrice)}" placeholder="체결가" aria-label="${trText(x)} 체결가">${unitWord}</span><div class="sub">${amt(1,x.amount)}</div>`
         :!s.sold?"손절 후 계산":x.amount>0?`<span>약 ${wonShort(x.amount)}</span><div class="sub">${ref?`약 ${won.format(Math.max(1,Math.round(x.amount/ref)))}주`:"현재가 넣으면 수량"}</div>`:"—";
       return `<div class="sale-row ${x.done?"done":""} ${due?"due":""}"><label class="check"><input type="checkbox" data-tranche-done="${i}:${x.t}" ${x.done?"checked":""}>${trName(x)}</label><div class="stage-price">${pricePart}</div><div class="shares">${shares}</div><div class="status ${x.done?"done":due||nextUp?"due":""}">${x.done?"매수 완료":due?"재매수 시점":nextUp?"다음 신호":"대기"}</div></div>`;
     }).join("");
