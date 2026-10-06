@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLadder,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLadder,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -46,22 +46,26 @@ test('분할매수: 실제 체결 금액과 남은 회차 예정액을 따로 �
   assert.equal(c.purchaseSummary({stages:[{amount:-10},{amount:'bad'},{amount:10,done:true,actual:-1}]}).actual,0,'음수·잘못된 금액은 합계에 더하지 않는다');
 });
 
-test('분할매수 가격 구간: 시작 → 목표 가격을 고르게 나눠 같은 수량씩 사고, 남는 수량은 싼 회차부터 더해 매수할 금액을 넘지 않는다', () => {
-  // 매수할 금액 600만원, 환율 1,000원 → $6,000. $30 → $32 5회(30·30.5·31·31.5·32, 평균 $31) → 193주 = 38주 × 5 + 3주(싼 회차부터)
+test('분할매수 가격 구간: 시작 → 목표 가격을 고르게 나눠 회차마다 같은 금액을 사고(위로 갈수록 수량이 줄어듦), 합계는 매수할 금액을 넘지 않는다', () => {
+  // 매수할 금액 600만원, 환율 1,000원 → $6,000, 회차마다 $1,200. $30 → $32 5회(30·30.5·31·31.5·32)
+  // 1,200 ÷ 가격으로 내리면 40·39·38·38·37주, 남은 $51.5로 한 주 더 사도 금액이 가장 작은 $31 회차에 1주 → 40·39·39·38·37주
   const r = c.purchaseLadder({budget:600, start:30, end:32, count:5, currency:'USD', fx:1000});
   assert.deepEqual(r.stages.map(s => s.price), [30, 30.5, 31, 31.5, 32]);
-  assert.deepEqual(r.stages.map(s => s.shares), [39, 39, 39, 38, 38]);
-  assert.equal(r.shares, 193); assert.equal(r.step, 0.5); near(r.cost, 5981.5, '달러 합계');
+  assert.deepEqual(r.stages.map(s => s.shares), [40, 39, 39, 38, 37]);
+  assert.deepEqual(r.stages.map(s => s.amount), [120, 118.95, 120.9, 119.7, 118.4], '회차 예정액(만원)은 가격 × 수량 × 환율');
+  const dollars = r.stages.map(s => s.price * s.shares);
+  assert.ok(Math.max(...dollars) - Math.min(...dollars) <= 32, '회차 금액 차이는 한 주 가격 안쪽');
+  assert.equal(r.shares, 193); assert.equal(r.step, 0.5); near(r.cost, 5979.5, '달러 합계');
   assert.ok(r.cost <= r.money, '합계가 매수할 금액 이하');
-  assert.equal(r.stages[0].amount, 117, '회차 예정액은 가격 × 수량 × 환율(만원)');
   near(r.amount, r.cost * 1000 / 1e4, '합계 만원 환산');
-  // 하락 분할(원화): 가격은 1원 단위, 남는 수량은 아래(싼) 회차에
+  // 하락 분할(원화): 가격은 1원 단위, 아래 회차일수록 수량이 많다
   const d = c.purchaseLadder({budget:100, start:50000, end:40000, count:4});
   assert.deepEqual(d.stages.map(s => [s.price, s.shares]), [[50000,5],[46667,5],[43333,6],[40000,6]]);
   assert.equal(d.step, -3333);
-  // 비트코인은 0.00000001 단위
+  // 비트코인은 0.00000001 단위라 회차 금액이 거의 같다
   const b = c.purchaseLadder({budget:100, start:100, end:120, count:3, currency:'USD', fx:1000, unit:1e-8});
-  assert.deepEqual(b.stages.map(s => s.shares), [3.03030303, 3.03030303, 3.03030303]);
+  assert.deepEqual(b.stages.map(s => s.shares), [3.33333333, 3.03030303, 2.77777778]);
+  assert.deepEqual(b.stages.map(s => s.amount), [33.33, 33.33, 33.33]);
   assert.ok(b.cost <= b.money);
   assert.deepEqual(c.purchaseLadder({budget:10, start:1000, end:2000, count:1}).stages, [{price:1000, shares:100, amount:10}], '1회면 시작 가격에서 한 번에');
   assert.equal(c.purchaseLadder({budget:0, start:1, end:2, count:2}).error, 'budget', '목표 이상이면 살 금액 없음');
@@ -72,6 +76,34 @@ test('분할매수 가격 구간: 시작 → 목표 가격을 고르게 나눠 �
   assert.equal(c.purchaseLadder({budget:10, start:1, end:2, count:2.5}).error, 'count');
   assert.equal(c.purchaseLadder({budget:10, start:1, end:2, count:51}).error, 'count');
   assert.deepEqual(c.purchaseLadder({budget:1, start:30, end:32, count:5, currency:'USD', fx:1000}), {error:'few', units:0, money:10}, '회차마다 1주도 못 사면 나누지 않음');
+  assert.equal(c.purchaseLadder({budget:5, start:30, end:60, count:3, currency:'USD', fx:1000}).error, 'few', '한 회차라도 0주면 나누지 않음');
+});
+
+test('분할매수 휴대폰 알림: 켠 미완료 가격 회차만, 방향은 구간(또는 회차 가격 순서), 통화가 종목 시장과 다르면 보내지 않음', () => {
+  assert.equal(c.purchaseDirection({ladder:{start:30, end:32}, stages:[{price:40},{price:10}]}), 'up', '구간이 있으면 구간 방향');
+  assert.equal(c.purchaseDirection({ladder:{start:32, end:30}}), 'down');
+  assert.equal(c.purchaseDirection({stages:[{price:10},{},{price:12}]}), 'up', '직접 넣은 가격이 오르면 상승');
+  assert.equal(c.purchaseDirection({stages:[{price:12},{price:10}]}), 'down');
+  assert.equal(c.purchaseDirection({stages:[{price:12}]}), 'down', '가격 하나뿐이면 하락(그 가격 이하에서 매수)');
+  assert.deepEqual(['069500','A069500','0091C0','SPY','BRK/B','BTC-USD','비트코인',''].map(c.purchaseQuoteKind), ['국내','국내','국내','해외','해외','코인',null,null]);
+  const plan = (extra={}) => ({ladder:{start:30, end:32, count:3}, currency:'USD', notify:{stages:true}, stages:[
+    {id:'s1', price:30, shares:1, amount:3, done:true}, {id:'s2', price:31, shares:1, amount:3}, {id:'s3', price:32, shares:1, amount:3, notify:false}, {id:'s4'}], ...extra});
+  const assets = {allocation:{groups:[{items:[
+    {id:'a', name:'비공개 이름', ticker:'aaa', note:'비공개 메모', buyPlan:plan()},
+    {id:'b', ticker:'111111', buyPlan:{stages:[{id:'k1', price:10000}], notify:{stages:true}}},
+    {id:'c', ticker:'AAA', buyPlan:plan({currency:undefined})},  // 시세도 계획 통화도 없으면 원화 → 미국 종목과 달라 제외
+    {id:'d', buyPlan:plan()},  // 종목 코드 없음
+    {id:'e', ticker:'BBB', buyPlan:plan({notify:undefined})},  // 켠 회차 없음
+  ]}]}};
+  const rules = c.purchaseAlertRules(assets, null);
+  assert.deepEqual(rules, [
+    {id:'trade:buy:a:s2', kind:'trade', ticker:'AAA', label:'분할매수 2차', targetPrice:31, condition:'up', quoteGroup:'stocks', quoteKey:'AAA', quoteKind:'해외', enabled:true, revision:'[31,"up"]'},
+    {id:'trade:buy:b:k1', kind:'trade', ticker:'111111', label:'분할매수 1차', targetPrice:10000, condition:'down', quoteGroup:'stocks', quoteKey:'111111', quoteKind:'국내', enabled:true, revision:'[10000,"down"]'},
+  ], '완료·OFF·가격 없는 회차는 빼고 이름·메모는 넣지 않는다');
+  assert.equal(c.purchaseAlertRules(assets, prices).length, 3, '시세가 있으면 그 통화(AAA는 달러) — 계획 c도 포함');
+  assert.deepEqual(c.purchaseAlertRules({allocation:{groups:[{items:[{id:'x', ticker:'111111', buyPlan:{currency:'USD', notify:{stages:true}, stages:[{id:'s', price:1}]}}]}]}}, null), [], '달러 계획인데 국내 종목 코드면 제외');
+  assert.deepEqual(c.purchaseAlertRules(null, null), []);
+  assert.deepEqual(c.purchaseAlertRules({allocation:{groups:'bad'}}, null), []);
 });
 
 test('분할매수 계획은 JSON 복원과 기기 간 병합에서 체결 기록을 보존하고 보유량·조정 기록과 독립적이다', () => {

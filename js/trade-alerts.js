@@ -115,5 +115,6 @@ function renderTradeAlertSummary(){
   const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+tradeTranchesToSend(fs).filter(x=>futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`)).length:0;
   const levelCount=(f?.levels||[]).filter(l=>tradeLevelEnabled(f,l)&&!levelDone(l)).length+futureCount;
   const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+tradeTranchesToSend(s).filter(x=>tradeRebuyEnabled(r,"buys",x.i)).length;},0);
-  target.innerHTML=`<div class="trade-alert-summary"><span>분할매도 <b>${saleCount}</b></span><span>달러선물 <b>${levelCount}</b></span><span>재매수 <b>${rebuyCount}</b></span></div><p class="hint">각 화면의 가격 옆에서 알림을 켜세요. 기준가 변경은 자동 반영되며 완료한 회차·단계는 제외됩니다. 종목 코드와 시세·기준가가 있어야 발송됩니다.</p>`;
+  const buyCount=typeof purchasePlanner==="object"?purchasePlanner.alertCount():0; // 분할매수는 자산 기록(assets-calc.js purchaseAlertRules)
+  target.innerHTML=`<div class="trade-alert-summary"><span>분할매도 <b>${saleCount}</b></span><span>분할매수 <b>${buyCount}</b></span><span>달러선물 <b>${levelCount}</b></span><span>재매수 <b>${rebuyCount}</b></span></div><p class="hint">각 화면의 가격 옆에서 알림을 켜세요. 기준가 변경은 자동 반영되며 완료한 회차·단계는 제외됩니다. 종목 코드와 시세·기준가가 있어야 발송됩니다.</p>`;
 }

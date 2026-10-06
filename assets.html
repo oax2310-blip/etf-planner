@@ -12,7 +12,7 @@
     (자산 배분 종목 코드는 마감 후 하루 한 번 종가만 — Actions 사용 시간). 평가액 규칙은 js/assets-calc.js itemValue 위 주석. 금액만 넣은 종목의 기준 가격(base)은 금액을 넣을 때·처음 시세를 볼 때 정함.
   - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%). 기준 총자산은 억·만원으로 표시·입력하며 숫자만 입력하면 만원으로 저장한다.
   - 투자구성은 지역·분류 합계, 자산 배분은 종목·현금. 목표는 종목 → 소분류 → 그룹 → 분류 합산(하위 목표가 전부 없으면 기존 직접 입력값). 합계 계산만으로 기록을 바꾸지 말 것.
-    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan={stages:[{id,price,shares,date,condition,amount,done,actual}],note,currency,ladder}. 금액은 만원, price는 plan 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화), ladder={start,end,count,target?}는 가격 구간 계산을 채울 때만(target은 종목 목표와 다르게 넣었을 때만). 계산은 assets-calc.js purchaseLadder. 완료 체크는 계획 기록만 바꾸고 보유 금액·수량이나 종목의 비중 조정 완료(done)는 바꾸지 않는다.
+    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan={stages:[{id,price,shares,date,condition,amount,done,actual,notify}],note,currency,ladder,notify:{stages}}. 금액은 만원, price는 plan 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화), ladder={start,end,count,target?}는 가격 구간 계산을 채울 때만(target은 종목 목표와 다르게 넣었을 때만). 계산은 assets-calc.js purchaseLadder(회차마다 같은 금액), 방향·휴대폰 알림 규칙은 purchaseDirection·purchaseAlertRules(데이터 저장소 수집 작업도 실행 — 함수 이름·라벨 형식을 바꾸면 그쪽도). 완료 체크는 계획 기록만 바꾸고 보유 금액·수량이나 종목의 비중 조정 완료(done)는 바꾸지 않는다.
   - 화면 상태(고른 탭·연도·시나리오)는 이 기기 etf-planner-assets-ui에만(동기화 안 함). 입력 중에는 시세·동기화로 다시 그리지 않음.
 -->
 <html lang="ko">
@@ -26,9 +26,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=32"></script>
-  <link rel="stylesheet" href="css/app.css?v=32" />
-  <link rel="stylesheet" href="css/assets.css?v=32" />
+  <script src="js/theme.js?v=33"></script>
+  <link rel="stylesheet" href="css/app.css?v=33" />
+  <link rel="stylesheet" href="css/assets.css?v=33" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -128,8 +128,8 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/assets-calc.js?v=32"></script>
-  <script src="js/assets-store.js?v=32"></script>
-  <script src="js/assets.js?v=32"></script>
+  <script src="js/assets-calc.js?v=33"></script>
+  <script src="js/assets-store.js?v=33"></script>
+  <script src="js/assets.js?v=33"></script>
 </body>
 </html>
