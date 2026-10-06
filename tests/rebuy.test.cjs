@@ -146,8 +146,8 @@ test('재매수 회차: 회차 가격은 단계 가격에서 다음 단계 가�
   const r = plan(ctx, {currentPrice: 10050, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}, {shares: 10, price: 9700}]}); // 평균 9,833.3원
   r.stages[0].price = 10100; r.stages[1].price = 10160;
   let s = ctx.rebuySummary(r);
-  assert.deepEqual(plain(s.tranches).map(x => [x.i, x.t, x.price, x.est]), [[0, 0, 10100, false], [0, 1, 10120, false], [0, 2, 10140, false]], '25선이 평균 손절가 위면 25선→32선 3분할');
-  s.tranches.forEach(x => near(x.amount, 295000 / 3));
+  assert.deepEqual(plain(s.tranches).map(x => [x.i, x.t, x.price, x.amount]), [[0, 0, 10100, 295000]], '25선 1차가 이미 평균 손절가 위면 25선 1차에서 한 번에');
+  assert.deepEqual(plain(s.skipped).map(x => [x.t, x.price]), [[1, 10120], [2, 10140]], '더 비싼 2·3차는 사지 않는다');
   assert.deepEqual(plain(ctx.rebuyStatus(r, s)), ['손절 3회 진행', '손절 3회'], '첫 단계 전에는 손절가 위로 와도 기한 없이 첫 회차 신호를 기다린다');
   r.stages[0].price = 9700; r.stages[1].price = 9790; r.stages[2].price = 9910;
   s = ctx.rebuySummary(r);
@@ -155,16 +155,18 @@ test('재매수 회차: 회차 가격은 단계 가격에서 다음 단계 가�
   s.tranches.forEach(x => near(x.amount, 295000 / 5));
   assert.deepEqual(plain(s.skipped).map(x => [x.i, x.t, Math.round(x.price)]), [[1, 2, 9870]]);
 });
-test('재매수 회차: 다음 단계 가격이 비면 추정치로 나누되 표시만 하고, 다음 단계가 더 낮으면 그 단계는 1회', () => {
+test('재매수 회차: 다음 단계 가격이 비면 2·3차 가격은 추정치(표시만)이고, 다음 단계가 더 낮으면 그 단계는 1회', () => {
   const ctx = load();
   const r = plan(ctx, {currentPrice: 9500, cuts: [{shares: 10, price: 9580}]}); // 25선이 평균 손절가 위라 25선 몫만
   r.stages[0].price = 9600; r.stages[13].price = 11000;
   let s = ctx.rebuySummary(r);
-  assert.deepEqual(plain(s.tranches).map(x => [x.t, x.est, x.step]), [[0, false, false], [1, true, true], [2, true, true]]);
-  assert.ok(s.tranches[1].price > 9600 && s.tranches[2].price > s.tranches[1].price);
+  assert.deepEqual(plain(s.tranches).map(x => [x.t, x.est, x.step, x.amount]), [[0, false, false, 95800]]);
+  assert.deepEqual(plain(s.skipped).map(x => [x.t, x.est, x.step]), [[1, true, true], [2, true, true]]);
+  assert.ok(s.skipped[0].price > 9600 && s.skipped[1].price > s.skipped[0].price);
   r.stages[1].price = 9550;
   s = ctx.rebuySummary(r);
   assert.deepEqual(plain(s.tranches).map(x => [x.price, x.est, x.step, x.amount]), [[9600, false, false, 95800]], '다음 단계가 더 낮으면 나눌 구간이 없어 1회');
+  assert.deepEqual(plain(s.skipped), []);
 });
 test('재매수 회차: 산 회차를 뺀 남은 금액을 고정한 계획의 안 산 회차에 똑같이 나누고, 계획을 다 샀으면 다음 단계 1회차에 담는다', () => {
   const ctx = load();
@@ -466,11 +468,11 @@ test('화면: 첫 단계 전에는 기한 없이 첫 회차 신호와 회차 계
   const view = (extra = {}) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', lowPrice: 10000, shares: 1000, currentPrice: 9950, cuts: [{shares: 10, price: 9900}], stages, ...extra}]}}).els;
   stages[0].price = 10100; stages[1].price = 10160;
   let els = view(), html = els.rebuyMain.innerHTML;
-  assert.match(html, /25선 반등 신호가 나오면 재매수 시작 <b>약 3\.3만원<\/b> · 3분할 \(<span class="tr-name">25선<span class="tr-no">1<\/span><\/span>~<span class="tr-name">25선<span class="tr-no">3<\/span><\/span>, 평균 손절가 9900원보다 25선 기준가가 높아 25선 회차만\)/);
+  assert.match(html, /25선 반등 신호가 나오면 재매수 시작 <b>약 9\.9만원<\/b> · 한 번에 \(<span class="tr-name">25선<span class="tr-no">1<\/span><\/span>, 평균 손절가 9900원보다 25선 기준가가 높음\)/);
   assert.doesNotMatch(html + els.rebuyList.innerHTML, /기한/, '재매수 기한은 따로 두지 않는다');
   assert.match(html, /data-tranche-done="0:0" ><span class="tr-name">25선<span class="tr-no">1<\/span><\/span><\/label>/);
-  assert.match(html, /<span class="price">10120원<\/span><span class="krw">25선→32선 1\/3<\/span>/);
-  assert.match(html, /<span class="price">10140원<\/span><span class="krw">25선→32선 2\/3<\/span>/);
+  assert.match(html, /<input type="checkbox" disabled><span class="tr-name">25선<span class="tr-no">2<\/span><\/span><\/label><div class="stage-price"><span class="price">10120원<\/span><span class="krw">25선→32선 1\/3<\/span><\/div><div class="shares">—<div class="sub">평균 손절가 위<\/div>/, '25선 1차가 평균 손절가 위면 더 비싼 2·3차는 안 삼');
+  assert.match(html, /<span class="price">10140원<\/span><span class="krw">25선→32선 2\/3<\/span><\/div><div class="shares">—<div class="sub">평균 손절가 위<\/div>/);
   assert.match(html, /data-tranche-done="1:0">32선<\/label>/, '계획이 없는 단계는 한 줄');
   assert.doesNotMatch(html, /aria-label="[^"]*</, '화면 읽기용 이름(속성)에는 태그가 들어가지 않는다');
   stages[0].price = 9800; stages[1].price = 9850;
@@ -480,7 +482,7 @@ test('화면: 첫 단계 전에는 기한 없이 첫 회차 신호와 회차 계
   assert.match(html, /5분할 \(<span class="tr-name">25선<span class="tr-no">1<\/span><\/span>~<span class="tr-name">32선<span class="tr-no">2<\/span><\/span>, 평균 손절가 9900원 이하 회차\)/);
   assert.match(html, /<input type="checkbox" disabled><span class="tr-name">32선<span class="tr-no">3<\/span><\/span><\/label><div class="stage-price"><span class="price">9916\.6+7?원<\/span><span class="krw">32선→42선 2\/3<\/span><\/div><div class="shares">—<div class="sub">평균 손절가 위<\/div><\/div><div class="status">안 삼<\/div>/);
   stages[0].price = 10100; stages[1].price = 9000;
-  assert.match(view().rebuyMain.innerHTML, /한 번에 \(<span class="tr-name">25선<span class="tr-no">1<\/span><\/span>, 평균 손절가 9900원보다 25선 기준가가 높아 25선 회차만\)/, '32선이 25선보다 낮으면 나눌 구간이 없다');
+  assert.match(view().rebuyMain.innerHTML, /한 번에 \(<span class="tr-name">25선<span class="tr-no">1<\/span><\/span>, 평균 손절가 9900원보다 25선 기준가가 높음\)/, '32선이 25선보다 낮으면 나눌 구간이 없다');
   stages[0].price = 9800; stages[1].price = 9850; stages[2].price = 0;
   stages[0].buys = [{shares: 2, price: 9800}];
   els = view({planned: [['25선', 0], ['25선', 1], ['25선', 2], ['32선', 0]]}); html = els.rebuyMain.innerHTML;

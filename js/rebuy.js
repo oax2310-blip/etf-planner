@@ -10,7 +10,7 @@
 // 재매수: 손절한 금액만큼, 평균 손절가(손절 금액 ÷ 손절 수량) 기준. 단계마다 다음 단계 가격까지 3회(TRANCHES)로 나눈 회차 가격
 //   (trancheLevels: 단계 가격 + (다음 단계 가격 − 단계 가격) × 0·⅓·⅔) 중, 평균 손절가 이하인 회차에 똑같이 나눈다(rebuyPlanned).
 //   대상 단계는 첫 단계(기본 25선)부터 끊기지 않고 이어진, 기준가가 평균 손절가 이하인 단계(rebuySplits, 상한 없음). 기준가를 비운 단계·추정 회차 가격은 배분에 쓰지 않는다.
-//   평균 손절가 이하 회차가 없으면(첫 단계가 평균 손절가 위·기준가 없음) 첫 단계 회차 전부(25선→32선 3분할).
+//   평균 손절가 이하 회차가 없으면(첫 단계가 평균 손절가 위·기준가 없음) 첫 단계 1차에서 전부 산다(2·3차는 1차보다 비싸다).
 //   회차 계획은 첫 재매수를 체크할 때 r.planned = [[단계 이름, 회차]…]에 저장해 그 뒤로는 바꾸지 않는다(재매수 체크를 모두 풀면 지움). 재매수 기한은 따로 두지 않는다.
 //   회차 체결은 단계의 buys[t] = {shares, price}. 옛 기록(단계 통째로 done·shares·execPrice)은 그 단계를 한 번에 산 것으로 본다(stageFills).
 //   재매수를 하나라도 체크하면 남은 손절은 멈춘다.
@@ -92,12 +92,12 @@ function trancheLevels(stages,est,i){
 }
 // 단계 i에서 살 수 있는 회차 [{t, price, est, step}]: 1회차와 나눌 구간이 있는 2·3회차. 옛 통째 기록 단계는 1회차만.
 const stageCandidates = (stages,est,i) => trancheLevels(stages,est,i).map((x,t)=>({t,...x})).filter(x=>x.t===0||x.step&&!stages[i].done);
-// 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 회차 중 실제 기준가에서 나온 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 회차 전부.
+// 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 회차 중 실제 기준가에서 나온 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 1차 하나.
 function rebuyPlanned(stages,est,avg){
   if(!stages.length)return [];
   const out=[],n=rebuySplits(stages,avg);
   for(let i=0;i<n;i++)for(const x of stageCandidates(stages,est,i))if(x.price>0&&!x.est&&x.price<=avg)out.push([i,x.t]);
-  return out.length?out:stageCandidates(stages,est,0).map(x=>[0,x.t]);
+  return out.length?out:[[0,0]]; // 평균 손절가 이하 회차가 없으면 첫 단계 1차에서 한 번에(2·3차는 더 비싸다)
 }
 // 재매수 회차 목록 [{i, t, price, est, step, done, qty, execPrice, amount}]: 체결한 회차 + 계획 회차. 계획을 다 샀는데 남았으면 계획 뒤 첫 안 산 단계의 1회차.
 // 남은 수량(rest)은 안 산 회차에 split(수량, 회차 수)로 나눈다. 산 회차의 amount는 부르는 쪽이 채운다.
@@ -126,7 +126,7 @@ const splitWhole = (v,n) => Array.from({length:n},(_,k)=>Math.round(v*(k+1)/n)-M
 // 정수 계약으로 나누므로 회차는 손절 목표 계약 수 이하. 한 회차뿐이면 하단에서 손절한다.
 // 실제 손절 수량을 고치면 남은 목표를 미완료 회차의 원래 비중으로 다시 나눈다. 체결 기록은 그대로 남긴다.
 // 재매수는 ETF 재매수(rebuySummary)와 같은 규칙: 단계마다 다음 단계 환율까지 3회로 나눈 회차 중 평균 손절 환율(실제 체결 환율, 없으면 회차 환율의
-// 계약 수 가중평균) 이하인 회차에 정수 계약을 나눈다(없으면 첫 단계 회차 전부). 회차 계획은 첫 재매수 체크 때 r.planned에 저장. 회차 체결은 단계의 buys[t] = {contracts, price}.
+// 계약 수 가중평균) 이하인 회차에 정수 계약을 나눈다(없으면 첫 단계 1차에서 전부). 회차 계획은 첫 재매수 체크 때 r.planned에 저장. 회차 체결은 단계의 buys[t] = {contracts, price}.
 // 재매수를 시작하면 손절을 멈춘다. 체크는 이 계획에만 반영하며 보유 월물·정산손익은 계좌 기준으로 직접 고친다.
 const futureRebuyQty = v => Number.isFinite(Number(v)) ? Math.max(0,Math.floor(Number(v))) : 0;
 const futureRebuyOf = f => f?.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)?f.rebuy:{};
@@ -314,7 +314,7 @@ function renderRebuy(){
   // 분할 안내: 회차 수와 범위, 평균 손절가 기준. 예: 5분할 (25선 1차~32선 2차, 평균 손절가 10,000원 이하 회차)
   // 회차 이름: 단계 이름 뒤에 작은 회차 번호 칩(css .tr-no). 화면 읽기용 이름(trText)은 '25선 2회차'
   const trName=x=>`<span class="tr-name">${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":`<span class="tr-no">${x.t+1}</span>`}</span>`, trText=x=>`${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":` ${x.t+1}회차`}`, firstTr=s.tranches[0], lastTr=s.tranches.at(-1), firstPx=Number(s.stages[0]?.price)||0;
-  const splitText=!s.sellAvg||!firstTr?"":`${s.tranches.length>1?`${s.tranches.length}분할 (${trName(firstTr)}~${trName(lastTr)}`:`한 번에 (${trName(firstTr)}`}, ${!firstPx?`${esc(first)} 기준가 없음`:firstPx<=s.sellAvg?`평균 손절가 ${P(s.sellAvg)} 이하 회차`:`평균 손절가 ${P(s.sellAvg)}보다 ${esc(first)} 기준가가 높아 ${esc(first)} 회차만`})`;
+  const splitText=!s.sellAvg||!firstTr?"":`${s.tranches.length>1?`${s.tranches.length}분할 (${trName(firstTr)}~${trName(lastTr)}`:`한 번에 (${trName(firstTr)}`}, ${!firstPx?`${esc(first)} 기준가 없음`:firstPx<=s.sellAvg?`평균 손절가 ${P(s.sellAvg)} 이하 회차`:`평균 손절가 ${P(s.sellAvg)}보다 ${esc(first)} 기준가가 높음`})`;
   const trAt=x=>x.price>0?` · ${x.est?"≈":""}${P(x.price)} 이상`:"";
   const next=!ready?"신저점 가격과 이탈 전 보유 금액(또는 수량)을 입력하면 손절 회차가 계산됩니다."
     :complete?`재매수 완료 · 손절 ${P(s.sellValue)} → 재매수 ${P(s.buyValue)} (${won.format(s.sold)}주 → ${won.format(s.rebought)}주)`
@@ -340,7 +340,7 @@ function renderRebuy(){
       return `<div class="sale-row ${x.done?"done":""} ${due?"due":""}"><label class="check"><input type="checkbox" data-tranche-done="${i}:${x.t}" ${x.done?"checked":""}>${trName(x)}</label><div class="stage-price">${pricePart}</div><div class="shares">${shares}</div><div class="status ${x.done?"done":due||nextUp?"due":""}">${x.done?"매수 완료":due?"재매수 시점":nextUp?"다음 신호":"대기"}</div></div>`;
     }).join("");
   };
-  $("rebuyMain").innerHTML=`<div class="heading"><div><div class="eyebrow">손절 후 재매수${ticker?` · ${esc(ticker)}`:""}${rp?` · ${priceStamp(rp)}`:""}</div><div class="title-row"><h1>${esc(title)}</h1><button class="btn icon-btn" id="rEdit" type="button" aria-label="종목 이름·코드 수정" title="종목 이름·코드 수정">${PENCIL}</button></div><p>신저점 이탈 뒤 ${shown(step)}% 내려갈 때마다 이탈 전 보유의 ${shown(sellPct)}%씩 손절하고, 손절한 금액만큼 되삽니다. 단계마다 다음 단계 가격까지 ${TRANCHES}번으로 나눈 회차 중 평균 손절가 이하인 회차에 똑같이 나눠 삽니다(없으면 ${esc(first)} 회차 전부).</p></div><button class="btn" id="rSave">변경 저장</button></div><div class="card progress-line">${next}</div>${rp?priceWarning(rp,esc(title)):""}
+  $("rebuyMain").innerHTML=`<div class="heading"><div><div class="eyebrow">손절 후 재매수${ticker?` · ${esc(ticker)}`:""}${rp?` · ${priceStamp(rp)}`:""}</div><div class="title-row"><h1>${esc(title)}</h1><button class="btn icon-btn" id="rEdit" type="button" aria-label="종목 이름·코드 수정" title="종목 이름·코드 수정">${PENCIL}</button></div><p>신저점 이탈 뒤 ${shown(step)}% 내려갈 때마다 이탈 전 보유의 ${shown(sellPct)}%씩 손절하고, 손절한 금액만큼 되삽니다. 단계마다 다음 단계 가격까지 ${TRANCHES}번으로 나눈 회차 중 평균 손절가 이하인 회차에 똑같이 나눠 삽니다(없으면 ${esc(first)} 1회차에서 한 번에).</p></div><button class="btn" id="rSave">변경 저장</button></div><div class="card progress-line">${next}</div>${rp?priceWarning(rp,esc(title)):""}
     <div class="metrics card"><div class="metric"><label>현재 상태</label><strong>${esc(status)}</strong><small>${ready?`현재 보유 약 ${won.format(s.held)}주 · 이탈 전 ${amount?manwon(amount):`${won.format(shares)}주`}${fromLow!=null?` · 신저점 대비 ${fromLow>0?"+":""}${fromLow.toFixed(1)}%`:""}`:"기준 입력에 신저점·보유 금액(또는 수량)을 넣으세요"}</small></div><div class="metric"><label>손절</label><strong>${won.format(s.sold)}주</strong><small>${s.doneCuts}회${s.sellValue?` · ${P(s.sellValue)}`:""} · 평균 ${s.sellAvg?P(s.sellAvg):"—"}</small></div><div class="metric"><label>재매수 (금액)</label><strong>${usdMode?`${wonShort(s.buyValue)} / ${wonShort(s.sellValue)}`:`${decimal.format(s.buyValue/10000)} / ${decimal.format(s.sellValue/10000)}만원`}</strong><small>${won.format(s.rebought)}주 (판 ${won.format(s.sold)}주) · 평균 ${s.buyAvg?P(s.buyAvg):"—"}${s.buyAvg&&s.sellAvg?` · 손절 평균 대비 ${s.buyAvg>s.sellAvg?"+":""}${((s.buyAvg/s.sellAvg-1)*100).toFixed(1)}%`:""}</small></div></div>
     <div class="control-grid"><section class="card panel"><div class="panel-head"><h2>기준 입력</h2>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeRebuyEnabled(r,"breakdown"),'data-rebuy-alert="breakdown"',"신저점 이탈",s.started,"신저점 이탈"):""}</div><p>${usdMode?"가격은 미국 시세(달러)입니다.":"가격은 국내 상장 ETF 가격(원)입니다."} 현재가는 선택 — 넣으면 도달한 손절 회차와 재매수 시점을 표시합니다. 종목 이름 옆 연필에서 종목 코드를 넣으면 현재가·일선·N선 기준가를 시세로 자동으로 채웁니다.</p><div class="inline-fields"><label class="field"><span>현재가 (${unitWord})${autoTag()}</span><input id="rCurrent" type="number" min="0" step="any" value="${opt(cur)}" placeholder="선택"></label><label class="field"><span>신저점 가격 (${unitWord})</span><input id="rLow" type="number" min="0" step="any" value="${opt(low)}"></label><label class="field"><span>이탈 전 보유</span><div class="hold-input"><input id="rHold" type="number" min="0" step="${inQty?1:"any"}" value="${holdValue}" placeholder="${holdPlaceholder}" aria-label="이탈 전 보유 ${inQty?"수량(주)":`금액(${holdWord})`}"><select id="rHoldUnit" aria-label="보유 입력 단위"><option value="amount"${inQty?"":" selected"}>${holdWord}</option><option value="shares"${inQty?" selected":""}>주</option></select></div></label><label class="field"><span>${esc(lastName)} 가격 (${unitWord})${lastStage?autoTag(lastName):""}</span><input id="rFinal" type="number" min="0" step="any" value="${opt(finalPrice)}" placeholder="선택 · 빈 단계 추정용"></label></div><p class="hint" style="margin:10px 0 0">${holdHint}${priceHint?`<br>${priceHint}`:""}</p></section><section class="card panel"><h2>손절 규칙</h2><p>신저점 대비 ${shown(step)}% 내려갈 때마다 이탈 전 보유의 ${shown(sellPct)}%를 팝니다. 재매수를 체크하면 남은 손절은 멈춥니다.</p><div class="inline-fields"><label class="field"><span>하락 간격 (%)</span><input id="rStep" type="number" min="0.1" max="50" step="0.1" value="${shown(step)}"></label><label class="field"><span>회당 손절 (기존 수량의&nbsp;%)</span><input id="rSell" type="number" min="0.1" max="100" step="0.1" value="${shown(sellPct)}"></label><label class="field"><span>표시 회차</span><input id="rSteps" type="number" min="1" max="60" step="1" value="${Math.floor(Number(r.steps)||30)}"></label></div></section></div>
     <div class="section-heading"><h2>1. 신저점 이탈 손절</h2>${typeof tradeRebuyAllButtons==="function"?tradeRebuyAllButtons("cuts"):""}<span>${s.doneCuts}회 · ${won.format(s.sold)}주 손절</span></div><section class="card table-card"><div class="table-head"><span>회차</span><span>손절가</span><span>손절 수량 · 금액</span><span>상태</span></div><div>${cutRows}</div></section>
