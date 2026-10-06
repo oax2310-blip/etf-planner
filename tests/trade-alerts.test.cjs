@@ -70,10 +70,14 @@ test('재매수의 이탈·회차 손절·기한·단계를 기존 배분에 연
   assert.ok(rules.some(x=>x.label==='재매수 신저점 이탈'&&x.condition==='below'));
   assert.ok(!rules.some(x=>x.label==='재매수 손절 1회'));
   assert.ok(rules.some(x=>x.label==='재매수 손절 2회'&&x.targetPrice===9800));
-  assert.ok(rules.some(x=>x.label==='재매수 1회 기한'&&x.targetPrice===9900));
+  assert.ok(!rules.some(x=>x.label.includes('기한')),'첫 단계를 사기 전에는 기한 알림이 없다');
   assert.ok(rules.some(x=>x.label==='재매수 25선'&&x.targetPrice===9600),'옛 이름 25분봉은 25선으로 알린다');
   assert.ok(!rules.some(x=>x.label==='재매수 60선'));
   const s=ctx.rebuySummary(r);for(const x of rules.filter(x=>x.id.includes(':buy:')))assert.ok(s.plan[Number(x.id.split(':').at(-1))]>0);
+  r.stages[0]={...r.stages[0],done:true,shares:5,execPrice:9600};r.splits=2;
+  const after=plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null));
+  assert.deepEqual(after.filter(x=>x.label==='재매수 기한').map(x=>[x.id,x.targetPrice,x.condition]),[['trade:rebuy:demo-rebuy:deadline',9900,'up']],'첫 단계 뒤 기한은 평균 손절가 하나');
+  assert.ok(after.some(x=>x.label==='재매수 25일선'));
 });
 test('재매수 시작 뒤 손절·이탈은 멈추고 완료 단계·다 채운 기한·배분 없는 단계는 제외한다',()=>{
   const ctx=load(),r=rebuy({notify:{breakdown:true,cuts:true,buys:true,deadlines:true},cuts:[{shares:10,price:9900}]});
@@ -88,7 +92,7 @@ test('재매수 시작 뒤 손절·이탈은 멈추고 완료 단계·다 채운
 });
 // 데이터 저장소 scripts/ma_alerts.py의 TRADE_LABEL_RE와 같게 둔다 — 수집 작업은 라벨 하나라도 거부하면 연결 알림 전체를 보내지 않는다
 const STAGE_LABEL='(?:[1-9]\\d{0,2}(?:일선|주선|개월선|분봉|단계|선))';
-const TRADE_LABEL_RE=new RegExp(`^(?:분할매도 (?:첫 매도|[1-9]\\d{0,2}회)|달러선물 (?:[1-9]\\d{0,2}일선|추가 [1-9]\\d{0,2}|신저점 손절 시작|손절 [1-9]\\d?회|[1-9]\\d?회 손절 환율 복귀|재매수 ${STAGE_LABEL})|재매수 (?:신저점 이탈|손절 [1-9]\\d?회|[1-9]\\d?회 기한|${STAGE_LABEL}))$`);
+const TRADE_LABEL_RE=new RegExp(`^(?:분할매도 (?:첫 매도|[1-9]\\d{0,2}회)|달러선물 (?:[1-9]\\d{0,2}일선|추가 [1-9]\\d{0,2}|신저점 손절 시작|손절 [1-9]\\d?회|(?:[1-9]\\d?회 )?손절 환율 복귀|재매수 ${STAGE_LABEL})|재매수 (?:신저점 이탈|손절 [1-9]\\d?회|(?:[1-9]\\d?회 )?기한|${STAGE_LABEL}))$`);
 test('재매수 단계 알림 이름은 N선·N일선, 직접 정한 이름은 N단계로 수집 작업의 라벨 형식을 지킨다',()=>{
   const ctx=load(),notify={breakdown:true,cuts:true,buys:true,deadlines:true};
   const r=rebuy({notify,cuts:[{shares:10,price:9900}]});r.stages.push({name:'내 단계',price:9650,done:false});
@@ -96,9 +100,14 @@ test('재매수 단계 알림 이름은 N선·N일선, 직접 정한 이름은 N
     cuts:[{contracts:3,price:1399.7,targetPrice:1400}],stages:[{name:'25분봉',price:1370},{name:'내 단계',price:1375},{name:'25일선',price:1380}]}};
   const before=JSON.stringify(f),rules=plain(ctx.buildTradeAlertRules({rebuy:{items:[r]},futures:f},null)),labels=rules.map(x=>x.label);
   assert.deepEqual(rules.filter(x=>x.id.includes(':buy:')).map(x=>x.label),['달러선물 재매수 25선','달러선물 재매수 2단계','달러선물 재매수 25일선','재매수 25선','재매수 25일선','재매수 3단계']);
-  assert.ok(labels.includes('달러선물 신저점 손절 시작')&&labels.includes('달러선물 손절 2회')&&labels.includes('달러선물 1회 손절 환율 복귀'));
+  assert.ok(labels.includes('달러선물 신저점 손절 시작')&&labels.includes('달러선물 손절 2회'));
   for(const label of labels)assert.match(label,TRADE_LABEL_RE);
   assert.equal(JSON.stringify(f),before,'알림 계산은 옛 이름 기록을 바꾸지 않는다');
+  // 첫 단계를 산 뒤의 기한 라벨도 수집 작업 형식을 지킨다
+  r.stages[0]={...r.stages[0],done:true,shares:1,execPrice:9600};f.rebuy.stages[0]={...f.rebuy.stages[0],done:true,contracts:1,execPrice:1370};
+  const after=plain(ctx.buildTradeAlertRules({rebuy:{items:[r]},futures:f},null)).map(x=>x.label);
+  assert.ok(after.includes('재매수 기한')&&after.includes('달러선물 손절 환율 복귀'));
+  for(const label of after)assert.match(label,TRADE_LABEL_RE);
 });
 test('시세로 채운 N선(60분봉) 단계는 이동평균만 움직이면 같은 알림 기준으로 보고 직접 고치면 새 기준으로 본다',()=>{
   const ctx=load(),r=rebuy({notify:{buys:true},cuts:[{shares:10,price:9900}],stages:[{name:'25분봉',price:0,done:false},{name:'25일선',price:9700,done:false}]});

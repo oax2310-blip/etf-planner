@@ -15,7 +15,7 @@ function setTradePlanAll(p,on){Object.assign(editTradeNotify(p),{start:on,sales:
 function setTradeLevelAll(f,on){editTradeNotify(f).levels=on;f.levels.forEach(l=>delete l.notify);}
 function setTradeRebuyAlert(r,kind,i,on){
   if(kind==="buys"){const s=Array.isArray(r.stages)?r.stages[i]:null;if(s)s.notify=on;return;} // 저장된 단계에(stagesOf는 옛 이름이면 사본) — r은 editRebuy()로 이름을 바꾼 기록
-  const n=editTradeNotify(r);if(i==null)n[kind]=on;else(n[kind+"Overrides"]??={})[i]=on;
+  const n=editTradeNotify(r);if(i==null){n[kind]=on;delete n[kind+"Overrides"];}else(n[kind+"Overrides"]??={})[i]=on; // 기한은 평균 손절가 하나라 옛 회차별 설정을 지움
 }
 function setTradeRebuyAll(r,kind,on){
   editTradeNotify(r)[kind]=on;delete r.notify[kind+"Overrides"];
@@ -41,7 +41,7 @@ function bindTradeRebuyAlerts(){
 function tradeRebuyAllButtons(kind){return `<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-rebuy-alert-all="${kind}" data-alert-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-rebuy-alert-all="${kind}" data-alert-on="off">OFF</button></span>`;}
 function futureRebuyAlertEnabled(f,kind,key){const n=tradeNotify(futureRebuyOf(f));return key==null?n[kind]===true:typeof n[kind+"Overrides"]?.[key]==="boolean"?n[kind+"Overrides"][key]:n[kind]===true;}
 function bindFutureRebuyAlerts(f){
-  onEdit("[data-frebuy-alert]",(v,el)=>{const n=editTradeNotify(editFutureRebuy(f)),kind=el.dataset.frebuyAlert,key=el.dataset.alertKey;if(key==null)n[kind]=el.checked;else(n[kind+"Overrides"]??={})[key]=el.checked;},renderFutures);
+  onEdit("[data-frebuy-alert]",(v,el)=>{const n=editTradeNotify(editFutureRebuy(f)),kind=el.dataset.frebuyAlert,key=el.dataset.alertKey;if(key==null){n[kind]=el.checked;delete n[kind+"Overrides"];}else(n[kind+"Overrides"]??={})[key]=el.checked;},renderFutures);
   $$("[data-frebuy-alert-all]").forEach(b=>b.onclick=()=>{const n=editTradeNotify(editFutureRebuy(f)),kind=b.dataset.frebuyAlertAll;n[kind]=b.dataset.alertOn==="on";delete n[kind+"Overrides"];save();renderFutures();});
 }
 function futureRebuyAllButtons(kind){return `<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-frebuy-alert-all="${kind}" data-alert-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-frebuy-alert-all="${kind}" data-alert-on="off">OFF</button></span>`;}
@@ -88,7 +88,8 @@ function buildTradeAlertRules(data,priceDoc){
       const mark=Number(r.auto?.[autoMark(x.name)]),basis=autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
       addF(`buy:stage:${i}`,`달러선물 재매수 ${tradeStageName(x.name,i)}`,x.price,"up",basis);
     }
-    for(const l of s.lots)if(l.open&&futureRebuyAlertEnabled(f,"deadlines",l.k-1))addF(`deadline:${l.k-1}`,`달러선물 ${l.k}회 손절 환율 복귀`,l.price,"up",[l.k,l.price]);
+    // 기한(손절 환율 복귀)은 평균 손절 환율 하나이고 첫 단계를 산 뒤 남은 계약이 있을 때만
+    if(s.started&&s.rest>0&&futureRebuyAlertEnabled(f,"deadlines"))addF("deadline","달러선물 손절 환율 복귀",s.sellAvg,"up",[s.sellAvg]);
   }
   for(const [ri,r] of rebuyItems(d).entries()){
     const ticker=String(r.ticker||"").trim().toUpperCase(),q=stockEntry(prices,ticker),kind=usTicker(ticker)?"해외":"국내"; // 미국 종목은 달러 시세로
@@ -104,7 +105,8 @@ function buildTradeAlertRules(data,priceDoc){
       // 비운 가격은 배분을 위한 추정값이다. 알림 기준으로 사용하지 않는다.
       addR(`buy:${encodeURIComponent(x.name)}:${i}`,`재매수 ${tradeStageName(x.name,i)}`,x.price,"up",basis);
     }
-    for(const l of s.lots)if(l.open&&tradeRebuyEnabled(r,"deadlines",l.k-1))addR(`deadline:${l.k-1}`,`재매수 ${l.k}회 기한`,l.price,"up",[l.price,l.k]);
+    // 기한은 평균 손절가 하나이고 첫 단계를 산 뒤 남은 금액이 있을 때만
+    if(s.started&&s.rest>0&&tradeRebuyEnabled(r,"deadlines"))addR("deadline","재매수 기한",s.sellAvg,"up",[s.sellAvg]);
   }
   return rules;
 }
@@ -112,8 +114,8 @@ function renderTradeAlertSummary(){
   const target=$("tradeAlertsSummary");if(!target)return;
   const plans=state.plans||[],f=state.futures,items=rebuyItems(state);
   const saleCount=plans.reduce((n,p)=>n+Array.from({length:Number(p.stages)||0},(_,i)=>p.checked?.[i]!==true&&tradePlanEnabled(p,i)?1:0).reduce((a,b)=>a+b,0),0);
-  const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+fs.stages.filter((x,i)=>!x.done&&fs.plan[i]>0&&futureRebuyAlertEnabled(f,"buys",`stage:${i}`)).length+fs.lots.filter(l=>l.open&&futureRebuyAlertEnabled(f,"deadlines",l.k-1)).length:0;
+  const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+fs.stages.filter((x,i)=>!x.done&&fs.plan[i]>0&&futureRebuyAlertEnabled(f,"buys",`stage:${i}`)).length+(fs.started&&fs.rest>0&&futureRebuyAlertEnabled(f,"deadlines")?1:0):0;
   const levelCount=(f?.levels||[]).filter(l=>tradeLevelEnabled(f,l)&&!levelDone(l)).length+futureCount;
-  const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+s.stages.filter((x,i)=>!x.done&&tradeRebuyEnabled(r,"buys",i)).length+s.lots.filter(l=>l.open&&tradeRebuyEnabled(r,"deadlines",l.k-1)).length;},0);
+  const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+s.stages.filter((x,i)=>!x.done&&tradeRebuyEnabled(r,"buys",i)).length+(s.started&&s.rest>0&&tradeRebuyEnabled(r,"deadlines")?1:0);},0);
   target.innerHTML=`<div class="trade-alert-summary"><span>분할매도 <b>${saleCount}</b></span><span>달러선물 <b>${levelCount}</b></span><span>재매수 <b>${rebuyCount}</b></span></div><p class="hint">각 화면의 가격 옆에서 알림을 켜세요. 기준가 변경은 자동 반영되며 완료한 회차·단계는 제외됩니다. 종목 코드와 시세·기준가가 있어야 발송됩니다.</p>`;
 }
