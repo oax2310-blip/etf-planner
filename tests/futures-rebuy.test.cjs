@@ -97,7 +97,7 @@ test('예전 손절 환율 복귀 방식 기록은 다음 반등 단계에서 �
   const before=JSON.stringify(f);let s=ctx.futureRebuySummary(f);
   assert.equal(JSON.stringify(f),before,'읽기만 하면 기록을 바꾸지 않는다');
   assert.equal(s.rebought,4);assert.equal(s.rest,3);assert.ok(s.started);
-  assert.deepEqual([s.stages[0].name,s.stages[0].done,s.stages[0].contracts,s.stages[0].execPrice],['25분봉',true,4,1351.5]);
+  assert.deepEqual([s.stages[0].name,s.stages[0].done,s.stages[0].contracts,s.stages[0].execPrice],['60분 25선',true,4,1351.5]);
   assert.equal(ctx.setFutureCutDone(f,1,false),false);
   assert.notEqual(ctx.setFutureRebuyField(f,'currentPrice','1390'),false);
   assert.equal(f.rebuy.returns,undefined);assert.equal(f.rebuy.buyMode,undefined);

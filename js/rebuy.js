@@ -10,10 +10,15 @@
 // 재매수: 손절한 금액만큼. 분량마다 판 가격이 재매수 기한(다시 오르면 낮은 손절가부터 닿으므로 재매수 금액은 낮은 손절가 분량부터 채움).
 //   각 분량은 판 가격보다 싸게 살 것으로 추정되는 단계에 나누고(stageEstimates), 기한이 온(현재가 ≥ 판 가격) 분량은 다음 단계에서 먼저 산다. 재매수를 하나라도 체크하면 남은 손절은 멈춘다.
 // 보유량 = 이탈 전 보유 금액(amount, 만원) ÷ 신저점 가격을 내림한 주 수, 또는 직접 넣은 보유 수량(shares, 주). 둘 중 넣은 쪽만 저장한다(setHold, 둘 다 있으면 금액 우선).
-const defaultRebuy = () => ({name:"니프티50 ETF",lowPrice:0,amount:0,currentPrice:0,stepPct:1,sellPct:0.5,steps:30,cuts:[],stages:["분봉","일선"].flatMap(unit=>[25,32,42,60,80,125,150].map(n=>({name:n+unit,price:0,done:false,execPrice:null,shares:null}))),note:""});
+// 단계 이름: 60분봉 차트의 N이평선은 '60분 N선', 일봉 차트의 N이평선은 'N일선'. 60분 단계 가격은 시세로 채우지 않는다(직접 입력, 비우면 추정).
+const defaultRebuy = () => ({name:"니프티50 ETF",lowPrice:0,amount:0,currentPrice:0,stepPct:1,sellPct:0.5,steps:30,cuts:[],stages:[n=>`60분 ${n}선`,n=>`${n}일선`].flatMap(label=>[25,32,42,60,80,125,150].map(n=>({name:label(n),price:0,done:false,execPrice:null,shares:null}))),note:""});
 // 예전 기본 단계(25분봉·60분봉·240분봉·일봉·주봉)를 손대지 않았으면 지금 기본 14단계로 본다(editRebuy가 저장할 때 바꿈).
 const untouchedOldStages = st => Array.isArray(st) && st.map(x=>x.name).join()==="25분봉,60분봉,240분봉,일봉,주봉" && st.every(x=>!x.done&&!(Number(x.price)>0));
-const stagesOf = r => untouchedOldStages(r.stages) ? defaultRebuy().stages : Array.isArray(r.stages) ? r.stages : [];
+// 옛 단계 이름 'N분봉'은 60분봉 N이평선을 뜻했다 — 읽을 때 '60분 N선'으로 보고, 처음 고칠 때 editRebuy·editFutureRebuy가 저장한다
+// (불러올 때 바꾸면 기록이 바뀌어 기록 차이 창이 뜸). 바꿀 이름이 있으면 사본을 돌려주므로 단계를 고칠 때는 저장된 r.stages에 쓸 것.
+const stageName = name => { const m=typeof name==="string"&&/^([1-9]\d{0,2})분봉$/.exec(name); return m?`60분 ${m[1]}선`:name; };
+const renamedStages = st => st.some(x=>stageName(x?.name)!==x?.name) ? st.map(x=>stageName(x?.name)!==x?.name?{...x,name:stageName(x.name)}:x) : st;
+const stagesOf = r => untouchedOldStages(r.stages) ? defaultRebuy().stages : Array.isArray(r.stages) ? renamedStages(r.stages) : [];
 const wholeShares = v => Math.max(0,Math.floor(Number(v)||0));
 const holdShares = r => Number(r.amount)>0 ? (Number(r.lowPrice)>0 ? Math.floor(Number(r.amount)*10000/Number(r.lowPrice)+1e-9) : 0) : wholeShares(r.shares);
 // 보유 입력 단위: 수량만 저장돼 있으면 "shares"(주), 아니면 "amount"(만원). 화면에서 단위만 바꾼 상태(rebuyUnit)는 메모리에만(저장·동기화 안 함)
@@ -61,9 +66,9 @@ function stageEstimates(stages,start){
 const futureRebuyQty = v => Number.isFinite(Number(v)) ? Math.max(0,Math.floor(Number(v))) : 0;
 const futureRebuyOf = f => f?.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)?f.rebuy:{};
 // 예전 '손절 환율 복귀' 방식(buyMode·returns[손절 회차])으로 체크한 재매수는 환율 복귀 때 다음 반등 단계에서 산 것과 같다.
-// 읽을 때는 첫 미완료 단계에 합쳐 보여 주기만 하고(기록은 그대로), 처음 고칠 때 editFutureRebuy가 stages로 옮긴다.
+// 읽을 때는 첫 미완료 단계에 합쳐 보여 주기만 하고(기록은 그대로), 처음 고칠 때 editFutureRebuy가 stages로 옮긴다. 옛 단계 이름 'N분봉'도 같은 방식(renamedStages).
 function futureRebuyStages(r){
-  const stages=Array.isArray(r.stages)?r.stages:defaultRebuy().stages,old=(Array.isArray(r.returns)?r.returns:[]).filter(x=>x?.done&&futureRebuyQty(x.contracts)>0);
+  const stages=Array.isArray(r.stages)?renamedStages(r.stages):defaultRebuy().stages,old=(Array.isArray(r.returns)?r.returns:[]).filter(x=>x?.done&&futureRebuyQty(x.contracts)>0);
   if(!old.length)return stages;
   const qty=old.reduce((n,x)=>n+futureRebuyQty(x.contracts),0),priced=old.filter(x=>Number(x.execPrice)>0),pq=priced.reduce((n,x)=>n+futureRebuyQty(x.contracts),0);
   const rec={done:true,contracts:qty,execPrice:pq?priced.reduce((n,x)=>n+futureRebuyQty(x.contracts)*Number(x.execPrice),0)/pq:null},i=stages.findIndex(x=>!x.done);
@@ -113,7 +118,7 @@ function editFutureRebuy(f){
   if(f.rebuy!==futureRebuyOf(f))f.rebuy={};
   const r=f.rebuy;if(!Object.hasOwn(r,"contracts"))r.contracts=hold;
   if(!Array.isArray(r.cuts))r.cuts=[];
-  r.stages=futureRebuyStages(r);delete r.returns;delete r.buyMode; // 예전 환율 복귀 방식 기록을 반등 단계로 옮김
+  r.stages=futureRebuyStages(r);delete r.returns;delete r.buyMode; // 예전 환율 복귀 방식 기록을 반등 단계로, 옛 이름 'N분봉'을 '60분 N선'으로 옮김
   return r;
 }
 function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(x=>x.done);}
@@ -183,7 +188,9 @@ function editRebuy(){
   if(!r){r={id:id(),...defaultRebuy()};items.push(r);}
   if(!r.id)r.id=id();
   state.selectedRebuy=r.id;
-  if(!Array.isArray(r.cuts))r.cuts=[];if(!Array.isArray(r.stages)||untouchedOldStages(r.stages))r.stages=defaultRebuy().stages;return r;
+  if(!Array.isArray(r.cuts))r.cuts=[];if(!Array.isArray(r.stages)||untouchedOldStages(r.stages))r.stages=defaultRebuy().stages;
+  r.stages.forEach(x=>{if(stageName(x?.name)!==x?.name)x.name=stageName(x.name);}); // 옛 이름 'N분봉' → '60분 N선'
+  return r;
 }
 // 상태 글자: [화면 '현재 상태', 목록 카드 오른쪽 짧은 글자]
 function rebuyStatus(r,s){
@@ -280,8 +287,8 @@ function renderRebuy(){
   onEdit("[data-stage-price]",(v,el)=>{v=nonNeg(v.trim());if(v===undefined)return false;editRebuy().stages[Number(el.dataset.stagePrice)].price=v;},renderRebuy);
   onEdit("[data-stage-exec]",(v,el)=>{v=Number(v);if(!(v>0))return false;editRebuy().stages[Number(el.dataset.stageExec)].execPrice=v;},renderRebuy);
   onEdit("[data-stage-qty]",(v,el)=>{v=v.trim();if(v===""||!(Number(v)>=0))return false;editRebuy().stages[Number(el.dataset.stageQty)].shares=Math.floor(Number(v));},renderRebuy);
-  $("rStages").onclick=()=>{const list=s.stages,text=prompt("재매수 단계를 짧은 봉부터 쉼표로 구분해 적으세요.\n마지막 단계 가격은 기준 입력에서 넣습니다.",list.map(x=>x.name).join(", "));
-    if(text==null)return;const names=[...new Set(text.split(/[,，]/).map(x=>x.trim().slice(0,20)).filter(Boolean))].slice(0,12);
+  $("rStages").onclick=()=>{const list=s.stages,text=prompt("재매수 단계를 짧은 봉부터 쉼표로 구분해 적으세요.\n60분봉 25이평선은 '60분 25선', 일봉 25이평선은 '25일선'으로 적습니다.\n마지막 단계 가격은 기준 입력에서 넣습니다.",list.map(x=>x.name).join(", "));
+    if(text==null)return;const names=[...new Set(text.split(/[,，]/).map(x=>stageName(x.trim().slice(0,20))).filter(Boolean))].slice(0,12);
     if(!names.length){alert("단계를 하나 이상 적어 주세요.");return;}
     const lost=list.filter(x=>x.done&&!names.includes(x.name));if(lost.length){alert(`재매수를 체크한 단계(${lost.map(x=>x.name).join(", ")})는 뺄 수 없습니다. 먼저 체크를 푸세요.`);return;}
     const r=editRebuy();r.stages=names.map(name=>r.stages.find(x=>x.name===name)||{name,price:0,done:false,execPrice:null,shares:null});save();renderRebuy();};

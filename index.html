@@ -41,6 +41,8 @@
     alerts는 dataSnapshot·readRemote에서 rebuy 뒤. 공개 기본값에는 기기 구독·구독 주소·발송키를 넣지 말 것. push-sw.js는 같은 사이트 알림 표시만.
   - 재매수는 종목 목록 state.rebuy = {items:[…]}(규칙은 rebuy.js 맨 위 주석). 옛 기록(rebuy에 종목 하나)은 고칠 때만 editRebuy가 목록으로 바꿈 —
     normalize·불러올 때 바꾸지 말 것(기기마다 다른 id → 기록 차이 창). 종목을 다 지워도 rebuy는 {items:[]}로 남김.
+  - 재매수 단계 이름(ETF·달러선물 같음): 60분봉 차트의 N이평선은 '60분 N선'(시세로 안 채움), 일봉은 'N일선'. 옛 이름 'N분봉'은 같은 뜻 — stagesOf·futureRebuyStages가 읽을 때만 바꿔 보이고
+    editRebuy·editFutureRebuy가 고칠 때 저장. 알림 라벨은 trade-alerts.js tradeStageName(데이터 저장소 TRADE_LABEL_RE와 같은 형식).
   - rebuy는 dataSnapshot·readRemote에서 actions 뒤(없으면 JSON에서 빠져 옛 스냅샷과 같음). applyRemote는 병합이라 저장소에 rebuy가 없으면
     이 기기 값 유지. isBlank: rebuy가 있으면 빈 기기가 아님.
   - 화면 상태(openLevels·openBuys: 펼친 매수 완료 구간·날, rebuyUnit: 재매수 보유 입력 단위만 바꾼 것)는 메모리에만 — 저장·동기화 안 함.
@@ -94,9 +96,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=28"></script>
-  <link rel="stylesheet" href="css/app.css?v=28" />
-  <link rel="stylesheet" href="css/purchases.css?v=28" />
+  <script src="js/theme.js?v=29"></script>
+  <link rel="stylesheet" href="css/app.css?v=29" />
+  <link rel="stylesheet" href="css/purchases.css?v=29" />
 </head>
 <body>
   <header class="top">
@@ -238,19 +240,19 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=28"></script>
-  <script src="js/sync.js?v=28"></script>
-  <script src="js/prices.js?v=28"></script>
-  <script src="js/assets-calc.js?v=28"></script>
-  <script src="js/assets-store.js?v=28"></script>
-  <script src="js/purchases.js?v=28"></script>
-  <script src="js/trade-alerts.js?v=28"></script>
-  <script src="js/plans.js?v=28"></script>
-  <script src="js/futures.js?v=28"></script>
-  <script src="js/actions.js?v=28"></script>
-  <script src="js/rebuy.js?v=28"></script>
-  <script src="js/alerts.js?v=28"></script>
-  <script src="js/push.js?v=28"></script>
+  <script src="js/core.js?v=29"></script>
+  <script src="js/sync.js?v=29"></script>
+  <script src="js/prices.js?v=29"></script>
+  <script src="js/assets-calc.js?v=29"></script>
+  <script src="js/assets-store.js?v=29"></script>
+  <script src="js/purchases.js?v=29"></script>
+  <script src="js/trade-alerts.js?v=29"></script>
+  <script src="js/plans.js?v=29"></script>
+  <script src="js/futures.js?v=29"></script>
+  <script src="js/actions.js?v=29"></script>
+  <script src="js/rebuy.js?v=29"></script>
+  <script src="js/alerts.js?v=29"></script>
+  <script src="js/push.js?v=29"></script>
   <script>purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
