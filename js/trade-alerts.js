@@ -51,8 +51,14 @@ function tradePriceBasis(obj,key,label,auto){
   return auto&&maKey(label)?["line",maKey(label),value>0&&mark>0&&value!==mark?value:null]:["price",value];
 }
 // 재매수 단계의 알림 이름: N일선·N주선·N개월선, N선(60분봉, 옛 이름 N분봉도)은 그대로, 직접 정한 다른 이름은 'N단계'.
+// 단계 안 회차는 1차가 단계 이름 그대로(예전 단계 알림과 같은 id·이력), 2·3차는 ' 2차'·' 3차'를 붙인다.
 // 수집 작업(데이터 저장소 ma_alerts.py TRADE_LABEL_RE)이 라벨을 다시 검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않으므로 형식을 바꾸면 그쪽도 같이.
 const tradeStageName = (name,i) => autoKey(name)||`${i+1}단계`;
+// 회차 알림 기준: 단계 기준가(시세로 채운 이평선은 이름, 직접 고친 값만) + 2·3차는 회차와 다음 단계 기준. 이평선만 움직이면 같은 알림 이력.
+function tradeStageBasis(r,x){const mark=Number(r.auto?.[autoMark(x.name)]);return autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];}
+const tradeTrancheBasis = (r,s,x) => x.t?[...tradeStageBasis(r,s.stages[x.i]),x.t,...(s.stages[x.i+1]?tradeStageBasis(r,s.stages[x.i+1]):[])]:tradeStageBasis(r,s.stages[x.i]);
+// 알림을 보낼 회차: 안 샀고 배분이 있고 가격이 실제 기준가에서 나온 것(추정치 제외).
+const tradeTranchesToSend = s => s.tranches.filter(x=>!x.done&&x.amount>0&&x.price>0&&!x.est);
 function buildTradeAlertRules(data,priceDoc){
   const d=JSON.parse(JSON.stringify(data||{})),prices=priceDoc?(priceDoc.format===PRICE_FORMAT?priceDoc:slimPrices(priceDoc)):null;
   if(prices)fillPrices(d,prices);
@@ -84,11 +90,8 @@ function buildTradeAlertRules(data,priceDoc){
       if(futureRebuyAlertEnabled(f,"breakdown"))addF("breakdown","달러선물 신저점 손절 시작",r.lowPrice,"down",[r.lowPrice]);
       for(const c of s.cuts)if(!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1))addF(`cut:${c.k-1}`,`달러선물 손절 ${c.k}회`,c.price,"down",[r.lowPrice,r.floorPrice,s.cuts.length,c.k]);
     }
-    for(const [i,x] of s.stages.entries())if(!x.done&&s.plan[i]>0&&futureRebuyAlertEnabled(f,"buys",`stage:${i}`)){
-      const mark=Number(r.auto?.[autoMark(x.name)]),basis=autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
-      addF(`buy:stage:${i}`,`달러선물 재매수 ${tradeStageName(x.name,i)}`,x.price,"up",basis);
-    }
-    for(const l of s.lots)if(l.open&&futureRebuyAlertEnabled(f,"deadlines",l.k-1))addF(`deadline:${l.k-1}`,`달러선물 ${l.k}회 손절 환율 복귀`,l.price,"up",[l.k,l.price]);
+    for(const x of tradeTranchesToSend(s))if(futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`))
+      addF(`buy:stage:${x.i}${x.t?`:${x.t+1}`:""}`,`달러선물 재매수 ${tradeStageName(s.stages[x.i].name,x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,"up",tradeTrancheBasis(r,s,x));
   }
   for(const [ri,r] of rebuyItems(d).entries()){
     const ticker=String(r.ticker||"").trim().toUpperCase(),q=stockEntry(prices,ticker),kind=usTicker(ticker)?"해외":"국내"; // 미국 종목은 달러 시세로
@@ -99,12 +102,9 @@ function buildTradeAlertRules(data,priceDoc){
       if(tradeRebuyEnabled(r,"breakdown"))addR("breakdown","재매수 신저점 이탈",r.lowPrice,"below",[Number(r.lowPrice)]);
       for(const c of s.cuts)if(!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1))addR(`cut:${c.k-1}`,`재매수 손절 ${c.k}회`,c.price,"down",[Number(r.lowPrice),Number(r.stepPct)||1,c.k]);
     }
-    for(const [i,x] of s.stages.entries())if(!x.done&&s.plan[i]>0&&tradeRebuyEnabled(r,"buys",i)){
-      const mark=Number(r.auto?.[autoMark(x.name)]),basis=autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
-      // 비운 가격은 배분을 위한 추정값이다. 알림 기준으로 사용하지 않는다.
-      addR(`buy:${encodeURIComponent(x.name)}:${i}`,`재매수 ${tradeStageName(x.name,i)}`,x.price,"up",basis);
-    }
-    for(const l of s.lots)if(l.open&&tradeRebuyEnabled(r,"deadlines",l.k-1))addR(`deadline:${l.k-1}`,`재매수 ${l.k}회 기한`,l.price,"up",[l.price,l.k]);
+    // 비운 가격은 표시용 추정값이다. 알림 기준으로 사용하지 않는다(tradeTranchesToSend).
+    for(const x of tradeTranchesToSend(s))if(tradeRebuyEnabled(r,"buys",x.i)){const name=s.stages[x.i].name;
+      addR(`buy:${encodeURIComponent(name)}:${x.i}${x.t?`:${x.t+1}`:""}`,`재매수 ${tradeStageName(name,x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,"up",tradeTrancheBasis(r,s,x));}
   }
   return rules;
 }
@@ -112,8 +112,8 @@ function renderTradeAlertSummary(){
   const target=$("tradeAlertsSummary");if(!target)return;
   const plans=state.plans||[],f=state.futures,items=rebuyItems(state);
   const saleCount=plans.reduce((n,p)=>n+Array.from({length:Number(p.stages)||0},(_,i)=>p.checked?.[i]!==true&&tradePlanEnabled(p,i)?1:0).reduce((a,b)=>a+b,0),0);
-  const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+fs.stages.filter((x,i)=>!x.done&&fs.plan[i]>0&&futureRebuyAlertEnabled(f,"buys",`stage:${i}`)).length+fs.lots.filter(l=>l.open&&futureRebuyAlertEnabled(f,"deadlines",l.k-1)).length:0;
+  const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+tradeTranchesToSend(fs).filter(x=>futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`)).length:0;
   const levelCount=(f?.levels||[]).filter(l=>tradeLevelEnabled(f,l)&&!levelDone(l)).length+futureCount;
-  const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+s.stages.filter((x,i)=>!x.done&&tradeRebuyEnabled(r,"buys",i)).length+s.lots.filter(l=>l.open&&tradeRebuyEnabled(r,"deadlines",l.k-1)).length;},0);
+  const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+tradeTranchesToSend(s).filter(x=>tradeRebuyEnabled(r,"buys",x.i)).length;},0);
   target.innerHTML=`<div class="trade-alert-summary"><span>분할매도 <b>${saleCount}</b></span><span>달러선물 <b>${levelCount}</b></span><span>재매수 <b>${rebuyCount}</b></span></div><p class="hint">각 화면의 가격 옆에서 알림을 켜세요. 기준가 변경은 자동 반영되며 완료한 회차·단계는 제외됩니다. 종목 코드와 시세·기준가가 있어야 발송됩니다.</p>`;
 }
