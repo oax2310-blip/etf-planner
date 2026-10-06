@@ -126,17 +126,37 @@ test('달러선물: 보유 근월물 이동평균으로 N일선 구간 기준가
   assert.equal(ctx.fillPrices({plans: [], futures: {positions: [], levels: f.levels}}, prices()), false, '보유 월물이 없으면 채우지 않는다');
 });
 
-test('재매수: 국내 종목 코드를 넣었을 때만 현재가와 N일선 단계 기준가를 채운다(분봉 단계는 그대로)', () => {
+test('재매수: 종목 코드를 넣었을 때만 현재가와 N일선 단계 기준가를 채운다(국내는 원, 미국은 달러 센트까지)', () => {
   const ctx = load();
   const stages = () => [{name: '25분봉', price: 0}, {name: '25일선', price: 0}, {name: '150일선', price: 1, done: true}];
   const r = {name: '테스트 ETF', ticker: '900001', currentPrice: 0, stages: stages()};
   assert.equal(ctx.fillPrices({plans: [], rebuy: r}, prices()), true);
   assert.deepEqual(plain([r.currentPrice, r.stages.map(x => x.price), r.auto]), [10234, [0, 10100, 9500], {at: AT, currentPrice: 10234, '25일선': 10100, '150일선': 9500}]);
   const us = {ticker: 'AAA', currentPrice: 0, stages: stages()}, none = {currentPrice: 7, stages: stages()};
-  assert.equal(ctx.fillPrices({plans: [], rebuy: us}, prices()), false, '해외 종목은 원화 재매수에 채우지 않는다');
+  assert.equal(ctx.fillPrices({plans: [], rebuy: us}, prices()), true, '미국 종목은 달러 시세로');
+  assert.deepEqual(plain([us.currentPrice, us.stages.map(x => x.price), us.auto]), [130.5, [0, 0, 1], {at: AT, currentPrice: 130.5}]);
+  const wrong = {ticker: 'AAA', currentPrice: 0, stages: stages()}, q = prices();
+  q.stocks.AAA.kind = '국내';
+  assert.equal(ctx.fillPrices({plans: [], rebuy: wrong}, q), false, '코드 종류와 시세 종류가 다르면 채우지 않는다');
   assert.equal(ctx.fillPrices({plans: [], rebuy: none}, prices()), false);
   assert.equal(ctx.fillPrices({plans: []}, prices()), false, '재매수 기록이 없으면 만들지 않는다');
-  assert.deepEqual(['auto' in us, 'auto' in none, none.currentPrice], [false, false, 7]);
+  assert.deepEqual(['auto' in none, none.currentPrice], [false, 7]);
+});
+
+test('재매수 N선(60분봉 이동평균): 시세 파일 ma의 N선으로 채우고(옛 이름 N분봉도), 값이 없으면 직접 넣은 가격을 둔다', () => {
+  const ctx = load();
+  assert.deepEqual(['25선', ' 150 선', '25분봉', '0선', '25일선', '60분 25선', '1000선', ''].map(ctx.hourKey),
+    ['25선', '150선', '25선', '', '', '', '', '']);
+  const q = prices();
+  Object.assign(q.stocks['900001'].ma, {'25선': 10180.26, '150선': null});
+  q.futures['202612'].ma['25선'] = 1399.456;
+  const r = {ticker: '900001', currentPrice: 0, stages: [{name: '25분봉', price: 0}, {name: '150선', price: 9999}, {name: '25일선', price: 0}]};
+  const f = {positions: [{month: '202612', contracts: 1}], levels: [], rebuy: {stages: [{name: '25선', price: 0}, {name: '32선', price: 1390}]}};
+  assert.equal(ctx.fillPrices({plans: [], rebuy: {items: [r]}, futures: f}, q), true);
+  assert.deepEqual(plain(r.stages.map(x => x.price)), [10180, 9999, 10100], '150선은 아직 봉이 모자라 직접 넣은 값 그대로');
+  assert.deepEqual(plain(r.auto), {at: AT, currentPrice: 10234, '25선': 10180, '25일선': 10100}, '옛 이름 25분봉도 25선으로 표시');
+  assert.deepEqual(plain(f.rebuy.stages.map(x => x.price)), [1399.46, 1390]);
+  assert.deepEqual([ctx.maValue(q.stocks['900001'], '25선'), ctx.maValue(q.stocks['900001'], '150선'), ctx.maValue(q.stocks['900001'], '25분봉')], [10180.26, null, 10180.26]);
 });
 
 test('재매수 종목 목록(rebuy.items): 종목마다 자기 종목 코드 시세로 채운다', () => {
@@ -145,7 +165,7 @@ test('재매수 종목 목록(rebuy.items): 종목마다 자기 종목 코드 �
   const a = {id: 'a', ticker: '900001', currentPrice: 0, stages: stages()}, b = {id: 'b', currentPrice: 7, stages: stages()}, c = {id: 'c', ticker: 'AAA', currentPrice: 0, stages: stages()};
   assert.equal(ctx.fillPrices({plans: [], rebuy: {items: [a, b, c, null]}}, prices()), true);
   assert.deepEqual(plain([a.currentPrice, a.stages.map(x => x.price), a.auto]), [10234, [0, 10100], {at: AT, currentPrice: 10234, '25일선': 10100}]);
-  assert.deepEqual(['auto' in b, b.currentPrice, 'auto' in c, c.currentPrice], [false, 7, false, 0], '코드 없는 종목·해외 종목은 그대로');
+  assert.deepEqual(['auto' in b, b.currentPrice, c.currentPrice], [false, 7, 130.5], '코드 없는 종목은 그대로, 미국 종목은 달러로');
   assert.equal(ctx.fillPrices({plans: [], rebuy: {items: [a]}}, prices()), false, '같은 시세로 다시 채우면 바뀌는 칸이 없다');
   assert.equal(ctx.fillPrices({plans: [], rebuy: {items: []}}, prices()), false);
 });

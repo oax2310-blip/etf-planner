@@ -100,6 +100,25 @@ test('재매수 단계 알림 이름은 N선·N일선, 직접 정한 이름은 N
   for(const label of labels)assert.match(label,TRADE_LABEL_RE);
   assert.equal(JSON.stringify(f),before,'알림 계산은 옛 이름 기록을 바꾸지 않는다');
 });
+test('시세로 채운 N선(60분봉) 단계는 이동평균만 움직이면 같은 알림 기준으로 보고 직접 고치면 새 기준으로 본다',()=>{
+  const ctx=load(),r=rebuy({notify:{buys:true},cuts:[{shares:10,price:9900}],stages:[{name:'25분봉',price:0,done:false},{name:'25일선',price:9700,done:false}]});
+  const doc=v=>({updatedAt:`2026-10-0${v}T01:00:00Z`,stocks:{TEST:{kind:'해외',asOf:'2026-10-02',close:9500,ma:{'25선':9600+v,'25일선':9700}}},futures:{}});
+  const get=(data,q)=>plain(ctx.buildTradeAlertRules(data,q)).find(x=>x.label==='재매수 25선');
+  const data={rebuy:{items:[r]}};ctx.fillPrices(data,doc(1));
+  const first=get(data,doc(1)),second=get(data,doc(2));
+  assert.deepEqual([first.targetPrice,second.targetPrice],[9601,9602]);
+  assert.equal(first.revision,second.revision);
+  r.stages[0].price=9650;
+  assert.notEqual(get(data,null).revision,first.revision);
+});
+test('미국 종목 재매수 알림은 달러 시세(해외)로, 국내 코드는 국내 시세로 판정하고 종류가 다른 시세면 만들지 않는다',()=>{
+  const ctx=load(),notify={breakdown:true};
+  const us=rebuy({id:'us',ticker:'spy',notify}),kr=rebuy({id:'kr',ticker:'900001',notify});
+  const q={updatedAt:'2026-10-03T01:00:00Z',stocks:{SPY:{kind:'해외',asOf:'2026-10-02',close:9500,ma:{}},'900001':{kind:'국내',asOf:'2026-10-02',close:9500,ma:{}}},futures:{}};
+  const rules=plain(ctx.buildTradeAlertRules({rebuy:{items:[us,kr]}},q));
+  assert.deepEqual(rules.map(x=>[x.ticker,x.quoteGroup,x.quoteKind]),[['SPY','stocks','해외'],['900001','stocks','국내']]);
+  q.stocks.SPY.kind='코인';assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[us]}},q)),[]);
+});
 test('종류별 전체 ON/OFF는 개별 예외를 초기화하며 알림에 수량·메모를 포함하지 않는다',()=>{
   const ctx=load(),r=rebuy({note:'private-memo',cuts:[{shares:10,price:9900}]});
   ctx.setTradeRebuyAll(r,'buys',true);ctx.setTradeRebuyAlert(r,'buys',0,false);

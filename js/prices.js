@@ -6,10 +6,12 @@
 //     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
 //   분할매도 달러 계획 환율 ← fx.USDKRW의 현물 환율(달러선물 보유와 무관). 조회 값이 없으면 마지막 환율 그대로.
 //   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
-//   달러선물 손절 후 재매수(futures.rebuy가 있는 경우만) 현재가·N일선 단계 기준가 ← 같은 보유 근월물. 신저점·손절 하단·이탈 전 계약 수는 직접 정한다.
-//   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선 단계 기준가 ← stocks[그 종목 코드] (국내 종목만). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
+//   달러선물 손절 후 재매수(futures.rebuy가 있는 경우만) 현재가·N일선·N선 단계 기준가 ← 같은 보유 근월물. 신저점·손절 하단·이탈 전 계약 수는 직접 정한다.
+//   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선·N선 단계 기준가 ← stocks[그 종목 코드] (국내 종목은 원, 미국 종목은 달러 — usTicker). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
+//   N선 = 60분봉 종가 N개 이동평균(hourKey). 수집 스크립트가 한국투자증권 분봉으로 계산해 ma['N선']에 두며, 처음에는 과거 봉을 몇 번의 수집에 나눠 받으므로
+//   짧은 N선부터 채워진다. 값이 없으면(null) 직접 넣은 값을 그대로 둔다.
 // 비트코인은 stocks["BTC-USD"](kind "코인", Coinbase 달러·UTC 일봉 — 데이터 저장소 scripts/kis_prices.py CRYPTO)로 매 수집에 들어 있다.
-//   동기화 창 시세 줄·직접 추가 알림과 달러 분할매도에 쓴다. 재매수는 국내 종목만 채운다.
+//   동기화 창 시세 줄·직접 추가 알림과 달러 분할매도에 쓴다. 재매수는 국내·미국 종목만 채운다(비트코인 제외).
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
 //   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.
 // 규칙: 칸마다 지난번 채운 값을 auto에 두고 파일 값이 그와 다를 때만 덮어쓴다 → 직접 고친 값은 다음 시세 갱신 때 덮어쓴다.
@@ -19,12 +21,19 @@ const PRICE_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 경고
 const PRICE_FORMAT = 3; // slimPrices 결과 형식. 바꾸면 올릴 것 — 이 기기에 둔 옛 형식 시세는 ETag 없이 다시 받는다(sync.js readPrices)
 // 기준선 이름 → 시세 파일 ma 이름. 데이터 저장소 scripts/kis_prices.py의 LABEL_RE·ma_name과 같게("60 일선"→"60일선", "12달선"→"12개월선")
 function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|달)\s*선/.exec(String(label||"")); return m&&Number(m[1])>=1?`${Number(m[1])}${{일:"일선",주:"주선",개월:"개월선",달:"개월선"}[m[2]]}`:""; }
+// 60분봉 N이평선(재매수 단계 'N선', 옛 이름 'N분봉') → 시세 파일 ma 이름 'N선'. 데이터 저장소 scripts/kis_prices.py HOUR_RE와 같게
+function hourKey(label){ const m=/^\s*([1-9]\d{0,2})\s*(?:선|분봉)\s*$/.exec(String(label||"")); return m?`${Number(m[1])}선`:""; }
+const autoKey = label => maKey(label)||hourKey(label); // 시세로 채우는 기준선(N일선·N주선·N개월선·N선)
+const autoMark = name => hourKey(name)||String(name); // 단계 기준가를 채운 값을 둘 auto 키(N선은 옛 이름 N분봉도 같은 키)
 const priceEntry = e => e&&typeof e==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(e.asOf)&&e.ma&&typeof e.ma==="object" ? e : null;
 const stockEntry = (prices, ticker) => priceEntry(prices?.stocks?.[String(ticker||"").trim().toUpperCase()]);
 const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&Number.isFinite(Number(e.close))&&Number(e.close)>0?e:null; };
 const BTC_KEY = "BTC-USD";
 // 분할매도에서 '비트코인'도 받되 저장할 때는 수집 스크립트와 같은 BTC-USD로 둔다. BTC는 미국 ETF 심볼이므로 바꾸지 않는다.
 const planTicker = ticker => { const t=String(ticker||"").trim().toUpperCase();return t==="비트코인"?BTC_KEY:t; };
+// 미국 종목 코드(영문 심볼)인지: 재매수 통화(rebuy.js rebuyUsd)와 채울 시세 종류. 데이터 저장소 scripts/kis_prices.py classify와 같은 구분
+//   (국내는 6자리·A/Q+6자리 코드. BTC-USD도 영문이라 true지만 시세 종류가 '코인'이라 재매수에는 채우지 않음).
+const usTicker = ticker => { const t=String(ticker||"").trim().toUpperCase(); return /^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)&&!/^[AQ]\d{6}$/.test(t); };
 const isBitcoinTicker = ticker => planTicker(ticker)===BTC_KEY;
 const planQuoteKind = (ticker, currency) => currency==="KRW"?"국내":isBitcoinTicker(ticker)?"코인":"해외";
 const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&Number(e.close)>0?e:null; };
@@ -54,7 +63,9 @@ function slimPrices(doc){
   return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,false),fx:pick(doc.fx,false)};
 }
 // 기준선 이름(N일선·N주선·N개월선)의 이동평균: 시세 파일 ma에 있으면 그 값, 없으면 보관한 종가로 계산(스크립트처럼 소수 넷째 자리). 없으면 null.
+// N선(60분봉)은 시세 파일 ma 값만(이 기기에는 60분봉을 두지 않음).
 function maValue(e, label){
+  const hour=hourKey(label);if(e&&hour)return Number(e.ma[hour])>0?Number(e.ma[hour]):null;
   const key=maKey(label);if(!e||!key)return null;
   if(Number(e.ma[key])>0)return Number(e.ma[key]);
   const n=parseInt(key),c=e.closes?.[{일선:"D",주선:"W",개월선:"M"}[key.slice(String(n).length)]];
@@ -90,15 +101,15 @@ function fillPrices(data, prices){
   if(fe&&f.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)){
     const r=f.rebuy,stages=Array.isArray(r.stages)?r.stages:[];
     changed=fillMarked(r,at,[["currentPrice",priceRound(fe.close,2),v=>r.currentPrice=v],
-      ...stages.filter(x=>x&&maKey(x.name)).map(x=>[String(x.name),priceRound(maValue(fe,x.name),2),v=>x.price=v])])||changed;
+      ...stages.filter(x=>x&&autoKey(x.name)).map(x=>[autoMark(x.name),priceRound(maValue(fe,x.name),2),v=>x.price=v])])||changed;
   }
   const rb=data.rebuy, items=rb&&typeof rb==="object"?(Array.isArray(rb.items)?rb.items:[rb]):[];
   for(const r of items){
     const re=r&&typeof r==="object"?stockEntry(prices,r.ticker):null;
-    if(!re||re.kind!=="국내")continue;
-    const stages=Array.isArray(r.stages)?r.stages:[];
-    changed=fillMarked(r,at,[["currentPrice",priceRound(re.close,0),v=>r.currentPrice=v],
-      ...stages.filter(x=>x&&maKey(x.name)).map(x=>[String(x.name),priceRound(maValue(re,x.name),0),v=>x.price=v])])||changed;
+    if(!re||re.kind!==(usTicker(r.ticker)?"해외":"국내"))continue; // 국내 종목은 원, 미국 종목은 달러(센트까지)
+    const stages=Array.isArray(r.stages)?r.stages:[], digits=re.kind==="해외"?2:0;
+    changed=fillMarked(r,at,[["currentPrice",priceRound(re.close,digits),v=>r.currentPrice=v],
+      ...stages.filter(x=>x&&autoKey(x.name)).map(x=>[autoMark(x.name),priceRound(maValue(re,x.name),digits),v=>x.price=v])])||changed;
   }
   return changed;
 }
