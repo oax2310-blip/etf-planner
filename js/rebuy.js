@@ -7,10 +7,11 @@
 // 손절: 신저점 × (1 − k × stepPct%)에서 이탈 전 보유 수량(holdShares)의 sellPct%씩. 정수 주로 나누려고 k회까지 누적 예정 수량(보유 × sellPct% × k)을
 //   반올림한 차이를 회차 수량으로 한다(1,000주·0.5%면 매번 5주). 체크한 회차(cuts[i] = {shares, price})는 기록한 수량을 쓰고,
 //   기록 수량을 고쳐도 다음 회차 예정 수량은 그대로 — 남은 수량보다 많이 팔지만 않는다.
-// 재매수: 손절한 금액만큼, 평균 손절가(손절 금액 ÷ 손절 수량) 기준(rebuySplits). 첫 단계(기본 25선)부터 끊기지 않고 이어진, 기준가가 평균 손절가 이하인
-//   단계 수만큼 똑같이 나눈다(상한 없음, 첫 단계가 평균 손절가 위면 첫 단계만). 기준가를 비운 단계에서 끊는다(추정치는 배분에 쓰지 않음).
-//   단계마다 그 몫을 다음 단계 가격까지 3회(TRANCHES)로 나눠 산다(trancheLevels: 단계 가격 + (다음 단계 가격 − 단계 가격) × 0·⅓·⅔).
-//   분할 단계 수는 첫 재매수를 체크할 때 r.splits에 저장해 그 뒤로는 바꾸지 않는다(재매수 체크를 모두 풀면 지움). 재매수 기한은 따로 두지 않는다.
+// 재매수: 손절한 금액만큼, 평균 손절가(손절 금액 ÷ 손절 수량) 기준. 단계마다 다음 단계 가격까지 3회(TRANCHES)로 나눈 회차 가격
+//   (trancheLevels: 단계 가격 + (다음 단계 가격 − 단계 가격) × 0·⅓·⅔) 중, 평균 손절가 이하인 회차에 똑같이 나눈다(rebuyPlanned).
+//   대상 단계는 첫 단계(기본 25선)부터 끊기지 않고 이어진, 기준가가 평균 손절가 이하인 단계(rebuySplits, 상한 없음). 기준가를 비운 단계·추정 회차 가격은 배분에 쓰지 않는다.
+//   평균 손절가 이하 회차가 없으면(첫 단계가 평균 손절가 위·기준가 없음) 첫 단계 회차 전부(25선→32선 3분할).
+//   회차 계획은 첫 재매수를 체크할 때 r.planned = [[단계 이름, 회차]…]에 저장해 그 뒤로는 바꾸지 않는다(재매수 체크를 모두 풀면 지움). 재매수 기한은 따로 두지 않는다.
 //   회차 체결은 단계의 buys[t] = {shares, price}. 옛 기록(단계 통째로 done·shares·execPrice)은 그 단계를 한 번에 산 것으로 본다(stageFills).
 //   재매수를 하나라도 체크하면 남은 손절은 멈춘다.
 // 보유량 = 이탈 전 보유 금액(amount, 만원 — 미국 종목은 달러) ÷ 신저점 가격을 내림한 주 수, 또는 직접 넣은 보유 수량(shares, 주). 둘 중 넣은 쪽만 저장한다(setHold, 둘 다 있으면 금액 우선).
@@ -72,8 +73,8 @@ function stageFills(x,key){
   return (Array.isArray(x.buys)?x.buys:[]).map((b,t)=>b&&typeof b==="object"?{t,qty:qty(b[key]),price:px(b.price)}:null).filter(Boolean);
 }
 const stageTouched = x => !!x?.done || Array.isArray(x?.buys) && x.buys.some(Boolean);
-// 재매수 분할 단계 수: 첫 단계부터 끊기지 않고 이어진, 기준가가 평균 손절가(avg) 이하인 단계 수. 최소 1(첫 단계가 평균 손절가 위면 첫 단계만).
-// 기준가가 없는 단계에서 끊는다. 산 단계는 이어진 것으로 본다(분할 수 r.splits가 없는 옛 기록용).
+// 재매수 대상 단계 수: 첫 단계부터 끊기지 않고 이어진, 기준가가 평균 손절가(avg) 이하인 단계 수. 최소 1(첫 단계가 평균 손절가 위면 첫 단계만 후보).
+// 기준가가 없는 단계에서 끊는다. 산 단계는 이어진 것으로 본다(회차 계획 r.planned가 없는 옛 기록용).
 function rebuySplits(stages,avg){
   let n=0;while(n<stages.length&&(stageTouched(stages[n])||Number(stages[n].price)>0&&Number(stages[n].price)<=avg))n++;
   return Math.max(1,n);
@@ -89,37 +90,43 @@ function trancheLevels(stages,est,i){
     return {price:step?p+(q-p)*t/TRANCHES:p,est:!own||step&&!nextOwn,step};
   });
 }
-// 재매수 회차 목록 [{i, t, price, est, step, done, qty, execPrice, amount}]: 분할 범위(앞 splits단계)는 단계마다 3회(나눌 구간이 없으면 1회),
-// 범위 밖은 체결한 회차만. 범위를 다 샀는데 남았으면 범위 밖 첫 안 산 단계의 1회차에 담는다.
-// 남은 수량(rest)은 먼저 단계에 나눈다 — 단계 몫(total ÷ splits)에서 그 단계에 산 만큼을 뺀 비율로(모두 0이면 똑같이). 단계 안에서는 안 산 회차에 똑같이.
-// valueOf(체결) = 산 수량을 total과 같은 단위로(ETF는 금액, 달러선물은 계약 수). split(수량, 비율) = 비율대로 나눈 배열.
-function rebuyTranches(stages,est,fills,splits,total,rest,valueOf,split){
-  const list=[], add=(i,t,lv,rec)=>list.push({i,t,...lv,done:!!rec,qty:rec?.qty??0,execPrice:rec?.price??null,amount:rec?valueOf(rec):0});
-  stages.forEach((x,i)=>{const lv=trancheLevels(stages,est,i);for(let t=0;t<(x.done?1:TRANCHES);t++){const rec=fills[i].find(y=>y.t===t);if(rec||i<splits&&(t===0||lv[t].step))add(i,t,lv[t],rec);}});
-  if(rest>0&&!list.some(x=>!x.done)){const j=stages.findIndex((x,i)=>i>=splits&&!stageTouched(x));if(j>=0)add(j,0,trancheLevels(stages,est,j)[0],null);}
+// 단계 i에서 살 수 있는 회차 [{t, price, est, step}]: 1회차와 나눌 구간이 있는 2·3회차. 옛 통째 기록 단계는 1회차만.
+const stageCandidates = (stages,est,i) => trancheLevels(stages,est,i).map((x,t)=>({t,...x})).filter(x=>x.t===0||x.step&&!stages[i].done);
+// 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 회차 중 실제 기준가에서 나온 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 회차 전부.
+function rebuyPlanned(stages,est,avg){
+  if(!stages.length)return [];
+  const out=[],n=rebuySplits(stages,avg);
+  for(let i=0;i<n;i++)for(const x of stageCandidates(stages,est,i))if(x.price>0&&!x.est&&x.price<=avg)out.push([i,x.t]);
+  return out.length?out:stageCandidates(stages,est,0).map(x=>[0,x.t]);
+}
+// 재매수 회차 목록 [{i, t, price, est, step, done, qty, execPrice, amount}]: 체결한 회차 + 계획 회차. 계획을 다 샀는데 남았으면 계획 뒤 첫 안 산 단계의 1회차.
+// 남은 수량(rest)은 안 산 회차에 split(수량, 회차 수)로 나눈다. 산 회차의 amount는 부르는 쪽이 채운다.
+function rebuyTranches(stages,est,fills,planned,rest,split){
+  const list=[], seen=new Set(), add=(i,t,rec)=>{const k=`${i}:${t}`;if(!stages[i]||seen.has(k))return;seen.add(k);list.push({i,t,...trancheLevels(stages,est,i)[t],done:!!rec,qty:rec?.qty??0,execPrice:rec?.price??null,amount:0});};
+  fills.forEach((f,i)=>f.forEach(rec=>add(i,rec.t,rec)));
+  planned.forEach(([i,t])=>{if(!stages[i]?.done)add(i,t,null);});
+  if(rest>0&&!list.some(x=>!x.done)){const last=Math.max(-1,...list.map(x=>x.i)),j=stages.findIndex((x,i)=>i>last&&!stageTouched(x));if(j>=0)add(j,0,null);}
   list.sort((a,b)=>a.i-b.i||a.t-b.t);
-  const groups=[...new Set(list.filter(x=>!x.done).map(x=>x.i))];
-  if(rest>0&&groups.length){
-    const share=total/Math.max(1,splits), need=groups.map(i=>Math.max(0,share-list.reduce((a,x)=>x.i===i&&x.done?a+x.amount:a,0)));
-    const perStage=split(rest,need.some(v=>v>0)?need:groups.map(()=>1));
-    groups.forEach((i,g)=>{const open=list.filter(x=>x.i===i&&!x.done),parts=split(perStage[g],open.map(()=>1));open.forEach((x,k)=>{x.amount=parts[k];});});
-  }
+  const open=list.filter(x=>!x.done), parts=rest>0&&open.length?split(rest,open.length):[];
+  open.forEach((x,k)=>{x.amount=parts[k]??0;});
   return list;
 }
-// 나누기: 금액은 비율대로, 계약은 정수로(내림한 뒤 남는 계약을 소수점이 큰 쪽부터, 같으면 앞 단계·회차부터 1계약씩)
-const splitValue = (v,w) => { const sum=w.reduce((a,b)=>a+b,0); return w.map(x=>v*x/sum); };
-function splitWhole(v,w){
-  const sum=w.reduce((a,b)=>a+b,0), raw=w.map(x=>v*x/sum), out=raw.map(Math.floor);
-  raw.map((x,k)=>[x-out[k],k]).sort((a,b)=>b[0]-a[0]||a[1]-b[1]).slice(0,v-out.reduce((a,b)=>a+b,0)).forEach(([,k])=>out[k]++);
-  return out;
+// 표시용: 계획이 있는 단계에서 평균 손절가 위(또는 추정 가격)라 사지 않는 회차
+const rebuySkipped = (stages,est,list) => [...new Set(list.map(x=>x.i))].filter(i=>!stages[i].done).flatMap(i=>stageCandidates(stages,est,i).filter(x=>!list.some(y=>y.i===i&&y.t===x.t)).map(x=>({i,...x})));
+// 저장된 회차 계획(단계 이름·회차)을 지금 단계 목록의 [i, t]로. 없거나 비었으면 null
+function storedPlan(r,stages){
+  const list=(Array.isArray(r.planned)?r.planned:[]).map(x=>Array.isArray(x)?[stages.findIndex(y=>y.name===x[0]),Number(x[1])]:null).filter(x=>x&&x[0]>=0&&Number.isInteger(x[1])&&x[1]>=0&&x[1]<TRANCHES);
+  return list.length?list:null;
 }
+// n회로 나누기: 금액은 똑같이, 계약은 누적 반올림 차이로 고르게 흩는다(3계약 5회면 1·0·1·0·1 — 앞 회차에만 몰리지 않게).
+const splitValue = (v,n) => Array(n).fill(v/n);
+const splitWhole = (v,n) => Array.from({length:n},(_,k)=>Math.round(v*(k+1)/n)-Math.round(v*k/n));
 // 달러선물 손절 후 재매수(futures.rebuy). ETF의 매도금액 배분과 달리 판 계약 수만 복원한다.
 // 최초 입력 때 이탈 전 계약 수를 고정한다. 신저점~직접 정한 하단을 고르게 나눠 floor(계약 수/2)까지만 손절한다.
 // 정수 계약으로 나누므로 회차는 손절 목표 계약 수 이하. 한 회차뿐이면 하단에서 손절한다.
 // 실제 손절 수량을 고치면 남은 목표를 미완료 회차의 원래 비중으로 다시 나눈다. 체결 기록은 그대로 남긴다.
-// 재매수는 ETF 재매수(rebuySummary)와 같은 규칙: 평균 손절 환율(실제 체결 환율, 없으면 회차 환율의 계약 수 가중평균) 이하인 단계가
-// 첫 단계부터 이어지는 만큼 나누고(rebuySplits, 상한 없음, 없으면 첫 단계만) 단계마다 다음 단계 환율까지 3회로 정수 계약을 나눈다.
-// 분할 단계 수는 첫 재매수 체크 때 r.splits에 저장. 회차 체결은 단계의 buys[t] = {contracts, price}.
+// 재매수는 ETF 재매수(rebuySummary)와 같은 규칙: 단계마다 다음 단계 환율까지 3회로 나눈 회차 중 평균 손절 환율(실제 체결 환율, 없으면 회차 환율의
+// 계약 수 가중평균) 이하인 회차에 정수 계약을 나눈다(없으면 첫 단계 회차 전부). 회차 계획은 첫 재매수 체크 때 r.planned에 저장. 회차 체결은 단계의 buys[t] = {contracts, price}.
 // 재매수를 시작하면 손절을 멈춘다. 체크는 이 계획에만 반영하며 보유 월물·정산손익은 계좌 기준으로 직접 고친다.
 const futureRebuyQty = v => Number.isFinite(Number(v)) ? Math.max(0,Math.floor(Number(v))) : 0;
 const futureRebuyOf = f => f?.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)?f.rebuy:{};
@@ -157,11 +164,12 @@ function futureRebuySummary(f){
   const stages=futureRebuyStages(r),fills=stages.map(x=>stageFills(x,"contracts")),all=fills.flat(),started=all.length>0;
   const sold=done.reduce((n,c)=>n+c.qty,0),rebought=all.reduce((n,x)=>n+x.qty,0),rest=Math.max(0,sold-rebought);
   const sellAvg=sold?done.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)/sold:null;
-  const splits=started&&futureRebuyQty(r.splits)>=1?futureRebuyQty(r.splits):rebuySplits(stages,sellAvg);
   const lastBuy=[...all].reverse().find(x=>x.price>0),start=cur>0?cur:lastBuy?lastBuy.price:sellAvg||0,est=stageEstimates(stages,start);
-  const tranches=rebuyTranches(stages,est,fills,splits,sold,rest,x=>x.qty,splitWhole);
+  const planned=started&&storedPlan(r,stages)||rebuyPlanned(stages,est,sellAvg);
+  const tranches=rebuyTranches(stages,est,fills,planned,rest,splitWhole);
+  tranches.forEach(x=>{if(x.done)x.amount=x.qty;});
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
-  return {hold,goal,cuts,stages,est,plan,tranches,sold,rebought,rest,sellAvg,splits,started,held:Math.max(0,hold-sold+rebought),doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,
+  return {hold,goal,cuts,stages,est,plan,tranches,skipped:rebuySkipped(stages,est,tranches),planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
 }
 function editFutureRebuy(f){
@@ -194,20 +202,20 @@ function setFutureCutQty(f,i,text){
 }
 // 회차 체결 기록(옛 통째 기록은 단계 자체 — contracts·execPrice, 새 기록은 buys[t] — contracts·price). 고칠 수 있게 저장된 기록을 돌려준다.
 function futureFillRec(f,i,t){const x=editFutureRebuy(f).stages[i];return !x?null:x.done?(t===0?[x,"execPrice"]:null):Array.isArray(x.buys)&&x.buys[t]?[x.buys[t],"price"]:null;}
-// 회차 t를 체크하면 회차 가격(추정치면 현재 환율, 없으면 추정치)으로 기록한다. 첫 재매수 때 분할 단계 수를 고정한다.
+// 회차 t를 체크하면 회차 가격(추정치면 현재 환율, 없으면 추정치)으로 기록한다. 첫 재매수 때 회차 계획(r.planned)을 고정한다.
 function setFutureBuyDone(f,i,t,on){
   const s=futureRebuySummary(f),x=s.stages[i];if(!x)return false;
   if(on){
     const tr=s.tranches.find(y=>y.i===i&&y.t===t),qty=tr?.amount||0,cur=Number(futureRebuyOf(f).currentPrice)||0,round=v=>Math.round(v*100)/100,price=tr&&tr.price>0&&!tr.est?round(tr.price):cur>0?cur:tr?.price>0?round(tr.price):0;
     if(!tr||tr.done||qty<1||qty>s.rest||!(price>0)||!Number.isFinite(price))return false;
-    const r=editFutureRebuy(f),st=r.stages[i];if(!s.started)r.splits=s.splits;
+    const r=editFutureRebuy(f),st=r.stages[i];if(!s.started)r.planned=s.planKeys; // 첫 재매수 때 회차 계획을 고정
     if(!Array.isArray(st.buys))st.buys=[];while(st.buys.length<t)st.buys.push(null);st.buys[t]={contracts:qty,price};
   }else{
     const r=editFutureRebuy(f),st=r.stages[i];
     if(st.done&&t===0)Object.assign(st,{done:false,contracts:null,execPrice:null});
     else if(Array.isArray(st.buys)&&st.buys[t]){st.buys[t]=null;while(st.buys.length&&!st.buys.at(-1))st.buys.pop();if(!st.buys.length)delete st.buys;}
     else return false;
-    if(!r.stages.some(stageTouched))delete r.splits;
+    if(!r.stages.some(stageTouched))delete r.planned;
   }
 }
 function setFutureBuyQty(f,i,t,text){
@@ -224,11 +232,13 @@ function rebuySummary(r){
   const buyAt=x=>x.price>0?x.price:sellAvg||0, rebought=all.reduce((a,x)=>a+x.qty,0), buyValue=all.reduce((a,x)=>a+x.qty*buyAt(x),0);
   const priced=all.filter(x=>x.price>0&&x.qty>0), pq=priced.reduce((a,x)=>a+x.qty,0), buyAvg=pq?priced.reduce((a,x)=>a+x.qty*x.price,0)/pq:null;
   // 남은 재매수 금액. 반 주(평균 손절가의 절반) 미만 자투리는 정수 주로 살 수 없으니 다 산 것으로 본다.
-  const left=sellValue-buyValue, rest=sold&&left>=sellAvg/2?left:0, stored=Math.floor(Number(r.splits)), splits=started&&stored>=1?stored:rebuySplits(stages,sellAvg);
+  const left=sellValue-buyValue, rest=sold&&left>=sellAvg/2?left:0;
   const lastBuy=[...all].reverse().find(x=>x.price>0), start=cur>0?cur:lastBuy?lastBuy.price:sellAvg||0, est=stageEstimates(stages,start);
-  const tranches=rebuyTranches(stages,est,fills,splits,sellValue,rest,x=>x.qty*buyAt(x),splitValue); // 회차별 금액(원)
+  const planned=started&&storedPlan(r,stages)||rebuyPlanned(stages,est,sellAvg);
+  const tranches=rebuyTranches(stages,est,fills,planned,rest,splitValue); // 회차별 금액(원)
+  tranches.forEach(x=>{if(x.done)x.amount=x.qty*(x.execPrice>0?x.execPrice:sellAvg||0);}); // 산 회차는 체결가(없으면 손절 평균가)로
   const plan=stages.map((x,i)=>tranches.reduce((a,y)=>y.i===i?a+y.amount:a,0)); // 단계별 금액(원)
-  return {cuts,stages,plan,est,tranches,sold,rebought,sellValue,buyValue,rest,splits,sellAvg,buyAvg,started,doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,held:Math.max(0,holdShares(r)-sold+rebought)};
+  return {cuts,stages,plan,est,tranches,skipped:rebuySkipped(stages,est,tranches),planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,sellValue,buyValue,rest,sellAvg,buyAvg,started,doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,held:Math.max(0,holdShares(r)-sold+rebought)};
 }
 const rebuyItems = d => { const r=d?.rebuy; return !r||typeof r!=="object"?[]:Array.isArray(r.items)?r.items.filter(x=>x&&typeof x==="object"):[r]; };
 const rebuyPick = () => { const list=rebuyItems(state); return list.find(x=>x.id&&x.id===state.selectedRebuy)||list[0]||null; }; // 화면에 보이는 종목
@@ -301,9 +311,9 @@ function renderRebuy(){
   const holdValue=inQty?qtyIn||"":amount?shown(amount):"", holdPlaceholder=inQty?(amount&&low>0?`≈${won.format(shares)}주`:"예: 500"):(qtyIn&&low>0?`≈${manwon(qtyIn*low/holdScale)}`:"예: 1000");
   const holdHint=(amount&&low>0?`${manwon(amount)} ÷ 신저점 ${P(low)} ≈ ${won.format(shares)}주로 계산합니다.`:qtyIn?`보유 수량 ${won.format(qtyIn)}주로 계산합니다.`:amount?"신저점 가격을 넣으면 보유 금액을 신저점 가격으로 나눈 주 수(정수)로 계산합니다.":`보유 금액(${holdWord})을 넣으면 신저점 가격으로 나눈 주 수(정수)로, 수량(주)을 넣으면 그 주 수로 손절 수량을 계산합니다.`)
     +(inQty&&amount?" 주 수를 넣으면 수량 기준으로 바뀝니다.":!inQty&&qtyIn?" 금액을 넣으면 금액 기준으로 바뀝니다.":"");
-  // 분할 안내: 첫 단계부터 마지막 회차 구간 끝까지 회차 수. 예: 25선부터 32선까지 3분할, 25선부터 42선까지 6분할
-  const trName=x=>`${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":` ${x.t+1}차`}`, lastTr=s.tranches.at(-1), endName=esc(lastTr?s.stages[lastTr.i+(lastTr.step?1:0)]?.name||"":"");
-  const firstPx=Number(s.stages[0]?.price)||0, splitText=!s.sellAvg?"":`${s.tranches.length>1?`${esc(first)}부터 ${endName}까지 ${s.tranches.length}분할`:`${esc(first)}에서 한 번에`} (${!firstPx?`${esc(first)} 기준가 없음`:firstPx<=s.sellAvg?`평균 손절가 ${P(s.sellAvg)} 이하 ${s.splits}단계`:`평균 손절가 ${P(s.sellAvg)}보다 ${esc(first)} 기준가가 높음`})`;
+  // 분할 안내: 회차 수와 범위, 평균 손절가 기준. 예: 5분할 (25선 1차~32선 2차, 평균 손절가 10,000원 이하 회차)
+  const trName=x=>`${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":` ${x.t+1}차`}`, firstTr=s.tranches[0], lastTr=s.tranches.at(-1), firstPx=Number(s.stages[0]?.price)||0;
+  const splitText=!s.sellAvg||!firstTr?"":`${s.tranches.length>1?`${s.tranches.length}분할 (${trName(firstTr)}~${trName(lastTr)}`:`한 번에 (${trName(firstTr)}`}, ${!firstPx?`${esc(first)} 기준가 없음`:firstPx<=s.sellAvg?`평균 손절가 ${P(s.sellAvg)} 이하 회차`:`평균 손절가 ${P(s.sellAvg)}보다 ${esc(first)} 기준가가 높아 ${esc(first)} 회차만`})`;
   const trAt=x=>x.price>0?` · ${x.est?"≈":""}${P(x.price)} 이상`:"";
   const next=!ready?"신저점 가격과 이탈 전 보유 금액(또는 수량)을 입력하면 손절 회차가 계산됩니다."
     :complete?`재매수 완료 · 손절 ${P(s.sellValue)} → 재매수 ${P(s.buyValue)} (${won.format(s.sold)}주 → ${won.format(s.rebought)}주)`
@@ -314,24 +324,26 @@ function renderRebuy(){
   const cutRows=!ready&&!s.doneCuts?"<div class='empty'>기준 입력에 신저점 가격과 이탈 전 보유 금액(또는 수량)을 넣으세요.</div>":(s.started?s.cuts.filter(c=>c.done):s.cuts).map(cutRow).join("")+(s.started?`<div class="stop-note">재매수를 시작해 남은 손절 회차는 멈췄습니다. 재매수 체크를 모두 풀면 다시 보입니다.</div>`:"");
   // 단계별 재매수: 분할 범위 단계(또는 산 단계)는 회차마다 한 줄(첫 줄에 단계 기준가·알림), 나머지 단계는 기준가만 한 줄.
   const stageRows=(st,i)=>{
-    const own=s.tranches.filter(x=>x.i===i), px=Number(st.price)||0, nextName=esc(s.stages[i+1]?.name||"");
+    const own=s.tranches.filter(x=>x.i===i), rows=[...own,...s.skipped.filter(x=>x.i===i).map(x=>({...x,skip:true}))].sort((a,b)=>a.t-b.t), px=Number(st.price)||0, nextName=esc(s.stages[i+1]?.name||"");
     const alert=typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeRebuyEnabled(r,"buys",i),`data-rebuy-alert="buys" data-alert-index="${i}"`,`${st.name} 재매수`,own.length>0&&own.every(x=>x.done)):"";
     const priceInput=`<span class="exec-fields">기준 <input data-stage-price="${i}" type="number" min="0" step="any" value="${opt(px)}" placeholder="${s.est[i]?`≈${usdMode?usd.format(s.est[i]):won.format(Math.round(s.est[i]))}`:"선택"}" aria-label="${esc(st.name)} 기준가">${unitWord}${autoTag(st.name)}</span>${alert}`;
     if(!own.length)return `<div class="sale-row"><label class="check"><input type="checkbox" data-tranche-done="${i}:0">${esc(st.name)}</label><div class="stage-price">${priceInput}</div><div class="shares">${s.sold?"—":"손절 후 계산"}</div><div class="status">대기</div></div>`;
-    return own.map((x,k)=>{
-      const due=!x.done&&x.amount>0&&cur>0&&x.price>0&&cur>=x.price, nextUp=x===nextTr, ref=x.price||cur;
+    return rows.map((x,k)=>{
+      const due=!x.skip&&!x.done&&x.amount>0&&cur>0&&x.price>0&&cur>=x.price, nextUp=x===nextTr, ref=x.price||cur;
       const where=x.step?`${esc(st.name)}→${nextName} ${x.t}/${TRANCHES}`:x.t?"1차와 같은 가격":"";
       const pricePart=k===0?priceInput:`<span class="price">${x.price>0?`${x.est?"≈":""}${P(x.price)}`:"—"}</span><span class="krw">${where}</span>`;
+      // 계획 밖 회차(평균 손절가 위·추정 가격)는 사지 않는다
+      if(x.skip)return `<div class="sale-row"><label class="check"><input type="checkbox" disabled>${trName(x)}</label><div class="stage-price">${pricePart}</div><div class="shares">—<div class="sub">${x.est?"추정 가격이라 제외":s.sellAvg&&x.price>s.sellAvg?"평균 손절가 위":"계획 밖"}</div></div><div class="status">안 삼</div></div>`;
       const shares=x.done?`<span class="exec-fields"><input class="qty" data-tranche-qty="${i}:${x.t}" type="number" min="0" step="1" value="${x.qty}" aria-label="${trName(x)} 재매수 수량">주 <input data-tranche-exec="${i}:${x.t}" type="number" min="0" step="any" value="${opt(x.execPrice)}" placeholder="체결가" aria-label="${trName(x)} 체결가">${unitWord}</span><div class="sub">${amt(1,x.amount)}</div>`
         :!s.sold?"손절 후 계산":x.amount>0?`<span>약 ${wonShort(x.amount)}</span><div class="sub">${ref?`약 ${won.format(Math.max(1,Math.round(x.amount/ref)))}주`:"현재가 넣으면 수량"}</div>`:"—";
       return `<div class="sale-row ${x.done?"done":""} ${due?"due":""}"><label class="check"><input type="checkbox" data-tranche-done="${i}:${x.t}" ${x.done?"checked":""}>${trName(x)}</label><div class="stage-price">${pricePart}</div><div class="shares">${shares}</div><div class="status ${x.done?"done":due||nextUp?"due":""}">${x.done?"매수 완료":due?"재매수 시점":nextUp?"다음 신호":"대기"}</div></div>`;
     }).join("");
   };
-  $("rebuyMain").innerHTML=`<div class="heading"><div><div class="eyebrow">손절 후 재매수${ticker?` · ${esc(ticker)}`:""}${rp?` · ${priceStamp(rp)}`:""}</div><div class="title-row"><h1>${esc(title)}</h1><button class="btn icon-btn" id="rEdit" type="button" aria-label="종목 이름·코드 수정" title="종목 이름·코드 수정">${PENCIL}</button></div><p>신저점 이탈 뒤 ${shown(step)}% 내려갈 때마다 이탈 전 보유의 ${shown(sellPct)}%씩 손절하고, 손절한 금액만큼 되삽니다. ${esc(first)}부터 평균 손절가 이하인 단계가 이어지는 만큼 나누고(없으면 ${esc(first)}만), 단계마다 다음 단계 가격까지 ${TRANCHES}번에 나눠 삽니다.</p></div><button class="btn" id="rSave">변경 저장</button></div><div class="card progress-line">${next}</div>${rp?priceWarning(rp,esc(title)):""}
+  $("rebuyMain").innerHTML=`<div class="heading"><div><div class="eyebrow">손절 후 재매수${ticker?` · ${esc(ticker)}`:""}${rp?` · ${priceStamp(rp)}`:""}</div><div class="title-row"><h1>${esc(title)}</h1><button class="btn icon-btn" id="rEdit" type="button" aria-label="종목 이름·코드 수정" title="종목 이름·코드 수정">${PENCIL}</button></div><p>신저점 이탈 뒤 ${shown(step)}% 내려갈 때마다 이탈 전 보유의 ${shown(sellPct)}%씩 손절하고, 손절한 금액만큼 되삽니다. 단계마다 다음 단계 가격까지 ${TRANCHES}번으로 나눈 회차 중 평균 손절가 이하인 회차에 똑같이 나눠 삽니다(없으면 ${esc(first)} 회차 전부).</p></div><button class="btn" id="rSave">변경 저장</button></div><div class="card progress-line">${next}</div>${rp?priceWarning(rp,esc(title)):""}
     <div class="metrics card"><div class="metric"><label>현재 상태</label><strong>${esc(status)}</strong><small>${ready?`현재 보유 약 ${won.format(s.held)}주 · 이탈 전 ${amount?manwon(amount):`${won.format(shares)}주`}${fromLow!=null?` · 신저점 대비 ${fromLow>0?"+":""}${fromLow.toFixed(1)}%`:""}`:"기준 입력에 신저점·보유 금액(또는 수량)을 넣으세요"}</small></div><div class="metric"><label>손절</label><strong>${won.format(s.sold)}주</strong><small>${s.doneCuts}회${s.sellValue?` · ${P(s.sellValue)}`:""} · 평균 ${s.sellAvg?P(s.sellAvg):"—"}</small></div><div class="metric"><label>재매수 (금액)</label><strong>${usdMode?`${wonShort(s.buyValue)} / ${wonShort(s.sellValue)}`:`${decimal.format(s.buyValue/10000)} / ${decimal.format(s.sellValue/10000)}만원`}</strong><small>${won.format(s.rebought)}주 (판 ${won.format(s.sold)}주) · 평균 ${s.buyAvg?P(s.buyAvg):"—"}${s.buyAvg&&s.sellAvg?` · 손절 평균 대비 ${s.buyAvg>s.sellAvg?"+":""}${((s.buyAvg/s.sellAvg-1)*100).toFixed(1)}%`:""}</small></div></div>
     <div class="control-grid"><section class="card panel"><div class="panel-head"><h2>기준 입력</h2>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeRebuyEnabled(r,"breakdown"),'data-rebuy-alert="breakdown"',"신저점 이탈",s.started,"신저점 이탈"):""}</div><p>${usdMode?"가격은 미국 시세(달러)입니다.":"가격은 국내 상장 ETF 가격(원)입니다."} 현재가는 선택 — 넣으면 도달한 손절 회차와 재매수 시점을 표시합니다. 종목 이름 옆 연필에서 종목 코드를 넣으면 현재가·일선·N선 기준가를 시세로 자동으로 채웁니다.</p><div class="inline-fields"><label class="field"><span>현재가 (${unitWord})${autoTag()}</span><input id="rCurrent" type="number" min="0" step="any" value="${opt(cur)}" placeholder="선택"></label><label class="field"><span>신저점 가격 (${unitWord})</span><input id="rLow" type="number" min="0" step="any" value="${opt(low)}"></label><label class="field"><span>이탈 전 보유</span><div class="hold-input"><input id="rHold" type="number" min="0" step="${inQty?1:"any"}" value="${holdValue}" placeholder="${holdPlaceholder}" aria-label="이탈 전 보유 ${inQty?"수량(주)":`금액(${holdWord})`}"><select id="rHoldUnit" aria-label="보유 입력 단위"><option value="amount"${inQty?"":" selected"}>${holdWord}</option><option value="shares"${inQty?" selected":""}>주</option></select></div></label><label class="field"><span>${esc(lastName)} 가격 (${unitWord})${lastStage?autoTag(lastName):""}</span><input id="rFinal" type="number" min="0" step="any" value="${opt(finalPrice)}" placeholder="선택 · 빈 단계 추정용"></label></div><p class="hint" style="margin:10px 0 0">${holdHint}${priceHint?`<br>${priceHint}`:""}</p></section><section class="card panel"><h2>손절 규칙</h2><p>신저점 대비 ${shown(step)}% 내려갈 때마다 이탈 전 보유의 ${shown(sellPct)}%를 팝니다. 재매수를 체크하면 남은 손절은 멈춥니다.</p><div class="inline-fields"><label class="field"><span>하락 간격 (%)</span><input id="rStep" type="number" min="0.1" max="50" step="0.1" value="${shown(step)}"></label><label class="field"><span>회당 손절 (기존 수량의&nbsp;%)</span><input id="rSell" type="number" min="0.1" max="100" step="0.1" value="${shown(sellPct)}"></label><label class="field"><span>표시 회차</span><input id="rSteps" type="number" min="1" max="60" step="1" value="${Math.floor(Number(r.steps)||30)}"></label></div></section></div>
     <div class="section-heading"><h2>1. 신저점 이탈 손절</h2>${typeof tradeRebuyAllButtons==="function"?tradeRebuyAllButtons("cuts"):""}<span>${s.doneCuts}회 · ${won.format(s.sold)}주 손절</span></div><section class="card table-card"><div class="table-head"><span>회차</span><span>손절가</span><span>손절 수량 · 금액</span><span>상태</span></div><div>${cutRows}</div></section>
-    <div class="section-heading"><h2>2. 단계별 재매수</h2>${typeof tradeRebuyAllButtons==="function"?tradeRebuyAllButtons("buys"):""}<span>${s.doneTranches} / ${s.tranches.length}회 · 분할 ${s.splits}단계${s.started?"(고정)":""} · 단계마다 다음 단계까지 ${TRANCHES}회 · 비운 기준가는 추정(배분 제외)</span><button class="btn mini" id="rStages" type="button">단계 편집</button></div><section class="card table-card stage-table"><div class="table-head"><span>단계 · 회차</span><span>기준가 · 회차 가격</span><span>재매수 금액 · 수량</span><span>상태</span></div><div>${s.stages.map(stageRows).join("")}</div></section>
+    <div class="section-heading"><h2>2. 단계별 재매수</h2>${typeof tradeRebuyAllButtons==="function"?tradeRebuyAllButtons("buys"):""}<span>${s.doneTranches} / ${s.tranches.length}회 · 평균 손절가 이하 회차에 나눔${s.started?"(고정)":""} · 비운 기준가는 추정(배분 제외)</span><button class="btn mini" id="rStages" type="button">단계 편집</button></div><section class="card table-card stage-table"><div class="table-head"><span>단계 · 회차</span><span>기준가 · 회차 가격</span><span>재매수 금액 · 수량</span><span>상태</span></div><div>${s.stages.map(stageRows).join("")}</div></section>
     <div class="reset-row"><button class="btn ghost mini" id="rReset" type="button" ${s.doneCuts||s.started?"":"disabled"}>체크 기록 초기화</button></div>
     <section class="card panel memo" style="margin-top:16px"><div class="memo-head"><h2>메모</h2><span id="rNoteCount">${memoCount(r.note)}</span></div><textarea id="rNote" maxlength="4000" style="min-height:100px">${esc(r.note||"")}</textarea></section>
     <p class="footnote">체크는 기록용입니다. 실제 주문은 증권사에서 직접 실행하세요. 체크하면 손절가·예정 수량이 먼저 기록되니 실제 체결가·수량으로 고치세요. 재매수 시점은 현재가를 넣어야 표시됩니다. 수량은 정수 주로 나누며 수수료·세금은 빼지 않았습니다.</p>`;
@@ -356,12 +368,12 @@ function renderRebuy(){
       if(!(view.sold>0)){alert("손절한 수량이 없습니다. 먼저 손절 회차를 체크하세요.");input.checked=false;return;}
       if(!(tr?.amount>0)){alert(view.rest>0?"이 회차에는 배분된 금액이 없습니다.":"손절한 금액을 모두 재매수했습니다.");input.checked=false;return;}
       if(!(px>0)){alert("현재가(또는 이 단계의 기준가)를 먼저 넣으세요. 그 가격으로 재매수 수량을 계산합니다.");input.checked=false;return;}
-      const r=editRebuy(),st=r.stages[i];if(!view.started)r.splits=view.splits; // 첫 재매수 때 분할 단계 수를 고정
+      const r=editRebuy(),st=r.stages[i];if(!view.started)r.planned=view.planKeys; // 첫 재매수 때 회차 계획을 고정
       if(!Array.isArray(st.buys))st.buys=[];while(st.buys.length<t)st.buys.push(null);st.buys[t]={shares:Math.max(1,Math.round(tr.amount/px)),price:px};}
     else{const r=editRebuy(),st=r.stages[i];
       if(st.done)Object.assign(st,{done:false,shares:null,execPrice:null}); // 옛 통째 기록
       else if(Array.isArray(st.buys)){st.buys[t]=null;while(st.buys.length&&!st.buys.at(-1))st.buys.pop();if(!st.buys.length)delete st.buys;}
-      if(!r.stages.some(stageTouched))delete r.splits;}
+      if(!r.stages.some(stageTouched))delete r.planned;}
     save();renderRebuy();});
   // 회차 체결 수량·가격: 옛 통째 기록은 단계의 shares·execPrice, 새 기록은 buys[t]의 shares·price
   const fillOf=(key,el)=>{const [i,t]=el.dataset[key].split(":").map(Number),st=editRebuy().stages[i];return !st?null:st.done?[st,"execPrice"]:st.buys?.[t]?[st.buys[t],"price"]:null;};
@@ -373,7 +385,7 @@ function renderRebuy(){
     if(!names.length){alert("단계를 하나 이상 적어 주세요.");return;}
     const lost=list.filter(x=>stageTouched(x)&&!names.includes(x.name));if(lost.length){alert(`재매수를 체크한 단계(${lost.map(x=>x.name).join(", ")})는 뺄 수 없습니다. 먼저 체크를 푸세요.`);return;}
     const r=editRebuy();r.stages=names.map(name=>r.stages.find(x=>x.name===name)||{name,price:0,done:false,execPrice:null,shares:null});save();renderRebuy();};
-  $("rReset").onclick=()=>{if(!confirm(`${title} 손절·재매수 체크 기록을 모두 지울까요?\n신저점·보유 금액(수량)·규칙·단계·메모는 남깁니다.`))return;const r=editRebuy();r.cuts=[];r.stages.forEach(x=>{Object.assign(x,{done:false,shares:null,execPrice:null});delete x.buys;});delete r.splits;save();renderRebuy();};
+  $("rReset").onclick=()=>{if(!confirm(`${title} 손절·재매수 체크 기록을 모두 지울까요?\n신저점·보유 금액(수량)·규칙·단계·메모는 남깁니다.`))return;const r=editRebuy();r.cuts=[];r.stages.forEach(x=>{Object.assign(x,{done:false,shares:null,execPrice:null});delete x.buys;});delete r.planned;save();renderRebuy();};
   const note=$("rNote");note.oninput=()=>$("rNoteCount").textContent=memoCount(note.value);
   onEdit("#rNote",v=>{editRebuy().note=v;});
   $("rSave").onclick=()=>{if(note.value!==(r.note||""))editRebuy().note=note.value;save();renderRebuy();};
