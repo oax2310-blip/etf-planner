@@ -50,9 +50,9 @@ function tradePriceBasis(obj,key,label,auto){
   const value=Number(obj[key]),mark=Number(obj.auto?.[key]);
   return auto&&maKey(label)?["line",maKey(label),value>0&&mark>0&&value!==mark?value:null]:["price",value];
 }
-// 재매수 단계의 알림 이름: N일선·N주선·N개월선, 60분 N선은 그대로, 직접 정한 다른 이름은 'N단계'.
+// 재매수 단계의 알림 이름: N일선·N주선·N개월선, N선(60분봉)은 그대로, 직접 정한 다른 이름은 'N단계'.
 // 수집 작업(데이터 저장소 ma_alerts.py TRADE_LABEL_RE)이 라벨을 다시 검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않으므로 형식을 바꾸면 그쪽도 같이.
-const tradeStageName = (name,i) => maKey(name)||/^60분 [1-9]\d{0,2}선$/.test(name)&&name||`${i+1}단계`;
+const tradeStageName = (name,i) => maKey(name)||/^[1-9]\d{0,2}선$/.test(name)&&name||`${i+1}단계`;
 function buildTradeAlertRules(data,priceDoc){
   const d=JSON.parse(JSON.stringify(data||{})),prices=priceDoc?(priceDoc.format===PRICE_FORMAT?priceDoc:slimPrices(priceDoc)):null;
   if(prices)fillPrices(d,prices);

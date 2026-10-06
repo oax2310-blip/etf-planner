@@ -64,7 +64,7 @@ test('손절: 하락 간격이 커도 손절가가 0원 아래로 내려가지 �
   assert.ok(cuts.every(c => c.price > 0));
 });
 
-const STAGES = ['60분 25선', '60분 32선', '60분 42선', '60분 60선', '60분 80선', '60분 125선', '60분 150선', '25일선', '32일선', '42일선', '60일선', '80일선', '125일선', '150일선'];
+const STAGES = ['25선', '32선', '42선', '60선', '80선', '125선', '150선', '25일선', '32일선', '42일선', '60일선', '80일선', '125일선', '150일선'];
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} ≠ ${expected}`);
 const nearAll = (actual, expected) => { assert.equal(actual.length, expected.length); actual.forEach((v, i) => near(v, expected[i])); };
 
@@ -160,19 +160,19 @@ test('예전 기본 5단계를 손대지 않은 기록은 14단계로 보고, �
   const old = ['25분봉', '60분봉', '240분봉', '일봉', '주봉'].map(name => ({name, price: 0, done: false, execPrice: null, shares: null}));
   assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: old})).stages).map(x => x.name), STAGES);
   const used = old.map((x, i) => i ? x : {...x, done: true, shares: 2, execPrice: 9500});
-  assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: used})).stages).map(x => x.name), ['60분 25선', '60분 60선', '60분 240선', '일봉', '주봉']);
+  assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: used})).stages).map(x => x.name), ['25선', '60선', '240선', '일봉', '주봉']);
 });
 
-test('옛 단계 이름 N분봉(60분봉 N이평선)은 읽을 때 60분 N선으로 보고 기록은 처음 고칠 때 바꾼다', () => {
+test('옛 단계 이름 N분봉(60분봉 N이평선)은 읽을 때 N선으로 보고 기록은 처음 고칠 때 바꾼다', () => {
   const ctx = load();
   const stages = ['25분봉', '150분봉', '25일선', '0분봉', '내 단계'].map((name, i) => ({name, price: 9000 + i, done: !i, execPrice: i ? null : 9100, shares: i ? null : 3, ...(i === 1 ? {notify: true} : {})}));
   const r = {id: 'demo', ...plan(ctx, {stages})}, before = JSON.stringify(r);
-  assert.deepEqual(plain(ctx.rebuySummary(r).stages).map(x => x.name), ['60분 25선', '60분 150선', '25일선', '0분봉', '내 단계']);
+  assert.deepEqual(plain(ctx.rebuySummary(r).stages).map(x => x.name), ['25선', '150선', '25일선', '0분봉', '내 단계']);
   assert.equal(JSON.stringify(r), before, '읽기만 하면 기록을 바꾸지 않는다');
   ctx.state = {rebuy: {items: [r]}, selectedRebuy: 'demo'};
   const edited = ctx.editRebuy();
   assert.equal(edited, r);
-  assert.deepEqual(r.stages.map(x => x.name), ['60분 25선', '60분 150선', '25일선', '0분봉', '내 단계']);
+  assert.deepEqual(r.stages.map(x => x.name), ['25선', '150선', '25일선', '0분봉', '내 단계']);
   assert.deepEqual([r.stages[0].done, r.stages[0].execPrice, r.stages[0].shares, r.stages[1].price, r.stages[1].notify], [true, 9100, 3, 9001, true], '이름만 바꾸고 체결·기준가·알림은 그대로');
   ctx.target = r;
   assert.equal(vm.runInContext('stagesOf(target)', ctx), r.stages, '바꿀 이름이 없으면 저장된 배열 그대로');
