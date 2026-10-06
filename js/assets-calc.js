@@ -89,6 +89,27 @@ function purchaseSummary(plan){
   return {count:stages.length,done:done.length,planned:stages.reduce((n,s)=>n+amount(s),0),
     actual:done.reduce((n,s)=>n+Math.max(0,finite(s.actual)??amount(s)),0),remaining:stages.filter(s=>!s.done).reduce((n,s)=>n+amount(s),0)};
 }
+// 가격 구간 분할매수(상승·하락 모두): 시작 가격 → 목표 가격을 count회로 고르게 나눈 가격(1차 = 시작 가격, 마지막 = 목표 가격)마다 같은 수량을 산다.
+// 매수할 금액(budget, 만원 — 화면은 목표 비중 × 기준 총자산 − 지금 평가액)을 회차 가격 평균으로 나눈 수량을 최소 단위(unit: 주식 1주, 비트코인 0.00000001)로 내림해
+// 똑같이 나누고, 남는 단위는 싼 회차부터 하나씩 더한다(합계가 매수할 금액을 넘지 않음). 가격은 달러 0.01·원 1원 단위로 반올림하고 달러는 fx(원/달러)로 만원 환산.
+// 돌려주는 값: {stages:[{price,shares,amount(만원)}], step(회차 사이 가격 차), shares(합계), cost(통화 금액), amount(만원), money(매수할 금액, 통화)}
+// 또는 {error}: price(가격 없음)·count(1~PURCHASE_MAX_STAGES 밖)·fx(달러인데 환율 없음)·budget(매수할 금액 없음)·few(회차마다 최소 단위도 못 삼, units 함께)
+const PURCHASE_MAX_STAGES = 50;
+function purchaseLadder({budget, start, end, count, currency="KRW", fx=null, unit=1}){
+  const usd=currency==="USD", rate=usd?plus(fx):1, n=finite(count);
+  if(!plus(start)||!plus(end))return {error:"price"};
+  if(!Number.isInteger(n)||n<1||n>PURCHASE_MAX_STAGES)return {error:"count"};
+  if(!rate)return {error:"fx"};
+  if(!plus(budget))return {error:"budget"};
+  const round=v=>usd?Math.round(v*100)/100:Math.round(v), dec=unit<1?8:0, fix=v=>Number(v.toFixed(dec));
+  const levels=Array.from({length:n},(_,i)=>round(n===1?start:start+(end-start)*i/(n-1)));
+  const money=budget*1e4/rate, avg=levels.reduce((s,p)=>s+p,0)/n, units=Math.floor(money/avg/unit+1e-9);
+  if(units<n)return {error:"few", units, money};
+  const each=Math.floor(units/n), cheap=new Set(levels.map((p,i)=>i).sort((a,b)=>levels[a]-levels[b]||a-b).slice(0,units-each*n));
+  const stages=levels.map((price,i)=>{const shares=fix((each+(cheap.has(i)?1:0))*unit);return {price,shares,amount:Math.round(price*shares*rate/100)/100};});
+  const cost=stages.reduce((s,x)=>s+x.price*x.shares,0);
+  return {stages, step:n>1?round((end-start)/(n-1)):0, shares:fix(units*unit), cost, amount:cost*rate/1e4, money};
+}
 // 화면에 쓰는 합계. base = 비중 기준(직접 넣은 기준 총자산, 없으면 종목+현금 합계)
 function allocationSummary(alloc, prices){
   const fx=assetFx(prices,alloc), items=new Map(), groups=new Map(), classes=new Map(), sections=new Map(), targets=allocationTargets(alloc);

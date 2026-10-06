@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLadder,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -44,6 +44,34 @@ test('분할매수: 실제 체결 금액과 남은 회차 예정액을 따로 �
   assert.deepEqual(c.purchaseSummary(plan),{count:4,done:2,planned:130,actual:40,remaining:80});
   assert.deepEqual(c.purchaseSummary(null),{count:0,done:0,planned:0,actual:0,remaining:0});
   assert.equal(c.purchaseSummary({stages:[{amount:-10},{amount:'bad'},{amount:10,done:true,actual:-1}]}).actual,0,'음수·잘못된 금액은 합계에 더하지 않는다');
+});
+
+test('분할매수 가격 구간: 시작 → 목표 가격을 고르게 나눠 같은 수량씩 사고, 남는 수량은 싼 회차부터 더해 매수할 금액을 넘지 않는다', () => {
+  // 매수할 금액 600만원, 환율 1,000원 → $6,000. $30 → $32 5회(30·30.5·31·31.5·32, 평균 $31) → 193주 = 38주 × 5 + 3주(싼 회차부터)
+  const r = c.purchaseLadder({budget:600, start:30, end:32, count:5, currency:'USD', fx:1000});
+  assert.deepEqual(r.stages.map(s => s.price), [30, 30.5, 31, 31.5, 32]);
+  assert.deepEqual(r.stages.map(s => s.shares), [39, 39, 39, 38, 38]);
+  assert.equal(r.shares, 193); assert.equal(r.step, 0.5); near(r.cost, 5981.5, '달러 합계');
+  assert.ok(r.cost <= r.money, '합계가 매수할 금액 이하');
+  assert.equal(r.stages[0].amount, 117, '회차 예정액은 가격 × 수량 × 환율(만원)');
+  near(r.amount, r.cost * 1000 / 1e4, '합계 만원 환산');
+  // 하락 분할(원화): 가격은 1원 단위, 남는 수량은 아래(싼) 회차에
+  const d = c.purchaseLadder({budget:100, start:50000, end:40000, count:4});
+  assert.deepEqual(d.stages.map(s => [s.price, s.shares]), [[50000,5],[46667,5],[43333,6],[40000,6]]);
+  assert.equal(d.step, -3333);
+  // 비트코인은 0.00000001 단위
+  const b = c.purchaseLadder({budget:100, start:100, end:120, count:3, currency:'USD', fx:1000, unit:1e-8});
+  assert.deepEqual(b.stages.map(s => s.shares), [3.03030303, 3.03030303, 3.03030303]);
+  assert.ok(b.cost <= b.money);
+  assert.deepEqual(c.purchaseLadder({budget:10, start:1000, end:2000, count:1}).stages, [{price:1000, shares:100, amount:10}], '1회면 시작 가격에서 한 번에');
+  assert.equal(c.purchaseLadder({budget:0, start:1, end:2, count:2}).error, 'budget', '목표 이상이면 살 금액 없음');
+  assert.equal(c.purchaseLadder({budget:-5, start:1, end:2, count:2}).error, 'budget');
+  assert.equal(c.purchaseLadder({budget:10, start:30, end:32, count:5, currency:'USD'}).error, 'fx', '달러인데 환율이 없으면 계산하지 않음');
+  assert.equal(c.purchaseLadder({budget:10, start:null, end:32, count:5}).error, 'price');
+  assert.equal(c.purchaseLadder({budget:10, start:1, end:2, count:0}).error, 'count');
+  assert.equal(c.purchaseLadder({budget:10, start:1, end:2, count:2.5}).error, 'count');
+  assert.equal(c.purchaseLadder({budget:10, start:1, end:2, count:51}).error, 'count');
+  assert.deepEqual(c.purchaseLadder({budget:1, start:30, end:32, count:5, currency:'USD', fx:1000}), {error:'few', units:0, money:10}, '회차마다 1주도 못 사면 나누지 않음');
 });
 
 test('분할매수 계획은 JSON 복원과 기기 간 병합에서 체결 기록을 보존하고 보유량·조정 기록과 독립적이다', () => {
