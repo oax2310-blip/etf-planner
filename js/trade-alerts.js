@@ -14,12 +14,12 @@ function setTradePlanAlert(p,i,on){const n=editTradeNotify(p);if(i===0)n.start=o
 function setTradePlanAll(p,on){Object.assign(editTradeNotify(p),{start:on,sales:on});delete p.notify.saleOverrides;}
 function setTradeLevelAll(f,on){editTradeNotify(f).levels=on;f.levels.forEach(l=>delete l.notify);}
 function setTradeRebuyAlert(r,kind,i,on){
-  if(kind==="buys"){const s=stagesOf(r)[i];if(s)s.notify=on;return;}
+  if(kind==="buys"){const s=Array.isArray(r.stages)?r.stages[i]:null;if(s)s.notify=on;return;} // 저장된 단계에(stagesOf는 옛 이름이면 사본) — r은 editRebuy()로 이름을 바꾼 기록
   const n=editTradeNotify(r);if(i==null)n[kind]=on;else(n[kind+"Overrides"]??={})[i]=on;
 }
 function setTradeRebuyAll(r,kind,on){
   editTradeNotify(r)[kind]=on;delete r.notify[kind+"Overrides"];
-  if(kind==="buys")stagesOf(r).forEach(s=>delete s.notify);
+  if(kind==="buys"&&Array.isArray(r.stages))r.stages.forEach(s=>delete s.notify);
 }
 // lead: 가격 칸 옆이 아닌 곳(카드 제목 줄 등)에 둘 때 글자 앞에 붙일 이름(예: "신저점 이탈" → "신저점 이탈 알림 OFF")
 function tradeAlertToggle(on,attrs,name,done=false,lead=""){
@@ -50,6 +50,9 @@ function tradePriceBasis(obj,key,label,auto){
   const value=Number(obj[key]),mark=Number(obj.auto?.[key]);
   return auto&&maKey(label)?["line",maKey(label),value>0&&mark>0&&value!==mark?value:null]:["price",value];
 }
+// 재매수 단계의 알림 이름: N일선·N주선·N개월선, N선(60분봉, 옛 이름 N분봉도)은 그대로, 직접 정한 다른 이름은 'N단계'.
+// 수집 작업(데이터 저장소 ma_alerts.py TRADE_LABEL_RE)이 라벨을 다시 검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않으므로 형식을 바꾸면 그쪽도 같이.
+const tradeStageName = (name,i) => autoKey(name)||`${i+1}단계`;
 function buildTradeAlertRules(data,priceDoc){
   const d=JSON.parse(JSON.stringify(data||{})),prices=priceDoc?(priceDoc.format===PRICE_FORMAT?priceDoc:slimPrices(priceDoc)):null;
   if(prices)fillPrices(d,prices);
@@ -82,25 +85,24 @@ function buildTradeAlertRules(data,priceDoc){
       for(const c of s.cuts)if(!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1))addF(`cut:${c.k-1}`,`달러선물 손절 ${c.k}회`,c.price,"down",[r.lowPrice,r.floorPrice,s.cuts.length,c.k]);
     }
     for(const [i,x] of s.stages.entries())if(!x.done&&s.plan[i]>0&&futureRebuyAlertEnabled(f,"buys",`stage:${i}`)){
-      const mark=Number(r.auto?.[x.name]),basis=maKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
-      addF(`buy:stage:${i}`,`달러선물 재매수 ${x.name}`,x.price,"up",basis);
+      const mark=Number(r.auto?.[autoMark(x.name)]),basis=autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
+      addF(`buy:stage:${i}`,`달러선물 재매수 ${tradeStageName(x.name,i)}`,x.price,"up",basis);
     }
     for(const l of s.lots)if(l.open&&futureRebuyAlertEnabled(f,"deadlines",l.k-1))addF(`deadline:${l.k-1}`,`달러선물 ${l.k}회 손절 환율 복귀`,l.price,"up",[l.k,l.price]);
   }
   for(const [ri,r] of rebuyItems(d).entries()){
-    const ticker=String(r.ticker||"").trim().toUpperCase(),q=stockEntry(prices,ticker);
-    if(!ticker||q&&q.kind!=="국내")continue;
+    const ticker=String(r.ticker||"").trim().toUpperCase(),q=stockEntry(prices,ticker),kind=usTicker(ticker)?"해외":"국내"; // 미국 종목은 달러 시세로
+    if(!ticker||q&&q.kind!==kind)continue;
     const key=String(r.id||`legacy-${ri}`),s=rebuySummary(r),ready=Number(r.lowPrice)>0&&holdShares(r)>0;
-    const addR=(suffix,label,price,condition,basis)=>add(`trade:rebuy:${key}:${suffix}`,ticker,label,price,condition,basis);
+    const addR=(suffix,label,price,condition,basis)=>add(`trade:rebuy:${key}:${suffix}`,ticker,label,price,condition,basis,"stocks",kind);
     if(ready&&!s.started){
       if(tradeRebuyEnabled(r,"breakdown"))addR("breakdown","재매수 신저점 이탈",r.lowPrice,"below",[Number(r.lowPrice)]);
       for(const c of s.cuts)if(!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1))addR(`cut:${c.k-1}`,`재매수 손절 ${c.k}회`,c.price,"down",[Number(r.lowPrice),Number(r.stepPct)||1,c.k]);
     }
     for(const [i,x] of s.stages.entries())if(!x.done&&s.plan[i]>0&&tradeRebuyEnabled(r,"buys",i)){
-      const name=maKey(x.name)||/^\d{1,3}분봉$/.test(x.name)&&x.name||`${i+1}단계`;
-      const mark=Number(r.auto?.[x.name]),basis=maKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
+      const mark=Number(r.auto?.[autoMark(x.name)]),basis=autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];
       // 비운 가격은 배분을 위한 추정값이다. 알림 기준으로 사용하지 않는다.
-      addR(`buy:${encodeURIComponent(x.name)}:${i}`,`재매수 ${name}`,x.price,"up",basis);
+      addR(`buy:${encodeURIComponent(x.name)}:${i}`,`재매수 ${tradeStageName(x.name,i)}`,x.price,"up",basis);
     }
     for(const l of s.lots)if(l.open&&tradeRebuyEnabled(r,"deadlines",l.k-1))addR(`deadline:${l.k-1}`,`재매수 ${l.k}회 기한`,l.price,"up",[l.price,l.k]);
   }

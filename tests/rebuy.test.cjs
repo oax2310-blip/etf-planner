@@ -6,10 +6,12 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
 
-// 화면이 쓰는 기준선 이름 판정(maKey)은 prices.js 것을 그대로 쓴다
-const maKey = vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8').match(/^function maKey\(.*$/m)[0] + ';maKey');
+// 화면이 쓰는 기준선 이름 판정(maKey·hourKey·autoKey)은 prices.js 것을 그대로 쓴다
+const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8');
+const {maKey, hourKey, autoKey, usTicker} = vm.runInNewContext(['function maKey\\(', 'function hourKey\\(', 'const autoKey ', 'const usTicker ']
+  .map(head => pricesSource.match(new RegExp(`^${head}.*$`, 'm'))[0]).join('\n') + '\n({maKey, hourKey, autoKey, usTicker})');
 
-const load = () => { const context = vm.createContext({}); vm.runInContext(source, context); return context; };
+const load = () => { const context = vm.createContext({usTicker}); vm.runInContext(source, context); return context; };
 const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
 const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
@@ -64,11 +66,11 @@ test('손절: 하락 간격이 커도 손절가가 0원 아래로 내려가지 �
   assert.ok(cuts.every(c => c.price > 0));
 });
 
-const STAGES = ['25분봉', '32분봉', '42분봉', '60분봉', '80분봉', '125분봉', '150분봉', '25일선', '32일선', '42일선', '60일선', '80일선', '125일선', '150일선'];
+const STAGES = ['25선', '32선', '42선', '60선', '80선', '125선', '150선', '25일선', '32일선', '42일선', '60일선', '80일선', '125일선', '150일선'];
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} ≠ ${expected}`);
 const nearAll = (actual, expected) => { assert.equal(actual.length, expected.length); actual.forEach((v, i) => near(v, expected[i])); };
 
-test('재매수: 기본 단계는 분봉 7개 + 일선 7개, 150일선 가격이 없으면 손절 금액을 14단계에 똑같이 나눈다', () => {
+test('재매수: 기본 단계는 60분봉 이평선 7개 + 일선 7개, 150일선 가격이 없으면 손절 금액을 14단계에 똑같이 나눈다', () => {
   const ctx = load();
   const r = plan(ctx, {cuts: [{shares: 5, price: 9900}, {shares: 5, price: 9800}, {shares: 7, price: 9700}]});
   const s = ctx.rebuySummary(r);
@@ -160,7 +162,22 @@ test('예전 기본 5단계를 손대지 않은 기록은 14단계로 보고, �
   const old = ['25분봉', '60분봉', '240분봉', '일봉', '주봉'].map(name => ({name, price: 0, done: false, execPrice: null, shares: null}));
   assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: old})).stages).map(x => x.name), STAGES);
   const used = old.map((x, i) => i ? x : {...x, done: true, shares: 2, execPrice: 9500});
-  assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: used})).stages).map(x => x.name), old.map(x => x.name));
+  assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: used})).stages).map(x => x.name), ['25선', '60선', '240선', '일봉', '주봉']);
+});
+
+test('옛 단계 이름 N분봉(60분봉 N이평선)은 읽을 때 N선으로 보고 기록은 처음 고칠 때 바꾼다', () => {
+  const ctx = load();
+  const stages = ['25분봉', '150분봉', '25일선', '0분봉', '내 단계'].map((name, i) => ({name, price: 9000 + i, done: !i, execPrice: i ? null : 9100, shares: i ? null : 3, ...(i === 1 ? {notify: true} : {})}));
+  const r = {id: 'demo', ...plan(ctx, {stages})}, before = JSON.stringify(r);
+  assert.deepEqual(plain(ctx.rebuySummary(r).stages).map(x => x.name), ['25선', '150선', '25일선', '0분봉', '내 단계']);
+  assert.equal(JSON.stringify(r), before, '읽기만 하면 기록을 바꾸지 않는다');
+  ctx.state = {rebuy: {items: [r]}, selectedRebuy: 'demo'};
+  const edited = ctx.editRebuy();
+  assert.equal(edited, r);
+  assert.deepEqual(r.stages.map(x => x.name), ['25선', '150선', '25일선', '0분봉', '내 단계']);
+  assert.deepEqual([r.stages[0].done, r.stages[0].execPrice, r.stages[0].shares, r.stages[1].price, r.stages[1].notify], [true, 9100, 3, 9001, true], '이름만 바꾸고 체결·기준가·알림은 그대로');
+  ctx.target = r;
+  assert.equal(vm.runInContext('stagesOf(target)', ctx), r.stages, '바꿀 이름이 없으면 저장된 배열 그대로');
 });
 
 test('재매수 기한: 이미 되산 분량은 가격이 와도 기한 도달이 아니다', () => {
@@ -243,8 +260,9 @@ function ui(state = {}, env = {}) {
   let n = 0;
   const ctx = vm.createContext({
     state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
-    esc: v => String(v ?? ''), money: v => `${v}원`, won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
-    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '', maKey, ...env,
+    esc: v => String(v ?? ''), money: v => `${v}원`, priceText: (v, currency) => currency === 'USD' ? `$${v}` : `${v}원`,
+    usd: new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}), won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
+    shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '', maKey, hourKey, autoKey, usTicker, ...env,
   });
   vm.runInContext(source, ctx);
   ctx.renderRebuy();
@@ -279,25 +297,40 @@ test('제목: 작은 글씨에 손절 후 재매수·종목 코드, 큰 글씨(h
   assert.doesNotMatch(els.rebuyMain.innerHTML, /id="rName"|id="rTicker"/, '이름·코드는 연필 창에서만 고친다');
 });
 
-test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일선 기준가 이름 옆에 작은 (자동)', () => {
+test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일선·N선 기준가 이름 옆에 작은 (자동)', () => {
   const tag = '<small class="auto-tag">(자동)</small>', count = html => html.split(tag).length - 1;
   const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
   const view = (item, env) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', stages, ...item}]}}, env).els.rebuyMain.innerHTML;
   const domestic = () => ({kind: '국내', asOf: '2026-10-01', ma: {}}), foreign = () => ({kind: '해외', asOf: '2026-10-01', ma: {}});
-  // 기본 단계 14개 중 N일선 7개 + 현재가 + 마지막 단계(150일선) 가격 칸. 분봉 단계에는 붙이지 않는다
+  // 기본 단계 14개(N선 7개·N일선 7개) + 현재가 + 마지막 단계(150일선) 가격 칸
   let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
-  assert.equal(count(html), 9);
+  assert.equal(count(html), 16);
   assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150일선 가격 (원)${tag}</span>`));
-  assert.ok(html.includes(`aria-label="150일선 기준가">원${tag}`) && !html.includes(`aria-label="25분봉 기준가">원${tag}`));
+  assert.ok(html.includes(`aria-label="150일선 기준가">원${tag}`) && html.includes(`aria-label="25선 기준가">원${tag}`));
   // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
   html = view({ticker: '900001'}, {priceData: {stocks: {}}});
-  assert.equal(count(html), 9);
-  assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·일선 기준가를 채웁니다\./);
+  assert.equal(count(html), 16);
+  assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·일선·N선 기준가를 채웁니다\./);
   assert.doesNotMatch(html, /시세 파일에 아직 없는/);
-  // 채우지 않는 경우: 해외 종목, 종목 코드 없음, 시세 파일을 못 읽음
+  // 채우지 않는 경우: 국내 코드인데 해외 시세(종류가 다름), 종목 코드 없음, 시세 파일을 못 읽음
   assert.equal(count(view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: foreign})), 0);
   assert.equal(count(view({}, {priceData: {stocks: {}}, stockEntry: domestic})), 0);
   assert.equal(count(view({ticker: '900001'}, {})), 0);
+});
+
+test('미국 종목: 가격·금액은 달러로, 보유 금액은 달러로 나눠 주 수를 계산하고 시세로 채우는 칸에 (자동)', () => {
+  const tag = '<small class="auto-tag">(자동)</small>', count = html => html.split(tag).length - 1;
+  const ctx = load(), hold = r => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
+  assert.deepEqual([hold({ticker: 'SPY', lowPrice: 500, amount: 10000}), hold({ticker: '900001', lowPrice: 10000, amount: 1000}), hold({ticker: 'A005930', lowPrice: 50000, amount: 100})],
+    [20, 1000, 20], '미국은 달러 ÷ 가격, 국내는 만원 × 10,000 ÷ 가격');
+  const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
+  const item = {id: 'a', name: '테스트 미국 ETF', ticker: 'spy', lowPrice: 500, amount: 10000, currentPrice: 480.25, cuts: [{shares: 2, price: 495}], stages};
+  const html = ui({rebuy: {items: [item]}}, {priceData: {stocks: {}}, stockEntry: () => ({kind: '해외', asOf: '2026-10-01', ma: {}})}).els.rebuyMain.innerHTML;
+  assert.equal(count(html), 16);
+  assert.match(html, /가격은 미국 시세\(달러\)입니다\./);
+  assert.ok(html.includes(`현재가 (달러)${tag}</span>`) && html.includes('신저점 가격 (달러)</span>') && html.includes('>달러</option>'));
+  assert.ok(html.includes('$495') && html.includes(`aria-label="25선 기준가">달러${tag}`));
+  assert.doesNotMatch(html, /만원|\(원\)/);
 });
 
 test('종목 목록: 옛 기록(rebuy에 종목 하나)은 한 종목으로 보여 주고, 처음 고칠 때만 {items:[…]}로 바꾼다', () => {
