@@ -35,7 +35,8 @@
     예전 buyMode='sellPrice'·returns 기록은 futureRebuyStages가 첫 미완료 단계에 합쳐 읽고 editFutureRebuy가 옮김. 체크로 보유 월물·정산손익을 바꾸지 말 것.
     현재가·일선 단계는 보유 근월물 시세, 신저점·하단은 직접. 알림은 futures.rebuy.notify에 입력할 때만(단계는 stage:i — 그 단계 1·2·3차 회차 모두, 옛 deadlines는 읽지 않음).
   - 연결 알림은 plans[].notify(첫 매도 start·회차 sales와 saleOverrides), futures.notify.levels·levels[].notify, rebuy.items[].notify(이탈 breakdown·손절 cuts·재매수 buys, 손절 회차 Overrides — 옛 기한 deadlines는 읽지 않음)·stages[].notify(그 단계 1·2·3차 회차 모두)에 버튼을 누를 때만 저장. 완료 회차는 제외. trade-alerts.js의 buildTradeAlertRules를 비공개 수집 작업도 prices.js·rebuy.js와 함께 실행해 같은 기준가·배분을 사용.
-    분할매수 회차 알림은 자산 기록 buyPlan.notify.stages(전체)·stages[].notify(회차)에 버튼을 누를 때만 저장하고, 규칙은 assets-calc.js purchaseAlertRules(수집 작업이 etf-planner-assets.json에 그대로 실행, 알림 켠 종목은 장중 실행마다 종가 조회 — kis_prices.py purchase_alert_tickers).
+    분할매수 회차 알림은 자산 기록 buyPlan.notify.stages(전체)·stages[].notify(직접 입력 회차)·notify.keys[회차 키](이동평균선 돌파)에 버튼을 누를 때만 저장하고, 규칙은 assets-calc.js purchaseAlertRules(수집 작업이 etf-planner-assets.json에 그대로 실행 — 이동평균선 돌파 종목은 전체 시세·60분봉(purchase_line_plans), 직접 입력 알림 종목은 장중 종가(purchase_alert_tickers)).
+    분할매수 이동평균선 돌파의 이동평균은 메인 시세(sync.js priceData)의 ma — 단계 이름(N선·N일선)·회차 규칙은 assets-calc.js purchaseLineLevels(재매수 trancheLevels와 같은 3분할, 목표 가격 미만 + 목표가 회차).
     수집 작업의 ma_alerts.py _rule이 규칙(quoteGroup·quoteKind·label)을 다시 검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않는다 — 새 시세 종류(kind)·알림 라벨을 만들면 데이터 저장소의 그 검증(TRADE_LABEL_RE 포함)도 같이 고칠 것.
   - 기준선 알림은 state.alerts={rules:[{id,ticker,period,unit,tolerancePct,enabled}],…수신 설정}. alerts는 입력할 때만 만들고 마지막 규칙을 지워도 rules:[]로 남김.
     미국 기준 한국장 재알림은 alerts.krOpenReminder=true로 켜며 기본은 OFF. 밤사이 발생한 미국 종목 신호를 한국장 09:45 이후 기준별 한 번 재발송(발송·휴장 확인·대기 이력은 비공개 수집 작업).
@@ -98,9 +99,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=33"></script>
-  <link rel="stylesheet" href="css/app.css?v=33" />
-  <link rel="stylesheet" href="css/purchases.css?v=33" />
+  <script src="js/theme.js?v=34"></script>
+  <link rel="stylesheet" href="css/app.css?v=34" />
+  <link rel="stylesheet" href="css/purchases.css?v=34" />
 </head>
 <body>
   <header class="top">
@@ -148,21 +149,24 @@
       <div id="purchaseSearchBox"><input type="search" id="purchaseSearch" placeholder="이름·종목 코드·그룹으로 검색" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-labelledby="purchaseItemLabel" aria-controls="purchaseItemList" /><div id="purchaseItemList" class="purchase-pick" role="listbox" aria-labelledby="purchaseItemLabel"></div></div>
       <div id="purchasePicked" class="purchase-picked" hidden></div><input type="hidden" name="item" />
       <small class="field-hint">자산 배분의 종목과 연결됩니다. 이름·목표 비중은 자산 배분의 종목별에서 수정하세요.</small></div>
-    <details class="purchase-ladder" id="purchaseLadder"><summary>가격 구간으로 회차 계산 <small>목표 비중까지 시작 → 목표 가격을 몇 회로 나눠 살지</small></summary>
+    <div class="purchase-mode" role="radiogroup" aria-label="매수 방식"><label><input type="radio" name="mode" value="lines" checked /> 이동평균선 돌파</label><label><input type="radio" name="mode" value="manual" /> 직접 입력</label></div>
+    <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-ladder-grid">
-        <label class="field"><span>매수 목표 비중 (%)</span><input name="ladderTarget" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
-        <label class="field"><span>시작 가격 (<i data-ladder-cur>원</i>)</span><input name="ladderStart" type="number" min="0" step="any" inputmode="decimal" /><small class="field-hint" id="ladderStartNote"></small></label>
-        <label class="field"><span>목표 가격 (<i data-ladder-cur>원</i>)</span><input name="ladderEnd" type="number" min="0" step="any" inputmode="decimal" /></label>
-        <label class="field"><span>분할 횟수</span><input name="ladderCount" type="number" min="1" max="50" step="1" inputmode="numeric" /></label>
-        <label class="field" id="ladderCurrencyField" hidden><span>통화</span><select name="ladderCurrency"><option value="KRW">원화(KRW)</option><option value="USD">달러(USD)</option></select></label>
+        <label class="field"><span>단계</span><select name="lineSet"><option value="all">60분봉 + 일봉</option><option value="day">일봉만</option><option value="hour">60분봉만</option></select></label>
+        <label class="field"><span>매수 목표 비중 (%)</span><input name="lineTarget" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
+        <label class="field"><span>목표 가격 (<i data-line-cur>원</i>)</span><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" /><small class="field-hint" id="lineEndNote"></small></label>
+        <div class="field"><span id="lineBudgetLabel">총 매수 금액 (만원) <button class="text-link" type="button" id="lineBudgetReset">다시 계산</button></span><input name="lineBudget" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineBudgetLabel" /><small class="field-hint" id="lineBudgetNote"></small></div>
       </div>
-      <div id="ladderResult" class="purchase-ladder-result" aria-live="polite"></div>
-      <div class="purchase-ladder-foot"><small>목표 가격이 시작 가격보다 높으면 상승, 낮으면 하락 분할매수입니다. 회차마다 같은 금액을 사므로 가격이 높은 회차는 수량이 적습니다.</small><button class="btn primary mini" type="button" id="ladderFill">회차 채우기</button></div>
-    </details>
-    <div class="section-heading"><h3>매수 회차</h3><button class="btn mini" type="button" id="addPurchaseStage">＋ 회차</button></div>
-    <div id="purchaseStageRows" class="purchase-stage-rows"></div>
+      <div id="lineResult" class="purchase-ladder-result" aria-live="polite"></div>
+      <div id="linePreview" class="purchase-line-preview"></div>
+      <p class="purchase-ladder-foot"><small>재매수와 같은 단계(기본 60분봉 25선~150선 → 일봉 25일선~150일선)마다 다음 단계 가격까지 3번(단계 가격·⅓·⅔) 나눈 회차 중 목표 가격보다 낮은 회차와 마지막 목표가 회차에 같은 금액씩 삽니다. 회차 가격은 이동평균을 따라 움직이고, 현재가가 회차 가격 이상이면 도달입니다.</small></p>
+    </section>
+    <section id="purchaseManual" hidden>
+      <div class="section-heading"><h3>매수 회차</h3><button class="btn mini" type="button" id="addPurchaseStage">＋ 회차</button><label class="purchase-currency" id="manualCurrencyField" hidden>통화 <select name="manualCurrency"><option value="KRW">원화</option><option value="USD">달러</option></select></label></div>
+      <div id="purchaseStageRows" class="purchase-stage-rows"></div>
+    </section>
     <label class="field"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
-    <p class="hint">가격·수량·날짜·조건은 선택 사항입니다. 가격과 수량을 넣으면 예정액을 계산합니다. 완료한 회차는 체결 금액을 고칠 수 있습니다. 실제 보유 금액·수량은 자산 배분에서 수정하세요.</p>
+    <p class="hint">직접 입력의 가격·수량·날짜·조건은 선택 사항입니다(가격과 수량을 넣으면 예정액을 계산). 완료한 회차는 카드에서 체결 금액을 고칠 수 있습니다. 실제 보유 금액·수량은 자산 배분에서 수정하세요.</p>
     <div class="dialog-foot"><button class="btn danger" type="button" id="purchaseDelete">계획 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
@@ -256,19 +260,19 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=33"></script>
-  <script src="js/sync.js?v=33"></script>
-  <script src="js/prices.js?v=33"></script>
-  <script src="js/assets-calc.js?v=33"></script>
-  <script src="js/assets-store.js?v=33"></script>
-  <script src="js/purchases.js?v=33"></script>
-  <script src="js/trade-alerts.js?v=33"></script>
-  <script src="js/plans.js?v=33"></script>
-  <script src="js/futures.js?v=33"></script>
-  <script src="js/actions.js?v=33"></script>
-  <script src="js/rebuy.js?v=33"></script>
-  <script src="js/alerts.js?v=33"></script>
-  <script src="js/push.js?v=33"></script>
+  <script src="js/core.js?v=34"></script>
+  <script src="js/sync.js?v=34"></script>
+  <script src="js/prices.js?v=34"></script>
+  <script src="js/assets-calc.js?v=34"></script>
+  <script src="js/assets-store.js?v=34"></script>
+  <script src="js/purchases.js?v=34"></script>
+  <script src="js/trade-alerts.js?v=34"></script>
+  <script src="js/plans.js?v=34"></script>
+  <script src="js/futures.js?v=34"></script>
+  <script src="js/actions.js?v=34"></script>
+  <script src="js/rebuy.js?v=34"></script>
+  <script src="js/alerts.js?v=34"></script>
+  <script src="js/push.js?v=34"></script>
   <script>purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

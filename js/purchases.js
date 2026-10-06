@@ -19,58 +19,94 @@ const quoteOf=it=>assetQuote(prices,it?.ticker);
 const planCurrency=(plan,it)=>plan?.currency||quoteOf(it)?.currency||"KRW";
 const unitOf=it=>quoteOf(it)?.kind==="코인"||String(it?.ticker||"").trim().toUpperCase()==="BTC-USD"?1e-8:1;
 const qtyNum=(v,it)=>(unitOf(it)<1?nf8:nf1).format(v), qtyUnit=it=>unitOf(it)<1?" BTC":"주", qtyText=(v,it)=>`${qtyNum(v,it)}${qtyUnit(it)}`;
-const qtyRange=(list,it)=>{const n=list.filter(v=>v>0);if(!n.length)return "";const lo=Math.min(...n),hi=Math.max(...n);return lo===hi?qtyText(lo,it):`${qtyNum(lo,it)}~${qtyText(hi,it)}`;};
-const avgMan=list=>{const n=list.filter(v=>v>0);return n.length?man(Math.round(n.reduce((a,b)=>a+b,0)/n.length)):"";};
-// 가격 구간 분할(plan.ladder={start,end,count,target?}). 상승·하락과 도달 기준은 assets-calc.js purchaseDirection(휴대폰 알림과 같음).
-const ladderStep=l=>finite(l?.count)>1?Math.abs(finite(l.end)-finite(l.start))/(finite(l.count)-1):null;
+const priceRoundOf=(v,cur)=>cur==="USD"?Math.round(v*100)/100:Math.round(v);
+// 이동평균선 돌파 계획의 시세: 메인 플래너가 읽은 시세 파일(sync.js priceData — 종목마다 ma 포함). 종목 코드 시장과 시세 종류가 같을 때만.
+const priceDoc=()=>typeof priceData==="object"&&priceData?priceData:null;
+const lineEntry=it=>{const e=stockEntry(priceDoc(),it?.ticker);return e&&e.kind===purchaseQuoteKind(it.ticker)?e:null;};
+const lineMarket=it=>["국내","해외"].includes(purchaseQuoteKind(it?.ticker)); // 이동평균(일봉·60분봉)은 국내·미국 종목만 수집(비트코인 제외)
+const lineKnown=(lines,e)=>purchaseLineNames(lines).filter(n=>Number(e?.ma?.[n])>0);
+const rangeText=names=>names.length?`${names[0]}~${names[names.length-1]}`:"";
+// 단계 묶음(창의 '단계' 선택): 재매수 기본 14단계 전체, 일봉만, 60분봉만. 저장은 lines.names(수집 작업이 이 이름으로 이동평균을 계산).
+const LINE_SETS={all:PURCHASE_LINES,day:PURCHASE_LINES.filter(n=>n.endsWith("일선")),hour:PURCHASE_LINES.filter(n=>!n.endsWith("일선"))};
+const lineSetOf=names=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||"all";
 // ---------- 분할매수 ----------
 // 계획은 종목 안에 두므로 이름·목표 변경과 그룹 이동이 그대로 연결된다. 창에서 고치는 동안은 복사본만 바꾸고 저장할 때 반영한다.
+// 두 방식(assets-calc.js 분할매수 주석): 이동평균선 돌파(lines — 회차는 지금 이동평균으로 계산, 산 회차는 buys[키])와 직접 입력(stages).
 const purchaseItems = () => (doc.allocation?.groups||[]).flatMap(g=>(g.items||[]).map(it=>({g,it})));
 function renderPurchases(){
   doc=assetStore.doc;prices=assetStore.prices;
   const view=el("buysView"), items=purchaseItems(), plans=items.filter(({it})=>it.buyPlan);
   if(!items.length){view.innerHTML=emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);el("purchaseGoAlloc").onclick=()=>{location.href="assets.html#alloc";};return;}
-  const s=allocationSummary(doc.allocation,prices), summaries=plans.map(({it})=>purchaseSummary(it.buyPlan)), totals=summaries.reduce((t,p)=>({planned:t.planned+p.planned,actual:t.actual+p.actual,remaining:t.remaining+p.remaining}),{planned:0,actual:0,remaining:0});
-  const card=({g,it})=>{const plan=it.buyPlan,p=purchaseSummary(plan),v=s.items.get(it.id)?.value||0,t=finite(it.target),stages=Array.isArray(plan.stages)?plan.stages:[];
-    const status=p.count&&p.done===p.count?"매수 완료":p.done?"진행 중":"매수 전";
-    const cur=planCurrency(plan,it), q=quoteOf(it), now=q&&q.currency===cur?q.close:null, lad=plan.ladder&&finite(plan.ladder.start)>0&&finite(plan.ladder.end)>0?plan.ladder:null, up=purchaseDirection(plan)==="up";
-    const pt=v=>priceText(v,cur), priced=stages.some(x=>finite(x.price)>0), kind=purchaseQuoteKind(it.ticker), alertable=!!kind&&(kind==="국내"?"KRW":"USD")===cur;
-    const due=x=>now!==null&&!x.done&&finite(x.price)>0&&(up?now>=x.price:now<=x.price);
-    const next=priced&&now!==null?stages.findIndex(x=>!x.done&&finite(x.price)>0&&!due(x)):-1, step=ladderStep(lad);
-    const each=avgMan(stages.filter(x=>finite(x.price)>0).map(x=>finite(x.amount)||0)), qty=qtyRange(stages.map(x=>finite(x.shares)||0),it);
-    const nowText=now!==null&&priced?`현재가 ${pt(now)}<span class="price-date">${escA(q.asOf.slice(5))}</span>${next>=0?` · 다음 ${next+1}차까지 ${now<stages[next].price?"+":""}${nf1.format((stages[next].price/now-1)*100)}%`:""}`:"";
-    const ladderLine=lad?`<p class="purchase-ladder-line"><b>${up?"상승":"하락"} 분할</b> ${pt(lad.start)} → ${pt(lad.end)} · ${escA(lad.count)}회${step?` · ${pt(step)} ${up?"오를":"내릴"} 때마다`:""}${each?` 약 ${each}씩`:""}${qty?` (${qty})`:""}</p>`:"";
-    const alertLine=!priced?"":alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${escA(it.id)}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${escA(it.id)}" data-on="off">OFF</button></span>`
+  const s=allocationSummary(doc.allocation,prices), summaries=plans.map(({it})=>purchaseSummary(it.buyPlan,lineEntry(it))), totals=summaries.reduce((t,p)=>({planned:t.planned+p.planned,actual:t.actual+p.actual,remaining:t.remaining+p.remaining}),{planned:0,actual:0,remaining:0});
+  const card=({g,it})=>{
+    const plan=it.buyPlan, lines=plan.lines, entry=lines?lineEntry(it):null, p=purchaseSummary(plan,entry), v=s.items.get(it.id)?.value||0, t=finite(it.target);
+    const status=p.count&&p.done===p.count?"매수 완료":p.done?"진행 중":"매수 전", id=escA(it.id);
+    const cur=planCurrency(plan,it), q=quoteOf(it), now=q&&q.currency===cur?q.close:null, up=purchaseDirection(plan)==="up", rate=cur==="USD"?s.fx:1;
+    const pt=v=>priceText(v,cur), kind=purchaseQuoteKind(it.ticker), alertable=!!kind&&(kind==="국내"?"KRW":"USD")===cur;
+    // 회차 줄(두 방식 공통 모양): 이동평균선 돌파는 키(data-key), 직접 입력은 순번(data-stage)으로 체크·체결·알림을 저장한다.
+    const rows=lines?purchaseLineRows(plan,entry).map(r=>({attr:`data-key="${escA(r.key)}"`,label:purchaseLineLabel(r),price:r.price,amount:r.done?r.actual:r.amount,done:r.done,actual:r.actual,line:r}))
+      :(Array.isArray(plan.stages)?plan.stages:[]).map((x,i)=>({attr:`data-stage="${i}"`,label:`${i+1}차`,price:finite(x.price),shares:finite(x.shares),amount:finite(x.amount),done:!!x.done,actual:finite(x.actual)??Math.max(0,finite(x.amount)||0),stage:x}));
+    const due=r=>now!==null&&!r.done&&r.price>0&&(up?now>=r.price:now<=r.price), priced=rows.some(r=>r.price>0);
+    // 다음 회차: 아직 도달하지 않은 회차 중 현재가에 가장 가까운 가격(단계 순서와 가격 순서가 다를 수 있음)
+    const next=now!==null?rows.filter(r=>!r.done&&r.price>0&&!due(r)).sort((a,b)=>Math.abs(a.price-now)-Math.abs(b.price-now))[0]:null, open=rows.filter(r=>!r.done);
+    const gap=next?(next.price/now-1)*100:0;
+    const nowText=now!==null&&priced?`현재가 ${pt(now)}<span class="price-date">${escA(q.asOf.slice(5))}</span>${next?` · 다음 ${escA(next.label)}까지 ${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`:""}`:"";
+    const known=lines?lineKnown(lines,entry):[], missing=lines?purchaseLineNames(lines).filter(n=>!known.includes(n)):[];
+    const head=lines?`<p class="purchase-ladder-line"><b>이동평균선 돌파</b> ${escA(rangeText(purchaseLineNames(lines)))} · 목표가 ${pt(lines.end)} · 총 ${man(lines.budget)}${open.length?` · 남은 ${open.length}회 회당 약 ${man(open[0].amount)}`:""}</p>
+        ${!known.length?`<p class="purchase-wait">이동평균 시세를 기다리는 중입니다. 다음 수집(장중 30분마다) 뒤 단계 회차가 보이고, 그 전에는 목표가 회차만 있습니다.</p>`
+          :missing.length?`<p class="purchase-wait">아직 시세가 없는 단계 ${escA(missing.join("·"))}는 건너뜁니다(60분봉 긴 선은 수집이 과거 봉을 받는 동안 며칠 걸릴 수 있음).</p>`:""}`:"";
+    const alertLine=!priced?"":alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
       :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
-    return `<section class="card purchase-card"><div class="purchase-head"><div class="title-row"><h2>${escA(it.name)}</h2><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>
+    const row=r=>{
+      const reached=due(r), approx=!r.done&&r.line&&r.price>0&&rate?Math.floor(r.amount*1e4/(r.price*rate)/unitOf(it)+1e-9)*unitOf(it):null;
+      const main=r.line?`${pt(r.price)}${approx?` · 약 ${qtyText(Number(approx.toFixed(8)),it)}`:""}`:r.price!==null?`${pt(r.price)}${r.shares!==null?` · ${qtyText(r.shares,it)}`:""}`:r.stage.condition||"조건 미입력";
+      const sub=r.line?"":r.price!==null?[r.stage.condition,r.stage.date].filter(Boolean).join(" · "):r.stage.date||"날짜 미정", name=`${it.name} ${r.label}`;
+      // 이동평균선 돌파 회차는 재매수처럼 단계 이름 + 회차 번호 칩(25선 [2]), 한 줄로 촘촘하게
+      const tag=r.line?(r.line.key==="end"?"목표가":`${escA(r.line.line)}<span class="tr-no">${r.line.t+1}</span>`):escA(r.label);
+      return `<div class="purchase-row${r.line?" line":""}${r.done?" done":reached?" due":""}"><label class="check" title="매수 완료"><input type="checkbox" ${r.line?"data-purchase-buy":"data-purchase-done"}="${id}" ${r.attr}${r.done?" checked":""} aria-label="${escA(name)} 매수 완료"><b>${tag}</b></label><div class="purchase-condition"><strong>${escA(main)}${reached?`<span class="purchase-due">도달</span>`:""}</strong>${sub?`<small>${escA(sub)}</small>`:""}</div>
+        <div class="purchase-amount">${r.done?`<label>체결 <input type="number" min="0" step="any" inputmode="decimal" ${r.line?"data-purchase-buy-actual":"data-purchase-actual"}="${id}" ${r.attr} value="${r.actual}" aria-label="${escA(name)} 체결 금액 (만원)"> 만원</label>`
+          :`<span>예정 ${man(r.amount)}</span>${r.price>0&&alertable?tradeAlertToggle(purchaseAlertOn(plan,r.line||r.stage),`data-purchase-alert="${id}" ${r.attr}`,name):""}`}</div></div>`;
+    };
+    return `<section class="card purchase-card"><div class="purchase-head"><div class="title-row"><h2>${escA(it.name)}</h2><button class="btn icon-btn" type="button" data-purchase-edit="${id}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>
       <p>${escA(g.name)} · 현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}${s.base>0&&t/100*s.base>v?` · 목표까지 ${man(t/100*s.base-v)}`:""}`:" · 목표 미입력"}</p>
-      ${ladderLine}${nowText?`<p class="purchase-now">${nowText}</p>`:""}
+      ${head}${nowText?`<p class="purchase-now">${nowText}</p>`:""}
       <div class="purchase-progress"><span class="purchase-status${p.count&&p.done===p.count?" done":""}">${status} · ${p.done}/${p.count}회</span><span>예정 ${man(p.planned)} · 체결 ${man(p.actual)} · 남은 예정 ${man(p.remaining)}</span>${alertLine}</div></div>
-      ${stages.map((stage,i)=>{const price=finite(stage.price),sh=finite(stage.shares),reached=due(stage);
-        const main=price!==null?`${pt(price)}${sh!==null?` · ${qtyText(sh,it)}`:""}`:stage.condition||"조건 미입력", sub=price!==null?[stage.condition,stage.date].filter(Boolean).join(" · "):stage.date||"날짜 미정";
-        return `<div class="purchase-row${stage.done?" done":reached?" due":""}"><label class="check" title="매수 완료"><input type="checkbox" data-purchase-done="${escA(it.id)}" data-stage="${i}"${stage.done?" checked":""} aria-label="${escA(it.name)} ${i+1}차 매수 완료"><b>${i+1}차</b></label><div class="purchase-condition"><strong>${escA(main)}${reached?`<span class="purchase-due">도달</span>`:""}</strong>${sub?`<small>${escA(sub)}</small>`:""}</div>
-        <div class="purchase-amount"><span>예정 ${man(stage.amount)}</span>${!stage.done&&price>0&&alertable?tradeAlertToggle(purchaseAlertOn(plan,stage),`data-purchase-alert="${escA(it.id)}" data-stage="${i}"`,`${it.name} ${i+1}차`):""}${stage.done?`<label>체결 <input type="number" min="0" step="any" inputmode="decimal" data-purchase-actual="${escA(it.id)}" data-stage="${i}" value="${finite(stage.actual)??Math.max(0,finite(stage.amount)||0)}" aria-label="${escA(it.name)} ${i+1}차 체결 금액 (만원)"> 만원</label>`:""}</div></div>`;}).join("")}
+      ${rows.map(row).join("")}
       ${plan.note?`<p class="purchase-note">${escA(plan.note)}</p>`:""}</section>`;
   };
-  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>회차별 가격·수량·예정액과 체결 기록을 관리합니다. 실제 매수 후 보유 금액·수량은 자산 배분에서 수정하세요.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파 회차나 직접 정한 회차로 목표 비중까지 나눠 삽니다. 실제 매수 후 보유 금액·수량은 자산 배분에서 수정하세요.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
     <p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p>
     <div class="card metrics"><div class="metric"><label>총 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>체결 금액</label><strong>${man(totals.actual)}</strong><small>완료한 회차의 실제 금액 합계</small></div><div class="metric"><label>남은 예정액</label><strong>${man(totals.remaining)}</strong><small>아직 매수하지 않은 회차의 예정액</small></div></div>
-    ${plans.length?plans.map(card).join(""):emptyCard("아직 분할매수 계획이 없습니다","종목을 고르고 매수 회차를 추가하세요.","")}`;
+    ${plans.length?plans.map(card).join(""):emptyCard("아직 분할매수 계획이 없습니다","종목을 고르고 목표 가격과 목표 비중을 넣으세요.","")}`;
   updateStatus();
   el("addPurchase").onclick=()=>openPurchase(null);
   all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
-  onChange("[data-purchase-done]","allocation",(_,x)=>{const stage=findItem(x.dataset.purchaseDone)?.it.buyPlan?.stages?.[Number(x.dataset.stage)];if(!stage)return false;if(x.checked){stage.done=true;if(finite(stage.actual)===null)stage.actual=Math.max(0,finite(stage.amount)||0);}else delete stage.done;});
-  // 알림 ON/OFF는 누를 때만 저장(회차 notify, 전체는 계획 notify.stages — 새로 채운 회차도 따라감). 규칙은 assets-calc.js purchaseAlertRules.
-  onChange("[data-purchase-alert]","allocation",(_,x)=>{const stage=findItem(x.dataset.purchaseAlert)?.it.buyPlan?.stages?.[Number(x.dataset.stage)];if(!stage)return false;stage.notify=x.checked;});
-  all("[data-purchase-alert-all]").forEach(b=>b.onclick=()=>{const plan=findItem(b.dataset.purchaseAlertAll)?.it.buyPlan;if(!plan)return;
-    plan.notify={...(plan.notify&&typeof plan.notify==="object"?plan.notify:{}),stages:b.dataset.on==="on"};(plan.stages||[]).forEach(x=>delete x.notify);saveSection("allocation");render();});
-  onChange("[data-purchase-actual]","allocation",(v,x)=>{const stage=findItem(x.dataset.purchaseActual)?.it.buyPlan?.stages?.[Number(x.dataset.stage)],n=numIn(v);if(!stage||n!==null&&n<0)return false;setNum(stage,"actual",v);});
+  const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseActual||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
+  // 직접 입력 회차: 체크하면 체결 금액을 예정액으로 채운다(고칠 수 있음).
+  onChange("[data-purchase-done]","allocation",(_,x)=>{const stage=stageOf(x);if(!stage)return false;if(x.checked){stage.done=true;if(finite(stage.actual)===null)stage.actual=Math.max(0,finite(stage.amount)||0);}else delete stage.done;});
+  onChange("[data-purchase-actual]","allocation",(v,x)=>{const stage=stageOf(x),n=numIn(v);if(!stage||n!==null&&n<0)return false;setNum(stage,"actual",v);});
+  // 이동평균선 돌파 회차: 체크하면 지금 회차 금액·가격을 buys[키]에 기록(남은 금액은 남은 회차에 다시 나뉨), 풀면 지움.
+  onChange("[data-purchase-buy]","allocation",(_,x)=>{
+    const found=findItem(x.dataset.purchaseBuy),plan=found?.it.buyPlan,key=x.dataset.key;if(!plan?.lines)return false;
+    const buys={...purchaseBuys(plan)};
+    if(x.checked){const r=purchaseLineRows(plan,lineEntry(found.it)).find(r=>r.key===key&&!r.done);if(!r)return false;buys[key]={actual:Math.round(r.amount*100)/100,price:priceRoundOf(r.price,planCurrency(plan,found.it))};}
+    else delete buys[key];
+    if(Object.keys(buys).length)plan.buys=buys;else delete plan.buys;
+  });
+  onChange("[data-purchase-buy-actual]","allocation",(v,x)=>{const b=purchaseBuys(planOf(x.dataset.purchaseBuyActual))[x.dataset.key],n=numIn(v);if(!b||n===null||n<0)return false;b.actual=n;});
+  // 알림 ON/OFF는 누를 때만 저장(직접 입력은 회차 notify, 이동평균선 돌파는 notify.keys[키], 전체는 계획 notify.stages — 새 회차도 따라감). 규칙은 assets-calc.js purchaseAlertRules.
+  onChange("[data-purchase-alert]","allocation",(_,x)=>{const plan=planOf(x.dataset.purchaseAlert);if(!plan)return false;
+    if(x.dataset.key!==undefined){const n=plan.notify&&typeof plan.notify==="object"?plan.notify:(plan.notify={});n.keys={...(n.keys&&typeof n.keys==="object"?n.keys:{}),[x.dataset.key]:x.checked};}
+    else{const stage=stageOf(x);if(!stage)return false;stage.notify=x.checked;}});
+  all("[data-purchase-alert-all]").forEach(b=>b.onclick=()=>{const plan=planOf(b.dataset.purchaseAlertAll);if(!plan)return;
+    const n={...(plan.notify&&typeof plan.notify==="object"?plan.notify:{}),stages:b.dataset.on==="on"};delete n.keys;plan.notify=n;(plan.stages||[]).forEach(x=>delete x.notify);saveSection("allocation");render();});
 }
 // ---------- 계획 창 ----------
 // 종목은 검색 목록에서 고른다(이름·그룹·소분류·종목 코드, 띄어 쓴 낱말이 모두 들어간 종목). 이미 계획이 있는 종목을 고르면 그 계획을 연다. 수정할 때는 종목 고정.
-let purchaseDraft=null,editing=null,autoStart="",ladderResult=null;
-const form=()=>el("purchaseForm"), pickedItem=()=>findItem(form().item.value);
-const draftCurrency=()=>{const it=pickedItem()?.it;return purchaseDraft?.currency||quoteOf(it)?.currency||form().ladderCurrency.value||"KRW";};
+// 방식은 이동평균선 돌파(기본)·직접 입력. 체결 기록이 있는 방식에서는 다른 방식으로 바꾸지 않는다.
+let purchaseDraft=null,editing=null,budgetAuto=true;
+const form=()=>el("purchaseForm"), pickedItem=()=>findItem(form().item.value), mode=()=>form().mode.value;
+const draftCurrency=()=>{const it=pickedItem()?.it;return purchaseDraft?.currency||quoteOf(it)?.currency||form().manualCurrency.value||"KRW";};
 function itemInfo({g,it},s){
   const v=s.items.get(it.id)?.value||0,t=finite(it.target);
   return [g.name,it.section,it.ticker,`현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`].filter(Boolean).map(escA).join(" · ");
@@ -80,7 +116,7 @@ function renderPicker(){
   box.hidden=!picked;el("purchaseSearchBox").hidden=!!picked;
   if(picked){
     box.innerHTML=`<div><strong>${escA(picked.it.name)}</strong><small>${itemInfo(picked,s)}</small></div>${editing?"":`<button class="btn mini" type="button" id="purchaseRepick">변경</button>`}`;
-    if(!editing)el("purchaseRepick").onclick=()=>{form().item.value="";renderPicker();renderLadder();renderPurchaseDraft();el("purchaseSearch").focus();};
+    if(!editing)el("purchaseRepick").onclick=()=>{form().item.value="";renderDraft();el("purchaseSearch").focus();};
     return;
   }
   const query=el("purchaseSearch").value.trim(), terms=query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -92,52 +128,46 @@ function renderPicker(){
 function pickPurchaseItem(itemId){
   const found=findItem(itemId);if(!found)return;
   if(found.it.buyPlan){openPurchase(itemId);return;}
-  const f=form(),q=quoteOf(found.it);f.item.value=itemId;if(q)delete purchaseDraft.currency; // 시세가 있으면 그 통화(전에 고른 종목의 직접 선택은 버림)
-  if(numIn(f.ladderStart.value)===null||f.ladderStart.value===autoStart){autoStart=q?String(q.close):"";f.ladderStart.value=autoStart;}
-  renderPicker();renderLadder();renderPurchaseDraft();
+  form().item.value=itemId;if(quoteOf(found.it))delete purchaseDraft.currency; // 시세가 있으면 그 통화(전에 고른 종목의 직접 선택은 버림)
+  budgetAuto=true;renderDraft();
 }
-// 가격 구간 분할 계산: 매수할 금액 = 목표 비중(비우면 종목 목표) × 기준 총자산 − 지금 평가액. 계산은 assets-calc.js purchaseLadder.
-// '회차 채우기'는 완료한 회차는 두고 나머지 회차를 계산 결과로 바꾼다(그래서 완료분은 자산 배분 보유량에 먼저 반영해야 함).
-function renderLadder(){
-  const f=form(), picked=pickedItem(), box=el("ladderResult"), fill=el("ladderFill"), hint=t=>`<p class="hint">${t}</p>`;
-  ladderResult=null;fill.disabled=true;
-  const it=picked?.it, q=quoteOf(it), cur=draftCurrency(), sym=cur==="USD"?"$":"원";
-  all("[data-ladder-cur]").forEach(x=>x.textContent=sym);
-  el("ladderCurrencyField").hidden=!picked||!!q;f.ladderCurrency.value=cur;
-  f.ladderTarget.placeholder=finite(it?.target)!==null?`${it.target} (종목 목표)`:"예: 3";
-  el("ladderStartNote").textContent=q&&q.currency===cur?`현재가 ${priceText(q.close,cur)} · ${q.asOf.slice(5)}`:"";
+const renderDraft=()=>{renderPicker();renderLines();renderPurchaseDraft();};
+// 이동평균선 돌파 설정: 총 매수 금액 = 목표 비중(비우면 종목 목표) × 기준 총자산 − 지금 평가액 + 이미 체결한 금액(매수한 수량을 자산 배분 보유량에 반영했다고 보고).
+// 새 계획·목표 비중을 고치면 자동으로 채우고, 직접 고친 금액은 그대로 둔다('다시 계산'으로 되돌림). 미리보기 회차는 assets-calc.js purchaseLineRows(지금 이동평균).
+function linesDraft(){
+  const f=form(), it=pickedItem()?.it, own=numIn(f.lineTarget.value);
+  return {names:LINE_SETS[f.lineSet.value]||PURCHASE_LINES,end:numIn(f.lineEnd.value),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
+}
+function renderLines(){
+  const f=form(), picked=pickedItem(), it=picked?.it, q=quoteOf(it), cur=quoteOf(it)?.currency||"KRW", lines=mode()==="lines";
+  el("purchaseLines").hidden=!lines;el("purchaseManual").hidden=lines;
+  el("manualCurrencyField").hidden=!picked||!!q;
+  all("[data-line-cur]").forEach(x=>x.textContent=cur==="USD"?"$":"원");
+  const box=el("lineResult"), list=el("linePreview"), hint=t=>`<p class="hint">${t}</p>`;list.innerHTML="";
+  el("lineEndNote").textContent=q?`현재가 ${priceText(q.close,cur)} · ${q.asOf.slice(5)}`:"";
+  f.lineTarget.placeholder=finite(it?.target)!==null?`${it.target} (종목 목표)`:"예: 3";
+  if(!lines)return;
   if(!picked){box.innerHTML=hint("종목을 먼저 고르세요.");return;}
-  const s=allocationSummary(doc.allocation,prices), own=numIn(f.ladderTarget.value), target=own??finite(it.target);
-  if(target===null){box.innerHTML=hint("매수 목표 비중을 넣으세요. 종목 목표 비중이 있으면 비워 둬도 됩니다.");return;}
-  const value=s.items.get(it.id)?.value||0, goal=target/100*s.base, budget=goal-value, pt=v=>priceText(v,cur);
-  const start=numIn(f.ladderStart.value), end=numIn(f.ladderEnd.value), count=numIn(f.ladderCount.value), kept=purchaseDraft.stages.filter(x=>x.done).length;
-  const lines=[`목표 ${pc(target)} = <b>${man(goal)}</b> <small>기준 총자산 ${escA(allocationTotalText(s.base)||man(s.base))} 대비${own!==null&&own!==finite(it.target)?" · 이 계획만":""}</small>`,
-    `지금 보유 ${man(value)} (${pc(s.pct(value))}) → 매수할 금액 <b>${budget>0?man(budget):"없음"}</b>${budget>0&&cur==="USD"&&s.fx?` <small>≈ ${pt(budget*1e4/s.fx)}</small>`:""}`];
-  const r=purchaseLadder({budget,start,end,count,currency:cur,fx:s.fx,unit:unitOf(it)});
-  const errors={price:"시작 가격과 목표 가격을 넣으세요.",count:`분할 횟수는 1~${PURCHASE_MAX_STAGES}회로 넣으세요.`,fx:"원/달러 환율이 없어 계산할 수 없습니다. 동기화를 연결하거나 자산 배분의 달러 환율을 넣으세요.",
-    budget:"지금 평가액이 목표 이상이라 더 살 금액이 없습니다.",few:`매수할 금액으로 ${qtyText(r.units||0,it)}만 살 수 있어 ${count}회로 나눌 수 없습니다. 분할 횟수를 줄이세요.`};
-  if(r.error)lines.push(`<span class="ladder-error">${errors[r.error]}</span>`);
+  if(!lineMarket(it)){box.innerHTML=`<p class="ladder-error">이동평균선 돌파는 국내·미국 시세 종목 코드가 있는 종목만 쓸 수 있습니다(수집 작업이 그 종목의 일봉·60분봉 이동평균을 계산). 자산 배분에서 종목 코드를 넣거나 직접 입력을 고르세요.</p>`;return;}
+  const s=allocationSummary(doc.allocation,prices), own=numIn(f.lineTarget.value), target=own??finite(it.target), value=s.items.get(it.id)?.value||0;
+  const spent=Object.values(purchaseBuys(purchaseDraft)).reduce((n,b)=>n+Math.max(0,finite(b?.actual)||0),0), goal=target!==null?target/100*s.base:null;
+  const auto=goal!==null?Math.round((Math.max(0,goal-value)+spent)*10)/10:null;
+  if(budgetAuto&&auto!==null)f.lineBudget.value=auto;
+  el("lineBudgetNote").textContent=goal===null?"매수 목표 비중을 넣으면 계산합니다":`목표 ${pc(target)} ${man(goal)} − 지금 보유 ${man(value)}${spent?` + 체결 ${man(spent)}`:""} = ${man(auto)}${numIn(f.lineBudget.value)!==auto?" · 직접 고친 금액":""}`;
+  const draft=linesDraft(), entry=lineEntry(it), rows=purchaseLineRows({lines:draft,buys:purchaseDraft.buys},entry), open=rows.filter(r=>!r.done), known=lineKnown(draft,entry);
+  const out=[];
+  if(!(draft.end>0))out.push(`<span class="ladder-error">목표 가격을 넣으세요.</span>`);
+  else if(!(draft.budget>0))out.push(`<span class="ladder-error">${goal!==null&&goal<=value?"지금 평가액이 목표 이상이라 더 살 금액이 없습니다.":"총 매수 금액을 넣으세요."}</span>`);
   else{
-    const up=end>=start, amounts=r.stages.map(x=>x.amount);
-    lines.push(`<b>${up?"상승":"하락"} 분할</b> ${pt(start)} → ${pt(end)} · ${count}회${count>1?` · ${pt(Math.abs(r.step))} ${up?"오를":"내릴"} 때마다`:""} <b>약 ${avgMan(amounts)}씩</b>${cur==="USD"?` <small>(약 ${pt(r.cost/count)})</small>`:""} · ${qtyRange(r.stages.map(x=>x.shares),it)}`);
-    lines.push(`합계 ${qtyText(r.shares,it)} · ${pt(r.cost)}${cur==="USD"?` ≈ ${man(r.amount)}`:""} <small>남는 금액 ${pt(Math.max(0,r.money-r.cost))}</small>`);
-    if(kept)lines.push(`<small>완료한 ${kept}회는 그대로 두고 나머지 회차를 바꿉니다. 매수한 수량을 자산 배분 보유량에 먼저 반영하세요.</small>`);
-    ladderResult={stages:r.stages,ladder:{start,end,count,...(own!==null?{target:own}:{})},cur};fill.disabled=false;
+    const rate=cur==="USD"?s.fx:1, now=q&&q.currency===cur?q.close:null;
+    out.push(`<b>${open.length}회</b>${open.length?` · 회당 약 <b>${man(open[0].amount)}</b>${cur==="USD"&&rate?` <small>(약 ${priceText(open[0].amount*1e4/rate,"USD")})</small>`:""}`:""}${spent?` · 체결 ${man(spent)}`:""}`);
+    if(!known.length)out.push(`<small>${escA(it.ticker)}의 이동평균 시세가 아직 없습니다. 저장하면 다음 수집(장중 30분마다)부터 일봉·60분봉 이동평균을 받아 단계 회차가 채워지고(60분봉 긴 선은 며칠), 그 전에는 목표가 회차만 있습니다.</small>`);
+    list.innerHTML=rows.map(r=>`<span class="${r.done?"done":now!==null&&now>=r.price?"due":""}"><b>${escA(purchaseLineLabel(r))}</b> ${r.price?priceText(r.price,cur):""}${r.done?" · 체결":""}</span>`).join("");
   }
-  box.innerHTML=lines.map(l=>`<p>${l}</p>`).join("");
-  fill.textContent=kept?"남은 회차 바꾸기":"회차 채우기";
-}
-function fillLadder(){
-  if(!ladderResult)return;
-  const rest=purchaseDraft.stages.filter(x=>!x.done), used=rest.some(x=>x.date||x.condition||finite(x.amount)!==null||finite(x.price)!==null||finite(x.shares)!==null);
-  if(used&&!confirm(`아직 매수하지 않은 ${rest.length}개 회차를 새 계산으로 바꿀까요?`))return;
-  purchaseDraft.stages=[...purchaseDraft.stages.filter(x=>x.done),...ladderResult.stages.map(x=>({id:newId(),...x}))];
-  purchaseDraft.ladder=ladderResult.ladder;
-  if(ladderResult.cur==="USD")purchaseDraft.currency="USD";else delete purchaseDraft.currency;
-  renderPurchaseDraft();renderLadder();
+  box.innerHTML=out.map(l=>`<p>${l}</p>`).join("");
 }
 function renderPurchaseDraft(){
-  const stages=purchaseDraft.stages, it=pickedItem()?.it, cur=draftCurrency(), unit=unitOf(it);
+  const stages=purchaseDraft.stages||[], it=pickedItem()?.it, cur=draftCurrency(), unit=unitOf(it);
   el("purchaseStageRows").innerHTML=stages.map((stage,i)=>`<div class="purchase-stage${stage.done?" done":""}"><b>${i+1}차${stage.done?`<small>매수 완료</small>`:""}</b>
     <label>매수 가격 (${cur==="USD"?"$":"원"})<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="price" data-stage="${i}" value="${finite(stage.price)??""}"></label>
     <label>수량 (${qtyUnit(it).trim()})<input type="number" min="0" step="${unit<1?"any":"1"}" inputmode="decimal" data-purchase-field="shares" data-stage="${i}" value="${finite(stage.shares)??""}"></label>
@@ -152,28 +182,39 @@ function renderPurchaseDraft(){
     const rate=draftCurrency()==="USD"?assetFx(prices,doc.allocation):1;
     if((key==="price"||key==="shares")&&finite(stage.price)!==null&&finite(stage.shares)!==null&&rate){stage.amount=Math.round(stage.price*stage.shares*rate/100)/100;const a=el("purchaseStageRows").querySelector(`[data-purchase-field=amount][data-stage="${i}"]`);if(a)a.value=stage.amount;}
   });
-  all("[data-purchase-remove]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.purchaseRemove);if(stages[i].done&&!confirm(`${i+1}차의 완료 기록과 체결 금액도 삭제할까요?`))return;stages.splice(i,1);renderPurchaseDraft();renderLadder();});
+  all("[data-purchase-remove]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.purchaseRemove);if(stages[i].done&&!confirm(`${i+1}차의 완료 기록과 체결 금액도 삭제할까요?`))return;stages.splice(i,1);renderPurchaseDraft();});
 }
 function openPurchase(id){
   const found=id?findItem(id):null,f=form(),d=dlg("purchaseDialog");
   if(!found&&purchaseItems().every(({it})=>it.buyPlan)){alert("모든 종목에 분할매수 계획이 있습니다. 종목 이름 옆 연필로 기존 계획을 수정하세요.");return;}
-  editing=found;ladderResult=null;
+  editing=found;
   el("purchaseTitle").textContent=found?"분할매수 계획 수정":"새 분할매수 계획";
   f.item.value=found?.it.id||"";el("purchaseSearch").value="";
-  purchaseDraft=found?.it.buyPlan?JSON.parse(JSON.stringify(found.it.buyPlan)):{stages:Array.from({length:3},()=>({id:newId()}))};
-  if(!Array.isArray(purchaseDraft.stages))purchaseDraft.stages=[];
-  const lad=purchaseDraft.ladder,q=quoteOf(found?.it);
-  f.ladderTarget.value=finite(lad?.target)??"";f.ladderEnd.value=finite(lad?.end)??"";f.ladderCount.value=finite(lad?.count)??5;
-  autoStart=!lad&&q?String(q.close):"";f.ladderStart.value=finite(lad?.start)??autoStart;
-  f.ladderCurrency.value=purchaseDraft.currency||"KRW";
-  el("purchaseLadder").open=!found||!!lad;
-  f.note.value=purchaseDraft.note||"";renderPicker();renderLadder();renderPurchaseDraft();
+  purchaseDraft=found?.it.buyPlan?JSON.parse(JSON.stringify(found.it.buyPlan)):{};
+  const lines=purchaseDraft.lines;
+  if(!Array.isArray(purchaseDraft.stages))purchaseDraft.stages=lines?[]:Array.from({length:3},()=>({id:newId()}));
+  f.mode.value=lines||!found?"lines":"manual";
+  f.lineSet.value=lineSetOf(purchaseLineNames(lines));f.lineTarget.value=finite(lines?.target)??"";f.lineEnd.value=finite(lines?.end)??"";f.lineBudget.value=finite(lines?.budget)??"";budgetAuto=!lines;
+  f.manualCurrency.value=purchaseDraft.currency||"KRW";
+  f.note.value=purchaseDraft.note||"";renderDraft();
   el("addPurchaseStage").onclick=()=>{purchaseDraft.stages.push({id:newId()});renderPurchaseDraft();};
   el("purchaseDelete").hidden=!found;
   el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;saveSection("allocation");d.close();render();};
-  f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");el("purchaseSearch").focus();return;}if(!purchaseDraft.stages.length){alert("매수 회차를 하나 이상 추가하세요.");return;}
-    if(draftCurrency()==="USD"&&(purchaseDraft.ladder||purchaseDraft.stages.some(x=>finite(x.price)!==null)))purchaseDraft.currency="USD";else delete purchaseDraft.currency;
-    setText(purchaseDraft,"note",f.note.value);item.buyPlan=purchaseDraft;saveSection("allocation");d.close();render();};
+  f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");el("purchaseSearch").focus();return;}
+    const draft=purchaseDraft;
+    if(mode()==="lines"){
+      const kind=purchaseQuoteKind(item.ticker),l=linesDraft();
+      if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다.");return;}
+      if(!(l.end>0)){alert("목표 가격을 넣으세요.");f.lineEnd.focus();return;}
+      if(!(l.budget>0)){alert("총 매수 금액을 넣으세요(목표 비중을 넣으면 계산합니다).");f.lineBudget.focus();return;}
+      draft.lines=l;delete draft.stages;delete draft.ladder;
+      if(kind!=="국내")draft.currency="USD";else delete draft.currency;
+    }else{
+      if(!draft.stages.length){alert("매수 회차를 하나 이상 추가하세요.");return;}
+      delete draft.lines;delete draft.buys;delete draft.ladder;if(draft.notify){delete draft.notify.keys;if(!Object.keys(draft.notify).length)delete draft.notify;}
+      if(draftCurrency()==="USD"&&draft.stages.some(x=>finite(x.price)!==null))draft.currency="USD";else delete draft.currency;
+    }
+    setText(draft,"note",f.note.value);item.buyPlan=draft;saveSection("allocation");d.close();render();};
   if(!d.open)d.showModal();
   if(!found&&matchMedia("(hover:hover) and (pointer:fine)").matches)el("purchaseSearch").focus();
 }
@@ -199,9 +240,15 @@ function initialize(){
     if(e.key==="Enter"){e.preventDefault();if(first)pickPurchaseItem(first.dataset.pick);}else if(e.key==="ArrowDown"&&first){e.preventDefault();first.focus();}};
   el("purchaseItemList").onkeydown=e=>{const b=e.target.closest?.("[data-pick]");if(!b||!["ArrowDown","ArrowUp"].includes(e.key))return;e.preventDefault();
     const next=e.key==="ArrowDown"?b.nextElementSibling:b.previousElementSibling;(next||(e.key==="ArrowUp"?search:null))?.focus();};
-  for(const name of ["ladderTarget","ladderStart","ladderEnd","ladderCount"]){f[name].oninput=()=>renderLadder();f[name].onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();fillLadder();}};}
-  f.ladderCurrency.onchange=()=>{if(f.ladderCurrency.value==="USD")purchaseDraft.currency="USD";else delete purchaseDraft.currency;renderLadder();renderPurchaseDraft();};
-  el("ladderFill").onclick=fillLadder;
+  f.lineTarget.oninput=()=>{budgetAuto=true;renderLines();};
+  f.lineEnd.oninput=()=>renderLines();f.lineSet.onchange=()=>renderLines();
+  f.lineBudget.oninput=()=>{budgetAuto=false;renderLines();};
+  el("lineBudgetReset").onclick=()=>{budgetAuto=true;renderLines();};
+  // 방식 바꾸기: 지금 방식에 체결 기록이 있으면 바꾸지 않는다(기록이 사라지지 않게).
+  all("[name=mode]").forEach(x=>x.onchange=()=>{const toLines=x.value==="lines",kept=toLines?(purchaseDraft.stages||[]).some(s=>s.done):Object.keys(purchaseBuys(purchaseDraft)).length;
+    if(kept){alert("체결 기록이 있어 방식을 바꿀 수 없습니다. 기록을 지우려면 계획을 삭제하고 새로 만드세요.");f.mode.value=toLines?"manual":"lines";return;}
+    if(!toLines&&!(purchaseDraft.stages||[]).length)purchaseDraft.stages=Array.from({length:3},()=>({id:newId()}));renderLines();renderPurchaseDraft();});
+  f.manualCurrency.onchange=()=>{if(f.manualCurrency.value==="USD")purchaseDraft.currency="USD";else delete purchaseDraft.currency;renderPurchaseDraft();};
   document.addEventListener("focusout",()=>setTimeout(()=>{if(redrawLater)redrawIdle();},0));
   assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;updateStatus();if(type==="change")redrawIdle();});
   for(const key of ["connectRepo","syncNow","disconnectRepo"]){const button=el(key),previous=button.onclick;button.onclick=e=>{previous?.call(button,e);assetStore.refreshConfig();};}
@@ -214,5 +261,5 @@ function initialize(){
     catch(error){alert(`복원 실패: ${error.message}`);}e.target.value="";};
   updateStatus();assetStore.start();
 }
-return {render:renderPurchases,initialize,alertCount:()=>purchaseAlertRules(assetStore.doc,assetStore.prices).length};
+return {render:renderPurchases,initialize,alertCount:()=>purchaseAlertRules(assetStore.doc,priceDoc()||assetStore.prices).length};
 })();
