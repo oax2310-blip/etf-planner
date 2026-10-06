@@ -141,33 +141,56 @@ test('재매수: 첫 재매수 뒤 남은 금액은 고정한 분할 범위의 �
   nearAll(s.plan, [76000, 61000, 61000, ...Array(11).fill(0)]);
 });
 
-test('재매수 기한: 첫 단계를 사기 전에는 손절가·평균 손절가에 다시 와도 기한 도달이 아니고 첫 단계 신호를 기다린다', () => {
+test('재매수 회차: 단계 몫을 단계 가격에서 다음 단계 가격까지 3번(0·⅓·⅔ 지점)에 나눠 산다', () => {
   const ctx = load();
-  const r = plan(ctx, {currentPrice: 10050, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}, {shares: 10, price: 9700}]});
-  r.stages[0].price = 10100;
-  const s = ctx.rebuySummary(r);
-  assert.equal(s.due, false);
-  assert.equal(s.dueValue, 0);
-  nearAll(s.plan, [295000, ...Array(13).fill(0)], '25선이 손절가 위라도 25선 신호에서 전부');
-  assert.deepEqual(plain(ctx.rebuyStatus(r, s)), ['손절 3회 진행', '손절 3회']);
-});
-
-test('재매수 기한: 첫 단계를 산 뒤 남은 금액을 사기 전에 평균 손절가에 다시 오면 다음 단계에서 전부 산다', () => {
-  const ctx = load();
-  const r = plan(ctx, {splits: 3, currentPrice: 9890, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}]}); // 평균 9,900원
-  r.stages[0] = {...r.stages[0], price: 9700, done: true, shares: 7, execPrice: 9700};
-  r.stages[1].price = 9800; r.stages[2].price = 9850;
+  const r = plan(ctx, {currentPrice: 10050, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}, {shares: 10, price: 9700}]}); // 평균 9,833.3원
+  r.stages[0].price = 10100; r.stages[1].price = 10160;
   let s = ctx.rebuySummary(r);
-  assert.equal(s.due, false, '평균 손절가 아래면 기한 전');
-  nearAll(s.plan, [67900, 65050, 65050, ...Array(11).fill(0)]);
-  r.currentPrice = 9900;
+  assert.equal(s.splits, 1, '25선이 평균 손절가 위면 25선 몫만');
+  assert.deepEqual(plain(s.tranches).map(x => [x.i, x.t, x.price, x.est]), [[0, 0, 10100, false], [0, 1, 10120, false], [0, 2, 10140, false]], '25선부터 32선까지 3분할');
+  s.tranches.forEach(x => near(x.amount, 295000 / 3));
+  nearAll(s.plan, [295000, ...Array(13).fill(0)]);
+  assert.deepEqual(plain(ctx.rebuyStatus(r, s)), ['손절 3회 진행', '손절 3회'], '첫 단계 전에는 손절가 위로 와도 기한 없이 첫 회차 신호를 기다린다');
+  r.stages[0].price = 9700; r.stages[1].price = 9790; r.stages[2].price = 9910;
   s = ctx.rebuySummary(r);
-  assert.equal(s.due, true);
-  assert.equal(s.dueValue, 130100);
-  nearAll(s.plan, [67900, 130100, ...Array(12).fill(0)]);
-  assert.deepEqual(plain(ctx.rebuyStatus(r, s)), ['재매수 기한 도달', '기한 도달']);
+  assert.equal(s.splits, 2);
+  assert.deepEqual(plain(s.tranches).map(x => [x.i, x.t, Math.round(x.price)]), [[0, 0, 9700], [0, 1, 9730], [0, 2, 9760], [1, 0, 9790], [1, 1, 9830], [1, 2, 9870]], '25선→32선 3분할, 32선→42선 3분할');
+  s.tranches.forEach(x => near(x.amount, 295000 / 6));
 });
 
+test('재매수 회차: 다음 단계 가격이 비면 추정치로 나누되 표시만 하고, 다음 단계가 더 낮으면 그 단계는 1회', () => {
+  const ctx = load();
+  const r = plan(ctx, {currentPrice: 9500, cuts: [{shares: 10, price: 9580}]}); // 25선이 평균 손절가 위라 25선 몫만
+  r.stages[0].price = 9600; r.stages[13].price = 11000;
+  let s = ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.tranches).map(x => [x.t, x.est, x.step]), [[0, false, false], [1, true, true], [2, true, true]]);
+  assert.ok(s.tranches[1].price > 9600 && s.tranches[2].price > s.tranches[1].price);
+  r.stages[1].price = 9550;
+  s = ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.tranches).map(x => [x.price, x.est, x.step, x.amount]), [[9600, false, false, 95800]], '다음 단계가 더 낮으면 나눌 구간이 없어 1회');
+});
+test('재매수 회차: 산 회차를 뺀 남은 금액을 고정한 분할 범위의 안 산 회차에 똑같이 나누고, 범위를 다 샀으면 다음 단계 1회차에 담는다', () => {
+  const ctx = load();
+  const r = plan(ctx, {splits: 2, currentPrice: 9950, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}]}); // 평균 9,900원
+  r.stages[0].price = 9700; r.stages[1].price = 9800; r.stages[2].price = 9850;
+  r.stages[0].buys = [{shares: 10, price: 9700}];
+  let s = ctx.rebuySummary(r);
+  assert.deepEqual([s.started, s.buyValue, s.rest, s.rebought, s.buyAvg], [true, 97000, 101000, 10, 9700]);
+  assert.deepEqual(plain(s.tranches).map(x => [x.i, x.t, x.done]), [[0, 0, true], [0, 1, false], [0, 2, false], [1, 0, false], [1, 1, false], [1, 2, false]]);
+  nearAll(plain(s.tranches).slice(1).map(x => x.amount), [1000, 1000, 33000, 33000, 33000], '단계 몫 9.9만원씩: 25선은 산 9.7만원을 뺀 0.2만원, 32선은 9.9만원을 회차에 나눈다');
+  assert.deepEqual(plain(ctx.rebuyStatus(r, s)), ['재매수 1/6회', '재매수 1/6']);
+  r.stages[2].price = 9600;
+  assert.equal(ctx.rebuySummary(r).splits, 2, '42선이 내려와도 처음 정한 2단계 그대로');
+  r.stages[2].price = 9850;
+  r.stages[0].buys = [{shares: 2, price: 9700}, {shares: 2, price: 9750}, {shares: 2, price: 9790}];
+  r.stages[1].buys = [{shares: 2, price: 9800}, {shares: 2, price: 9830}, {shares: 2, price: 9850}];
+  s = ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.tranches.at(-1)).i, 2, '6회를 다 샀는데 남았으면 42선 1회차');
+  near(s.tranches.at(-1).amount, s.rest);
+  r.stages[1].buys = [null, {shares: 2, price: 9830}];
+  s = ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.tranches).filter(x => !x.done).map(x => [x.i, x.t]), [[1, 0], [1, 2]], '빈 회차는 순서와 관계없이 남은 회차');
+});
 test('단계 가격 추정: 현재가와 150일선 가격 사이를 고르게 채우고, 넣은 기준가·체결가를 기준점으로 쓴다', () => {
   const ctx = load();
   const stages = plain(vm.runInContext('defaultRebuy()', ctx).stages);
@@ -206,15 +229,15 @@ test('옛 단계 이름 N분봉(60분봉 N이평선)은 읽을 때 N선으로 �
   assert.equal(vm.runInContext('stagesOf(target)', ctx), r.stages, '바꿀 이름이 없으면 저장된 배열 그대로');
 });
 
-test('재매수 기한: 다 되샀으면 가격이 평균 손절가를 넘어도 기한 도달이 아니다', () => {
+test('재매수: 다 되샀으면 남은 회차에 금액이 없고 재매수 완료', () => {
   const ctx = load();
   const r = plan(ctx, {splits: 1, currentPrice: 10500, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}]});
-  r.stages[0] = {...r.stages[0], done: true, shares: 21, execPrice: 9500};
+  r.stages[0].buys = [{shares: 21, price: 9500}];
   const s = ctx.rebuySummary(r);
-  assert.deepEqual([s.rest, s.due, s.dueValue], [0, false, 0]);
+  assert.equal(s.rest, 0);
+  assert.ok(s.tranches.filter(x => !x.done).every(x => x.amount === 0));
   assert.deepEqual(plain(ctx.rebuyStatus(r, s)), ['재매수 완료', '완료']);
 });
-
 test('재매수: 반 주(평균 손절가의 절반)가 안 되는 자투리는 다 산 것으로 보고, 모두 되사면 남은 금액이 0이다', () => {
   const ctx = load();
   const r = plan(ctx, {splits: 2, currentPrice: 9950, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}]});
@@ -224,7 +247,6 @@ test('재매수: 반 주(평균 손절가의 절반)가 안 되는 자투리는 
   r.stages[1] = {...r.stages[1], done: true, shares: 10, execPrice: 9970};
   s = ctx.rebuySummary(r);
   assert.equal(s.rest, 0, '남은 3,300원은 반 주(4,950원) 미만');
-  assert.equal(s.due, false);
   assert.ok(plain(s.plan).slice(2).every(v => v === 0));
 });
 
@@ -404,38 +426,64 @@ test('손절 금액: 체크한 회차의 체결가 × 수량을 더하고, 체�
   assert.equal(s.sellValue, 49500 + 9800 * 5);
 });
 
-test('재매수 체크: 첫 재매수 때 분할 수를 기록에 고정하고 체크를 모두 풀면 지운다', () => {
+test('재매수 체크: 회차를 체크하면 회차 가격으로 buys에 기록하고, 첫 재매수 때 분할 단계 수를 고정하며 체크를 모두 풀면 지운다', () => {
   const ctx = load();
   const r = {id: 'demo', ...plan(ctx, {currentPrice: 9600, cuts: [{shares: 10, price: 10000}, {shares: 10, price: 9800}]})};
-  r.stages[0].price = 9600; r.stages[1].price = 9800;
-  const input = {dataset: {stageDone: '0'}, checked: true};
-  Object.assign(ctx, {state: {rebuy: {items: [r]}, selectedRebuy: 'demo'}, $$: () => [input], save() {}, renderRebuy() {}, alert: msg => { throw Error(msg); }});
-  const start = source.indexOf('  $$("[data-stage-done]").forEach('), end = source.indexOf('  onEdit("[data-stage-price]"', start);
+  r.stages[0].price = 9600; r.stages[1].price = 9800; r.stages[2].price = 9950;
+  const input = {dataset: {trancheDone: '0:0'}, checked: true};
+  Object.assign(ctx, {state: {rebuy: {items: [r]}, selectedRebuy: 'demo'}, $$: () => [input], save() {}, renderRebuy() {}, cents: v => Math.round(v), alert: msg => { throw Error(msg); }});
+  const start = source.indexOf('  $$("[data-tranche-done]").forEach('), end = source.indexOf('  onEdit("[data-stage-price]"', start);
   assert.ok(start >= 0 && end > start);
   vm.runInContext(source.slice(start, end), ctx);
   input.onchange();
-  assert.deepEqual([r.splits, r.stages[0].done, r.stages[0].shares, r.stages[0].execPrice], [2, true, 10, 9600], '9.9만원 ÷ 9,600원 ≈ 10주');
+  assert.deepEqual(plain([r.splits, r.stages[0].buys, r.stages[0].done]), [2, [{shares: 3, price: 9600}], false], '19.8만원 ÷ 6회 = 3.3만원 ÷ 9,600원 ≈ 3주');
+  input.dataset.trancheDone = '0:2'; input.onchange();
+  assert.deepEqual(plain(r.stages[0].buys), [{shares: 3, price: 9600}, null, {shares: 4, price: 9733}], '3회차는 25선→32선 ⅔ 지점 가격(원 단위), 25선 몫 9.9만원에서 산 2.88만원을 뺀 나머지의 절반');
   r.stages[2].price = 9700;
-  assert.equal(ctx.rebuySummary(r).splits, 2, '42선이 평균 손절가 아래로 내려와도 2분할 그대로');
+  assert.equal(ctx.rebuySummary(r).splits, 2, '42선이 평균 손절가 아래로 내려와도 2단계 그대로');
   input.checked = false; input.onchange();
-  assert.equal('splits' in r, false);
+  assert.deepEqual(plain(r.stages[0].buys), [{shares: 3, price: 9600}]);
+  input.dataset.trancheDone = '0:0'; input.onchange();
+  assert.deepEqual(['buys' in r.stages[0], 'splits' in r], [false, false]);
   assert.equal(ctx.rebuySummary(r).splits, 3, '체크를 모두 풀면 지금 기준가로 다시 센다');
 });
 
-test('화면: 첫 단계 전에는 기한 도달 없이 첫 단계 신호와 분할을 안내하고, 기한은 평균 손절가 한 줄', () => {
+test('재매수 체크: 옛 기록(단계 통째로 done)은 그 단계를 한 번에 산 것으로 보고 체크를 풀면 지운다', () => {
+  const ctx = load();
+  const r = {id: 'demo', ...plan(ctx, {splits: 1, cuts: [{shares: 10, price: 10000}]})};
+  r.stages[0] = {...r.stages[0], price: 9600, done: true, shares: 4, execPrice: 9500};
+  let s = ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.tranches).map(x => [x.i, x.t, x.done, x.qty]), [[0, 0, true, 4], [1, 0, false, 0]], '옛 통째 기록 단계는 회차 하나, 남은 금액은 다음 단계');
+  assert.equal(s.buyValue, 38000);
+  const input = {dataset: {trancheDone: '0:0'}, checked: false};
+  Object.assign(ctx, {state: {rebuy: {items: [r]}, selectedRebuy: 'demo'}, $$: () => [input], save() {}, renderRebuy() {}, cents: v => Math.round(v), alert: msg => { throw Error(msg); }});
+  const start = source.indexOf('  $$("[data-tranche-done]").forEach('), end = source.indexOf('  onEdit("[data-stage-price]"', start);
+  vm.runInContext(source.slice(start, end), ctx);
+  input.onchange();
+  assert.deepEqual([r.stages[0].done, r.stages[0].shares, r.stages[0].execPrice, 'splits' in r], [false, null, null, false]);
+});
+test('화면: 첫 단계 전에는 기한 없이 첫 회차 신호와 분할을 안내하고, 단계마다 회차 줄을 보여 준다', () => {
   const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
   const view = (extra = {}) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', lowPrice: 10000, shares: 1000, currentPrice: 9950, cuts: [{shares: 10, price: 9900}], stages, ...extra}]}}).els;
-  stages[0].price = 10100; stages[1].price = 10150;
+  stages[0].price = 10100; stages[1].price = 10160;
   let els = view(), html = els.rebuyMain.innerHTML;
-  assert.match(html, /25선 반등 신호가 나오면 재매수 시작 <b>약 9\.9만원<\/b> · 25선에서 전부 \(평균 손절가 9900원보다 25선 기준가가 높음\)/);
-  assert.doesNotMatch(html + els.rebuyList.innerHTML, /기한 도달/, '현재가가 손절가 위여도 첫 단계 전에는 기한이 없다');
-  assert.match(html, /<h2>3\. 재매수 기한<\/h2>/);
-  assert.match(html, /평균 손절가<\/div><div class="stage-price"><span class="price">9900원<\/span><span class="krw">25선 매수 후부터<\/span>/);
+  assert.match(html, /25선 반등 신호가 나오면 재매수 시작 <b>약 3\.3만원<\/b> · 25선부터 32선까지 3분할 \(평균 손절가 9900원보다 25선 기준가가 높음\)/);
+  assert.doesNotMatch(html + els.rebuyList.innerHTML, /기한/, '재매수 기한은 따로 두지 않는다');
+  assert.match(html, /data-tranche-done="0:0" >25선 1차<\/label>/);
+  assert.match(html, /data-tranche-done="0:1" >25선 2차<\/label><\/div>|data-tranche-done="0:1" >25선 2차<\/label><div class="stage-price"><span class="price">10120원<\/span><span class="krw">25선→32선 1\/3<\/span>/);
+  assert.match(html, /<span class="price">10140원<\/span><span class="krw">25선→32선 2\/3<\/span>/);
+  assert.match(html, /data-tranche-done="1:0">32선<\/label>/, '배분이 없는 단계는 한 줄');
   stages[0].price = 9800; stages[1].price = 9850;
   html = view().rebuyMain.innerHTML;
-  assert.match(html, /25선~32선 2분할 \(평균 손절가 9900원 이하 단계\)/);
-  stages[0] = {...stages[0], done: true, shares: 5, execPrice: 9800};
+  assert.match(html, /25선부터 32선까지 4분할 \(평균 손절가 9900원 이하 2단계\)/, '42선 기준가를 몰라 32선 몫은 32선에서 한 번에');
+  stages[2].price = 9950;
+  html = view().rebuyMain.innerHTML;
+  assert.match(html, /25선부터 42선까지 6분할 \(평균 손절가 9900원 이하 2단계\)/);
+  stages[0].price = 10100; stages[1].price = 9000;
+  assert.match(view().rebuyMain.innerHTML, /25선에서 한 번에 \(평균 손절가 9900원보다 25선 기준가가 높음\)/, '32선이 25선보다 낮으면 나눌 구간이 없다');
+  stages[0].price = 9800; stages[1].price = 9850; stages[2].price = 0;
+  stages[0].buys = [{shares: 2, price: 9800}];
   els = view({splits: 2}); html = els.rebuyMain.innerHTML;
-  assert.match(html, /<b>기한 도달<\/b> · 평균 손절가 9900원에 다시 왔습니다 · <b>32선 단계로 지금 약 5만원 재매수<\/b>/);
-  assert.match(els.rebuyList.innerHTML, /plan-count due">기한 도달</);
+  assert.match(html, /다음 재매수 <b>25선 2차 · 9816\.6+7?원 이상에서 약 1\.5만원<\/b>/, '25선→32선 ⅓ 지점 (테스트의 가격 표시는 반올림 없음)');
+  assert.match(els.rebuyList.innerHTML, /plan-count">재매수 1\/4</);
 });

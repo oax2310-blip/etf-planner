@@ -30,11 +30,11 @@
     (futures.rollSpread·lossPrice, state.rebuy는 처음 입력할 때 editRebuy()가 만듦).
   - 달러선물 신저점 손절·재매수는 futures.rebuy에 입력할 때만 저장(editFutureRebuy). 계산은 rebuy.js futureCutPlan·futureRebuySummary,
     화면은 futures.js renderFutureRebuy(체크 기록 전엔 한 줄로 접음, futureRebuyExpanded는 저장 안 하는 화면 상태). 이탈 전 계약 수를 고정해 하단까지 floor(계약 수/2)만 손절하고 판 계약 수만 복원.
-    재매수는 ETF 재매수(rebuySummary)와 같은 규칙(rebuySplits·rebuyTargets): 평균 손절가 이하 단계가 첫 단계부터 이어지는 만큼 나누고 분할 수는 첫 재매수 때 rebuy.splits에 고정,
-    기한(평균 손절가 복귀)은 첫 단계를 산 뒤부터 — 먼저 오면 남은 수량을 다음 단계에서 바로 되삼. 재매수 체크를 모두 풀거나 초기화하면 splits를 지움.
+    재매수는 ETF 재매수(rebuySummary)와 같은 규칙(rebuySplits·rebuyTranches): 평균 손절가 이하 단계가 첫 단계부터 이어지는 만큼 나누고 단계마다 다음 단계 가격까지 3회(trancheLevels),
+    분할 단계 수는 첫 재매수 때 rebuy.splits에 고정(체크를 모두 풀거나 초기화하면 지움). 회차 체결은 stages[i].buys[t], 옛 통째 기록(done)은 그 단계 1회로 읽음(stageFills). 기한은 없음.
     예전 buyMode='sellPrice'·returns 기록은 futureRebuyStages가 첫 미완료 단계에 합쳐 읽고 editFutureRebuy가 옮김. 체크로 보유 월물·정산손익을 바꾸지 말 것.
-    현재가·일선 단계는 보유 근월물 시세, 신저점·하단은 직접. 알림은 futures.rebuy.notify에 입력할 때만(단계는 stage:i, 환율 복귀는 deadlines 하나 — 옛 deadlinesOverrides는 읽지 않음).
-  - 연결 알림은 plans[].notify(첫 매도 start·회차 sales와 saleOverrides), futures.notify.levels·levels[].notify, rebuy.items[].notify(이탈 breakdown·손절 cuts·재매수 buys·기한 deadlines(평균 손절가 하나), 손절 회차 Overrides)·stages[].notify에 버튼을 누를 때만 저장. 완료 회차는 제외. trade-alerts.js의 buildTradeAlertRules를 비공개 수집 작업도 prices.js·rebuy.js와 함께 실행해 같은 기준가·배분을 사용.
+    현재가·일선 단계는 보유 근월물 시세, 신저점·하단은 직접. 알림은 futures.rebuy.notify에 입력할 때만(단계는 stage:i — 그 단계 1·2·3차 회차 모두, 옛 deadlines는 읽지 않음).
+  - 연결 알림은 plans[].notify(첫 매도 start·회차 sales와 saleOverrides), futures.notify.levels·levels[].notify, rebuy.items[].notify(이탈 breakdown·손절 cuts·재매수 buys, 손절 회차 Overrides — 옛 기한 deadlines는 읽지 않음)·stages[].notify(그 단계 1·2·3차 회차 모두)에 버튼을 누를 때만 저장. 완료 회차는 제외. trade-alerts.js의 buildTradeAlertRules를 비공개 수집 작업도 prices.js·rebuy.js와 함께 실행해 같은 기준가·배분을 사용.
     수집 작업의 ma_alerts.py _rule이 규칙(quoteGroup·quoteKind·label)을 다시 검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않는다 — 새 시세 종류(kind)·알림 라벨을 만들면 데이터 저장소의 그 검증(TRADE_LABEL_RE 포함)도 같이 고칠 것.
   - 기준선 알림은 state.alerts={rules:[{id,ticker,period,unit,tolerancePct,enabled}],…수신 설정}. alerts는 입력할 때만 만들고 마지막 규칙을 지워도 rules:[]로 남김.
     미국 기준 한국장 재알림은 alerts.krOpenReminder=true로 켜며 기본은 OFF. 밤사이 발생한 미국 종목 신호를 한국장 09:45 이후 기준별 한 번 재발송(발송·휴장 확인·대기 이력은 비공개 수집 작업).
