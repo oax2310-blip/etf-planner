@@ -89,6 +89,68 @@ function purchaseSummary(plan){
   return {count:stages.length,done:done.length,planned:stages.reduce((n,s)=>n+amount(s),0),
     actual:done.reduce((n,s)=>n+Math.max(0,finite(s.actual)??amount(s)),0),remaining:stages.filter(s=>!s.done).reduce((n,s)=>n+amount(s),0)};
 }
+// 가격 구간 분할매수(상승·하락 모두): 시작 가격 → 목표 가격을 count회로 고르게 나눈 가격(1차 = 시작 가격, 마지막 = 목표 가격)마다 같은 금액을 산다.
+// 매수할 금액(budget, 만원 — 화면은 목표 비중 × 기준 총자산 − 지금 평가액)을 회차 수로 나눠 회차 가격으로 나눈 수량을 최소 단위(unit: 주식 1주, 비트코인 0.00000001)로
+// 내리고, 남은 돈으로는 한 단위 더 사도 회차 금액이 가장 작은 회차부터 한 단위씩 더 산다. 합계는 매수할 금액을 넘지 않고 회차 금액 차이는 대략 한 단위 가격 안쪽이라,
+// 가격이 높은 회차일수록 수량이 줄어든다. 가격은 달러 0.01·원 1원 단위로 반올림하고 달러는 fx(원/달러)로 만원 환산.
+// 돌려주는 값: {stages:[{price,shares,amount(만원)}], step(회차 사이 가격 차), shares(합계), cost(통화 금액), amount(만원), money(매수할 금액, 통화)}
+// 또는 {error}: price(가격 없음)·count(1~PURCHASE_MAX_STAGES 밖)·fx(달러인데 환율 없음)·budget(매수할 금액 없음)·few(최소 단위도 못 사는 회차가 있음, units 합계 함께)
+const PURCHASE_MAX_STAGES = 50;
+function purchaseLadder({budget, start, end, count, currency="KRW", fx=null, unit=1}){
+  const usd=currency==="USD", rate=usd?plus(fx):1, n=finite(count);
+  if(!plus(start)||!plus(end))return {error:"price"};
+  if(!Number.isInteger(n)||n<1||n>PURCHASE_MAX_STAGES)return {error:"count"};
+  if(!rate)return {error:"fx"};
+  if(!plus(budget))return {error:"budget"};
+  const round=v=>usd?Math.round(v*100)/100:Math.round(v), dec=unit<1?8:0, fix=v=>Number(v.toFixed(dec));
+  const levels=Array.from({length:n},(_,i)=>round(n===1?start:start+(end-start)*i/(n-1)));
+  const money=budget*1e4/rate, units=levels.map(p=>Math.floor(money/n/(p*unit)+1e-9));
+  let left=money-levels.reduce((s,p,i)=>s+p*unit*units[i],0);
+  for(;;){
+    let best=-1;
+    levels.forEach((p,i)=>{if(p*unit<=left+1e-9&&(best<0||(units[i]+1)*p<(units[best]+1)*levels[best]))best=i;});
+    if(best<0)break;
+    units[best]++;left-=levels[best]*unit;
+  }
+  if(units.some(u=>u<1))return {error:"few", units:fix(units.reduce((s,u)=>s+u,0)*unit), money};
+  const stages=levels.map((price,i)=>{const shares=fix(units[i]*unit);return {price,shares,amount:Math.round(price*shares*rate/100)/100};});
+  const cost=stages.reduce((s,x)=>s+x.price*x.shares,0);
+  return {stages, step:n>1?round((end-start)/(n-1)):0, shares:fix(units.reduce((s,u)=>s+u,0)*unit), cost, amount:cost*rate/1e4, money};
+}
+// 분할매수 방향: 가격 구간 계산(ladder)이 있으면 목표 가격 ≥ 시작 가격이면 상승("up"), 아니면 하락("down").
+// 직접 넣은 가격만 있으면 마지막 회차 가격이 첫 회차보다 높을 때 상승, 그 밖(가격 하나뿐·같거나 낮음)은 하락.
+// 상승은 현재가 ≥ 회차 가격, 하락은 현재가 ≤ 회차 가격이면 도달 — 화면의 '도달' 표시와 휴대폰 알림이 같은 기준.
+function purchaseDirection(plan){
+  const l=plan?.ladder;
+  if(plus(l?.start)&&plus(l?.end))return Number(l.end)>=Number(l.start)?"up":"down";
+  const p=(Array.isArray(plan?.stages)?plan.stages:[]).map(s=>plus(s?.price)).filter(v=>v!==null);
+  return p.length>1&&p[p.length-1]>p[0]?"up":"down";
+}
+// 회차 알림 켬: 회차의 notify(true/false)가 있으면 그것, 없으면 계획의 notify.stages(카드의 '전체 ON'). 버튼을 누를 때만 저장한다.
+const purchaseAlertOn = (plan, stage) => typeof stage?.notify==="boolean" ? stage.notify : plan?.notify?.stages===true;
+// 종목 코드 → 시세 종류(데이터 저장소 kis_prices.py classify와 같은 형식): BTC-USD는 코인, 국내 6자리(A·Q 접두 포함)는 국내, 미국 심볼은 해외, 그 밖은 null
+function purchaseQuoteKind(ticker){
+  const t=String(ticker||"").trim().toUpperCase();
+  return t==="BTC-USD"?"코인":/^[AQ]\d{6}$|^\d[0-9A-Z]{5}$/.test(t)?"국내":/^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)?"해외":null;
+}
+// 분할매수 회차 휴대폰 알림 규칙(js/trade-alerts.js buildTradeAlertRules와 같은 모양): 종목 코드가 있고 가격을 넣은 미완료 회차 중 알림을 켠 것.
+// 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다. 회차 가격·방향을 바꾸면 revision이 바뀌어 이력이 새로 시작된다.
+// 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py purchase_alert_tickers가 알림 켠 종목을 장중 실행마다 받는다
+// (켜짐 판정을 바꾸면 그쪽도 같이). 라벨 '분할매수 N차'는 그 저장소 ma_alerts.py TRADE_LABEL_RE와 같은 형식.
+function purchaseAlertRules(assets, prices){
+  const rules=[];
+  for(const g of Array.isArray(assets?.allocation?.groups)?assets.allocation.groups:[])for(const it of Array.isArray(g?.items)?g.items:[]){
+    const plan=it?.buyPlan, stages=Array.isArray(plan?.stages)?plan.stages:[], ticker=String(it?.ticker||"").trim().toUpperCase(), kind=purchaseQuoteKind(ticker);
+    if(!plan||!kind||!it.id||(plan.currency||assetQuote(prices,ticker)?.currency||"KRW")!==(kind==="국내"?"KRW":"USD"))continue;
+    const condition=purchaseDirection(plan);
+    stages.forEach((s,i)=>{
+      const price=plus(s?.price);
+      if(!price||s.done||!s.id||!purchaseAlertOn(plan,s))return;
+      rules.push({id:`trade:buy:${it.id}:${s.id}`,kind:"trade",ticker,label:`분할매수 ${i+1}차`,targetPrice:price,condition,quoteGroup:"stocks",quoteKey:ticker,quoteKind:kind,enabled:true,revision:JSON.stringify([price,condition])});
+    });
+  }
+  return rules;
+}
 // 화면에 쓰는 합계. base = 비중 기준(직접 넣은 기준 총자산, 없으면 종목+현금 합계)
 function allocationSummary(alloc, prices){
   const fx=assetFx(prices,alloc), items=new Map(), groups=new Map(), classes=new Map(), sections=new Map(), targets=allocationTargets(alloc);
