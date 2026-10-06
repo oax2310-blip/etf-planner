@@ -81,72 +81,97 @@ function allocationTargets(alloc){
   for(const c of alloc?.classes||[])classes.set(c.id,resolve((alloc?.groups||[]).filter(g=>g.classId===c.id).map(g=>groups.get(g.id).target),c.target));
   return {groups,classes,section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||{target:null,linked:false}};
 }
-// 분할매수 회차는 계획·체결 기록만 관리한다. 완료 체크로 보유 금액·수량을 자동 변경하지 않는다.
-// 완료 회차의 실제 금액이 비어 있으면 예정액을 쓰고, 실제 0은 0으로 유지한다. 남은 예정액은 미완료 회차의 합계.
-function purchaseSummary(plan){
+// ---------- 분할매수(플래너 js/purchases.js) ----------
+// 계획(buyPlan)은 두 방식. 체크는 계획 기록만 바꾸고 보유 금액·수량은 바꾸지 않는다(매수 후 자산 배분에서 직접 수정).
+// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}.
+//    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 산 회차는 buys[회차 키] = {actual:체결 금액(만원), price:체크할 때 회차 가격}.
+// ② 직접 입력: stages = [{id, price?, shares?, date?, condition?, amount(만원), done?, actual?}] — 가격·금액을 사용자가 정한 회차.
+// 이동평균선 돌파 단계(재매수 기본 단계와 같음): 60분봉 N이평선 'N선'(25~150), 일봉 'N일선'(25~150). 시세 파일 ma에 같은 이름으로 들어 있다
+// (데이터 저장소 kis_prices.py가 lines.names로 이 종목의 일봉·60분봉 이동평균을 계산 — purchase_line_plans).
+const PURCHASE_LINES = [n=>`${n}선`,n=>`${n}일선`].flatMap(f=>[25,32,42,60,80,125,150].map(f));
+const purchaseLineName = name => /^[1-9]\d{0,2}(?:선|일선)$/.test(String(name??"")) ? String(name) : "";
+const purchaseLineNames = lines => (Array.isArray(lines?.names)?lines.names:PURCHASE_LINES).map(purchaseLineName).filter(Boolean);
+const purchaseBuys = plan => plan?.buys&&typeof plan.buys==="object"&&!Array.isArray(plan.buys) ? plan.buys : {};
+// 회차 가격: 이동평균 값이 있는 단계를 순서대로, 단계마다 다음 단계(값이 있는 단계) 가격까지 3번 — 단계 가격·⅓·⅔ 지점(재매수 trancheLevels와 같음,
+// 다음 단계가 없거나 더 낮으면 1차만). 그중 목표 가격보다 낮은 회차 + 마지막 '목표가' 회차(목표 가격). 값이 없는 단계(수집 전·봉 부족)는 건너뛴다.
+// 회차 키: '25선:0'(단계 이름:회차 0~2), 목표가는 'end'. 상승 돌파라 현재가 ≥ 회차 가격이면 도달.
+function purchaseLineLevels(lines, entry){
+  const end=plus(lines?.end);if(!end)return [];
+  const known=purchaseLineNames(lines).map(name=>({name,price:plus(entry?.ma?.[name])})).filter(x=>x.price), out=[];
+  known.forEach((s,k)=>{
+    const next=known[k+1];
+    for(let t=0;t<3;t++){
+      const price=t===0?s.price:next&&next.price>s.price?s.price+(next.price-s.price)*t/3:null;
+      if(price&&price<end)out.push({key:`${s.name}:${t}`,line:s.name,t,next:t?next.name:null,price});
+    }
+  });
+  out.push({key:"end",line:"목표가",t:0,next:null,price:end});
+  return out;
+}
+const purchaseLineLabel = row => row.key==="end" ? "목표가" : `${row.line} ${row.t+1}차`;
+// 회차 목록(화면·합계·알림 공통): 산 회차 + 아직 안 산 회차(지금 이동평균 기준). 안 산 회차 금액 = (총 매수 금액 − 체결 금액 합) ÷ 안 산 회차 수 — 다 썼으면 안 산 회차 없음.
+// 순서는 단계 순서·회차 순서, 목표가는 마지막. 산 회차의 price는 체크할 때 기록한 가격.
+function purchaseLineRows(plan, entry){
+  const lines=plan?.lines, buys=purchaseBuys(plan), names=purchaseLineNames(lines);
+  const parse=key=>{if(key==="end")return {line:"목표가",t:0};const m=/^(.+):([0-2])$/.exec(key);return m&&purchaseLineName(m[1])?{line:m[1],t:Number(m[2])}:null;};
+  const done=Object.entries(buys).map(([key,b])=>{const at=b&&typeof b==="object"?parse(key):null;return at&&{key,...at,price:plus(b.price),done:true,actual:Math.max(0,finite(b.actual)||0)};}).filter(Boolean);
+  const spent=done.reduce((s,r)=>s+r.actual,0), left=Math.max(0,(finite(lines?.budget)||0)-spent);
+  const open=left>0?purchaseLineLevels(lines,entry).filter(x=>!buys[x.key]):[];
+  const order=r=>r.key==="end"?1e6:(names.indexOf(r.line)+1||999)*3+r.t;
+  return [...done,...open.map(x=>({...x,done:false,amount:left/open.length}))].sort((a,b)=>order(a)-order(b));
+}
+// 합계: 예정 = 총 매수 금액(이동평균선 돌파) 또는 회차 예정액 합(직접 입력), 체결 = 완료 회차 체결 금액(직접 입력은 비우면 예정액, 0은 0), 남은 예정 = 그 차이·미완료 회차 합.
+// 이동평균선 돌파의 회차 수는 지금 이동평균 기준이라 entry(시세 파일 종목)가 필요하다(없으면 목표가 회차만).
+function purchaseSummary(plan, entry=null){
+  if(plan?.lines){
+    const rows=purchaseLineRows(plan,entry), actual=rows.filter(r=>r.done).reduce((s,r)=>s+r.actual,0), budget=Math.max(0,finite(plan.lines.budget)||0);
+    return {count:rows.length,done:rows.filter(r=>r.done).length,planned:budget,actual,remaining:Math.max(0,budget-actual)};
+  }
   const stages=Array.isArray(plan?.stages)?plan.stages:[];
   const amount=s=>Math.max(0,finite(s.amount)||0), done=stages.filter(s=>s.done);
   return {count:stages.length,done:done.length,planned:stages.reduce((n,s)=>n+amount(s),0),
     actual:done.reduce((n,s)=>n+Math.max(0,finite(s.actual)??amount(s)),0),remaining:stages.filter(s=>!s.done).reduce((n,s)=>n+amount(s),0)};
 }
-// 가격 구간 분할매수(상승·하락 모두): 시작 가격 → 목표 가격을 count회로 고르게 나눈 가격(1차 = 시작 가격, 마지막 = 목표 가격)마다 같은 금액을 산다.
-// 매수할 금액(budget, 만원 — 화면은 목표 비중 × 기준 총자산 − 지금 평가액)을 회차 수로 나눠 회차 가격으로 나눈 수량을 최소 단위(unit: 주식 1주, 비트코인 0.00000001)로
-// 내리고, 남은 돈으로는 한 단위 더 사도 회차 금액이 가장 작은 회차부터 한 단위씩 더 산다. 합계는 매수할 금액을 넘지 않고 회차 금액 차이는 대략 한 단위 가격 안쪽이라,
-// 가격이 높은 회차일수록 수량이 줄어든다. 가격은 달러 0.01·원 1원 단위로 반올림하고 달러는 fx(원/달러)로 만원 환산.
-// 돌려주는 값: {stages:[{price,shares,amount(만원)}], step(회차 사이 가격 차), shares(합계), cost(통화 금액), amount(만원), money(매수할 금액, 통화)}
-// 또는 {error}: price(가격 없음)·count(1~PURCHASE_MAX_STAGES 밖)·fx(달러인데 환율 없음)·budget(매수할 금액 없음)·few(최소 단위도 못 사는 회차가 있음, units 합계 함께)
-const PURCHASE_MAX_STAGES = 50;
-function purchaseLadder({budget, start, end, count, currency="KRW", fx=null, unit=1}){
-  const usd=currency==="USD", rate=usd?plus(fx):1, n=finite(count);
-  if(!plus(start)||!plus(end))return {error:"price"};
-  if(!Number.isInteger(n)||n<1||n>PURCHASE_MAX_STAGES)return {error:"count"};
-  if(!rate)return {error:"fx"};
-  if(!plus(budget))return {error:"budget"};
-  const round=v=>usd?Math.round(v*100)/100:Math.round(v), dec=unit<1?8:0, fix=v=>Number(v.toFixed(dec));
-  const levels=Array.from({length:n},(_,i)=>round(n===1?start:start+(end-start)*i/(n-1)));
-  const money=budget*1e4/rate, units=levels.map(p=>Math.floor(money/n/(p*unit)+1e-9));
-  let left=money-levels.reduce((s,p,i)=>s+p*unit*units[i],0);
-  for(;;){
-    let best=-1;
-    levels.forEach((p,i)=>{if(p*unit<=left+1e-9&&(best<0||(units[i]+1)*p<(units[best]+1)*levels[best]))best=i;});
-    if(best<0)break;
-    units[best]++;left-=levels[best]*unit;
-  }
-  if(units.some(u=>u<1))return {error:"few", units:fix(units.reduce((s,u)=>s+u,0)*unit), money};
-  const stages=levels.map((price,i)=>{const shares=fix(units[i]*unit);return {price,shares,amount:Math.round(price*shares*rate/100)/100};});
-  const cost=stages.reduce((s,x)=>s+x.price*x.shares,0);
-  return {stages, step:n>1?round((end-start)/(n-1)):0, shares:fix(units.reduce((s,u)=>s+u,0)*unit), cost, amount:cost*rate/1e4, money};
-}
-// 분할매수 방향: 가격 구간 계산(ladder)이 있으면 목표 가격 ≥ 시작 가격이면 상승("up"), 아니면 하락("down").
-// 직접 넣은 가격만 있으면 마지막 회차 가격이 첫 회차보다 높을 때 상승, 그 밖(가격 하나뿐·같거나 낮음)은 하락.
-// 상승은 현재가 ≥ 회차 가격, 하락은 현재가 ≤ 회차 가격이면 도달 — 화면의 '도달' 표시와 휴대폰 알림이 같은 기준.
+// 방향: 이동평균선 돌파는 상승("up" — 현재가 ≥ 회차 가격이면 도달). 직접 입력은 마지막 회차 가격이 첫 회차보다 높으면 상승, 그 밖(가격 하나뿐·같거나 낮음)은 하락("down" — ≤).
+// 화면의 '도달' 표시와 휴대폰 알림이 같은 기준.
 function purchaseDirection(plan){
-  const l=plan?.ladder;
-  if(plus(l?.start)&&plus(l?.end))return Number(l.end)>=Number(l.start)?"up":"down";
+  if(plan?.lines)return "up";
   const p=(Array.isArray(plan?.stages)?plan.stages:[]).map(s=>plus(s?.price)).filter(v=>v!==null);
   return p.length>1&&p[p.length-1]>p[0]?"up":"down";
 }
-// 회차 알림 켬: 회차의 notify(true/false)가 있으면 그것, 없으면 계획의 notify.stages(카드의 '전체 ON'). 버튼을 누를 때만 저장한다.
-const purchaseAlertOn = (plan, stage) => typeof stage?.notify==="boolean" ? stage.notify : plan?.notify?.stages===true;
+// 회차 알림 켬: 회차 설정(직접 입력은 stages[].notify, 이동평균선 돌파는 notify.keys[회차 키])이 있으면 그것, 없으면 계획의 notify.stages(카드의 '전체 ON').
+// 버튼을 누를 때만 저장한다. row는 직접 입력 회차(stage) 또는 purchaseLineRows의 회차.
+function purchaseAlertOn(plan, row){
+  const n=plan?.notify&&typeof plan.notify==="object"?plan.notify:{}, own=row?.key?n.keys?.[row.key]:row?.notify;
+  return typeof own==="boolean"?own:n.stages===true;
+}
 // 종목 코드 → 시세 종류(데이터 저장소 kis_prices.py classify와 같은 형식): BTC-USD는 코인, 국내 6자리(A·Q 접두 포함)는 국내, 미국 심볼은 해외, 그 밖은 null
 function purchaseQuoteKind(ticker){
   const t=String(ticker||"").trim().toUpperCase();
   return t==="BTC-USD"?"코인":/^[AQ]\d{6}$|^\d[0-9A-Z]{5}$/.test(t)?"국내":/^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)?"해외":null;
 }
-// 분할매수 회차 휴대폰 알림 규칙(js/trade-alerts.js buildTradeAlertRules와 같은 모양): 종목 코드가 있고 가격을 넣은 미완료 회차 중 알림을 켠 것.
-// 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다. 회차 가격·방향을 바꾸면 revision이 바뀌어 이력이 새로 시작된다.
-// 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py purchase_alert_tickers가 알림 켠 종목을 장중 실행마다 받는다
-// (켜짐 판정을 바꾸면 그쪽도 같이). 라벨 '분할매수 N차'는 그 저장소 ma_alerts.py TRADE_LABEL_RE와 같은 형식.
+// 분할매수 회차 휴대폰 알림 규칙(js/trade-alerts.js buildTradeAlertRules와 같은 모양): 종목 코드가 있고 가격이 있는 미완료 회차 중 알림을 켠 것.
+// 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다.
+// 이동평균선 돌파 회차는 지금 이동평균 가격으로(이력은 단계 이름·회차로 이어져 이평선이 움직여도 다시 알리지 않음), 직접 입력 회차는 가격·방향을 바꾸면 이력이 새로.
+// 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py가 이동평균선 돌파 종목(purchase_line_plans)은 전체 시세·60분봉을,
+// 직접 입력 알림 종목(purchase_alert_tickers)은 장중 실행마다 종가를 받는다(켜짐 판정·단계 이름을 바꾸면 그쪽도 같이).
+// 라벨 '분할매수 N차'·'분할매수 25선 1차'·'분할매수 목표가'는 그 저장소 ma_alerts.py TRADE_LABEL_RE와 같은 형식.
 function purchaseAlertRules(assets, prices){
   const rules=[];
   for(const g of Array.isArray(assets?.allocation?.groups)?assets.allocation.groups:[])for(const it of Array.isArray(g?.items)?g.items:[]){
-    const plan=it?.buyPlan, stages=Array.isArray(plan?.stages)?plan.stages:[], ticker=String(it?.ticker||"").trim().toUpperCase(), kind=purchaseQuoteKind(ticker);
+    const plan=it?.buyPlan, ticker=String(it?.ticker||"").trim().toUpperCase(), kind=purchaseQuoteKind(ticker);
     if(!plan||!kind||!it.id||(plan.currency||assetQuote(prices,ticker)?.currency||"KRW")!==(kind==="국내"?"KRW":"USD"))continue;
+    const add=(key,label,price,condition,revision)=>rules.push({id:`trade:buy:${it.id}:${key}`,kind:"trade",ticker,label,targetPrice:price,condition,quoteGroup:"stocks",quoteKey:ticker,quoteKind:kind,enabled:true,revision:JSON.stringify(revision)});
+    if(plan.lines){
+      const entry=prices?.stocks?.[ticker];
+      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null))if(!r.done&&r.price&&purchaseAlertOn(plan,r))
+        add(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next]);
+      continue;
+    }
     const condition=purchaseDirection(plan);
-    stages.forEach((s,i)=>{
+    (Array.isArray(plan.stages)?plan.stages:[]).forEach((s,i)=>{
       const price=plus(s?.price);
-      if(!price||s.done||!s.id||!purchaseAlertOn(plan,s))return;
-      rules.push({id:`trade:buy:${it.id}:${s.id}`,kind:"trade",ticker,label:`분할매수 ${i+1}차`,targetPrice:price,condition,quoteGroup:"stocks",quoteKey:ticker,quoteKind:kind,enabled:true,revision:JSON.stringify([price,condition])});
+      if(price&&!s.done&&s.id&&purchaseAlertOn(plan,s))add(s.id,`분할매수 ${i+1}차`,price,condition,[price,condition]);
     });
   }
   return rules;
