@@ -312,7 +312,7 @@ function renderRebuy(){
   const holdHint=(amount&&low>0?`${manwon(amount)} ÷ 신저점 ${P(low)} ≈ ${won.format(shares)}주로 계산합니다.`:qtyIn?`보유 수량 ${won.format(qtyIn)}주로 계산합니다.`:amount?"신저점 가격을 넣으면 보유 금액을 신저점 가격으로 나눈 주 수(정수)로 계산합니다.":`보유 금액(${holdWord})을 넣으면 신저점 가격으로 나눈 주 수(정수)로, 수량(주)을 넣으면 그 주 수로 손절 수량을 계산합니다.`)
     +(inQty&&amount?" 주 수를 넣으면 수량 기준으로 바뀝니다.":!inQty&&qtyIn?" 금액을 넣으면 금액 기준으로 바뀝니다.":"");
   // 분할 안내: 회차 수와 범위, 평균 손절가 기준. 예: 5분할 (25선 1차~32선 2차, 평균 손절가 10,000원 이하 회차)
-  // 회차 이름: 단계 이름 뒤에 작은 회차 번호(25선₁). 화면 읽기용 이름(trText)은 '25선 2회차'
+  // 회차 이름: 단계 이름 뒤에 작은 회차 번호 칩(css .tr-no). 화면 읽기용 이름(trText)은 '25선 2회차'
   const trName=x=>`<span class="tr-name">${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":`<span class="tr-no">${x.t+1}</span>`}</span>`, trText=x=>`${esc(s.stages[x.i].name)}${s.stages[x.i].done?"":` ${x.t+1}회차`}`, firstTr=s.tranches[0], lastTr=s.tranches.at(-1), firstPx=Number(s.stages[0]?.price)||0;
   const splitText=!s.sellAvg||!firstTr?"":`${s.tranches.length>1?`${s.tranches.length}분할 (${trName(firstTr)}~${trName(lastTr)}`:`한 번에 (${trName(firstTr)}`}, ${!firstPx?`${esc(first)} 기준가 없음`:firstPx<=s.sellAvg?`평균 손절가 ${P(s.sellAvg)} 이하 회차`:`평균 손절가 ${P(s.sellAvg)}보다 ${esc(first)} 기준가가 높아 ${esc(first)} 회차만`})`;
   const trAt=x=>x.price>0?` · ${x.est?"≈":""}${P(x.price)} 이상`:"";
