@@ -91,7 +91,7 @@
     시세로 채우는 칸(현재가·N일선·N선 기준가) 이름 옆에는 아주 작고 흐린 '(자동)'(.auto-tag, 국내·미국 종목 코드가 있을 때만). 미국 종목(usTicker)은 가격·금액·보유 금액이 달러(rebuyUsd).
   - 분할매도 표(모바일): 종목이 하나(또는 평가액만)면 이름을 머리줄(.m-head)과 수량 아래(.one-sub)에 표시, fitNames()가 칸 폭에 맞춰 자름.
   - 윗줄(.top)은 모바일에서 음수 top(--tuck, fitTop())으로 붙여 스크롤하면 탭 줄만 남음. 탭을 누르면 맨 위로.
-  - 플래너 탭 줄(.tabs-2row)은 모바일(700px 이하)에서 3칸 두 줄. 탭이 4개인 assets.html은 한 줄 그대로.
+  - 플래너 탭 5개와 자산 현황 탭 4개는 모바일(700px 이하)에서도 한 줄로 표시.
 --><html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -103,14 +103,14 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=39"></script>
-  <link rel="stylesheet" href="css/app.css?v=39" />
-  <link rel="stylesheet" href="css/purchases.css?v=39" />
+  <script src="js/theme.js?v=40"></script>
+  <link rel="stylesheet" href="css/app.css?v=40" />
+  <link rel="stylesheet" href="css/purchases.css?v=40" />
 </head>
 <body>
   <header class="top">
     <div class="brand"><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 11v8M12 6v10M18 3v10"/><rect x="4.5" y="13" width="3" height="4" rx=".5"/><rect x="10.5" y="8" width="3" height="5" rx=".5"/><rect x="16.5" y="5" width="3" height="5" rx=".5"/></svg></b> 매매 플래너</div>
-    <nav class="tabs tabs-2row" aria-label="화면 선택">
+    <nav class="tabs" aria-label="화면 선택">
       <button class="tab active" data-tab="plans">분할매도</button>
       <button class="tab" data-tab="buys" type="button">분할매수</button>
       <button class="tab" data-tab="futures">달러선물</button>
@@ -271,20 +271,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=39"></script>
-  <script src="js/core.js?v=39"></script>
-  <script src="js/sync.js?v=39"></script>
-  <script src="js/prices.js?v=39"></script>
-  <script src="js/assets-calc.js?v=39"></script>
-  <script src="js/assets-store.js?v=39"></script>
-  <script src="js/alloc-link.js?v=39"></script>
-  <script src="js/purchases.js?v=39"></script>
-  <script src="js/trade-alerts.js?v=39"></script>
-  <script src="js/plans.js?v=39"></script>
-  <script src="js/futures.js?v=39"></script>
-  <script src="js/rebuy.js?v=39"></script>
-  <script src="js/alerts.js?v=39"></script>
-  <script src="js/push.js?v=39"></script>
+  <script src="js/ma-ladder.js?v=40"></script>
+  <script src="js/core.js?v=40"></script>
+  <script src="js/sync.js?v=40"></script>
+  <script src="js/prices.js?v=40"></script>
+  <script src="js/assets-calc.js?v=40"></script>
+  <script src="js/assets-store.js?v=40"></script>
+  <script src="js/alloc-link.js?v=40"></script>
+  <script src="js/purchases.js?v=40"></script>
+  <script src="js/trade-alerts.js?v=40"></script>
+  <script src="js/plans.js?v=40"></script>
+  <script src="js/futures.js?v=40"></script>
+  <script src="js/rebuy.js?v=40"></script>
+  <script src="js/alerts.js?v=40"></script>
+  <script src="js/push.js?v=40"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
