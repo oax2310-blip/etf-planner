@@ -5,13 +5,15 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
-function setup({currency='KRW',budget=8.9,price=10000,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선']}={}){
+function setup({currency='KRW',budget=8.9,price=10000,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000}={}){
   const ticker=currency==='USD'?'AAA':'111111',item={id:'a',name:'테스트 종목',ticker,shares:legacy?19:10,amount:0,
     buyPlan:manual?{stages:[{id:'s',price,...(manualShares===null?{}:{shares:manualShares}),amount:manualAmount}]}:{lines:{names,end:price,budget}}};
   if(currency==='USD')item.buyPlan.currency='USD';
+  if(tracking){item.tradeTicker=trackingCurrency==='USD'?'BBB':'222222';if(manualTrackingPrice!==null){item.tradePrice=manualTrackingPrice;item.tradePriceAt='2026-01-02T00:00:00Z';}}
   const doc={version:1,allocation:{total:100,classes:[],cash:[],groups:[{id:'g',name:'테스트 계좌',items:[item]}]}};
   if(legacy){item.buyPlan.buys={end:{actual:8.9,price}};doc.allocation.trades={'buy:a:end':{qty:null,price,value:8.9,items:[{id:'a',shares:9}]}};}
-  const prices={fx:{close:1000,asOf:'2026-01-02'},stocks:{[ticker]:{kind:currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
+  const prices={fx:{close:fx,asOf:'2026-01-02'},stocks:{[ticker]:{kind:currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
+  if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
   function element(){return {dataset:{},value:'',classList,setAttribute(){},append(){},textContent:''};}
   const document={body:element(),createElement:element,getElementById(id){
@@ -36,10 +38,10 @@ function setup({currency='KRW',budget=8.9,price=10000,legacy=false,manual=false,
   const ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:()=>'',esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){}};
   const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
-  const api=vm.runInNewContext(`${code}\n;({purchasePlanner})`,ctx);
+  const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {doc,item,prices,change,render:api.purchasePlanner.render,html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0]};
+  return {doc,item,prices,change,rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0]};
 }
 
 test('분할매수: 표시한 8주를 저장·반영하고 기존 금액 기록이 있어도 주수로만 수정한다',()=>{
@@ -142,4 +144,73 @@ test('분할매수 금액 계획도 예정액·가격으로 주수를 계산해 
   r.change('[data-purchase-shares]',8);assert.equal(r.item.shares,18);
   assert.match(r.html(),/남은 매수 2주/);
   r.change('[data-purchase-shares]',0);assert.equal(r.item.shares,10);
+});
+
+test('미국 ETF 추종: 실제 ETF 90주를 표시하고 부분 체결·추가 체결·취소에 같은 단위를 쓴다',()=>{
+  const r=setup({currency:'USD',price:100,budget:135,tracking:true,trackingPrice:15000,fx:1350});
+  assert.match(r.html(),/매수 90주/);assert.match(r.html(),/실제 매수 <b>222222<\/b>/);assert.match(r.html(),/예상 ₩1350000/);assert.match(r.html(),/잔액 ₩0/);
+  r.item.buyPlan.notify={stages:true};assert.equal(r.rules()[0].ticker,'AAA');assert.equal(r.rules()[0].targetPrice,100);
+  r.change('[data-purchase-buy-shares]',60);
+  const b=r.item.buyPlan.buys.end;assert.equal(b.shares,60);assert.equal(b.plannedShares,90);assert.equal(b.price,100);assert.equal(b.tradePrice,15000);assert.equal(b.tradeTicker,'222222');assert.equal(b.tradeCurrency,'KRW');assert.equal(b.actual,90);assert.equal(r.item.shares,70);
+  assert.equal(r.doc.allocation.trades['buy:a:end'].price,15000,'반영 기록도 실제 ETF 가격');
+  r.prices.stocks.AAA.close=200;r.prices.stocks['222222'].close=30000;r.prices.fx.close=1500;r.render();
+  assert.match(r.html(),/남은 매수 30주/);assert.equal(b.tradePrice,15000,'첫 체결 시 가격 고정');
+  r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,100);assert.equal(r.item.buyPlan.buys.end.actual,135);
+  r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
+});
+
+test('추종 ETF: 예산 내림·잔액·가격 누락·직접 입력·해외 추종 ETF 환율을 처리한다',()=>{
+  const r=setup({currency:'USD',price:100,budget:100,tracking:true,trackingPrice:12300});
+  assert.match(r.html(),/매수 81주/);assert.match(r.html(),/예상 ₩996300/);assert.match(r.html(),/잔액 ₩3700/);
+  const missing=setup({currency:'USD',price:100,tracking:true,missingTracking:true});
+  assert.match(missing.html(),/수량 계산 불가/);assert.equal(missing.input('[data-purchase-buy]').disabled,true);
+  missing.change('[data-purchase-buy]',true);assert.equal(missing.item.shares,10);
+  const manualPrice=setup({currency:'USD',price:100,budget:100,tracking:true,missingTracking:true,manualTrackingPrice:12300});
+  assert.match(manualPrice.html(),/매수 81주/);assert.match(manualPrice.html(),/직접 입력/);
+  const small=setup({currency:'USD',price:100,budget:0.9,tracking:true});assert.match(small.html(),/매수 0주/);assert.equal(small.input('[data-purchase-buy]').disabled,true);
+  const foreign=setup({currency:'USD',price:100,budget:10,tracking:true,trackingCurrency:'USD',trackingPrice:20,fx:1000});
+  assert.match(foreign.html(),/매수 5주/);foreign.change('[data-purchase-buy]',true);assert.equal(foreign.item.shares,15);assert.equal(foreign.item.buyPlan.buys.end.tradeCurrency,'USD');assert.equal(foreign.item.buyPlan.buys.end.actual,10);
+});
+
+test('추종 ETF 직접 입력: 기준 수량 10주와 실제 계획 90주를 구분하고 취소 때 원래 입력을 복원한다',()=>{
+  for(const manualShares of [10,null]){
+    const r=setup({currency:'USD',price:100,manual:true,manualShares,manualAmount:135,tracking:true,trackingPrice:15000,fx:1350});
+    assert.match(r.html(),/매수 90주/);r.change('[data-purchase-shares]',63);assert.equal(r.item.shares,73);
+    const b=r.item.buyPlan.stages[0];assert.equal(b.plannedShares,90);assert.equal(b.actual,94.5);assert.equal(b.sourceShares,manualShares);assert.equal(b.tradePrice,15000);
+    r.prices.stocks['222222'].close=30000;r.render();assert.match(r.html(),/남은 매수 27주/);
+    r.change('[data-purchase-done]',true);assert.equal(r.item.shares,100);assert.equal(b.actual,135);
+    r.change('[data-purchase-done]',false);assert.equal(r.item.shares,10);assert.equal(b.shares,manualShares??undefined);assert.equal(b.tradeTicker,undefined);assert.equal(b.sourceShares,undefined);
+  }
+});
+
+test('같은 미국 티커를 추종해도 다른 실제 ETF 계좌에 주수를 더하지 않는다',()=>{
+  const r=setup({currency:'USD',price:100,budget:135,tracking:true,trackingPrice:15000,fx:1350});
+  const other={id:'b',name:'다른 추종 ETF',ticker:'AAA',tradeTicker:'333333',shares:20};r.doc.allocation.groups[0].items.push(other);
+  r.prices.stocks['333333']={kind:'국내',close:30000,asOf:'2026-01-02'};r.render();r.change('[data-purchase-buy]',true);
+  assert.equal(r.item.shares,100);assert.equal(other.shares,20);
+});
+
+test('추종 ETF: 같은 이름·코드의 기존 보유 계좌가 여럿이어도 계획에서 고른 항목에만 체결·추가·취소한다',()=>{
+  const r=setup({currency:'USD',price:100,budget:135,tracking:true,trackingPrice:15000,fx:1350});
+  const other={id:'b',name:r.item.name,ticker:'AAA',tradeTicker:'222222',shares:20},direct={id:'c',name:'같은 ETF 직접 보유',ticker:'222222',shares:30},source={id:'ref',name:'기준 미국 ETF',ticker:'AAA',shares:5};
+  r.doc.allocation.groups.push({id:'other',name:'다른 계좌',items:[other,direct,source]});
+  const before=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),before,'대상 표시만으로 기존 보유 기록을 바꾸지 않음');
+  assert.match(r.html(),/매수 반영 대상<\/b> 자산 배분 › 테스트 계좌 › 테스트 종목/);assert.match(r.html(),/현재 보유 <b>10주<\/b> · 체결 주수를 더합니다/);
+  r.change('[data-purchase-buy-shares]',60);
+  assert.equal(r.item.shares,70);assert.deepEqual([other.shares,direct.shares,source.shares],[20,30,5]);
+  assert.equal(r.doc.allocation.trades['buy:a:end'].items.length,1);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');
+  r.item.name='바뀐 종목 이름';r.doc.allocation.groups[0].items=[];r.doc.allocation.groups[1].items.push(r.item);r.render();
+  assert.match(r.html(),/매수 반영 대상<\/b> 자산 배분 › 다른 계좌 › 바뀐 종목 이름/);
+  r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,100);assert.deepEqual([other.shares,direct.shares,source.shares],[20,30,5]);
+  r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.deepEqual([other.shares,direct.shares,source.shares],[20,30,5]);assert.equal(r.doc.allocation.trades,undefined);
+});
+
+test('추종 ETF: 금액으로 관리하는 기존 항목은 평가액을 표시하고 체결 금액만 더했다가 복원한다',()=>{
+  const r=setup({currency:'USD',price:100,budget:135,tracking:true,trackingPrice:15000,fx:1350});
+  delete r.item.shares;r.item.amount=100;r.item.base=15000;r.render();
+  assert.match(r.html(),/현재 평가액 <b>100만원<\/b> · 체결 금액을 더합니다/);
+  r.change('[data-purchase-buy-shares]',60);assert.equal(r.item.amount,190);assert.equal(r.item.shares,undefined);
+  assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].amount,90);
+  r.change('[data-purchase-buy]',true);assert.equal(r.item.amount,235);assert.equal(r.item.base,15000);
+  r.change('[data-purchase-buy]',false);assert.equal(r.item.amount,100);assert.equal(r.item.shares,undefined);
 });

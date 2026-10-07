@@ -26,6 +26,7 @@
     동기화 연결은 같고 기기 간 병합·시세는 assets-store.js를 공유한다. 분할매수·자산 JSON 백업/복원·복구 기록은 플래너 동기화 창에도 있다.
   - 체크 → 자산 배분 연동(js/alloc-link.js, 계산은 assets-calc.js '플래너 체결 → 자산 배분 연동' 주석): 분할매도 회차·재매수 손절(cuts)·재매수 회차(stages[].buys)·분할매수 회차를 체크하면
     같은 종목 코드(linkTicker) 자산 배분 종목의 보유 수량·금액을 바꾸고 자산 기록 allocation.trades[출처 키]에 반영한 양을 둔다. 연결 계좌가 여럿이면 linkDialog에서 고름.
+    추종 ETF 분할매수는 실제 ETF 주수로 계산하고 targetId(계획을 붙인 자산 항목 id)에만 반영한다. 카드·계획 창에 그룹·종목·기존 보유량을 표시하며 같은 코드의 다른 계좌는 건드리지 않는다.
     분할매수·분할매도는 체크 전에도 누적 체결 입력 가능. 매도 plans[].fills[회차] = {plannedQty,qty,price} 또는 {plannedValue,value,price}, checked는 전량 완료만.
     매수 buyPlan.buys[키]는 plannedShares·plannedActual·shares·actual·price·next, 직접 입력 stages[]는 plannedShares·shares·partial(부분 체결)·done(완료)·actual.
     첫 체결 때 원래 수량·가격을 고정하고 잔량을 유지, 매수 잔량 예산은 새 회차에 중복 배분하지 않는다. 옛 완료 기록은 읽을 때만 해석하고 입력할 때 새 필드 저장. 누적 0은 되돌림.
@@ -107,9 +108,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=42"></script>
-  <link rel="stylesheet" href="css/app.css?v=42" />
-  <link rel="stylesheet" href="css/purchases.css?v=42" />
+  <script src="js/theme.js?v=44"></script>
+  <link rel="stylesheet" href="css/app.css?v=44" />
+  <link rel="stylesheet" href="css/purchases.css?v=44" />
 </head>
 <body>
   <header class="top">
@@ -151,10 +152,12 @@
 
   <dialog id="purchaseDialog"><form method="dialog" class="dialog-inner" id="purchaseForm">
     <div class="dialog-head"><h2 id="purchaseTitle">분할매수 계획</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
-    <div class="field purchase-item-field"><span id="purchaseItemLabel">종목</span>
+    <div class="field purchase-item-field"><span id="purchaseItemLabel">매수를 반영할 자산 종목</span>
       <div id="purchaseSearchBox"><input type="search" id="purchaseSearch" placeholder="이름·종목 코드·그룹으로 검색" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-labelledby="purchaseItemLabel" aria-controls="purchaseItemList" /><div id="purchaseItemList" class="purchase-pick" role="listbox" aria-labelledby="purchaseItemLabel"></div></div>
       <div id="purchasePicked" class="purchase-picked" hidden></div><input type="hidden" name="item" />
-      <small class="field-hint">자산 배분의 종목과 연결됩니다. 이름·목표 비중은 자산 배분의 종목별에서 수정하세요.</small></div>
+      <small class="field-hint">이미 보유한 ETF라면 해당 계좌·그룹의 기존 종목을 고르세요. 추종 ETF는 고른 종목의 보유량에 체결분을 더합니다. 이름·목표 비중·ETF 코드는 자산 배분에서 수정하세요.</small></div>
+    <p id="purchaseTargetInfo" class="purchase-target-info" hidden></p>
+    <p id="purchaseTrackingInfo" class="purchase-tracking-info" hidden></p>
     <div class="purchase-mode" role="radiogroup" aria-label="매수 방식"><label><input type="radio" name="mode" value="lines" checked /> 이동평균선 돌파</label><label><input type="radio" name="mode" value="manual" /> 직접 입력</label></div>
     <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-ladder-grid">
@@ -275,20 +278,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=42"></script>
-  <script src="js/core.js?v=42"></script>
-  <script src="js/sync.js?v=42"></script>
-  <script src="js/prices.js?v=42"></script>
-  <script src="js/assets-calc.js?v=42"></script>
-  <script src="js/assets-store.js?v=42"></script>
-  <script src="js/alloc-link.js?v=42"></script>
-  <script src="js/purchases.js?v=42"></script>
-  <script src="js/trade-alerts.js?v=42"></script>
-  <script src="js/plans.js?v=42"></script>
-  <script src="js/futures.js?v=42"></script>
-  <script src="js/rebuy.js?v=42"></script>
-  <script src="js/alerts.js?v=42"></script>
-  <script src="js/push.js?v=42"></script>
+  <script src="js/ma-ladder.js?v=44"></script>
+  <script src="js/core.js?v=44"></script>
+  <script src="js/sync.js?v=44"></script>
+  <script src="js/prices.js?v=44"></script>
+  <script src="js/assets-calc.js?v=44"></script>
+  <script src="js/assets-store.js?v=44"></script>
+  <script src="js/alloc-link.js?v=44"></script>
+  <script src="js/purchases.js?v=44"></script>
+  <script src="js/trade-alerts.js?v=44"></script>
+  <script src="js/plans.js?v=44"></script>
+  <script src="js/futures.js?v=44"></script>
+  <script src="js/rebuy.js?v=44"></script>
+  <script src="js/alerts.js?v=44"></script>
+  <script src="js/push.js?v=44"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // 플래너 체크 → 자산 배분 보유량 연동(분할매도·재매수·분할매수 공통): 계획 화면의 '자산 배분' 줄, 보유량 가져오기 값, 체크할 때 계좌를 고르는 창(linkDialog)과 결과 알림 줄.
 // 계산·반영 기록 규칙은 assets-calc.js '플래너 체결 → 자산 배분 연동' 주석. 자산 기록은 assetStore(분할매수·자산 현황과 같은 기록·동기화)의 allocation 구역에 저장한다.
-// 체크: 연결 종목이 없으면 지금처럼 체크만, 하나면 바로 반영, 여럿(같은 종목 코드의 여러 계좌)이거나 양을 계산할 수 없으면 창에서 계좌·양을 고른다.
+// 체크: 연결 종목이 없으면 지금처럼 체크만, 하나면 바로 반영, 여럿(같은 종목 코드의 여러 계좌)이거나 양을 계산할 수 없으면 창에서 계좌·양을 고른다. targetId가 있는 추종 ETF 분할매수는 계획에서 고른 항목만 사용한다.
 // 창의 '반영 안 함'은 체크만 하고 자산 배분은 그대로, '취소'·닫기는 체크하지 않는다. 체크를 풀면 반영한 양을 그대로 되돌린다(창 없음).
 const allocLink = (()=>{
 const allocOf=()=>assetStore.doc?.allocation||null;
@@ -41,7 +41,7 @@ function describe(rec){
 }
 function apply(key, o, picks){
   const a=allocOf();if(!a)return;
-  const had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,o.trade,o.label,picks);
+  const had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,{...o.trade,ticker:o.ticker},o.label,picks);
   if(rec||had)assetStore.saveSection("allocation");
   if(rec)toast(`자산 배분 반영 · ${describe(rec)}`);
 }
@@ -87,9 +87,11 @@ function initialize(){
   d.addEventListener("close",()=>{if(pending)finish(null);});
 }
 // ---------- 출처 화면이 부르는 함수 ----------
-// 체크: o = {ticker, ownId?, trade(assets-calc.js 체결), label, prefer?: [반영 키 앞부분…], commit: () => 출처 키(체크를 저장한 뒤) 또는 false, redraw}
+// 체크: o = {ticker, ownId?, targetId?, trade(assets-calc.js 체결), label, prefer?: [반영 키 앞부분…], commit: () => 출처 키(체크를 저장한 뒤) 또는 false, redraw}
+// targetId가 있으면 그 자산 항목에만 반영한다(추종 ETF 분할매수에서 계획을 붙인 기존 종목). 같은 코드의 다른 계좌를 자동으로 연결하지 않는다.
 function check(o){
-  const a=allocOf(), size=plus(o.trade?.qty)||plus(o.trade?.value), rows=a&&size?tradeRows(a,assetStore.prices,o.ticker,o.trade,o.ownId):[]; // 0주 회차는 체크만
+  const a=allocOf(), size=plus(o.trade?.qty)||plus(o.trade?.value), rows=a&&size?tradeRows(a,assetStore.prices,o.ticker,o.trade,o.ownId).filter(r=>!o.targetId||r.it.id===o.targetId):[]; // 0주 회차는 체크만
+  if(o.targetId&&size&&!rows.length){toast("매수를 반영할 자산 항목을 다시 확인하세요.");o.redraw?.();return;}
   if(rows.length>1||rows.length===1&&rows[0].n===null){openDialog(o,rows);return;}
   const key=o.commit();
   if(key&&rows.length)apply(key,o,[{id:rows[0].it.id,unit:rows[0].unit,n:rows[0].n}]);

@@ -17,6 +17,18 @@ function assetQuote(prices, ticker){
 const assetFx = (prices, alloc) => plus(prices?.fx?.close) || plus(alloc?.cashFx);
 // 1주(1단위) 원화 가격. 달러 시세는 × 환율, 환율이 없으면 null
 const krwPrice = (q, fx) => !q ? null : q.currency==="USD" ? (fx ? q.close*fx : null) : q.close;
+// ticker는 매매 기준 티커, tradeTicker는 실제 매수하는 일반 추종 ETF 코드. 빈칸이면 기존처럼 ticker를 직접 거래한다.
+const assetTradeTicker = it => String(it?.tradeTicker||it?.ticker||"").trim().toUpperCase();
+const tracksETF = it => !!String(it?.tradeTicker||"").trim()&&linkTicker(it.tradeTicker)!==linkTicker(it.ticker);
+function assetTradeQuote(prices, it){
+  if(!tracksETF(it))return assetQuote(prices,it?.ticker);
+  const ticker=assetTradeTicker(it), kind=purchaseQuoteKind(ticker);
+  if(!["국내","해외"].includes(kind))return null;
+  const q=assetQuote(prices,ticker);
+  if(q?.kind===kind)return q;
+  const close=plus(it.tradePrice);
+  return close?{kind,close,currency:kind==="해외"?"USD":"KRW",asOf:String(it.tradePriceAt||"").slice(0,10),manual:true}:null;
+}
 
 // ---------- 자산 배분 ----------
 // 기준 총자산 입력: 숫자만 넣으면 기존처럼 만원. 억·만원·원 표기는 만원 숫자로 환산하며, 빈칸(null)과 잘못된 입력(NaN)을 구분한다.
@@ -37,10 +49,11 @@ function allocationTotalText(value){
   return `${allocationTotalFormat.format(e)}억${m?` ${allocationTotalFormat.format(m)}만원`:"원"}`;
 }
 // 종목 평가액(만원): ① 보유 수량 × 현재가(달러는 × 환율) ② 금액만 넣었으면 금액 × (지금 원화 가격 ÷ 금액을 넣을 때 원화 가격 base)
-// ③ 시세가 없으면 넣은 금액 그대로. 미국 ETF를 따라가는 국내 ETF는 ticker에 따라가는 미국 ETF를 넣어 ②로 따라간다.
+// ③ 시세가 없으면 넣은 금액 그대로. tradeTicker가 있으면 실제 ETF 시세(없으면 직접 넣은 tradePrice)로 평가하고, 보유 수량도 실제 ETF 주수다.
+// 미국 ETF를 따라가는 국내 ETF에서 tradeTicker를 비운 기존 기록은 ticker에 따라가는 미국 ETF를 넣어 ②로 따라간다.
 // 보유 수량 0(플래너 체크로 다 판 종목 — 칸을 지우지 않음)은 평가액 0(남은 금액 칸으로 돌아가지 않게).
 function itemValue(item, prices, fx){
-  const q=assetQuote(prices,item?.ticker), p=krwPrice(q,fx), shares=plus(item?.shares), amount=finite(item?.amount)||0;
+  const q=assetTradeQuote(prices,item), p=krwPrice(q,fx), shares=plus(item?.shares), amount=finite(item?.amount)||0;
   if(finite(item?.shares)===0)return {value:0, how:"shares", q};
   if(shares&&p)return {value:shares*p/1e4, how:"shares", q};
   if(amount>0&&p&&plus(item?.base))return {value:amount*p/Number(item.base), how:"ratio", q};
@@ -51,7 +64,7 @@ function fillBases(alloc, prices){
   const fx=assetFx(prices,alloc);let changed=false;
   for(const g of alloc?.groups||[])for(const it of g.items||[]){
     if(plus(it.shares)||!(finite(it.amount)>0)||plus(it.base))continue;
-    const q=assetQuote(prices,it.ticker), p=krwPrice(q,fx);
+    const q=assetTradeQuote(prices,it), p=krwPrice(q,fx);
     if(p){it.base=Math.round(p*1e4)/1e4;it.baseAt=q.asOf;changed=true;}
   }
   return changed;
@@ -59,7 +72,7 @@ function fillBases(alloc, prices){
 // 금액·종목 코드를 고쳤을 때 기준 가격을 지금 시세로 다시 잡는다(시세가 없으면 지움 → 다음 시세 때 fillBases)
 function resetBase(it, prices, alloc){
   delete it.base;delete it.baseAt;
-  const q=assetQuote(prices,it.ticker), p=krwPrice(q,assetFx(prices,alloc));
+  const q=assetTradeQuote(prices,it), p=krwPrice(q,assetFx(prices,alloc));
   if(p&&finite(it.amount)>0&&!plus(it.shares)){it.base=Math.round(p*1e4)/1e4;it.baseAt=q.asOf;}
 }
 // 현금(만원): 원화는 그대로, 달러는 × 환율(시세 → 직접 넣은 환율), minus는 빼는 항목(예: 선물 증거금)
@@ -128,6 +141,17 @@ function purchaseFill(row, currency, fx, step=1){
   if(!(price>0))return null;
   const shares=Number((Math.floor(amount*1e4/(price*rate*step)+1e-9)*step).toFixed(8));
   return {shares, price, actual:Number((shares*price*rate/1e4).toFixed(8))};
+}
+// 추종 ETF: 회차 예산(만원)을 실제 ETF 현재가로 나눠 정수 주수를 내림한다. 예산이 없고 기준 주수만 있으면 기준 주수 × 기준가 × 환율로 예산을 환산한다.
+// price는 알림·회차용 기준 가격을 유지하고, tradeTicker·tradePrice·tradeCurrency는 첫 체결 때 고정해 추가 체결·취소도 같은 ETF 단위를 쓴다.
+function purchaseTrackingFill(row, it, prices, fx, currency="USD"){
+  if(!tracksETF(it))return purchaseFill(row,currency,fx,linkStep(it));
+  const q=assetTradeQuote(prices,it);if(!q)return null;
+  let amount=finite(row?.amount);
+  if(amount===null){const shares=plus(row?.shares), price=plus(row?.price), rate=currency==="USD"?plus(fx):1;if(!shares||!price||!rate)return null;amount=shares*price*rate/1e4;}
+  const fill=purchaseFill({amount,price:q.close},q.currency,fx);if(!fill)return null;
+  const raw=plus(row?.price), price=raw?currency==="USD"?Math.round(raw*100)/100:Math.round(raw):null;
+  return {...fill,price,budget:amount,tradeTicker:assetTradeTicker(it),tradePrice:fill.price,tradeCurrency:q.currency};
 }
 // 회차 목록(화면·합계·알림 공통): 체결 기록(완료·부분 체결) + 아직 안 산 회차(지금 이동평균 기준).
 // 부분 체결의 잔량 예산을 먼저 남겨 두고, 나머지 예산만 새 회차에 나눈다. 시세·단계·예산이 바뀌어도 부분 체결 잔량은 사라지지 않는다.
@@ -227,19 +251,20 @@ function allocationSummary(alloc, prices){
 // 연결: 종목 코드가 같은 종목(대문자, 국내 코드 'A' 접두 무시, '비트코인' = BTC-USD). 분할매수는 계획이 붙은 종목도(코드가 없어도) 연결.
 // 반영 기록 allocation.trades = {출처 키: {label, at, qty, price, value, items:[{id, shares?, amount?, fresh?}]}} — 체크한 동안만 두고 풀면 지운다(처음 반영할 때만 만듦).
 //   items의 shares·amount는 그 종목에 실제로 더한 양(매도는 음수, 0 아래로 내려가지 않게 자른 값)이라 되돌리면 원래 값. fresh는 보유 수량 칸을 새로 만든 것(되돌려 0이면 칸을 지움).
-//   qty(주)·price(계획 통화)·value(만원)는 반영할 때의 체결 크기 — 체크 뒤 체결 수량·가격·금액을 고치면 같은 비율로 items를 다시 맞춘다(rescaleTrade).
+//   qty(주)·price(체결 통화)·value(만원)는 반영할 때의 체결 크기 — 체크 뒤 체결 수량·가격·금액을 고치면 같은 비율로 items를 다시 맞춘다(rescaleTrade).
+//   기준 티커와 실제 ETF 단위가 다르면 투자 금액을 실제 ETF 가격으로 나눈 주수를 내림하고 items[].converted로 표시해 금액 비율로 정정한다.
 // 출처 키: 'sell:계획 id:회차', 'cut:재매수 종목 id:회차', 'rebuy:재매수 종목 id:단계 이름:회차', 'buy:자산 종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'.
 // 종목마다 단위: 보유 수량 칸(shares, 0 포함)이 있으면 수량(비트코인 0.00000001, 나머지 1주), 없으면 금액(amount, 만원). 빈 종목(수량 없고 금액 0)은 체결 수량을 알면 수량.
 //   금액 종목이 시세를 따라가면(base) 금액 칸은 '넣을 때 가격' 기준이라, 지금 평가액 V만원을 사고팔면 amount를 V × (amount ÷ 지금 평가액)만큼 바꾼다(기준 가격 base는 그대로 — 입력 대비 수익률 유지).
 //   금액 0에서 사면 기준 가격을 지금 시세로 다시 잡는다(resetBase).
 const linkTicker = t => { const s=String(t||"").trim().toUpperCase(); return s==="비트코인"?"BTC-USD":s.replace(/^A(\d[0-9A-Z]{5})$/,"$1"); };
-const linkStep = it => linkTicker(it?.ticker)==="BTC-USD" ? 1e-8 : 1;
+const linkStep = it => linkTicker(assetTradeTicker(it))==="BTC-USD" ? 1e-8 : 1;
 const linkRound = (v, step) => step<1 ? Number((Math.round(v/step)*step).toFixed(8)) : Math.round(v/step)*step;
 function allocItemById(alloc, id){ for(const g of alloc?.groups||[])for(const it of g.items||[])if(it.id===id)return it; return null; }
 // 연결 종목 [{g, it}]: 종목 코드가 같은 종목 + ownId 종목(분할매수 계획이 붙은 종목). 종목 코드가 비었으면 ownId만.
 function linkedItems(alloc, ticker, ownId=null){
   const key=linkTicker(ticker), out=[];
-  for(const g of alloc?.groups||[])for(const it of g.items||[])if(it.id===ownId||key&&linkTicker(it.ticker)===key)out.push({g,it});
+  for(const g of alloc?.groups||[])for(const it of g.items||[])if(it.id===ownId||key&&(linkTicker(it.ticker)===key||linkTicker(assetTradeTicker(it))===key))out.push({g,it});
   return out;
 }
 // 계획 화면의 '자산 배분' 줄과 보유량 가져오기: 연결 종목 합계 평가액·비중, 목표(연결 종목 목표의 합 — 없으면 연결 종목이 한 그룹의 전부일 때 그 그룹 목표),
@@ -250,7 +275,7 @@ function linkSummary(alloc, prices, ticker, ownId=null){
   const own=list.map(x=>finite(x.it.target)).filter(v=>v!==null), groups=[...new Set(list.map(x=>x.g))];
   let target=own.length?Math.round(own.reduce((a,b)=>a+b,0)*1e8)/1e8:null, scope=own.length?"item":null;
   if(target===null&&groups.length===1&&groups[0].items.every(it=>list.some(x=>x.it===it))){const t=s.targets.groups.get(groups[0].id)?.target;if(t!=null){target=t;scope="group";}}
-  const allShares=list.every(x=>finite(x.it.shares)!==null), step=linkStep(list[0].it);
+  const allShares=list.every(x=>finite(x.it.shares)!==null&&linkTicker(assetTradeTicker(x.it))===linkTicker(ticker)), step=linkStep(list[0].it);
   return {rows, value, pct:s.pct(value), target, scope, gap:target!==null?target/100*s.base-value:null, shares:allShares?linkRound(list.reduce((n,x)=>n+finite(x.it.shares),0),step):null, base:s.base, fx:s.fx};
 }
 // 체결 = {sign: -1 매도·손절, 1 매수, qty?: 수량, price?: 가격(계획 통화), currency: "KRW"|"USD", value?: 금액(만원)}. 모르는 값은 null.
@@ -259,10 +284,10 @@ function linkSummary(alloc, prices, ticker, ownId=null){
 function tradeRows(alloc, prices, ticker, trade, ownId=null){
   const s=allocationSummary(alloc,prices), qty=plus(trade?.qty), rate=trade?.currency==="USD"?s.fx:1, px=plus(trade?.price)&&rate?trade.price*rate:null;
   return linkedItems(alloc,ticker,ownId).map(({g,it})=>{
-    const r=s.items.get(it.id), price=px||krwPrice(r?.q,s.fx), step=linkStep(it);
+    const r=s.items.get(it.id), converted=linkTicker(assetTradeTicker(it))!==linkTicker(ticker), price=converted?krwPrice(r?.q,s.fx):px||krwPrice(r?.q,s.fx), step=linkStep(it);
     const unit=finite(it.shares)!==null||!(finite(it.amount)>0)&&qty?"shares":"amount";
-    const value=plus(trade?.value)??(qty&&price?qty*price/1e4:null), n=unit==="shares"?qty??(value&&price?value*1e4/price:null):value;
-    return {g,it,unit,step,value:r?.value||0,n:n===null?null:unit==="shares"?linkRound(n,step):Math.round(n*10)/10};
+    const value=plus(trade?.value)??(qty&&(converted?px:price)?qty*(converted?px:price)/1e4:null), n=unit==="shares"?(!converted?qty:null)??(value&&price?value*1e4/price:null):value;
+    return {g,it,unit,step,converted,value:r?.value||0,n:n===null?null:unit==="shares"?converted?Math.floor(n/step+1e-9)*step:linkRound(n,step):Math.round(n*10)/10};
   });
 }
 // 종목 칸(shares·amount)에 d를 더한다(0 아래로는 자름). 실제로 더한 양을 돌려준다(없으면 0).
@@ -279,7 +304,7 @@ function applyTrade(alloc, prices, key, trade, label, picks){
     const it=allocItemById(alloc,p?.id), n=plus(p?.n);if(!it||!n)continue;
     if(p.unit==="shares"){
       const fresh=finite(it.shares)===null, add=bumpField(it,"shares",sign*n,linkStep(it));
-      if(add)items.push({id:it.id,shares:add,...(fresh?{fresh:true}:{})});
+      if(add)items.push({id:it.id,shares:add,...(fresh?{fresh:true}:{}),...(trade?.ticker&&linkTicker(trade.ticker)!==linkTicker(assetTradeTicker(it))?{converted:true}:{})});
     }else{
       const was=finite(it.amount)||0, v=s.items.get(it.id)?.value||0, add=bumpField(it,"amount",sign*n*(was>0&&v>0?was/v:1),0.01);
       if(!add)continue;
@@ -312,21 +337,23 @@ function rescaleTrade(alloc, key, trade){
   const rq=ratio(q,rec.qty), rpq=ratio(q&&p?q*p:null,rec.qty&&rec.price?rec.qty*rec.price:null), rv=ratio(v,rec.value);
   const fShares=rq??rv??rpq, fAmount=rv??rpq??rq;
   const quantities=new Map(), groups=new Map();
-  if(fShares&&fShares!==1)for(const e of Array.isArray(rec.items)?rec.items:[]){
+  for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it||!finite(e.shares))continue;
-    const step=linkStep(it), sign=e.shares<0?-1:1, key=`${step}:${sign}`, rows=groups.get(key)||[];
-    const units=Math.round(Math.abs(e.shares)/step), scaled=units*fShares;
-    rows.push({e,step,sign,units,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
+    const factor=e.converted?fAmount:fShares;if(!factor||factor===1)continue;
+    const step=linkStep(it), sign=e.shares<0?-1:1, key=`${step}:${sign}:${!!e.converted}`, rows=groups.get(key)||[];
+    const units=Math.round(Math.abs(e.shares)/step), scaled=units*factor;
+    rows.push({e,step,sign,units,factor,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
   }
   for(const rows of groups.values()){
-    const extra=Math.round(rows.reduce((n,r)=>n+r.units,0)*fShares)-rows.reduce((n,r)=>n+r.base,0);
+    const total=rows.reduce((n,r)=>n+r.units,0)*rows[0].factor,extra=(rows[0].e.converted?Math.floor(total+1e-9):Math.round(total))-rows.reduce((n,r)=>n+r.base,0);
     [...rows].sort((a,b)=>b.fraction-a.fraction).slice(0,extra).forEach(r=>r.base++);
     rows.forEach(r=>quantities.set(r.e,linkRound(r.sign*r.base*r.step,r.step)));
   }
   let changed=false;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it)continue;
-    if(finite(e.shares)&&fShares&&fShares!==1){const step=linkStep(it), add=bumpField(it,"shares",(quantities.get(e)??linkRound(e.shares*fShares,step))-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
+    const factor=e.converted?fAmount:fShares;
+    if(finite(e.shares)&&factor&&factor!==1){const step=linkStep(it), add=bumpField(it,"shares",(quantities.get(e)??linkRound(e.shares*factor,step))-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
     if(finite(e.amount)&&fAmount&&fAmount!==1){const add=bumpField(it,"amount",Math.round(e.amount*fAmount*100)/100-e.amount,0.01);if(add){e.amount=linkRound(e.amount+add,0.01);changed=true;}}
   }
   rec.qty=q??rec.qty;rec.price=p??rec.price;rec.value=v??rec.value;

@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -15,6 +15,42 @@ const prices = {stocks: {
   'BTC-USD': {kind: '코인', asOf: '2026-01-03', close: 100},
   BAD: {error: true},
 }, fx: {close: 1000, asOf: '2026-01-02'}};
+
+test('일반 추종 ETF: 기준 주수·달러 가격·환율로 같은 금액을 환산하고 잔액을 남긴다',()=>{
+  const it={ticker:'AAA',tradeTicker:'111111'},source={price:50,shares:10};
+  const before=JSON.stringify([it,source,prices]);
+  const fill=c.purchaseTrackingFill(source,it,prices,1000,'USD');
+  assert.equal(fill.shares,50);assert.equal(fill.actual,50);assert.equal(fill.price,50);assert.equal(fill.tradePrice,10000);assert.equal(fill.tradeCurrency,'KRW');
+  const p={...prices,stocks:{...prices.stocks,'111111':{...prices.stocks['111111'],close:12300}}};
+  const rounded=c.purchaseTrackingFill({amount:100,price:50},it,p,1000,'USD');
+  assert.equal(rounded.shares,81);assert.equal(rounded.actual,99.63);near((rounded.budget-rounded.actual)*1e4,3700,'예산 내 매수 잔액');
+  assert.equal(JSON.stringify([it,source,prices]),before,'환산·표시는 기존 입력과 시세를 변경하지 않음');
+  assert.equal(c.purchaseTrackingFill(source,it,prices,null,'USD'),null,'달러 기준 주수 환산에는 환율 필요');
+  assert.equal(c.purchaseTrackingFill({amount:100,price:50},it,prices,null,'USD').shares,100,'이미 원화 예산이면 국내 ETF 주수 계산에 환율 불필요');
+});
+
+test('추종 ETF 평가액은 실제 ETF 주수·가격을 쓰며 직접 입력 가격보다 자동 시세를 우선한다',()=>{
+  const it={id:'a',ticker:'AAA',tradeTicker:'111111',shares:10,amount:0,tradePrice:9000,tradePriceAt:'2026-01-01T00:00:00Z'};
+  assert.equal(c.itemValue(it,prices,1000).value,10,'미국 기준 ETF의 50달러로 보유 주수를 곱하지 않음');
+  assert.equal(c.assetTradeQuote(prices,it).close,10000);
+  const empty={stocks:{AAA:prices.stocks.AAA}};
+  assert.equal(c.assetTradeQuote(empty,it).manual,true);assert.equal(c.itemValue(it,empty,null).value,9);
+  assert.equal(c.purchaseTrackingFill({amount:10,price:50},it,empty,1000,'USD').shares,11);
+  delete it.tradePrice;assert.equal(c.purchaseTrackingFill({amount:10,price:50},it,empty,1000,'USD'),null,'실제 ETF 가격이 없을 때 원본 가격으로 잘못 계산하지 않음');
+  const amountOnly={ticker:'AAA',tradeTicker:'111111',amount:10};c.resetBase(amountOnly,prices,{});
+  assert.equal(amountOnly.base,10000);assert.equal(c.itemValue(amountOnly,prices,1000).value,10);
+});
+
+test('미국 기준 계획과 연결한 추종 ETF 계좌는 보유 주수를 섞지 않고 체결 금액을 실제 ETF 주수로 환산한다',()=>{
+  const it={id:'a',ticker:'AAA',tradeTicker:'111111',shares:100},alloc={total:1000,groups:[{id:'g',items:[it]}],cash:[],classes:[]};
+  assert.equal(c.linkSummary(alloc,prices,'AAA').shares,null,'국내 ETF 100주를 미국 ETF 100주로 가져오지 않음');
+  assert.equal(c.linkSummary(alloc,prices,'111111').shares,100);
+  const trade={ticker:'AAA',sign:1,qty:2,price:50,currency:'USD',value:10},row=c.tradeRows(alloc,prices,'AAA',trade)[0];
+  assert.equal(row.n,10);assert.equal(row.converted,true);
+  c.applyTrade(alloc,prices,'r',trade,'환산',[{id:'a',unit:'shares',n:row.n}]);assert.equal(it.shares,110);
+  c.rescaleTrade(alloc,'r',{qty:2,price:75,value:15});assert.equal(it.shares,115,'기준 가격 정정도 투자 금액 비율로 맞춤');
+  c.revertTrade(alloc,'r');assert.equal(it.shares,100);
+});
 
 test('목표 비중: 종목 수정·이동·삭제가 소분류·그룹·분류·지역 합계에 반영되고 기존 기록은 보존한다', () => {
   const alloc = {classes: [{id:'c',region:'국내',target:80},{id:'cash',region:'현금',target:20,cash:true}],cash:[],
