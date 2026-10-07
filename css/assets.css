@@ -61,3 +61,7 @@
   .param-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.plan-line,.plan-line.event{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.plan-line .remove{grid-column:3;justify-self:end}.plan-line.event label.wide{grid-column:1/-1}
   .data-table th,.data-table td{padding:8px 10px;font-size:12.5px}.actual-row{grid-template-columns:62px minmax(0,1fr) auto;gap:6px}.actual-row small{display:none}.actual-row.add{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
 }
+/* 종목 수정 창: 플래너 체크로 반영한 체결(allocation.trades) */
+.item-trades{display:grid;gap:6px}.item-trades>span{color:var(--text-2);font-size:12.5px;font-weight:600}.item-trades>span small{margin-left:4px;color:var(--text-3);font-weight:500}
+.item-trades ul{display:grid;gap:4px;margin:0;padding:0;list-style:none}.item-trades li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:baseline;gap:10px;padding:7px 10px;border-radius:8px;background:var(--surface-2);font-size:13px}
+.item-trades li b{font-weight:600;overflow-wrap:anywhere}.item-trades li span{font-variant-numeric:tabular-nums;white-space:nowrap}.item-trades li small{color:var(--text-3);font-variant-numeric:tabular-nums}

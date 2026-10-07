@@ -7,10 +7,10 @@
     js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수),
     js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰·PC 브라우저 알림 연결 — 기기마다 따로, 안내 문구만 PC/휴대폰 구분), push-sw.js(닫힌 화면의 푸시 수신),
     js/theme.js(화면 모드 — valuation.html·assets.html도 씀). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
-    분할매수는 js/purchases.js·css/purchases.css, 자산 현황 페이지(assets.html)는 css/assets.css·js/assets.js. js/assets-calc.js·js/assets-store.js는 두 페이지가 계산·기록·동기화를 공유한다(규칙은 assets.html HANDOFF).
+    분할매수는 js/purchases.js·css/purchases.css, 자산 현황 페이지(assets.html)는 css/assets.css·js/assets.js. js/alloc-link.js는 체크 → 자산 배분 보유량 연동(계좌 고르는 창 linkDialog·알림 줄, 계산은 assets-calc.js). js/assets-calc.js·js/assets-store.js는 두 페이지가 계산·기록·동기화를 공유한다(규칙은 assets.html HANDOFF).
     app.css·theme.js를 같이 쓰므로 ?v=를 올릴 때 assets.html도 같이.
-  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → assets-calc → assets-store → purchases → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서.
-    index.html 맨 끝에서 purchasePlanner.initialize·startSync·openTab·initializeAlerts·initializePush로 시작한다.
+  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → assets-calc → assets-store → alloc-link → purchases → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서.
+    index.html 맨 끝에서 allocLink.initialize·purchasePlanner.initialize·startSync·openTab·initializeAlerts·initializePush로 시작한다.
     파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
     sync 테스트는 core.js 대신 가짜 값($·state 등)과 prices.js를 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
   - css·js를 고치면 index.html의 ?v= 숫자를 모든 태그에서 같이 1 올릴 것(배포 직후 옛 파일 캐시 방지, valuation.html의 theme.js 숫자도). tests/files.test.cjs가 파일·숫자 일치를 확인.
@@ -24,6 +24,10 @@
   - 기록은 브라우저 + 비공개 데이터 저장소의 etf-planner-data.json에만(사이트 저장소 금지 — 저장마다 Pages 재게시). 설정은 README.md.
   - 분할매수는 플래너의 buys 탭. 자산 배분 종목의 buyPlan으로 연결해 기존 etf-planner-assets.json·etf-planner-assets-v1에 저장한다(메인 state 스냅샷과 별도).
     동기화 연결은 같고 기기 간 병합·시세는 assets-store.js를 공유한다. 분할매수·자산 JSON 백업/복원·복구 기록은 플래너 동기화 창에도 있다.
+  - 체크 → 자산 배분 연동(js/alloc-link.js, 계산은 assets-calc.js '플래너 체결 → 자산 배분 연동' 주석): 분할매도 회차·재매수 손절(cuts)·재매수 회차(stages[].buys)·분할매수 회차를 체크하면
+    같은 종목 코드(linkTicker) 자산 배분 종목의 보유 수량·금액을 바꾸고 자산 기록 allocation.trades[출처 키]에 반영한 양을 둔다(메인 state에는 새 필드 없음). 연결 계좌가 여럿이면 linkDialog에서 고름.
+    체크를 풀면 되돌리고(uncheck), 체결 수량·가격·금액 수정은 같은 비율로(rescale), 재매수 초기화는 되돌릴지 묻는다(forget). 계획·종목 삭제는 자산 배분을 그대로 둔다(실제 체결).
+    plans.js·rebuy.js는 planLink·rebuyLink로 부른다(테스트·수집 작업에는 allocLink가 없어 체크만). 반영 키 형식(sell·cut·rebuy·buy)을 바꾸면 기존 기록을 되돌릴 수 없으니 바꾸지 말 것.
   - 토큰은 각 기기 localStorage에만. 열 때·45초마다·탭 복귀 시 동기화, 충돌은 sha(409)로 감지, 공개 저장소면 업로드 거부.
   - REPO_KEY·TOKEN_KEY 이름은 valuation.html도 읽음(같은 저장소의 etf-planner-scenarios.json 동기화) — 바꾸면 두 파일 같이.
   - normalize()에서 새 필드를 채우지 말 것(기존 기기의 동기화 스냅샷이 바뀜). 새 값은 입력했을 때만 저장하고 비우면 delete
@@ -100,9 +104,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=35"></script>
-  <link rel="stylesheet" href="css/app.css?v=35" />
-  <link rel="stylesheet" href="css/purchases.css?v=35" />
+  <script src="js/theme.js?v=36"></script>
+  <link rel="stylesheet" href="css/app.css?v=36" />
+  <link rel="stylesheet" href="css/purchases.css?v=36" />
 </head>
 <body>
   <header class="top">
@@ -167,7 +171,7 @@
       <div id="purchaseStageRows" class="purchase-stage-rows"></div>
     </section>
     <label class="field"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
-    <p class="hint">직접 입력의 가격·수량·날짜·조건은 선택 사항입니다(가격과 수량을 넣으면 예정액을 계산). 완료한 회차는 카드에서 체결 금액을 고칠 수 있습니다. 실제 보유 금액·수량은 자산 배분에서 수정하세요.</p>
+    <p class="hint">직접 입력의 가격·수량·날짜·조건은 선택 사항입니다(가격과 수량을 넣으면 예정액을 계산). 완료한 회차는 카드에서 체결 금액을 고칠 수 있습니다. 카드에서 회차를 체크하면 자산 배분 보유량에도 더하고, 체결 금액을 고치면 같이 맞춥니다.</p>
     <div class="dialog-foot"><button class="btn danger" type="button" id="purchaseDelete">계획 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
@@ -187,6 +191,7 @@
       <label class="field"><span>분할 횟수</span><input name="stages" type="number" min="2" max="250" step="1" value="30" required /></label>
       <label class="field"><span>매도 비중 (%)<small class="field-note" id="saleNote"></small></span><input name="salePct" type="number" min="1" max="100" step="1" inputmode="numeric" value="100" placeholder="100 = 전량" /></label>
       <label class="field"><span>평가액 (만원)<small class="field-note" id="worthNote"></small></span><input name="valueKrw" type="number" step="any" /></label>
+      <p class="hint dialog-wide alloc-hold" id="planAllocHold" hidden></p>
       <details class="dialog-wide dialog-help"><summary>입력 설명</summary><p class="hint">종목 코드에 비트코인을 입력하면 달러(USD) 시세를 자동으로 불러옵니다. BTC-USD도 같은 방식으로 사용할 수 있습니다. 수량은 소수점 8자리까지 입력할 수 있습니다. 주식은 1주, 비트코인은 0.00000001 BTC 단위로 회차에 고르게 나누고, 평가액은 보유 수량 × 현재가로 자동 계산합니다. 수량 없이 평가액만 넣으면 회차별 매도액으로 나눕니다. 매도 비중을 100% 아래로 두면 보유 수량(또는 평가액)의 그 비중만 회차에 나눠 팔고 나머지는 남깁니다(수량은 최소 단위로 내림). 시작 기준선이 ‘직접’이면 시작 기준가는 직접 정하고, 일선·주선·개월선을 고르면 종료 기준가처럼 시세로 채웁니다. 동기화를 연결하면 종료 기준가(종료 기준선의 이동평균)와 달러 계획의 현물 USD/KRW 환율을 시세로 채웁니다. 자동으로 채우는 칸을 직접 고치면 그 칸 시세가 다음에 바뀔 때 덮어씁니다.</p></details>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
@@ -206,6 +211,14 @@
       <p class="hint dialog-wide">국내 종목 코드(원) 또는 미국 종목 심볼(달러)을 넣으면 동기화할 때 현재가·일선·N선(60분봉) 단계 기준가를 시세로 채웁니다. 신저점·보유·손절 규칙은 화면의 기준 입력에서 넣습니다.</p>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deleteRebuyBtn">종목 삭제</button><button class="btn" type="button" data-close-rebuy>취소</button><button class="btn primary" type="submit">저장</button></div>
+  </form></dialog>
+
+  <dialog id="linkDialog" aria-labelledby="linkTitle"><form method="dialog" class="dialog-inner" id="linkForm">
+    <div class="dialog-head"><h2 id="linkTitle">자산 배분에 반영</h2><button class="btn ghost" type="button" data-close-link>닫기</button></div>
+    <p class="link-what" id="linkWhat"></p>
+    <p class="hint" id="linkHint"></p>
+    <div class="link-rows" id="linkRows"></div>
+    <div class="dialog-foot"><button class="btn ghost link-skip" type="button" id="linkSkip">반영 안 함</button><button class="btn" type="button" data-close-link>취소</button><button class="btn primary" type="submit">반영</button></div>
   </form></dialog>
 
   <dialog id="alertsDialog" aria-labelledby="alertsTitle"><div class="dialog-inner">
@@ -261,19 +274,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=35"></script>
-  <script src="js/sync.js?v=35"></script>
-  <script src="js/prices.js?v=35"></script>
-  <script src="js/assets-calc.js?v=35"></script>
-  <script src="js/assets-store.js?v=35"></script>
-  <script src="js/purchases.js?v=35"></script>
-  <script src="js/trade-alerts.js?v=35"></script>
-  <script src="js/plans.js?v=35"></script>
-  <script src="js/futures.js?v=35"></script>
-  <script src="js/actions.js?v=35"></script>
-  <script src="js/rebuy.js?v=35"></script>
-  <script src="js/alerts.js?v=35"></script>
-  <script src="js/push.js?v=35"></script>
-  <script>purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
+  <script src="js/core.js?v=36"></script>
+  <script src="js/sync.js?v=36"></script>
+  <script src="js/prices.js?v=36"></script>
+  <script src="js/assets-calc.js?v=36"></script>
+  <script src="js/assets-store.js?v=36"></script>
+  <script src="js/alloc-link.js?v=36"></script>
+  <script src="js/purchases.js?v=36"></script>
+  <script src="js/trade-alerts.js?v=36"></script>
+  <script src="js/plans.js?v=36"></script>
+  <script src="js/futures.js?v=36"></script>
+  <script src="js/actions.js?v=36"></script>
+  <script src="js/rebuy.js?v=36"></script>
+  <script src="js/alerts.js?v=36"></script>
+  <script src="js/push.js?v=36"></script>
+  <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

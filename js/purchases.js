@@ -74,7 +74,7 @@ function renderPurchases(){
       ${rows.map(row).join("")}
       ${plan.note?`<p class="purchase-note">${escA(plan.note)}</p>`:""}</section>`;
   };
-  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파 회차나 직접 정한 회차로 목표 비중까지 나눠 삽니다. 실제 매수 후 보유 금액·수량은 자산 배분에서 수정하세요.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파 회차나 직접 정한 회차로 목표 비중까지 나눠 삽니다. 회차를 체크하면 자산 배분 보유량에도 더하고(같은 종목 코드 계좌가 여럿이면 고름), 체크를 풀면 되돌립니다.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
     <p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p>
     <div class="card metrics"><div class="metric"><label>총 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>체결 금액</label><strong>${man(totals.actual)}</strong><small>완료한 회차의 실제 금액 합계</small></div><div class="metric"><label>남은 예정액</label><strong>${man(totals.remaining)}</strong><small>아직 매수하지 않은 회차의 예정액</small></div></div>
     ${plans.length?plans.map(card).join(""):emptyCard("아직 분할매수 계획이 없습니다","종목을 고르고 목표 가격과 목표 비중을 넣으세요.","")}`;
@@ -82,18 +82,28 @@ function renderPurchases(){
   el("addPurchase").onclick=()=>openPurchase(null);
   all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
   const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseActual||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
+  // 회차 체크는 자산 배분 보유량과 연동(alloc-link.js): 체크하면 이 종목(같은 종목 코드 계좌가 여럿이면 고름)에 체결 금액만큼 더하고, 체결 금액을 고치면 같은 비율로 맞추며, 풀면 되돌린다.
+  // 반영 키: 'buy:종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'. 체결 수량은 직접 입력 회차의 수량, 없으면 체결 금액 ÷ 회차 가격.
+  const stageKey=(id,x)=>{const stage=stageOf(x);return stage?`buy:${id}:${stage.id||`#${x.dataset.stage}`}`:"";};
+  const buyTrade=(it,plan,b)=>({sign:1,qty:finite(b.shares),price:finite(b.price),currency:planCurrency(plan,it),value:finite(b.actual)});
+  const linkCheck=(x,label,b,commit)=>{const found=findItem(x.dataset.purchaseDone||x.dataset.purchaseBuy);if(!found)return render();
+    allocLink.check({ticker:found.it.ticker,ownId:found.it.id,trade:buyTrade(found.it,found.it.buyPlan,b),label:`${found.it.name} ${label}`,prefer:[`buy:${found.it.id}:`],redraw:render,
+      commit:()=>{const key=commit();if(!key)return false;saveSection("allocation");return key;}});};
   // 직접 입력 회차: 체크하면 체결 금액을 예정액으로 채운다(고칠 수 있음).
-  onChange("[data-purchase-done]","allocation",(_,x)=>{const stage=stageOf(x);if(!stage)return false;if(x.checked){stage.done=true;if(finite(stage.actual)===null)stage.actual=Math.max(0,finite(stage.amount)||0);}else delete stage.done;});
-  onChange("[data-purchase-actual]","allocation",(v,x)=>{const stage=stageOf(x),n=numIn(v);if(!stage||n!==null&&n<0)return false;setNum(stage,"actual",v);});
+  all("[data-purchase-done]").forEach(x=>x.onchange=()=>{const id=x.dataset.purchaseDone, i=Number(x.dataset.stage), stage=stageOf(x), key=stageKey(id,x);if(!stage)return render();
+    if(!x.checked){delete stage.done;saveSection("allocation");allocLink.uncheck(key);return render();}
+    const actual=finite(stage.actual)??Math.max(0,finite(stage.amount)||0);
+    linkCheck(x,`분할매수 ${i+1}차`,{shares:stage.shares,price:stage.price,actual},()=>{const s=planOf(id)?.stages?.[i];if(!s)return false;s.done=true;if(finite(s.actual)===null)s.actual=actual;return key;});});
+  onChange("[data-purchase-actual]","allocation",(v,x)=>{const stage=stageOf(x),n=numIn(v),found=findItem(x.dataset.purchaseActual);if(!stage||n!==null&&n<0)return false;setNum(stage,"actual",v);
+    allocLink.rescale(stageKey(found.it.id,x),{qty:null,price:finite(stage.price),value:finite(stage.actual)??finite(stage.amount)});});
   // 이동평균선 돌파 회차: 체크하면 지금 회차 금액·가격을 buys[키]에 기록(남은 금액은 남은 회차에 다시 나뉨), 풀면 지움.
-  onChange("[data-purchase-buy]","allocation",(_,x)=>{
-    const found=findItem(x.dataset.purchaseBuy),plan=found?.it.buyPlan,key=x.dataset.key;if(!plan?.lines)return false;
-    const buys={...purchaseBuys(plan)};
-    if(x.checked){const r=purchaseLineRows(plan,lineEntry(found.it)).find(r=>r.key===key&&!r.done);if(!r)return false;buys[key]={actual:Math.round(r.amount*100)/100,price:priceRoundOf(r.price,planCurrency(plan,found.it))};}
-    else delete buys[key];
-    if(Object.keys(buys).length)plan.buys=buys;else delete plan.buys;
-  });
-  onChange("[data-purchase-buy-actual]","allocation",(v,x)=>{const b=purchaseBuys(planOf(x.dataset.purchaseBuyActual))[x.dataset.key],n=numIn(v);if(!b||n===null||n<0)return false;b.actual=n;});
+  all("[data-purchase-buy]").forEach(x=>x.onchange=()=>{const id=x.dataset.purchaseBuy, found=findItem(id), plan=found?.it.buyPlan, key=x.dataset.key;if(!plan?.lines)return render();
+    if(!x.checked){const buys={...purchaseBuys(plan)};delete buys[key];if(Object.keys(buys).length)plan.buys=buys;else delete plan.buys;saveSection("allocation");allocLink.uncheck(`buy:${id}:${key}`);return render();}
+    const r=purchaseLineRows(plan,lineEntry(found.it)).find(r=>r.key===key&&!r.done);if(!r)return render();
+    const b={actual:Math.round(r.amount*100)/100,price:priceRoundOf(r.price,planCurrency(plan,found.it))};
+    linkCheck(x,`분할매수 ${purchaseLineLabel(r)}`,b,()=>{const p=planOf(id);if(!p?.lines||purchaseBuys(p)[key])return false;p.buys={...purchaseBuys(p),[key]:b};return `buy:${id}:${key}`;});});
+  onChange("[data-purchase-buy-actual]","allocation",(v,x)=>{const id=x.dataset.purchaseBuyActual, b=purchaseBuys(planOf(id))[x.dataset.key],n=numIn(v);if(!b||n===null||n<0)return false;b.actual=n;
+    allocLink.rescale(`buy:${id}:${x.dataset.key}`,{qty:null,price:finite(b.price),value:n});});
   // 알림 ON/OFF는 누를 때만 저장(직접 입력은 회차 notify, 이동평균선 돌파는 notify.keys[키], 전체는 계획 notify.stages — 새 회차도 따라감). 규칙은 assets-calc.js purchaseAlertRules.
   onChange("[data-purchase-alert]","allocation",(_,x)=>{const plan=planOf(x.dataset.purchaseAlert);if(!plan)return false;
     if(x.dataset.key!==undefined){const n=plan.notify&&typeof plan.notify==="object"?plan.notify:(plan.notify={});n.keys={...(n.keys&&typeof n.keys==="object"?n.keys:{}),[x.dataset.key]:x.checked};}

@@ -12,7 +12,10 @@
     (자산 배분 종목 코드는 마감 후 하루 한 번 종가만 — Actions 사용 시간). 평가액 규칙은 js/assets-calc.js itemValue 위 주석. 금액만 넣은 종목의 기준 가격(base)은 금액을 넣을 때·처음 시세를 볼 때 정함.
   - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%). 기준 총자산은 억·만원으로 표시·입력하며 숫자만 입력하면 만원으로 저장한다.
   - 투자구성은 지역·분류 합계, 자산 배분은 종목·현금. 목표는 종목 → 소분류 → 그룹 → 분류 합산(하위 목표가 전부 없으면 기존 직접 입력값). 합계 계산만으로 기록을 바꾸지 말 것.
-    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan은 이동평균선 돌파 {lines:{names,end,budget,target?},buys:{회차 키:{actual,price}},notify:{stages,keys},currency,note} 또는 직접 입력 {stages:[{id,price,shares,date,condition,amount,done,actual,notify}],notify:{stages},currency,note}. 금액은 만원, 가격은 계획 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화). 옛 ladder 필드는 읽지 않음. 규칙은 assets-calc.js 분할매수 주석(purchaseLineLevels·purchaseLineRows·purchaseSummary·purchaseDirection·purchaseAlertRules — 데이터 저장소 수집 작업도 실행하므로 함수 이름·라벨 형식·단계 이름을 바꾸면 그쪽도). 완료 체크는 계획 기록만 바꾸고 보유 금액·수량이나 종목의 비중 조정 완료(done)는 바꾸지 않는다.
+    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan은 이동평균선 돌파 {lines:{names,end,budget,target?},buys:{회차 키:{actual,price}},notify:{stages,keys},currency,note} 또는 직접 입력 {stages:[{id,price,shares,date,condition,amount,done,actual,notify}],notify:{stages},currency,note}. 금액은 만원, 가격은 계획 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화). 옛 ladder 필드는 읽지 않음. 규칙은 assets-calc.js 분할매수 주석(purchaseLineLevels·purchaseLineRows·purchaseSummary·purchaseDirection·purchaseAlertRules — 데이터 저장소 수집 작업도 실행하므로 함수 이름·라벨 형식·단계 이름을 바꾸면 그쪽도). 완료 체크는 종목의 비중 조정 완료(done)를 바꾸지 않는다.
+  - 플래너 체크 → 자산 배분 연동(분할매도 회차·재매수 손절·재매수 회차·분할매수 회차): 플래너 js/alloc-link.js가 같은 종목 코드(assets-calc.js linkTicker) 종목의 보유 수량·금액을 바꾸고
+    allocation.trades[출처 키] = {label, at, qty, price, value, items:[{id, shares?, amount?, fresh?}]}에 반영한 양을 둔다(체크한 동안만 — 풀면 되돌리고 지움, 처음 반영할 때만 만듦). 계산은 assets-calc.js 주석.
+    보유 수량 0은 지우지 않고 평가액 0(다 판 종목). 종목 수정 창에 그 종목의 반영 내역을 보여 준다. 금액 종목은 기준 가격(base)을 그대로 두고 금액 칸을 '입력 때 가격' 기준으로 바꾼다.
   - 화면 상태(고른 탭·연도·시나리오)는 이 기기 etf-planner-assets-ui에만(동기화 안 함). 입력 중에는 시세·동기화로 다시 그리지 않음.
 -->
 <html lang="ko">
@@ -26,9 +29,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=35"></script>
-  <link rel="stylesheet" href="css/app.css?v=35" />
-  <link rel="stylesheet" href="css/assets.css?v=35" />
+  <script src="js/theme.js?v=36"></script>
+  <link rel="stylesheet" href="css/app.css?v=36" />
+  <link rel="stylesheet" href="css/assets.css?v=36" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -61,6 +64,7 @@
       <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 소분류·그룹·분류 목표에 자동 합산</small></label>
       <label class="field check-field"><span>조정 기록</span><span class="check"><input name="done" type="checkbox" /> 비중 조정 완료</span><small class="field-hint">조정을 끝냈다는 직접 표시입니다. 비중을 자동 판정하지 않으며 계산에는 영향을 주지 않습니다.</small></label>
       <label class="field dialog-wide"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
+      <div class="dialog-wide item-trades" id="itemTrades" hidden></div>
       <p class="hint dialog-wide" id="itemHint">보유 수량을 넣으면 수량 × 현재가로, 금액만 넣으면 넣은 금액이 그때부터 시세 변동을 따라갑니다(국내 ETF가 추종하는 미국 ETF 코드를 넣어도 됩니다). 종목 코드가 없으면 넣은 금액 그대로입니다.</p>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="itemDelete">종목 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
@@ -128,8 +132,8 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/assets-calc.js?v=35"></script>
-  <script src="js/assets-store.js?v=35"></script>
-  <script src="js/assets.js?v=35"></script>
+  <script src="js/assets-calc.js?v=36"></script>
+  <script src="js/assets-store.js?v=36"></script>
+  <script src="js/assets.js?v=36"></script>
 </body>
 </html>
