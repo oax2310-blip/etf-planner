@@ -341,3 +341,14 @@ test('체결 연동: 체크 뒤 체결 수량·가격·금액을 고치면 반�
   c.rescaleTrade(alloc, 'buy:d:k', {price: 50, value: 15});
   assert.deepEqual([byId(alloc, 'd').amount, byId(alloc, 'b').shares], [65, 8], '체결 금액 1.5배 → 금액·수량(2주 → 3주) 모두');
 });
+
+test('체결 연동: 여러 계좌 수량 수정 시 계좌별 반올림으로 체결 수량 합계가 달라지지 않는다', () => {
+  const alloc=linkAlloc(),key='buy:a:end';
+  c.applyTrade(alloc,lp,key,{sign:1,qty:8,price:10000,currency:'KRW',value:8},'분할매수', [{id:'a',unit:'shares',n:4},{id:'b',unit:'shares',n:4}]);
+  c.rescaleTrade(alloc,key,{qty:7,price:10000,value:7});
+  assert.equal(alloc.trades[key].items.reduce((n,e)=>n+e.shares,0),7,'4×7/8를 각각 반올림해 4+4=8로 남기지 않는다');
+  assert.deepEqual([byId(alloc,'a').shares,byId(alloc,'b').shares],[14,8],'최소 단위를 배분한 4주+3주를 반영');
+  c.rescaleTrade(alloc,key,{qty:9,price:10000,value:9});
+  assert.equal(alloc.trades[key].items.reduce((n,e)=>n+e.shares,0),9,'재수정해도 합계 유지');
+  c.revertTrade(alloc,key);assert.deepEqual([byId(alloc,'a').shares,byId(alloc,'b').shares],[10,5],'계좌마다 정확히 원래 보유량 복원');
+});

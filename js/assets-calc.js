@@ -291,16 +291,29 @@ function revertTrade(alloc, key){
   return rec;
 }
 // 체크 뒤 체결 크기를 고쳤을 때(trade = 새 {qty, price, value}): 수량 종목은 수량 비율, 금액 종목은 금액 비율(금액이 없으면 수량 × 가격, 그다음 수량 비율)로
-// 반영한 양을 다시 맞춘다. 비율을 알 수 없거나(0·빈 값) 그대로면 바꾸지 않는다. 바뀐 기록(없으면 null).
+// 반영한 양을 다시 맞춘다. 수량은 같은 최소 단위·방향의 계좌별 합계를 먼저 반올림하고, 남는 최소 단위는 소수부가 큰 계좌부터 배분한다(4주+4주를 7주로 고쳐도 합계 7주).
+// 비율을 알 수 없거나(0·빈 값) 그대로면 바꾸지 않는다. 바뀐 기록(없으면 null).
 function rescaleTrade(alloc, key, trade){
   const rec=alloc?.trades?.[key];if(!rec)return null;
   const q=plus(trade?.qty), p=plus(trade?.price), v=plus(trade?.value), ratio=(a,b)=>a&&b?a/b:null;
   const rq=ratio(q,rec.qty), rpq=ratio(q&&p?q*p:null,rec.qty&&rec.price?rec.qty*rec.price:null), rv=ratio(v,rec.value);
   const fShares=rq??rv??rpq, fAmount=rv??rpq??rq;
+  const quantities=new Map(), groups=new Map();
+  if(fShares&&fShares!==1)for(const e of Array.isArray(rec.items)?rec.items:[]){
+    const it=allocItemById(alloc,e?.id);if(!it||!finite(e.shares))continue;
+    const step=linkStep(it), sign=e.shares<0?-1:1, key=`${step}:${sign}`, rows=groups.get(key)||[];
+    const units=Math.round(Math.abs(e.shares)/step), scaled=units*fShares;
+    rows.push({e,step,sign,units,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
+  }
+  for(const rows of groups.values()){
+    const extra=Math.round(rows.reduce((n,r)=>n+r.units,0)*fShares)-rows.reduce((n,r)=>n+r.base,0);
+    [...rows].sort((a,b)=>b.fraction-a.fraction).slice(0,extra).forEach(r=>r.base++);
+    rows.forEach(r=>quantities.set(r.e,linkRound(r.sign*r.base*r.step,r.step)));
+  }
   let changed=false;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it)continue;
-    if(finite(e.shares)&&fShares&&fShares!==1){const step=linkStep(it), add=bumpField(it,"shares",linkRound(e.shares*fShares,step)-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
+    if(finite(e.shares)&&fShares&&fShares!==1){const step=linkStep(it), add=bumpField(it,"shares",(quantities.get(e)??linkRound(e.shares*fShares,step))-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
     if(finite(e.amount)&&fAmount&&fAmount!==1){const add=bumpField(it,"amount",Math.round(e.amount*fAmount*100)/100-e.amount,0.01);if(add){e.amount=linkRound(e.amount+add,0.01);changed=true;}}
   }
   rec.qty=q??rec.qty;rec.price=p??rec.price;rec.value=v??rec.value;
