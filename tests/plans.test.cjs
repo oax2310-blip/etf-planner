@@ -22,7 +22,7 @@ function load(){
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
     id:()=> 'test-plan',FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
   for(const file of ['prices.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
-  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth})',ctx);
+  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth,planTrade,planLink})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
 }
 
@@ -109,4 +109,18 @@ test('매도 비중이 잘못됐거나 매도할 수량이 없으면 저장을 �
   fields.shares.value='1';fields.salePct.value='50';submit();assert.equal(ctx.state.plans.length,0);assert.match(fields.salePct.validityMessage,/매도할 수량/);
   fields.shares.value='';fields.valueKrw.value='100';api.planLive();assert.equal(fields.salePct.validityMessage,'');
   submit();assert.equal(ctx.state.plans[0].salePct,50);
+});
+
+test('자산 배분 연동: 회차 체결은 매도 비중을 적용한 회차 수량 × 회차 기준가, 평가액만 넣은 계획은 회차 매도액',()=>{
+  const {api}=load(), plain=v=>JSON.parse(JSON.stringify(v));
+  const shares={ticker:'005380',currency:'KRW',holdings:[{name:'테스트',shares:10}],stages:3,startPrice:300,endPrice:200,checked:[false,false,false],salePct:50};
+  assert.deepEqual(plain(api.planTrade(shares,0)),{sign:-1,qty:2,price:300,currency:'KRW',value:null},'10주의 50% = 5주를 3회로(2·2·1)');
+  assert.deepEqual(plain(api.planTrade(shares,2)),{sign:-1,qty:1,price:200,currency:'KRW',value:null});
+  const btc={ticker:'BTC-USD',currency:'USD',holdings:[{shares:0.01234567}],stages:3,startPrice:60000,endPrice:50000,checked:[false,false,false]};
+  assert.equal(api.planTrade(btc,1).qty,0.00411522);
+  const value={ticker:'SOXX',currency:'USD',holdings:[],valueKrw:300,valueBase:100,stages:3,startPrice:100,endPrice:80,checked:[false,false,false]};
+  assert.deepEqual(plain(api.planTrade(value,2)),{sign:-1,qty:null,price:80,currency:'USD',value:80},'300만원 ÷ 3회 × 80/100');
+  let committed=0,drawn=0;
+  api.planLink('check',{commit:()=>{committed++;return 'k';},redraw:()=>{drawn++;}});
+  assert.deepEqual([committed,drawn,api.planLink('line','SOXX'),api.planLink('holding','SOXX')],[1,1,'',null],'자산 배분 연동이 없으면 체크만');
 });

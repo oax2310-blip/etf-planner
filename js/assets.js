@@ -56,7 +56,7 @@ function renderAlloc(tab="alloc"){
   const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[String(it.ticker||"").trim().toUpperCase()];
     const how=r.how==="shares"?`<small class="how live">수량 × 현재가</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?`<small class="how">${stock?.error?"시세 조회 실패":"시세 대기"}</small>`:"";
     return `<div class="asset-row${it.done?" done":""}"><label class="check" title="비중 조정 완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 비중 조정 완료 (직접 표시)"></label>
-      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),plus(it.shares)?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
+      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),finite(it.shares)!==null?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
       <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct">${pc(cur)}<small>${t!==null?`목표 ${pc(t)}`:""}</small></span></div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small>${escA(meta.note)}</small>`:""}</div>`;};
@@ -108,13 +108,18 @@ function openItem(id, groupId){
   const fillSections=()=>{const g=a.groups.find(x=>x.id===f.group.value);el("sectionList").innerHTML=[...new Set([...(g?.sections||[]).map(x=>x.name),...(g?.items||[]).map(x=>x.section).filter(Boolean)])].map(n=>`<option value="${escA(n)}">`).join("");};
   f.group.onchange=fillSections; fillSections();
   f.name.value=it.name||""; f.section.value=it.section||""; f.amount.value=it.amount??""; f.ticker.value=it.ticker||""; f.shares.value=it.shares??""; f.target.value=it.target??""; f.done.checked=!!it.done; f.note.value=it.note||"";
+  // 플래너에서 체크로 반영한 체결(allocation.trades — 규칙은 assets-calc.js '플래너 체결 → 자산 배분 연동'): 이 종목에 더하거나 뺀 양. 체크를 풀면 플래너가 되돌린다.
+  const trades=Object.values(a.trades&&typeof a.trades==="object"?a.trades:{}).flatMap(t=>(Array.isArray(t?.items)?t.items:[]).filter(e=>found&&e.id===it.id).map(e=>({t,e}))).sort((x,y)=>String(y.t.at).localeCompare(String(x.t.at)));
+  el("itemTrades").hidden=!trades.length;
+  el("itemTrades").innerHTML=trades.length?`<span>플래너 체크로 반영한 체결 <small>${trades.length}건 · 체크를 풀면 되돌립니다</small></span><ul>${trades.slice(0,20).map(({t,e})=>{const d=finite(e.shares)?e.shares:e.amount,sign=d<0?"−":"+";
+    return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{ if(!confirm(`'${it.name}' 종목${it.buyPlan?"과 분할매수 계획":""}을 삭제할까요?`)) return; found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
     const target=found?.it||{id:newId(), amount:0}, before=JSON.stringify([target.amount,target.ticker,target.shares]);
     target.name=f.name.value.trim()||"이름 없음"; setText(target,"section",f.section.value); target.amount=numIn(f.amount.value)??0; setText(target,"ticker",f.ticker.value.toUpperCase()); setNum(target,"shares",f.shares.value); setNum(target,"target",f.target.value);
     if(f.done.checked) target.done=true; else delete target.done; setText(target,"note",f.note.value);
-    if(!plus(target.shares)) delete target.shares;
+    if(!(finite(target.shares)>=0)) delete target.shares; // 0은 남김(다 판 종목 — 평가액 0, itemValue)
     if(!found||before!==JSON.stringify([target.amount,target.ticker,target.shares])) resetBase(target,prices,a);
     const g=a.groups.find(x=>x.id===f.group.value);
     if(found&&found.g!==g) found.g.items=found.g.items.filter(x=>x!==target);

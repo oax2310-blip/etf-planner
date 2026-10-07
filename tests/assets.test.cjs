@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -238,4 +238,90 @@ test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저�
   assert.equal(c.cleanAssets({version: 2}), null); assert.equal(c.cleanAssets([]), null);
   assert.deepEqual(c.cleanAssets({allocation: {}}).allocation, {classes: [], groups: [], cash: []});
   assert.equal(c.assetsBlank({version: 1}), true); assert.equal(c.assetsBlank(local), false);
+});
+
+// ---------- 플래너 체결 → 자산 배분 연동 ----------
+// 시세 파일 키는 적힌 그대로(A 접두 포함)라 테스트 시세에도 둘 다 둔다
+const lp = {...prices, stocks: {...prices.stocks, A111111: {kind: '국내', asOf: '2026-01-02', close: 10000}}};
+const linkAlloc = () => ({cash: [], total: 1000, classes: [], groups: [
+  {id: 'g1', target: 2, items: [{id: 'a', ticker: 'A111111', shares: 10, amount: 0}, {id: 'b', ticker: '111111', shares: 5, amount: 0}]},
+  {id: 'g2', items: [{id: 'c', ticker: 'aaa', amount: 100, base: 40000}, {id: 'd', ticker: 'AAA', amount: 50, target: 1}, {id: 'e', ticker: 'BTC-USD', shares: 0.5, amount: 0}, {id: 'n', name: '코드 없음', amount: 30}]},
+]});
+const byId = (alloc, id) => alloc.groups.flatMap(g => g.items).find(it => it.id === id);
+
+test('체결 연동: 같은 종목 코드 계좌(대소문자·국내 A 접두·비트코인)와 합계·목표·수량 합', () => {
+  const alloc = linkAlloc();
+  assert.equal(c.linkTicker(' a111111 '), '111111');
+  assert.equal(c.linkTicker('비트코인'), 'BTC-USD');
+  assert.deepEqual(c.linkedItems(alloc, '111111').map(x => x.it.id), ['a', 'b']);
+  assert.deepEqual(c.linkedItems(alloc, 'AAA').map(x => x.it.id), ['c', 'd']);
+  assert.deepEqual(c.linkedItems(alloc, '비트코인').map(x => x.it.id), ['e']);
+  assert.deepEqual(c.linkedItems(alloc, '', 'n').map(x => x.it.id), ['n'], '분할매수 계획이 붙은 종목은 코드가 없어도 연결');
+  assert.deepEqual(c.linkedItems(alloc, 'ZZZ'), []);
+  const kr = c.linkSummary(alloc, lp, 'A111111');
+  near(kr.value, 15, '10주 + 5주 × 1만원'); assert.equal(kr.shares, 15);
+  assert.deepEqual([kr.target, kr.scope], [2, 'group'], '종목 목표가 없고 그룹 종목이 모두 연결되면 그룹 목표');
+  near(kr.gap, 5, '목표 2% × 1,000만원 − 15만원'); near(kr.pct, 1.5, '기준 총자산 대비');
+  const us = c.linkSummary(alloc, lp, 'AAA');
+  near(us.value, 175, '125(시세 따라감) + 50'); assert.deepEqual([us.target, us.scope, us.shares], [1, 'item', null], '종목 목표 합, 금액 종목이 있으면 수량 합 없음');
+  assert.equal(c.linkSummary(alloc, lp, 'ZZZ'), null);
+});
+
+test('체결 연동: 계좌마다 단위(수량·금액)와 미리 채울 양', () => {
+  const alloc = linkAlloc();
+  assert.deepEqual(c.tradeRows(alloc, lp, '111111', {sign: -1, qty: 3, price: 9000, currency: 'KRW'}).map(r => [r.it.id, r.unit, r.n]), [['a', 'shares', 3], ['b', 'shares', 3]]);
+  assert.deepEqual(c.tradeRows(alloc, lp, 'AAA', {sign: -1, qty: 2, price: 60, currency: 'USD'}).map(r => [r.it.id, r.unit, r.n]), [['c', 'amount', 12], ['d', 'amount', 12]], '2주 × $60 × 1,000원 = 12만원');
+  assert.deepEqual(c.tradeRows(alloc, lp, '111111', {sign: -1, value: 20, currency: 'KRW'}).map(r => r.n), [20, 20], '금액만 아는 매도는 지금 시세로 수량 환산');
+  assert.deepEqual(c.tradeRows(alloc, lp, 'BTC-USD', {sign: -1, qty: 0.1234567891, price: 100, currency: 'USD'})[0].n, 0.12345679, '비트코인은 0.00000001 단위');
+  alloc.groups[0].items.push({id: 'z', ticker: '111111', amount: 0});
+  assert.equal(c.tradeRows(alloc, lp, '111111', {sign: 1, qty: 4, price: 10000, currency: 'KRW'})[2].unit, 'shares', '빈 종목은 체결 수량을 알면 수량');
+  assert.equal(c.tradeRows(alloc, lp, '111111', {sign: 1, value: 4, price: 10000, currency: 'KRW'})[2].unit, 'amount', '금액만 알면 금액');
+});
+
+test('체결 연동: 반영하면 보유 수량·금액을 바꾸고 기록하며, 되돌리면 정확히 원래 값으로', () => {
+  const alloc = linkAlloc(), before = JSON.stringify(alloc);
+  const sell = c.applyTrade(alloc, lp, 'sell:p:0', {sign: -1, qty: 3, price: 9000, currency: 'KRW'}, '테스트 1회 매도', [{id: 'a', unit: 'shares', n: 3}, {id: 'c', unit: 'amount', n: 12.5}, {id: 'gone', unit: 'shares', n: 1}]);
+  assert.equal(byId(alloc, 'a').shares, 7);
+  near(byId(alloc, 'c').amount, 90, '지금 평가액 12.5만원 = 입력 금액 10만원(기준 가격 4만원 → 5만원)'); assert.equal(byId(alloc, 'c').base, 40000, '기준 가격은 그대로');
+  assert.deepEqual(sell.items, [{id: 'a', shares: -3}, {id: 'c', amount: -10}], '없는 종목은 건너뜀');
+  assert.deepEqual([sell.label, sell.qty, sell.price, sell.value], ['테스트 1회 매도', 3, 9000, null]);
+  assert.equal(alloc.trades['sell:p:0'], sell);
+  c.applyTrade(alloc, lp, 'sell:p:0', {sign: -1, qty: 2, price: 9000, currency: 'KRW'}, '테스트 1회 매도', [{id: 'b', unit: 'shares', n: 2}]);
+  assert.deepEqual([byId(alloc, 'a').shares, byId(alloc, 'b').shares, byId(alloc, 'c').amount], [10, 3, 100], '같은 키를 다시 반영하면 먼저 되돌린다');
+  assert.ok(c.revertTrade(alloc, 'sell:p:0'));
+  assert.equal(JSON.stringify(alloc), before, '되돌리면 원래 기록 그대로(trades도 지움)');
+  assert.equal(c.revertTrade(alloc, 'sell:p:0'), null);
+});
+
+test('체결 연동: 0 아래로 내려가지 않고, 다 판 종목은 수량 0(평가액 0), 새로 만든 수량 칸은 되돌리면 지운다', () => {
+  const alloc = linkAlloc();
+  const rec = c.applyTrade(alloc, lp, 'cut:r:0', {sign: -1, qty: 8, currency: 'KRW'}, '손절', [{id: 'b', unit: 'shares', n: 8}]);
+  assert.deepEqual(rec.items, [{id: 'b', shares: -5}], '실제로 뺀 양만 기록');
+  assert.equal(byId(alloc, 'b').shares, 0);
+  assert.deepEqual(c.itemValue({...byId(alloc, 'b'), amount: 30}, lp, 1000).value, 0, '수량 0은 금액 칸으로 돌아가지 않고 0');
+  c.revertTrade(alloc, 'cut:r:0'); assert.equal(byId(alloc, 'b').shares, 5);
+  alloc.groups[0].items.push({id: 'z', ticker: '111111', amount: 0});
+  const buy = c.applyTrade(alloc, lp, 'rebuy:r:25선:0', {sign: 1, qty: 4, price: 10000, currency: 'KRW'}, '재매수', [{id: 'z', unit: 'shares', n: 4}]);
+  assert.deepEqual([byId(alloc, 'z').shares, buy.items[0].fresh], [4, true]);
+  c.revertTrade(alloc, 'rebuy:r:25선:0'); assert.equal('shares' in byId(alloc, 'z'), false);
+  alloc.groups[1].items.push({id: 'y', ticker: 'AAA', amount: 0});
+  c.applyTrade(alloc, lp, 'buy:y:end', {sign: 1, price: 50, currency: 'USD', value: 20}, '분할매수 목표가', [{id: 'y', unit: 'amount', n: 20}]);
+  assert.deepEqual([byId(alloc, 'y').amount, byId(alloc, 'y').base], [20, 50000], '금액 0에서 사면 기준 가격을 지금 시세로');
+  assert.equal(c.applyTrade(alloc, lp, 'sell:p:1', {sign: -1, qty: 1, currency: 'KRW'}, '없음', [{id: 'a', unit: 'shares', n: 0}]), null, '반영할 양이 없으면 기록하지 않음');
+});
+
+test('체결 연동: 체크 뒤 체결 수량·가격·금액을 고치면 반영한 양을 같은 비율로', () => {
+  const alloc = linkAlloc();
+  c.applyTrade(alloc, lp, 'cut:r:0', {sign: -1, qty: 4, price: 10000, currency: 'KRW'}, '손절', [{id: 'a', unit: 'shares', n: 4}, {id: 'c', unit: 'amount', n: 5}]);
+  near(byId(alloc, 'c').amount, 96, '5만원 × 0.8');
+  assert.ok(c.rescaleTrade(alloc, 'cut:r:0', {qty: 3, price: 10000}));
+  assert.equal(byId(alloc, 'a').shares, 7, '4주 → 3주'); near(byId(alloc, 'c').amount, 97, '금액도 3/4');
+  assert.ok(c.rescaleTrade(alloc, 'cut:r:0', {qty: 3, price: 20000}));
+  assert.equal(byId(alloc, 'a').shares, 7, '가격만 바꾸면 수량 그대로'); near(byId(alloc, 'c').amount, 94, '금액은 두 배');
+  assert.equal(c.rescaleTrade(alloc, 'cut:r:0', {qty: 0, price: null}), null, '0·빈 값이면 바꾸지 않음');
+  c.revertTrade(alloc, 'cut:r:0');
+  assert.deepEqual([byId(alloc, 'a').shares, byId(alloc, 'c').amount], [10, 100]);
+  c.applyTrade(alloc, lp, 'buy:d:k', {sign: 1, price: 50, currency: 'USD', value: 10}, '분할매수', [{id: 'd', unit: 'amount', n: 10}, {id: 'b', unit: 'shares', n: 2}]);
+  c.rescaleTrade(alloc, 'buy:d:k', {price: 50, value: 15});
+  assert.deepEqual([byId(alloc, 'd').amount, byId(alloc, 'b').shares], [65, 8], '체결 금액 1.5배 → 금액·수량(2주 → 3주) 모두');
 });
