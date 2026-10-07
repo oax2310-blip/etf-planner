@@ -1,4 +1,4 @@
-// 공통: 상수·도우미($·onEdit 등)·state 불러오기·normalize·탭 전환. 불러오는 순서 core → sync → plans → futures → actions → rebuy
+// 공통: 상수·도우미($·onEdit 등)·state 불러오기·normalize·탭 전환. 불러오는 순서 core → sync → plans → futures → rebuy
 const STORAGE_KEY = "etf-exit-planner-standalone-v1";
 const futuresDays = [25,32,42,60,80,125,150];
 const contractSize = 10000;
@@ -18,24 +18,23 @@ const shown = v => Number.isFinite(Number(v)) ? String(Math.round(Number(v)*1e4)
 const onEdit = (sel, set, redraw) => $$(sel).forEach(el => el.onchange = () => { if (set(el.value, el) !== false) save(); redraw?.(); });
 const id = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const defaultFutures = () => ({targetPrice:1480,baselinePnl:0,positions:[],levels:MA_LINES.map(name=>({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]})),note:""});
-const defaultActions = () => ({coveredCallName:"S&P500 커버드콜",buys:[1,2,3].map((day,i)=>({id:id(),day,plannedKrw:200000,actualKrw:null,completed:false})),buyNote:""});
-const seeded = {plans:[],futures:defaultFutures(),actions:defaultActions(),selectedPlan:null,tab:"plans"}; // 공개 저장소용: 실제 데이터는 JSON 복원으로만
+const seeded = {plans:[],futures:defaultFutures(),actions:{},selectedPlan:null,tab:"plans"}; // actions는 옛 기록·동기화 형식 호환용. 실제 데이터는 JSON 복원으로만
 const hadStoredState = localStorage.getItem(STORAGE_KEY) !== null;
 let state;
 try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || seeded; } catch { state = seeded; }
 function normalize(){
   state.plans = Array.isArray(state.plans) ? state.plans : [];
   state.plans.forEach(p=>{p.checked=Array.from({length:Number(p.stages)||2},(_,i)=>p.checked?.[i]===true);p.holdings=Array.isArray(p.holdings)?p.holdings:[];p.note=p.note||"";});
-  state.futures = state.futures || defaultFutures(); state.futures.positions = Array.isArray(state.futures.positions) ? state.futures.positions : []; state.actions = state.actions || defaultActions();
+  state.futures = state.futures || defaultFutures(); state.futures.positions = Array.isArray(state.futures.positions) ? state.futures.positions : []; state.actions = state.actions || {};
   ensureFutureMovingLines(state.futures);
   if(!state.selectedPlan || !state.plans.some(p=>p.id===state.selectedPlan)) state.selectedPlan=state.plans[0]?.id||null;
   state.tab = state.tab || "plans";
 }
 normalize();
-function openTab(tab){ state.tab=["plans","buys","futures","actions","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","actions","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); render(); }
+function openTab(tab){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); render(); }
 $$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ openTab(b.dataset.tab); history.replaceState(null,"",`#${state.tab}`); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
 addEventListener("hashchange",()=>openTab(location.hash.slice(1)));
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
-function render(){ if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="actions") renderActions(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }
+function render(){ if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }

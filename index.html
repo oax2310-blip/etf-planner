@@ -4,12 +4,12 @@
   [작업·파일]
   - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음(글꼴 Pretendard만 jsDelivr CSS 한 줄 — 못 받으면 시스템 글꼴).
   - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·시세 파일 읽기·JSON 백업/복원),
-    js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/actions.js(체크목록), js/rebuy.js(재매수),
+    js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/rebuy.js(재매수),
     js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰·PC 브라우저 알림 연결 — 기기마다 따로, 안내 문구만 PC/휴대폰 구분), push-sw.js(닫힌 화면의 푸시 수신),
     js/theme.js(화면 모드 — valuation.html·assets.html도 씀). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
     분할매수는 js/purchases.js·css/purchases.css, 자산 현황 페이지(assets.html)는 css/assets.css·js/assets.js. js/alloc-link.js는 체크 → 자산 배분 보유량 연동(계좌 고르는 창 linkDialog·알림 줄, 계산은 assets-calc.js). js/assets-calc.js·js/assets-store.js는 두 페이지가 계산·기록·동기화를 공유한다(규칙은 assets.html HANDOFF).
     app.css·theme.js를 같이 쓰므로 ?v=를 올릴 때 assets.html도 같이.
-  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → assets-calc → assets-store → alloc-link → purchases → trade-alerts → plans → futures → actions → rebuy → alerts → push 순서.
+  - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → assets-calc → assets-store → alloc-link → purchases → trade-alerts → plans → futures → rebuy → alerts → push 순서.
     index.html 맨 끝에서 allocLink.initialize·purchasePlanner.initialize·startSync·openTab·initializeAlerts·initializePush로 시작한다.
     파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
     sync 테스트는 core.js 대신 가짜 값($·state 등)과 prices.js를 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
@@ -18,7 +18,7 @@
   - 작업 순서(토큰 절약): 요청을 모아 한 브랜치에서 작업하고 병합은 마지막에 한 번. 화면이 바뀌면 병합 전에 바뀐 뒤 화면 캡처만(전/후 비교 이미지 없이)
     사용자에게 보내 확인받고 PR → 병합. 글자만 바꾸는 작은 변경은 캡처 없이 병합해도 됨.
   - 계산 규칙(달러선물 합산·기대수익·손익 확인·월물교체 예상, 손절·재매수 배분)은 각 함수 위 주석이 기준. 규칙을 바꾸면 주석도 같이 고칠 것.
-  - 기본값(seeded·defaultFutures·defaultActions·defaultRebuy)에 실제 보유 수량·손익·평가액을 넣지 말 것.
+  - 기본값(seeded·defaultFutures·defaultRebuy)에 실제 보유 수량·손익·평가액을 넣지 말 것.
   [저장·동기화]
   - localStorage 키 "etf-exit-planner-standalone-v1"과 기존 필드 구조 유지(바꿀 땐 기존 데이터 이전 코드 포함).
   - 기록은 브라우저 + 비공개 데이터 저장소의 etf-planner-data.json에만(사이트 저장소 금지 — 저장마다 Pages 재게시). 설정은 README.md.
@@ -52,7 +52,7 @@
     editRebuy·editFutureRebuy가 고칠 때 저장. 알림 라벨은 trade-alerts.js tradeStageName(데이터 저장소 TRADE_LABEL_RE와 같은 형식).
   - rebuy는 dataSnapshot·readRemote에서 actions 뒤(없으면 JSON에서 빠져 옛 스냅샷과 같음). applyRemote는 병합이라 저장소에 rebuy가 없으면
     이 기기 값 유지. isBlank: rebuy가 있으면 빈 기기가 아님.
-  - 화면 상태(openLevels·openBuys: 펼친 매수 완료 구간·날, rebuyUnit: 재매수 보유 입력 단위만 바꾼 것)는 메모리에만 — 저장·동기화 안 함.
+  - 화면 상태(openLevels: 펼친 매수 완료 구간, rebuyUnit: 재매수 보유 입력 단위만 바꾼 것)는 메모리에만 — 저장·동기화 안 함.
     고른 계획·종목(selectedPlan·selectedRebuy)은 이 기기 state에만(dataSnapshot 밖).
   [시세 자동 채우기]
   - 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions가 평일마다 한국투자증권 시세로 갱신)을 동기화 때 읽기만 한다(ETag, 이 기기 localStorage에 필요한 값만).
@@ -63,17 +63,16 @@
   - 시세 기준일은 작게(priceStamp), PRICE_STALE_DAYS(3)일 넘게 지나면 경고(priceWarning). 분할매도·달러선물 현재가, 분할매도 평가액(보유 수량 × 현재가)은 화면에만(저장 안 함).
     분할매도 시작 기준가는 시작 기준선 '직접'(기본, startAuto 없음)이면 사용자가 정함, 일·주·개월선이면 startAuto=true로 시세 채움. 이동평균은 파일 ma, 없으면 이 기기에 둔 종가(closes)로 계산(maValue) — 수정 창에서 종료 기준선을 바꾸면 종료 기준가가 바로 바뀜. slimPrices 형식을 바꾸면 PRICE_FORMAT을 올릴 것.
   [남겨둔 옛 필드 — 지우지 말고, 기본값·새 계획·수정 창에 다시 넣지 말 것]
-  - futures.rolls·targetProfit, actions.adobeSales·adobeNote·allocation(비중 조정): 화면·계산에 안 쓰고 isBlank 판정에만.
+  - futures.rolls·targetProfit, actions(옛 체크목록·비중 조정): 화면·계산에 안 쓰고 isBlank 판정에만. actions는 동기화·JSON 백업 형식 호환을 위해 보존하고 새 기기는 {}만 둔다.
   - plans[].currentPrice·started·asOf(기준일)·basisPrice(평가액 기준 가격): 기능 삭제, 값은 두고 안 씀. 계획 상태는 체크 수로(0 '시작 전', 1회 이상 '진행 중', 전부 '전량 매도 완료' — 매도 비중이 100% 아래면 '계획 매도 완료').
   [필드명·용어]
   - positions[].settlementPrice = 화면 '단순평균가'. futures.baselinePnl = 누적 정산손익(직접 입력). 월물교체는 기능 없이 계좌를 보고 직접 고침.
-  - 체크목록 '목록 삭제'는 actions.buys=[]만(coveredCallName·buyNote 남김, 되살리기는 JSON 복원·데이터 저장소 커밋 기록).
   [디자인]
   - 색·그림자는 app.css 맨 위 토큰(:root = 밝은 화면, :root[data-theme=dark] = 어두운 모드)만 쓰고 새 규칙에 색 코드를 직접 적지 말 것.
     화면 모드는 js/theme.js가 <html data-theme>에 넣음: PC(hover:hover·pointer:fine)는 윗줄 버튼으로 고른 값(이 브라우저 localStorage etf-planner-theme, 동기화 밖),
     휴대폰·태블릿(터치)은 고른 값과 상관없이 기기 설정. 버튼은 [data-theme-pick] 자리에 그림(PC에서만 보임).
     valuation.html 맨 위 토큰도 같은 값 — 바꾸면 두 파일 같이. 강조색(--accent)은 버튼·선택·알림 ON, 초록(--good)은 완료, 주황(--warn)은 도달·오래된 시세, 빨강(--danger)은 삭제·손실.
-  - 완료 체크박스(.check·.tranche-check·.action-row>input)와 알림 스위치(.trade-alert-toggle·.alert-switch)는 input[type=checkbox]를 직접 그린 것 —
+  - 완료 체크박스(.check·.tranche-check)와 알림 스위치(.trade-alert-toggle·.alert-switch)는 input[type=checkbox]를 직접 그린 것 —
     선택자에 [type=checkbox]를 붙여 칸 공통 input 규칙(.tranche input·.field input 등)보다 구체적으로 둘 것(아니면 입력칸처럼 늘어남).
   [모바일 CSS(700px 이하)]
   - 그리드 칸은 minmax(0,1fr), 칸 안 입력칸은 width:100%(1fr + 기본 폭 input이면 안 줄어 페이지가 가로로 넘침).
@@ -92,7 +91,7 @@
     시세로 채우는 칸(현재가·N일선·N선 기준가) 이름 옆에는 아주 작고 흐린 '(자동)'(.auto-tag, 국내·미국 종목 코드가 있을 때만). 미국 종목(usTicker)은 가격·금액·보유 금액이 달러(rebuyUsd).
   - 분할매도 표(모바일): 종목이 하나(또는 평가액만)면 이름을 머리줄(.m-head)과 수량 아래(.one-sub)에 표시, fitNames()가 칸 폭에 맞춰 자름.
   - 윗줄(.top)은 모바일에서 음수 top(--tuck, fitTop())으로 붙여 스크롤하면 탭 줄만 남음. 탭을 누르면 맨 위로.
-  - 플래너 탭 줄(.tabs-2row)은 모바일(700px 이하)에서 3칸 두 줄. 탭이 4개인 assets.html은 한 줄 그대로.
+  - 플래너 탭 5개와 자산 현황 탭 4개는 모바일(700px 이하)에서도 한 줄로 표시.
 --><html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -104,18 +103,17 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=38"></script>
-  <link rel="stylesheet" href="css/app.css?v=38" />
-  <link rel="stylesheet" href="css/purchases.css?v=38" />
+  <script src="js/theme.js?v=40"></script>
+  <link rel="stylesheet" href="css/app.css?v=40" />
+  <link rel="stylesheet" href="css/purchases.css?v=40" />
 </head>
 <body>
   <header class="top">
     <div class="brand"><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 11v8M12 6v10M18 3v10"/><rect x="4.5" y="13" width="3" height="4" rx=".5"/><rect x="10.5" y="8" width="3" height="5" rx=".5"/><rect x="16.5" y="5" width="3" height="5" rx=".5"/></svg></b> 매매 플래너</div>
-    <nav class="tabs tabs-2row" aria-label="화면 선택">
+    <nav class="tabs" aria-label="화면 선택">
       <button class="tab active" data-tab="plans">분할매도</button>
       <button class="tab" data-tab="buys" type="button">분할매수</button>
       <button class="tab" data-tab="futures">달러선물</button>
-      <button class="tab" data-tab="actions">체크목록</button>
       <button class="tab" data-tab="rebuy">재매수</button>
       <a class="tab tab-link" href="assets.html">자산</a>
     </nav>
@@ -136,7 +134,6 @@
 
     <section id="buysView" class="hidden"></section>
     <section id="futuresView" class="futures hidden"></section>
-    <section id="actionsView" class="hidden"></section>
     <section id="rebuyView" class="rebuy hidden">
       <div class="layout">
         <aside class="side card">
@@ -274,21 +271,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=38"></script>
-  <script src="js/core.js?v=38"></script>
-  <script src="js/sync.js?v=38"></script>
-  <script src="js/prices.js?v=38"></script>
-  <script src="js/assets-calc.js?v=38"></script>
-  <script src="js/assets-store.js?v=38"></script>
-  <script src="js/alloc-link.js?v=38"></script>
-  <script src="js/purchases.js?v=38"></script>
-  <script src="js/trade-alerts.js?v=38"></script>
-  <script src="js/plans.js?v=38"></script>
-  <script src="js/futures.js?v=38"></script>
-  <script src="js/actions.js?v=38"></script>
-  <script src="js/rebuy.js?v=38"></script>
-  <script src="js/alerts.js?v=38"></script>
-  <script src="js/push.js?v=38"></script>
+  <script src="js/ma-ladder.js?v=40"></script>
+  <script src="js/core.js?v=40"></script>
+  <script src="js/sync.js?v=40"></script>
+  <script src="js/prices.js?v=40"></script>
+  <script src="js/assets-calc.js?v=40"></script>
+  <script src="js/assets-store.js?v=40"></script>
+  <script src="js/alloc-link.js?v=40"></script>
+  <script src="js/purchases.js?v=40"></script>
+  <script src="js/trade-alerts.js?v=40"></script>
+  <script src="js/plans.js?v=40"></script>
+  <script src="js/futures.js?v=40"></script>
+  <script src="js/rebuy.js?v=40"></script>
+  <script src="js/alerts.js?v=40"></script>
+  <script src="js/push.js?v=40"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
