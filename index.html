@@ -104,9 +104,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=36"></script>
-  <link rel="stylesheet" href="css/app.css?v=36" />
-  <link rel="stylesheet" href="css/purchases.css?v=36" />
+  <script src="js/theme.js?v=37"></script>
+  <link rel="stylesheet" href="css/app.css?v=37" />
+  <link rel="stylesheet" href="css/purchases.css?v=37" />
 </head>
 <body>
   <header class="top">
@@ -157,7 +157,7 @@
     <div class="purchase-mode" role="radiogroup" aria-label="매수 방식"><label><input type="radio" name="mode" value="lines" checked /> 이동평균선 돌파</label><label><input type="radio" name="mode" value="manual" /> 직접 입력</label></div>
     <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-ladder-grid">
-        <label class="field"><span>단계</span><select name="lineSet"><option value="all">60분봉 + 일봉</option><option value="day">일봉만</option><option value="hour">60분봉만</option></select></label>
+        <label class="field"><span>단계</span><select name="lineSet"><option value="all">시선 + 일선 + 주선 + 월선</option><option value="hour">시선 · 60분봉만</option><option value="day">일선만</option><option value="week">주선만</option><option value="month">월선만</option><option value="legacy">시선 + 일선</option><option value="custom">기존 선택 유지</option></select></label>
         <label class="field"><span>매수 목표 비중 (%)</span><input name="lineTarget" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
         <label class="field"><span>목표 가격 (<i data-line-cur>원</i>)</span><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" /><small class="field-hint" id="lineEndNote"></small></label>
         <div class="field"><span id="lineBudgetLabel">총 매수 금액 (만원) <button class="text-link" type="button" id="lineBudgetReset">다시 계산</button></span><input name="lineBudget" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineBudgetLabel" /><small class="field-hint" id="lineBudgetNote"></small></div>
@@ -274,20 +274,21 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/core.js?v=36"></script>
-  <script src="js/sync.js?v=36"></script>
-  <script src="js/prices.js?v=36"></script>
-  <script src="js/assets-calc.js?v=36"></script>
-  <script src="js/assets-store.js?v=36"></script>
-  <script src="js/alloc-link.js?v=36"></script>
-  <script src="js/purchases.js?v=36"></script>
-  <script src="js/trade-alerts.js?v=36"></script>
-  <script src="js/plans.js?v=36"></script>
-  <script src="js/futures.js?v=36"></script>
-  <script src="js/actions.js?v=36"></script>
-  <script src="js/rebuy.js?v=36"></script>
-  <script src="js/alerts.js?v=36"></script>
-  <script src="js/push.js?v=36"></script>
+  <script src="js/ma-ladder.js?v=37"></script>
+  <script src="js/core.js?v=37"></script>
+  <script src="js/sync.js?v=37"></script>
+  <script src="js/prices.js?v=37"></script>
+  <script src="js/assets-calc.js?v=37"></script>
+  <script src="js/assets-store.js?v=37"></script>
+  <script src="js/alloc-link.js?v=37"></script>
+  <script src="js/purchases.js?v=37"></script>
+  <script src="js/trade-alerts.js?v=37"></script>
+  <script src="js/plans.js?v=37"></script>
+  <script src="js/futures.js?v=37"></script>
+  <script src="js/actions.js?v=37"></script>
+  <script src="js/rebuy.js?v=37"></script>
+  <script src="js/alerts.js?v=37"></script>
+  <script src="js/push.js?v=37"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

@@ -18,10 +18,10 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
   for (const [, f] of [...refs, ...assetRefs]) assert.ok(fs.existsSync(path.join(root, f)), `${f} 파일이 없다`);
   const onDisk = ['css', 'js'].flatMap(d => fs.readdirSync(path.join(root, d)).map(f => `${d}/${f}`));
   assert.deepEqual([...new Set([...refs, ...assetRefs].map(r => r[1]))].sort(), onDisk.sort(), 'index.html·assets.html에서 불러오지 않는 파일이 있다');
-  assert.deepEqual(assetScripts, ['js/theme.js', 'js/assets-calc.js', 'js/assets-store.js', 'js/assets.js'], 'assets.html은 theme → assets-calc → assets-store → assets 순서');
+  assert.deepEqual(assetScripts, ['js/theme.js', 'js/ma-ladder.js', 'js/assets-calc.js', 'js/assets-store.js', 'js/assets.js'], 'assets.html은 theme → assets-calc → assets-store → assets 순서');
   assert.ok(assetRefs.some(r => r[1] === 'css/app.css'), 'assets.html도 공통 토큰(css/app.css)을 불러야 한다');
   assert.equal(scripts[0], 'js/theme.js', '화면 모드(theme.js)는 head에서 가장 먼저 불러야 첫 화면 색이 맞는다');
-  assert.deepEqual(scripts.slice(1, 3), ['js/core.js', 'js/sync.js'], 'core·sync를 먼저 불러와야 한다');
+  assert.deepEqual(scripts.slice(1, 4), ['js/ma-ladder.js', 'js/core.js', 'js/sync.js'], 'core·sync를 먼저 불러와야 한다');
   const valuation = fs.readFileSync(path.join(root, 'valuation.html'), 'utf8');
   assert.deepEqual([...valuation.matchAll(/src="js\/theme\.js\?v=(\d+)"/g)].map(r => r[1]), [refs[0][2]], 'valuation.html도 같은 버전의 theme.js를 한 번 불러야 한다');
 });

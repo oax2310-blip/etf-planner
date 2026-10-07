@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/sync.js'), 'utf8');
-const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
+const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
 if (!source.includes('async function syncNow()')) throw Error('동기화 구현을 찾지 못했습니다.');
 
 const REPO = 'me/data';
@@ -348,7 +348,7 @@ test('이 기기에 둔 시세가 옛 형식(종가 없음)이면 ETag 없이 �
   await h.restored();
   assert.deepEqual(h.server.priceAsks, [null]);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [3, [130.5]]);
+  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [4, [130.5]]);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"'], '새 형식이면 다시 ETag로 묻는다');
   assert.equal(h.server.writes, 0);
@@ -369,7 +369,7 @@ test('현물 환율 도입으로 옛 시세 캐시를 다시 받고, 다른 기�
   assert.equal(statePlan(h).note, '이 기기 메모');
   assert.equal(h.server.writes, 1);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.fx.USDKRW], [3, spot]);
+  assert.deepEqual([cached.format, cached.fx.USDKRW], [4, spot]);
   assert.match(h.elements.get('priceStatus').textContent, /현물 환율 1388.46원/);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"']);

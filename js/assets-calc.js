@@ -88,11 +88,11 @@ function allocationTargets(alloc){
 // ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}.
 //    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 산 회차는 buys[회차 키] = {actual:체결 금액(만원), price:체크할 때 회차 가격}.
 // ② 직접 입력: stages = [{id, price?, shares?, date?, condition?, amount(만원), done?, actual?}] — 가격·금액을 사용자가 정한 회차.
-// 이동평균선 돌파 단계(재매수 기본 단계와 같음): 60분봉 N이평선 'N선'(25~150), 일봉 'N일선'(25~150). 시세 파일 ma에 같은 이름으로 들어 있다
+// 이동평균선 돌파 단계(재매수 기본 단계와 같음): 시선(60분봉) 'N선', 일선 'N일선', 주선 'N주선', 월선 'N개월선'(각 25~150). 시세 파일 ma에 같은 이름으로 들어 있다
 // (데이터 저장소 kis_prices.py가 lines.names로 이 종목의 일봉·60분봉 이동평균을 계산 — purchase_line_plans).
-const PURCHASE_LINES = [n=>`${n}선`,n=>`${n}일선`].flatMap(f=>[25,32,42,60,80,125,150].map(f));
-const purchaseLineName = name => /^[1-9]\d{0,2}(?:선|일선)$/.test(String(name??"")) ? String(name) : "";
-const purchaseLineNames = lines => (Array.isArray(lines?.names)?lines.names:PURCHASE_LINES).map(purchaseLineName).filter(Boolean);
+const PURCHASE_LINES = MA_LINES;
+const purchaseLineName = movingLineName;
+const purchaseLineNames = lines => [...new Set((Array.isArray(lines?.names)?lines.names:PURCHASE_LINES).map(purchaseLineName).filter(Boolean))];
 const purchaseBuys = plan => plan?.buys&&typeof plan.buys==="object"&&!Array.isArray(plan.buys) ? plan.buys : {};
 // 회차 가격: 이동평균 값이 있는 단계를 순서대로, 단계마다 다음 단계(값이 있는 단계) 가격까지 3번 — 단계 가격·⅓·⅔ 지점(재매수 trancheLevels와 같음,
 // 다음 단계가 없거나 더 낮으면 1차만). 그중 목표 가격보다 낮은 회차 + 마지막 '목표가' 회차(목표 가격). 값이 없는 단계(수집 전·봉 부족)는 건너뛴다.
@@ -102,8 +102,7 @@ function purchaseLineLevels(lines, entry){
   const known=purchaseLineNames(lines).map(name=>({name,price:plus(entry?.ma?.[name])})).filter(x=>x.price), out=[];
   known.forEach((s,k)=>{
     const next=known[k+1];
-    for(let t=0;t<3;t++){
-      const price=t===0?s.price:next&&next.price>s.price?s.price+(next.price-s.price)*t/3:null;
+    for(const [t,price] of lineThirds(s.price,next?.price).entries()){
       if(price&&price<end)out.push({key:`${s.name}:${t}`,line:s.name,t,next:t?next.name:null,price});
     }
   });

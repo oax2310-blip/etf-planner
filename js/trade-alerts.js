@@ -80,9 +80,14 @@ function buildTradeAlertRules(data,priceDoc){
   if(f&&month)for(const [i,l] of (Array.isArray(f.levels)?f.levels:[]).entries()){
     const tr=Array.isArray(l.tranches)?l.tranches:[],done=Number(l.contracts)>0&&tr.length>=Number(l.contracts)&&tr.every(t=>t.completed===true);
     if(!tradeLevelEnabled(f,l)||done)continue;
-    const name=Number(l.days)>0?`${Number(l.days)}일선`:`추가 ${i+1}`;
-    const mark=Number(f.auto?.[name]),basis=Number(l.days)>0?[Number(l.days),Number(l.price)>0&&mark>0&&Number(l.price)!==mark?Number(l.price):null]:[Number(l.price)];
-    add(`trade:future:${i}`,month,`달러선물 ${name}`,l.price,"down",basis,"futures","달러선물");
+    const line=futureLineName(l),name=line||`추가 ${i+1}`,next=nextFutureLine(f.levels,i);
+    const basisOf=level=>{const name=futureLineName(level),mark=Number(f.auto?.[name]);return name?[name,Number(level.price)>0&&(!(mark>0)||Number(level.price)!==mark)?Number(level.price):null]:[Number(level.price)];};
+    const prices=line?futureBuyPrices(f.levels,i):[Number(l.price)];
+    for(const [t,price] of prices.entries()){
+      if(Number(l.contracts)>0&&!tr.some((x,ti)=>!x.completed&&(prices.length===1||futureTrancheSlot(l,x,ti)===t)))continue;
+      const basis=[line?"up":"down",...basisOf(l),...(t?[t,...basisOf(next.level)]:[])];
+      add(`trade:future:${i}${t?`:${t+1}`:""}`,month,`달러선물 ${name}${t?` ${t+1}차`:""}`,price,line?"up":"down",basis,"futures","달러선물");
+    }
   }
   if(f?.rebuy&&month){
     const r=futureRebuyOf(f),s=futureRebuySummary(f),addF=(key,label,price,condition,basis)=>add(`trade:future-rebuy:${key}`,month,label,price,condition,basis,"futures","달러선물");
@@ -113,7 +118,7 @@ function renderTradeAlertSummary(){
   const plans=state.plans||[],f=state.futures,items=rebuyItems(state);
   const saleCount=plans.reduce((n,p)=>n+Array.from({length:Number(p.stages)||0},(_,i)=>p.checked?.[i]!==true&&tradePlanEnabled(p,i)?1:0).reduce((a,b)=>a+b,0),0);
   const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+tradeTranchesToSend(fs).filter(x=>futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`)).length:0;
-  const levelCount=(f?.levels||[]).filter(l=>tradeLevelEnabled(f,l)&&!levelDone(l)).length+futureCount;
+  const levelCount=buildTradeAlertRules({futures:{...f,rebuy:undefined}},priceData).length+futureCount;
   const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+tradeTranchesToSend(s).filter(x=>tradeRebuyEnabled(r,"buys",x.i)).length;},0);
   const buyCount=typeof purchasePlanner==="object"?purchasePlanner.alertCount():0; // 분할매수는 자산 기록(assets-calc.js purchaseAlertRules)
   target.innerHTML=`<div class="trade-alert-summary"><span>분할매도 <b>${saleCount}</b></span><span>분할매수 <b>${buyCount}</b></span><span>달러선물 <b>${levelCount}</b></span><span>재매수 <b>${rebuyCount}</b></span></div><p class="hint">각 화면의 가격 옆에서 알림을 켜세요. 기준가 변경은 자동 반영되며 완료한 회차·단계는 제외됩니다. 종목 코드와 시세·기준가가 있어야 발송됩니다.</p>`;

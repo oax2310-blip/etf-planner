@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const code=['prices.js','rebuy.js','trade-alerts.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+const code=['ma-ladder.js','prices.js','rebuy.js','trade-alerts.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({});vm.runInContext(code,ctx);return ctx;};
 const plain=v=>JSON.parse(JSON.stringify(v));
 // 모두 가상 계약·시세. 실제 기록은 공개 테스트에 넣지 않는다.

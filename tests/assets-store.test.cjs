@@ -11,7 +11,7 @@ function setup(initial,fetcher,shared){
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
     setTimeout:()=>1,clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
     fetch:fetcher||(()=>{throw Error('unexpected network call');})};
-  const code=['js/assets-calc.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+  const code=['js/ma-ladder.js','js/assets-calc.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
   return {store,storage,event:()=>listeners.get('storage')?.({key:KEY})};
 }

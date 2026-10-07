@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(require('node:path').join(__dirname, '../js/futures.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/futures.js'), 'utf8');
 if (!source.includes('function resizeTranches(')) throw Error('계획 계약 수 조정 구현을 찾지 못했습니다.');
 
 const load = () => { const context = vm.createContext({futuresDays: [25, 32, 42, 60, 80, 125, 150], contractSize: 10000}); vm.runInContext(source, context); return context; };
@@ -27,7 +27,7 @@ test('계획 계약 수를 늘리면 구간 기준가로 미매수 계약을 추
   l.price = 1420;
   ctx.resizeTranches(l, 3);
   assert.equal(l.contracts, 3);
-  assert.deepEqual({...l.tranches[2]}, {price: 1420, completed: false, executionPrice: null});
+  assert.deepEqual({...l.tranches[2]}, {price: 1420, completed: false, executionPrice: null,slot:2});
 });
 
 const futures = extra => ({targetPrice: 1480, targetProfit: 0, baselinePnl: 50000, positions: [{month: '202611', contracts: 3, settlementPrice: 1400}], levels: [level(25, 2)], ...extra});
