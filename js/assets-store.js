@@ -39,7 +39,8 @@ async function readAssetRemote(cfg){
   return (aSync.remote={repo:cfg.repo,sha:meta.sha,doc:data,etag:r.headers.get("ETag")||""});
 }
 async function writeAssetRemote(cfg, data, sha){
-  const body={message:`자산 현황 동기화 ${new Date().toISOString()}`,content:toB64A(JSON.stringify(data,null,2)+"\n"),...(sha?{sha}:{})};
+  const previous=aSync.remote?.repo===cfg.repo?aSync.remote.doc:null,tag=bitcoinAlertsChanged(previous,data,true)?" [crypto-alerts]":"";
+  const body={message:`자산 현황 동기화 ${new Date().toISOString()}${tag}`,content:toB64A(JSON.stringify(data,null,2)+"\n"),...(sha?{sha}:{})};
   const r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_FILE}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   if(r.status===409||r.status===422){ const e=Error("다른 기기가 먼저 저장했습니다."); e.stale=true; throw e; }
   if(!r.ok) throw Error(`기록 저장 실패 (${r.status})`);

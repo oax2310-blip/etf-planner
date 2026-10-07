@@ -157,6 +157,33 @@ function purchaseAlertOn(plan, row){
   const n=plan?.notify&&typeof plan.notify==="object"?plan.notify:{}, own=row?.key?n.keys?.[row.key]:row?.notify;
   return typeof own==="boolean"?own:n.stages===true;
 }
+// 비트코인 전용 예약의 ON/OFF 판정. 데이터 저장소도 이 함수를 그대로 읽는다.
+// 시세·봉이 아직 없어도 켜진 미완료 자동 기준은 수집을 재개해야 한다. 기록은 바꾸지 않는다.
+function bitcoinAlertsEnabled(data, assets){
+  const btc=t=>String(t||"").trim().toUpperCase()==="BTC-USD";
+  if((Array.isArray(data?.alerts?.rules)?data.alerts.rules:[]).some(r=>r?.enabled===true&&btc(r.ticker)))return true;
+  for(const p of Array.isArray(data?.plans)?data.plans:[]){
+    if(!p?.id||!(btc(p.ticker)||String(p.ticker||"").trim()==="비트코인")||p.currency==="KRW")continue;
+    const count=Number(p.stages),n=p.notify;
+    if(!Number.isInteger(count)||count<2||count>250||!n)continue;
+    for(let i=0;i<count;i++)if(p.checked?.[i]!==true&&(i===0?n.start===true:typeof n.saleOverrides?.[i]==="boolean"?n.saleOverrides[i]:n.sales===true))return true;
+  }
+  for(const g of Array.isArray(assets?.allocation?.groups)?assets.allocation.groups:[])for(const it of Array.isArray(g?.items)?g.items:[]){
+    const plan=it?.buyPlan;
+    if(!it?.id||!btc(it.ticker)||!plan||plan.currency&&plan.currency!=="USD")continue;
+    if(plan.lines){
+      const spent=purchaseLineRows(plan,null).filter(r=>r.done).reduce((s,r)=>s+r.actual,0),buys=purchaseBuys(plan);
+      const keys=["end",...purchaseLineNames(plan.lines).flatMap(name=>[0,1,2].map(t=>`${name}:${t}`))];
+      if(plus(plan.lines.end)&&(finite(plan.lines.budget)||0)>spent&&keys.some(key=>!buys[key]&&purchaseAlertOn(plan,{key})))return true;
+    }else if((Array.isArray(plan.stages)?plan.stages:[]).some(s=>s?.id&&!s.done&&plus(s.price)&&purchaseAlertOn(plan,s)))return true;
+  }
+  return false;
+}
+// 각 기록 파일의 마지막 비트코인 알림이 ON↔OFF로 바뀐 저장만 예약 제어 작업을 깨운다.
+function bitcoinAlertsChanged(before,after,assets=false){
+  const enabled=doc=>bitcoinAlertsEnabled(assets?null:doc,assets?doc:null);
+  return enabled(before)!==enabled(after);
+}
 // 종목 코드 → 시세 종류(데이터 저장소 kis_prices.py classify와 같은 형식): BTC-USD는 코인, 국내 6자리(A·Q 접두 포함)는 국내, 미국 심볼은 해외, 그 밖은 null
 function purchaseQuoteKind(ticker){
   const t=String(ticker||"").trim().toUpperCase();

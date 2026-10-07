@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,bitcoinAlertsEnabled,bitcoinAlertsChanged,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -15,6 +15,31 @@ const prices = {stocks: {
   'BTC-USD': {kind: '코인', asOf: '2026-01-03', close: 100},
   BAD: {error: true},
 }, fx: {close: 1000, asOf: '2026-01-02'}};
+
+test('비트코인 전용 예약은 시세가 없어도 켜진 미완료 알림을 받고 완료·개별 OFF·BTC ETF는 제외한다',()=>{
+  const p={id:'synthetic-sale',ticker:'비트코인',currency:'USD',stages:3,startAuto:true,startPrice:0,endPrice:0,notify:{start:true,sales:true,saleOverrides:{1:false}},checked:[false,false,true]};
+  const data={plans:[p]},before=JSON.stringify(data);
+  assert.equal(c.bitcoinAlertsEnabled(data),true,'첫 자동 기준가를 받기 전에도 ON');
+  assert.equal(JSON.stringify(data),before,'읽기만 하면 기록이 바뀌지 않는다');
+  p.checked[0]=true;assert.equal(c.bitcoinAlertsEnabled(data),false);
+  p.notify.saleOverrides[1]=true;assert.equal(c.bitcoinAlertsEnabled(data),true);
+  p.currency='KRW';assert.equal(c.bitcoinAlertsEnabled(data),false);
+  p.currency='USD';p.ticker='BTC';assert.equal(c.bitcoinAlertsEnabled(data),false);
+  data.alerts={rules:[{ticker:' btc-usd ',enabled:true}]};assert.equal(c.bitcoinAlertsEnabled(data),true);
+  data.alerts.rules[0].enabled=false;assert.equal(c.bitcoinAlertsEnabled(data),false);
+});
+
+test('비트코인 분할매수 알림도 전용 예약을 유지하고 마지막 미완료 회차가 끝나면 중단한다',()=>{
+  const stage={id:'synthetic-stage',price:60000},plan={currency:'USD',notify:{stages:true},stages:[stage]};
+  const assets={allocation:{groups:[{items:[{id:'synthetic-asset',ticker:'BTC-USD',buyPlan:plan}]}]}};
+  assert.equal(c.bitcoinAlertsEnabled(null,assets),true);
+  stage.notify=false;assert.equal(c.bitcoinAlertsEnabled(null,assets),false);
+  stage.notify=true;stage.done=true;assert.equal(c.bitcoinAlertsEnabled(null,assets),false);
+  assert.equal(c.bitcoinAlertsEnabled({alerts:{rules:[{ticker:'BTC-USD',enabled:true}]}},assets),true,'다른 기록에 ON이 남아 있으면 유지');
+  plan.lines={names:['25일선'],end:65000,budget:100};plan.notify={stages:false,keys:{'25일선:0':true}};
+  assert.equal(c.bitcoinAlertsEnabled(null,assets),true,'아직 이동평균 값이 없어도 ON');
+  plan.buys={'25일선:0':{price:60000,actual:100}};assert.equal(c.bitcoinAlertsEnabled(null,assets),false,'예산을 다 썼으면 완료');
+});
 
 test('목표 비중: 종목 수정·이동·삭제가 소분류·그룹·분류·지역 합계에 반영되고 기존 기록은 보존한다', () => {
   const alloc = {classes: [{id:'c',region:'국내',target:80},{id:'cash',region:'현금',target:20,cash:true}],cash:[],

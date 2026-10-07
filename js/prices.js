@@ -10,7 +10,8 @@
 //   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선·N선 단계 기준가 ← stocks[그 종목 코드] (국내 종목은 원, 미국 종목은 달러 — usTicker). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
 //   N선 = 60분봉 종가 N개 이동평균(hourKey). 수집 스크립트가 한국투자증권 분봉으로 계산해 ma['N선']에 두며, 처음에는 과거 봉을 몇 번의 수집에 나눠 받으므로
 //   짧은 N선부터 채워진다. 값이 없으면(null) 직접 넣은 값을 그대로 둔다.
-// 비트코인은 stocks["BTC-USD"](kind "코인", Coinbase 달러·UTC 일봉 — 데이터 저장소 scripts/kis_prices.py CRYPTO)로 매 수집에 들어 있다.
+// 비트코인은 stocks["BTC-USD"](kind "코인", Coinbase 달러·UTC 일봉 — 데이터 저장소 scripts/kis_prices.py CRYPTO)로 평일 기존 수집에 들어 있다.
+//   저녁·주말 전용 예약은 켜진 미완료 비트코인 알림이 있을 때만 실행한다(assets-calc.js bitcoinAlertsEnabled).
 //   동기화 창 시세 줄·직접 추가 알림과 달러 분할매도에 쓴다. 재매수는 국내·미국 종목만 채운다(비트코인 제외).
 // 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
 //   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.

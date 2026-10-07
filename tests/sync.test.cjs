@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/sync.js'), 'utf8');
-const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
+const pricesSource = ['ma-ladder.js','prices.js','assets-calc.js'].map(name=>fs.readFileSync(require('node:path').join(__dirname, '../js',name),'utf8')).join('\n;\n'); // 브라우저처럼 시세 채우기·예약 판정도 함께
 if (!source.includes('async function syncNow()')) throw Error('동기화 구현을 찾지 못했습니다.');
 
 const REPO = 'me/data';
@@ -74,6 +74,25 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
+
+test('비트코인 알림의 첫 ON·마지막 OFF 저장만 예약 제어를 깨우고 일반 편집은 실행시키지 않는다',async()=>{
+  const record=enabled=>({...empty(),alerts:{rules:[{id:'synthetic-rule',ticker:'BTC-USD',period:60,unit:'일선',tolerancePct:0.5,enabled}]}});
+  for(const [before,after,changed] of [[false,true,true],[true,false,true],[true,true,false],[false,false,false]]){
+    const remote=record(before),local=record(after);local.actions.note='synthetic-edit';
+    const h=harness({local,remote,base:JSON.stringify(remote)});await h.restored();
+    assert.equal(h.server.writes,1);
+    assert.equal(h.server.puts[0].message.includes('[crypto-alerts]'),changed);
+    assert.deepEqual(h.remoteData(),local);
+  }
+});
+
+test('마지막 비트코인 매도 회차 완료도 예약 중단을 요청한다',async()=>{
+  const remote={...empty(),plans:[{id:'synthetic-sale',ticker:'BTC-USD',currency:'USD',stages:2,notify:{start:true},checked:[]}]};
+  const local=structuredClone(remote);local.plans[0].checked=[true];
+  const h=harness({local,remote,base:JSON.stringify(remote)});await h.restored();
+  assert.equal(h.server.puts[0].message.includes('[crypto-alerts]'),true);
+  assert.equal(h.remoteData().plans[0].checked[0],true);
+});
 
 test('알림 조건과 휴대폰 구독을 다른 기기에서 손실 없이 가져온다', async () => {
   const local=empty(), remote={...empty(),alerts:{rules:[{id:'rule-1',ticker:'AAA',period:60,unit:'일선',tolerancePct:0.5,enabled:true}],subscriptions:[{id:'device-1',subscription:{endpoint:'https://fcm.googleapis.com/test-only',keys:{p256dh:'fake-public-key',auth:'fake-auth'}}}]}};

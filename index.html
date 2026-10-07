@@ -56,7 +56,8 @@
     고른 계획·종목(selectedPlan·selectedRebuy)은 이 기기 state에만(dataSnapshot 밖).
   [시세 자동 채우기]
   - 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions가 평일마다 한국투자증권 시세로 갱신)을 동기화 때 읽기만 한다(ETag, 이 기기 localStorage에 필요한 값만).
-    비트코인은 stocks["BTC-USD"](kind 코인, Coinbase 달러·UTC 일봉, 주말 포함 매 수집) — 동기화 창 시세 줄·직접 추가 알림·달러 분할매도에 쓴다(prices.js 맨 위 주석).
+    비트코인은 stocks["BTC-USD"](kind 코인, Coinbase 달러·UTC 일봉, 평일 기존 수집 + 켜진 미완료 알림이 있을 때만 저녁·주말 전용 예약) — 동기화 창 시세 줄·직접 추가 알림·달러 분할매도에 쓴다(prices.js 맨 위 주석).
+    예약 ON/OFF 판정은 assets-calc.js bitcoinAlertsEnabled(data,assets)를 데이터 저장소도 그대로 읽는다. sync.js·assets-store.js는 각 파일의 알림 유무가 바뀐 커밋에만 [crypto-alerts]를 붙여 예약 제어를 깨운다. 일반 편집·시세 채우기는 추가 러너 없음.
     대상 종목은 그 저장소 scripts/kis_prices.py가 plans[].ticker·rebuy.items[].ticker(옛 기록 rebuy.ticker)·보유 월물에서 고름 — 채우는 칸이나 기준선 이름 규칙을 바꾸면 그 스크립트도 같이.
   - 채우는 칸·규칙은 prices.js 맨 위 주석이 기준(시세 우선: 직접 고친 값은 다음 시세 갱신 때 덮어씀, 칸마다 지난번 채운 값은 plans[]·futures·rebuy의 auto).
     채우기는 같은 기록 + 같은 시세면 결과가 같아야 한다 — syncNow가 저장소·지난 동기화 기록에도 채운 뒤 비교해 시세만으로 기록 차이 창이 뜨지 않게 함.
@@ -103,9 +104,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=40"></script>
-  <link rel="stylesheet" href="css/app.css?v=40" />
-  <link rel="stylesheet" href="css/purchases.css?v=40" />
+  <script src="js/theme.js?v=41"></script>
+  <link rel="stylesheet" href="css/app.css?v=41" />
+  <link rel="stylesheet" href="css/purchases.css?v=41" />
 </head>
 <body>
   <header class="top">
@@ -271,20 +272,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=40"></script>
-  <script src="js/core.js?v=40"></script>
-  <script src="js/sync.js?v=40"></script>
-  <script src="js/prices.js?v=40"></script>
-  <script src="js/assets-calc.js?v=40"></script>
-  <script src="js/assets-store.js?v=40"></script>
-  <script src="js/alloc-link.js?v=40"></script>
-  <script src="js/purchases.js?v=40"></script>
-  <script src="js/trade-alerts.js?v=40"></script>
-  <script src="js/plans.js?v=40"></script>
-  <script src="js/futures.js?v=40"></script>
-  <script src="js/rebuy.js?v=40"></script>
-  <script src="js/alerts.js?v=40"></script>
-  <script src="js/push.js?v=40"></script>
+  <script src="js/ma-ladder.js?v=41"></script>
+  <script src="js/core.js?v=41"></script>
+  <script src="js/sync.js?v=41"></script>
+  <script src="js/prices.js?v=41"></script>
+  <script src="js/assets-calc.js?v=41"></script>
+  <script src="js/assets-store.js?v=41"></script>
+  <script src="js/alloc-link.js?v=41"></script>
+  <script src="js/purchases.js?v=41"></script>
+  <script src="js/trade-alerts.js?v=41"></script>
+  <script src="js/plans.js?v=41"></script>
+  <script src="js/futures.js?v=41"></script>
+  <script src="js/rebuy.js?v=41"></script>
+  <script src="js/alerts.js?v=41"></script>
+  <script src="js/push.js?v=41"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

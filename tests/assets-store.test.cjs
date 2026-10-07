@@ -20,6 +20,29 @@ const json=(value,status=200)=>new Response(JSON.stringify(value),{status,header
 const contents=doc=>json({sha:'remote-sha',encoding:'base64',content:Buffer.from(JSON.stringify(doc)).toString('base64')});
 function connect(storage){storage.set('etf-planner-data-repo','example/private-data');storage.set('etf-planner-github-token','fake-test-token');}
 
+test('분할매수 비트코인 알림의 ON·OFF·완료 저장만 예약 제어를 깨운다',async()=>{
+  for(const [before,after,done,changed] of [[false,true,false,true],[true,false,false,true],[true,true,true,true],[true,true,false,false]]){
+    const original=fake(),item=original.allocation.groups[0].items[0];item.ticker='BTC-USD';
+    item.buyPlan={currency:'USD',stages:[{id:'synthetic-stage',amount:30,price:60000,notify:before}]};
+    let remote=clone(original),message='';
+    const {store,storage}=setup(original,async(url,options)=>{
+      if(url.endsWith('/repos/example/private-data'))return json({private:true});
+      if(url.endsWith('/etf-planner-prices.json'))return new Response('',{status:404});
+      if(options.method==='PUT'){
+        const body=JSON.parse(options.body);message=body.message;remote=JSON.parse(Buffer.from(body.content,'base64').toString());
+        return json({content:{sha:'saved-sha'}});
+      }
+      return contents(remote);
+    });
+    connect(storage);storage.set(BASE,JSON.stringify(original));
+    const stage=store.doc.allocation.groups[0].items[0].buyPlan.stages[0];stage.notify=after;stage.done=done;
+    store.doc.allocation.groups[0].items[0].target=12;store.saveSection('allocation');await store.sync();
+    assert.equal(store.status.state,'done');
+    assert.equal(message.includes('[crypto-alerts]'),changed);
+    assert.equal(remote.allocation.groups[0].items[0].buyPlan.stages[0].done,done);
+  }
+});
+
 test('공유 자산 기록: 입력 없이 열면 기존 분할매수·목표·동기화 스냅샷을 바꾸지 않는다',()=>{
   const original=fake(),{store,storage}=setup(original);store.start();
   assert.deepEqual(JSON.parse(storage.get(KEY)),original);
