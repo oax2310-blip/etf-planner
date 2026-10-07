@@ -20,6 +20,12 @@ const planCurrency=(plan,it)=>plan?.currency||quoteOf(it)?.currency||(tracksETF(
 const unitOf=it=>linkStep(it);
 const qtyNum=(v,it)=>(unitOf(it)<1?nf8:nf1).format(v), qtyUnit=it=>unitOf(it)<1?" BTC":"주", qtyText=(v,it)=>`${qtyNum(v,it)}${qtyUnit(it)}`;
 const wonAmount=v=>priceText(v*1e4,"KRW");
+// 추종 ETF 계획은 처음 고른 자산 항목의 id에 붙는다. 코드만으로 다른 계좌를 고르지 않으며 기존 보유량에 체결분을 더한다.
+function targetInfo({g,it},s){
+  const path=[g.name,it.section,it.name].filter(Boolean).map(escA).join(" › "), shares=finite(it.shares), byShares=shares!==null||!(finite(it.amount)>0);
+  const holding=byShares?`현재 보유 <b>${qtyText(shares??0,it)}</b> · 체결 주수를 더합니다.`:`현재 평가액 <b>${man(s.items.get(it.id)?.value||0)}</b> · 체결 금액을 더합니다.`;
+  return `<b>매수 반영 대상</b> 자산 배분 › ${path}<br>${holding}`;
+}
 function trackingInfo(it){
   if(!tracksETF(it))return "";
   const q=assetTradeQuote(prices,it), fx=assetFx(prices,doc.allocation), date=q?.asOf?` ${escA(q.asOf.slice(5))} 기준`:"", old=q&&(q.stale||q.asOf&&priceAge(q.asOf)>PRICE_STALE_DAYS);
@@ -95,12 +101,12 @@ function renderPurchases(){
     };
     return `<section class="card purchase-card"><div class="purchase-head"><div class="title-row"><h2>${escA(it.name)}</h2><button class="btn icon-btn" type="button" data-purchase-edit="${id}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>
       <p>${escA(g.name)} · 현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}${s.base>0&&t/100*s.base>v?` · 목표까지 ${man(t/100*s.base-v)}`:""}`:" · 목표 미입력"}</p>
-      ${head}${nowText?`<p class="purchase-now">${nowText}</p>`:""}${tracksETF(it)?`<p class="purchase-tracking">${trackingInfo(it)}</p>`:""}
+      ${head}${nowText?`<p class="purchase-now">${nowText}</p>`:""}${tracksETF(it)?`<p class="purchase-target">${targetInfo({g,it},s)}</p><p class="purchase-tracking">${trackingInfo(it)}</p>`:""}
       <div class="purchase-progress"><span class="purchase-status${p.count&&p.done===p.count?" done":""}">${status} · ${p.done}/${p.count}회</span><span>${sharesKnown?`체결 ${qtyText(Number(filledShares.toFixed(8)),it)} · 남은 매수 ${qtyText(Number(remainingShares.toFixed(8)),it)}`:`부분 체결 ${partialCount}회 · 미완료 ${open.length}회`}</span>${alertLine}</div></div>
       ${rows.map(row).join("")}<p class="purchase-note">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다.</p>
       ${plan.note?`<p class="purchase-note">${escA(plan.note)}</p>`:""}</section>`;
   };
-  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파 회차나 직접 정한 회차로 목표 비중까지 나눠 삽니다. 회차를 체크하면 자산 배분 보유량에도 더하고(같은 종목 코드 계좌가 여럿이면 고름), 체크를 풀면 되돌립니다.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파 회차나 직접 정한 회차로 목표 비중까지 나눠 삽니다. 누적 체결 주수를 입력하면 자산 배분의 기존 보유량에 더합니다. 체크하면 잔량까지 모두 체결하고, 체크를 풀면 되돌립니다.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
     <p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p>
     <div class="card metrics"><div class="metric"><label>총 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>매수 진행</label><strong>${completed} / ${count}회 완료</strong><small>부분 체결 ${partials}회</small></div><div class="metric"><label>남은 예정액</label><strong>${man(totals.remaining)}</strong><small>부분 체결 잔량과 미체결 회차의 예정액</small></div></div>
     ${plans.length?plans.map(card).join(""):emptyCard("아직 분할매수 계획이 없습니다","종목을 고르고 목표 가격과 목표 비중을 넣으세요.","")}`;
@@ -128,7 +134,7 @@ function renderPurchases(){
       else{delete r.stage.done;delete r.stage.partial;Object.assign(r.stage,b);}
       saveSection("allocation");return r.key;};
     if(r.recorded){if(r.line||finite(b.plannedShares)!==null)keepShares(r.key,oldBuy(plan,r));if(commit())allocLink.rescale(r.key,buyTrade(found.it,plan,b));render();}
-    else allocLink.check({ticker:b.tradeTicker||found.it.ticker,ownId:id,trade:buyTrade(found.it,plan,b),label:`${found.it.name} 분할매수 ${r.label}`,prefer:[`buy:${id}:`],redraw:render,commit});
+    else allocLink.check({ticker:b.tradeTicker||found.it.ticker,ownId:id,...(b.tradeTicker?{targetId:id}:{}),trade:buyTrade(found.it,plan,b),label:`${found.it.name} 분할매수 ${r.label}`,prefer:[`buy:${id}:`],redraw:render,commit});
   }
   function fillShares(id,r,n){
     const found=findItem(id),plan=found?.it.buyPlan;if(!found||!r||n===null||n<0||(unitOf(found.it)===1?!Number.isSafeInteger(n):Number(n.toFixed(8))!==n))return render();
@@ -169,7 +175,7 @@ const form=()=>el("purchaseForm"), pickedItem=()=>findItem(form().item.value), m
 const draftCurrency=()=>{const it=pickedItem()?.it;return purchaseDraft?.currency||quoteOf(it)?.currency||form().manualCurrency.value||"KRW";};
 function itemInfo({g,it},s){
   const v=s.items.get(it.id)?.value||0,t=finite(it.target);
-  return [g.name,it.section,tracksETF(it)?`${it.ticker} → ${assetTradeTicker(it)}`:it.ticker,`현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`].filter(Boolean).map(escA).join(" · ");
+  return [g.name,it.section,tracksETF(it)?`${it.ticker} → ${assetTradeTicker(it)}`:it.ticker,finite(it.shares)!==null?`보유 ${qtyText(finite(it.shares),it)}`:`평가액 ${man(v)}`,`현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`].filter(Boolean).map(escA).join(" · ");
 }
 function renderPicker(){
   const s=allocationSummary(doc.allocation,prices), picked=pickedItem(), box=el("purchasePicked");
@@ -191,7 +197,7 @@ function pickPurchaseItem(itemId){
   form().item.value=itemId;if(quoteOf(found.it))delete purchaseDraft.currency; // 시세가 있으면 그 통화(전에 고른 종목의 직접 선택은 버림)
   budgetAuto=true;renderDraft();
 }
-const renderDraft=()=>{renderPicker();const it=pickedItem()?.it,info=el("purchaseTrackingInfo");info.hidden=!tracksETF(it);info.innerHTML=trackingInfo(it);renderLines();renderPurchaseDraft();};
+const renderDraft=()=>{renderPicker();const picked=pickedItem(),it=picked?.it,info=el("purchaseTrackingInfo"),target=el("purchaseTargetInfo");info.hidden=target.hidden=!tracksETF(it);info.innerHTML=trackingInfo(it);target.innerHTML=tracksETF(it)?targetInfo(picked,allocationSummary(doc.allocation,prices)):"";renderLines();renderPurchaseDraft();};
 // 이동평균선 돌파 설정: 총 매수 금액 = 목표 비중(비우면 종목 목표) × 기준 총자산 − 지금 평가액 + 이미 체결한 금액(매수한 수량을 자산 배분 보유량에 반영했다고 보고).
 // 새 계획·목표 비중을 고치면 자동으로 채우고, 직접 고친 금액은 그대로 둔다('다시 계산'으로 되돌림). 미리보기 회차는 assets-calc.js purchaseLineRows(지금 이동평균).
 function linesDraft(){
