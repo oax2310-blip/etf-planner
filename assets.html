@@ -11,6 +11,10 @@
   - 시세: 같은 저장소의 etf-planner-prices.json을 ETag로 읽기만 함(이 기기 etf-planner-assets-prices에 종가·환율만). 수집 대상·시각은 데이터 저장소 scripts/kis_prices.py
     (자산 배분 종목 코드는 마감 후 하루 한 번 종가만 — Actions 사용 시간). 평가액 규칙은 js/assets-calc.js itemValue 위 주석. 금액만 넣은 종목의 기준 가격(base)은 금액을 넣을 때·처음 시세를 볼 때 정함.
   - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%). 기준 총자산은 억·만원으로 표시·입력하며 숫자만 입력하면 만원으로 저장한다.
+  - 일반 추종 ETF: ticker는 기준 가격·이동평균·알림용 티커, tradeTicker(입력할 때만)는 실제 ETF 코드. 보유 수량·평가액은 실제 ETF 기준(assetTradeQuote).
+    실제 ETF 자동 시세가 없으면 직접 넣은 tradePrice·tradePriceAt을 사용한다. 실제 ETF 코드를 입력·변경할 때 금액 기준 가격(base)을 다시 잡는다. 분할매수 환산은 purchaseTrackingFill.
+    첫 체결에 buyPlan 회차의 tradeTicker·tradePrice·tradeCurrency를 고정하고 shares·plannedShares는 실제 ETF 주수, price는 기준 가격을 유지한다.
+    직접 입력 회차는 취소할 때 sourceShares(기준 티커 주수, 없었으면 null)를 복원한다. 기준 티커와 실제 ETF가 다른 계좌의 주수 합을 기준 티커 보유량으로 가져오지 않는다.
   - 투자구성은 지역·분류 합계, 자산 배분은 종목·현금. 목표는 종목 → 소분류 → 그룹 → 분류 합산(하위 목표가 전부 없으면 기존 직접 입력값). 합계 계산만으로 기록을 바꾸지 말 것.
     플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan은 이동평균선 돌파 {lines:{names,end,budget,target?},buys:{회차 키:{shares,actual,price}},notify:{stages,keys},currency,note} 또는 직접 입력 {stages:[{id,price,shares,date,condition,amount,done,actual,notify}],notify:{stages},currency,note}. 금액은 만원, 가격은 계획 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화). 옛 ladder 필드는 읽지 않음. 규칙은 assets-calc.js 분할매수 주석(purchaseLineLevels·purchaseLineRows·purchaseSummary·purchaseDirection·purchaseAlertRules — 데이터 저장소 수집 작업도 실행하므로 함수 이름·라벨 형식·단계 이름을 바꾸면 그쪽도). 완료 체크는 종목의 비중 조정 완료(done)를 바꾸지 않는다.
   - 플래너 체크 → 자산 배분 연동(분할매도 회차·재매수 손절·재매수 회차·분할매수 회차): 플래너 js/alloc-link.js가 같은 종목 코드(assets-calc.js linkTicker) 종목의 보유 수량·금액을 바꾸고
@@ -29,9 +33,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=42"></script>
-  <link rel="stylesheet" href="css/app.css?v=42" />
-  <link rel="stylesheet" href="css/assets.css?v=42" />
+  <script src="js/theme.js?v=43"></script>
+  <link rel="stylesheet" href="css/app.css?v=43" />
+  <link rel="stylesheet" href="css/assets.css?v=43" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -59,13 +63,15 @@
       <label class="field"><span>그룹</span><select name="group"></select></label>
       <label class="field"><span>소분류 (선택)</span><input name="section" maxlength="30" list="sectionList" autocomplete="off" placeholder="예: 커버드콜" /><datalist id="sectionList"></datalist></label>
       <label class="field"><span>금액 (만원)</span><input name="amount" type="number" step="any" inputmode="decimal" /></label>
-      <label class="field"><span>시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
+      <label class="field"><span>기준 티커 / 시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
+      <label class="field"><span>실제 매수 ETF 코드 (추종할 때)</span><input name="tradeTicker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼" /><small class="field-hint">같은 지수를 따르는 일반 ETF · 비우면 기준 티커를 직접 거래</small></label>
+      <label class="field"><span id="itemTradePriceLabel">매수 ETF 현재가 (원 · 시세 없을 때)</span><input name="tradePrice" type="number" min="0" step="any" inputmode="decimal" placeholder="자동 시세가 없을 때 직접 입력" /><small class="field-hint" id="itemTradePriceNote">자동 시세를 우선 사용하며, 분할매수 주수와 보유 평가액에 반영합니다.</small></label>
       <label class="field"><span>보유 수량 (선택)</span><input name="shares" type="number" min="0" step="any" inputmode="decimal" placeholder="넣으면 수량 × 현재가" /></label>
       <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 소분류·그룹·분류 목표에 자동 합산</small></label>
       <label class="field check-field"><span>조정 기록</span><span class="check"><input name="done" type="checkbox" /> 비중 조정 완료</span><small class="field-hint">조정을 끝냈다는 직접 표시입니다. 비중을 자동 판정하지 않으며 계산에는 영향을 주지 않습니다.</small></label>
       <label class="field dialog-wide"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
       <div class="dialog-wide item-trades" id="itemTrades" hidden></div>
-      <p class="hint dialog-wide" id="itemHint">보유 수량을 넣으면 수량 × 현재가로, 금액만 넣으면 넣은 금액이 그때부터 시세 변동을 따라갑니다(국내 ETF가 추종하는 미국 ETF 코드를 넣어도 됩니다). 종목 코드가 없으면 넣은 금액 그대로입니다.</p>
+      <p class="hint dialog-wide" id="itemHint">추종 ETF를 거래하면 기준 티커에 미국 ETF, 실제 매수 ETF 코드에 거래할 ETF를 넣으세요. 보유 수량은 실제 매수 ETF 주수이며, 분할매수에 회차별 권장 주수·예상 금액·잔액이 표시됩니다. 금액만 넣으면 입력 때부터 해당 시세 변동을 따라갑니다. 종목 코드가 없으면 넣은 금액 그대로입니다.</p>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="itemDelete">종목 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
@@ -132,9 +138,9 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=42"></script>
-  <script src="js/assets-calc.js?v=42"></script>
-  <script src="js/assets-store.js?v=42"></script>
-  <script src="js/assets.js?v=42"></script>
+  <script src="js/ma-ladder.js?v=43"></script>
+  <script src="js/assets-calc.js?v=43"></script>
+  <script src="js/assets-store.js?v=43"></script>
+  <script src="js/assets.js?v=43"></script>
 </body>
 </html>

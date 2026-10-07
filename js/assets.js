@@ -36,7 +36,7 @@ document.addEventListener("focusout",()=>setTimeout(()=>{ if(redrawLater) redraw
 const onChange = (sel, section, set) => all(sel).forEach(x=>x.onchange=()=>{ if(set(x.value,x)!==false) saveSection(section); render(); });
 function emptyCard(title, text, button){ return `<div class="card empty assets-empty"><h2>${title}</h2><p>${text}</p>${button}</div>`; }
 const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n=new Date(); return Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(y,m-1,d))/864e5); };
-const quoteText = q => !q ? "" : `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} <span class="price-date${q.stale||priceDays(q.asOf)>A_STALE_DAYS?" old":""}">${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))}${q.stale?" · 조회 실패":""}</span>`;
+const quoteText = q => !q ? "" : `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} <span class="price-date${q.stale||q.asOf&&priceDays(q.asOf)>A_STALE_DAYS?" old":""}">${q.manual?"직접 입력 ":""}${q.asOf?`${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))}`:""}${q.stale?" · 조회 실패":""}</span>`;
 
 // ---------- 자산 배분 ----------
 // 큰 분류(classes, 엑셀 '분할 정리') → 그룹(groups, Sheet2의 굵은 제목) → 종목(items, 소분류 section은 그룹 안 작은 제목)
@@ -53,10 +53,10 @@ function renderAlloc(tab="alloc"){
   const classOf=id=>a.classes.find(c=>c.id===id);
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
-  const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[String(it.ticker||"").trim().toUpperCase()];
+  const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)];
     const how=r.how==="shares"?`<small class="how live">수량 × 현재가</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?`<small class="how">${stock?.error?"시세 조회 실패":"시세 대기"}</small>`:"";
     return `<div class="asset-row${it.done?" done":""}"><label class="check" title="비중 조정 완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 비중 조정 완료 (직접 표시)"></label>
-      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),finite(it.shares)!==null?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
+      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),finite(it.shares)!==null?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
       <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct">${pc(cur)}<small>${t!==null?`목표 ${pc(t)}`:""}</small></span></div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small>${escA(meta.note)}</small>`:""}</div>`;};
@@ -108,6 +108,12 @@ function openItem(id, groupId){
   const fillSections=()=>{const g=a.groups.find(x=>x.id===f.group.value);el("sectionList").innerHTML=[...new Set([...(g?.sections||[]).map(x=>x.name),...(g?.items||[]).map(x=>x.section).filter(Boolean)])].map(n=>`<option value="${escA(n)}">`).join("");};
   f.group.onchange=fillSections; fillSections();
   f.name.value=it.name||""; f.section.value=it.section||""; f.amount.value=it.amount??""; f.ticker.value=it.ticker||""; f.shares.value=it.shares??""; f.target.value=it.target??""; f.done.checked=!!it.done; f.note.value=it.note||"";
+  f.tradeTicker.value=it.tradeTicker||"";f.tradePrice.value=it.tradePrice??"";
+  const tradePriceInfo=()=>{const draft={tradeTicker:f.tradeTicker.value,ticker:f.ticker.value,tradePrice:numIn(f.tradePrice.value),tradePriceAt:it.tradePriceAt},q=assetTradeQuote(prices,draft),usd=purchaseQuoteKind(f.tradeTicker.value)==="해외";
+    el("itemTradePriceLabel").textContent=`매수 ETF 현재가 (${usd?"달러":"원"} · 시세 없을 때)`;
+    el("itemTradePriceNote").textContent=q&&!q.manual?`자동 시세 ${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} · ${q.asOf} 기준${q.stale?" · 마지막 조회 실패":""}. 직접 입력보다 우선 사용합니다.`:"자동 시세가 없으면 직접 입력한 가격으로 주수·평가액을 계산합니다.";};
+  let priceTicker=f.tradeTicker.value.trim().toUpperCase();
+  f.tradeTicker.oninput=()=>{const next=f.tradeTicker.value.trim().toUpperCase();if(next!==priceTicker){f.tradePrice.value="";priceTicker=next;}tradePriceInfo();};f.ticker.oninput=tradePriceInfo;tradePriceInfo();
   // 플래너에서 체크로 반영한 체결(allocation.trades — 규칙은 assets-calc.js '플래너 체결 → 자산 배분 연동'): 이 종목에 더하거나 뺀 양. 체크를 풀면 플래너가 되돌린다.
   const trades=Object.values(a.trades&&typeof a.trades==="object"?a.trades:{}).flatMap(t=>(Array.isArray(t?.items)?t.items:[]).filter(e=>found&&e.id===it.id).map(e=>({t,e}))).sort((x,y)=>String(y.t.at).localeCompare(String(x.t.at)));
   el("itemTrades").hidden=!trades.length;
@@ -116,11 +122,17 @@ function openItem(id, groupId){
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{ if(!confirm(`'${it.name}' 종목${it.buyPlan?"과 분할매수 계획":""}을 삭제할까요?`)) return; found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
-    const target=found?.it||{id:newId(), amount:0}, before=JSON.stringify([target.amount,target.ticker,target.shares]);
+    const tradeTicker=f.tradeTicker.value.trim().toUpperCase(),sourceKind=purchaseQuoteKind(f.ticker.value),tradeKind=purchaseQuoteKind(tradeTicker);
+    if(tradeTicker&&(!["국내","해외"].includes(sourceKind)||!["국내","해외"].includes(tradeKind))){alert("기준 티커와 실제 매수 ETF에 국내 종목 코드 또는 미국 심볼을 넣으세요.");f.tradeTicker.focus();return;}
+    if(numIn(f.tradePrice.value)!==null&&!tradeTicker){alert("현재가를 직접 넣으려면 실제 매수 ETF 코드를 먼저 입력하세요.");f.tradeTicker.focus();return;}
+    const target=found?.it||{id:newId(), amount:0}, before=JSON.stringify([target.amount,target.ticker,target.tradeTicker,target.shares]),oldTradeTicker=target.tradeTicker,oldTradePrice=finite(target.tradePrice);
     target.name=f.name.value.trim()||"이름 없음"; setText(target,"section",f.section.value); target.amount=numIn(f.amount.value)??0; setText(target,"ticker",f.ticker.value.toUpperCase()); setNum(target,"shares",f.shares.value); setNum(target,"target",f.target.value);
+    setText(target,"tradeTicker",tradeTicker);setNum(target,"tradePrice",f.tradePrice.value);
+    if(!target.tradeTicker||!plus(target.tradePrice)){delete target.tradePrice;delete target.tradePriceAt;}
+    else if(oldTradeTicker!==target.tradeTicker||oldTradePrice!==target.tradePrice)target.tradePriceAt=new Date().toISOString();
     if(f.done.checked) target.done=true; else delete target.done; setText(target,"note",f.note.value);
     if(!(finite(target.shares)>=0)) delete target.shares; // 0은 남김(다 판 종목 — 평가액 0, itemValue)
-    if(!found||before!==JSON.stringify([target.amount,target.ticker,target.shares])) resetBase(target,prices,a);
+    if(!found||before!==JSON.stringify([target.amount,target.ticker,target.tradeTicker,target.shares])||tracksETF(target)&&!plus(target.base)&&plus(target.amount)) resetBase(target,prices,a);
     const g=a.groups.find(x=>x.id===f.group.value);
     if(found&&found.g!==g) found.g.items=found.g.items.filter(x=>x!==target);
     if(!g.items.includes(target)) g.items.push(target);

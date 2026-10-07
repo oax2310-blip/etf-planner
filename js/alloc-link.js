@@ -41,7 +41,7 @@ function describe(rec){
 }
 function apply(key, o, picks){
   const a=allocOf();if(!a)return;
-  const had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,o.trade,o.label,picks);
+  const had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,{...o.trade,ticker:o.ticker},o.label,picks);
   if(rec||had)assetStore.saveSection("allocation");
   if(rec)toast(`자산 배분 반영 · ${describe(rec)}`);
 }

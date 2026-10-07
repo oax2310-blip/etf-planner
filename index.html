@@ -107,9 +107,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=42"></script>
-  <link rel="stylesheet" href="css/app.css?v=42" />
-  <link rel="stylesheet" href="css/purchases.css?v=42" />
+  <script src="js/theme.js?v=43"></script>
+  <link rel="stylesheet" href="css/app.css?v=43" />
+  <link rel="stylesheet" href="css/purchases.css?v=43" />
 </head>
 <body>
   <header class="top">
@@ -155,6 +155,7 @@
       <div id="purchaseSearchBox"><input type="search" id="purchaseSearch" placeholder="이름·종목 코드·그룹으로 검색" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-labelledby="purchaseItemLabel" aria-controls="purchaseItemList" /><div id="purchaseItemList" class="purchase-pick" role="listbox" aria-labelledby="purchaseItemLabel"></div></div>
       <div id="purchasePicked" class="purchase-picked" hidden></div><input type="hidden" name="item" />
       <small class="field-hint">자산 배분의 종목과 연결됩니다. 이름·목표 비중은 자산 배분의 종목별에서 수정하세요.</small></div>
+    <p id="purchaseTrackingInfo" class="purchase-tracking-info" hidden></p>
     <div class="purchase-mode" role="radiogroup" aria-label="매수 방식"><label><input type="radio" name="mode" value="lines" checked /> 이동평균선 돌파</label><label><input type="radio" name="mode" value="manual" /> 직접 입력</label></div>
     <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-ladder-grid">
@@ -275,20 +276,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=42"></script>
-  <script src="js/core.js?v=42"></script>
-  <script src="js/sync.js?v=42"></script>
-  <script src="js/prices.js?v=42"></script>
-  <script src="js/assets-calc.js?v=42"></script>
-  <script src="js/assets-store.js?v=42"></script>
-  <script src="js/alloc-link.js?v=42"></script>
-  <script src="js/purchases.js?v=42"></script>
-  <script src="js/trade-alerts.js?v=42"></script>
-  <script src="js/plans.js?v=42"></script>
-  <script src="js/futures.js?v=42"></script>
-  <script src="js/rebuy.js?v=42"></script>
-  <script src="js/alerts.js?v=42"></script>
-  <script src="js/push.js?v=42"></script>
+  <script src="js/ma-ladder.js?v=43"></script>
+  <script src="js/core.js?v=43"></script>
+  <script src="js/sync.js?v=43"></script>
+  <script src="js/prices.js?v=43"></script>
+  <script src="js/assets-calc.js?v=43"></script>
+  <script src="js/assets-store.js?v=43"></script>
+  <script src="js/alloc-link.js?v=43"></script>
+  <script src="js/purchases.js?v=43"></script>
+  <script src="js/trade-alerts.js?v=43"></script>
+  <script src="js/plans.js?v=43"></script>
+  <script src="js/futures.js?v=43"></script>
+  <script src="js/rebuy.js?v=43"></script>
+  <script src="js/alerts.js?v=43"></script>
+  <script src="js/push.js?v=43"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
