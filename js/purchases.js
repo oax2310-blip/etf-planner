@@ -44,6 +44,7 @@ function renderPurchases(){
   const view=el("buysView"), items=purchaseItems(), plans=items.filter(({it})=>it.buyPlan), fills=new Map(), rowData=new Map();
   if(!items.length){view.innerHTML=emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);el("purchaseGoAlloc").onclick=()=>{location.href="assets.html#alloc";};return;}
   const s=allocationSummary(doc.allocation,prices), summaries=plans.map(({it})=>purchaseSummary(it.buyPlan,lineEntry(it))), totals=summaries.reduce((t,p)=>({planned:t.planned+p.planned,actual:t.actual+p.actual,remaining:t.remaining+p.remaining}),{planned:0,actual:0,remaining:0});
+  const completed=summaries.reduce((n,p)=>n+p.done,0),count=summaries.reduce((n,p)=>n+p.count,0),partials=plans.reduce((n,{it})=>n+(it.buyPlan.lines?purchaseLineRows(it.buyPlan,lineEntry(it)).filter(r=>!r.done&&r.remainingShares>0).length:(it.buyPlan.stages||[]).filter(r=>r.partial).length),0);
   const card=({g,it})=>{
     const plan=it.buyPlan, lines=plan.lines, entry=lines?lineEntry(it):null, p=purchaseSummary(plan,entry), v=s.items.get(it.id)?.value||0, t=finite(it.target);
     const status=p.count&&p.done===p.count?"매수 완료":p.done||p.actual>0||Object.keys(purchaseBuys(plan)).length||(plan.stages||[]).some(purchaseStageRecorded)?"진행 중":"매수 전", id=escA(it.id);
@@ -55,11 +56,13 @@ function renderPurchases(){
       const shares=b?recordedShares(key,b):0, plannedShares=b?finite(b.plannedShares)??shares:fill?.shares??null;
       const row={key,attr:`data-key="${escA(r.key)}"`,label:purchaseLineLabel(r),price:r.price,shares,plannedShares,amount:b?r.amount:fill?.actual??r.amount,done:r.done,recorded:!!b,actual:r.actual??0,line:r,fill};rowData.set(key,row);return row;})
       :(Array.isArray(plan.stages)?plan.stages:[]).map((x,i)=>{
-        const key=`buy:${it.id}:${x.id||`#${i}`}`, recorded=purchaseStageRecorded(x), shares=recorded?recordedShares(key,x):0, plannedShares=purchasePlannedShares(x);
-        const row={key,attr:`data-stage="${i}"`,label:`${i+1}차`,price:finite(x.price),shares,plannedShares,amount:purchaseStageRemaining(x),done:!!x.done,recorded,actual:recorded?finite(x.actual)??Math.max(0,finite(x.amount)||0):0,stage:x};rowData.set(key,row);return row;});
+        const key=`buy:${it.id}:${x.id||`#${i}`}`, recorded=purchaseStageRecorded(x), inferred=purchasePlannedShares(x)===null?purchaseFill(x,cur,s.fx,unitOf(it)):null;
+        const plannedShares=purchasePlannedShares(x)??inferred?.shares??null, shares=recorded?recordedShares(key,x)??(inferred?purchaseFill({amount:finite(x.actual)??x.amount,price:x.price},cur,s.fx,unitOf(it))?.shares??null:null):0;
+        const row={key,attr:`data-stage="${i}"`,label:`${i+1}차`,price:finite(x.price),shares,plannedShares,amount:purchaseStageRemaining(x),done:!!x.done,recorded,actual:recorded?finite(x.actual)??Math.max(0,finite(x.amount)||0):0,stage:x,fill:inferred};rowData.set(key,row);return row;});
     const due=r=>now!==null&&!r.done&&r.price>0&&(up?now>=r.price:now<=r.price), priced=rows.some(r=>r.price>0);
     // 다음 회차: 아직 도달하지 않은 회차 중 현재가에 가장 가까운 가격(단계 순서와 가격 순서가 다를 수 있음)
     const next=now!==null?rows.filter(r=>!r.done&&r.price>0&&!due(r)).sort((a,b)=>Math.abs(a.price-now)-Math.abs(b.price-now))[0]:null, open=rows.filter(r=>!r.done);
+    const sharesKnown=rows.every(r=>r.plannedShares!==null&&(!r.recorded||r.shares!==null)),filledShares=rows.reduce((n,r)=>n+(r.shares||0),0),remainingShares=open.reduce((n,r)=>n+Math.max(0,(r.plannedShares||0)-(r.shares||0)),0);
     const gap=next?(next.price/now-1)*100:0;
     const nowText=now!==null&&priced?`현재가 ${pt(now)}<span class="price-date">${escA(q.asOf.slice(5))}</span>${next?` · 다음 ${escA(next.label)}까지 ${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`:""}`:"";
     const known=lines?lineKnown(lines,entry):[], missing=lines?purchaseLineNames(lines).filter(n=>!known.includes(n)):[];
@@ -70,31 +73,30 @@ function renderPurchases(){
     const alertLine=!priced?"":alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
       :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
     const row=r=>{
-      const reached=due(r), partial=r.recorded&&!r.done, blocked=r.line&&!r.recorded&&!(r.plannedShares>0), remaining=r.plannedShares!==null?Number(Math.max(0,r.plannedShares-(r.shares||0)).toFixed(8)):null;
+      const reached=due(r), partial=r.recorded&&!r.done, blocked=!r.recorded&&!(r.plannedShares>0), remaining=r.plannedShares!==null?Number(Math.max(0,r.plannedShares-(r.shares||0)).toFixed(8)):null;
       const shown=r.done?r.shares:r.plannedShares, main=r.line?`${pt(r.price)} · ${shown!==null?`${r.done?"체결":"매수"} ${qtyText(shown,it)}`:r.done?"체결 수량 미입력":"수량 계산 불가"}`:r.price!==null?`${pt(r.price)}${shown!==null?` · ${r.done?"체결":"매수"} ${qtyText(shown,it)}`:""}`:r.stage.condition||"조건 미입력";
-      const sub=partial?`부분 체결 · ${remaining!==null?`체결 ${qtyText(r.shares,it)} · 남은 매수 ${qtyText(remaining,it)}`:`체결 ${man(r.actual)} · 남은 매수 ${man(r.amount)}`}`:r.line?blocked?r.plannedShares===0?`회차 예산으로 ${qtyText(unitOf(it),it)}를 살 수 없습니다.`:"환율·기준 가격을 확인하세요.":"":r.price!==null?[r.stage.condition,r.stage.date].filter(Boolean).join(" · "):r.stage.date||"날짜 미정", name=`${it.name} ${r.label}`;
+      const sub=partial?`부분 체결 · ${remaining!==null?`체결 ${qtyText(r.shares,it)} · 남은 매수 ${qtyText(remaining,it)}`:"계획에 매수 가격·수량을 입력하세요."}`:blocked?r.plannedShares===0?`회차 예산으로 ${qtyText(unitOf(it),it)}를 살 수 없습니다.`:"계획에 매수 가격·수량을 입력하세요.":r.line?"":r.price!==null?[r.stage.condition,r.stage.date].filter(Boolean).join(" · "):r.stage.date||"날짜 미정", name=`${it.name} ${r.label}`;
       // 이동평균선 돌파 회차는 재매수처럼 단계 이름 + 회차 번호 칩(25선 [2]), 한 줄로 촘촘하게
       const tag=r.line?(r.line.key==="end"?"목표가":`${escA(r.line.line)}<span class="tr-no">${r.line.t+1}</span>`):escA(r.label);
       return `<div class="purchase-row${r.line?" line":""}${r.done?" done":partial?" partial":reached?" due":""}"><label class="check" title="잔량까지 매수 완료"><input type="checkbox" ${r.line?"data-purchase-buy":"data-purchase-done"}="${id}" ${r.attr}${r.done?" checked":""}${partial?' data-purchase-partial="true" aria-checked="mixed"':""}${blocked?" disabled":""} aria-label="${escA(name)} 매수 완료"><b>${tag}</b></label><div class="purchase-condition"><strong>${escA(main)}${reached?`<span class="purchase-due">도달</span>`:""}</strong>${sub?`<small class="${partial?"purchase-fill-summary":""}">${escA(sub)}</small>`:""}</div>
         <div class="purchase-amount">${r.plannedShares!==null||r.recorded&&!r.stage?.partial?`<label>누적 체결 <input type="number" min="0" ${r.plannedShares!==null?`max="${r.plannedShares}"`:""} step="${unitOf(it)}" inputmode="${unitOf(it)<1?"decimal":"numeric"}" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${r.shares??""}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 체결 수량 (${qtyUnit(it).trim()})"> ${qtyUnit(it).trim()}</label>`:""}
-          ${r.recorded||!r.line&&r.plannedShares===null?`<label>체결 금액 <input type="number" min="0" step="any" inputmode="decimal" ${r.line?"data-purchase-buy-actual":"data-purchase-actual"}="${id}" ${r.attr} value="${r.actual}" aria-label="${escA(name)} 체결 금액 (만원)"> 만원</label>`:`<span>예정 ${man(r.amount)}</span>`}
           ${!r.done&&r.price>0&&alertable?tradeAlertToggle(purchaseAlertOn(plan,r.line||r.stage),`data-purchase-alert="${id}" ${r.attr}`,name):""}</div></div>`;
     };
     return `<section class="card purchase-card"><div class="purchase-head"><div class="title-row"><h2>${escA(it.name)}</h2><button class="btn icon-btn" type="button" data-purchase-edit="${id}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>
       <p>${escA(g.name)} · 현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}${s.base>0&&t/100*s.base>v?` · 목표까지 ${man(t/100*s.base-v)}`:""}`:" · 목표 미입력"}</p>
       ${head}${nowText?`<p class="purchase-now">${nowText}</p>`:""}
-      <div class="purchase-progress"><span class="purchase-status${p.count&&p.done===p.count?" done":""}">${status} · ${p.done}/${p.count}회</span><span>예정 ${man(p.planned)} · 체결 ${man(p.actual)} · 남은 예정 ${man(p.remaining)}</span>${alertLine}</div></div>
+      <div class="purchase-progress"><span class="purchase-status${p.count&&p.done===p.count?" done":""}">${status} · ${p.done}/${p.count}회</span><span>${sharesKnown?`체결 ${qtyText(Number(filledShares.toFixed(8)),it)} · 남은 매수 ${qtyText(Number(remainingShares.toFixed(8)),it)}`:`부분 체결 ${partialCount}회 · 미완료 ${open.length}회`}</span>${alertLine}</div></div>
       ${rows.map(row).join("")}<p class="purchase-note">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다.</p>
       ${plan.note?`<p class="purchase-note">${escA(plan.note)}</p>`:""}</section>`;
   };
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파 회차나 직접 정한 회차로 목표 비중까지 나눠 삽니다. 회차를 체크하면 자산 배분 보유량에도 더하고(같은 종목 코드 계좌가 여럿이면 고름), 체크를 풀면 되돌립니다.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
     <p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p>
-    <div class="card metrics"><div class="metric"><label>총 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>체결 금액</label><strong>${man(totals.actual)}</strong><small>부분 체결을 포함한 실제 금액 합계</small></div><div class="metric"><label>남은 예정액</label><strong>${man(totals.remaining)}</strong><small>부분 체결 잔량과 미체결 회차의 예정액</small></div></div>
+    <div class="card metrics"><div class="metric"><label>총 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>매수 진행</label><strong>${completed} / ${count}회 완료</strong><small>부분 체결 ${partials}회</small></div><div class="metric"><label>남은 예정액</label><strong>${man(totals.remaining)}</strong><small>부분 체결 잔량과 미체결 회차의 예정액</small></div></div>
     ${plans.length?plans.map(card).join(""):emptyCard("아직 분할매수 계획이 없습니다","종목을 고르고 목표 가격과 목표 비중을 넣으세요.","")}`;
   updateStatus();
   el("addPurchase").onclick=()=>openPurchase(null);
   all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
-  const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseActual||x.dataset.purchaseShares||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
+  const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseShares||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
   // 회차의 누적 체결 수량을 저장·반영한다. 첫 체결 때 계획 수량을 고정하고, 추가 체결은 같은 반영 키의 총량을 맞춰 차이만 자산에 반영한다.
   // 반영 키: 'buy:종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'. 수량 없는 옛 기록은 이미 반영한 수량을 먼저 읽고, 사용자가 고칠 때만 shares에 기록한다.
   const stageKey=(id,x)=>{const stage=stageOf(x);return stage?`buy:${id}:${stage.id||`#${x.dataset.stage}`}`:"";};
@@ -122,7 +124,7 @@ function renderPurchases(){
     const target=r.plannedShares??n;if(n>target||!(target>0))return render();
     if(n===0)return clearFill(id,r);
     const old=oldBuy(plan,r),fill=fills.get(r.key),qty=r.recorded?r.shares:0,rate=planCurrency(plan,found.it)==="USD"?assetFx(prices,doc.allocation):1;
-    const full=qty>0?r.actual*target/qty:r.line?fill?.actual:finite(old.actual)??finite(old.amount);
+    const full=qty>0?r.actual*target/qty:r.line?fill?.actual:r.fill?.actual??finite(old.actual)??finite(old.amount);
     const actual=full!==null&&full!==undefined?full*n/target:r.price>0&&rate?n*r.price*rate/1e4:null;if(actual===null)return render();
     const b={...old,plannedShares:target,shares:n,actual:Number(actual.toFixed(8))};
     if(r.line){b.price=old?.price??fill?.price??r.price;b.plannedActual=finite(old?.plannedActual)??Number(full.toFixed(8));b.next=old?.next??r.line.next??null;}
@@ -133,18 +135,10 @@ function renderPurchases(){
     const id=x.dataset.purchaseDone||x.dataset.purchaseBuy,r=inputRow(id,x);if(!r)return render();
     if(!x.checked)return clearFill(id,r);
     if(r.plannedShares!==null)return fillShares(id,r,r.plannedShares);
-    if(r.line)return render();
-    const b={...r.stage,done:true,actual:r.stage.partial?r.actual+r.amount:finite(r.stage.actual)??Math.max(0,finite(r.stage.amount)||0)};delete b.partial;writeFill(id,r,b);
+    return render();
   });
   all("[data-purchase-shares], [data-purchase-buy-shares]").forEach(x=>x.onchange=()=>{
     const id=x.dataset.purchaseShares||x.dataset.purchaseBuyShares;fillShares(id,inputRow(id,x),numIn(x.value));
-  });
-  all("[data-purchase-actual], [data-purchase-buy-actual]").forEach(x=>x.onchange=()=>{
-    const id=x.dataset.purchaseActual||x.dataset.purchaseBuyActual,r=inputRow(id,x),plan=planOf(id),n=numIn(x.value);if(!r||!plan||n===null||n<0)return render();
-    if(!r.line&&r.plannedShares===null&&n===0)return clearFill(id,r);
-    const old=oldBuy(plan,r),b={...old,actual:n};if(r.recorded&&(r.line||r.plannedShares!==null)){const qty=keepShares(r.key,old);if(qty!==null)b.shares=qty;}
-    if(!r.line&&r.plannedShares===null){delete b.done;delete b.partial;if(n>=(finite(old.amount)||0))b.done=true;else b.partial=true;}
-    writeFill(id,r,b);
   });
   all("[data-purchase-partial]").forEach(x=>{x.indeterminate=true;});
   // 알림 ON/OFF는 누를 때만 저장(직접 입력은 회차 notify, 이동평균선 돌파는 notify.keys[키], 전체는 계획 notify.stages — 새 회차도 따라감). 규칙은 assets-calc.js purchaseAlertRules.
@@ -229,7 +223,7 @@ function renderPurchaseDraft(){
     <button class="btn mini ghost" type="button" data-purchase-remove="${i}" aria-label="${i+1}차 회차 삭제">삭제</button>
     <label class="date-field">매수 예정일<input type="date" data-purchase-field="date" data-stage="${i}" value="${escA(stage.date||"")}"></label>
     <label class="condition-field">매수 조건<input maxlength="100" placeholder="예: 기준가 도달" data-purchase-field="condition" data-stage="${i}" value="${escA(stage.condition||"")}"></label>
-    ${stage.done?`<label class="actual-field">체결액 (만원)<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="actual" data-stage="${i}" value="${finite(stage.actual)??""}" readonly></label>`:""}</div>`).join("");
+    </div>`).join("");
   form().manualCurrency.disabled=stages.some(purchaseStageRecorded);
   // 가격·수량을 고치면 예정액 = 가격 × 수량(달러는 × 지금 환율)으로 맞춘다. 예정액만 따로 고쳐도 된다.
   all("[data-purchase-field]").forEach(x=>x.oninput=()=>{const i=Number(x.dataset.stage),stage=stages[i],key=x.dataset.purchaseField;

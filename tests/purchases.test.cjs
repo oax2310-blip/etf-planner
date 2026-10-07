@@ -42,15 +42,16 @@ function setup({currency='KRW',budget=8.9,price=10000,legacy=false,manual=false,
   return {doc,item,prices,change,render:api.purchasePlanner.render,html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0]};
 }
 
-test('분할매수: 표시한 8주를 체크·저장·반영하고 금액만 수정해도 8주를 유지한다',()=>{
+test('분할매수: 표시한 8주를 저장·반영하고 기존 금액 기록이 있어도 주수로만 수정한다',()=>{
   for(const options of [{},{currency:'USD',price:10}]){
     const r=setup(options);
     assert.match(r.html(),/매수 8주/);assert.doesNotMatch(r.html(),/약 8주/);
     r.change('[data-purchase-buy]',true);
     assert.equal(r.item.buyPlan.buys.end.shares,8);assert.equal(r.item.buyPlan.buys.end.actual,8);
     assert.equal(r.item.shares,18);assert.equal(r.doc.allocation.trades['buy:a:end'].qty,8);
-    r.change('[data-purchase-buy-actual]',8.95);
-    assert.equal(r.item.shares,18,'수수료·환율 등에 따른 금액 변경으로 수량이 바뀌지 않음');
+    assert.equal(r.input('[data-purchase-buy-actual]'),undefined,'별도 체결금액 입력이 필요하지 않음');
+    r.item.buyPlan.buys.end.actual=8.95;r.doc.allocation.trades['buy:a:end'].value=8.95;r.render();
+    assert.equal(r.item.shares,18,'옛 금액 기록을 불러와도 보유 주수는 유지');
     r.change('[data-purchase-buy-shares]',7);
     assert.equal(r.item.shares,17);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].shares,7);
     r.change('[data-purchase-buy-shares]',7.5);
@@ -68,7 +69,7 @@ test('분할매수: 옛 9주 반영 기록을 표시하고 실제 체결 수량 
   r.change('[data-purchase-buy-shares]',8);
   assert.equal(r.item.buyPlan.buys.end.shares,8);assert.equal(r.item.shares,18);
   assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].shares,8);
-  r.change('[data-purchase-buy-actual]',8.9);assert.equal(r.item.shares,18);
+  assert.equal(r.input('[data-purchase-buy-actual]'),undefined);assert.equal(r.item.shares,18);
   r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);
 });
 
@@ -77,10 +78,11 @@ test('분할매수: 1주도 살 수 없는 예산은 0주로 표시하고 체크
   r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
 });
 
-test('분할매수 직접 입력: 수량이 있는 회차는 체결 금액 수정 시 그 수량을 유지한다',()=>{
+test('분할매수 직접 입력: 체결 주수만 입력하고 금액은 자동 계산한다',()=>{
   const r=setup({manual:true});r.change('[data-purchase-done]',true);assert.equal(r.item.shares,18);
-  r.change('[data-purchase-actual]',12);assert.equal(r.item.shares,18);
+  assert.equal(r.input('[data-purchase-actual]'),undefined);
   r.change('[data-purchase-shares]',7);assert.equal(r.item.shares,17);
+  assert.equal(r.item.buyPlan.stages[0].actual,7.7875);
   r.change('[data-purchase-done]',false);assert.equal(r.item.shares,10);
 });
 
@@ -130,13 +132,14 @@ test('분할매수 직접 입력: 부분 체결·추가 체결·체크 취소가
   assert.equal(r.item.buyPlan.stages[0].shares,10);assert.equal(r.item.buyPlan.stages[0].plannedShares,undefined);
 });
 
-test('분할매수 금액 계획: 10만원 중 7만원 체결을 기록해도 남은 3만원을 표시한다',()=>{
+test('분할매수 금액 계획도 예정액·가격으로 주수를 계산해 체결 7주와 잔량 3주를 기록한다',()=>{
   const r=setup({manual:true,manualShares:null,manualAmount:10});
-  r.change('[data-purchase-actual]',7);assert.equal(r.item.shares,17);
-  assert.equal(r.item.buyPlan.stages[0].shares,undefined,'금액 계획을 수량 계획으로 바꾸지 않음');
-  assert.match(r.html(),/부분 체결 · 체결 7만원 · 남은 매수 3만원/);
+  assert.match(r.html(),/매수 10주/);assert.equal(r.input('[data-purchase-actual]'),undefined);
+  r.change('[data-purchase-shares]',7);assert.equal(r.item.shares,17);
+  assert.equal(r.item.buyPlan.stages[0].plannedShares,10);assert.equal(r.item.buyPlan.stages[0].actual,7);
+  assert.match(r.html(),/부분 체결 · 체결 7주 · 남은 매수 3주/);
   r.change('[data-purchase-done]',true);assert.equal(r.item.shares,20);
-  r.change('[data-purchase-actual]',8);assert.equal(r.item.shares,18);
-  assert.match(r.html(),/남은 매수 2만원/);
-  r.change('[data-purchase-actual]',0);assert.equal(r.item.shares,10);
+  r.change('[data-purchase-shares]',8);assert.equal(r.item.shares,18);
+  assert.match(r.html(),/남은 매수 2주/);
+  r.change('[data-purchase-shares]',0);assert.equal(r.item.shares,10);
 });
