@@ -25,7 +25,10 @@
   - 분할매수는 플래너의 buys 탭. 자산 배분 종목의 buyPlan으로 연결해 기존 etf-planner-assets.json·etf-planner-assets-v1에 저장한다(메인 state 스냅샷과 별도).
     동기화 연결은 같고 기기 간 병합·시세는 assets-store.js를 공유한다. 분할매수·자산 JSON 백업/복원·복구 기록은 플래너 동기화 창에도 있다.
   - 체크 → 자산 배분 연동(js/alloc-link.js, 계산은 assets-calc.js '플래너 체결 → 자산 배분 연동' 주석): 분할매도 회차·재매수 손절(cuts)·재매수 회차(stages[].buys)·분할매수 회차를 체크하면
-    같은 종목 코드(linkTicker) 자산 배분 종목의 보유 수량·금액을 바꾸고 자산 기록 allocation.trades[출처 키]에 반영한 양을 둔다(메인 state에는 새 필드 없음). 연결 계좌가 여럿이면 linkDialog에서 고름.
+    같은 종목 코드(linkTicker) 자산 배분 종목의 보유 수량·금액을 바꾸고 자산 기록 allocation.trades[출처 키]에 반영한 양을 둔다. 연결 계좌가 여럿이면 linkDialog에서 고름.
+    분할매수·분할매도는 체크 전에도 누적 체결 입력 가능. 매도 plans[].fills[회차] = {plannedQty,qty,price} 또는 {plannedValue,value,price}, checked는 전량 완료만.
+    매수 buyPlan.buys[키]는 plannedShares·plannedActual·shares·actual·price·next, 직접 입력 stages[]는 plannedShares·shares·partial(부분 체결)·done(완료)·actual.
+    첫 체결 때 원래 수량·가격을 고정하고 잔량을 유지, 매수 잔량 예산은 새 회차에 중복 배분하지 않는다. 옛 완료 기록은 읽을 때만 해석하고 입력할 때 새 필드 저장. 누적 0은 되돌림.
     체크를 풀면 되돌리고(uncheck), 체결 수량·가격·금액 수정은 같은 비율로(rescale), 재매수 초기화는 되돌릴지 묻는다(forget). 계획·종목 삭제는 자산 배분을 그대로 둔다(실제 체결).
     plans.js·rebuy.js는 planLink·rebuyLink로 부른다(테스트·수집 작업에는 allocLink가 없어 체크만). 반영 키 형식(sell·cut·rebuy·buy)을 바꾸면 기존 기록을 되돌릴 수 없으니 바꾸지 말 것.
   - 토큰은 각 기기 localStorage에만. 열 때·45초마다·탭 복귀 시 동기화, 충돌은 sha(409)로 감지, 공개 저장소면 업로드 거부.
@@ -103,9 +106,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=40"></script>
-  <link rel="stylesheet" href="css/app.css?v=40" />
-  <link rel="stylesheet" href="css/purchases.css?v=40" />
+  <script src="js/theme.js?v=41"></script>
+  <link rel="stylesheet" href="css/app.css?v=41" />
+  <link rel="stylesheet" href="css/purchases.css?v=41" />
 </head>
 <body>
   <header class="top">
@@ -271,20 +274,20 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=40"></script>
-  <script src="js/core.js?v=40"></script>
-  <script src="js/sync.js?v=40"></script>
-  <script src="js/prices.js?v=40"></script>
-  <script src="js/assets-calc.js?v=40"></script>
-  <script src="js/assets-store.js?v=40"></script>
-  <script src="js/alloc-link.js?v=40"></script>
-  <script src="js/purchases.js?v=40"></script>
-  <script src="js/trade-alerts.js?v=40"></script>
-  <script src="js/plans.js?v=40"></script>
-  <script src="js/futures.js?v=40"></script>
-  <script src="js/rebuy.js?v=40"></script>
-  <script src="js/alerts.js?v=40"></script>
-  <script src="js/push.js?v=40"></script>
+  <script src="js/ma-ladder.js?v=41"></script>
+  <script src="js/core.js?v=41"></script>
+  <script src="js/sync.js?v=41"></script>
+  <script src="js/prices.js?v=41"></script>
+  <script src="js/assets-calc.js?v=41"></script>
+  <script src="js/assets-store.js?v=41"></script>
+  <script src="js/alloc-link.js?v=41"></script>
+  <script src="js/purchases.js?v=41"></script>
+  <script src="js/trade-alerts.js?v=41"></script>
+  <script src="js/plans.js?v=41"></script>
+  <script src="js/futures.js?v=41"></script>
+  <script src="js/rebuy.js?v=41"></script>
+  <script src="js/alerts.js?v=41"></script>
+  <script src="js/push.js?v=41"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

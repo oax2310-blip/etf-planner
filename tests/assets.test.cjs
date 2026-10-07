@@ -112,6 +112,31 @@ test('분할매수 체결 기본값: 8.9주 예산은 표시 가격으로 8주�
   near(c.purchaseSummary(plan).remaining,0.9,'쓰지 않은 예산은 체결 금액에 포함하지 않음');
 });
 
+test('분할매수 부분 체결은 잔량 예산을 먼저 남기고 새 회차에 중복 배분하지 않는다',()=>{
+  const plan={lines:{names:['25선','32선'],end:14000,budget:50},buys:{'25선:0':{plannedShares:10,plannedActual:10,shares:7,price:10000,actual:7,next:null}}};
+  const entry={ma:{'25선':10000,'32선':13000}},before=JSON.stringify(plan),rows=c.purchaseLineRows(plan,entry);
+  assert.equal(rows[0].done,false);assert.equal(rows[0].remainingShares,3);assert.equal(rows[0].amount,3);
+  assert.ok(rows.slice(1).every(r=>r.amount===10),'체결 7 + 잔량 3을 빼고 나머지 40을 새 4회에 배분');
+  assert.deepEqual(c.purchaseSummary(plan,entry),{count:5,done:0,planned:50,actual:7,remaining:43});
+  assert.equal(JSON.stringify(plan),before,'조회만으로 새 필드를 저장하지 않음');
+  plan.lines.budget=7;
+  assert.equal(c.purchaseLineRows(plan,{ma:{'25선':15000,'32선':16000}})[0].remainingShares,3,'예산을 낮추거나 단계가 사라져도 이미 고정한 잔량은 유지');
+});
+
+test('분할매수 부분 체결은 알림·JSON 복원·기기 간 병합에서도 미완료 상태를 유지한다',()=>{
+  const plan={lines:{names:['25선','32선'],end:14000,budget:50},notify:{stages:true},buys:{'25선:0':{plannedShares:10,plannedActual:10,shares:7,price:10000,actual:7,next:null}}};
+  const doc={version:1,allocation:{savedAt:'2026-01-02',classes:[],cash:[],groups:[{items:[{id:'a',ticker:'111111',shares:7,buyPlan:plan}]}]}};
+  const restored=c.cleanAssets(JSON.parse(JSON.stringify(doc))),merged=c.mergeAssets({version:1},restored,{version:1}).doc;
+  assert.deepEqual(merged,doc);
+  const rules=c.purchaseAlertRules(merged,{stocks:{'111111':{kind:'국내',ma:{'25선':15000,'32선':16000}}}});
+  assert.equal(rules.find(r=>r.id==='trade:buy:a:25선:0').targetPrice,10000,'부분 체결 회차의 잔량도 알림에 포함');
+  const item=merged.allocation.groups[0].items[0];item.buyPlan={notify:{stages:true},stages:[{id:'s',price:10000,plannedShares:10,shares:7,amount:10,actual:7,partial:true}]};
+  assert.deepEqual(c.purchaseSummary(item.buyPlan),{count:1,done:0,planned:10,actual:7,remaining:3});
+  assert.equal(c.purchaseAlertRules(merged,null)[0].id,'trade:buy:a:s','직접 입력의 부분 체결도 잔량 알림 유지');
+  item.buyPlan.stages[0].done=true;delete item.buyPlan.stages[0].partial;
+  assert.equal(c.purchaseAlertRules(merged,null).length,0);
+});
+
 test('분할매수 휴대폰 알림(이동평균선 돌파): 지금 이동평균 회차 가격으로 상승 알림, 이력은 단계 이름·회차로 이어지고 산 회차·OFF는 빠진다', () => {
   const assets = {allocation:{groups:[{items:[{id:'a', ticker:'AAA', name:'비공개', buyPlan:{currency:'USD', lines:{names:['25선','32선'], end:110, budget:40},
     buys:{'25선:0':{actual:10, price:100}}, notify:{stages:true, keys:{'25선:2':false}}}}]}]}};

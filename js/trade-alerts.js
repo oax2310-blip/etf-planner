@@ -72,7 +72,7 @@ function buildTradeAlertRules(data,priceDoc){
     if(q&&q.kind!==kind)continue;
     const basis=[count,tradePriceBasis(p,"startPrice",p.startLabel,p.startAuto===true),tradePriceBasis(p,"endPrice",p.endLabel,true)];
     for(let i=0;i<count;i++)if(p.checked?.[i]!==true&&tradePlanEnabled(p,i)){
-      const price=Number(p.startPrice)-(Number(p.startPrice)-Number(p.endPrice))*i/Math.max(count-1,1);
+      const price=Number(p.fills?.[i]?.price)>0?Number(p.fills[i].price):Number(p.startPrice)-(Number(p.startPrice)-Number(p.endPrice))*i/Math.max(count-1,1);
       add(`trade:plan:${p.id}:${i}`,ticker,i===0?"분할매도 첫 매도":"분할매도 "+(i+1)+"회",price,Number(p.endPrice)>Number(p.startPrice)?"up":"down",basis,"stocks",kind);
     }
   }

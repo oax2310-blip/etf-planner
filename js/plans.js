@@ -21,8 +21,9 @@ const planWorth = (shares, close, currency, fx) => { const rate=currency==="KRW"
 // 수량 = 평가액 ÷ valueBase(평가액을 입력해 저장할 때의 종목 시세). 그때 시세가 없었거나 옛 기록(valueBase 없음)이면 지금 첫 매도 기준가로 나눈다.
 const valueBasis = p => Number(p.valueBase)>0?Number(p.valueBase):Number(p.startPrice);
 const stageWorth = (p, price) => { const b=valueBasis(p); return p.valueKrw*planSalePct(p)/100/p.stages*(b>0?price/b:1); };
-// 남은 수량: 보유 수량에서 체크한 회차의 수량을 최소 단위 정수로 빼서 소수점 오차가 남지 않게 한다(매도 비중으로 남기는 수량 포함).
-const sharesLeft = p => { const digits=planShareDigits(p), scale=10**digits;return p.holdings.reduce((s,h)=>{const n=Number(h.shares||0), sale=saleShares(n,p);return s+Math.round(n*scale)-p.checked.reduce((t,c,i)=>t+(c?Math.round(sharesAt(sale,i,p.stages,digits)*scale):0),0);},0)/scale; };
+// 남은 보유 수량: 부분 체결을 포함한 실제 매도 수량만 최소 단위 정수로 빼며, 매도 비중으로 남기는 수량도 포함한다.
+const sharesLeft = p => { const scale=10**planShareDigits(p), held=p.holdings.reduce((s,h)=>s+Math.round(Number(h.shares||0)*scale),0);
+  return Math.max(0,held-Array.from({length:p.stages},(_,i)=>Math.round((planStageProgress(p,i).qty||0)*scale)).reduce((s,n)=>s+n,0))/scale; };
 // 자산 배분 연동(js/alloc-link.js — 플래너 화면에서만 불러옴, 없으면(테스트) 체크만): 회차를 체크하면 같은 종목 코드 계좌 보유량을 줄이고 풀면 되돌린다. 반영 키 'sell:계획 id:회차'.
 function planLink(fn, ...args){
   if(typeof allocLink==="object")return allocLink[fn](...args);
@@ -32,6 +33,34 @@ function planLink(fn, ...args){
 // 회차 체결(자산 배분 연동 — assets-calc.js 체결): 보유 수량 계획은 회차 매도 수량 합 × 회차 기준가, 평가액만 넣은 계획은 회차 매도액(stageWorth)만.
 const planTrade = (p, i) => { const price=stagePrice(p,i), digits=planShareDigits(p), valueOnly=p.valueKrw!=null&&!p.holdings.length, qty=p.holdings.reduce((n,h)=>n+sharesAt(saleShares(h.shares,p),i,p.stages,digits),0);
   return {sign:-1,qty:valueOnly?null:Number(qty.toFixed(digits))||null,price,currency:p.currency,value:valueOnly?stageWorth(p,price):null}; };
+// fills[회차]는 첫 체결 때 계획 수량(또는 예정액)·가격을 고정하고 누적 실제 체결을 기록한다. 옛 checked=true 기록은 기존 계획 전량 체결로 읽기만 한다.
+function planStageProgress(p,i){
+  const planned=planTrade(p,i),fill=p.fills?.[i],byValue=planned.value!==null, target=byValue?fill?.plannedValue??planned.value:fill?.plannedQty??planned.qty??(p.holdings.length?0:null);
+  const amount=byValue?fill?.value??(p.checked?.[i]?target:0):fill?.qty??(p.checked?.[i]?target:0), remaining=Number(Math.max(0,(target||0)-(amount||0)).toFixed(8));
+  return {target,amount:amount||0,remaining,recorded:!!fill||!!p.checked?.[i],done:!!p.checked?.[i],byValue,
+    qty:byValue?null:amount||0,trade:{...planned,price:fill?.price??planned.price,qty:byValue?null:amount||0,value:byValue?amount||0:null}};
+}
+// 누적 체결 입력·전량 체크 공통. 추가 체결은 기존 반영 키를 rescale해 차이만 반영하고, 0이면 기존 자산 반영을 되돌린다.
+function recordPlanFill(p,i,n,redraw=renderPlans){
+  const r=planStageProgress(p,i),key=`sell:${p.id}:${i}`;
+  if(!Number.isFinite(n)||n<0||n>(r.target||0)||!r.byValue&&n>0&&!hasPlanShares(p.ticker,n))return redraw();
+  if(n===0){p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}save();planLink("uncheck",key);return redraw();}
+  const fill={price:r.trade.price,...(r.byValue?{plannedValue:r.target,value:n}:{plannedQty:r.target,qty:n})},trade={...r.trade,...(r.byValue?{value:n}:{qty:n})};
+  const commit=()=>{const q=state.plans.find(x=>x.id===p.id);if(q!==p||i>=q.stages)return false;q.fills={...(q.fills||{}),[i]:fill};q.checked[i]=n>=r.target;save();return key;};
+  if(r.recorded){if(commit())planLink("rescale",key,trade);redraw();}
+  else planLink("check",{ticker:planTicker(p.ticker),trade,label:`${p.title} ${i+1}회 매도`,prefer:[`sell:${p.id}:`],redraw,commit});
+}
+function planSaleRow(p,i,oneName){
+  const r=planStageProgress(p,i),price=r.trade.price,partial=r.recorded&&!r.done, digits=planShareDigits(p),unit=digits?"BTC":"주";
+  const target=r.target!==null?r.byValue?`약 ${decimal.format(r.target)}만원`:r.recorded||p.holdings.length<=1?planQuantity(r.target,p)
+    :p.holdings.map(h=>`<span>${esc(h.name)} </span>${planQuantity(sharesAt(saleShares(h.shares,p),i,p.stages,digits),p)}`).join(" · "):"보유량 입력 필요";
+  const remaining=r.byValue?`${decimal.format(r.remaining)}만원`:planQuantity(r.remaining,p),amount=r.byValue?`${decimal.format(r.amount)}만원`:planQuantity(r.amount,p);
+  const input=r.target!==null?`<label class="exec-fields sale-exec">누적 체결 <input type="number" min="0" max="${r.target}" step="${r.byValue?"any":digits?"0.00000001":"1"}" inputmode="${r.byValue||digits?"decimal":"numeric"}" data-sale-filled="${i}" value="${r.amount}" aria-label="${i+1}회 매도 누적 체결 ${r.byValue?"금액 (만원)":`수량 (${unit})`}"> ${r.byValue?"만원":unit}</label>`:"";
+  return `<div class="sale-row ${r.done?"done":partial?"partial":""}"><label class="check" title="잔량까지 매도 완료"><input type="checkbox" data-stage="${i}" ${r.done?"checked":""}${partial?' data-sale-partial="true" aria-checked="mixed"':""} aria-label="${i+1}회 매도 완료">${i+1}회</label>
+    <div class="stage-price"><span class="price">${priceText(price,p.currency)}</span>${p.currency==="USD"?`<span class="krw">${fxText(price*p.fx)}</span>`:""}${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,i),`data-sale-alert="${i}"`,`${i+1}회 매도`,r.done):""}</div>
+    <div class="shares"><span>계획 ${target}</span>${input}${r.recorded?`<small class="sale-fill-summary${partial?" partial":""}">${partial?"부분 체결":`체결 ${amount}`} · 남은 매도 ${remaining}</small>`:""}${oneName?`<small class="one-sub">${oneName}</small>`:""}</div>
+    <div class="status ${r.done?"done":partial?"partial":""}">${r.done?"매도 완료":partial?"부분 체결":"대기"}</div></div>`;
+}
 // 모바일 표 이름 말줄임: CSS 말줄임은 잘린 뒤 남는 여백이 '…' 오른쪽에 생겨 끝이 안 맞는다. 칸에 들어가는 만큼 글자를 잘라 '…'를 붙여
 // 오른쪽 끝(수량·'매도량')에 붙인다. 같은 폭은 한 번만 계산. CSS text-overflow는 예비로 둔다.
 function fitNames(){
@@ -73,7 +102,7 @@ function renderPlans(){
   const p=selected(); const main=$("planMain");
   if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
   const done=p.checked.filter(Boolean).length, shares=p.holdings.reduce((s,h)=>s+Number(h.shares||0),0), gap=(p.startPrice-p.endPrice)/Math.max(p.stages-1,1);
-  const pct=planSalePct(p), status=done===p.stages?pct<100?"계획 매도 완료":"전량 매도 완료":done?"진행 중":"시작 전"; // 1회라도 체크하면 시작
+  const started=done>0||Object.keys(p.fills||{}).length>0, pct=planSalePct(p), status=done===p.stages?pct<100?"계획 매도 완료":"전량 매도 완료":started?"진행 중":"시작 전";
   const startText=p.currency==="USD"&&Number.isInteger(Math.round(p.startPrice*1e6)/1e4)?Number(p.startPrice).toFixed(2):String(p.startPrice); // 달러는 소수 둘째 자리까지면 $80.00처럼
   const scale=10**planShareDigits(p), sale=p.holdings.reduce((s,h)=>s+Math.round(saleShares(h.shares,p)*scale),0)/scale, keep=Math.round((shares-sale)*scale)/scale;
   const valueOnly=p.valueKrw!=null&&!p.holdings.length, saleNote=pct===100?"":valueOnly?`평가액의 ${pct}%만 나눠 팝니다. `:shares?`보유 ${planQuantity(shares,p)}의 ${pct}%인 ${planQuantity(sale,p)}만 나눠 팔고 ${planQuantity(keep,p)}는 남깁니다. `:"";
@@ -82,22 +111,25 @@ function renderPlans(){
   const px=planQuote(p.ticker,p.currency); // 시세: 기준일은 제목 위에 작게, 현재 가격은 설명 줄에
   const fxe=fxEntry(priceData), fxAuto=fxe&&p.auto?.fx===p.fx&&p.fx===priceRound(fxe.close,2)?`현물 USD/KRW(시세 ${fxe.asOf}${fxe.stale?" · 마지막 조회 실패":""}${priceOld(fxe)?" · 지난 시세":""})로 자동 · `:""; // 달러 계획 환율(prices.js)
   const left=sharesLeft(p), worth=shares?planWorth(left,px?.close,p.currency,p.fx):null; // 평가액: 남은 수량 × 현재가(× 환율), 수량 없이 평가액만 넣은 계획은 그 값
-  const value = shares ? `${done?`남은 ${planQuantity(left,p)}`:`${planQuantity(shares,p)} 보유`}${worth!=null?` · 평가액 ₩${won.format(worth)}만원`:""}` : p.valueKrw!=null?`평가액 ₩${won.format(p.valueKrw)}만원`:"보유 수량 미입력";
+  const value = shares ? `${started?`매도 ${planQuantity(Number((shares-left).toFixed(8)),p)} · 남은 ${planQuantity(left,p)}`:`${planQuantity(shares,p)} 보유`}${worth!=null?` · 평가액 ₩${won.format(worth)}만원`:""}` : p.valueKrw!=null?`평가액 ₩${won.format(p.valueKrw)}만원`:"보유 수량 미입력";
   main.innerHTML=`<div class="heading plan-heading"><div><div class="eyebrow">${esc(p.ticker)}${px?` · ${priceStamp(px)}`:""}</div><div class="title-row"><h1>${esc(p.title)}</h1><button class="btn icon-btn" id="editPlan" type="button" aria-label="계획 수정" title="계획 수정">${pencil}</button></div><p>${esc(p.startLabel)} 이탈 후 ${esc(p.endLabel)}까지 ${pct<100?`보유의 ${pct}%를 `:""}${p.stages}회 분할매도${px&&Number(px.close)>0?` · <span class="nowrap">현재 ${priceText(Number(px.close),p.currency)}</span>`:""}</p>${planLink("line",planTicker(p.ticker))}</div></div>${px?priceWarning(px,esc(p.ticker)):""}
     <div class="metrics card"><div class="metric"><label>현재 계획 상태</label><strong>${esc(status)}</strong><small${worth!=null?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:""}>${done} / ${p.stages}회 완료 · ${value}</small></div><div class="metric"><div class="trade-price-heading"><label for="startPrice">첫 매도 기준가</label>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"첫 매도",p.checked[0]):""}</div><label class="metric-edit" title="눌러서 수정">${p.currency==="USD"?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" value="${esc(startText)}">${p.currency==="USD"?"":"원"}${pencil}</label><small>${p.currency==="USD"?`${fxText(p.startPrice*p.fx)} · <label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="number" min="0" step="any" inputmode="decimal" aria-label="달러/원 환율" value="${esc(String(p.fx))}">${pencil}</label>`:""}</small></div><div class="metric"><label>마지막 매도 기준가</label><strong>${priceText(p.endPrice,p.currency)}</strong><small>${p.currency==="USD"?fxText(p.endPrice*p.fx):""}</small></div></div>
     <div class="control-grid"><section class="card panel"><h2>계산 요약</h2><p>${esc(splitNote)}</p><div class="inline-fields"><div><div class="sub">회차당 가격 하락폭</div><strong>${priceText(gap,p.currency)}</strong></div><div><div class="sub">예상 1회 주문 비중</div><strong>${p.stages?decimal.format(pct/p.stages):"—"}%</strong></div></div></section><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
-    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${p.stages}회 완료</span></div><section class="card table-card"><div class="m-head"><span>회차 · 기준가</span><span>${oneName?`<b>${oneName}</b>`:""}<span>${!oneName?"예상 매도량":p.holdings.length?"매도량":"매도액"}</span></span></div><div class="table-head"><span>회차</span><span>기준가</span><span>예상 매도량</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>{const price=stagePrice(p,i), checked=p.checked[i];const amount=valueOnly?`약 ${decimal.format(stageWorth(p,price))}만원`:"";const qty=([...p.holdings.map(h=>`<span class="${oneName?"one-name":""}">${esc(h.name)} </span>${planQuantity(sharesAt(saleShares(h.shares,p),i,p.stages,planShareDigits(p)),p)}`),amount].filter(Boolean).map(x=>`<span>${x}</span>`).join(" · ")||"보유량 입력 필요")+(oneName?`<small class="one-sub">${oneName}</small>`:"");return `<div class="sale-row ${checked?"done":""}"><label class="check"><input type="checkbox" data-stage="${i}" ${checked?"checked":""}>${i+1}회</label><div class="stage-price"><span class="price">${priceText(price,p.currency)}</span>${p.currency==="USD"?`<span class="krw">${fxText(price*p.fx)}</span>`:""}${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,i),`data-sale-alert="${i}"`,`${i+1}회 매도`,checked):""}</div><div class="shares">${qty}</div><div class="status ${checked?"done":""}">${checked?"매도 완료":"대기"}</div></div>`;}).join("")}</div></section><p class="footnote">실제 주문은 증권사에서 직접 실행하세요. 자산 배분에 같은 종목 코드가 있으면 체크할 때 그 계좌의 보유량도 줄이고(계좌가 여럿이면 고름), 체크를 풀면 되돌립니다. 기기 간 동기화를 연결하면 다른 기기에도 반영됩니다.</p>`;
+    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${p.stages}회 완료</span></div><section class="card table-card"><div class="m-head"><span>회차 · 기준가</span><span>${oneName?`<b>${oneName}</b>`:""}<span>계획 · 체결</span></span></div><div class="table-head"><span>회차</span><span>기준가</span><span>매도 계획 · 체결</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>planSaleRow(p,i,oneName)).join("")}</div></section><p class="footnote">누적 체결 수량(금액)을 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
   // 첫 매도 기준가·환율(달러 계획)은 카드 숫자에서 바로 수정: 폭은 글자 수에 맞추고, Enter·칸 벗어나면 저장, Esc는 취소. 0 이하·빈 값은 무시(다시 그려 원래 값).
   const inlineEdit=(id,text,key)=>{const el=$(id);if(!el)return;const fit=()=>el.style.width=`${Math.max(3,el.value.length-(el.value.split(".").length-1)*.6)+.4}ch`; fit(); el.oninput=fit;
     el.onkeydown=e=>{if(e.key==="Enter")el.blur();if(e.key==="Escape"){el.value=text;fit();el.blur();}};
     onEdit("#"+id,v=>{v=Number(v);if(!(v>0)||v===p[key])return false;p[key]=v;},renderPlans);};
   inlineEdit("startPrice",startText,"startPrice"); inlineEdit("planFx",String(p.fx),"fx");
   const note=$("planNote"); note.oninput=()=>$("memoCount").textContent=memoCount(note.value); $("saveNote").onclick=()=>{p.note=note.value;save();renderPlans();};
-  // 회차 체크는 자산 배분 보유량과 연동(planLink): 체크하면 같은 종목 코드 계좌에서 회차 매도량만큼 줄이고, 풀면 되돌린다.
+  // 체크는 잔량까지 전량 체결, 입력칸은 누적 실제 체결. 부분 체결은 중간 체크 상태로 표시하며 완료 수에는 넣지 않는다.
   $$("#planMain [data-stage]").forEach(el=>el.onchange=()=>{const i=Number(el.dataset.stage), pid=p.id, key=`sell:${pid}:${i}`;
-    if(!el.checked){p.checked[i]=false;save();planLink("uncheck",key);renderPlans();return;}
+    if(!el.checked)return recordPlanFill(p,i,0);
+    const r=planStageProgress(p,i);if(r.target>0)return recordPlanFill(p,i,r.target);
     planLink("check",{ticker:planTicker(p.ticker),trade:planTrade(p,i),label:`${p.title} ${i+1}회 매도`,prefer:[`sell:${pid}:`],redraw:renderPlans,
       commit:()=>{const q=state.plans.find(x=>x.id===pid);if(!q||i>=q.checked.length)return false;q.checked[i]=true;save();return key;}});});
+  onEdit("#planMain [data-sale-filled]",(v,el)=>{recordPlanFill(p,Number(el.dataset.saleFilled),String(v).trim()===""?NaN:Number(v));return false;});
+  $$("#planMain [data-sale-partial]").forEach(el=>{el.indeterminate=true;});
   $("editPlan").onclick=()=>openPlanDialog(p);
   if(typeof bindTradePlanAlerts==="function")bindTradePlanAlerts(p);
   fitNames();
@@ -141,9 +173,10 @@ function planLive(fill=[]){
   f.salePct.setCustomValidity(!pctOk?"매도 비중은 1~100 사이 정수(%)로 입력해 주세요.":sale===0?"매도할 수량이 없습니다. 매도 비중을 올려 주세요.":"");
   $("saleNote").textContent=!pctOk||pct===100?"":sale?`${planQuantity(sale,plan)} 매도 · ${planQuantity(Math.round((shares-sale)*1e8)/1e8,plan)} 남김`:!held&&value>0?`약 ${decimal.format(value*pct/100)}만원 매도`:"";
   // 자산 배분 보유량 가져오기(alloc-link.js holding): 같은 종목 코드 계좌가 모두 수량이면 보유 수량 합, 아니면 평가액 합(만원). 매도 체크가 있으면 계획 기준 보유량이라 바꾸지 않는다.
-  const hold=planLink("holding",planTicker(f.ticker.value)), box=$("planAllocHold"), locked=!!editingId&&state.plans.find(x=>x.id===editingId)?.checked.some(Boolean);
+  const hold=planLink("holding",planTicker(f.ticker.value)), box=$("planAllocHold"), existing=state.plans.find(x=>x.id===editingId), locked=!!existing&&(existing.checked.some(Boolean)||Object.keys(existing.fills||{}).length>0);
+  for(const name of ["ticker","shares","stages","salePct"])f[name].readOnly=locked;
   box.hidden=!hold;if(!hold)return;
-  box.innerHTML=`자산 배분 ${esc(hold.text)} · ${locked?"매도 체크가 있어 계획 보유량은 그대로 둡니다":`<button class="text-link" type="button" id="planAllocFill">보유량 가져오기</button>`}`;
+  box.innerHTML=`자산 배분 ${esc(hold.text)} · ${locked?"체결 기록이 있어 계획 보유량은 그대로 둡니다":`<button class="text-link" type="button" id="planAllocFill">보유량 가져오기</button>`}`;
   if(!locked)$("planAllocFill").onclick=()=>{if(hold.shares>0)f.shares.value=String(hold.shares);else{f.shares.value="";f.valueKrw.dataset.typed=String(hold.value);if(!f.valueKrw.readOnly)f.valueKrw.value=String(hold.value);}planLive();};
 }
 $("planForm").addEventListener("input",e=>{const n=e.target.name;if(n==="startUnit")startMode(e.target.form.elements,true);
@@ -168,8 +201,12 @@ $("planForm").addEventListener("submit",e=>{
   e.preventDefault();planLive();if(!e.target.reportValidity())return;
   const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim(), ticker=planTicker(val("ticker")), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;
   const shares=Number(val("shares")), held=hasPlanShares(ticker,shares), endLabel=lineOf(e.target.elements,"end"), startAuto=!!val("startUnit"), startLabel=startAuto?lineOf(e.target.elements,"start"):val("startLabel"), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency||!!old.startAuto!==startAuto||startAuto&&old.startLabel!==startLabel);
-  const valueKrw=held||val("valueKrw")===""?null:Number(val("valueKrw")), rebase=valueKrw!=null&&(!old||old.valueKrw!==valueKrw||old.ticker!==ticker||old.currency!==currency), p=old||defaultPlan(ticker,val("title"),{});
-  Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw,fx:Number(val("fx"))||1354.91,holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;const salePct=planSalePct({salePct:Number(val("salePct"))});if(salePct<100)p.salePct=salePct;else delete p.salePct;if(startAuto)p.startAuto=true;else delete p.startAuto;
+  const valueKrw=held||val("valueKrw")===""?null:Number(val("valueKrw")), locked=old&&(old.checked.some(Boolean)||Object.keys(old.fills||{}).length>0);
+  if(locked&&(ticker!==old.ticker||currency!==old.currency||stages!==old.stages||shares!==Number(old.holdings[0]?.shares||0)||planSalePct({salePct:Number(val("salePct"))})!==planSalePct(old)||valueKrw!==(old.valueKrw??null))){
+    alert("체결 기록이 있어 종목·통화·보유량·분할 횟수·매도 비중은 유지합니다. 체결 수량은 계획 화면에서 수정하세요.");return;
+  }
+  const rebase=valueKrw!=null&&(!old||old.valueKrw!==valueKrw||old.ticker!==ticker||old.currency!==currency), p=old||defaultPlan(ticker,val("title"),{});
+  Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw,fx:Number(val("fx"))||1354.91,holdings:locked?old.holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;const salePct=planSalePct({salePct:Number(val("salePct"))});if(salePct<100)p.salePct=salePct;else delete p.salePct;if(startAuto)p.startAuto=true;else delete p.startAuto;
   if(rebase||valueKrw==null){const base=valueKrw==null?null:priceRound(planQuote(ticker,currency)?.close,currency==="KRW"?0:2);if(base)p.valueBase=base;else delete p.valueBase;} // 평가액 기준 가격(규칙은 stageWorth 위 주석)
   if(moved||!old){delete p.auto;const mark=JSON.parse(JSON.stringify(p));if(fillPrices({plans:[mark],futures:state.futures},priceData))p.auto=mark.auto;}
   if(!old)state.plans.push(p);state.selectedPlan=p.id;save();planDialog.close();render();});
