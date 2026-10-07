@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
@@ -94,6 +94,22 @@ test('분할매수 휴대폰 알림(직접 입력): 켠 미완료 가격 회차�
   assert.deepEqual(c.purchaseAlertRules({allocation:{groups:[{items:[{id:'x', ticker:'111111', buyPlan:{currency:'USD', notify:{stages:true}, stages:[{id:'s', price:1}]}}]}]}}, null), [], '달러 계획인데 국내 종목 코드면 제외');
   assert.deepEqual(c.purchaseAlertRules(null, null), []);
   assert.deepEqual(c.purchaseAlertRules({allocation:{groups:'bad'}}, null), []);
+});
+
+test('분할매수 체결 기본값: 8.9주 예산은 표시 가격으로 8주만 사고 실제 수량의 금액을 저장한다', () => {
+  assert.deepEqual(c.purchaseFill({amount:8.9,price:10000},'KRW',null),{shares:8,price:10000,actual:8});
+  assert.deepEqual(c.purchaseFill({amount:8.9,price:10},'USD',1000),{shares:8,price:10,actual:8});
+  assert.deepEqual(c.purchaseFill({amount:0.8008,price:1000.6},'KRW',null),{shares:8,price:1001,actual:0.8008},'표시 원화 가격으로 계산해 반올림 경계에서도 수량·금액 일치');
+  assert.deepEqual(c.purchaseFill({amount:8.8044,price:10.004},'USD',1000),{shares:8,price:10,actual:8},'표시 달러 가격 소수 둘째 자리 사용');
+  assert.deepEqual(c.purchaseFill({amount:0.9,price:10000},'KRW',null),{shares:0,price:10000,actual:0},'예산을 초과하는 1주를 만들지 않음');
+  assert.equal(c.purchaseFill({amount:10,price:10},'USD',null),null,'달러 환율이 없으면 수량을 추정하지 않음');
+  assert.equal(c.purchaseFill({amount:10,price:0},'KRW',null),null);
+  const btc=c.purchaseFill({amount:0.1234567891,price:100},'USD',1000,1e-8);
+  assert.equal(btc.shares,0.01234567,'BTC도 예산 안에서 최소 단위로 내림');
+  assert.ok(btc.actual<=0.1234567891);
+  const plan={lines:{names:['25선'],end:10000,budget:8.9},buys:{end:c.purchaseFill({amount:8.9,price:10000},'KRW',null)}};
+  assert.equal(c.purchaseLineRows(plan,null).find(r=>r.done).shares,8,'완료 회차의 저장한 수량을 보존');
+  near(c.purchaseSummary(plan).remaining,0.9,'쓰지 않은 예산은 체결 금액에 포함하지 않음');
 });
 
 test('분할매수 휴대폰 알림(이동평균선 돌파): 지금 이동평균 회차 가격으로 상승 알림, 이력은 단계 이름·회차로 이어지고 산 회차·OFF는 빠진다', () => {
