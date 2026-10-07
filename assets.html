@@ -12,7 +12,7 @@
     (자산 배분 종목 코드는 마감 후 하루 한 번 종가만 — Actions 사용 시간). 평가액 규칙은 js/assets-calc.js itemValue 위 주석. 금액만 넣은 종목의 기준 가격(base)은 금액을 넣을 때·처음 시세를 볼 때 정함.
   - 단위: 자산 배분 금액은 만원, 현금은 원/달러, 손익·저축은 원. 비중·수익률은 % 숫자로 저장(3 = 3%). 기준 총자산은 억·만원으로 표시·입력하며 숫자만 입력하면 만원으로 저장한다.
   - 투자구성은 지역·분류 합계, 자산 배분은 종목·현금. 목표는 종목 → 소분류 → 그룹 → 분류 합산(하위 목표가 전부 없으면 기존 직접 입력값). 합계 계산만으로 기록을 바꾸지 말 것.
-    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan은 이동평균선 돌파 {lines:{names,end,budget,target?},buys:{회차 키:{actual,price}},notify:{stages,keys},currency,note} 또는 직접 입력 {stages:[{id,price,shares,date,condition,amount,done,actual,notify}],notify:{stages},currency,note}. 금액은 만원, 가격은 계획 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화). 옛 ladder 필드는 읽지 않음. 규칙은 assets-calc.js 분할매수 주석(purchaseLineLevels·purchaseLineRows·purchaseSummary·purchaseDirection·purchaseAlertRules — 데이터 저장소 수집 작업도 실행하므로 함수 이름·라벨 형식·단계 이름을 바꾸면 그쪽도). 완료 체크는 종목의 비중 조정 완료(done)를 바꾸지 않는다.
+    플래너 분할매수는 같은 기록의 allocation.groups[].items[].buyPlan은 이동평균선 돌파 {lines:{names,end,budget,target?},buys:{회차 키:{shares,actual,price}},notify:{stages,keys},currency,note} 또는 직접 입력 {stages:[{id,price,shares,date,condition,amount,done,actual,notify}],notify:{stages},currency,note}. 금액은 만원, 가격은 계획 통화(currency는 달러일 때만 "USD", 없으면 종목 시세 통화 → 원화). 옛 ladder 필드는 읽지 않음. 규칙은 assets-calc.js 분할매수 주석(purchaseLineLevels·purchaseLineRows·purchaseSummary·purchaseDirection·purchaseAlertRules — 데이터 저장소 수집 작업도 실행하므로 함수 이름·라벨 형식·단계 이름을 바꾸면 그쪽도). 완료 체크는 종목의 비중 조정 완료(done)를 바꾸지 않는다.
   - 플래너 체크 → 자산 배분 연동(분할매도 회차·재매수 손절·재매수 회차·분할매수 회차): 플래너 js/alloc-link.js가 같은 종목 코드(assets-calc.js linkTicker) 종목의 보유 수량·금액을 바꾸고
     allocation.trades[출처 키] = {label, at, qty, price, value, items:[{id, shares?, amount?, fresh?}]}에 반영한 양을 둔다(체크한 동안만 — 풀면 되돌리고 지움, 처음 반영할 때만 만듦). 계산은 assets-calc.js 주석.
     보유 수량 0은 지우지 않고 평가액 0(다 판 종목). 종목 수정 창에 그 종목의 반영 내역을 보여 준다. 금액 종목은 기준 가격(base)을 그대로 두고 금액 칸을 '입력 때 가격' 기준으로 바꾼다.
@@ -29,9 +29,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=37"></script>
-  <link rel="stylesheet" href="css/app.css?v=37" />
-  <link rel="stylesheet" href="css/assets.css?v=37" />
+  <script src="js/theme.js?v=38"></script>
+  <link rel="stylesheet" href="css/app.css?v=38" />
+  <link rel="stylesheet" href="css/assets.css?v=38" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -132,9 +132,9 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=37"></script>
-  <script src="js/assets-calc.js?v=37"></script>
-  <script src="js/assets-store.js?v=37"></script>
-  <script src="js/assets.js?v=37"></script>
+  <script src="js/ma-ladder.js?v=38"></script>
+  <script src="js/assets-calc.js?v=38"></script>
+  <script src="js/assets-store.js?v=38"></script>
+  <script src="js/assets.js?v=38"></script>
 </body>
 </html>

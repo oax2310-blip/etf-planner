@@ -84,9 +84,10 @@ function allocationTargets(alloc){
   return {groups,classes,section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||{target:null,linked:false}};
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
-// 계획(buyPlan)은 두 방식. 체크는 계획 기록만 바꾸고 보유 금액·수량은 바꾸지 않는다(매수 후 자산 배분에서 직접 수정).
+// 계획(buyPlan)은 두 방식. 체크한 체결은 alloc-link.js가 자산 배분 보유량에도 반영하고, 체크를 풀면 되돌린다.
 // ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}.
-//    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 산 회차는 buys[회차 키] = {actual:체결 금액(만원), price:체크할 때 회차 가격}.
+//    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 산 회차는 buys[회차 키] = {shares:체결 수량, actual:체결 금액(만원), price:체크할 때 표시 가격}.
+//    수량은 purchaseFill로 회차 예산 안에서 내림하고, 표시한 수량을 그대로 저장·반영한다. 체결 금액만 고쳐도 수량은 바뀌지 않는다. 옛 기록은 읽을 때 새 필드를 채우지 않는다.
 // ② 직접 입력: stages = [{id, price?, shares?, date?, condition?, amount(만원), done?, actual?}] — 가격·금액을 사용자가 정한 회차.
 // 이동평균선 돌파 단계(재매수 기본 단계와 같음): 시선(60분봉) 'N선', 일선 'N일선', 주선 'N주선', 월선 'N개월선'(각 25~150). 시세 파일 ma에 같은 이름으로 들어 있다
 // (데이터 저장소 kis_prices.py가 lines.names로 이 종목의 일봉·60분봉 이동평균을 계산 — purchase_line_plans).
@@ -110,12 +111,22 @@ function purchaseLineLevels(lines, entry){
   return out;
 }
 const purchaseLineLabel = row => row.key==="end" ? "목표가" : `${row.line} ${row.t+1}차`;
+// 화면·체크 공통 체결 기본값: 표시 가격(원화 정수·달러 소수 둘째 자리)으로 예산 안에서 살 수 있는 수량을 내림한다.
+// 주식은 1주, 비트코인은 0.00000001 BTC 단위. 체결 금액은 그 수량 × 가격 × 환율(만원); 쓰지 않은 예산은 남은 회차에 배분한다.
+function purchaseFill(row, currency, fx, step=1){
+  const amount=plus(row?.amount), raw=plus(row?.price), rate=currency==="USD"?plus(fx):1;
+  if(!amount||!raw||!rate||!(step>0))return null;
+  const price=currency==="USD"?Math.round(raw*100)/100:Math.round(raw);
+  if(!(price>0))return null;
+  const shares=Number((Math.floor(amount*1e4/(price*rate*step)+1e-9)*step).toFixed(8));
+  return {shares, price, actual:Number((shares*price*rate/1e4).toFixed(8))};
+}
 // 회차 목록(화면·합계·알림 공통): 산 회차 + 아직 안 산 회차(지금 이동평균 기준). 안 산 회차 금액 = (총 매수 금액 − 체결 금액 합) ÷ 안 산 회차 수 — 다 썼으면 안 산 회차 없음.
 // 순서는 단계 순서·회차 순서, 목표가는 마지막. 산 회차의 price는 체크할 때 기록한 가격.
 function purchaseLineRows(plan, entry){
   const lines=plan?.lines, buys=purchaseBuys(plan), names=purchaseLineNames(lines);
   const parse=key=>{if(key==="end")return {line:"목표가",t:0};const m=/^(.+):([0-2])$/.exec(key);return m&&purchaseLineName(m[1])?{line:m[1],t:Number(m[2])}:null;};
-  const done=Object.entries(buys).map(([key,b])=>{const at=b&&typeof b==="object"?parse(key):null;return at&&{key,...at,price:plus(b.price),done:true,actual:Math.max(0,finite(b.actual)||0)};}).filter(Boolean);
+  const done=Object.entries(buys).map(([key,b])=>{const at=b&&typeof b==="object"?parse(key):null;return at&&{key,...at,price:plus(b.price),...(finite(b.shares)!==null?{shares:finite(b.shares)}:{}),done:true,actual:Math.max(0,finite(b.actual)||0)};}).filter(Boolean);
   const spent=done.reduce((s,r)=>s+r.actual,0), left=Math.max(0,(finite(lines?.budget)||0)-spent);
   const open=left>0?purchaseLineLevels(lines,entry).filter(x=>!buys[x.key]):[];
   const order=r=>r.key==="end"?1e6:(names.indexOf(r.line)+1||999)*3+r.t;
@@ -280,16 +291,29 @@ function revertTrade(alloc, key){
   return rec;
 }
 // 체크 뒤 체결 크기를 고쳤을 때(trade = 새 {qty, price, value}): 수량 종목은 수량 비율, 금액 종목은 금액 비율(금액이 없으면 수량 × 가격, 그다음 수량 비율)로
-// 반영한 양을 다시 맞춘다. 비율을 알 수 없거나(0·빈 값) 그대로면 바꾸지 않는다. 바뀐 기록(없으면 null).
+// 반영한 양을 다시 맞춘다. 수량은 같은 최소 단위·방향의 계좌별 합계를 먼저 반올림하고, 남는 최소 단위는 소수부가 큰 계좌부터 배분한다(4주+4주를 7주로 고쳐도 합계 7주).
+// 비율을 알 수 없거나(0·빈 값) 그대로면 바꾸지 않는다. 바뀐 기록(없으면 null).
 function rescaleTrade(alloc, key, trade){
   const rec=alloc?.trades?.[key];if(!rec)return null;
   const q=plus(trade?.qty), p=plus(trade?.price), v=plus(trade?.value), ratio=(a,b)=>a&&b?a/b:null;
   const rq=ratio(q,rec.qty), rpq=ratio(q&&p?q*p:null,rec.qty&&rec.price?rec.qty*rec.price:null), rv=ratio(v,rec.value);
   const fShares=rq??rv??rpq, fAmount=rv??rpq??rq;
+  const quantities=new Map(), groups=new Map();
+  if(fShares&&fShares!==1)for(const e of Array.isArray(rec.items)?rec.items:[]){
+    const it=allocItemById(alloc,e?.id);if(!it||!finite(e.shares))continue;
+    const step=linkStep(it), sign=e.shares<0?-1:1, key=`${step}:${sign}`, rows=groups.get(key)||[];
+    const units=Math.round(Math.abs(e.shares)/step), scaled=units*fShares;
+    rows.push({e,step,sign,units,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
+  }
+  for(const rows of groups.values()){
+    const extra=Math.round(rows.reduce((n,r)=>n+r.units,0)*fShares)-rows.reduce((n,r)=>n+r.base,0);
+    [...rows].sort((a,b)=>b.fraction-a.fraction).slice(0,extra).forEach(r=>r.base++);
+    rows.forEach(r=>quantities.set(r.e,linkRound(r.sign*r.base*r.step,r.step)));
+  }
   let changed=false;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it)continue;
-    if(finite(e.shares)&&fShares&&fShares!==1){const step=linkStep(it), add=bumpField(it,"shares",linkRound(e.shares*fShares,step)-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
+    if(finite(e.shares)&&fShares&&fShares!==1){const step=linkStep(it), add=bumpField(it,"shares",(quantities.get(e)??linkRound(e.shares*fShares,step))-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
     if(finite(e.amount)&&fAmount&&fAmount!==1){const add=bumpField(it,"amount",Math.round(e.amount*fAmount*100)/100-e.amount,0.01);if(add){e.amount=linkRound(e.amount+add,0.01);changed=true;}}
   }
   rec.qty=q??rec.qty;rec.price=p??rec.price;rec.value=v??rec.value;
