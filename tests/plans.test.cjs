@@ -20,9 +20,9 @@ function load(){
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
     priceData:{updatedAt:'2026-10-02T12:00:00Z',stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-02',close:60000,ma:{'25개월선':50000}},
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
-    id:()=> 'test-plan',FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
-  for(const file of ['prices.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
-  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth,planTrade,planLink})',ctx);
+    id:()=> 'test-plan',priceText:v=>String(v),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
+  for(const file of ['ma-ladder.js','prices.js','assets-calc.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
+  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,recordPlanQuantity,planSaleRow,applyTrade,revertTrade,rescaleTrade})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
 }
 
@@ -123,4 +123,75 @@ test('자산 배분 연동: 회차 체결은 매도 비중을 적용한 회차 �
   let committed=0,drawn=0;
   api.planLink('check',{commit:()=>{committed++;return 'k';},redraw:()=>{drawn++;}});
   assert.deepEqual([committed,drawn,api.planLink('line','SOXX'),api.planLink('holding','SOXX')],[1,1,'',null],'자산 배분 연동이 없으면 체크만');
+});
+
+function partialSale({bitcoin=false,valueOnly=false}={}){
+  const {api,ctx}=load(),ticker=bitcoin?'BTC-USD':'111111',qty=bitcoin?0.02:20;
+  const p={id:'sale',title:'가상 매도 계획',ticker,currency:'KRW',holdings:valueOnly?[]:[{shares:qty}],valueKrw:valueOnly?20:null,startPrice:10000,endPrice:9000,stages:2,checked:[false,false]};
+  const it={id:'asset',ticker,...(valueOnly?{amount:20}:{shares:qty})},alloc={groups:[{items:[it]}]},prices={stocks:{[ticker]:{kind:bitcoin?'코인':'국내',close:10000,asOf:'2026-01-02'}}};
+  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},saveSection(){}};ctx.allocLink={
+    check(o){const key=o.commit();if(key)api.applyTrade(alloc,prices,key,o.trade,o.label,[{id:it.id,unit:valueOnly?'amount':'shares',n:valueOnly?o.trade.value:o.trade.qty}]);o.redraw?.();},
+    rescale(key,trade){api.rescaleTrade(alloc,key,trade);},uncheck(key){api.revertTrade(alloc,key);}
+  };
+  return {api,p,it,alloc,prices,fill:n=>api.recordPlanFill(p,0,n,()=>{}),fillQuantity:n=>api.recordPlanQuantity(p,0,n,()=>{})};
+}
+
+test('분할매도: 계획 10주 중 7주만 체결하면 7주만 빼고 3주는 미완료로 남긴다',()=>{
+  const {api,p,it,alloc,fill}=partialSale();const before=JSON.stringify(p);api.planStageProgress(p,0);assert.equal(JSON.stringify(p),before);
+  fill(7);assert.equal(it.shares,13);assert.equal(api.sharesLeft(p),13);assert.equal(p.checked[0],false);
+  assert.equal(p.fills[0].plannedQty,10);assert.equal(api.planStageProgress(p,0).remaining,3);
+  assert.equal(alloc.trades['sell:sale:0'].qty,7);
+  fill(9);assert.equal(it.shares,11,'추가 2주만 차감');
+  fill(10);assert.equal(it.shares,10);assert.equal(p.checked[0],true);
+  fill(7);assert.equal(it.shares,13,'완료 체결량 정정도 차이만 복원');assert.equal(p.checked[0],false);
+  fill(0);assert.equal(it.shares,20);assert.equal(api.sharesLeft(p),20);
+  assert.equal(p.fills,undefined);assert.equal(alloc.trades,undefined);
+});
+
+test('분할매도: 부분 체결 뒤 가격이 바뀌어도 원래 주문 수량·가격을 유지한다',()=>{
+  const {api,p,it,fill}=partialSale();fill(7);p.startPrice=20000;
+  assert.equal(api.planStageProgress(p,0).remaining,3);assert.equal(api.planStageProgress(p,0).trade.price,10000);
+  for(const n of [11,7.5,-1,NaN,Infinity]){fill(n);assert.equal(it.shares,13);}
+  fill(10);assert.equal(it.shares,10);
+  const small={...p,holdings:[{shares:1}],stages:3,checked:[false,false,false]};delete small.fills;
+  assert.equal(api.planStageProgress(small,1).target,0,'수량 0주 회차와 보유량 미입력은 구분');
+});
+
+test('분할매도: 비트코인 부분 체결·잔량·취소를 소수점 8자리로 정확히 처리한다',()=>{
+  const {api,p,it,fill}=partialSale({bitcoin:true});fill(0.007);
+  assert.equal(it.shares,0.013);assert.equal(api.sharesLeft(p),0.013);assert.equal(api.planStageProgress(p,0).remaining,0.003);
+  fill(0.007000001);assert.equal(it.shares,0.013,'최소 단위보다 작은 수량은 거부');
+  fill(0.01);assert.equal(it.shares,0.01);assert.equal(p.checked[0],true);
+  fill(0);assert.equal(it.shares,0.02);
+});
+
+test('분할매도: 평가액만 있는 계획도 부분 체결액과 남은 금액을 분리한다',()=>{
+  const {api,p,it,fill}=partialSale({valueOnly:true});fill(7);
+  assert.equal(it.amount,13);assert.equal(api.planStageProgress(p,0).remaining,3);assert.equal(p.checked[0],false);
+  p.startPrice=20000;assert.equal(api.planStageProgress(p,0).target,10,'첫 체결 때 예정액도 고정');
+  fill(10);assert.equal(it.amount,10);assert.equal(p.checked[0],true);
+  fill(0);assert.equal(it.amount,20);
+});
+
+test('분할매도: 평가액 계획도 입력은 주수로 하고 금액은 자동 계산한다',()=>{
+  const {api,p,it,fillQuantity}=partialSale({valueOnly:true});
+  assert.equal(api.planQuantityProgress(p,0).target,10);
+  fillQuantity(7);assert.equal(it.amount,13);assert.equal(p.fills[0].qty,7);assert.equal(p.fills[0].plannedQty,10);
+  assert.equal(api.planQuantityProgress(p,0).remaining,3);assert.equal(p.checked[0],false);
+  assert.match(api.planSaleRow(p,0,''),/누적 체결 수량 \(주\)/);assert.doesNotMatch(api.planSaleRow(p,0,''),/금액 \(만원\)/);
+  p.fx=2000;fillQuantity(10);assert.equal(it.amount,10);assert.equal(p.checked[0],true);
+  fillQuantity(0);assert.equal(it.amount,20);
+  p.startPrice=18000;
+  assert.equal(api.planQuantityProgress(p,0).target,5);
+  fillQuantity(5);assert.equal(p.checked[0],true,'계획 5주가 체결되면 내림 뒤 남는 예산과 관계없이 완료');assert.equal(it.amount,11);
+});
+
+test('분할매도: 수량 없는 옛 금액 체결도 이미 차감한 주수를 읽고 차이만 정정한다',()=>{
+  const {api,p,it,alloc,prices,fillQuantity}=partialSale({valueOnly:true});
+  delete it.amount;it.shares=20;
+  p.fills={0:{plannedValue:10,value:7.58,price:10000}};
+  api.applyTrade(alloc,prices,'sell:sale:0',{sign:-1,value:7.58,price:10000,currency:'KRW'},'옛 체결',[{id:'asset',unit:'shares',n:8}]);
+  const before=JSON.stringify(alloc);assert.equal(api.planQuantityProgress(p,0).amount,8);assert.equal(JSON.stringify(alloc),before);
+  fillQuantity(9);assert.equal(it.shares,11,'이미 차감한 8주에서 추가 1주만 차감');
+  fillQuantity(0);assert.equal(it.shares,20);
 });

@@ -23,6 +23,13 @@ test('첫 매도와 1회차가 같은 알림을 공유하고 전체 ON 후 개�
   p.checked[0]=true;rules=plain(ctx.buildTradeAlertRules({plans:[p]},quote()));assert.equal(rules.length,1);
   ctx.setTradePlanAll(p,false);assert.equal(ctx.buildTradeAlertRules({plans:[p]},quote()).length,0);
 });
+test('분할매도 부분 체결은 잔량 알림을 유지하고 첫 체결 기준가를 사용한다',()=>{
+  const ctx=load(),p=sale({startPrice:110,notify:{start:true,sales:true},checked:[false,true,true],fills:{0:{plannedQty:10,qty:7,price:100}}});
+  const before=JSON.stringify(p),rules=plain(ctx.buildTradeAlertRules({plans:[p]},quote()));
+  assert.equal(rules.length,1);assert.equal(rules[0].targetPrice,100);assert.equal(rules[0].label,'분할매도 첫 매도');
+  assert.equal(JSON.stringify(p),before,'알림 계산은 기록을 변경하지 않음');
+  p.checked[0]=true;assert.equal(ctx.buildTradeAlertRules({plans:[p]},quote()).length,0);
+});
 test('닫힌 화면의 자동 기준가·통화·보간은 시세 채우기와 같고 원본을 바꾸지 않는다',()=>{
   const ctx=load(),p=sale({startAuto:true,startLabel:'60일선',notify:{start:true,sales:true}}),data={plans:[p]},before=JSON.stringify(data);
   const rules=plain(ctx.buildTradeAlertRules(data,quote({'60일선':110,'25개월선':90})));
