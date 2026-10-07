@@ -17,7 +17,7 @@ const shown = v => Number.isFinite(Number(v)) ? String(Math.round(Number(v)*1e4)
 // set이 false를 돌려주면(잘못된 값) 저장하지 않고 다시 그려 원래 값으로 되돌린다. redraw가 없으면 다시 그리지 않는다.
 const onEdit = (sel, set, redraw) => $$(sel).forEach(el => el.onchange = () => { if (set(el.value, el) !== false) save(); redraw?.(); });
 const id = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
-const defaultFutures = () => ({targetPrice:1480,baselinePnl:0,positions:[],levels:futuresDays.map(days=>({days,price:0,confirmed:false,contracts:0,tranches:[]})),note:""});
+const defaultFutures = () => ({targetPrice:1480,baselinePnl:0,positions:[],levels:MA_LINES.map(name=>({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]})),note:""});
 const defaultActions = () => ({coveredCallName:"S&P500 커버드콜",buys:[1,2,3].map((day,i)=>({id:id(),day,plannedKrw:200000,actualKrw:null,completed:false})),buyNote:""});
 const seeded = {plans:[],futures:defaultFutures(),actions:defaultActions(),selectedPlan:null,tab:"plans"}; // 공개 저장소용: 실제 데이터는 JSON 복원으로만
 const hadStoredState = localStorage.getItem(STORAGE_KEY) !== null;
@@ -27,6 +27,7 @@ function normalize(){
   state.plans = Array.isArray(state.plans) ? state.plans : [];
   state.plans.forEach(p=>{p.checked=Array.from({length:Number(p.stages)||2},(_,i)=>p.checked?.[i]===true);p.holdings=Array.isArray(p.holdings)?p.holdings:[];p.note=p.note||"";});
   state.futures = state.futures || defaultFutures(); state.futures.positions = Array.isArray(state.futures.positions) ? state.futures.positions : []; state.actions = state.actions || defaultActions();
+  ensureFutureMovingLines(state.futures);
   if(!state.selectedPlan || !state.plans.some(p=>p.id===state.selectedPlan)) state.selectedPlan=state.plans[0]?.id||null;
   state.tab = state.tab || "plans";
 }

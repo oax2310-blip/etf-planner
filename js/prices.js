@@ -18,13 +18,13 @@
 //   auto.at(채운 시세 파일의 updatedAt)보다 오래된 시세로는 채우지 않는다(늦게 읽은 기기가 옛 시세로 되돌리지 않게).
 //   같은 기록 + 같은 시세면 어느 기기에서 채워도 결과가 같아야 한다(sync.js가 저장소·지난 동기화 기록도 채워 비교해, 시세만으로 기록 차이 창이 뜨지 않게).
 const PRICE_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 경고
-const PRICE_FORMAT = 3; // slimPrices 결과 형식. 바꾸면 올릴 것 — 이 기기에 둔 옛 형식 시세는 ETag 없이 다시 받는다(sync.js readPrices)
+const PRICE_FORMAT = 4; // 선물도 주봉·월봉 종가를 보관한다. 옛 캐시는 ETag 없이 다시 받는다(sync.js readPrices).
 // 기준선 이름 → 시세 파일 ma 이름. 데이터 저장소 scripts/kis_prices.py의 LABEL_RE·ma_name과 같게("60 일선"→"60일선", "12달선"→"12개월선")
-function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|달)\s*선/.exec(String(label||"")); return m&&Number(m[1])>=1?`${Number(m[1])}${{일:"일선",주:"주선",개월:"개월선",달:"개월선"}[m[2]]}`:""; }
+function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|월|달)\s*선/.exec(String(label||"")); return m&&Number(m[1])>=1?`${Number(m[1])}${{일:"일선",주:"주선",개월:"개월선",월:"개월선",달:"개월선"}[m[2]]}`:""; }
 // 60분봉 N이평선(재매수 단계 'N선', 옛 이름 'N분봉') → 시세 파일 ma 이름 'N선'. 데이터 저장소 scripts/kis_prices.py HOUR_RE와 같게
-function hourKey(label){ const m=/^\s*([1-9]\d{0,2})\s*(?:선|분봉)\s*$/.exec(String(label||"")); return m?`${Number(m[1])}선`:""; }
+function hourKey(label){ const m=/^\s*([1-9]\d{0,2})\s*(?:선|시선|분봉)\s*$/.exec(String(label||"")); return m?`${Number(m[1])}선`:""; }
 const autoKey = label => maKey(label)||hourKey(label); // 시세로 채우는 기준선(N일선·N주선·N개월선·N선)
-const autoMark = name => hourKey(name)||String(name); // 단계 기준가를 채운 값을 둘 auto 키(N선은 옛 이름 N분봉도 같은 키)
+const autoMark = name => autoKey(name)||String(name); // 시선·월선 별칭도 같은 자동 기준가 키를 사용한다.
 const priceEntry = e => e&&typeof e==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(e.asOf)&&e.ma&&typeof e.ma==="object" ? e : null;
 const stockEntry = (prices, ticker) => priceEntry(prices?.stocks?.[String(ticker||"").trim().toUpperCase()]);
 const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&Number.isFinite(Number(e.close))&&Number(e.close)>0?e:null; };
@@ -60,7 +60,7 @@ function slimPrices(doc){
   if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object")throw Error("시세 파일 형식을 확인할 수 없습니다.");
   const pick=(group,bars)=>Object.fromEntries(Object.entries(group&&typeof group==="object"?group:{}).filter(([,e])=>e&&typeof e==="object")
     .map(([k,e])=>{const closes=bars&&barCloses(e,doc.columns);return [k,{kind:e.kind,asOf:e.asOf,close:e.close,ma:e.ma,...(closes?{closes}:{}),...(e.stale?{stale:true}:{})}];}));
-  return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,false),fx:pick(doc.fx,false)};
+  return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,true),fx:pick(doc.fx,false)};
 }
 // 기준선 이름(N일선·N주선·N개월선)의 이동평균: 시세 파일 ma에 있으면 그 값, 없으면 보관한 종가로 계산(스크립트처럼 소수 넷째 자리). 없으면 null.
 // N선(60분봉)은 시세 파일 ma 값만(이 기기에는 60분봉을 두지 않음).
@@ -94,9 +94,13 @@ function fillPrices(data, prices){
     changed=fillMarked(p,at,[...(p.startAuto===true?[["startPrice",ma(p.startLabel),v=>p.startPrice=v]]:[]),["endPrice",ma(p.endLabel),v=>p.endPrice=v],...(usd?[["fx",fx,v=>p.fx=v]]:[])])||changed;
   }
   if(fe&&Array.isArray(f.levels)){
-    const rows=[...new Set(f.levels.map(l=>Number(l?.days)).filter(d=>Number.isInteger(d)&&d>0))].map(days=>[`${days}일선`,priceRound(fe.ma[`${days}일선`],2),v=>f.levels.forEach(l=>{
-      if(Number(l?.days)!==days)return; l.price=v; (Array.isArray(l.tranches)?l.tranches:[]).forEach(t=>{if(!t.completed)t.price=v;}); })]);
-    changed=fillMarked(f,at,rows)||changed;
+    const names=[...new Set(f.levels.map(futureLineName).filter(Boolean))],updated=[];
+    const rows=names.map(name=>[name,priceRound(maValue(fe,name),2),v=>{
+      updated.push(name);f.levels.forEach(l=>{if(futureLineName(l)===name)l.price=v;});
+    }]);
+    const filled=fillMarked(f,at,rows);
+    if(filled)refreshFutureBuyPrices(f,updated);
+    changed=filled||changed;
   }
   if(fe&&f.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)){
     const r=f.rebuy,stages=Array.isArray(r.stages)?r.stages:[];

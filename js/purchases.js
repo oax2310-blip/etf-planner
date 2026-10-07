@@ -27,8 +27,8 @@ const lineMarket=it=>["국내","해외"].includes(purchaseQuoteKind(it?.ticker))
 const lineKnown=(lines,e)=>purchaseLineNames(lines).filter(n=>Number(e?.ma?.[n])>0);
 const rangeText=names=>names.length?`${names[0]}~${names[names.length-1]}`:"";
 // 단계 묶음(창의 '단계' 선택): 재매수 기본 14단계 전체, 일봉만, 60분봉만. 저장은 lines.names(수집 작업이 이 이름으로 이동평균을 계산).
-const LINE_SETS={all:PURCHASE_LINES,day:PURCHASE_LINES.filter(n=>n.endsWith("일선")),hour:PURCHASE_LINES.filter(n=>!n.endsWith("일선"))};
-const lineSetOf=names=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||"all";
+const LINE_SETS={all:PURCHASE_LINES,hour:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="선"),day:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="일선"),week:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="주선"),month:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="개월선"),legacy:PURCHASE_LINES.filter(n=>["선","일선"].includes(movingLineUnit(n)))};
+const lineSetOf=names=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||"custom";
 // ---------- 분할매수 ----------
 // 계획은 종목 안에 두므로 이름·목표 변경과 그룹 이동이 그대로 연결된다. 창에서 고치는 동안은 복사본만 바꾸고 저장할 때 반영한다.
 // 두 방식(assets-calc.js 분할매수 주석): 이동평균선 돌파(lines — 회차는 지금 이동평균으로 계산, 산 회차는 buys[키])와 직접 입력(stages).
@@ -146,7 +146,7 @@ const renderDraft=()=>{renderPicker();renderLines();renderPurchaseDraft();};
 // 새 계획·목표 비중을 고치면 자동으로 채우고, 직접 고친 금액은 그대로 둔다('다시 계산'으로 되돌림). 미리보기 회차는 assets-calc.js purchaseLineRows(지금 이동평균).
 function linesDraft(){
   const f=form(), it=pickedItem()?.it, own=numIn(f.lineTarget.value);
-  return {names:LINE_SETS[f.lineSet.value]||PURCHASE_LINES,end:numIn(f.lineEnd.value),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
+  return {names:LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines),end:numIn(f.lineEnd.value),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
 }
 function renderLines(){
   const f=form(), picked=pickedItem(), it=picked?.it, q=quoteOf(it), cur=quoteOf(it)?.currency||"KRW", lines=mode()==="lines";

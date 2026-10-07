@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8');
 if (!source.includes('function fillPrices(')) throw Error('시세 채우기 구현을 찾지 못했습니다.');
 
 // 종목 코드·가격은 모두 가짜 값.
@@ -186,7 +186,7 @@ test('시세 파일에서 채우기·표시에 쓰는 값만 남기고, 형식�
   const ctx = load();
   const slim = plain(ctx.slimPrices({updatedAt: AT, columns: [], stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}, daily: [[1]], monthly: [[1]]},
     BAD: {error: '조회 실패'}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true, error: 'x'}}}));
-  assert.deepEqual(slim, {format: 3, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
+  assert.deepEqual(slim, {format: 4, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
   assert.equal(vm.runInContext('stockEntry', ctx)(slim, 'bad'), null, '기준일 없는 항목(조회만 실패)은 쓰지 않는다');
   assert.throws(() => ctx.slimPrices({plans: []}), /형식/);
 });
@@ -213,7 +213,7 @@ test('시세 파일 봉 기록에서 종목 종가만 남기고, 주봉이 없�
   }, futures: {'202612': {kind: '달러선물', asOf: '2026-09-30', close: 1398.2, ma: {}, daily}}}));
   assert.deepEqual(slim.stocks.AAA.closes, {D: [10, 11, 12, 13, 14, 15], W: [11, 13, 15], M: [20, 30]});
   assert.deepEqual(slim.stocks.BBB.closes, {D: [10, 11, 12, 13, 14, 15], W: [7, 8]}, '시세 파일 주봉이 있으면 그대로 쓴다');
-  assert.equal(slim.futures['202612'].closes, undefined, '달러선물은 파일 ma만 쓴다');
+  assert.deepEqual(slim.futures['202612'].closes, {D:[10,11,12,13,14,15],W:[11,13,15]}, '달러선물도 주선·월선 fallback 계산에 종가를 보관한다');
   const moved = plain(ctx.slimPrices({updatedAt: AT, columns: ['close', 'date'], stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {}, daily: [[10, '2026-09-29'], [15, '2026-09-30']]}}}));
   assert.deepEqual(moved.stocks.AAA.closes, {D: [10, 15], W: [15]}, 'columns 순서를 따른다');
 });

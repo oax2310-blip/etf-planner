@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
 
 // 화면이 쓰는 기준선 이름 판정(maKey·hourKey·autoKey)은 prices.js 것을 그대로 쓴다
@@ -12,7 +12,7 @@ const {maKey, hourKey, autoKey, usTicker} = vm.runInNewContext(['function maKey\
   .map(head => pricesSource.match(new RegExp(`^${head}.*$`, 'm'))[0]).join('\n') + '\n({maKey, hourKey, autoKey, usTicker})');
 
 const load = () => { const context = vm.createContext({usTicker}); vm.runInContext(source, context); return context; };
-const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, ...extra});
+const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, stages: vm.runInContext('defaultRebuy().stages.slice(0,14)',ctx), ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
 const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
 
@@ -194,7 +194,7 @@ test('재매수 회차: 산 회차를 뺀 남은 금액을 고정한 계획의 �
 });
 test('단계 가격 추정: 현재가와 150일선 가격 사이를 고르게 채우고, 넣은 기준가·체결가를 기준점으로 쓴다', () => {
   const ctx = load();
-  const stages = plain(vm.runInContext('defaultRebuy()', ctx).stages);
+  const stages = plain(vm.runInContext('defaultRebuy()', ctx).stages).slice(0,14);
   stages[13].price = 11200;
   const est = () => { ctx.target = stages; return plain(vm.runInContext('stageEstimates(target, 9800)', ctx)); };
   nearAll(est(), Array.from({length: 14}, (_, i) => 9800 + 100 * (i + 1)));
@@ -207,10 +207,10 @@ test('단계 가격 추정: 현재가와 150일선 가격 사이를 고르게 �
   assert.equal(est()[10], null, '뒤쪽에 아는 가격이 없으면 추정하지 않음');
 });
 
-test('예전 기본 5단계를 손대지 않은 기록은 14단계로 보고, 체크한 기록은 그대로 둔다', () => {
+test('예전 기본 5단계를 손대지 않은 기록은 시·일·주·월선 28단계로 보고, 체크한 기록은 그대로 둔다', () => {
   const ctx = load();
   const old = ['25분봉', '60분봉', '240분봉', '일봉', '주봉'].map(name => ({name, price: 0, done: false, execPrice: null, shares: null}));
-  assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: old})).stages).map(x => x.name), STAGES);
+  assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: old})).stages).map(x => x.name), [...STAGES,...[25,32,42,60,80,125,150].map(n=>`${n}주선`),...[25,32,42,60,80,125,150].map(n=>`${n}개월선`)]);
   const used = old.map((x, i) => i ? x : {...x, done: true, shares: 2, execPrice: 9500});
   assert.deepEqual(plain(ctx.rebuySummary(plan(ctx, {stages: used})).stages).map(x => x.name), ['25선', '60선', '240선', '일봉', '주봉']);
 });
@@ -352,13 +352,13 @@ test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일
   const domestic = () => ({kind: '국내', asOf: '2026-10-01', ma: {}}), foreign = () => ({kind: '해외', asOf: '2026-10-01', ma: {}});
   // 기본 단계 14개(N선 7개·N일선 7개) + 현재가 + 마지막 단계(150일선) 가격 칸
   let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
-  assert.equal(count(html), 16);
-  assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150일선 가격 (원)${tag}</span>`));
+  assert.equal(count(html), 30);
+  assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150개월선 가격 (원)${tag}</span>`));
   assert.ok(html.includes(`aria-label="150일선 기준가">원${tag}`) && html.includes(`aria-label="25선 기준가">원${tag}`));
   // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
   html = view({ticker: '900001'}, {priceData: {stocks: {}}});
-  assert.equal(count(html), 16);
-  assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·일선·N선 기준가를 채웁니다\./);
+  assert.equal(count(html), 30);
+  assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·시선·일선·주선·월선 기준가를 채웁니다\./);
   assert.doesNotMatch(html, /시세 파일에 아직 없는/);
   // 채우지 않는 경우: 국내 코드인데 해외 시세(종류가 다름), 종목 코드 없음, 시세 파일을 못 읽음
   assert.equal(count(view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: foreign})), 0);
@@ -374,7 +374,7 @@ test('미국 종목: 가격·금액은 달러로, 보유 금액은 달러로 나
   const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
   const item = {id: 'a', name: '테스트 미국 ETF', ticker: 'spy', lowPrice: 500, amount: 10000, currentPrice: 480.25, cuts: [{shares: 2, price: 495}], stages};
   const html = ui({rebuy: {items: [item]}}, {priceData: {stocks: {}}, stockEntry: () => ({kind: '해외', asOf: '2026-10-01', ma: {}})}).els.rebuyMain.innerHTML;
-  assert.equal(count(html), 16);
+  assert.equal(count(html), 30);
   assert.match(html, /가격은 미국 시세\(달러\)입니다\./);
   assert.ok(html.includes(`현재가 (달러)${tag}</span>`) && html.includes('신저점 가격 (달러)</span>') && html.includes('>달러</option>'));
   assert.ok(html.includes('$495') && html.includes(`aria-label="25선 기준가">달러${tag}`));
@@ -391,7 +391,7 @@ test('종목 목록: 옛 기록(rebuy에 종목 하나)은 한 종목으로 보�
   assert.equal(ctx.state.rebuy.items.length, 1);
   assert.deepEqual(Object.keys(ctx.state.rebuy), ['items'], '옛 칸은 종목 안으로 옮긴다');
   const {id, stages, ...moved} = plain(ctx.state.rebuy.items[0]);
-  assert.deepEqual([id, ctx.state.selectedRebuy, stages.length], ['id-1', 'id-1', 14]);
+  assert.deepEqual([id, ctx.state.selectedRebuy, stages.length], ['id-1', 'id-1', 28]);
   assert.deepEqual(moved, {...legacy, lowPrice: 9000});
 });
 

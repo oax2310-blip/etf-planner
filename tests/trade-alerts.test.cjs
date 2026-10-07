@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const code=['prices.js','rebuy.js','trade-alerts.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+const code=['ma-ladder.js','prices.js','rebuy.js','trade-alerts.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({});vm.runInContext(code,ctx);return ctx;};
 const plain=v=>JSON.parse(JSON.stringify(v));
 const sale=(extra={})=>({id:'demo-sale',ticker:'AAA',currency:'USD',startPrice:100,endPrice:80,startLabel:'직접',endLabel:'25개월선',stages:3,checked:[],...extra});
@@ -92,7 +92,7 @@ test('재매수 시작 뒤 손절·이탈은 멈추고 완료 단계·다 채운
 });
 // 데이터 저장소 scripts/ma_alerts.py의 TRADE_LABEL_RE와 같게 둔다 — 수집 작업은 라벨 하나라도 거부하면 연결 알림 전체를 보내지 않는다
 const STAGE_LABEL='(?:[1-9]\\d{0,2}(?:일선|주선|개월선|분봉|단계|선)(?: [23]차)?)';
-const TRADE_LABEL_RE=new RegExp(`^(?:분할매도 (?:첫 매도|[1-9]\\d{0,2}회)|달러선물 (?:[1-9]\\d{0,2}일선|추가 [1-9]\\d{0,2}|신저점 손절 시작|손절 [1-9]\\d?회|[1-9]\\d?회 손절 환율 복귀|재매수 ${STAGE_LABEL})|재매수 (?:신저점 이탈|손절 [1-9]\\d?회|[1-9]\\d?회 기한|${STAGE_LABEL}))$`);
+const TRADE_LABEL_RE=new RegExp(`^(?:분할매도 (?:첫 매도|[1-9]\\d{0,2}회)|달러선물 (?:[1-9]\\d{0,2}(?:선|일선|주선|개월선)(?: [23]차)?|추가 [1-9]\\d{0,2}|신저점 손절 시작|손절 [1-9]\\d?회|[1-9]\\d?회 손절 환율 복귀|재매수 ${STAGE_LABEL})|재매수 (?:신저점 이탈|손절 [1-9]\\d?회|[1-9]\\d?회 기한|${STAGE_LABEL}))$`);
 test('재매수 단계 알림 이름은 N선·N일선, 직접 정한 이름은 N단계, 회차는 2차·3차로 수집 작업의 라벨 형식을 지킨다',()=>{
   const ctx=load(),notify={breakdown:true,cuts:true,buys:true,deadlines:true};
   const r=rebuy({notify,cuts:[{shares:10,price:9900}]});r.stages.push({name:'내 단계',price:9650,done:false});
