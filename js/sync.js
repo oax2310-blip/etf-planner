@@ -50,8 +50,9 @@ async function readRemote(){
   if(!Array.isArray(data.plans)||!data.futures||!data.actions)throw Error("저장소의 기록 파일 형식을 확인할 수 없습니다. 자동으로 덮어쓰지 않았습니다.");
   return {sha:meta.sha,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions,rebuy:data.rebuy,alerts:data.alerts})};
 }
-async function writeRemote(snapshot,sha){
-  const body={message:`기록 동기화 ${new Date().toISOString()}`,content:toB64(JSON.stringify(JSON.parse(snapshot),null,2)+"\n"),...(sha?{sha}:{})};
+async function writeRemote(snapshot,sha,previous=null){
+  const data=JSON.parse(snapshot),tag=bitcoinAlertsChanged(previous?JSON.parse(previous):null,data)?" [crypto-alerts]":"";
+  const body={message:`기록 동기화 ${new Date().toISOString()}${tag}`,content:toB64(JSON.stringify(data,null,2)+"\n"),...(sha?{sha}:{})};
   const response=await gh(`/repos/${sync.repo}/contents/${DATA_FILE}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   if(response.status===409||response.status===422){const error=Error("다른 기기가 먼저 저장했습니다. 다시 확인합니다.");error.stale=true;throw error;}
   if(!response.ok)throw Error(`기록 저장 실패 (${response.status})`);
@@ -101,7 +102,7 @@ async function syncNow(){
     // 시세로 채우는 칸은 어느 기기든 같은 시세 파일로 똑같이 채우므로, 저장소 기록(raw)·지난 동기화 기록도 같은 시세로 채운 뒤 비교한다
     // (시세 갱신만으로 기록 차이 창이 뜨지 않게). 저장소 파일에 아직 안 채운 시세가 있으면 채운 기록을 올린다(settle).
     const remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
-    const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha);if(!same())return;markSynced(json);}sync.blocked=false;};
+    const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha,raw);if(!same())return;markSynced(json);}sync.blocked=false;};
     if(remote===local)await settle(local);
     else if(remote===null){
       const last=localStorage.getItem(LAST_REPO_KEY);
@@ -121,7 +122,7 @@ async function syncNow(){
         const latest=await readRemote();if(latest.snapshot!==raw)throw Error("선택하는 동안 저장소 기록이 바뀌었습니다. 다시 동기화해 주세요.");
         if(!same())return;
         backupRecord(raw,"이 기기 기록을 선택하기 전 저장소 기록");
-        const current=dataSnapshot();await writeRemote(current,latest.sha);if(!same())return;markSynced(current);sync.blocked=false;
+        const current=dataSnapshot();await writeRemote(current,latest.sha,latest.snapshot);if(!same())return;markSynced(current);sync.blocked=false;
       }
       else syncStatus("기록 차이 확인 전 · 이 기기에만 저장 중");
     }
