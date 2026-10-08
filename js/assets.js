@@ -1,9 +1,9 @@
 // 자산 현황 화면. 기능 규칙은 해당 함수 주석, 계산·기록은 assets-calc.js·assets-store.js, 공통 작업 규칙은 AGENTS.md.
 const A_UI_KEY = "etf-planner-assets-ui";
-const A_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 주황색(js/prices.js PRICE_STALE_DAYS와 같음)
+const A_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 ‘갱신 필요’ 배지(js/prices.js PRICE_STALE_DAYS와 같음)
 const el = id => document.getElementById(id), all = sel => document.querySelectorAll(sel);
 const escA = v => String(v ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
-const nf0 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0}), nf1 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}), nf2 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:2});
+const nf0 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0}), nf1 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}), nf2 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:2}), nfShares = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:8});
 const man = v => `${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`;
 const wonA = v => `${nf0.format(Math.round(Number(v)||0))}원`;
 const pc = v => v===null||v===undefined||!Number.isFinite(Number(v)) ? "—" : `${(Math.abs(v)<1?nf2:nf1).format(Number(v))}%`;
@@ -37,7 +37,12 @@ document.addEventListener("focusout",()=>setTimeout(()=>{ if(redrawLater) redraw
 const onChange = (sel, section, set) => all(sel).forEach(x=>x.onchange=()=>{ if(set(x.value,x)!==false) saveSection(section); render(); });
 function emptyCard(title, text, button){ return `<div class="card empty assets-empty"><h2>${title}</h2><p>${text}</p>${button}</div>`; }
 const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n=new Date(); return Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(y,m-1,d))/864e5); };
-const quoteText = q => !q ? "" : `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} <span class="price-date${q.stale||q.asOf&&priceDays(q.asOf)>A_STALE_DAYS?" old":""}">${q.manual?"직접 입력 ":""}${q.asOf?`${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))}`:""}${q.stale?" · 조회 실패":""}</span>`;
+function quoteText(q,current=false){
+  if(!q)return "";
+  const days=q.asOf?priceDays(q.asOf):NaN, status=q.stale?"갱신 실패":!Number.isFinite(days)||days>A_STALE_DAYS?"갱신 필요":"";
+  const detail=q.stale?"시세 갱신에 실패해 이전 가격을 표시합니다.":Number.isFinite(days)?`시세가 ${A_STALE_DAYS}일 넘게 갱신되지 않았습니다.`:"시세 기준일을 확인할 수 없습니다.";
+  return `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)}${current?'<span class="quote-label">(현재가)</span>':""}${q.manual?' <span class="quote-source">직접 입력</span>':""}${status?` <span class="quote-status" title="${escA(detail+(q.asOf?` 마지막 시세: ${q.asOf}`:""))}"><span aria-hidden="true">!</span> ${status}</span>`:""}`;
+}
 
 // ---------- 자산 배분 ----------
 // 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 화면 목록만 거른다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하며 기록·합계는 바꾸지 않는다.
@@ -74,10 +79,10 @@ function renderAlloc(tab="alloc"){
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
   const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)];
-    const how=r.how==="shares"?`<small class="how live">수량 × 현재가</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?`<small class="how">${stock?.error?"시세 조회 실패":"시세 대기"}</small>`:"";
+    const how=r.how==="shares"?`<small class="how holding">${nfShares.format(it.shares)}주${r.q?` × <span class="holding-price">${quoteText(r.q,true)}</span>`:""}</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?stock?.error?'<small class="how quote-status"><span aria-hidden="true">!</span> 시세 조회 실패</small>':'<small class="how">시세 대기</small>':"";
     return `<div class="asset-row${it.done?" done":""}" data-alloc-item="${escA(it.id)}"><label class="check" title="비중 조정 완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 비중 조정 완료 (직접 표시)"></label>
-      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),finite(it.shares)!==null?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
-      <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct">${pc(cur)}<small>${t!==null?`목표 ${pc(t)}`:""}</small></span></div>`; };
+      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",r.how!=="shares"?quoteText(r.q):"",r.how!=="shares"&&finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
+      <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>`:""}</span></div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small>${escA(meta.note)}</small>`:""}</div>`;};
     return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${escA(g.name)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
