@@ -4,7 +4,59 @@ const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
 let pushConfig = null, pushSubscription = null, pushBusy = false, pushMessage = "";
+let pendingPushTarget = null;
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
+// 알림의 종목·기준선만으로 기존 기록을 찾는다. 화면 선택은 이 기기에만 저장하고 매매 기록은 만들거나 고치지 않는다.
+function pushAlertTab(target){
+  return target.line.startsWith("분할매도 ")?"plans":target.line.startsWith("분할매수 ")?"buys":target.line.startsWith("달러선물 ")?"futures":target.line.startsWith("재매수 ")?"rebuy":null;
+}
+function pushAlertDestination(target){
+  const same=ticker=>linkTicker(ticker)===linkTicker(target.ticker), tab=pushAlertTab(target);
+  const pick=(items,prefix,selected)=>items.find(x=>target.ruleId&&target.ruleId.startsWith(`${prefix}${x.id}:`))||items.find(x=>x.id===selected)||items[0];
+  const plans=(state.plans||[]).filter(p=>same(p.ticker)), rebuys=rebuyItems(state).filter(r=>same(r.ticker));
+  const buys=(assetStore.doc.allocation?.groups||[]).flatMap(g=>g.items||[]).filter(it=>it.buyPlan&&same(it.ticker));
+  const forTab=kind=>{
+    if(kind==="plans"){const p=pick(plans,"trade:plan:",state.selectedPlan);if(p)return {tab:kind,planId:p.id};}
+    if(kind==="buys"){const it=pick(buys,"trade:buy:");if(it)return {tab:kind,itemId:it.id};}
+    if(kind==="rebuy"){const r=pick(rebuys,"trade:rebuy:",state.selectedRebuy);if(r)return {tab:kind,rebuyId:r.id||null};}
+    if(kind==="futures")return {tab:kind,futureRebuy:/손절|재매수/.test(target.line)};
+    return null;
+  };
+  if(tab)return forTab(tab);
+  for(const kind of [...new Set([state.tab,"plans","buys","rebuy"])].filter(x=>x!=="futures")){const found=forTab(kind);if(found)return found;}
+  const rule=alertRules().find(r=>same(r.ticker)&&(target.ruleId?r.id===target.ruleId:!target.line||`${r.period}${r.unit}`===target.line));
+  return rule?{tab:state.tab,ruleId:rule.id}:null;
+}
+function clearPushAlertTarget(){pendingPushTarget=null;}
+function openPushAlertFromHash(){
+  const target=pushAlertTargetFromHash(location.hash);if(!target)return false;
+  pendingPushTarget=target;
+  openTab(pushAlertTab(target)||state.tab);return true;
+}
+// 새 기기는 동기화가 끝난 뒤 다시 찾는다. 찾은 뒤 주소에서 알림을 지워 일반 종목 선택을 방해하지 않는다.
+function applyPendingPushAlert(){
+  if(!pendingPushTarget)return false;
+  const found=pushAlertDestination(pendingPushTarget);if(!found)return false;
+  pendingPushTarget=null;
+  if(found.planId)state.selectedPlan=found.planId;
+  if("rebuyId" in found){if(state.selectedRebuy!==found.rebuyId)rebuyUnit=null;state.selectedRebuy=found.rebuyId;}
+  if(found.futureRebuy)futureRebuyExpanded=true;
+  openTab(found.tab);
+  history.replaceState(null,"",`#${state.tab}`);
+  let node;
+  if(found.ruleId){
+    closeAlertEditor();renderPushSetup();
+    node=[...$$("[data-alert-rule]")].find(x=>x.dataset.alertRule===found.ruleId);
+    if(node){node.closest("details").open=true;if(!$("alertsDialog").open)$("alertsDialog").showModal();}
+  }else if(found.itemId)node=[...$$("[data-purchase-item]")].find(x=>x.dataset.purchaseItem===found.itemId);
+  else node=$(found.tab==="plans"?"planMain":found.tab==="rebuy"?"rebuyMain":"futuresView");
+  if(node){
+    node.tabIndex=-1;node.focus({preventScroll:true});
+    if(found.ruleId)node.scrollIntoView({block:"start"});
+    else scrollTo({top:Math.max(0,node.getBoundingClientRect().top+scrollY-topBar.getBoundingClientRect().height-12),behavior:"auto"});
+  }
+  return true;
+}
 function pushOnPc(){try{return typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches;}catch{return false;}}
 function pushSupported(){return window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;}
 function pushPublicBytes(key){
@@ -74,7 +126,7 @@ function renderPushSetup(){
 }
 async function pushRegistration(){
   const worker=new URL("push-sw.js",document.baseURI),scope=new URL("./",document.baseURI).href;
-  const registration=await navigator.serviceWorker.register(worker.href,{scope});
+  const registration=await navigator.serviceWorker.register(worker.href,{scope,updateViaCache:"none"});
   return registration.active?registration:await navigator.serviceWorker.ready;
 }
 async function enablePhonePush(){
@@ -115,8 +167,9 @@ async function disablePhonePush(){
   finally{pushBusy=false;renderPushSetup();}
 }
 async function initializePush(){
+  assetStore.subscribe(type=>{if(type==="change"&&pendingPushTarget)render();});
   renderPushSetup();
   if(!pushSupported())return;
-  try{const registration=await navigator.serviceWorker.getRegistration(new URL("./",document.baseURI).href);pushSubscription=registration?await registration.pushManager.getSubscription():null;}catch{}
+  try{const registration=await navigator.serviceWorker.getRegistration(new URL("./",document.baseURI).href);pushSubscription=registration?await registration.pushManager.getSubscription():null;if(registration?.update)registration.update().catch(()=>{});}catch{}
   renderPushSetup();
 }
