@@ -75,7 +75,7 @@ test('연결한 기기도 새 서비스 워커로 갱신하고 기존 형식 알
 
 function page(initial={},assets={}){
   const storage=new Map([['etf-exit-planner-standalone-v1',JSON.stringify({plans:[],futures:{positions:[],levels:[]},...initial})]]);
-  const events={},assetListeners=[],calls={tabs:[],focused:[],scrolled:[],saves:0};
+  const events={},assetListeners=[],calls={tabs:[],focused:[],scrolled:[],saves:0,selectedBuys:[]};
   const node=name=>({name,dataset:{},classList:{toggle(){}},style:{setProperty(){}},
     getBoundingClientRect:()=>({top:240,height:60}),focus:()=>calls.focused.push(name),
     scrollIntoView:()=>calls.scrolled.push(name),addEventListener(){}});
@@ -93,7 +93,7 @@ function page(initial={},assets={}){
     history:{replaceState:(_,__,hash)=>ctx.location.hash=hash},save:()=>calls.saves++,
     assetStore:{doc:assets,subscribe:fn=>assetListeners.push(fn)},
     renderPlans:()=>calls.tabs.push('plans'),renderRebuy:()=>calls.tabs.push('rebuy'),renderFutures:()=>calls.tabs.push('futures'),
-    purchasePlanner:{render:()=>calls.tabs.push('buys')},futureRebuyExpanded:false,priceData:null});
+    purchasePlanner:{select:id=>calls.selectedBuys.push(id),render:()=>calls.tabs.push('buys')},futureRebuyExpanded:false,priceData:null});
   for(const file of ['js/ma-ladder.js','js/core.js','js/assets-calc.js','js/rebuy.js','js/alerts.js','js/alert-target.js','js/push.js'])vm.runInContext(source(file),ctx);
   ctx.renderRebuy=()=>calls.tabs.push('rebuy');
   const state=()=>plain(vm.runInContext('state',ctx));
@@ -135,6 +135,7 @@ test('분할매수 종목 카드로 이동하며 늦게 동기화된 자산 기�
   p.ctx.assetStore.doc={allocation:{groups:[{items:[{id:'other',ticker:'OTHER',buyPlan:{}},{id:'target',ticker:'TEST',buyPlan:{}}]}]}};
   for(const fn of p.assetListeners)fn('change');
   assert.equal(p.ctx.location.hash,'#buys');assert.deepEqual(p.calls.focused,['target']);
+  assert.deepEqual(p.calls.selectedBuys,['target']);
   assert.deepEqual(plain(p.calls.scrolled),[{top:248,behavior:'auto'}]);
 });
 
@@ -153,6 +154,7 @@ test('매수대기 알림은 같은 종목의 매도 계획 대신 해당 계좌
   const p=page({plans:[{id:'sell',ticker:'TEST'}]},assets),card=p.node('two');card.dataset.purchaseItem='two';p.cards.push(card);
   const before=JSON.stringify(assets);p.open({ticker:'TEST',line:'매수대기 25개월선',ruleId:'trade:buy:two:wait'});
   assert.equal(p.state().tab,'buys');assert.equal(p.ctx.location.hash,'#buys');assert.deepEqual(p.calls.focused,['two']);assert.equal(JSON.stringify(assets),before);
+  assert.deepEqual(p.calls.selectedBuys,['two']);
 });
 
 test('달러선물 손절·재매수 알림은 해당 화면을 펼치며 기록을 바꾸지 않는다',()=>{

@@ -1,4 +1,5 @@
-/* 분할매수: 연결 종목별 계획·회차, 창은 저장 전 복사본을 편집한다 */
+/* 분할매수: 저장된 계획 목록과 선택한 종목의 회차, 창은 저장 전 복사본을 편집한다 */
+#purchaseMain{min-width:0}#purchaseList .plan-row{flex-wrap:wrap;gap:2px 8px}#purchaseList .plan-title{display:block;min-height:0;padding-right:0}#purchaseList .plan-count{white-space:nowrap}#purchaseList .plan-item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.side .purchase-save-status{margin-bottom:4px}
 .purchase-card{margin-bottom:16px;overflow:hidden}.purchase-card h2{margin:0;font-size:18px;letter-spacing:-.02em;overflow-wrap:anywhere}
 .purchase-progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}.purchase-status{padding:3px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}.purchase-status.done{background:var(--done-row);color:var(--good)}
 .purchase-row{display:grid;grid-template-columns:80px minmax(0,1fr) minmax(0,auto);gap:12px;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}.purchase-row.done{background:var(--done-row)}.purchase-row>.check{font-size:13px;white-space:nowrap}

@@ -41,8 +41,30 @@ function setup({currency='KRW',budget=8.9,price=10000,legacy=false,manual=false,
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {doc,item,prices,change,rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0]};
+  return {doc,item,prices,change,rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
+
+test('계획 목록: 선택한 계획만 표시하고 체결은 그 종목에만 반영하며 선택·새로 그리기는 기록을 바꾸지 않는다',()=>{
+  const r=setup(),other={id:'b',name:'다른 종목',ticker:'222222',shares:3,buyPlan:{lines:{names:['25선'],end:10000,budget:5}}};
+  r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other]});r.prices.stocks['222222']={kind:'국내',close:10000,asOf:'2026-01-02'};
+  const before=JSON.stringify(r.doc);r.render();
+  assert.equal(r.inputs('[data-purchase-select]').length,2);assert.match(r.html(),/data-purchase-item="a"/);assert.doesNotMatch(r.html(),/data-purchase-item="b"/);
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='b').onclick();
+  assert.match(r.html(),/data-purchase-item="b"/);assert.doesNotMatch(r.html(),/data-purchase-item="a"/);assert.equal(JSON.stringify(r.doc),before);
+  assert.equal(r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='b').attrs['aria-pressed'],'true');
+  r.change('[data-purchase-buy-shares]',2);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
+  r.render();assert.match(r.html(),/data-purchase-item="b"/);assert.match(r.html(),/부분 체결/);
+  delete other.buyPlan;r.render();assert.match(r.html(),/data-purchase-item="a"/);assert.doesNotMatch(r.html(),/data-purchase-item="b"/);
+  delete r.item.buyPlan;r.render();assert.match(r.html(),/계획 없음/);assert.match(r.html(),/아직 분할매수 계획이 없습니다/);
+  r.doc.allocation.groups=[];r.render();assert.match(r.html(),/분할매수할 종목을 추가하세요/);assert.match(r.html(),/id="addPurchase"/);
+});
+
+test('계획 목록: 매수대기의 시세 대기·도달 상태를 표시하고 회차 수를 만들지 않는다',()=>{
+  const r=setup({wait:'25일선',ma:{'25일선':10000}});
+  const progress=()=>r.html().match(/<span class="plan-count[^"]*">(.*?)<\/span>/)[1];
+  assert.equal(progress(),'도달');r.prices.stocks['111111'].close=11000;r.render();assert.equal(progress(),'대기');
+  delete r.prices.stocks['111111'].ma;r.render();assert.equal(progress(),'시세 대기');assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
+});
 
 test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도달하며 보유량·체결 회차는 바꾸지 않는다',()=>{
   const r=setup({currency:'USD',wait:'25개월선',price:110,ma:{'25개월선':100}}),before=JSON.stringify(r.doc);

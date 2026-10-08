@@ -39,6 +39,7 @@ function applyPendingPushAlert(){
   const found=pushAlertDestination(pendingPushTarget);if(!found)return false;
   pendingPushTarget=null;
   if(found.planId)state.selectedPlan=found.planId;
+  if(found.itemId)purchasePlanner.select(found.itemId);
   if("rebuyId" in found){if(state.selectedRebuy!==found.rebuyId)rebuyUnit=null;state.selectedRebuy=found.rebuyId;}
   if(found.futureRebuy)futureRebuyExpanded=true;
   openTab(found.tab);
