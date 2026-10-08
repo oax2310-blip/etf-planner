@@ -15,9 +15,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=62"></script>
-  <link rel="stylesheet" href="css/app.css?v=62" />
-  <link rel="stylesheet" href="css/assets.css?v=62" />
+  <script src="js/theme.js?v=63"></script>
+  <link rel="stylesheet" href="css/app.css?v=63" />
+  <link rel="stylesheet" href="css/assets.css?v=63" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -32,6 +32,10 @@
   </header>
 
   <main>
+    <div class="price-refresh">
+      <button class="btn mini" id="refreshPricesBtn" type="button" title="데이터 저장소에 수집된 최신 시세를 불러옵니다. 새 시세 수집은 기존 예약대로 실행됩니다." aria-describedby="priceRefreshStatus">시세 즉시 불러오기</button>
+      <span id="priceRefreshStatus" role="status"></span>
+    </div>
     <section id="strategyView" class="hidden"></section>
     <section id="allocView"></section>
     <section id="ledgerView" class="hidden"></section>
@@ -116,14 +120,14 @@
     <p class="sync-details" id="syncOn" hidden><b id="syncRepo"></b> 저장소의 etf-planner-assets.json에 저장합니다. 자산 배분·월별 손익·저축 계획은 따로 맞추고, 두 기기에서 같은 화면을 함께 바꿨으면 나중에 저장한 쪽을 씁니다(다른 쪽은 이 기기에 보관).</p>
     <p class="sync-details" id="syncDialogStatus" role="status"></p>
     <p class="sync-details" id="assetPriceStatus"></p>
-    <div class="sync-controls"><button class="btn primary" id="syncNowBtn" type="button">지금 동기화</button></div>
+    <div class="sync-controls"><button class="btn primary" id="syncNowBtn" type="button">지금 동기화</button><button class="btn mini" id="refreshPricesDialogBtn" type="button" aria-describedby="priceRefreshStatus assetPriceStatus">시세 즉시 불러오기</button></div>
     <button class="btn ghost" id="downloadRecovery" type="button" hidden>동기화 때 보관한 기록 내려받기</button>
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=62"></script>
-  <script src="js/assets-calc.js?v=62"></script>
-  <script src="js/assets-store.js?v=62"></script>
-  <script src="js/assets.js?v=62"></script>
+  <script src="js/ma-ladder.js?v=63"></script>
+  <script src="js/assets-calc.js?v=63"></script>
+  <script src="js/assets-store.js?v=63"></script>
+  <script src="js/assets.js?v=63"></script>
 </body>
 </html>
