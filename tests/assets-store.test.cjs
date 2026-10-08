@@ -98,6 +98,32 @@ test('즉시 읽은 공유 시세는 분할매수 평가에 반영하고 자산 
 
 const quotes=close=>({updatedAt:'2026-01-02T07:00:00Z',stocks:{AAA:{kind:'해외',close,asOf:'2026-01-02'}},fx:{USDKRW:{close:1400,asOf:'2026-01-02'}}});
 const priceReply=close=>new Response(JSON.stringify(quotes(close)),{headers:{ETag:'"same-etag"'}});
+test('실제 ETF 시세가 없으면 파일을 읽어도 완료로 표시하지 않고 중복 계좌는 한 종목으로 안내한다',async()=>{
+  const original=fake();original.allocation.groups[0].items=[
+    {id:'a',ticker:'AAA',tradeTicker:'900002',shares:12,amount:0},
+    {id:'b',ticker:'AAA',tradeTicker:'900002',shares:7,amount:0},
+    {id:'zero',ticker:'AAA',tradeTicker:'900003',shares:0,amount:100},
+  ];
+  let doc=quotes(150);
+  const {store,storage}=setup(original,async()=>json(doc));connect(storage);
+  await store.refreshPrices();
+  assert.match(store.priceMessage,/시세 없음 1종목.*900002/);assert.doesNotMatch(store.priceMessage,/불러오기 완료|900003/);
+  await store.refreshPrices();assert.match(store.priceMessage,/시세 없음 1종목/,'같은 파일을 다시 읽어도 누락 상태를 숨기지 않는다');
+  doc={...doc,stocks:{...doc.stocks,'900002':{kind:'국내',close:8000,asOf:'2026-01-02'}}};
+  await store.refreshPrices();assert.match(store.priceMessage,/시세 불러오기 완료/);
+  assert.deepEqual(JSON.parse(storage.get(KEY)),original,'시세 확인으로 주수·금액·체결 기록을 바꾸지 않는다');
+});
+
+test('자동 시세 조회 실패도 완료로 표시하지 않으며 유효한 직접 입력 가격은 평가 가능으로 처리한다',async()=>{
+  const original=fake();original.allocation.groups[0].items=[{id:'a',ticker:'AAA',tradeTicker:'900002',shares:12,amount:0}];
+  const doc={...quotes(150),stocks:{...quotes(150).stocks,'900002':{error:'fake quote failure'}}};
+  const {store,storage}=setup(original,async()=>json(doc));connect(storage);
+  await store.refreshPrices();assert.match(store.priceMessage,/시세 없음 1종목.*900002/);assert.doesNotMatch(store.priceMessage,/불러오기 완료/);
+  store.doc.allocation.groups[0].items[0].tradePrice=8000;
+  store.doc.allocation.groups[0].items[0].tradePriceAt='2026-01-02T00:00:00Z';
+  await store.refreshPrices();assert.match(store.priceMessage,/시세 불러오기 완료/);
+});
+
 test('자산 시세 즉시 불러오기는 ETag 없이 시세 파일만 읽고 보유량·금액·체결 기록을 보존한다',async()=>{
   const original=fake(),asks=[],events=[],{store,storage}=setup(original,async(url,options)=>{asks.push({url,options});return priceReply(150);});
   connect(storage);store.acceptPrices(store.config(),quotes(100),'"same-etag"');store.subscribe(type=>events.push(type));

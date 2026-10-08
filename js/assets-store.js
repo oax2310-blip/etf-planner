@@ -69,6 +69,17 @@ function acceptPrices(cfg,d,etag="",notify=true){
   priceLine(next?"":"데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다.");if(changed&&notify)emit("change");return changed;
 }
 function priceLine(message=""){ priceMessage=message; emit("prices"); }
+// 평가에 필요한 실제 종목 시세가 없으면 파일을 읽었어도 완료로 표시하지 않는다.
+// 같은 ETF의 여러 계좌는 한 번만 안내하며, 보유 수량 0·보유 금액 없음·직접 입력 가격은 제외한다. 기록은 바꾸지 않는다.
+function missingPriceMessage(){
+  const missing=new Set();
+  for(const g of doc.allocation?.groups||[])for(const it of g.items||[]){
+    if(finite(it.shares)===0||(!plus(it.shares)&&!plus(it.amount)))continue;
+    const ticker=assetTradeTicker(it);
+    if(ticker&&purchaseQuoteKind(ticker)&&!assetTradeQuote(prices,it))missing.add(ticker);
+  }
+  return missing.size?`시세 없음 ${missing.size}종목 (${[...missing].join(", ")}) · 다음 시세 수집 후 다시 불러와 주세요.`:"";
+}
 // 수집된 시세 파일만 즉시 다시 읽는다. 보유량·금액·체결 기록은 변경하지 않고, 기록 동기화와 중복 조회는 겹치지 않게 한다.
 async function refreshPrices(){
   if(aSync.busy||priceRefreshBusy)return;
@@ -79,7 +90,7 @@ async function refreshPrices(){
     const changed=await readAssetPrices(cfg,true);
     if(!sameConfig(cfg)){priceLine("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");return;}
     if(changed)emit("change");
-    if(!priceMessage)priceLine(`시세 불러오기 완료${prices?.updatedAt?` · 최근 수집 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`);
+    if(!priceMessage)priceLine(missingPriceMessage()||`시세 불러오기 완료${prices?.updatedAt?` · 최근 수집 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`);
   }finally{priceRefreshBusy=false;emit("prices");if(aSync.again)scheduleAssetSync(300);}
 }
 function setAssetSync(state, message=""){
@@ -134,7 +145,7 @@ function start(){
   if(doc.allocation&&prices&&fillBases(doc.allocation,prices))saveSection("allocation");
   syncAssets();
 }
-return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
+return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
   config:assetConfig,saveSection,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();
