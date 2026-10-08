@@ -117,6 +117,46 @@ test('분할매수 이동평균선 돌파: 단계마다 다음 단계까지 3분
   assert.equal(c.purchaseLineLevels({end:200}, {ma:{'25선':1}}).length, 2, '단계 이름이 없으면 재매수 기본 14단계');
 });
 
+test('목표 가격 없는 분할매수는 마지막 선택 평균선의 도달 회차까지 예산을 배분한다', () => {
+  for(const unit of ['선','일선','주선','개월선']){
+    const names=[`32${unit}`,`42${unit}`],plan={lines:{names,budget:400}},entry={ma:{[names[0]]:1350,[names[1]]:1380}},before=JSON.stringify(plan);
+    const rows=c.purchaseLineRows(plan,entry);
+    assert.deepEqual(rows.map(r=>[r.key,r.price,r.amount]),[[`${names[0]}:0`,1350,100],[`${names[0]}:1`,1360,100],[`${names[0]}:2`,1370,100],[`${names[1]}:0`,1380,100]]);
+    assert.equal(c.purchaseSummary(plan,entry).remaining,400);
+    assert.equal(JSON.stringify(plan),before,'읽기만 할 때 목표 가격이나 체결 필드를 만들지 않음');
+  }
+  const rows=c.purchaseLineLevels({names:['25선','32선']},{ma:{'25선':1400,'32선':1350,'42선':1600}});
+  assert.deepEqual(rows.map(r=>[r.key,r.price]),[['25선:0',1400],['32선:0',1350]],'역전된 선도 선택 순서대로 매수하고 선택 뒤의 선은 제외');
+});
+
+test('목표 가격 없는 분할매수는 종료선 시세가 없으면 기다리고 부분 체결 잔량은 보존한다', () => {
+  const plan={lines:{names:['25선','32선'],budget:50}},entry={ma:{'25선':10000}};
+  for(const missing of [null,{},entry]){
+    assert.deepEqual(c.purchaseLineRows(plan,missing),[]);
+    assert.deepEqual(c.purchaseSummary(plan,missing),{count:0,done:0,planned:50,actual:0,remaining:50});
+  }
+  plan.buys={'25선:0':{plannedShares:10,plannedActual:10,shares:7,price:10000,actual:7,next:null}};
+  const before=JSON.stringify(plan),pending=c.purchaseLineRows(plan,entry);
+  assert.equal(pending.length,1);assert.equal(pending[0].remainingShares,3);assert.equal(pending[0].amount,3);
+  entry.ma['32선']=13000;
+  const rows=c.purchaseLineRows(plan,entry);
+  assert.equal(rows[0].remainingShares,3);assert.equal(rows[0].price,10000);
+  near(rows.filter(r=>r.key!=='25선:0').reduce((sum,r)=>sum+r.amount,0),40,'예산에서 체결 7만원과 고정 잔량 3만원만 제외');
+  assert.equal(rows.at(-1).key,'32선:0');assert.equal(JSON.stringify(plan),before);
+});
+
+test('목표 가격 없는 분할매수 알림은 종료 평균선을 따르고 시세 변경에도 같은 이력을 쓴다', () => {
+  const plan={currency:'USD',lines:{names:['25일선','32일선'],budget:40},notify:{stages:true}},assets={allocation:{groups:[{items:[{id:'a',ticker:'AAA',buyPlan:plan}]}]}},prices={stocks:{AAA:{kind:'해외',ma:{'25일선':100,'32일선':130}}}};
+  const before=JSON.stringify(assets),first=c.purchaseAlertRules(assets,prices);
+  assert.deepEqual(first.map(r=>[r.targetPrice,r.condition]),[[100,'up'],[110,'up'],[120,'up'],[130,'up']]);
+  assert.equal(first.at(-1).label,'분할매수 32일선 1차');assert.equal(first.at(-1).id,'trade:buy:a:32일선:0');
+  prices.stocks.AAA.ma={'25일선':110,'32일선':140};
+  const updated=c.purchaseAlertRules(assets,prices);
+  assert.deepEqual(updated.map(r=>r.revision),first.map(r=>r.revision));assert.equal(updated.at(-1).targetPrice,140);
+  delete prices.stocks.AAA.ma['32일선'];assert.deepEqual(c.purchaseAlertRules(assets,prices),[]);
+  assert.equal(JSON.stringify(assets),before);
+});
+
 test('분할매수 휴대폰 알림(직접 입력): 켠 미완료 가격 회차만, 방향은 회차 가격 순서, 통화가 종목 시장과 다르면 보내지 않음', () => {
   assert.equal(c.purchaseDirection({lines:{end:30}, stages:[{price:40},{price:10}]}), 'up', '이동평균선 돌파는 상승');
   assert.equal(c.purchaseDirection({stages:[{price:10},{},{price:12}]}), 'up', '직접 넣은 가격이 오르면 상승');

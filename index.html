@@ -14,9 +14,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=61"></script>
-  <link rel="stylesheet" href="css/app.css?v=61" />
-  <link rel="stylesheet" href="css/purchases.css?v=61" />
+  <script src="js/theme.js?v=62"></script>
+  <link rel="stylesheet" href="css/app.css?v=62" />
+  <link rel="stylesheet" href="css/purchases.css?v=62" />
 </head>
 <body>
   <header class="top">
@@ -73,12 +73,12 @@
       <div class="purchase-ladder-grid">
         <label class="field"><span>단계</span><select name="lineSet"><option value="all">시선 + 일선 + 주선 + 월선</option><option value="hour">시선 · 60분봉만</option><option value="day">일선만</option><option value="week">주선만</option><option value="month">월선만</option><option value="legacy">시선 + 일선</option><option value="custom">기존 선택 유지</option></select></label>
         <label class="field"><span>매수 목표 비중 (%)</span><input name="lineTarget" type="number" min="0" max="100" step="any" inputmode="decimal" /></label>
-        <label class="field"><span>목표 가격 (<i data-line-cur>원</i>)</span><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" /><small class="field-hint" id="lineEndNote"></small></label>
+        <div class="field"><label class="field"><span>목표 가격 (<i data-line-cur>원</i> · 선택)</span><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" placeholder="선택 입력" /><small class="field-hint" id="lineEndNote"></small></label><label class="field" id="lineEndLineField"><span>마지막 매수 평균선</span><select name="lineEndLine"></select><small class="field-hint">이 선의 도달 회차까지 목표 금액을 나눠 삽니다.</small></label></div>
         <div class="field"><span id="lineBudgetLabel">총 매수 금액 (만원) <button class="text-link" type="button" id="lineBudgetReset">다시 계산</button></span><input name="lineBudget" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineBudgetLabel" /><small class="field-hint" id="lineBudgetNote"></small></div>
       </div>
       <div id="lineResult" class="purchase-ladder-result" aria-live="polite"></div>
       <div id="linePreview" class="purchase-line-preview"></div>
-      <p class="purchase-ladder-foot"><small>재매수와 같은 단계(기본 60분봉 25선~150선 → 일봉 25일선~150일선)마다 다음 단계 가격까지 3번(단계 가격·⅓·⅔) 나눈 회차 중 목표 가격보다 낮은 회차와 마지막 목표가 회차에 같은 금액씩 삽니다. 회차 가격은 이동평균을 따라 움직이고, 현재가가 회차 가격 이상이면 도달입니다.</small></p>
+      <p class="purchase-ladder-foot"><small>단계마다 다음 단계 가격까지 3번(단계 가격·⅓·⅔) 나눕니다. 목표 가격을 비우면 마지막 매수 평균선의 도달 회차까지, 가격을 넣으면 그보다 낮은 회차와 마지막 목표가 회차에 같은 금액씩 삽니다. 회차 가격은 이동평균을 따라 움직이고, 현재가가 회차 가격 이상이면 도달입니다.</small></p>
     </section>
     <section class="purchase-ladder" id="purchaseWait" hidden>
       <div class="purchase-wait-grid">
@@ -198,21 +198,21 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=61"></script>
-  <script src="js/core.js?v=61"></script>
-  <script src="js/sync.js?v=61"></script>
-  <script src="js/prices.js?v=61"></script>
-  <script src="js/assets-calc.js?v=61"></script>
-  <script src="js/assets-store.js?v=61"></script>
-  <script src="js/alloc-link.js?v=61"></script>
-  <script src="js/purchases.js?v=61"></script>
-  <script src="js/trade-alerts.js?v=61"></script>
-  <script src="js/plans.js?v=61"></script>
-  <script src="js/futures.js?v=61"></script>
-  <script src="js/rebuy.js?v=61"></script>
-  <script src="js/alerts.js?v=61"></script>
-  <script src="js/alert-target.js?v=61"></script>
-  <script src="js/push.js?v=61"></script>
+  <script src="js/ma-ladder.js?v=62"></script>
+  <script src="js/core.js?v=62"></script>
+  <script src="js/sync.js?v=62"></script>
+  <script src="js/prices.js?v=62"></script>
+  <script src="js/assets-calc.js?v=62"></script>
+  <script src="js/assets-store.js?v=62"></script>
+  <script src="js/alloc-link.js?v=62"></script>
+  <script src="js/purchases.js?v=62"></script>
+  <script src="js/trade-alerts.js?v=62"></script>
+  <script src="js/plans.js?v=62"></script>
+  <script src="js/futures.js?v=62"></script>
+  <script src="js/rebuy.js?v=62"></script>
+  <script src="js/alerts.js?v=62"></script>
+  <script src="js/alert-target.js?v=62"></script>
+  <script src="js/push.js?v=62"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
