@@ -39,6 +39,25 @@ const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n
 const quoteText = q => !q ? "" : `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} <span class="price-date${q.stale||q.asOf&&priceDays(q.asOf)>A_STALE_DAYS?" old":""}">${q.manual?"직접 입력 ":""}${q.asOf?`${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))}`:""}${q.stale?" · 조회 실패":""}</span>`;
 
 // ---------- 자산 배분 ----------
+// 검색은 화면에만 적용한다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하고, 기록·합계는 바꾸지 않는다.
+let allocQuery = "";
+const allocSearchText = v => String(v??"").normalize("NFKC").toLowerCase().replace(/\s+/g,"");
+function filterAllocItems(){
+  const input=el("allocSearch"), list=el("allocItems"); if(!input||!list)return;
+  allocQuery=input.value;
+  const terms=allocQuery.normalize("NFKC").trim().split(/\s+/).filter(Boolean).map(allocSearchText), matches=new Set();
+  let count=0;
+  for(const g of doc.allocation.groups)for(const it of g.items){
+    count++;
+    const hay=[it.name,it.ticker,it.tradeTicker,g.name,it.section].map(allocSearchText);
+    if(terms.every(term=>hay.some(text=>text.includes(term))))matches.add(it.id);
+  }
+  list.querySelectorAll("[data-alloc-item]").forEach(row=>row.classList.toggle("hidden",!matches.has(row.dataset.allocItem)));
+  list.querySelectorAll(".asset-section, .group-card, .alloc-class").forEach(box=>box.classList.toggle("hidden",!!terms.length&&!box.querySelector(".asset-row:not(.hidden)")));
+  el("allocSearchStatus").textContent=terms.length?`검색 결과 ${matches.size} / ${count}개 종목`:`전체 ${count}개 종목`;
+  el("allocSearchClear").classList.toggle("hidden",!allocQuery);
+  el("allocSearchEmpty").classList.toggle("hidden",!terms.length||matches.size>0);
+}
 // 큰 분류(classes, 엑셀 '분할 정리') → 그룹(groups, Sheet2의 굵은 제목) → 종목(items, 소분류 section은 그룹 안 작은 제목)
 function renderAlloc(tab="alloc"){
   const a=doc.allocation, view=el(tab+"View"), strategy=tab==="strategy";
@@ -55,7 +74,7 @@ function renderAlloc(tab="alloc"){
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
   const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)];
     const how=r.how==="shares"?`<small class="how live">수량 × 현재가</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?`<small class="how">${stock?.error?"시세 조회 실패":"시세 대기"}</small>`:"";
-    return `<div class="asset-row${it.done?" done":""}"><label class="check" title="비중 조정 완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 비중 조정 완료 (직접 표시)"></label>
+    return `<div class="asset-row${it.done?" done":""}" data-alloc-item="${escA(it.id)}"><label class="check" title="비중 조정 완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 비중 조정 완료 (직접 표시)"></label>
       <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",quoteText(r.q),finite(it.shares)!==null?`${nf2.format(it.shares)}주`:""].filter(Boolean).join(" · ")}${it.note?` <span class="note-dot" title="메모 있음">메모</span>`:""}</small></button>
       <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct">${pc(cur)}<small>${t!==null?`목표 ${pc(t)}`:""}</small></span></div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
@@ -63,10 +82,10 @@ function renderAlloc(tab="alloc"){
     return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${escA(g.name)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
       <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} (${man(t/100*s.base)})${target.linked?" · 하위 합산":""}`:""} ${gap(t,v)}</p></div>
       ${g.note?`<details class="group-note"><summary>메모</summary><p>${escA(g.note)}</p></details>`:""}
-      ${plain.map(itemRow).join("")}${names.map(n=>sec(n)+g.items.filter(it=>it.section===n).map(itemRow).join("")).join("")}
+      ${plain.map(itemRow).join("")}${names.map(n=>`<div class="asset-section">${sec(n)}${g.items.filter(it=>it.section===n).map(itemRow).join("")}</div>`).join("")}
       ${g.items.length?"":`<p class="group-empty">종목 없음</p>`}<div class="group-foot"><button class="btn mini ghost" type="button" data-add-item="${escA(g.id)}">＋ 종목</button></div></section>`; };
-  const detail=s.regions.map(r=>r.classes.map(c=>{const gs=a.groups.filter(g=>g.classId===c.id);return gs.length?`<div class="class-label">${escA(r.name)} · ${escA(c.name)}</div>${gs.map(groupCard).join("")}`:"";}).join("")).join("")
-    +a.groups.filter(g=>!classOf(g.classId)).map(g=>`<div class="class-label">분류 없음</div>${groupCard(g)}`).join("");
+  const detail=s.regions.map(r=>r.classes.map(c=>{const gs=a.groups.filter(g=>g.classId===c.id);return gs.length?`<div class="alloc-class"><div class="class-label">${escA(r.name)} · ${escA(c.name)}</div>${gs.map(groupCard).join("")}</div>`:"";}).join("")).join("")
+    +a.groups.filter(g=>!classOf(g.classId)).map(g=>`<div class="alloc-class"><div class="class-label">분류 없음</div>${groupCard(g)}</div>`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
   const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(s.grand), totalWidth=v=>`${Math.max(3,v.replace(/[억만원]/g,"00").length)+.6}ch`;
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">${strategy?"지역과 자산군별 배분":"종목과 현금"}</div><h1>${strategy?"투자구성":"자산 배분"}</h1><p>${strategy?"지역·자산 분류별 현재 비중과 목표를 한눈에 확인합니다. 목표 비중은 종목별에서 수정하면 소분류·그룹·분류에 자동 합산됩니다.":"금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 비중 조정을 끝냈다는 직접 표시입니다."}</p></div></div>
@@ -77,7 +96,9 @@ function renderAlloc(tab="alloc"){
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
     <p class="footnote">모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>
     <section class="card panel memo assets-memo"><div class="memo-head"><h2>배분 메모</h2></div><textarea id="allocMemo" maxlength="4000">${escA(a.memo||"")}</textarea></section>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div>
-    ${detail||`<div class="card empty">그룹이 없습니다</div>`}
+    <div class="alloc-search"><label class="field"><span>종목 검색</span><input id="allocSearch" type="search" value="${escA(allocQuery)}" placeholder="종목명 · 코드 · 그룹 · 소분류" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="allocItems" aria-describedby="allocSearchStatus"></label><button class="btn hidden" id="allocSearchClear" type="button">초기화</button><p class="hint" id="allocSearchStatus" role="status" aria-live="polite" aria-atomic="true"></p></div>
+    <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
+    <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
     <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
     <section class="card cash-card">${cashRows||`<p class="group-empty">현금 항목 없음</p>`}<div class="cash-total"><span>합계</span><b>${man(s.cash)}</b></div></section>`}`;
   const totalInput=el("allocTotal");
@@ -94,6 +115,14 @@ function renderAlloc(tab="alloc"){
   all("[data-class]").forEach(b=>b.onclick=()=>openClass(b.dataset.class));
   all("[data-cash]").forEach(b=>b.onclick=()=>openCash(b.dataset.cash));
   if(el("addGroup"))el("addGroup").onclick=()=>openGroup(null); if(el("addClass"))el("addClass").onclick=()=>openClass(null); if(el("addCash"))el("addCash").onclick=()=>openCash(null);
+  const search=el("allocSearch");
+  if(search){
+    const clear=()=>{search.value="";filterAllocItems();search.focus();};
+    search.oninput=filterAllocItems;
+    search.onkeydown=e=>{if(e.key==="Escape"&&!e.isComposing){e.preventDefault();clear();}};
+    el("allocSearchClear").onclick=clear;
+    filterAllocItems();
+  }
 }
 function findItem(id){ for(const g of doc.allocation?.groups||[]){ const it=g.items.find(x=>x.id===id); if(it) return {g,it}; } return null; }
 const dlg = id => el(id);

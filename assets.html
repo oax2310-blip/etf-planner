@@ -22,6 +22,7 @@
     추종 ETF 분할매수는 계획을 붙인 기존 항목 id에만 반영한다. 이름·그룹·같은 ETF 코드로 다른 항목을 자동 선택하지 않는다.
     보유 수량 0은 지우지 않고 평가액 0(다 판 종목). 종목 수정 창에 그 종목의 반영 내역을 보여 준다. 금액 종목은 기준 가격(base)을 그대로 두고 금액 칸을 '입력 때 가격' 기준으로 바꾼다.
   - 화면 상태(고른 탭·연도·시나리오)는 이 기기 etf-planner-assets-ui에만(동기화 안 함). 입력 중에는 시세·동기화로 다시 그리지 않음.
+    종목 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 표시할 목록만 거른다. 검색으로 기록·평가액·목표 합계를 바꾸지 않는다.
 -->
 <html lang="ko">
 <head>
@@ -34,9 +35,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=46"></script>
-  <link rel="stylesheet" href="css/app.css?v=46" />
-  <link rel="stylesheet" href="css/assets.css?v=46" />
+  <script src="js/theme.js?v=47"></script>
+  <link rel="stylesheet" href="css/app.css?v=47" />
+  <link rel="stylesheet" href="css/assets.css?v=47" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -140,9 +141,9 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=46"></script>
-  <script src="js/assets-calc.js?v=46"></script>
-  <script src="js/assets-store.js?v=46"></script>
-  <script src="js/assets.js?v=46"></script>
+  <script src="js/ma-ladder.js?v=47"></script>
+  <script src="js/assets-calc.js?v=47"></script>
+  <script src="js/assets-store.js?v=47"></script>
+  <script src="js/assets.js?v=47"></script>
 </body>
 </html>
