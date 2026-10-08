@@ -52,11 +52,18 @@ async function readAssetPrices(cfg){
     if(r.status===304){ priceLine(); return false; }
     if(r.status===404){ const had=!!prices; prices=null; localStorage.removeItem(A_PRICE_KEY); priceLine("데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다."); return had; }
     if(!r.ok) throw Error(`시세 읽기 실패 (${r.status})`);
-    const d=JSON.parse(await r.text()), stocks={};
-    for(const [k,e] of Object.entries(d?.stocks||{})){ if(!e||typeof e!=="object") continue; stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true}; }
-    const fx=d?.fx?.USDKRW, next={repo:cfg.repo,etag:r.headers.get("ETag")||"",updatedAt:String(d?.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf}:null};
-    const changed=JSON.stringify({...prices,etag:""})!==JSON.stringify({...next,etag:""}); prices=next; writeJson(A_PRICE_KEY,prices); priceLine(); return changed;
+    return acceptPrices(cfg,JSON.parse(await r.text()),r.headers.get("ETag")||"",false);
   }catch(error){ priceLine(`시세 확인 실패 · ${error.message}`); return false; }
+}
+// 메인에서 즉시 읽은 시세 파일을 분할매수·자산 평가에도 반영한다. 연결 변경 뒤의 응답은 받지 않는다.
+function acceptPrices(cfg,d,etag="",notify=true){
+  const current=assetConfig();if(!current||current.repo!==cfg.repo||current.token!==cfg.token)return false;
+  let next=null;
+  if(d){const stocks={};for(const [k,e] of Object.entries(d.stocks||{})){if(!e||typeof e!=="object")continue;stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true};}
+    const fx=d.fx?.USDKRW;next={repo:cfg.repo,etag,updatedAt:String(d.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf}:null};}
+  const changed=JSON.stringify({...prices,etag:""})!==JSON.stringify({...next,etag:""});prices=next;
+  if(next)writeJson(A_PRICE_KEY,next);else localStorage.removeItem(A_PRICE_KEY);
+  priceLine(next?"":"데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다.");if(changed&&notify)emit("change");return changed;
 }
 function priceLine(message=""){ priceMessage=message; emit("prices"); }
 function setAssetSync(state, message=""){
@@ -111,6 +118,6 @@ function start(){
   syncAssets();
 }
 return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get status(){return {...aSync};},
-  config:assetConfig,saveSection,sync:syncAssets,start,refreshConfig,restore,keepLost,
+  config:assetConfig,saveSection,sync:syncAssets,start,refreshConfig,restore,keepLost,acceptPrices,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();

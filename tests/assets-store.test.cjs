@@ -79,3 +79,19 @@ test('분할매수·자산 JSON 복원은 기존 기록을 보관하고 체결 �
   assert.equal(store.recovery().length,2);
   assert.equal(store.restore({version:2}),false);
 });
+
+test('즉시 읽은 공유 시세는 분할매수 평가에 반영하고 자산 기록·체결 내역은 보존한다',()=>{
+  const original=fake(),{store,storage}=setup(original);connect(storage);
+  const cfg=store.config(),events=[];store.subscribe(type=>events.push(type));
+  const prices={updatedAt:'2026-01-02T07:00:00Z',stocks:{AAA:{kind:'해외',close:123,asOf:'2026-01-02',daily:[[1,2,3]]}},fx:{USDKRW:{close:1400,asOf:'2026-01-02'}}};
+  assert.equal(store.acceptPrices(cfg,prices,'"p1"'),true);
+  assert.equal(store.prices.stocks.AAA.close,123);assert.equal(store.prices.fx.close,1400);
+  assert.equal(store.prices.stocks.AAA.daily,undefined);
+  assert.ok(events.includes('change'));assert.deepEqual(clone(store.doc),original);
+  assert.deepEqual(JSON.parse(storage.get(KEY)),original);assert.equal(storage.has(BASE),false);
+  assert.equal(store.acceptPrices(cfg,prices,'"p2"'),false,'ETag만 바뀌면 평가 화면을 다시 그리지 않는다');
+  assert.equal(store.prices.etag,'"p2"');
+  assert.equal(store.acceptPrices({...cfg,token:'old-fake-token'},{...prices,stocks:{}},'"old"'),false);
+  assert.equal(store.prices.stocks.AAA.close,123,'이전 연결 응답은 무시');
+  assert.equal(store.acceptPrices(cfg,null),true);assert.equal(store.prices,null);
+});
