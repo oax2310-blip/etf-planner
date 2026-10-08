@@ -92,7 +92,11 @@ async function refreshPrices(){
     if(await readPrices(true))sync.redraw=true;
     if(sync.repo!==repo||sync.token!==token){priceStatus("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");return;}
     if(fillPrices(state,priceData)){save();sync.redraw=true;}
-    if(!priceReadMessage)$("priceRefreshStatus").textContent=`시세 불러오기 완료${priceData?.updatedAt?` · 최근 수집 ${new Date(priceData.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`;
+    if(!priceReadMessage){
+      const missing=typeof assetStore!=="undefined"?assetStore.missingPriceMessage:"";
+      if(missing)priceStatus(missing);
+      else $("priceRefreshStatus").textContent=`시세 불러오기 완료${priceData?.updatedAt?` · 최근 수집 ${new Date(priceData.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`;
+    }
   }catch(error){priceStatus(`시세 확인 실패 · ${error.message}`);}
   finally{priceRefreshBusy=false;syncBadge();if(sync.redraw)redrawIdle();if(sync.again&&!sync.blocked)scheduleSync(300);}
 }

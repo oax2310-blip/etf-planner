@@ -414,6 +414,21 @@ test('시세 즉시 불러오기는 ETag 없이 파일만 다시 읽고 기준�
   assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 불러오기 완료.*최근 수집/);
 });
 
+test('메인 시세 버튼도 공유 자산의 실제 ETF 시세 누락을 완료 대신 안내한다', async () => {
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});await h.restored();
+  const message='시세 없음 1종목 (900002) · 다음 시세 수집 후 다시 불러와 주세요.';
+  h.context.assetStore={acceptPrices(){},missingPriceMessage:message};
+  const writes=h.server.writes;
+  await h.elements.get('refreshPricesBtn').onclick();
+  assert.equal(h.elements.get('priceRefreshStatus').textContent,message);
+  assert.equal(h.elements.get('priceRefreshStatus').className,'warning');
+  assert.doesNotMatch(h.elements.get('priceRefreshStatus').textContent,/불러오기 완료/);
+  h.context.assetStore.missingPriceMessage='';
+  await h.elements.get('refreshPricesBtn').onclick();
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 불러오기 완료/);
+  assert.equal(h.server.writes,writes);
+});
+
 test('시세 즉시 불러오기 실패는 마지막 시세·기준가를 유지하고 다시 누를 수 있다', async () => {
   const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});await h.restored();
   const cached=h.items.get('etf-planner-prices'),before=statePlan(h);
