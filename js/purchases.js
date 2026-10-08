@@ -9,7 +9,7 @@ const PEN=PENCIL,dlg=el;
 const numIn=v=>String(v??"").trim()===""?null:finite(v);
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
-let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false;
+let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null;
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
 const render=()=>renderPurchases(),saveSection=section=>assetStore.saveSection(section);
 const onChange=(sel,section,set)=>all(sel).forEach(x=>x.onchange=()=>{if(set(x.value,x)!==false)saveSection(section);render();});
@@ -54,6 +54,8 @@ const lineSetOf=names=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===name
 // 이동평균선 돌파(lines)·매수대기(wait)와 기존 직접 입력(stages). 새 계획은 돌파·대기만 선택하고 기존 회차 기록은 유지한다.
 const purchaseItems = () => (doc.allocation?.groups||[]).flatMap(g=>(g.items||[]).map(it=>({g,it})));
 const purchaseMode = plan => plan?.wait?"wait":plan?.lines?"lines":Array.isArray(plan?.stages)?"manual":"lines";
+// 목록 선택은 화면에만 유지한다. 알림·계획 저장도 같은 종목 id를 선택하며 자산·동기화 기록에는 필드를 추가하지 않는다.
+const selectPurchase=id=>{selectedPurchaseId=id;};
 function waitCard({g,it},s){
   const plan=it.buyPlan, entry=waitEntry(it), info=purchaseWaitInfo(plan,entry), cur=planCurrency(plan,it), pt=v=>v?priceText(v,cur):"—", id=escA(it.id);
   const gap=info.gapPct===null?"—":`${info.gapPct>0?"+":""}${nf2.format(info.gapPct)}%`, relation=info.gapPct===null?"기준선 시세 대기":info.reached?"기준선 이하":"기준선 위";
@@ -70,7 +72,7 @@ function waitCard({g,it},s){
 function renderPurchases(){
   doc=assetStore.doc;prices=assetStore.prices;
   const view=el("buysView"), items=purchaseItems(), plans=items.filter(({it})=>it.buyPlan), fills=new Map(), rowData=new Map();
-  if(!items.length){view.innerHTML=emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);el("purchaseGoAlloc").onclick=()=>{location.href="assets.html#alloc";};return;}
+  const selected=plans.find(({it})=>it.id===selectedPurchaseId)||plans[0];selectedPurchaseId=selected?.it.id||null;
   const s=allocationSummary(doc.allocation,prices), summaries=plans.map(({it})=>purchaseSummary(it.buyPlan,lineEntry(it))), totals=summaries.reduce((t,p)=>({planned:t.planned+p.planned,actual:t.actual+p.actual,remaining:t.remaining+p.remaining}),{planned:0,actual:0,remaining:0});
   const completed=summaries.reduce((n,p)=>n+p.done,0),count=summaries.reduce((n,p)=>n+p.count,0),waiting=plans.filter(({it})=>it.buyPlan.wait).length,partials=plans.reduce((n,{it})=>n+(it.buyPlan.wait?0:it.buyPlan.lines?purchaseLineRows(it.buyPlan,lineEntry(it)).filter(r=>!r.done&&r.remainingShares>0).length:(it.buyPlan.stages||[]).filter(r=>r.partial).length),0);
   const card=({g,it})=>{
@@ -122,12 +124,21 @@ function renderPurchases(){
       ${rows.map(row).join("")}<p class="purchase-note">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다.</p>
       ${plan.note?`<p class="purchase-note">${escA(plan.note)}</p>`:""}</section>`;
   };
-  view.innerHTML=`<div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파로 나눠 사거나 원하는 선까지 매수를 기다립니다. 돌파 계획은 누적 체결 주수를 입력하면 자산 배분의 기존 보유량에 더합니다.</p></div><button class="btn primary" id="addPurchase" type="button">＋ 계획</button></div>
-    <p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p>
-    <div class="card metrics"><div class="metric"><label>총 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>매수 진행</label><strong>${completed} / ${count}회 완료</strong><small>부분 체결 ${partials}회${waiting?` · 매수대기 ${waiting}개`:""}</small></div><div class="metric"><label>남은 예정액</label><strong>${man(totals.remaining)}</strong><small>부분 체결 잔량과 미체결 회차의 예정액</small></div></div>
-    ${plans.length?plans.map(card).join(""):emptyCard("아직 분할매수 계획이 없습니다","종목을 고르고 목표 가격과 목표 비중을 넣으세요.","")}`;
+  const list=plans.map(({g,it},i)=>{
+    const p=summaries[i],wait=it.buyPlan.wait?purchaseWaitInfo(it.buyPlan,waitEntry(it)):null;
+    const progress=wait?wait.gapPct===null?"시세 대기":wait.reached?"도달":"대기":`${p.done}/${p.count}`,reached=!!wait?.reached;
+    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력";
+    return `<button class="plan-item${it.id===selectedPurchaseId?" active":""}" type="button" data-purchase-select="${escA(it.id)}" aria-pressed="${it.id===selectedPurchaseId}" aria-controls="purchaseMain" title="${escA(`${it.name} · ${context} · ${mode} · ${progress}${wait?"":"회 완료"}`)}"><span class="plan-row"><strong>${escA(it.name)}</strong><span class="plan-count${reached?" due":""}">${progress}${wait?"":'<span class="plan-unit">회</span>'}</span></span><span class="plan-title">${escA(context)}</span>${wait?"":`<span class="plan-bar"><i style="width:${Math.round(p.done/Math.max(p.count,1)*100)}%"></i></span>`}</button>`;
+  }).join("");
+  const empty=items.length?emptyCard("아직 분할매수 계획이 없습니다","저장된 계획의 ＋ 추가를 눌러 종목과 매수 방식을 고르세요.",""):emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);
+  view.innerHTML=`<div class="layout"><aside class="side card" aria-label="저장된 분할매수 계획"><div class="side-head"><h2>저장된 계획</h2><button class="btn primary mini" id="addPurchase" type="button" aria-label="새 분할매수 계획 추가">＋ 추가</button></div><div id="purchaseList" class="plan-list">${list||"<div class='empty'>계획 없음</div>"}</div><p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p></aside>
+    <section id="purchaseMain"><div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파로 나눠 사거나 원하는 선까지 매수를 기다립니다. 목록에서 계획을 고르면 상세 내용과 회차를 확인할 수 있습니다.</p></div></div>
+    <div class="card metrics"><div class="metric"><label>전체 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>전체 매수 진행</label><strong>${completed} / ${count}회 완료</strong><small>부분 체결 ${partials}회${waiting?` · 매수대기 ${waiting}개`:""}</small></div><div class="metric"><label>전체 남은 예정액</label><strong>${man(totals.remaining)}</strong><small>부분 체결 잔량과 미체결 회차의 예정액</small></div></div>
+    ${selected?card(selected):empty}</section></div>`;
   updateStatus();
-  el("addPurchase").onclick=()=>openPurchase(null);
+  el("addPurchase").onclick=()=>{if(items.length)openPurchase(null);else location.href="assets.html#alloc";};
+  if(!items.length)el("purchaseGoAlloc").onclick=()=>{location.href="assets.html#alloc";};
+  all("[data-purchase-select]").forEach(b=>b.onclick=()=>{selectPurchase(b.dataset.purchaseSelect);render();[...all("[data-purchase-select]")].find(x=>x.dataset.purchaseSelect===selectedPurchaseId)?.focus?.();});
   all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
   const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseShares||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
   // 회차의 누적 체결 수량을 저장·반영한다. 첫 체결 때 계획 수량을 고정하고, 추가 체결은 같은 반영 키의 총량을 맞춰 차이만 자산에 반영한다.
@@ -331,7 +342,7 @@ function openPurchase(id){
       delete draft.wait;delete draft.lines;delete draft.buys;delete draft.ladder;if(draft.notify){delete draft.notify.keys;if(!Object.keys(draft.notify).length)delete draft.notify;}
       if(draftCurrency()==="USD"&&draft.stages.some(x=>finite(x.price)!==null))draft.currency="USD";else delete draft.currency;
     }
-    setText(draft,"note",f.note.value);item.buyPlan=draft;saveSection("allocation");d.close();render();};
+    setText(draft,"note",f.note.value);item.buyPlan=draft;selectPurchase(item.id);saveSection("allocation");d.close();render();};
   if(!d.open)d.showModal();
   if(!found&&matchMedia("(hover:hover) and (pointer:fine)").matches)el("purchaseSearch").focus();
 }
@@ -379,5 +390,5 @@ function initialize(){
     catch(error){alert(`복원 실패: ${error.message}`);}e.target.value="";};
   updateStatus();assetStore.start();
 }
-return {render:renderPurchases,initialize,alertCount:()=>purchaseAlertRules(assetStore.doc,priceDoc()||assetStore.prices).length};
+return {render:renderPurchases,select:selectPurchase,initialize,alertCount:()=>purchaseAlertRules(assetStore.doc,priceDoc()||assetStore.prices).length};
 })();
