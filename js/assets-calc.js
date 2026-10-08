@@ -1,7 +1,7 @@
 // 자산 현황·플래너 분할매수의 계산, 자산 배분 연동, 구역별 병합. 계산 기준은 각 함수 주석, 공통 작업 규칙은 AGENTS.md.
 // tests/assets.test.cjs·시세 수집도 DOM 없이 실행하므로 함수 밖에서 화면을 건드리지 않는다.
 const ASSET_SECTIONS = ["allocation","ledger","savings"]; // 기록 파일의 세 구역. 기기 간 병합은 구역마다 따로(savedAt)
-const ASSET_REGIONS = ["미국","국내","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
+const ASSET_REGIONS = ["미국","국내","중국","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
 const finite = v => v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v)) ? Number(v) : null;
 const plus = v => { const n=finite(v); return n!==null&&n>0 ? n : null; };
 
