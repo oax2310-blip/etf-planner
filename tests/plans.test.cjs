@@ -161,6 +161,43 @@ test('매도 계좌 선택: 기준 2주를 기존 계좌 ETF 30주로 환산하�
   r.fill(0,0);assert.equal(r.isa.shares,100);assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
 });
 
+test('평가액 추종 ETF 매도: 회차당 기준 ETF 1주 미만이어도 실제 ETF 주수로 환산한 뒤 내림한다',()=>{
+  const r=accountSale();Object.assign(r.p,{holdings:[],valueKrw:300,valueBase:100,stages:30,checked:Array(30).fill(false)});r.isa.shares=1000;
+  const before=JSON.stringify([r.p,r.alloc]);
+  assert.equal(r.api.planSourceQuantityProgress(r.p,0).target,0,'기준 ETF를 직접 팔면 정수 주수로 내림');
+  assert.deepEqual(Array.from({length:30},(_,i)=>r.api.planQuantityProgress(r.p,i).target),Array(30).fill(10),'10만원씩 30회 → 실제 ETF 10주씩');
+  assert.ok(Math.abs(r.api.planSaleExecution(r.p,0).sourceQty-2/3)<1e-12);
+  assert.equal(JSON.stringify([r.p,r.alloc]),before,'조회로 저장 기록을 바꾸지 않는다');
+  r.ctx.priceData.stocks.AAA.close=120;
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,12,'기준 현재가를 반영');
+  delete r.ctx.priceData.stocks.AAA;
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,10,'시세가 없으면 회차 기준가로 환산');
+  assert.equal(r.api.planQuantityProgress(r.p,29).target,9);
+  r.p.salePct=50;assert.equal(r.api.planQuantityProgress(r.p,0).target,5);
+  r.isa.shares=3;assert.equal(r.api.planQuantityProgress(r.p,0).target,3,'보유량 한도 유지');
+  delete r.prices.stocks['111111'];assert.equal(r.api.planQuantityProgress(r.p,0).target,null,'실제 ETF 시세 없이는 계산하지 않는다');
+});
+
+test('평가액 추종 ETF 매도: 부분 체결·수량 고정·추가 체결·취소가 실제 ETF 주수로 동작한다',()=>{
+  const r=accountSale();Object.assign(r.p,{holdings:[],valueKrw:20,valueBase:100});
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,10);
+  r.fill(0,4);assert.equal(r.isa.shares,96);assert.equal(r.pension.shares,80);assert.equal(r.p.checked[0],false);
+  assert.equal(r.p.fills[0].value,4);assert.equal(r.api.planQuantityProgress(r.p,0).remaining,6);
+  r.ctx.priceData.stocks.AAA.close=200;r.prices.stocks['111111'].close=20000;r.p.fx=2000;r.p.startPrice=200;
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,10);assert.equal(r.p.fills[0].execution.price,10000);
+  r.fill(0,10);assert.equal(r.isa.shares,90);assert.equal(r.p.checked[0],true);
+  r.fill(0,0);assert.equal(r.isa.shares,100);assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
+});
+
+test('평가액 계획의 기준 ETF 직접 매도와 옛 체결 기록은 정수 주수 계산을 유지한다',()=>{
+  const r=accountSale();Object.assign(r.p,{holdings:[],valueKrw:20,valueBase:100});r.isa.ticker='AAA';
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,0);
+  r.isa.ticker='111111';r.p.checked[0]=true;
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,0,'옛 완료 회차는 기준 ETF 단위 유지');
+  r.p.checked[0]=false;delete r.p.sellTargetId;delete r.p.sellAccountId;
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,0);
+});
+
 test('계좌를 바꿔도 이미 체결한 회차는 원래 계좌에 남고 새 회차만 새 계좌 ETF를 사용한다',()=>{
   const r=accountSale();r.fill(0,12);r.p.sellAccountId='pension';r.p.sellTargetId='pension-etf';
   assert.equal(r.api.planQuantityProgress(r.p,0).execution.targetId,'isa-etf');assert.equal(r.api.planQuantityProgress(r.p,1).target,20,'환산은 두 ETF의 현재가를 사용하고 회차 기준가는 유지');
