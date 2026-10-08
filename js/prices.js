@@ -1,27 +1,12 @@
-// 시세 자동 채우기: 데이터 저장소의 etf-planner-prices.json(그 저장소 Actions 'KIS 시세 수집'이 평일마다 갱신)으로 현재가·이동평균선 기준가를 채운다.
-// 파일 읽기·채우는 때는 sync.js(readPrices·syncNow), 마지막으로 읽은 시세는 전역 priceData(sync.js). DOM 없이 불러와 테스트하므로 함수 밖에서 화면을 건드리지 말 것.
-// 채우는 칸(시세 우선):
-//   분할매도 종료 기준가 ← stocks[종목 코드]의 종료 기준선 이름(N일선·N주선·N개월선) 이동평균(maValue) (국내=원화 계획, 해외·비트코인=달러 계획일 때만).
-//     시작 기준가(첫 매도 기준가)는 수정 창에서 시작 기준선을 일·주·개월선으로 고른 계획(startAuto=true)만 같은 방식으로 채운다.
-//     '직접'(startAuto 없음, 옛 기록 포함)은 사용자가 정하는 값이라 채우지 않는다(옛 기록의 auto.startPrice는 남아 있어도 안 씀).
-//   분할매도 달러 계획 환율 ← fx.USDKRW의 현물 환율(달러선물 보유와 무관). 조회 값이 없으면 마지막 환율 그대로.
-//   달러선물 N일선 구간 기준가 ← futures[보유 근월물].ma (안 산 계약 매수가도 같이, 직접 고칠 때와 같음)
-//   달러선물 손절 후 재매수(futures.rebuy가 있는 경우만) 현재가·N일선·N선 단계 기준가 ← 같은 보유 근월물. 신저점·손절 하단·이탈 전 계약 수는 직접 정한다.
-//   재매수 종목마다(rebuy.items[], 옛 기록은 rebuy 하나 — rebuy.js rebuyItems) 현재가·N일선·N선 단계 기준가 ← stocks[그 종목 코드] (국내 종목은 원, 미국 종목은 달러 — usTicker). 분할매도·달러선물 현재가와 분할매도 평가액(plans.js planWorth)은 저장하지 않고 화면에만.
-//   N선 = 60분봉 종가 N개 이동평균(hourKey). 수집 스크립트가 한국투자증권 분봉으로 계산해 ma['N선']에 두며, 처음에는 과거 봉을 몇 번의 수집에 나눠 받으므로
-//   짧은 N선부터 채워진다. 값이 없으면(null) 직접 넣은 값을 그대로 둔다.
-// 비트코인은 stocks["BTC-USD"](kind "코인", Coinbase 달러·UTC 일봉 — 데이터 저장소 scripts/kis_prices.py CRYPTO)로 매 수집에 들어 있다.
-//   동기화 창 시세 줄·직접 추가 알림과 달러 분할매도에 쓴다. 재매수는 국내·미국 종목만 채운다(비트코인 제외).
-// 이동평균은 시세 파일 ma 값, 없으면(수집 스크립트가 아직 계산하지 않은 기준선 — 수정 창에서 새로 고른 N일·N주·N개월선) 보관한 종가(closes)로
-//   스크립트와 같은 규칙(종가 단순이동평균, 이번 주·이번 달 봉 포함)으로 바로 계산한다(maValue). 봉이 모자라면 비움 → 다음 수집 때 스크립트가 채움.
-// 규칙: 칸마다 지난번 채운 값을 auto에 두고 파일 값이 그와 다를 때만 덮어쓴다 → 직접 고친 값은 다음 시세 갱신 때 덮어쓴다.
-//   auto.at(채운 시세 파일의 updatedAt)보다 오래된 시세로는 채우지 않는다(늦게 읽은 기기가 옛 시세로 되돌리지 않게).
-//   같은 기록 + 같은 시세면 어느 기기에서 채워도 결과가 같아야 한다(sync.js가 저장소·지난 동기화 기록도 채워 비교해, 시세만으로 기록 차이 창이 뜨지 않게).
+// 시세 자동 채우기·캐시 형식·기준일 표시. 파일 읽기와 priceData는 sync.js.
+// 대상/기준선 변경은 데이터 저장소 scripts/kis_prices.py도 수정(plans[].ticker·rebuy.items[].ticker/옛 rebuy.ticker·보유 월물 수집).
+// 화면 없는 계산/테스트에서도 읽으므로 함수 밖에서 DOM을 건드리지 않는다.
 const PRICE_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 경고
-const PRICE_FORMAT = 4; // 선물도 주봉·월봉 종가를 보관한다. 옛 캐시는 ETag 없이 다시 받는다(sync.js readPrices).
+const PRICE_FORMAT = 4; // slimPrices 형식을 바꾸면 증가; 옛 캐시는 ETag 없이 다시 받는다(sync.js readPrices).
 // 기준선 이름 → 시세 파일 ma 이름. 데이터 저장소 scripts/kis_prices.py의 LABEL_RE·ma_name과 같게("60 일선"→"60일선", "12달선"→"12개월선")
 function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|월|달)\s*선/.exec(String(label||"")); return m&&Number(m[1])>=1?`${Number(m[1])}${{일:"일선",주:"주선",개월:"개월선",월:"개월선",달:"개월선"}[m[2]]}`:""; }
-// 60분봉 N이평선(재매수 단계 'N선', 옛 이름 'N분봉') → 시세 파일 ma 이름 'N선'. 데이터 저장소 scripts/kis_prices.py HOUR_RE와 같게
+// 60분봉 종가 N개 평균('N선', 옛 'N분봉') → ma['N선']; scripts/kis_prices.py HOUR_RE와 같은 이름.
+// KIS 분봉을 여러 수집에 나눠 받으므로 짧은 N선부터 채워질 수 있다.
 function hourKey(label){ const m=/^\s*([1-9]\d{0,2})\s*(?:선|시선|분봉)\s*$/.exec(String(label||"")); return m?`${Number(m[1])}선`:""; }
 const autoKey = label => maKey(label)||hourKey(label); // 시세로 채우는 기준선(N일선·N주선·N개월선·N선)
 const autoMark = name => autoKey(name)||String(name); // 시선·월선 별칭도 같은 자동 기준가 키를 사용한다.
@@ -36,6 +21,8 @@ const planTicker = ticker => { const t=String(ticker||"").trim().toUpperCase();r
 const usTicker = ticker => { const t=String(ticker||"").trim().toUpperCase(); return /^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)&&!/^[AQ]\d{6}$/.test(t); };
 const isBitcoinTicker = ticker => planTicker(ticker)===BTC_KEY;
 const planQuoteKind = (ticker, currency) => currency==="KRW"?"국내":isBitcoinTicker(ticker)?"코인":"해외";
+// BTC-USD: Coinbase 달러·UTC 일봉, 주말 포함 매 수집(kind '코인', kis_prices.py CRYPTO).
+// 동기화 시세 줄·직접 추가 알림·달러 분할매도에 사용; ETF 재매수 자동 채우기는 제외.
 const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&Number(e.close)>0?e:null; };
 // 시세 통화: 해외 종목·비트코인은 달러, 그 밖(국내)은 원화
 const quoteCurrency = e => e?.kind==="해외"||e?.kind==="코인" ? "USD" : "KRW";
@@ -55,14 +42,14 @@ function barCloses(e, cols){
   if(monthly.length)out.M=monthly.map(b=>Number(b[ci]));
   return Object.keys(out).length?out:null;
 }
-// 파일에서 채우기·표시에 쓰는 값만 남긴다(봉 기록은 버리고 종목 종가만 closes로). 형식이 다르면 오류.
+// 채우기·표시 값만 남김(종목/선물 D·W·M 종가는 closes, 원본 봉은 버림). 형식이 다르면 오류.
 function slimPrices(doc){
   if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object")throw Error("시세 파일 형식을 확인할 수 없습니다.");
   const pick=(group,bars)=>Object.fromEntries(Object.entries(group&&typeof group==="object"?group:{}).filter(([,e])=>e&&typeof e==="object")
     .map(([k,e])=>{const closes=bars&&barCloses(e,doc.columns);return [k,{kind:e.kind,asOf:e.asOf,close:e.close,ma:e.ma,...(closes?{closes}:{}),...(e.stale?{stale:true}:{})}];}));
   return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,true),fx:pick(doc.fx,false)};
 }
-// 기준선 이름(N일선·N주선·N개월선)의 이동평균: 시세 파일 ma에 있으면 그 값, 없으면 보관한 종가로 계산(스크립트처럼 소수 넷째 자리). 없으면 null.
+// N일·N주·N개월선: ma 우선, 없으면 closes 단순평균(진행 중 주·월 봉 포함, 스크립트처럼 소수 넷째 자리). 봉 부족은 null.
 // N선(60분봉)은 시세 파일 ma 값만(이 기기에는 60분봉을 두지 않음).
 function maValue(e, label){
   const hour=hourKey(label);if(e&&hour)return Number(e.ma[hour])>0?Number(e.ma[hour]):null;
@@ -74,7 +61,8 @@ function maValue(e, label){
   return sum>0?Math.round(sum/n*1e4)/1e4:null;
 }
 const priceRound = (v, digits) => Number(v)>0 ? Math.round(Number(v)*10**digits)/10**digits : null;
-// obj의 칸들을 채운다. rows = [auto에 둘 이름, 값, 넣기(값)]. 값이 없거나 지난번 채운 값과 같으면 건너뛴다. 하나라도 채우면 auto를 바꾼다.
+// rows = [auto 키, 값, 넣기]. null·지난 자동값과 같은 시세는 건너뛰고 새 시세만 직접 입력값을 덮어쓴다.
+// auto.at보다 오래된 시세는 거부. 같은 기록 + 같은 시세는 기기와 무관하게 같은 결과(syncNow 충돌 비교의 전제).
 function fillMarked(obj, at, rows){
   const prev=obj.auto&&typeof obj.auto==="object"?obj.auto:null;
   if(prev&&(Date.parse(prev.at)||0)>(Date.parse(at)||0))return false;
@@ -83,7 +71,12 @@ function fillMarked(obj, at, rows){
   if(hit)obj.auto={...mark,at};
   return hit;
 }
-// data = {plans, futures, rebuy}(state 또는 저장소 기록, rebuy는 {items:[…]} 또는 옛 기록의 종목 하나). 바꾼 칸이 있으면 true.
+// data = {plans,futures,rebuy}(state/원격 기록); 바꾼 칸이 있으면 true. 채우기 대상:
+// plans: 통화에 맞는 stocks 종료 MA; 시작 MA는 startAuto=true만('직접'/옛 auto.startPrice는 안 씀).
+// 달러 계획 환율은 보유 선물과 무관한 fx.USDKRW 현물; 없으면 기존 값 유지.
+// futures: 보유 근월물 MA 구간 + 미매수 가격. futures.rebuy가 있을 때만 현재가·자동 단계도 같은 월물로 채움.
+// 선물 재매수 신저점·하단·이탈 전 계약 수는 직접 입력. ETF rebuy.items(옛 단일 종목도)은 국내 원/해외 달러만.
+// 분할매도·선물 현재가와 분할매도 평가액(planWorth)은 화면 전용. 단계 MA가 null이면 직접 입력값 유지.
 function fillPrices(data, prices){
   if(!prices||!data)return false;
   const at=String(prices.updatedAt||"");let changed=false;

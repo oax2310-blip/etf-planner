@@ -1,13 +1,12 @@
-// 자산 현황(assets.html) 계산: 자산 배분 평가액·비중, 월별 손익 요약, 저축 계획 시뮬레이션, 기기 간 병합.
-// DOM 없이 불러와 테스트하므로(tests/assets.test.cjs) 함수 밖에서 화면을 건드리지 말 것. 공개 소스라 개인 수치를 기본값으로 넣지 말 것.
-// 단위: 자산 배분 금액(amount·total)은 만원, 현금(cash[].amount)은 원 또는 달러, 손익·저축은 원. 비중·수익률(target·giving·growth·returnRate)은 % 숫자(3 = 3%).
+// 자산 현황·플래너 분할매수의 계산, 자산 배분 연동, 구역별 병합. 계산 기준은 각 함수 주석, 공통 작업 규칙은 AGENTS.md.
+// tests/assets.test.cjs·시세 수집도 DOM 없이 실행하므로 함수 밖에서 화면을 건드리지 않는다.
 const ASSET_SECTIONS = ["allocation","ledger","savings"]; // 기록 파일의 세 구역. 기기 간 병합은 구역마다 따로(savedAt)
 const ASSET_REGIONS = ["미국","국내","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
 const finite = v => v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v)) ? Number(v) : null;
 const plus = v => { const n=finite(v); return n!==null&&n>0 ? n : null; };
 
 // ---------- 시세 ----------
-// prices = {updatedAt, stocks:{종목 코드:{kind, asOf, close, stale}}, fx:{close, asOf}} (assets.js가 시세 파일에서 필요한 값만 남긴 것)
+// prices = {updatedAt, stocks:{종목 코드:{kind, asOf, close, stale}}, fx:{close, asOf}} (assets-store.js가 시세 파일에서 필요한 값만 남긴 것)
 function assetQuote(prices, ticker){
   const key=String(ticker||"").trim().toUpperCase(), e=key&&prices?.stocks?.[key];
   if(!e||!(Number(e.close)>0)||!/^\d{4}-\d{2}-\d{2}$/.test(String(e.asOf)))return null;
@@ -17,9 +16,10 @@ function assetQuote(prices, ticker){
 const assetFx = (prices, alloc) => plus(prices?.fx?.close) || plus(alloc?.cashFx);
 // 1주(1단위) 원화 가격. 달러 시세는 × 환율, 환율이 없으면 null
 const krwPrice = (q, fx) => !q ? null : q.currency==="USD" ? (fx ? q.close*fx : null) : q.close;
-// ticker는 매매 기준 티커, tradeTicker는 실제 매수하는 일반 추종 ETF 코드. 빈칸이면 기존처럼 ticker를 직접 거래한다.
+// ticker는 기준 가격·이동평균·알림용, tradeTicker는 실제 거래하는 일반 추종 ETF 코드. 빈칸이면 ticker를 직접 거래한다.
 const assetTradeTicker = it => String(it?.tradeTicker||it?.ticker||"").trim().toUpperCase();
 const tracksETF = it => !!String(it?.tradeTicker||"").trim()&&linkTicker(it.tradeTicker)!==linkTicker(it.ticker);
+// 실제 ETF 자동 시세가 우선이며, 없으면 직접 넣은 tradePrice·tradePriceAt을 쓴다.
 function assetTradeQuote(prices, it){
   if(!tracksETF(it))return assetQuote(prices,it?.ticker);
   const ticker=assetTradeTicker(it), kind=purchaseQuoteKind(ticker);
@@ -31,6 +31,7 @@ function assetTradeQuote(prices, it){
 }
 
 // ---------- 자산 배분 ----------
+// amount·total은 만원, target은 % 숫자(3 = 3%). 현금 단위는 cashValue 주석.
 // 기준 총자산 입력: 숫자만 넣으면 기존처럼 만원. 억·만원·원 표기는 만원 숫자로 환산하며, 빈칸(null)과 잘못된 입력(NaN)을 구분한다.
 function parseAllocationTotal(value){
   const text=String(value??"").replace(/[\s,]/g,"");
@@ -69,7 +70,7 @@ function fillBases(alloc, prices){
   }
   return changed;
 }
-// 금액·종목 코드를 고쳤을 때 기준 가격을 지금 시세로 다시 잡는다(시세가 없으면 지움 → 다음 시세 때 fillBases)
+// 금액·종목 코드(실제 ETF 코드 포함)를 고쳤을 때 기준 가격을 지금 시세로 다시 잡는다(시세가 없으면 지움 → 다음 시세 때 fillBases)
 function resetBase(it, prices, alloc){
   delete it.base;delete it.baseAt;
   const q=assetTradeQuote(prices,it), p=krwPrice(q,assetFx(prices,alloc));
@@ -97,7 +98,7 @@ function allocationTargets(alloc){
   return {groups,classes,section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||{target:null,linked:false}};
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
-// 계획(buyPlan)은 두 방식. 체크한 체결은 alloc-link.js가 자산 배분 보유량에도 반영하고, 체크를 풀면 되돌린다.
+// 종목의 buyPlan은 두 방식이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 비중 조정 완료(it.done)와 매수 완료는 별개.
 // ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}.
 //    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?}.
 //    부분 체결 회차는 원래 수량·가격과 잔량 예산을 고정한다. plannedShares 없는 옛 체결은 완료로 읽고, 처음 수정할 때만 계획 수량을 저장한다.
@@ -143,7 +144,7 @@ function purchaseFill(row, currency, fx, step=1){
   return {shares, price, actual:Number((shares*price*rate/1e4).toFixed(8))};
 }
 // 추종 ETF: 회차 예산(만원)을 실제 ETF 현재가로 나눠 정수 주수를 내림한다. 예산이 없고 기준 주수만 있으면 기준 주수 × 기준가 × 환율로 예산을 환산한다.
-// price는 알림·회차용 기준 가격을 유지하고, tradeTicker·tradePrice·tradeCurrency는 첫 체결 때 고정해 추가 체결·취소도 같은 ETF 단위를 쓴다.
+// shares·plannedShares는 실제 ETF 주수, price는 기준 가격. tradeTicker·tradePrice·tradeCurrency는 첫 체결 때 고정해 추가 체결·취소도 같은 ETF 단위를 쓴다.
 function purchaseTrackingFill(row, it, prices, fx, currency="USD"){
   if(!tracksETF(it))return purchaseFill(row,currency,fx,linkStep(it));
   const q=assetTradeQuote(prices,it);if(!q)return null;
@@ -203,7 +204,7 @@ function purchaseQuoteKind(ticker){
 // 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다.
 // 이동평균선 돌파 회차는 지금 이동평균 가격으로(이력은 단계 이름·회차로 이어져 이평선이 움직여도 다시 알리지 않음), 직접 입력 회차는 가격·방향을 바꾸면 이력이 새로.
 // 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py가 이동평균선 돌파 종목(purchase_line_plans)은 전체 시세·60분봉을,
-// 직접 입력 알림 종목(purchase_alert_tickers)은 장중 실행마다 종가를 받는다(켜짐 판정·단계 이름을 바꾸면 그쪽도 같이).
+// 직접 입력 알림 종목(purchase_alert_tickers)은 장중 실행마다 종가를 받는다(함수 이름·켜짐 판정·단계 이름을 바꾸면 그쪽도 같이).
 // 라벨 '분할매수 N차'·'분할매수 25선 1차'·'분할매수 목표가'는 그 저장소 ma_alerts.py TRADE_LABEL_RE와 같은 형식.
 function purchaseAlertRules(assets, prices){
   const rules=[];
@@ -253,7 +254,7 @@ function allocationSummary(alloc, prices){
 //   items의 shares·amount는 그 종목에 실제로 더한 양(매도는 음수, 0 아래로 내려가지 않게 자른 값)이라 되돌리면 원래 값. fresh는 보유 수량 칸을 새로 만든 것(되돌려 0이면 칸을 지움).
 //   qty(주)·price(체결 통화)·value(만원)는 반영할 때의 체결 크기 — 체크 뒤 체결 수량·가격·금액을 고치면 같은 비율로 items를 다시 맞춘다(rescaleTrade).
 //   기준 티커와 실제 ETF 단위가 다르면 투자 금액을 실제 ETF 가격으로 나눈 주수를 내림하고 items[].converted로 표시해 금액 비율로 정정한다.
-// 출처 키: 'sell:계획 id:회차', 'cut:재매수 종목 id:회차', 'rebuy:재매수 종목 id:단계 이름:회차', 'buy:자산 종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'.
+// 출처 키(기존 반영을 되돌리는 데 쓰는 형식): 'sell:계획 id:회차', 'cut:재매수 종목 id:회차', 'rebuy:재매수 종목 id:단계 이름:회차', 'buy:자산 종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'.
 // 종목마다 단위: 보유 수량 칸(shares, 0 포함)이 있으면 수량(비트코인 0.00000001, 나머지 1주), 없으면 금액(amount, 만원). 빈 종목(수량 없고 금액 0)은 체결 수량을 알면 수량.
 //   금액 종목이 시세를 따라가면(base) 금액 칸은 '넣을 때 가격' 기준이라, 지금 평가액 V만원을 사고팔면 amount를 V × (amount ÷ 지금 평가액)만큼 바꾼다(기준 가격 base는 그대로 — 입력 대비 수익률 유지).
 //   금액 0에서 사면 기준 가격을 지금 시세로 다시 잡는다(resetBase).
@@ -268,7 +269,7 @@ function linkedItems(alloc, ticker, ownId=null){
   return out;
 }
 // 계획 화면의 '자산 배분' 줄과 보유량 가져오기: 연결 종목 합계 평가액·비중, 목표(연결 종목 목표의 합 — 없으면 연결 종목이 한 그룹의 전부일 때 그 그룹 목표),
-// 목표와의 차이(gap > 0 목표까지 더 살 금액, < 0 목표 초과), 보유 수량 합(모든 연결 종목에 수량이 있을 때만).
+// 목표와의 차이(gap > 0 목표까지 더 살 금액, < 0 목표 초과), 보유 수량 합(모든 연결 종목에 수량이 있고 실제 거래 티커가 기준 티커와 같을 때만).
 function linkSummary(alloc, prices, ticker, ownId=null){
   const list=linkedItems(alloc,ticker,ownId);if(!list.length)return null;
   const s=allocationSummary(alloc,prices), rows=list.map(x=>({...x,value:s.items.get(x.it.id)?.value||0})), value=rows.reduce((n,r)=>n+r.value,0);
@@ -386,6 +387,7 @@ function yearSummary(year){
 }
 
 // ---------- 저축 계획 ----------
+// 금액은 원, giving·growth·returnRate는 % 숫자(3 = 3%).
 // 엑셀 '복리 저축 계산' 시트 규칙: 매달 저축총액 += 월급 − 기부(월급 × giving%) − 사용금액 − 할부. 12월에는 투자수익(전년 12월 저축총액 × 연 수익률)에서
 // 수익 기부(giving%)를 뺀 값을 더한다. 사용금액은 spendingYear의 월 금액에서 해마다 growth%씩 늘고, 단계(stages: 그 나이부터 월급·증가율·수익률을 바꾸고
 // spending이 있으면 그해 월 사용금액을 그 값으로)로 바꾼다. 나이는 해마다 1살(startYear에 startAge). 마지막 실제 기록(actual) 다음 달부터 endAge 해 12월까지 계산.

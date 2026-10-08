@@ -1,9 +1,10 @@
-// 달러선물: 보유 월물·구간 매수 계산(futuresSummary·rollEstimate·lossCheck)과 화면
+// 달러선물 계산·화면. 시세는 prices.js, 단계는 ma-ladder.js, 손절·재매수 계산은 rebuy.js.
+// DOM 없는 계산 호출을 위해 함수 밖에서 화면을 건드리지 않는다.
 const monthOk = m => /^\d{6}$/.test(m) && Number(m.slice(4)) >= 1 && Number(m.slice(4)) <= 12;
 const fmtPrice = v => Number(v).toLocaleString("ko-KR",{maximumFractionDigits:4});
 const nearestMonth = f => f.positions.filter(p=>Number(p.contracts)>0 && monthOk(String(p.month))).map(p=>String(p.month)).sort()[0] || "";
 const sortPositions = f => f.positions.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
-// 같은 월물이면 가중평균으로 합친다. (목표−가격)×계약 합계가 선형이라 따로 둘 때와 기대손익이 같다.
+// 같은 월물은 계약 수 가중평균으로 합침; settlementPrice는 화면 '단순평균가'. 선형 손익이라 따로 둘 때와 기대손익이 같다.
 function addToPosition(f, month, qty, price){
   const pos=f.positions.find(p=>String(p.month)===month);
   if(pos){ const c=Number(pos.contracts)||0; pos.settlementPrice=(Number(pos.settlementPrice)*c+price*qty)/(c+qty); pos.contracts=c+qty; }
@@ -17,7 +18,8 @@ function removeFromPosition(f, month, qty, price){
   else { pos.settlementPrice=(Number(pos.settlementPrice)*c-price*qty)/(c-qty); pos.contracts=c-qty; }
   return true;
 }
-// price를 주면 목표 환율 대신 그 환율에서 계산한다(손익 확인 카드). invested = 보유 계약 매수금액(단순평균가·체결가 × 1만 달러).
+// 현재 기대손익 = (price−단순평균가)×계약×1만 + baselinePnl(직접 입력 누적 정산손익) + 월물 밖 옛 매수.
+// 편입 매수는 월물에 이미 포함; 미매수 유효 가격만 projected에 추가. price 기본은 목표 환율, invested는 보유 매수금액.
 function futuresSummary(f, price=f.targetPrice){
   const tr=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({...t,price:futureTranchePrice(f.levels,li,t,ti)}))), gainAt=p=>(price-Number(p))*contractSize;
   const posContracts=f.positions.reduce((s,p)=>s+(Number(p.contracts)||0),0);
@@ -57,6 +59,8 @@ function lossCheck(f){
   return {price,pnl,held,contracts,invested:s.invested,avg:contracts?s.invested/(contracts*contractSize):null,rate:s.invested>0?held/s.invested:null,
     years:rollEstimate(f,contracts,pnl).years.map(y=>({...y,offset:pnl<0&&y.gain>0?y.gain/-pnl:null}))};
 }
+// 월물교체는 계좌를 보고 보유 월물·단순평균가·누적 정산손익을 직접 수정(교체 실행 기능 없음).
+// rollSpread·lossPrice는 입력 때만 저장, 비우면 delete. 현재 근월물 시세는 화면 전용.
 function renderFutures(){
   const f=state.futures;refreshFutureBuyPrices(f);const s=futuresSummary(f),tr=f.levels.flatMap(l=>l.tranches),completed=tr.filter(t=>t.completed).length,total=f.levels.reduce((a,l)=>a+l.contracts,0),target=decimal.format(f.targetPrice),near=nearestMonth(f),months=[...new Set(f.positions.map(p=>String(p.month)).filter(monthOk))].sort();
   const roll=rollEstimate(f,s.posContracts+s.legacyCount,s.current), fe=futuresEntry(priceData,f); // 보유 근월물 시세: N일선 구간 기준가를 채우고(prices.js) 현재가·기준일은 구간 제목 옆에

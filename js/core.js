@@ -1,4 +1,4 @@
-// 공통: 상수·도우미($·onEdit 등)·state 불러오기·normalize·탭 전환. 불러오는 순서 core → sync → plans → futures → rebuy
+// 공통 상수·입력 도우미·state·탭. 저장은 sync.js, 이동평균 단계는 ma-ladder.js, 기능 화면은 각 모듈.
 const STORAGE_KEY = "etf-exit-planner-standalone-v1";
 const futuresDays = [25,32,42,60,80,125,150];
 const contractSize = 10000;
@@ -18,10 +18,12 @@ const shown = v => Number.isFinite(Number(v)) ? String(Math.round(Number(v)*1e4)
 const onEdit = (sel, set, redraw) => $$(sel).forEach(el => el.onchange = () => { if (set(el.value, el) !== false) save(); redraw?.(); });
 const id = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const defaultFutures = () => ({targetPrice:1480,baselinePnl:0,positions:[],levels:MA_LINES.map(name=>({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]})),note:""});
-const seeded = {plans:[],futures:defaultFutures(),actions:{},selectedPlan:null,tab:"plans"}; // actions는 옛 기록·동기화 형식 호환용. 실제 데이터는 JSON 복원으로만
+const seeded = {plans:[],futures:defaultFutures(),actions:{},selectedPlan:null,tab:"plans"}; // actions는 옛 기록 호환용이며 새 기기는 {}만 둔다.
 const hadStoredState = localStorage.getItem(STORAGE_KEY) !== null;
 let state;
 try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || seeded; } catch { state = seeded; }
+// 새 입력 필드(rebuy·alerts·futures.rebuy·rollSpread·lossPrice 등)를 여기서 채우지 않는다.
+// 옛 재매수를 목록으로 바꾸면 기기별 id로 스냅샷이 달라진다(생성·이전은 각 모듈의 edit 함수).
 function normalize(){
   state.plans = Array.isArray(state.plans) ? state.plans : [];
   state.plans.forEach(p=>{p.checked=Array.from({length:Number(p.stages)||2},(_,i)=>p.checked?.[i]===true);p.holdings=Array.isArray(p.holdings)?p.holdings:[];p.note=p.note||"";});
@@ -40,6 +42,7 @@ function openPlannerLocation(){
 $$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ if(typeof clearPushAlertTarget==="function")clearPushAlertTarget(); openTab(b.dataset.tab); history.replaceState(null,"",`#${state.tab}`); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
 addEventListener("hashchange",openPlannerLocation);
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
+// 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 탭 클릭은 위의 핸들러에서 맨 위로 이동.
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
 function render(){ if(typeof applyPendingPushAlert==="function"&&applyPendingPushAlert())return; if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }

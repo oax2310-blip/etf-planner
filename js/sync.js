@@ -1,9 +1,11 @@
-// 저장(save)·GitHub 비공개 데이터 저장소 동기화·JSON 백업/복원. 시작은 index.html 맨 끝의 startSync()
+// 플래너 저장·GitHub 동기화·JSON 백업/복원. 시세 채우기는 prices.js, 분할매수·자산 기록은 assets-store.js.
+// core.js 이름을 새로 사용하면 가짜 core 값으로 불러오는 tests/sync.test.cjs도 맞춘다.
 const initialSnapshot = dataSnapshot();
 const DATA_FILE = "etf-planner-data.json";
-const DEFAULT_DATA_REPO = "oax2310-blip/etf-planner-data"; // 기록 전용 비공개 저장소. 사이트 저장소와 분리해 저장해도 사이트가 다시 게시되지 않는다
+const DEFAULT_DATA_REPO = "oax2310-blip/etf-planner-data";
+// assets-store.js·valuation.html도 같은 키를 읽는다(시나리오는 etf-planner-scenarios.json); 이름 변경은 함께 적용.
 const REPO_KEY = "etf-planner-data-repo";
-const TOKEN_KEY = "etf-planner-github-token"; // 이 기기 브라우저에만 보관하는 GitHub 토큰(데이터 저장소 Contents 읽기·쓰기 전용). 코드·저장소에 넣지 말 것
+const TOKEN_KEY = "etf-planner-github-token"; // 토큰은 기기별 localStorage 전용(Contents 읽기·쓰기).
 const SYNC_BASE_KEY = "etf-planner-sync-base:";
 const LAST_REPO_KEY = "etf-planner-last-data-repo";
 const RECOVERY_KEY = "etf-planner-sync-recovery";
@@ -12,10 +14,13 @@ const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우�
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
 let priceRefreshBusy=false, priceReadMessage="";
 const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false};
+// 순서는 plans → futures → actions → rebuy → alerts(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
+// tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
 function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions,rebuy:state.rebuy,alerts:state.alerts});}
 const repoOk = r => /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r);
 const connected = () => !!(sync.token && sync.repo);
-// 아무것도 입력하지 않은 기기인지(처음 연결할 때 저장소 기록을 묻지 않고 가져와도 되는지)
+// 빈 기기만 처음 연결 때 자동 수신. rebuy·alerts가 있으면 비어 있지 않다.
+// 옛 futures.rolls·targetProfit·actions도 이 판정에 보존한다(화면·계산에 다시 넣지 않음).
 const isBlank = json => {const d=JSON.parse(json),f=d.futures||{},a=d.actions||{},al=a.allocation||{};return !(d.plans||[]).length&&!(f.positions||[]).length&&!(f.rolls||[]).length&&!Number(f.baselinePnl)&&!Number(f.targetProfit)&&!f.note&&!f.rebuy&&!(f.levels||[]).some(l=>Number(l.contracts)>0||Number(l.price)>0)&&!(a.buys||[]).some(b=>b.completed||b.actualKrw)&&!(a.adobeSales||[]).some(s=>s.completed||s.plannedShares||s.soldShares||s.priceUsd)&&!a.buyNote&&!a.adobeNote&&!al.completed&&!al.note&&!al.targetNasdaqPct&&!al.targetCoveredCallPct&&!d.rebuy&&!d.alerts;};
 function syncStatus(message){$("syncStatus").textContent=message;$("syncDialogStatus").textContent=message;const btn=$("syncBtn");btn.title=message;syncBadge();}
 // 동기화 버튼 아이콘 상태: off(연결 안 됨, 회전 아이콘 대신 빨간 ! 표시) · busy(도는 중) · ok(초록 점) · warn(주황 점, 확인 필요)
@@ -33,6 +38,7 @@ async function gh(path,options={}){
   if(response.status===403)throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
   return response;
 }
+// 업로드 전 비공개 저장소인지 확인하고 공개 저장소면 거부한다.
 async function checkRepo(){
   const response=await gh(`/repos/${sync.repo}`);
   if(response.status===404)throw Error(`저장소 ${sync.repo}를 찾을 수 없습니다. 이름과 토큰에 고른 저장소를 확인해 주세요.`);
@@ -52,6 +58,7 @@ async function readRemote(){
   if(!Array.isArray(data.plans)||!data.futures||!data.actions)throw Error("저장소의 기록 파일 형식을 확인할 수 없습니다. 자동으로 덮어쓰지 않았습니다.");
   return {sha:meta.sha,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions,rebuy:data.rebuy,alerts:data.alerts})};
 }
+// SHA로 다른 기기의 선행 저장(409/422)을 감지해 다시 읽는다.
 async function writeRemote(snapshot,sha){
   const body={message:`기록 동기화 ${new Date().toISOString()}`,content:toB64(JSON.stringify(JSON.parse(snapshot),null,2)+"\n"),...(sha?{sha}:{})};
   const response=await gh(`/repos/${sync.repo}/contents/${DATA_FILE}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -96,6 +103,7 @@ function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt),fx=f
 // 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
+// 병합: 원격에 rebuy·alerts가 없으면 이 기기 값 유지. 빈 목록도 지우려면 {items:[]}·{rules:[]}로 저장.
 function applyRemote(snapshot){state={...state,...JSON.parse(snapshot)};normalize();localStorage.setItem(STORAGE_KEY,JSON.stringify(state));render();}
 function chooseConflict(local,remote){return new Promise(resolve=>{
   const dialog=$("conflictDialog"),summary=json=>{const d=JSON.parse(json);return `${d.plans.length}개 계획 · 달러선물 ${d.futures.positions?.length||0}개 월물`;};
@@ -118,8 +126,7 @@ async function syncNow(){
     if(!same())return;
     if(fillPrices(state,priceData)){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));sync.redraw=true;}
     sync.sha=sha;
-    // 시세로 채우는 칸은 어느 기기든 같은 시세 파일로 똑같이 채우므로, 저장소 기록(raw)·지난 동기화 기록도 같은 시세로 채운 뒤 비교한다
-    // (시세 갱신만으로 기록 차이 창이 뜨지 않게). 저장소 파일에 아직 안 채운 시세가 있으면 채운 기록을 올린다(settle).
+    // 로컬·원격·base를 같은 시세로 채운 뒤 비교(시세 갱신만으로 충돌 창이 뜨지 않음). settle은 채운 원격 값도 저장.
     const remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
     const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha);if(!same())return;markSynced(json);}sync.blocked=false;};
     if(remote===local)await settle(local);
@@ -166,6 +173,7 @@ $("connectRepo").onclick=()=>{
 $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncStatus("먼저 저장소와 토큰으로 연결해 주세요.");};
 $("refreshPricesBtn").onclick=refreshPrices;$("refreshPricesDialogBtn").onclick=refreshPrices;
 $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);loadConfig();refreshTokenField();syncStatus("이 기기에만 저장 중");};
+// 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 자동 동기화를 멈춘다.
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
 loadConfig();refreshTokenField();

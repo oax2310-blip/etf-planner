@@ -1,22 +1,25 @@
-// 화면 모드: PC(마우스·트랙패드)는 윗줄 버튼으로 기기 설정 따름·밝게·어둡게를 고르고, 휴대폰·태블릿(터치)은 고른 값과 상관없이 기기 설정을 따른다.
-// 고른 값은 이 브라우저 localStorage(THEME_KEY)에만 — 동기화 기록(state) 밖. index.html·valuation.html 둘 다 head에서 먼저 불러 첫 화면부터 맞는 색으로 그린다.
-// CSS는 <html data-theme="dark">일 때 어두운 토큰(app.css·valuation.html 맨 위). 버튼은 [data-theme-pick] 자리에 그린다. themeOf만 화면 없이 테스트한다.
+// index.html·valuation.html·assets.html의 화면 모드. 색 토큰은 app.css·valuation.html, 버튼 자리는 [data-theme-pick]과 연결된다.
 const THEME_KEY = "etf-planner-theme";
-// choice: 고른 값(auto·light·dark), desktop: 마우스 기기, systemDark: 기기가 어두운 모드 → "light" 또는 "dark"
+// PC(hover:hover·pointer:fine)는 윗줄 버튼으로 고른 auto·light·dark를 적용한다. 휴대폰·태블릿(터치)은 고른 값과 상관없이 기기 설정을 따른다.
+// choice: 고른 값, desktop: 마우스 기기, systemDark: 기기가 어두운 모드 → "light" 또는 "dark"
+// themeOf는 DOM 없이 검증하는 화면 모드 계산 함수로 유지한다.
 function themeOf(choice, desktop, systemDark){ return desktop && (choice === "light" || choice === "dark") ? choice : systemDark ? "dark" : "light"; }
+// 각 페이지 head에서 먼저 불러 첫 화면 색을 맞춘다. <html data-theme>가 CSS의 밝은·어두운 토큰을 고른다.
 (function(){
   if (typeof document === "undefined" || typeof matchMedia !== "function") return;
   const desktopQ = matchMedia("(hover:hover) and (pointer:fine)"), darkQ = matchMedia("(prefers-color-scheme: dark)"), CHOICES = ["auto","light","dark"];
   const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const ICON = {auto:svg('<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>'), light:svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), dark:svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>')};
   const LABEL = {auto:"기기 설정 따름", light:"밝게", dark:"어둡게"};
+  // 고른 값은 이 브라우저 localStorage(etf-planner-theme)에만 저장하고 state·동기화에 넣지 않는다.
   const read = () => { try { const v = localStorage.getItem(THEME_KEY); return CHOICES.includes(v) ? v : "auto"; } catch { return "auto"; } };
   let picks = [];
   function apply(){ const choice = read(); document.documentElement.dataset.theme = themeOf(choice, desktopQ.matches, darkQ.matches); picks.forEach(p => p(choice)); }
   apply();
   desktopQ.addEventListener?.("change", apply); darkQ.addEventListener?.("change", apply);
   addEventListener("storage", e => { if (e.key === THEME_KEY) apply(); }); // 다른 탭(플래너↔시나리오)에서 바꾸면 같이
-  // 버튼 + 고르는 메뉴(popover: 화면 맨 위 층에 떠서 윗줄 overflow에 잘리지 않음). popover를 모르는 옛 브라우저는 버튼 없이 기기 설정만.
+  // [data-theme-pick] 버튼은 CSS에서 PC에만 보인다. 메뉴 popover는 윗줄 overflow 위에 떠서 잘리지 않는다.
+  // popover를 모르는 옛 브라우저는 버튼 없이 기기 설정만 따른다.
   function build(slot, i){
     const id = `themeMenu${i}`;
     slot.classList.add("theme-pick");
