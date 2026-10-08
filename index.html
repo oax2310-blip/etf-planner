@@ -5,12 +5,12 @@
   - 정본: main. 바뀌는 부분만 수정 → PR → 병합하면 GitHub Pages 자동 게시. 테스트: node --test tests/*.cjs. 외부 라이브러리·빌드 없음(글꼴 Pretendard만 jsDelivr CSS 한 줄 — 못 받으면 시스템 글꼴).
   - 파일: index.html(화면 뼈대·이 규칙), css/app.css, js/core.js(상수·도우미 $·onEdit·state·normalize·탭), js/sync.js(save·GitHub 동기화·시세 파일 읽기·JSON 백업/복원),
     js/prices.js(시세로 현재가·기준가 채우기·기준일 표시), js/plans.js(분할매도), js/futures.js(달러선물), js/rebuy.js(재매수),
-    js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/push.js(휴대폰·PC 브라우저 알림 연결 — 기기마다 따로, 안내 문구만 PC/휴대폰 구분), push-sw.js(닫힌 화면의 푸시 수신),
+    js/trade-alerts.js(기존 매매 기준의 ON/OFF·서버와 같은 알림 계산), js/alerts.js(추가 기준선 알림 설정), js/alert-target.js(페이지·서비스 워커 공통 알림 이동 주소), js/push.js(휴대폰·PC 브라우저 알림 연결·알림 종목으로 이동), push-sw.js(닫힌 화면의 푸시 수신),
     js/theme.js(화면 모드 — valuation.html·assets.html도 씀). 고칠 기능 파일(필요하면 core.js·app.css)만 읽을 것.
     분할매수는 js/purchases.js·css/purchases.css, 자산 현황 페이지(assets.html)는 css/assets.css·js/assets.js. js/alloc-link.js는 체크 → 자산 배분 보유량 연동(계좌 고르는 창 linkDialog·알림 줄, 계산은 assets-calc.js). js/assets-calc.js·js/assets-store.js는 두 페이지가 계산·기록·동기화를 공유한다(규칙은 assets.html HANDOFF).
     app.css·theme.js를 같이 쓰므로 ?v=를 올릴 때 assets.html도 같이.
   - theme.js만 head에서 먼저(첫 화면 색). 나머지는 일반 <script>로 core → sync → prices → assets-calc → assets-store → alloc-link → purchases → trade-alerts → plans → futures → rebuy → alerts → push 순서.
-    index.html 맨 끝에서 allocLink.initialize·purchasePlanner.initialize·startSync·openTab·initializeAlerts·initializePush로 시작한다.
+    index.html 맨 끝에서 allocLink.initialize·purchasePlanner.initialize·startSync·openPlannerLocation·initializeAlerts·initializePush로 시작한다.
     파일끼리 맨 위 이름(const·function)이 겹치면 안 됨. prices·futures·rebuy 테스트는 파일을 DOM 없이 불러오므로 세 파일의 함수 밖에서 화면을 건드리지 말 것.
     sync 테스트는 core.js 대신 가짜 값($·state 등)과 prices.js를 넣으므로, sync.js가 core.js의 다른 이름을 새로 쓰면 tests/sync.test.cjs에도 넣을 것.
   - css·js를 고치면 index.html의 ?v= 숫자를 모든 태그에서 같이 1 올릴 것(배포 직후 옛 파일 캐시 방지, valuation.html의 theme.js 숫자도). tests/files.test.cjs가 파일·숫자 일치를 확인.
@@ -52,7 +52,8 @@
   - 기준선 알림은 state.alerts={rules:[{id,ticker,period,unit,tolerancePct,enabled}],…수신 설정}. alerts는 입력할 때만 만들고 마지막 규칙을 지워도 rules:[]로 남김.
     미국 기준 한국장 재알림은 alerts.krOpenReminder=true로 켜며 기본은 OFF. 밤사이 발생한 미국 종목 신호를 한국장 09:45 이후 기준별 한 번 재발송(발송·휴장 확인·대기 이력은 비공개 수집 작업).
     알림 설정·수신 설정은 비공개 기록에만 저장, 시세·발송 판정은 데이터 저장소의 수집 작업. 화면에서 알림 규칙을 여는 것만으로 저장 기록을 바꾸지 말 것.
-    alerts는 dataSnapshot·readRemote에서 rebuy 뒤. 공개 기본값에는 기기 구독·구독 주소·발송키를 넣지 말 것. push-sw.js는 같은 사이트 알림 표시만.
+    alerts는 dataSnapshot·readRemote에서 rebuy 뒤. 공개 기본값에는 기기 구독·구독 주소·발송키를 넣지 말 것. push-sw.js는 같은 사이트 알림 표시·알림 클릭 시 종목 이동만.
+    알림 이동은 발송 중인 ticker·line을 사용(#alert?), 매매 계획·종목 선택은 이 기기에만. 아직 기록이 없으면 동기화 뒤 다시 찾고, 이동 후 해시를 일반 탭으로 돌린다.
   - 재매수는 종목 목록 state.rebuy = {items:[…]}(규칙은 rebuy.js 맨 위 주석). 옛 기록(rebuy에 종목 하나)은 고칠 때만 editRebuy가 목록으로 바꿈 —
     normalize·불러올 때 바꾸지 말 것(기기마다 다른 id → 기록 차이 창). 종목을 다 지워도 rebuy는 {items:[]}로 남김.
   - 재매수 단계 이름(ETF·달러선물 같음): 60분봉 차트의 N이평선은 'N선'(시세 파일 ma['N선'] — prices.js hourKey, 수집이 한국투자증권 분봉으로 계산), 일봉은 'N일선'. 옛 이름 'N분봉'은 같은 뜻 — stagesOf·futureRebuyStages가 읽을 때만 바꿔 보이고
@@ -110,9 +111,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=45"></script>
-  <link rel="stylesheet" href="css/app.css?v=45" />
-  <link rel="stylesheet" href="css/purchases.css?v=45" />
+  <script src="js/theme.js?v=46"></script>
+  <link rel="stylesheet" href="css/app.css?v=46" />
+  <link rel="stylesheet" href="css/purchases.css?v=46" />
 </head>
 <body>
   <header class="top">
@@ -280,20 +281,21 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=45"></script>
-  <script src="js/core.js?v=45"></script>
-  <script src="js/sync.js?v=45"></script>
-  <script src="js/prices.js?v=45"></script>
-  <script src="js/assets-calc.js?v=45"></script>
-  <script src="js/assets-store.js?v=45"></script>
-  <script src="js/alloc-link.js?v=45"></script>
-  <script src="js/purchases.js?v=45"></script>
-  <script src="js/trade-alerts.js?v=45"></script>
-  <script src="js/plans.js?v=45"></script>
-  <script src="js/futures.js?v=45"></script>
-  <script src="js/rebuy.js?v=45"></script>
-  <script src="js/alerts.js?v=45"></script>
-  <script src="js/push.js?v=45"></script>
-  <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openTab(location.hash.slice(1)||state.tab); save(); initializeAlerts(); initializePush();</script>
+  <script src="js/ma-ladder.js?v=46"></script>
+  <script src="js/core.js?v=46"></script>
+  <script src="js/sync.js?v=46"></script>
+  <script src="js/prices.js?v=46"></script>
+  <script src="js/assets-calc.js?v=46"></script>
+  <script src="js/assets-store.js?v=46"></script>
+  <script src="js/alloc-link.js?v=46"></script>
+  <script src="js/purchases.js?v=46"></script>
+  <script src="js/trade-alerts.js?v=46"></script>
+  <script src="js/plans.js?v=46"></script>
+  <script src="js/futures.js?v=46"></script>
+  <script src="js/rebuy.js?v=46"></script>
+  <script src="js/alerts.js?v=46"></script>
+  <script src="js/alert-target.js?v=46"></script>
+  <script src="js/push.js?v=46"></script>
+  <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

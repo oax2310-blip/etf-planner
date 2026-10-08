@@ -32,9 +32,14 @@ function normalize(){
 }
 normalize();
 function openTab(tab){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); render(); }
-$$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ openTab(b.dataset.tab); history.replaceState(null,"",`#${state.tab}`); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
-addEventListener("hashchange",()=>openTab(location.hash.slice(1)));
+function openPlannerLocation(){
+  if(typeof openPushAlertFromHash==="function"&&openPushAlertFromHash())return;
+  if(typeof clearPushAlertTarget==="function")clearPushAlertTarget();
+  openTab(location.hash.slice(1)||state.tab);
+}
+$$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ if(typeof clearPushAlertTarget==="function")clearPushAlertTarget(); openTab(b.dataset.tab); history.replaceState(null,"",`#${state.tab}`); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
+addEventListener("hashchange",openPlannerLocation);
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
-function render(){ if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }
+function render(){ if(typeof applyPendingPushAlert==="function"&&applyPendingPushAlert())return; if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }
