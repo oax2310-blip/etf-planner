@@ -106,17 +106,25 @@ function allocationTargets(alloc){
   return {groups,classes,section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||{target:null,linked:false}};
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
-// 종목의 buyPlan은 두 방식이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 비중 조정 완료(it.done)와 매수 완료는 별개.
+// 종목의 buyPlan은 이동평균선 돌파·매수대기·기존 직접 입력이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 비중 조정 완료(it.done)와 매수 완료는 별개.
 // ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}.
 //    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?}.
 //    부분 체결 회차는 원래 수량·가격과 잔량 예산을 고정한다. plannedShares 없는 옛 체결은 완료로 읽고, 처음 수정할 때만 계획 수량을 저장한다.
 //    수량은 purchaseFill로 회차 예산 안에서 내림하고, 표시한 수량을 그대로 저장·반영한다. 체결 금액만 고쳐도 수량은 바뀌지 않는다. 옛 기록은 읽을 때 새 필드를 채우지 않는다.
 // ② 직접 입력: stages = [{id, price?, shares?, plannedShares?, date?, condition?, amount(만원), done?, partial?, actual?}] — 첫 체결 때 plannedShares를 고정하고 shares는 누적 체결, 잔량이 있으면 partial=true(done 없음).
+// ③ 매수대기: wait = {line:원하는 이동평균선 이름}. 예산·체결 회차 없이 현재가 ≤ 그때의 이동평균선이면 도달하며 보유량을 바꾸지 않는다.
+//    알림은 notify.stages(개별 예외는 notify.keys.wait). 선 값이 바뀌어도 같은 알림 이력을 쓰고, 선택한 선을 바꾸면 이력을 새로 시작한다.
 // 이동평균선 돌파 단계(재매수 기본 단계와 같음): 시선(60분봉) 'N선', 일선 'N일선', 주선 'N주선', 월선 'N개월선'(각 25~150). 시세 파일 ma에 같은 이름으로 들어 있다
 // (데이터 저장소 kis_prices.py가 lines.names로 이 종목의 일봉·60분봉 이동평균을 계산 — purchase_line_plans).
 const PURCHASE_LINES = MA_LINES;
 const purchaseLineName = movingLineName;
 const purchaseLineNames = lines => [...new Set((Array.isArray(lines?.names)?lines.names:PURCHASE_LINES).map(purchaseLineName).filter(Boolean))];
+const purchaseWaitLine = plan => purchaseLineName(plan?.wait?.line);
+// 대기 기준가는 수집 작업이 계산한 ma만 사용한다. 시세·봉이 없으면 추정하지 않으며 읽기만 할 때 계획을 바꾸지 않는다.
+function purchaseWaitInfo(plan, entry){
+  const line=purchaseWaitLine(plan), price=line?plus(entry?.ma?.[line]):null, current=plus(entry?.close);
+  return {line,price,current,gapPct:price&&current?(current/price-1)*100:null,reached:!!(price&&current&&current<=price)};
+}
 const purchaseBuys = plan => plan?.buys&&typeof plan.buys==="object"&&!Array.isArray(plan.buys) ? plan.buys : {};
 const purchaseStageRecorded = stage => !!(stage?.done||stage?.partial);
 const purchasePlannedShares = stage => finite(stage?.plannedShares)??finite(stage?.shares);
@@ -181,6 +189,7 @@ function purchaseLineRows(plan, entry){
 // 합계: 예정 = 총 매수 금액(이동평균선 돌파) 또는 회차 예정액 합(직접 입력), 체결 = 부분 체결·완료의 실제 금액, 남은 예정 = 예산 차이·미체결 잔량 예정액.
 // 이동평균선 돌파의 회차 수는 지금 이동평균 기준이라 entry(시세 파일 종목)가 필요하다(없으면 목표가 회차만).
 function purchaseSummary(plan, entry=null){
+  if(plan?.wait)return {count:0,done:0,planned:0,actual:0,remaining:0};
   if(plan?.lines){
     const rows=purchaseLineRows(plan,entry), actual=rows.reduce((s,r)=>s+(r.actual||0),0), budget=Math.max(0,finite(plan.lines.budget)||0);
     return {count:rows.length,done:rows.filter(r=>r.done).length,planned:budget,actual,remaining:Math.max(0,budget-actual)};
@@ -190,9 +199,10 @@ function purchaseSummary(plan, entry=null){
   return {count:stages.length,done:done.length,planned:stages.reduce((n,s)=>n+amount(s),0),
     actual:recorded.reduce((n,s)=>n+Math.max(0,finite(s.actual)??amount(s)),0),remaining:stages.reduce((n,s)=>n+purchaseStageRemaining(s),0)};
 }
-// 방향: 이동평균선 돌파는 상승("up" — 현재가 ≥ 회차 가격이면 도달). 직접 입력은 마지막 회차 가격이 첫 회차보다 높으면 상승, 그 밖(가격 하나뿐·같거나 낮음)은 하락("down" — ≤).
+// 방향: 매수대기는 하락("down" — 현재가 ≤ 선택한 이동평균선), 이동평균선 돌파는 상승("up" — 현재가 ≥ 회차 가격이면 도달). 기존 직접 입력은 마지막 회차 가격이 첫 회차보다 높으면 상승, 그 밖은 하락.
 // 화면의 '도달' 표시와 휴대폰 알림이 같은 기준.
 function purchaseDirection(plan){
+  if(plan?.wait)return "down";
   if(plan?.lines)return "up";
   const p=(Array.isArray(plan?.stages)?plan.stages:[]).map(s=>plus(s?.price)).filter(v=>v!==null);
   return p.length>1&&p[p.length-1]>p[0]?"up":"down";
@@ -211,15 +221,21 @@ function purchaseQuoteKind(ticker){
 // 분할매수 회차 휴대폰 알림 규칙(js/trade-alerts.js buildTradeAlertRules와 같은 모양): 종목 코드가 있고 가격이 있는 미완료 회차 중 알림을 켠 것.
 // 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다.
 // 이동평균선 돌파 회차는 지금 이동평균 가격으로(이력은 단계 이름·회차로 이어져 이평선이 움직여도 다시 알리지 않음), 직접 입력 회차는 가격·방향을 바꾸면 이력이 새로.
-// 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py가 이동평균선 돌파 종목(purchase_line_plans)은 전체 시세·60분봉을,
+// 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py가 이동평균선 돌파·매수대기 종목(purchase_line_plans)은 선택한 선의 전체 시세·60분봉을,
 // 직접 입력 알림 종목(purchase_alert_tickers)은 장중 실행마다 종가를 받는다(함수 이름·켜짐 판정·단계 이름을 바꾸면 그쪽도 같이).
-// 라벨 '분할매수 N차'·'분할매수 25선 1차'·'분할매수 목표가'는 그 저장소 ma_alerts.py TRADE_LABEL_RE와 같은 형식.
+// 라벨 '매수대기 25개월선'·'분할매수 N차'·'분할매수 25선 1차'·'분할매수 목표가'는 그 저장소 ma_alerts.py TRADE_LABEL_RE와 같은 형식.
 function purchaseAlertRules(assets, prices){
   const rules=[];
   for(const g of Array.isArray(assets?.allocation?.groups)?assets.allocation.groups:[])for(const it of Array.isArray(g?.items)?g.items:[]){
     const plan=it?.buyPlan, ticker=String(it?.ticker||"").trim().toUpperCase(), kind=purchaseQuoteKind(ticker);
     if(!plan||!kind||!it.id||(plan.currency||assetQuote(prices,ticker)?.currency||"KRW")!==(kind==="국내"?"KRW":"USD"))continue;
     const add=(key,label,price,condition,revision)=>rules.push({id:`trade:buy:${it.id}:${key}`,kind:"trade",ticker,label,targetPrice:price,condition,quoteGroup:"stocks",quoteKey:ticker,quoteKind:kind,enabled:true,revision:JSON.stringify(revision)});
+    if(plan.wait){
+      const entry=prices?.stocks?.[ticker], info=purchaseWaitInfo(plan,entry?.kind===kind?entry:null);
+      if(["국내","해외"].includes(kind)&&info.price&&purchaseAlertOn(plan,{key:"wait"}))
+        add("wait",`매수대기 ${info.line}`,info.price,"down",["wait",info.line,"down"]);
+      continue;
+    }
     if(plan.lines){
       const entry=prices?.stocks?.[ticker];
       for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null))if(!r.done&&r.price&&purchaseAlertOn(plan,r))
