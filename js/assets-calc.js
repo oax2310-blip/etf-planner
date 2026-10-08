@@ -107,7 +107,7 @@ function allocationTargets(alloc){
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
 // 종목의 buyPlan은 이동평균선 돌파·매수대기·기존 직접 입력이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 비중 조정 완료(it.done)와 매수 완료는 별개.
-// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}.
+// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end?:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}. 목표 가격을 비우면 names의 마지막 선까지 매수한다.
 //    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?}.
 //    부분 체결 회차는 원래 수량·가격과 잔량 예산을 고정한다. plannedShares 없는 옛 체결은 완료로 읽고, 처음 수정할 때만 계획 수량을 저장한다.
 //    수량은 purchaseFill로 회차 예산 안에서 내림하고, 표시한 수량을 그대로 저장·반영한다. 체결 금액만 고쳐도 수량은 바뀌지 않는다. 옛 기록은 읽을 때 새 필드를 채우지 않는다.
@@ -134,18 +134,21 @@ const purchaseStageRemaining = stage => {
   return stage?.partial?planned>0?amount*Math.max(0,planned-(finite(stage.shares)||0))/planned:Math.max(0,amount-(finite(stage.actual)||0)):amount;
 };
 // 회차 가격: 이동평균 값이 있는 단계를 순서대로, 단계마다 다음 단계(값이 있는 단계) 가격까지 3번 — 단계 가격·⅓·⅔ 지점(재매수 trancheLevels와 같음,
-// 다음 단계가 없거나 더 낮으면 1차만). 그중 목표 가격보다 낮은 회차 + 마지막 '목표가' 회차(목표 가격). 값이 없는 단계(수집 전·봉 부족)는 건너뛴다.
+// 다음 단계가 없거나 더 낮으면 1차만). 목표 가격이 있으면 그보다 낮은 회차 + 마지막 '목표가' 회차(목표 가격).
+// 목표 가격이 없으면 선택한 마지막 선의 도달 회차까지 같은 금액을 배분한다. 마지막 선 시세가 없으면 새 회차를 만들지 않고 기다리며, 그 밖의 값이 없는 단계는 건너뛴다.
 // 회차 키: '25선:0'(단계 이름:회차 0~2), 목표가는 'end'. 상승 돌파라 현재가 ≥ 회차 가격이면 도달.
 function purchaseLineLevels(lines, entry){
-  const end=plus(lines?.end);if(!end)return [];
-  const known=purchaseLineNames(lines).map(name=>({name,price:plus(entry?.ma?.[name])})).filter(x=>x.price), out=[];
+  const end=plus(lines?.end), names=purchaseLineNames(lines);
+  if(lines?.end!==undefined&&lines.end!==null&&lines.end!==""&&!end)return [];
+  if(!end&&!plus(entry?.ma?.[names[names.length-1]]))return [];
+  const known=names.map(name=>({name,price:plus(entry?.ma?.[name])})).filter(x=>x.price), out=[];
   known.forEach((s,k)=>{
     const next=known[k+1];
     for(const [t,price] of lineThirds(s.price,next?.price).entries()){
-      if(price&&price<end)out.push({key:`${s.name}:${t}`,line:s.name,t,next:t?next.name:null,price});
+      if(price&&(!end||price<end))out.push({key:`${s.name}:${t}`,line:s.name,t,next:t?next.name:null,price});
     }
   });
-  out.push({key:"end",line:"목표가",t:0,next:null,price:end});
+  if(end)out.push({key:"end",line:"목표가",t:0,next:null,price:end});
   return out;
 }
 const purchaseLineLabel = row => row.key==="end" ? "목표가" : `${row.line} ${row.t+1}차`;
@@ -187,7 +190,7 @@ function purchaseLineRows(plan, entry){
   return [...records,...open.map(x=>({...x,done:false,amount:left/open.length}))].sort((a,b)=>order(a)-order(b));
 }
 // 합계: 예정 = 총 매수 금액(이동평균선 돌파) 또는 회차 예정액 합(직접 입력), 체결 = 부분 체결·완료의 실제 금액, 남은 예정 = 예산 차이·미체결 잔량 예정액.
-// 이동평균선 돌파의 회차 수는 지금 이동평균 기준이라 entry(시세 파일 종목)가 필요하다(없으면 목표가 회차만).
+// 이동평균선 돌파의 회차 수는 지금 이동평균 기준이라 entry(시세 파일 종목)가 필요하다(없으면 목표 가격을 넣은 계획만 목표가 회차).
 function purchaseSummary(plan, entry=null){
   if(plan?.wait)return {count:0,done:0,planned:0,actual:0,remaining:0};
   if(plan?.lines){

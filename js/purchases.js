@@ -48,9 +48,9 @@ const lineMarket=it=>["국내","해외"].includes(purchaseQuoteKind(it?.ticker))
 const waitEntry=it=>{const e=lineEntry(it)||quoteOf(it);return lineMarket(it)&&e?.kind===purchaseQuoteKind(it.ticker)?e:null;};
 const lineKnown=(lines,e)=>purchaseLineNames(lines).filter(n=>Number(e?.ma?.[n])>0);
 const rangeText=names=>names.length?`${names[0]}~${names[names.length-1]}`:"";
-// 단계 묶음(창의 '단계' 선택): 재매수 기본 14단계 전체, 일봉만, 60분봉만. 저장은 lines.names(수집 작업이 이 이름으로 이동평균을 계산).
+// 단계 묶음(창의 '단계' 선택). 목표 가격을 비우면 고른 마지막 선까지의 names만 저장해 수집 작업도 같은 선을 받는다.
 const LINE_SETS={all:PURCHASE_LINES,hour:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="선"),day:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="일선"),week:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="주선"),month:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="개월선"),legacy:PURCHASE_LINES.filter(n=>["선","일선"].includes(movingLineUnit(n)))};
-const lineSetOf=names=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||"custom";
+const lineSetOf=(names,extend=false)=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||(extend&&["hour","day","week","month","legacy","all"].find(k=>names.length&&names.every((n,i)=>LINE_SETS[k][i]===n)))||"custom";
 // ---------- 분할매수 ----------
 // 계획은 종목 안에 두므로 이름·목표 변경과 그룹 이동이 그대로 연결된다. 창에서 고치는 동안은 복사본만 바꾸고 저장할 때 반영한다.
 // 이동평균선 돌파(lines)·매수대기(wait)와 기존 직접 입력(stages). 새 계획은 돌파·대기만 선택하고 기존 회차 기록은 유지한다.
@@ -97,14 +97,14 @@ function renderPurchases(){
     const due=r=>now!==null&&!r.done&&r.price>0&&(up?now>=r.price:now<=r.price), priced=rows.some(r=>r.price>0);
     // 다음 회차: 아직 도달하지 않은 회차 중 현재가에 가장 가까운 가격(단계 순서와 가격 순서가 다를 수 있음)
     const next=now!==null?rows.filter(r=>!r.done&&r.price>0&&!due(r)).sort((a,b)=>Math.abs(a.price-now)-Math.abs(b.price-now))[0]:null, open=rows.filter(r=>!r.done);
-    const sharesKnown=rows.every(r=>r.plannedShares!==null&&(!r.recorded||r.shares!==null)),filledShares=rows.reduce((n,r)=>n+(r.shares||0),0),remainingShares=open.reduce((n,r)=>n+Math.max(0,(r.plannedShares||0)-(r.shares||0)),0);
+    const sharesKnown=rows.length>0&&rows.every(r=>r.plannedShares!==null&&(!r.recorded||r.shares!==null)),filledShares=rows.reduce((n,r)=>n+(r.shares||0),0),remainingShares=open.reduce((n,r)=>n+Math.max(0,(r.plannedShares||0)-(r.shares||0)),0);
     const gap=next?(next.price/now-1)*100:0;
     const nowText=now!==null&&priced?`현재가 ${pt(now)}<span class="price-date">${escA(q.asOf.slice(5))}</span>${next?` · 다음 ${escA(next.label)}까지 ${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`:""}`:"";
-    const known=lines?lineKnown(lines,entry):[], missing=lines?purchaseLineNames(lines).filter(n=>!known.includes(n)):[];
+    const names=lines?purchaseLineNames(lines):[],known=lines?lineKnown(lines,entry):[],missing=names.filter(n=>!known.includes(n)),lastLine=names[names.length-1],waitingLast=!!lines&&!plus(lines.end)&&!known.includes(lastLine);
     const partialCount=rows.filter(r=>r.recorded&&!r.done).length;
     const done=rows.filter(r=>r.done).length, completedOpen=openCompletedPurchases.has(it.id);
-    const head=lines?`<p class="purchase-ladder-line"><b>이동평균선 돌파</b> ${escA(rangeText(purchaseLineNames(lines)))} · 목표가 ${pt(lines.end)} · 총 ${man(lines.budget)}${open.length?` · 남은 ${open.length}회${partialCount?` · 부분 체결 ${partialCount}회`:` 회당 약 ${man(open[0].amount)}`}`:""}</p>
-        ${!known.length?`<p class="purchase-wait">이동평균 시세를 기다리는 중입니다. 다음 수집(장중 30분마다) 뒤 단계 회차가 보이고, 그 전에는 목표가 회차만 있습니다.</p>`
+    const head=lines?`<p class="purchase-ladder-line"><b>이동평균선 돌파</b> ${escA(rangeText(names))}${plus(lines.end)?` · 목표가 ${pt(lines.end)}`:"까지 매수"} · 총 ${man(lines.budget)}${open.length?` · 남은 ${open.length}회${partialCount?` · 부분 체결 ${partialCount}회`:` 회당 약 ${man(open[0].amount)}`}`:""}</p>
+        ${waitingLast?`<p class="purchase-wait">마지막 매수 평균선 ${escA(lastLine||"선택한 선")}의 시세를 기다리는 중입니다. 시세가 채워지면 이 선의 도달 회차까지 매수 금액을 나눕니다.</p>`:!known.length?`<p class="purchase-wait">이동평균 시세를 기다리는 중입니다. 다음 수집(장중 30분마다) 뒤 단계 회차가 보이고, 그 전에는 목표가 회차만 있습니다.</p>`
           :missing.length?`<p class="purchase-wait">아직 시세가 없는 단계 ${escA(missing.join("·"))}는 건너뜁니다(60분봉 긴 선은 수집이 과거 봉을 받는 동안 며칠 걸릴 수 있음).</p>`:""}`:"";
     const alertLine=!priced?"":alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
       :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
@@ -259,11 +259,18 @@ function renderWait(){
 // 이동평균선 돌파 설정: 총 매수 금액 = 목표 비중(비우면 종목 목표) × 기준 총자산 − 지금 평가액 + 이미 체결한 금액(매수한 수량을 자산 배분 보유량에 반영했다고 보고).
 // 새 계획·목표 비중을 고치면 자동으로 채우고, 직접 고친 금액은 그대로 둔다('다시 계산'으로 되돌림). 미리보기 회차는 assets-calc.js purchaseLineRows(지금 이동평균).
 function linesDraft(){
-  const f=form(), it=pickedItem()?.it, own=numIn(f.lineTarget.value);
-  return {names:LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines),end:numIn(f.lineEnd.value),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
+  const f=form(), own=numIn(f.lineTarget.value),end=numIn(f.lineEnd.value),names=LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines),last=names.indexOf(f.lineEndLine.value);
+  return {names:end===null?names.slice(0,last+1):names,...(end!==null?{end}:{}),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
+}
+function renderLineEnd(names,selected=form().lineEndLine.value){
+  const input=form().lineEndLine;
+  input.innerHTML=names.map(n=>`<option value="${escA(n)}">${escA(n)}</option>`).join("");
+  input.value=names.includes(selected)?selected:names[names.length-1]||"";
 }
 function renderLines(){
   const f=form(), picked=pickedItem(), it=picked?.it, q=quoteOf(it), cur=quoteOf(it)?.currency||"KRW", lines=mode()==="lines";
+  renderLineEnd(LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines));
+  el("lineEndLineField").hidden=f.lineEndLine.disabled=!lines||numIn(f.lineEnd.value)!==null;
   el("manualCurrencyField").hidden=!picked||!!q;
   all("[data-line-cur]").forEach(x=>x.textContent=cur==="USD"?"$":"원");
   const box=el("lineResult"), list=el("linePreview"), hint=t=>`<p class="hint">${t}</p>`;list.innerHTML="";
@@ -279,13 +286,16 @@ function renderLines(){
   el("lineBudgetNote").textContent=goal===null?"매수 목표 비중을 넣으면 계산합니다":`목표 ${pc(target)} ${man(goal)} − 지금 보유 ${man(value)}${spent?` + 체결 ${man(spent)}`:""} = ${man(auto)}${numIn(f.lineBudget.value)!==auto?" · 직접 고친 금액":""}`;
   const draft=linesDraft(), entry=lineEntry(it), rows=purchaseLineRows({lines:draft,buys:purchaseDraft.buys},entry), open=rows.filter(r=>!r.done), known=lineKnown(draft,entry);
   const out=[];
-  if(!(draft.end>0))out.push(`<span class="ladder-error">목표 가격을 넣으세요.</span>`);
+  if(draft.end!==undefined&&!(draft.end>0))out.push(`<span class="ladder-error">목표 가격은 0보다 크게 넣거나 비우세요.</span>`);
+  else if(!draft.names.length)out.push(`<span class="ladder-error">마지막 매수 평균선을 고르세요.</span>`);
   else if(!(draft.budget>0))out.push(`<span class="ladder-error">${goal!==null&&goal<=value?"지금 평가액이 목표 이상이라 더 살 금액이 없습니다.":"총 매수 금액을 넣으세요."}</span>`);
   else{
     const rate=cur==="USD"?s.fx:1, now=q&&q.currency===cur?q.close:null;
     const partial=open.filter(r=>r.remainingShares>0).length;
+    if(draft.end===undefined)out.push(`<b>${escA(draft.names[draft.names.length-1])}</b>의 도달 회차까지 매수합니다.`);
     out.push(`<b>${open.length}회</b>${partial?` · 부분 체결 ${partial}회`:open.length?` · 회당 약 <b>${man(open[0].amount)}</b>${cur==="USD"&&rate?` <small>(약 ${priceText(open[0].amount*1e4/rate,"USD")})</small>`:""}`:""}${spent?` · 체결 ${man(spent)}`:""}`);
-    if(!known.length)out.push(`<small>${escA(it.ticker)}의 이동평균 시세가 아직 없습니다. 저장하면 다음 수집(장중 30분마다)부터 일봉·60분봉 이동평균을 받아 단계 회차가 채워지고(60분봉 긴 선은 며칠), 그 전에는 목표가 회차만 있습니다.</small>`);
+    if(draft.end===undefined&&!known.includes(draft.names[draft.names.length-1]))out.push(`<small>마지막 매수 평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
+    else if(!known.length)out.push(`<small>${escA(it.ticker)}의 이동평균 시세가 아직 없습니다. 저장하면 다음 수집(장중 30분마다)부터 이동평균을 받아 단계 회차가 채워지고, 그 전에는 목표가 회차만 있습니다.</small>`);
     list.innerHTML=rows.map(r=>{const fill=!r.done&&!purchaseBuys(purchaseDraft)[r.key]?purchaseTrackingFill(r,it,prices,s.fx,cur):null,qty=r.plannedShares??fill?.shares;
       return `<span class="${r.done?"done":now!==null&&now>=r.price?"due":""}"><b>${escA(purchaseLineLabel(r))}</b> ${r.price?priceText(r.price,cur):""}${r.done?" · 체결":tracksETF(it)?qty!==null&&qty!==undefined?` → ${qtyText(qty,it)}`:" · 수량 계산 불가":""}</span>`;}).join("");
   }
@@ -322,7 +332,8 @@ function openPurchase(id){
   originalMode=purchaseMode(purchaseDraft);f.mode.value=originalMode;
   const waitLine=purchaseWaitLine(purchaseDraft)||"25개월선";
   f.waitPeriod.value=parseInt(waitLine);f.waitUnit.value=movingLineUnit(waitLine);f.waitNotify.checked=purchaseDraft.wait?purchaseAlertOn(purchaseDraft,{key:"wait"}):true;
-  f.lineSet.value=lineSetOf(purchaseLineNames(lines));f.lineTarget.value=finite(lines?.target)??"";f.lineEnd.value=finite(lines?.end)??"";f.lineBudget.value=finite(lines?.budget)??"";budgetAuto=!lines;
+  f.lineSet.value=lineSetOf(purchaseLineNames(lines),!plus(lines?.end));f.lineTarget.value=finite(lines?.target)??"";f.lineEnd.value=finite(lines?.end)??"";f.lineBudget.value=finite(lines?.budget)??"";budgetAuto=!lines;
+  renderLineEnd(purchaseLineNames(lines));
   f.manualCurrency.value=purchaseDraft.currency||"KRW";
   f.note.value=purchaseDraft.note||"";renderDraft();
   el("purchaseDelete").hidden=!found;
@@ -334,7 +345,8 @@ function openPurchase(id){
     if(mode()==="lines"){
       const kind=purchaseQuoteKind(item.ticker),l=linesDraft();
       if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다.");return;}
-      if(!(l.end>0)){alert("목표 가격을 넣으세요.");f.lineEnd.focus();return;}
+      if(l.end!==undefined&&!(l.end>0)){alert("목표 가격은 0보다 크게 넣거나 비우세요.");f.lineEnd.focus();return;}
+      if(!l.names.length){alert("마지막 매수 평균선을 고르세요.");f.lineEndLine.focus();return;}
       if(!(l.budget>0)){alert("총 매수 금액을 넣으세요(목표 비중을 넣으면 계산합니다).");f.lineBudget.focus();return;}
       draft.lines=l;delete draft.wait;delete draft.stages;delete draft.ladder;
       if(kind!=="국내")draft.currency="USD";else delete draft.currency;
@@ -376,7 +388,7 @@ function initialize(){
   el("purchaseItemList").onkeydown=e=>{const b=e.target.closest?.("[data-pick]");if(!b||!["ArrowDown","ArrowUp"].includes(e.key))return;e.preventDefault();
     const next=e.key==="ArrowDown"?b.nextElementSibling:b.previousElementSibling;(next||(e.key==="ArrowUp"?search:null))?.focus();};
   f.lineTarget.oninput=()=>{budgetAuto=true;renderLines();};
-  f.lineEnd.oninput=()=>renderLines();f.lineSet.onchange=()=>renderLines();
+  f.lineEnd.oninput=()=>renderLines();f.lineSet.onchange=f.lineEndLine.onchange=()=>renderLines();
   f.lineBudget.oninput=()=>{budgetAuto=false;renderLines();};
   el("lineBudgetReset").onclick=()=>{budgetAuto=true;renderLines();};
   f.waitPeriod.oninput=()=>renderWait();f.waitUnit.onchange=()=>renderWait();
