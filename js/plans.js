@@ -158,6 +158,8 @@ addEventListener("resize",fitNames);
 // 수정 창의 카드 이름 칸과 같은 값(비우면 cardName을 지워 종목 코드로). 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
 // 모바일 카드 한 줄·'회' 숨김. 상태는 실제 체결/완료 수로: 시작 전 → 진행 중 → 전량(비중<100이면 계획) 매도 완료.
 // 옛 currentPrice·started·asOf·basisPrice는 값만 보존하며 계산·새 계획·수정 창에 쓰지 않는다.
+// 완료 회차는 기본 접기. 계획별 펼침 상태는 이 화면에서만 유지하고 거래 기록·동기화에는 저장하지 않는다.
+const openCompletedSales=new Set();
 function renderPlans(){
   const list=$("planList"), pencil=PENCIL;
   list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()];
@@ -176,6 +178,7 @@ function renderPlans(){
   const p=selected(); const main=$("planMain");
   if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
   const done=p.checked.filter(Boolean).length, shares=p.holdings.reduce((s,h)=>s+Number(h.shares||0),0), gap=(p.startPrice-p.endPrice)/Math.max(p.stages-1,1);
+  const completedOpen=openCompletedSales.has(p.id);
   const started=done>0||Object.keys(p.fills||{}).length>0, pct=planSalePct(p), status=done===p.stages?pct<100?"계획 매도 완료":"전량 매도 완료":started?"진행 중":"시작 전";
   const startText=p.currency==="USD"&&Number.isInteger(Math.round(p.startPrice*1e6)/1e4)?Number(p.startPrice).toFixed(2):String(p.startPrice); // 달러는 소수 둘째 자리까지면 $80.00처럼
   const scale=10**planShareDigits(p), sale=p.holdings.reduce((s,h)=>s+Math.round(saleShares(h.shares,p)*scale),0)/scale, keep=Math.round((shares-sale)*scale)/scale;
@@ -190,7 +193,12 @@ function renderPlans(){
     ${planSaleAccountView(p)}
     <div class="metrics card"><div class="metric"><label>${p.sellTargetId?"기준 ETF 계획 상태":"현재 계획 상태"}</label><strong>${esc(status)}</strong><small${worth!=null?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:""}>${done} / ${p.stages}회 완료 · ${p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}</small></div><div class="metric"><div class="trade-price-heading"><label for="startPrice">첫 매도 기준가</label>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"첫 매도",p.checked[0]):""}</div><label class="metric-edit" title="눌러서 수정">${p.currency==="USD"?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" value="${esc(startText)}">${p.currency==="USD"?"":"원"}${pencil}</label><small>${p.currency==="USD"?`${fxText(p.startPrice*p.fx)} · <label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="number" min="0" step="any" inputmode="decimal" aria-label="달러/원 환율" value="${esc(String(p.fx))}">${pencil}</label>`:""}</small></div><div class="metric"><label>마지막 매도 기준가</label><strong>${priceText(p.endPrice,p.currency)}</strong><small>${p.currency==="USD"?fxText(p.endPrice*p.fx):""}</small></div></div>
     <div class="control-grid"><section class="card panel"><h2>계산 요약</h2><p>${esc(splitNote)}</p><div class="inline-fields"><div><div class="sub">회차당 가격 하락폭</div><strong>${priceText(gap,p.currency)}</strong></div><div><div class="sub">예상 1회 주문 비중</div><strong>${p.stages?decimal.format(pct/p.stages):"—"}%</strong></div></div></section><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
-    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${p.stages}회 완료</span></div><section class="card table-card"><div class="m-head"><span>회차 · 기준가</span><span>${oneName?`<b>${oneName}</b>`:""}<span>계획 · 체결</span></span></div><div class="table-head"><span>회차</span><span>기준가</span><span>매도 계획 · 체결</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>planSaleRow(p,i,oneName)).join("")}</div></section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
+    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${p.stages}회 완료</span>${done?`<button class="btn mini ghost" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleTable">완료 ${done}회 ${completedOpen?"접기":"펼치기"}</button>`:""}</div><section class="card table-card sale-table${completedOpen?"":" hide-completed"}${done===p.stages?" all-done":""}" id="saleTable"><div class="m-head"><span>회차 · 기준가</span><span>${oneName?`<b>${oneName}</b>`:""}<span>계획 · 체결</span></span></div><div class="table-head"><span>회차</span><span>기준가</span><span>매도 계획 · 체결</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>planSaleRow(p,i,oneName)).join("")}</div>${done===p.stages?'<div class="sale-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
+  const completedToggle=$("toggleCompletedSales");
+  if(completedToggle)completedToggle.onclick=()=>{
+    const open=!openCompletedSales.has(p.id);if(open)openCompletedSales.add(p.id);else openCompletedSales.delete(p.id);
+    $("saleTable").classList.toggle("hide-completed",!open);completedToggle.setAttribute("aria-expanded",String(open));completedToggle.textContent=`완료 ${done}회 ${open?"접기":"펼치기"}`;
+  };
   // 첫 매도 기준가·달러 환율은 수정 창과 같은 필드. 카드에서 Enter/blur 저장·Esc 취소; 0 이하·빈 값은 원복, 폭은 글자 수.
   bindSaleAccount(p);
   const inlineEdit=(id,text,key)=>{const el=$(id);if(!el)return;const fit=()=>el.style.width=`${Math.max(3,el.value.length-(el.value.split(".").length-1)*.6)+.4}ch`; fit(); el.oninput=fit;
