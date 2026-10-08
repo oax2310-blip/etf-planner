@@ -148,6 +148,13 @@ test('별도 기준선은 같은 종목 계획이나 계획 없는 종목의 알
   assert.equal(a.records(),before);
 });
 
+test('매수대기 알림은 같은 종목의 매도 계획 대신 해당 계좌 매수대기 카드로 이동한다',()=>{
+  const assets={allocation:{groups:[{items:[{id:'one',ticker:'TEST',buyPlan:{wait:{line:'25개월선'}}},{id:'two',ticker:'TEST',buyPlan:{wait:{line:'25개월선'}}}]}]}};
+  const p=page({plans:[{id:'sell',ticker:'TEST'}]},assets),card=p.node('two');card.dataset.purchaseItem='two';p.cards.push(card);
+  const before=JSON.stringify(assets);p.open({ticker:'TEST',line:'매수대기 25개월선',ruleId:'trade:buy:two:wait'});
+  assert.equal(p.state().tab,'buys');assert.equal(p.ctx.location.hash,'#buys');assert.deepEqual(p.calls.focused,['two']);assert.equal(JSON.stringify(assets),before);
+});
+
 test('달러선물 손절·재매수 알림은 해당 화면을 펼치며 기록을 바꾸지 않는다',()=>{
   const p=page(),before=p.records();p.open({ticker:'202612',line:'달러선물 신저점 손절 시작'});
   assert.equal(p.state().tab,'futures');assert.equal(p.ctx.futureRebuyExpanded,true);assert.equal(p.records(),before);

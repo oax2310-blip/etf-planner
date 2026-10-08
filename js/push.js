@@ -7,7 +7,7 @@ let pendingPushTarget = null;
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
 // 발송된 ticker·line으로 기존 기록을 찾는다. 화면 선택(selectedPlan·selectedRebuy)은 이 기기에만 저장하고 매매 기록은 만들거나 고치지 않는다.
 function pushAlertTab(target){
-  return target.line.startsWith("분할매도 ")?"plans":target.line.startsWith("분할매수 ")?"buys":target.line.startsWith("달러선물 ")?"futures":target.line.startsWith("재매수 ")?"rebuy":null;
+  return target.line.startsWith("분할매도 ")?"plans":target.line.startsWith("분할매수 ")||target.line.startsWith("매수대기 ")?"buys":target.line.startsWith("달러선물 ")?"futures":target.line.startsWith("재매수 ")?"rebuy":null;
 }
 function pushAlertDestination(target){
   const same=ticker=>linkTicker(ticker)===linkTicker(target.ticker), tab=pushAlertTab(target);

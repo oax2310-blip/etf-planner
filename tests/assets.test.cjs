@@ -9,6 +9,17 @@ const vm = require('node:vm');
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
 return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
+test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
+  for(const line of ['25선','60일선','20주선','25개월선']){
+    const plan={wait:{line},currency:'USD',notify:{stages:true}},assets={allocation:{groups:[{items:[{id:'a',ticker:'AAA',buyPlan:plan}]}]}},before=JSON.stringify(assets);
+    assert.deepEqual(c.purchaseSummary(plan),{count:0,done:0,planned:0,actual:0,remaining:0});assert.equal(c.purchaseDirection(plan),'down');
+    assert.deepEqual(c.purchaseAlertRules(assets,null),[]);
+    const rules=c.purchaseAlertRules(assets,{stocks:{AAA:{kind:'해외',close:105,ma:{[line]:100}}}});
+    assert.equal(rules.length,1);assert.equal(rules[0].targetPrice,100);assert.equal(rules[0].condition,'down');assert.equal(rules[0].id,'trade:buy:a:wait');
+    assert.equal(JSON.stringify(assets),before);
+    for(const invalid of ['', '401개월선','0일선','25개월선 메모']){plan.wait.line=invalid;assert.deepEqual(c.purchaseAlertRules(assets,{stocks:{AAA:{kind:'해외',ma:{[invalid]:100}}}}),[]);}
+  }
+});
 const prices = {stocks: {
   '111111': {kind: '국내', asOf: '2026-01-02', close: 10000},
   AAA: {kind: '해외', asOf: '2026-01-02', close: 50},
