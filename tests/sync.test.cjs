@@ -394,3 +394,81 @@ test('시세 파일을 읽지 못해도 기록 동기화는 그대로 하고 알
   assert.match(h.status(), /동기화 완료/);
   assert.match(h.elements.get('priceStatus').textContent, /시세 확인 실패/);
 });
+
+test('시세 즉시 불러오기는 ETag 없이 파일만 다시 읽고 기준가와 공유 시세를 반영한다', async () => {
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});
+  await h.restored();
+  const next={...PRICES,updatedAt:'2026-09-30T14:10:00+09:00',stocks:{AAA:{...PRICES.stocks.AAA,close:140,ma:{'25개월선':95}}}};
+  h.server.prices={etag:'"p1"',text:JSON.stringify(next)}; // 서버의 ETag가 같아도 수동 조회는 실제 파일을 받는다.
+  const accepted=[];h.context.assetStore={acceptPrices:(...args)=>accepted.push(args)};
+  const requests=h.server.requests,writes=h.server.writes;
+  await h.elements.get('refreshPricesBtn').onclick();
+  assert.equal(h.server.requests,requests+1,'기록이나 수집 작업 API는 호출하지 않는다');
+  assert.equal(h.server.priceAsks.at(-1),null);
+  assert.equal(statePlan(h).endPrice,95);
+  assert.equal(JSON.parse(h.items.get('test-state')).plans[0].endPrice,95);
+  assert.equal(JSON.parse(h.items.get('etf-planner-prices')).stocks.AAA.close,140);
+  assert.equal(accepted.length,1);assert.equal(accepted[0][1].stocks.AAA.close,140);
+  assert.equal(h.server.writes,writes,'기록 업로드는 기존 동기화가 처리한다');
+  assert.equal(h.elements.get('refreshPricesBtn').disabled,false);
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 불러오기 완료.*최근 수집/);
+});
+
+test('시세 즉시 불러오기 실패는 마지막 시세·기준가를 유지하고 다시 누를 수 있다', async () => {
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});await h.restored();
+  const cached=h.items.get('etf-planner-prices'),before=statePlan(h);
+  h.server.priceStatus=500;
+  await h.elements.get('refreshPricesDialogBtn').onclick();
+  assert.equal(h.items.get('etf-planner-prices'),cached);assert.deepEqual(statePlan(h),before);
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 확인 실패/);
+  assert.equal(h.elements.get('refreshPricesBtn').disabled,false);
+  h.server.priceStatus=0;await h.elements.get('refreshPricesBtn').onclick();
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 불러오기 완료/);
+});
+
+test('시세 즉시 불러오기 중 중복 클릭과 자동 동기화는 조회를 겹치지 않는다', async () => {
+  const h=harness({remote:empty(),base:snap(empty()),prices:PRICES});await h.restored();
+  const fetch=h.context.fetch,requests=h.server.requests;let release;
+  h.context.fetch=async(...args)=>{await new Promise(resolve=>release=resolve);return fetch(...args);};
+  const work=h.elements.get('refreshPricesBtn').onclick();
+  assert.equal(h.elements.get('refreshPricesBtn').disabled,true);
+  assert.equal(h.elements.get('refreshPricesDialogBtn').disabled,true);
+  assert.match(h.elements.get('refreshPricesBtn').textContent,/불러오는 중/);
+  await h.elements.get('refreshPricesDialogBtn').onclick();await h.run();
+  assert.equal(h.server.requests,requests);
+  release();await work;
+  assert.equal(h.server.requests,requests+1);
+  assert.equal(h.elements.get('refreshPricesBtn').disabled,false);
+  assert.equal(vm.runInContext('sync.again',h.context),true,'자동 동기화는 다음 순서로 대기한다');
+});
+
+test('연결 전 시세 버튼은 요청 없이 동기화 설정을 열고, 시세 파일이 없으면 완료로 표시하지 않는다', async () => {
+  const off=harness({connect:false});await off.restored();
+  await off.elements.get('refreshPricesBtn').onclick();
+  assert.equal(off.server.requests,0);assert.equal(off.elements.get('syncDialog').open,true);
+  assert.match(off.elements.get('priceRefreshStatus').textContent,/연결해 주세요/);
+  const h=harness({remote:empty(),base:snap(empty()),prices:PRICES});await h.restored();
+  h.server.prices=null;await h.elements.get('refreshPricesBtn').onclick();
+  assert.equal(h.items.has('etf-planner-prices'),false);
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 파일.*없어/);
+  assert.doesNotMatch(h.elements.get('priceRefreshStatus').textContent,/완료/);
+});
+
+test('시세를 받는 동안 연결이 바뀌면 이전 저장소 응답을 적용하지 않는다', async () => {
+  const h=harness({remote:empty(),base:snap(empty()),prices:PRICES});await h.restored();
+  const cached=h.items.get('etf-planner-prices'),fetch=h.context.fetch;let release;
+  h.context.fetch=async(...args)=>{await new Promise(resolve=>release=resolve);return fetch(...args);};
+  const work=h.elements.get('refreshPricesBtn').onclick();
+  vm.runInContext('sync.token=""',h.context);release();await work;
+  assert.equal(h.items.get('etf-planner-prices'),cached);
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/연결 설정이 바뀌었습니다/);
+});
+
+test('수동 시세 조회가 끝나도 입력 중인 메모를 다시 그려 지우지 않는다', async () => {
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});await h.restored();
+  h.server.prices={etag:'"p2"',text:JSON.stringify({...PRICES,updatedAt:'2026-09-30T14:10:00+09:00'})};
+  let renders=0;h.context.render=()=>renders++;h.context.document.activeElement={tagName:'TEXTAREA',value:'입력 중인 가상 메모'};
+  await h.elements.get('refreshPricesBtn').onclick();
+  assert.equal(renders,0);assert.equal(vm.runInContext('sync.redraw',h.context),true);
+  h.context.document.activeElement=null;vm.runInContext('redrawIdle()',h.context);assert.equal(renders,1);
+});
