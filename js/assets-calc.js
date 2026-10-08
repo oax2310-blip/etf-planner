@@ -1,7 +1,7 @@
 // 자산 현황·플래너 분할매수의 계산, 자산 배분 연동, 구역별 병합. 계산 기준은 각 함수 주석, 공통 작업 규칙은 AGENTS.md.
 // tests/assets.test.cjs·시세 수집도 DOM 없이 실행하므로 함수 밖에서 화면을 건드리지 않는다.
 const ASSET_SECTIONS = ["allocation","ledger","savings"]; // 기록 파일의 세 구역. 기기 간 병합은 구역마다 따로(savedAt)
-const ASSET_REGIONS = ["미국","국내","중국","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
+const ASSET_REGIONS = ["미국","국내","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
 const finite = v => v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v)) ? Number(v) : null;
 const plus = v => { const n=finite(v); return n!==null&&n>0 ? n : null; };
 
@@ -32,6 +32,14 @@ function assetTradeQuote(prices, it){
 
 // ---------- 자산 배분 ----------
 // amount·total은 만원, target은 % 숫자(3 = 3%). 현금 단위는 cashValue 주석.
+// 이전 중국·주식은 해외·중국으로 표시하고 인도 바로 뒤에 둔다. id·목표·그룹 연결과 저장된 기록은 그대로 유지한다.
+function allocationClassList(alloc){
+  const classes=(alloc?.classes||[]).map(c=>c.region==="중국"&&c.name==="주식"?{...c,region:"해외",name:"중국"}:c);
+  const china=classes.filter(c=>c.region==="해외"&&c.name==="중국"), rest=classes.filter(c=>!china.includes(c));
+  const india=rest.findIndex(c=>c.region==="해외"&&c.name==="인도");
+  if(india<0||!china.length)return classes;
+  rest.splice(india+1,0,...china);return rest;
+}
 // 기준 총자산 입력: 숫자만 넣으면 기존처럼 만원. 억·만원·원 표기는 만원 숫자로 환산하며, 빈칸(null)과 잘못된 입력(NaN)을 구분한다.
 function parseAllocationTotal(value){
   const text=String(value??"").replace(/[\s,]/g,"");
@@ -241,8 +249,9 @@ function allocationSummary(alloc, prices){
   const cash=(alloc?.cash||[]).reduce((s,c)=>s+cashValue(c,fx),0);
   for(const c of alloc?.classes||[])if(c.cash)classes.set(c.id,(classes.get(c.id)||0)+cash);
   const grand=invest+cash, base=plus(alloc?.total)||grand;
-  const regions=[...new Set([...ASSET_REGIONS,...(alloc?.classes||[]).map(c=>c.region||"기타")])]
-    .map(name=>({name,classes:(alloc?.classes||[]).filter(c=>(c.region||"기타")===name)})).filter(r=>r.classes.length)
+  const classList=allocationClassList(alloc);
+  const regions=[...new Set([...ASSET_REGIONS,...classList.map(c=>c.region||"기타")])]
+    .map(name=>({name,classes:classList.filter(c=>(c.region||"기타")===name)})).filter(r=>r.classes.length)
     .map(r=>({...r,value:r.classes.reduce((s,c)=>s+(classes.get(c.id)||0),0),target:r.classes.some(c=>targets.classes.get(c.id).target!==null)?r.classes.reduce((s,c)=>s+(targets.classes.get(c.id).target??0),0):null}));
   return {fx, invest, cash, grand, base, items, groups, classes, regions, targets, section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||0, pct:v=>base>0?v/base*100:0};
 }

@@ -260,6 +260,23 @@ test('자산 배분 합계: 그룹·분류·지역, 현금 분류, 빼는 현금
   near(c.allocationSummary({...alloc}, null).cash, (1000000 + 130000 - 200000) / 1e4, '시세가 없으면 직접 넣은 환율');
 });
 
+test('중국 분류: 기존 연결·목표·기록을 보존하고 해외의 인도 다음에 합산한다', () => {
+  const alloc={total:1000,cash:[],classes:[{id:'cn',region:'중국',name:'주식',target:30},
+    {id:'kr',region:'국내',name:'주식'}, {id:'jp',region:'해외',name:'일본'},
+    {id:'in',region:'해외',name:'인도'}, {id:'eu',region:'해외',name:'유럽'}],
+    groups:[{id:'cn-g',classId:'cn',items:[{id:'cn-i',amount:100,target:10}]},
+      {id:'in-g',classId:'in',items:[{id:'in-i',amount:200,target:20}]}]};
+  const before=JSON.stringify(alloc), s=c.allocationSummary(alloc,null);
+  assert.deepEqual(s.regions.map(r=>r.name),['국내','해외']);
+  const overseas=s.regions.find(r=>r.name==='해외');
+  assert.deepEqual(overseas.classes.map(x=>[x.id,x.name]),[['jp','일본'],['in','인도'],['cn','중국'],['eu','유럽']]);
+  assert.equal(overseas.value,300);assert.equal(overseas.target,30);
+  assert.equal(s.classes.get('cn'),100);assert.equal(s.targets.classes.get('cn').target,10);
+  assert.equal(JSON.stringify(alloc),before,'표시·합산만으로 저장 기록을 바꾸지 않는다');
+  alloc.classes[0]={...alloc.classes[0],region:'해외',name:'중국'};
+  assert.deepEqual(c.allocationSummary(alloc,null).regions.find(r=>r.name==='해외').classes.map(x=>x.id),['jp','in','cn','eu']);
+});
+
 test('월별 손익: 계좌 합계·대출 제외, 월 수익률 합, 선물옵션은 마지막 달 총자산으로, 연환산', () => {
   const year = {accounts: [{name: 'A'}, {name: '대출', loan: true}, {name: 'B'}], futures: -1000,
     months: [{m: 2, pnl: 2000, balances: [100000, 50000]}, {m: 1, total: 100000}, {m: 3, pnl: 1000, interest: -50, balances: [150000, null, 50000]}, {m: 4, balances: [200000]}]};
