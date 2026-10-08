@@ -1,4 +1,4 @@
-// 자산 현황 화면(규칙은 assets.html HANDOFF). theme → assets-calc → assets-store → assets 순서로 불러온다.
+// 자산 현황 화면. 기능 규칙은 해당 함수 주석, 계산·기록은 assets-calc.js·assets-store.js, 공통 작업 규칙은 AGENTS.md.
 const A_UI_KEY = "etf-planner-assets-ui";
 const A_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 주황색(js/prices.js PRICE_STALE_DAYS와 같음)
 const el = id => document.getElementById(id), all = sel => document.querySelectorAll(sel);
@@ -17,6 +17,7 @@ const newId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${M
 const numIn = v => { const s=String(v??"").trim(); return s===""?null:finite(s); };
 
 let doc=assetStore.doc, prices=assetStore.prices;
+// 고른 탭·연도·시나리오는 이 기기 etf-planner-assets-ui에만 저장하고 동기화하지 않는다.
 const ui = {tab:"alloc", year:null, scenario:null, ...readJson(A_UI_KEY, {})};
 const setUi = patch => { Object.assign(ui, patch); writeJson(A_UI_KEY, ui); };
 // 바꾼 구역의 savedAt을 새로 찍고 저장 → 잠시 뒤 동기화
@@ -39,7 +40,7 @@ const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n
 const quoteText = q => !q ? "" : `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)} <span class="price-date${q.stale||q.asOf&&priceDays(q.asOf)>A_STALE_DAYS?" old":""}">${q.manual?"직접 입력 ":""}${q.asOf?`${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))}`:""}${q.stale?" · 조회 실패":""}</span>`;
 
 // ---------- 자산 배분 ----------
-// 검색은 화면에만 적용한다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하고, 기록·합계는 바꾸지 않는다.
+// 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 화면 목록만 거른다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하며 기록·합계는 바꾸지 않는다.
 let allocQuery = "";
 const allocSearchText = v => String(v??"").normalize("NFKC").toLowerCase().replace(/\s+/g,"");
 function filterAllocItems(){
@@ -58,7 +59,7 @@ function filterAllocItems(){
   el("allocSearchClear").classList.toggle("hidden",!allocQuery);
   el("allocSearchEmpty").classList.toggle("hidden",!terms.length||matches.size>0);
 }
-// 큰 분류(classes, 엑셀 '분할 정리') → 그룹(groups, Sheet2의 굵은 제목) → 종목(items, 소분류 section은 그룹 안 작은 제목)
+// 투자구성은 지역·큰 분류 합계, 자산 배분은 그룹별 종목·현금. 큰 분류(classes) → 그룹(groups) → 종목(items, 소분류 section은 그룹 안 작은 제목).
 function renderAlloc(tab="alloc"){
   const a=doc.allocation, view=el(tab+"View"), strategy=tab==="strategy";
   el((strategy?"alloc":"strategy")+"View").innerHTML=""; // 같은 입력칸 id가 두 화면에 남지 않게

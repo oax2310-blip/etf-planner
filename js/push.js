@@ -1,12 +1,11 @@
-// 휴대폰·PC 웹 푸시: 구독은 비공개 기록에만, 발송키는 서버에만 둔다. 알림 권한은 사용자 버튼으로 요청한다.
-// 기기마다 따로 연결하고 연결·발송 방식은 같다. 안내 문구만 PC(theme.js와 같은 마우스 기준)와 휴대폰으로 나눈다.
+// 휴대폰·PC 웹 푸시 연결·종목 이동. 규칙은 alerts.js·trade-alerts.js, 공통 이동 주소는 alert-target.js·push-sw.js와 연결된다.
 const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
 let pushConfig = null, pushSubscription = null, pushBusy = false, pushMessage = "";
 let pendingPushTarget = null;
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
-// 알림의 종목·기준선만으로 기존 기록을 찾는다. 화면 선택은 이 기기에만 저장하고 매매 기록은 만들거나 고치지 않는다.
+// 발송된 ticker·line으로 기존 기록을 찾는다. 화면 선택(selectedPlan·selectedRebuy)은 이 기기에만 저장하고 매매 기록은 만들거나 고치지 않는다.
 function pushAlertTab(target){
   return target.line.startsWith("분할매도 ")?"plans":target.line.startsWith("분할매수 ")?"buys":target.line.startsWith("달러선물 ")?"futures":target.line.startsWith("재매수 ")?"rebuy":null;
 }
@@ -28,12 +27,13 @@ function pushAlertDestination(target){
   return rule?{tab:state.tab,ruleId:rule.id}:null;
 }
 function clearPushAlertTarget(){pendingPushTarget=null;}
+// #alert? 이동 목표를 메모리에 남겨 아직 기록이 없는 기기도 동기화 후 다시 찾을 수 있게 한다.
 function openPushAlertFromHash(){
   const target=pushAlertTargetFromHash(location.hash);if(!target)return false;
   pendingPushTarget=target;
   openTab(pushAlertTab(target)||state.tab);return true;
 }
-// 새 기기는 동기화가 끝난 뒤 다시 찾는다. 찾은 뒤 주소에서 알림을 지워 일반 종목 선택을 방해하지 않는다.
+// 기록이 없으면 목표를 유지해 동기화 뒤 다시 찾는다. 찾은 뒤 해시를 일반 탭으로 돌려 평소 종목 선택을 방해하지 않는다.
 function applyPendingPushAlert(){
   if(!pendingPushTarget)return false;
   const found=pushAlertDestination(pendingPushTarget);if(!found)return false;
@@ -104,6 +104,7 @@ async function readPushConfig(){
   }catch{pushMessage="알림 발송 상태를 확인하지 못했습니다. 동기화 후 다시 확인해 주세요.";}
   renderPushSetup();
 }
+// 기기마다 따로 연결하며 연결·발송 방식은 같다. 안내 문구만 PC(theme.js와 같은 마우스 기준)와 휴대폰으로 나눈다.
 function renderPushSetup(){
   const target=$("pushSetup");if(!target)return;
   const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),pc=pushOnPc(),device=pc?"PC":"휴대폰";
@@ -129,6 +130,8 @@ async function pushRegistration(){
   const registration=await navigator.serviceWorker.register(worker.href,{scope,updateViaCache:"none"});
   return registration.active?registration:await navigator.serviceWorker.ready;
 }
+// 권한은 사용자 버튼으로 요청한다. 구독·구독 주소는 비공개 기록에만, 발송키는 서버에만 둔다.
+// state.alerts는 이 입력 때만 만들며 공개 기본값에는 기기 구독·구독 주소·발송키를 넣지 않는다.
 async function enablePhonePush(){
   if(pushBusy||!pushSupported()||!pushReady()||sync.blocked)return;
   const repo=sync.repo,key=pushConfig.publicKey;

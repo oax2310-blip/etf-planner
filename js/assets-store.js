@@ -1,5 +1,4 @@
-// 자산 현황과 플래너 분할매수가 공유하는 기록·시세·동기화. 기존 파일·키·구역별 병합 규칙을 유지한다.
-// UI와 독립적이며 start()를 부를 때만 주기적 동기화를 시작한다. 연결 토큰은 기기 localStorage에서만 읽는다.
+// 자산 현황·플래너 분할매수의 공유 기록·시세·동기화. 구역 병합은 assets-calc.js mergeAssets, 공통 작업 규칙은 AGENTS.md.
 const assetStore = (()=>{
 const A_KEY="etf-planner-assets-v1", A_BASE_KEY="etf-planner-assets-sync-base:", A_RECOVERY_KEY="etf-planner-assets-recovery";
 const A_PRICE_KEY="etf-planner-assets-prices", A_FILE="etf-planner-assets.json", A_PRICE_FILE="etf-planner-prices.json";
@@ -45,7 +44,7 @@ async function writeAssetRemote(cfg, data, sha){
   if(!r.ok) throw Error(`기록 저장 실패 (${r.status})`);
   const res=await r.json(); aSync.remote={repo:cfg.repo,sha:res.content?.sha||"",doc:JSON.parse(JSON.stringify(data)),etag:""};
 }
-// 시세 파일: 바뀌었을 때만 받는다(ETag). 종가·환율만 이 기기에 둔다. 시세가 바뀌었으면 true.
+// 시세 파일은 ETag로 읽고 종가·환율만 이 기기에 둔다. 자산 종목은 kis_prices.py가 마감 후 하루 한 번 수집한다. 시세가 바뀌었으면 true.
 async function readAssetPrices(cfg){
   try{
     const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(same&&prices.etag?{"If-None-Match":prices.etag}:{})}});
@@ -106,6 +105,7 @@ function restore(incoming){
   writeLocal();scheduleAssetSync(300);emit("change");return true;
 }
 function refreshConfig(){aSync.checked="";aSync.remote=null;return syncAssets();}
+// UI와 독립적이며 start()를 부를 때만 주기적 동기화를 시작한다.
 function start(){
   if(started)return;started=true;
   setInterval(()=>{if(!document.hidden&&!aSync.busy&&assetConfig())syncAssets();},45000);

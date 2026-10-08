@@ -1,4 +1,4 @@
-// 플래너의 분할매수 탭. 자산 배분의 연결 종목·목표와 기존 buyPlan 기록을 그대로 사용한다.
+// 플래너 분할매수 탭·계획 창. 계산 기준은 assets-calc.js 분할매수 주석, 기록·동기화는 assetStore, 공통 작업 규칙은 AGENTS.md.
 const purchasePlanner = (()=>{
 const el=id=>document.getElementById(id), all=sel=>document.querySelectorAll(sel);
 const escA=v=>String(v??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
@@ -121,6 +121,7 @@ function renderPurchases(){
   const keepShares=(key,b)=>{const qty=recordedShares(key,b),rec=doc.allocation?.trades?.[key];if(qty!==null){b.shares=qty;if(rec&&finite(rec.qty)===null)rec.qty=qty;}return qty;};
   const inputRow=(id,x)=>rowData.get(x.dataset.key!==undefined?`buy:${id}:${x.dataset.key}`:stageKey(id,x));
   const oldBuy=(plan,r)=>r.line?purchaseBuys(plan)[r.line.key]:r.stage;
+  // 누적 0·체크 해제는 체결과 자산 반영을 되돌린다. 추종 ETF 직접 입력은 sourceShares(원래 기준 티커 주수, null이면 원래 빈칸)를 복원한다.
   function clearFill(id,r){
     const plan=planOf(id);if(!plan||!r)return;
     if(r.line){const buys={...purchaseBuys(plan)};delete buys[r.line.key];if(Object.keys(buys).length)plan.buys=buys;else delete plan.buys;}
@@ -136,6 +137,7 @@ function renderPurchases(){
     if(r.recorded){if(r.line||finite(b.plannedShares)!==null)keepShares(r.key,oldBuy(plan,r));if(commit())allocLink.rescale(r.key,buyTrade(found.it,plan,b));render();}
     else allocLink.check({ticker:b.tradeTicker||found.it.ticker,ownId:id,...(b.tradeTicker?{targetId:id}:{}),trade:buyTrade(found.it,plan,b),label:`${found.it.name} 분할매수 ${r.label}`,prefer:[`buy:${id}:`],redraw:render,commit});
   }
+  // 체크 전에도 누적 주수만 입력한다(체결 금액 칸 없음). 금액은 자동 계산하고 잔량은 유지하며, 체크는 잔량까지 전부 체결한 상태만 표시한다.
   function fillShares(id,r,n){
     const found=findItem(id),plan=found?.it.buyPlan;if(!found||!r||n===null||n<0||(unitOf(found.it)===1?!Number.isSafeInteger(n):Number(n.toFixed(8))!==n))return render();
     const target=r.plannedShares??n;if(n>target||!(target>0))return render();
@@ -269,6 +271,7 @@ function openPurchase(id){
   f.note.value=purchaseDraft.note||"";renderDraft();
   el("addPurchaseStage").onclick=()=>{purchaseDraft.stages.push({id:newId()});renderPurchaseDraft();};
   el("purchaseDelete").hidden=!found;
+  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않는다.
   el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;saveSection("allocation");d.close();render();};
   f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");el("purchaseSearch").focus();return;}
     const draft=purchaseDraft;

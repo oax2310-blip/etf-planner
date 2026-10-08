@@ -1,6 +1,6 @@
-// 기존 매매 기준에 연결된 알림. 읽을 때 notify 필드를 만들지 않고, 버튼을 누를 때만 저장한다.
-// buildTradeAlertRules는 시세 수집 서버도 같은 파일과 prices.js·rebuy.js를 읽어 사용한다.
-// 매매 계산을 바꾸면 연결 알림 테스트도 확인할 것. 완료·금액 없는 단계는 서버 판정에서 제외한다.
+// 기존 매매 기준의 알림 ON/OFF·규칙 계산. 기준가·배분은 prices.js·rebuy.js, 분할매수 규칙은 assets-calc.js와 연결된다.
+// 추가 기준선 설정은 alerts.js, 수신·종목 이동은 push.js.
+// 읽을 때 notify를 만들지 않는다. 아래 수정 함수는 알림 버튼을 누를 때만 호출한다.
 const tradeNotify = obj => obj?.notify&&typeof obj.notify==="object"&&!Array.isArray(obj.notify)?obj.notify:{};
 function tradePlanEnabled(p,i){const n=tradeNotify(p);return i===0?n.start===true:typeof n.saleOverrides?.[i]==="boolean"?n.saleOverrides[i]:n.sales===true;}
 function tradeLevelEnabled(f,l){return typeof l?.notify==="boolean"?l.notify:tradeNotify(f).levels===true;}
@@ -10,9 +10,13 @@ function tradeRebuyEnabled(r,kind,i){
   return i==null?n[kind]===true:typeof n[kind+"Overrides"]?.[i]==="boolean"?n[kind+"Overrides"][i]:n[kind]===true;
 }
 function editTradeNotify(obj){if(obj.notify!==tradeNotify(obj))obj.notify={};return obj.notify;}
+// plans[].notify: 첫 매도 start, 나머지 전체 sales, 회차별 saleOverrides. 전체 설정은 개별 예외를 지운다.
 function setTradePlanAlert(p,i,on){const n=editTradeNotify(p);if(i===0)n.start=on;else(n.saleOverrides??={})[i]=on;}
 function setTradePlanAll(p,on){Object.assign(editTradeNotify(p),{start:on,sales:on});delete p.notify.saleOverrides;}
+// futures.notify.levels는 전체, levels[].notify는 개별 기준. 입력하기 전에는 필드를 만들지 않는다.
 function setTradeLevelAll(f,on){editTradeNotify(f).levels=on;f.levels.forEach(l=>delete l.notify);}
+// rebuy.items[].notify: 이탈 breakdown·손절 cuts·재매수 buys와 손절 cutsOverrides.
+// stages[].notify 하나는 그 단계의 1·2·3차 모두에 적용한다. 옛 deadlines는 읽지 않는다.
 function setTradeRebuyAlert(r,kind,i,on){
   if(kind==="buys"){const s=Array.isArray(r.stages)?r.stages[i]:null;if(s)s.notify=on;return;} // 저장된 단계에(stagesOf는 옛 이름이면 사본) — r은 editRebuy()로 이름을 바꾼 기록
   const n=editTradeNotify(r);if(i==null)n[kind]=on;else(n[kind+"Overrides"]??={})[i]=on;
@@ -39,6 +43,7 @@ function bindTradeRebuyAlerts(){
   $$("[data-rebuy-alert-all]").forEach(b=>b.onclick=()=>{setTradeRebuyAll(editRebuy(),b.dataset.rebuyAlertAll,b.dataset.alertOn==="on");save();renderRebuy();});
 }
 function tradeRebuyAllButtons(kind){return `<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-rebuy-alert-all="${kind}" data-alert-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-rebuy-alert-all="${kind}" data-alert-on="off">OFF</button></span>`;}
+// futures.rebuy.notify는 입력할 때만 저장한다. buysOverrides['stage:i']는 해당 단계의 1·2·3차 모두이며 옛 deadlines는 읽지 않는다.
 function futureRebuyAlertEnabled(f,kind,key){const n=tradeNotify(futureRebuyOf(f));return key==null?n[kind]===true:typeof n[kind+"Overrides"]?.[key]==="boolean"?n[kind+"Overrides"][key]:n[kind]===true;}
 function bindFutureRebuyAlerts(f){
   onEdit("[data-frebuy-alert]",(v,el)=>{const n=editTradeNotify(editFutureRebuy(f)),kind=el.dataset.frebuyAlert,key=el.dataset.alertKey;if(key==null)n[kind]=el.checked;else(n[kind+"Overrides"]??={})[key]=el.checked;},renderFutures);
@@ -52,13 +57,17 @@ function tradePriceBasis(obj,key,label,auto){
 }
 // 재매수 단계의 알림 이름: N일선·N주선·N개월선, N선(60분봉, 옛 이름 N분봉도)은 그대로, 직접 정한 다른 이름은 'N단계'.
 // 단계 안 회차는 1차가 단계 이름 그대로(예전 단계 알림과 같은 id·이력), 2·3차는 ' 2차'·' 3차'를 붙인다.
-// 수집 작업(데이터 저장소 ma_alerts.py TRADE_LABEL_RE)이 라벨을 다시 검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않으므로 형식을 바꾸면 그쪽도 같이.
+// 라벨 형식은 비공개 데이터 저장소 ma_alerts.py의 TRADE_LABEL_RE와 같아야 한다(buildTradeAlertRules 참조).
 const tradeStageName = (name,i) => autoKey(name)||`${i+1}단계`;
 // 회차 알림 기준: 단계 기준가(시세로 채운 이평선은 이름, 직접 고친 값만) + 2·3차는 회차와 다음 단계 기준. 이평선만 움직이면 같은 알림 이력.
 function tradeStageBasis(r,x){const mark=Number(r.auto?.[autoMark(x.name)]);return autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];}
 const tradeTrancheBasis = (r,s,x) => x.t?[...tradeStageBasis(r,s.stages[x.i]),x.t,...(s.stages[x.i+1]?tradeStageBasis(r,s.stages[x.i+1]):[])]:tradeStageBasis(r,s.stages[x.i]);
 // 알림을 보낼 회차: 안 샀고 배분이 있고 가격이 실제 기준가에서 나온 것(추정치 제외).
 const tradeTranchesToSend = s => s.tranches.filter(x=>!x.done&&x.amount>0&&x.price>0&&!x.est);
+// 비공개 수집 작업도 이 함수와 prices.js·rebuy.js를 실행해 화면과 같은 기준가·배분을 사용한다. 원본 기록은 바꾸지 않는다.
+// 완료 회차·단계와 배분 없는 회차는 제외한다. 시세·기준가가 있어야 발송되며 표시용 추정가는 쓰지 않는다.
+// 수집 작업 ma_alerts.py _rule은 quoteGroup·quoteKind·label을 재검증하고 하나라도 거부하면 연결 알림 전체를 보내지 않는다.
+// 새 시세 kind·알림 라벨을 만들면 데이터 저장소의 검증과 TRADE_LABEL_RE도 함께 고친다.
 function buildTradeAlertRules(data,priceDoc){
   const d=JSON.parse(JSON.stringify(data||{})),prices=priceDoc?(priceDoc.format===PRICE_FORMAT?priceDoc:slimPrices(priceDoc)):null;
   if(prices)fillPrices(d,prices);

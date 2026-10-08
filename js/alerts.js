@@ -1,10 +1,10 @@
-// 기준선 알림 설정. 규칙은 state.alerts.rules, 수신 기기 설정은 state.alerts의 다른 필드에 둔다.
-// 읽거나 창을 여는 것만으로 alerts를 만들지 않는다. 새 필드는 사용자가 저장·수정할 때만 만든다.
-// 시세 판정·발송은 데이터 저장소의 수집 작업이 담당한다. 여기서는 마지막 시세와 기준선 간격만 표시한다.
-// DOM 없이 불러와 테스트하므로 함수 밖에서 화면을 건드리지 않는다.
+// 추가 기준선 알림 설정. 시세 표시는 prices.js, 연결 매매 기준은 trade-alerts.js, 기기 수신은 push.js와 연결된다.
 let editingAlertId = null;
 let alertsInitialized = false;
+// 조회·창 열기는 state.alerts를 만들거나 저장 기록을 바꾸지 않는다. DOM 없이 불러 쓰므로 함수 밖에서 화면을 건드리지 않는다.
 const alertRules = () => Array.isArray(state.alerts?.rules) ? state.alerts.rules.filter(r=>r&&typeof r==="object") : [];
+// 기본 OFF. alerts.krOpenReminder=true면 밤사이 미국 종목 신호를 한국장 09:45 이후 기준별 한 번 재발송한다.
+// 발송·휴장 확인·대기 이력은 비공개 수집 작업에서 관리한다.
 const krOpenReminderEnabled = () => state.alerts?.krOpenReminder===true;
 function setKrOpenReminder(enabled){
   if(krOpenReminderEnabled()===enabled)return false;
@@ -29,6 +29,8 @@ function alertRuleInput(input){
   if(!String(input.tolerancePct??"").trim()||!Number.isFinite(tolerancePct)||tolerancePct<0||tolerancePct>10)return {error:"허용 범위는 0~10%로 넣어 주세요."};
   return {value:{ticker,period,unit:input.unit,tolerancePct,enabled:input.enabled!==false}};
 }
+// 실제 입력 때만 state.alerts={rules:[{id,ticker,period,unit,tolerancePct,enabled}],…수신 설정}을 만든다.
+// 규칙·수신 설정은 비공개 기록에만 저장하며 수신 설정은 alerts의 다른 필드에 둔다.
 function editAlerts(){
   if(!state.alerts||typeof state.alerts!=="object"||Array.isArray(state.alerts))state.alerts={rules:[]};
   if(!Array.isArray(state.alerts.rules))state.alerts.rules=[];
@@ -45,6 +47,7 @@ function writeAlertRule(input, ruleId=null){
   if(old)list[list.findIndex(r=>r===old)]=rule;else list.push(rule);
   return {value:rule};
 }
+// 마지막 규칙을 지워도 alerts.rules=[]를 남긴다.
 function removeAlertRule(ruleId){
   if(!alertRules().some(r=>r.id===ruleId))return false;
   editAlerts().rules=state.alerts.rules.filter(r=>r?.id!==ruleId);
@@ -54,6 +57,7 @@ function setAlertRuleEnabled(ruleId, enabled){
   const rule=alertRules().find(r=>r.id===ruleId);if(!rule||rule.enabled===enabled)return false;
   rule.enabled=enabled;return true;
 }
+// 마지막 시세와 기준선 간격만 표시한다. 시세 판정·발송은 데이터 저장소의 수집 작업이 담당한다.
 function alertQuoteInfo(rule, prices){
   const quote=stockEntry(prices,rule.ticker), current=Number(quote?.close), line=quote?maValue(quote,`${rule.period}${rule.unit}`):null;
   const close=Number.isFinite(current)&&current>0?current:null, ma=Number.isFinite(line)&&line>0?line:null;
@@ -87,6 +91,7 @@ function renderAlerts(){
   $$("[data-edit-alert]").forEach(button=>button.onclick=()=>openAlertEditor(button.dataset.editAlert));
   $$("[data-remove-alert]").forEach(button=>button.onclick=()=>{if(removeAlertRule(button.dataset.removeAlert)){if(editingAlertId===button.dataset.removeAlert)closeAlertEditor();save();renderAlerts();}});
 }
+// 편집창 기본값은 화면에만 채우고 저장·수정 전에는 alerts를 만들지 않는다.
 function openAlertEditor(ruleId=null){
   const rule=ruleId?alertRules().find(r=>r.id===ruleId):null;if(ruleId&&!rule)return;
   editingAlertId=ruleId;

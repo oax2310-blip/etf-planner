@@ -1,24 +1,7 @@
-// 손절 후 재매수(state.rebuy): 종목 목록·손절 회차(cutPlan)·재매수 배분(rebuySummary)과 화면
-// 손절 후 재매수 (가격은 국내 상장 ETF 원화 가격). 종목마다 아래 규칙으로 따로 계산한다.
-// 종목 목록: state.rebuy = {items:[종목…]}(종목마다 id). 고른 종목(state.selectedRebuy)은 selectedPlan처럼 이 기기 state에만(동기화 기록 밖).
-//   옛 기록은 rebuy에 종목 하나를 바로 둔 것 — 그 하나를 목록으로 보고, 처음 고칠 때 editRebuy가 {items:[{id,…옛 종목}]}으로 바꾼다
-//   (불러올 때 바꾸면 기기마다 다른 id가 붙어 기록 차이 창이 뜸). 목록을 rebuy 안에 두는 건 열어 둔 옛 화면·시세 수집 스크립트가 rebuy를 객체로 읽어서
-//   (옛 화면은 rebuy를 통째로 주고받아 목록을 지우지 않음). 종목을 모두 지워도 {items:[]}로 둔다(rebuy를 지우면 applyRemote 병합이라 다른 기기에서 안 지워짐).
-// 손절: 신저점 × (1 − k × stepPct%)에서 이탈 전 보유 수량(holdShares)의 sellPct%씩. 정수 주로 나누려고 k회까지 누적 예정 수량(보유 × sellPct% × k)을
-//   반올림한 차이를 회차 수량으로 한다(1,000주·0.5%면 매번 5주). 체크한 회차(cuts[i] = {shares, price})는 기록한 수량을 쓰고,
-//   기록 수량을 고쳐도 다음 회차 예정 수량은 그대로 — 남은 수량보다 많이 팔지만 않는다.
-// 재매수: 손절한 금액만큼, 평균 손절가(손절 금액 ÷ 손절 수량) 기준. 단계마다 다음 단계 가격까지 3회(TRANCHES)로 나눈 회차 가격
-//   (trancheLevels: 단계 가격 + (다음 단계 가격 − 단계 가격) × 0·⅓·⅔) 중, 평균 손절가 이하인 회차에 똑같이 나눈다(rebuyPlanned).
-//   대상 단계는 첫 단계(기본 25선)부터 끊기지 않고 이어진, 기준가가 평균 손절가 이하인 단계(rebuySplits, 상한 없음). 기준가를 비운 단계·추정 회차 가격은 배분에 쓰지 않는다.
-//   평균 손절가 이하 회차가 없으면(첫 단계가 평균 손절가 위·기준가 없음) 첫 단계 1차에서 전부 산다(2·3차는 1차보다 비싸다).
-//   회차 계획은 첫 재매수를 체크할 때 r.planned = [[단계 이름, 회차]…]에 저장해 그 뒤로는 바꾸지 않는다(재매수 체크를 모두 풀면 지움). 재매수 기한은 따로 두지 않는다.
-//   회차 체결은 단계의 buys[t] = {shares, price}. 옛 기록(단계 통째로 done·shares·execPrice)은 그 단계를 한 번에 산 것으로 본다(stageFills).
-//   재매수를 하나라도 체크하면 남은 손절은 멈춘다.
-// 보유량 = 이탈 전 보유 금액(amount, 만원 — 미국 종목은 달러) ÷ 신저점 가격을 내림한 주 수, 또는 직접 넣은 보유 수량(shares, 주). 둘 중 넣은 쪽만 저장한다(setHold, 둘 다 있으면 금액 우선).
-// 단계 이름: 60분봉 차트의 N이평선은 'N선', 일봉 차트의 N이평선은 'N일선'. 종목 코드가 있으면 둘 다 시세로 채운다(prices.js — N선은 수집이 과거 60분봉을
-//   다 받기 전엔 비어 있을 수 있음). 비운 단계는 앞뒤 가격 사이 추정(stageEstimates — 표시·수량 어림용, 배분에는 쓰지 않음).
+// ETF(종목별)·달러선물 손절/재매수 계산과 ETF 화면. 시세는 prices.js, 선물 화면은 futures.js, 체결 연동은 alloc-link.js.
+// 서버·DOM 없는 테스트에서도 읽으므로 함수 밖에서 화면을 건드리지 않는다.
 const defaultRebuy = () => ({name:"니프티50 ETF",lowPrice:0,amount:0,currentPrice:0,stepPct:1,sellPct:0.5,steps:30,cuts:[],stages:MA_LINES.map(name=>({name,price:0,done:false,execPrice:null,shares:null})),note:""});
-// 예전 기본 단계(25분봉·60분봉·240분봉·일봉·주봉)를 손대지 않았으면 지금 기본 14단계로 본다(editRebuy가 저장할 때 바꿈).
+// 손대지 않은 옛 기본 단계(25분봉·60분봉·240분봉·일봉·주봉)는 MA_LINES 기본으로 읽고 editRebuy 때만 저장.
 const untouchedOldStages = st => Array.isArray(st) && st.map(x=>x.name).join()==="25분봉,60분봉,240분봉,일봉,주봉" && st.every(x=>!x.done&&!(Number(x.price)>0));
 // 옛 단계 이름 'N분봉'은 60분봉 N이평선을 뜻했다 — 읽을 때 'N선'으로 보고, 처음 고칠 때 editRebuy·editFutureRebuy가 저장한다
 // (불러올 때 바꾸면 기록이 바뀌어 기록 차이 창이 뜸). 바꿀 이름이 있으면 사본을 돌려주므로 단계를 고칠 때는 저장된 r.stages에 쓸 것.
@@ -29,8 +12,9 @@ const wholeShares = v => Math.max(0,Math.floor(Number(v)||0));
 // 재매수 통화: 미국 종목 코드(영문 심볼, prices.js usTicker)면 달러 — 가격은 미국 시세(달러, 센트까지), 보유 금액은 달러.
 // 그 밖(국내 6자리 코드·코드 없음)은 원화(보유 금액은 만원).
 const rebuyUsd = r => usTicker(r?.ticker);
+// 이탈 전 주수 = amount(국내 만원/미국 달러)÷신저점 가격을 내림, 또는 직접 shares. 둘 다 있으면 금액 우선.
 const holdShares = r => Number(r.amount)>0 ? (Number(r.lowPrice)>0 ? Math.floor(Number(r.amount)*(rebuyUsd(r)?1:10000)/Number(r.lowPrice)+1e-9) : 0) : wholeShares(r.shares);
-// 보유 입력 단위: 수량만 저장돼 있으면 "shares"(주), 아니면 "amount"(만원). 화면에서 단위만 바꾼 상태(rebuyUnit)는 메모리에만(저장·동기화 안 함)
+// 보유 단위: 수량만 있으면 "shares"(주), 아니면 "amount"(국내 만원/미국 달러). 단위만 바꾼 rebuyUnit은 메모리 전용.
 const holdUnit = r => !(Number(r.amount)>0) && wholeShares(r.shares)>0 ? "shares" : "amount";
 let rebuyUnit = null;
 // 보유 입력칸 저장: 고른 단위로 넣은 값만 남기고 다른 단위 값은 지운다(수량은 정수 주). 0·빈칸이면 둘 다 지움. 잘못된 값이면 false
@@ -39,6 +23,8 @@ function setHold(r, unit, text){
   const [key,other]=unit==="shares"?["shares","amount"]:["amount","shares"]; if(key==="shares")v=Math.floor(v);
   if(v>0){r[key]=v;delete r[other];}else{delete r.amount;delete r.shares;}
 }
+// k회 가격=신저점×(1−k×stepPct%), 주수=round(이탈 전 주수×sellPct%×k)의 인접 차이(정수 균등 배분).
+// cuts[i]={shares,price} 체결은 기록량을 사용. 체결량 수정은 다음 예정량을 바꾸지 않으며 남은 보유량이 한도.
 function cutPlan(r){
   const low=Number(r.lowPrice)||0, step=Number(r.stepPct)>0?Number(r.stepPct):1, pct=Math.min(Math.max(Number(r.sellPct)||0,0),100), cuts=Array.isArray(r.cuts)?r.cuts:[];
   const lastDone=cuts.reduce((m,c,i)=>c?i+1:m,0), n=Math.max(1,lastDone,Math.min(60,Math.floor(Number(r.steps)||30),Math.ceil(100/step)-1));
@@ -51,7 +37,7 @@ function cutPlan(r){
     return {k,drop:k*step,price,qty,left,done:false,execPrice:null};
   });
 }
-// 단계별 예상 가격: 산 단계는 체결가, 기준가를 넣은 단계(마지막 150일선 가격 포함)는 그 값, 나머지는 앞뒤 값 사이를 고르게 채운다.
+// 단계별 예상 가격: 산 단계는 체결가, 기준가가 있는 단계(마지막 포함)는 그 값, 나머지는 앞뒤 값 사이를 고르게 채운다.
 // 아직 안 산 첫 단계 바로 앞에 start(현재가 등)를 둔다. 뒤쪽에 아는 값이 없는 단계는 추정하지 않는다(null).
 function stageEstimates(stages,start){
   const est=stages.map(x=>x.done?(Number(x.execPrice)>0?Number(x.execPrice):null):(Number(x.price)>0?Number(x.price):null)), first=stages.findIndex(x=>!x.done);
@@ -73,7 +59,7 @@ function stageFills(x,key){
   return (Array.isArray(x.buys)?x.buys:[]).map((b,t)=>b&&typeof b==="object"?{t,qty:qty(b[key]),price:px(b.price)}:null).filter(Boolean);
 }
 const stageTouched = x => !!x?.done || Array.isArray(x?.buys) && x.buys.some(Boolean);
-// 재매수 대상 단계 수: 첫 단계부터 끊기지 않고 이어진, 기준가가 평균 손절가(avg) 이하인 단계 수. 최소 1(첫 단계가 평균 손절가 위면 첫 단계만 후보).
+// 대상 단계 수: 첫 단계(기본 25선)부터 연속한 평균 손절가(avg) 이하 단계, 별도 상한 없음. 최소 1(첫 단계가 위면 첫 단계만 후보).
 // 기준가가 없는 단계에서 끊는다. 산 단계는 이어진 것으로 본다(회차 계획 r.planned가 없는 옛 기록용).
 function rebuySplits(stages,avg){
   let n=0;while(n<stages.length&&(stageTouched(stages[n])||Number(stages[n].price)>0&&Number(stages[n].price)<=avg))n++;
@@ -81,7 +67,7 @@ function rebuySplits(stages,avg){
 }
 // 단계 i의 회차 가격: 단계 가격에서 다음 단계 가격까지 t/3 지점(t = 0·1·2, step: true).
 // 다음 단계 가격을 모르거나 단계 가격 이하면 나눌 구간이 없어 그 단계는 1회(단계 가격)로 산다(2·3회차 step: false).
-// 비운 가격은 추정치(est)로 채우고 est: true(표시만, 알림에는 쓰지 않음).
+// 비운 가격은 앞뒤 기준 사이 추정치(est: true)로 표시/수량 어림만; 배분·알림은 제외(rebuyPlanned fallback 제외).
 function trancheLevels(stages,est,i){
   const own=Number(stages[i]?.price)>0, p=own?Number(stages[i].price):est[i]??null, n=stages[i+1], nextOwn=Number(n?.price)>0, q=!n?null:nextOwn?Number(n.price):est[i+1]??null;
   const prices=lineThirds(p,q);
@@ -114,7 +100,7 @@ function rebuyTranches(stages,est,fills,planned,rest,split){
 }
 // 표시용: 계획이 있는 단계에서 평균 손절가 위(또는 추정 가격)라 사지 않는 회차
 const rebuySkipped = (stages,est,list) => [...new Set(list.map(x=>x.i))].filter(i=>!stages[i].done).flatMap(i=>stageCandidates(stages,est,i).filter(x=>!list.some(y=>y.i===i&&y.t===x.t)).map(x=>({i,...x})));
-// 저장된 회차 계획(단계 이름·회차)을 지금 단계 목록의 [i, t]로. 없거나 비었으면 null
+// 첫 재매수 때 고정한 r.planned=[[단계 이름,회차]…]를 현재 [i,t]로 읽음. 모든 체크 해제/초기화 때 지움; 기한 없음.
 function storedPlan(r,stages){
   const list=(Array.isArray(r.planned)?r.planned:[]).map(x=>Array.isArray(x)?[stages.findIndex(y=>y.name===stageName(x[0])),Number(x[1])]:null).filter(x=>x&&x[0]>=0&&Number.isInteger(x[1])&&x[1]>=0&&x[1]<TRANCHES);
   return list.length?list:null;
@@ -122,13 +108,6 @@ function storedPlan(r,stages){
 // n회로 나누기: 금액은 똑같이, 계약은 누적 반올림 차이로 고르게 흩는다(3계약 5회면 1·0·1·0·1 — 앞 회차에만 몰리지 않게).
 const splitValue = (v,n) => Array(n).fill(v/n);
 const splitWhole = (v,n) => Array.from({length:n},(_,k)=>Math.round(v*(k+1)/n)-Math.round(v*k/n));
-// 달러선물 손절 후 재매수(futures.rebuy). ETF의 매도금액 배분과 달리 판 계약 수만 복원한다.
-// 최초 입력 때 이탈 전 계약 수를 고정한다. 신저점~직접 정한 하단을 고르게 나눠 floor(계약 수/2)까지만 손절한다.
-// 정수 계약으로 나누므로 회차는 손절 목표 계약 수 이하. 한 회차뿐이면 하단에서 손절한다.
-// 실제 손절 수량을 고치면 남은 목표를 미완료 회차의 원래 비중으로 다시 나눈다. 체결 기록은 그대로 남긴다.
-// 재매수는 ETF 재매수(rebuySummary)와 같은 규칙: 단계마다 다음 단계 환율까지 3회로 나눈 회차 중 평균 손절 환율(실제 체결 환율, 없으면 회차 환율의
-// 계약 수 가중평균) 이하인 회차에 정수 계약을 나눈다(없으면 첫 단계 1차에서 전부). 회차 계획은 첫 재매수 체크 때 r.planned에 저장. 회차 체결은 단계의 buys[t] = {contracts, price}.
-// 재매수를 시작하면 손절을 멈춘다. 체크는 이 계획에만 반영하며 보유 월물·정산손익은 계좌 기준으로 직접 고친다.
 const futureRebuyQty = v => Number.isFinite(Number(v)) ? Math.max(0,Math.floor(Number(v))) : 0;
 const futureRebuyOf = f => f?.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)?f.rebuy:{};
 // 예전 '손절 환율 복귀' 방식(buyMode·returns[손절 회차])으로 체크한 재매수는 환율 복귀 때 다음 반등 단계에서 산 것과 같다.
@@ -145,6 +124,8 @@ function futureRebuyHold(f){
   const held=(Array.isArray(f?.positions)?f.positions:[]).reduce((n,p)=>n+futureRebuyQty(p.contracts),0);
   return held+(Array.isArray(f?.levels)?f.levels:[]).flatMap(l=>Array.isArray(l.tranches)?l.tranches:[]).filter(t=>t.completed&&!t.mergedMonth).length;
 }
+// 신저점~직접 하단을 고르게 나눠 고정 이탈 전 계약의 floor(계약/2)만 손절. 회차 수≤목표 계약, 1회면 하단.
+// 체결량 수정 후 남은 목표는 미완료 회차의 원래 비중으로 재배분; 기존 체결은 유지.
 function futureCutPlan(f){
   const r=futureRebuyOf(f),low=Number(r.lowPrice)||0,floor=Number(r.floorPrice)||0,hold=futureRebuyHold(f),goal=Math.floor(hold/2),records=Array.isArray(r.cuts)?r.cuts:[];
   const valid=Number.isFinite(low)&&Number.isFinite(floor)&&low>floor&&floor>0&&goal>0;
@@ -160,6 +141,8 @@ function futureCutPlan(f){
     return {k:i+1,price,qty,left,done:!!rec,execPrice:Number(rec?.price)>0?Number(rec.price):null};
   });
 }
+// 판 계약만 복원. 평균 손절 환율은 실제 체결(없으면 회차 환율)의 계약 가중평균.
+// ETF와 같은 rebuyPlanned·rebuyTranches, 계약은 splitWhole로 배분. 재매수 시작 후 손절 중단; 보유 월물/정산손익은 건드리지 않음.
 function futureRebuySummary(f){
   const r=futureRebuyOf(f),hold=futureRebuyHold(f),goal=Math.floor(hold/2),cuts=futureCutPlan(f),done=cuts.filter(c=>c.done),cur=Number(r.currentPrice)||0;
   const stages=futureRebuyStages(r),fills=stages.map(x=>stageFills(x,"contracts")),all=fills.flat(),started=all.length>0;
@@ -173,6 +156,7 @@ function futureRebuySummary(f){
   return {hold,goal,cuts,stages,est,plan,tranches,skipped:rebuySkipped(stages,est,tranches),planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
 }
+// futures.rebuy는 최초 입력 때만 생성하고 이탈 전 계약 수를 고정(읽기/normalize는 생성·이전 안 함).
 function editFutureRebuy(f){
   const hold=futureRebuyHold(f);
   if(f.rebuy!==futureRebuyOf(f))f.rebuy={};
@@ -227,6 +211,8 @@ function setFutureBuyQty(f,i,t,text){
 function setFutureBuyPrice(f,i,t,text){
   const n=Number(text),rec=futureFillRec(f,i,t);if(!rec||!Number.isFinite(n)||n<=0)return false;rec[0][rec[1]]=n;
 }
+// 손절 금액(수량×실제 체결가, 없으면 계획가)만 복원; 평균 손절가=금액÷주수, 미매수 회차에 splitValue로 균등 금액.
+// 배분 대상/3분할/고정 계획은 rebuyPlanned·trancheLevels·storedPlan. 재매수를 하나라도 기록하면 남은 손절 중단.
 function rebuySummary(r){
   const cuts=cutPlan(r), stages=stagesOf(r), done=cuts.filter(c=>c.done), cur=Number(r.currentPrice)||0, fills=stages.map(x=>stageFills(x,"shares")), all=fills.flat(), started=all.length>0;
   const sellAt=c=>c.execPrice||c.price, sold=done.reduce((a,c)=>a+c.qty,0), sellValue=done.reduce((a,c)=>a+sellAt(c)*c.qty,0), sellAvg=sold?sellValue/sold:null;
@@ -242,7 +228,7 @@ function rebuySummary(r){
   return {cuts,stages,plan,est,tranches,skipped:rebuySkipped(stages,est,tranches),planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,sellValue,buyValue,rest,sellAvg,buyAvg,started,doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,held:Math.max(0,holdShares(r)-sold+rebought)};
 }
 // 자산 배분 연동(js/alloc-link.js — 플래너 화면에서만 불러옴): 손절·재매수 체크를 같은 종목 코드 계좌의 보유량에 반영하고, 체결 수량·가격을 고치면 같은 비율로 맞추며, 풀면 되돌린다.
-// 반영 키 'cut:종목 id:회차'·'rebuy:종목 id:단계 이름:회차'(종목 id는 editRebuy가 붙이므로 체크를 저장한 뒤 정함). 체결 = 수량·가격(종목 통화 — 미국 종목은 달러).
+// 취소에 쓰는 키 'cut:종목 id:회차'·'rebuy:종목 id:단계 이름:회차' 유지(id는 editRebuy 뒤 정함). 체결은 수량·가격(미국은 달러).
 // allocLink가 없으면(테스트·수집 작업) 체크만 한다.
 const rebuyFill = (r, rec, sign) => ({sign,qty:Number(rec?.shares)||null,price:Number(rec?.price)||null,currency:rebuyUsd(r)?"USD":"KRW"});
 function rebuyLink(fn, ...args){
@@ -250,9 +236,11 @@ function rebuyLink(fn, ...args){
   if(fn==="check"){args[0].commit();args[0].redraw?.();}
   return fn==="line"?"":null;
 }
+// rebuy={items:[{id,…}]}(객체를 유지해 옛 화면/수집과 호환). 옛 단일 종목은 목록처럼 읽기만 한다.
 const rebuyItems = d => { const r=d?.rebuy; return !r||typeof r!=="object"?[]:Array.isArray(r.items)?r.items.filter(x=>x&&typeof x==="object"):[r]; };
 const rebuyPick = () => { const list=rebuyItems(state); return list.find(x=>x.id&&x.id===state.selectedRebuy)||list[0]||null; }; // 화면에 보이는 종목
-// 고칠 종목 목록(배열). 옛 기록이면 목록 형식으로 바꾼다.
+// 입력 때만 생성·단일 기록→목록 이전(id 부여). 불러올 때 바꾸면 기기마다 id가 달라 충돌 창이 뜬다.
+// 전부 삭제해도 {items:[]} 유지(필드 삭제는 applyRemote 병합 때문에 다른 기기에 반영되지 않음).
 function editRebuyList(){
   const rb=state.rebuy;
   if(!rb||typeof rb!=="object")state.rebuy={items:[]};
@@ -281,6 +269,7 @@ function rebuyStatus(r,s){
 }
 // 종목 추가·이름/코드 수정 창(rebuyDialog). 이 파일은 테스트가 DOM 없이 불러오므로 창 처리는 이 함수 안에서 연결한다.
 // 새 종목은 기본 규칙·단계로 만든다. 종목 코드를 바꾸면 auto를 지워 다음 동기화 때 새 종목 시세로 채운다.
+// 종목 삭제는 실제 체결인 자산 배분을 그대로 둔다(초기화의 forget와 다름).
 function openRebuyDialog(edit){
   const dialog=$("rebuyDialog"), form=$("rebuyForm"), f=form.elements;
   form.reset();$("rebuyTitle").textContent=edit?`${String(edit.name||"").trim()||"종목"} 수정`:"새 재매수 종목";$("deleteRebuyBtn").classList.toggle("hidden",!edit);
@@ -296,6 +285,7 @@ function openRebuyDialog(edit){
 }
 // 화면: 왼쪽(모바일은 위) 종목 목록(분할매도 '저장된 계획'과 같은 카드 — 종목 이름, 오른쪽 짧은 상태, 아래 종목 코드(PC), 막대는 재매수 금액/손절 금액)
 // + 고른 종목. 제목은 작은 글씨 '손절 후 재매수 · 종목 코드' 아래 종목 이름(크게), 옆 연필로 이름·코드 수정·종목 삭제 창.
+// 이름·코드는 기준 입력에 넣지 않음; 짧은 상태는 PC 오른쪽/모바일 이름 아래. 계산 요약·메모는 두 칸 유지.
 function renderRebuy(){
   const items=rebuyItems(state), r=rebuyPick();
   $("rebuyList").innerHTML=items.length?items.map((x,i)=>{const s=rebuySummary(x), [,short]=rebuyStatus(x,s), name=String(x.name||"").trim()||"이름 없음", code=String(x.ticker||"").trim(), done=s.sellValue?Math.min(100,Math.round(s.buyValue/s.sellValue*100)):0;
@@ -309,7 +299,7 @@ function renderRebuy(){
   // 종목 코드를 넣으면 현재가·N일선·N선 단계 기준가를 시세 파일로 채운다(prices.js, 국내·미국 종목). 없거나 다른 종류(비트코인)면 기준 입력 아래에 알림
   const ticker=String(r.ticker||""), re=stockEntry(priceData,ticker), rp=re?.kind===(rebuyUsd(r)?"해외":"국내")?re:null;
   const priceHint=!ticker||!priceData?"":re&&!rp?"국내·미국 종목 코드만 시세로 채웁니다.":!re?"시세 수집 후 (장중 30분마다) 현재가·시선·일선·주선·월선 기준가를 채웁니다.":"";
-  // 시세로 채우는 칸(현재가·시선·일선·주선·월선 기준가) 이름 옆에 아주 작고 흐린 '(자동)' — 국내 종목 코드가 있고 시세 파일을 읽었을 때(아직 파일에 없는 코드 포함)
+  // 현재가·자동 단계 이름 옆에 작고 흐린 '(자동)'(.auto-tag): 국내/미국 코드 + 시세 파일을 읽었을 때(아직 파일에 없는 코드 포함).
   const autoTag=label=>ticker&&priceData&&(!re||rp)&&(!label||autoKey(label))?`<small class="auto-tag">(자동)</small>`:"";
   const complete=s.started&&!s.rest, nextCut=s.cuts.find(c=>!c.done&&c.qty>0), nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
   const [status]=rebuyStatus(r,s), title=String(r.name||"").trim()||"이름 없음";

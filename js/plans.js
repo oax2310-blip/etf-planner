@@ -1,4 +1,4 @@
-// 분할매도: 저장된 계획 목록·계획 화면·계획 입력/수정 창
+// 분할매도 계산·목록·수정 창. 시세는 prices.js, 체결→자산 배분은 alloc-link.js·assets-calc.js.
 // 주식은 1주, 비트코인은 0.00000001 BTC 단위의 정수로 균등 배분한다. 나머지는 회차에 고르게 넣어 합계가 보유 수량과 같도록 한다.
 const sharesAt = (shares, stage, stages, digits=0) => { const scale=10**digits, units=Math.round(Number(shares)*scale), base=Math.floor(units/stages), extra=units%stages;return (base+Math.ceil((stage+1)*extra/stages)-Math.ceil(stage*extra/stages))/scale; };
 const planShareDigits = p => isBitcoinTicker(p.ticker)?8:0;
@@ -18,14 +18,14 @@ const planQuote = (ticker, currency) => { const e=stockEntry(priceData,planTicke
 // 보유 수량이 있는 계획은 이 값만 쓰고 valueKrw(직접 입력한 평가액)는 보유 수량 없이 평가액만 있는 계획에만 쓴다.
 const planWorth = (shares, close, currency, fx) => { const rate=currency==="KRW"?1:Number(fx); return shares>0&&Number(close)>0&&rate>0?shares*Number(close)*rate/1e4:null; };
 // 평가액만 넣은 계획(보유 수량 없이 valueKrw)의 회차 금액(만원): 주수 계획처럼 회차마다 같은 수량을 판다고 보고 회차 기준가에 비례해 나눈다(같은 금액씩 나누지 않음).
-// 수량 = 평가액 ÷ valueBase(평가액을 입력해 저장할 때의 종목 시세). 그때 시세가 없었거나 옛 기록(valueBase 없음)이면 지금 첫 매도 기준가로 나눈다.
+// 수량 = 평가액 ÷ valueBase(평가액 저장 때 종목 시세, 옛 basisPrice와 별개). 없으면 지금 첫 매도 기준가로 나눈다.
 const valueBasis = p => Number(p.valueBase)>0?Number(p.valueBase):Number(p.startPrice);
 const stageWorth = (p, price) => { const b=valueBasis(p); return p.valueKrw*planSalePct(p)/100/p.stages*(b>0?price/b:1); };
 // 남은 보유 수량: 부분 체결을 포함한 실제 매도 수량만 최소 단위 정수로 빼며, 매도 비중으로 남기는 수량도 포함한다.
 const sharesLeft = p => { const scale=10**planShareDigits(p), held=p.holdings.reduce((s,h)=>s+Math.round(Number(h.shares||0)*scale),0);
   if(Object.values(p.fills||{}).some(f=>f.execution))return Number(Math.max(0,held/scale-Array.from({length:p.stages},(_,i)=>planStageProgress(p,i).qty||0).reduce((s,n)=>s+n,0)).toFixed(8));
   return Math.max(0,held-Array.from({length:p.stages},(_,i)=>Math.round((planStageProgress(p,i).qty||0)*scale)).reduce((s,n)=>s+n,0))/scale; };
-// 자산 배분 연동(js/alloc-link.js — 플래너 화면에서만 불러옴, 없으면(테스트) 체크만): 회차를 체크하면 같은 종목 코드 계좌 보유량을 줄이고 풀면 되돌린다. 반영 키 'sell:계획 id:회차'.
+// alloc-link.js(없으면 체크만): 같은 종목 코드 계좌 보유량을 줄이고 풀면 되돌림. 취소에 쓰는 키 'sell:계획 id:회차' 형식 유지.
 function planLink(fn, ...args){
   if(typeof allocLink==="object")return allocLink[fn](...args);
   if(fn==="check"){args[0].commit();args[0].redraw?.();}
@@ -34,7 +34,8 @@ function planLink(fn, ...args){
 // 회차 체결(자산 배분 연동 — assets-calc.js 체결): 보유 수량 계획은 회차 매도 수량 합 × 회차 기준가, 평가액만 넣은 계획은 회차 매도액(stageWorth)만.
 const planTrade = (p, i) => { const price=stagePrice(p,i), digits=planShareDigits(p), valueOnly=p.valueKrw!=null&&!p.holdings.length, qty=p.holdings.reduce((n,h)=>n+sharesAt(saleShares(h.shares,p),i,p.stages,digits),0);
   return {sign:-1,qty:valueOnly?null:Number(qty.toFixed(digits))||null,price,currency:p.currency,value:valueOnly?stageWorth(p,price):null}; };
-// fills[회차]는 첫 체결 때 계획 수량(또는 예정액)·가격을 고정하고 누적 실제 체결을 기록한다. 옛 checked=true 기록은 기존 계획 전량 체결로 읽기만 한다.
+// fills[회차]={plannedQty,qty,price} 또는 {plannedValue,value,price}: 첫 체결 때 예정량·가격 고정, 누적량·잔량 유지.
+// 체크 전에도 입력 가능; checked는 전량 완료만. 옛 checked=true는 기존 전량 체결로 읽고 입력 때 새 필드로 저장.
 function planStageProgress(p,i){
   const planned=planTrade(p,i),fill=p.fills?.[i],byValue=planned.value!==null, target=byValue?fill?.plannedValue??planned.value:fill?.plannedQty??planned.qty??(p.holdings.length?0:null);
   const amount=byValue?fill?.value??(p.checked?.[i]?target:0):fill?.qty??(p.checked?.[i]?target:0), remaining=Number(Math.max(0,(target||0)-(amount||0)).toFixed(8));
@@ -61,10 +62,12 @@ function planSourceQuantityProgress(p,i){
   const amount=p.fills?.[i]?.qty??applied??(cost>0?Math.round(r.amount*1e4/cost*scale)/scale:0);
   return {...r,byValue:false,target,amount,remaining:target===null?null:Number(Math.max(0,target-amount).toFixed(8))};
 }
-// 기준 ETF 회차는 유지하고, 선택한 기존 자산 id에서 실제 ETF 코드·시세를 가져온다. 첫 체결의 계좌·가격·수량은 execution에 고정한다.
 function planSaleAssets(){return typeof assetStore==="object"?assetStore.doc?.allocation:null;}
 function planSaleItems(){return (planSaleAssets()?.groups||[]).flatMap(g=>(g.items||[]).filter(it=>["국내","해외"].includes(purchaseQuoteKind(assetTradeTicker(it)))).map(it=>({g,it})));}
 function planSalePrices(){return {stocks:{...(typeof priceData==="object"?priceData?.stocks:{}),...(typeof assetStore==="object"?assetStore.prices?.stocks:{})}};}
+// 기존 자산 id에서 실제 ETF 코드·현재가를 읽고 기준 ETF 현재가×주수×환율을 실제 ETF 정수 주로 내림(보유량 한도).
+// 기준 시세가 없으면 회차 기준가. 첫 체결 execution={targetId,ticker,account,name,price,currency,fx,sourceQty,sourcePrice,referencePrice,plannedQty,qty,…} 고정.
+// execution.qty는 실제 ETF 주수, 바깥 fills.qty는 기준 수량 환산값. 기존 회차 추가/취소는 고정한 원래 자산 id에 반영.
 function planSaleExecution(p,i){
   const source=planSourceQuantityProgress(p,i),stored=p.fills?.[i]?.execution;
   if(stored)return {...stored,recorded:true};
@@ -124,6 +127,7 @@ function planSaleAccountView(p){
   const choices=items.filter(x=>x.g.id===gid),info=found?`${found.g.name} › ${found.it.name} · 코드 ${assetTradeTicker(found.it)}${finite(found.it.shares)!==null?` · 보유 ${won.format(found.it.shares)}주`:" · 금액으로 보유 관리"}`:p.sellTargetId?"연결한 보유 종목이 없어졌습니다. 계좌·종목을 다시 고르세요.":gid?"이 계좌에서 실제 매도할 보유 ETF를 고르세요.":"ISA·연저펀 등 보유 계좌를 고르면 실제 ETF 코드와 회차별 매도 주수를 연결합니다.";
   return `<section class="card panel sale-account"><h2>실제 매도 계좌 · ETF</h2><div class="sale-account-fields"><label class="field"><span>매도할 계좌·그룹</span><select id="saleAccount"><option value="">${esc(p.ticker)} 직접 매도</option>${groups.map(g=>`<option value="${esc(g.id)}"${g.id===gid?" selected":""}>${esc(g.name)}</option>`).join("")}</select></label>${gid?`<label class="field"><span>계좌에 보유한 ETF</span><select id="saleHolding"><option value="">보유 ETF 선택</option>${choices.map(({it})=>`<option value="${esc(it.id)}"${it.id===p.sellTargetId?" selected":""}>${esc(it.name)} · ${esc(assetTradeTicker(it))}${finite(it.shares)!==null?` · ${won.format(it.shares)}주 보유`:""}</option>`).join("")}</select></label>`:""}</div><p class="hint">${esc(info)}</p><p class="hint">${esc(p.ticker)} 현재가 × 기준 주수${p.currency==="USD"?" × 환율":""} ÷ 실제 ETF 현재가로 정수 주수를 내림합니다. 기준 현재가가 없으면 회차 기준가를 사용합니다. 체결한 회차는 당시 계좌·ETF·수량을 유지합니다.${!groups.length?' <a href="assets.html#alloc">자산 배분에서 보유 계좌와 종목 코드를 등록하세요.</a>':""}</p></section>`;
 }
+// sellAccountId·sellTargetId는 계좌/ETF 선택 때만 저장. 변경은 새 회차에만 적용(execution이 있는 회차는 고정).
 function bindSaleAccount(p){
   const select=$("saleAccount");if(!select)return;
   select.onchange=()=>{const gid=select.value;if(!gid){delete p.sellAccountId;delete p.sellTargetId;}else{p.sellAccountId=gid;const items=planSaleItems().filter(x=>x.g.id===gid),matches=items.filter(x=>linkTicker(x.it.ticker)===linkTicker(p.ticker)||linkTicker(assetTradeTicker(x.it))===linkTicker(p.ticker));const chosen=matches.length===1?matches[0]:items.length===1?items[0]:null;if(chosen)p.sellTargetId=chosen.it.id;else delete p.sellTargetId;}save();renderPlans();};
@@ -152,6 +156,8 @@ addEventListener("resize",fitNames);
 // 저장된 계획 카드: 카드 이름(cardName)을 굵게, 없으면 종목 코드. PC에서만 아래 작게 — 카드 이름이 있으면 종목 코드, 없으면 계획 이름.
 // 카드 이름은 이름만 고치는 작은 창(nameDialog)으로도 바꾼다: 터치는 카드를 0.5초 누르고 있으면(손 떼기 전에) 열리고, 마우스(PC)는 카드 오른쪽 아래 연필(.plan-rename).
 // 수정 창의 카드 이름 칸과 같은 값(비우면 cardName을 지워 종목 코드로). 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
+// 모바일 카드 한 줄·'회' 숨김. 상태는 실제 체결/완료 수로: 시작 전 → 진행 중 → 전량(비중<100이면 계획) 매도 완료.
+// 옛 currentPrice·started·asOf·basisPrice는 값만 보존하며 계산·새 계획·수정 창에 쓰지 않는다.
 function renderPlans(){
   const list=$("planList"), pencil=PENCIL;
   list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()];
@@ -185,7 +191,7 @@ function renderPlans(){
     <div class="metrics card"><div class="metric"><label>${p.sellTargetId?"기준 ETF 계획 상태":"현재 계획 상태"}</label><strong>${esc(status)}</strong><small${worth!=null?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:""}>${done} / ${p.stages}회 완료 · ${p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}</small></div><div class="metric"><div class="trade-price-heading"><label for="startPrice">첫 매도 기준가</label>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"첫 매도",p.checked[0]):""}</div><label class="metric-edit" title="눌러서 수정">${p.currency==="USD"?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" value="${esc(startText)}">${p.currency==="USD"?"":"원"}${pencil}</label><small>${p.currency==="USD"?`${fxText(p.startPrice*p.fx)} · <label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="number" min="0" step="any" inputmode="decimal" aria-label="달러/원 환율" value="${esc(String(p.fx))}">${pencil}</label>`:""}</small></div><div class="metric"><label>마지막 매도 기준가</label><strong>${priceText(p.endPrice,p.currency)}</strong><small>${p.currency==="USD"?fxText(p.endPrice*p.fx):""}</small></div></div>
     <div class="control-grid"><section class="card panel"><h2>계산 요약</h2><p>${esc(splitNote)}</p><div class="inline-fields"><div><div class="sub">회차당 가격 하락폭</div><strong>${priceText(gap,p.currency)}</strong></div><div><div class="sub">예상 1회 주문 비중</div><strong>${p.stages?decimal.format(pct/p.stages):"—"}%</strong></div></div></section><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
     <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${p.stages}회 완료</span></div><section class="card table-card"><div class="m-head"><span>회차 · 기준가</span><span>${oneName?`<b>${oneName}</b>`:""}<span>계획 · 체결</span></span></div><div class="table-head"><span>회차</span><span>기준가</span><span>매도 계획 · 체결</span><span>상태</span></div><div>${Array.from({length:p.stages},(_,i)=>planSaleRow(p,i,oneName)).join("")}</div></section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
-  // 첫 매도 기준가·환율(달러 계획)은 카드 숫자에서 바로 수정: 폭은 글자 수에 맞추고, Enter·칸 벗어나면 저장, Esc는 취소. 0 이하·빈 값은 무시(다시 그려 원래 값).
+  // 첫 매도 기준가·달러 환율은 수정 창과 같은 필드. 카드에서 Enter/blur 저장·Esc 취소; 0 이하·빈 값은 원복, 폭은 글자 수.
   bindSaleAccount(p);
   const inlineEdit=(id,text,key)=>{const el=$(id);if(!el)return;const fit=()=>el.style.width=`${Math.max(3,el.value.length-(el.value.split(".").length-1)*.6)+.4}ch`; fit(); el.oninput=fit;
     el.onkeydown=e=>{if(e.key==="Enter")el.blur();if(e.key==="Escape"){el.value=text;fit();el.blur();}};
@@ -210,6 +216,7 @@ const planDialog=$("planDialog"); let editingId=null, dialogBase={};
 // 시작 기준선은 '직접'(기본)이 더 있다: 이름만 적고 시작 기준가는 사용자가 정함(시세로 안 채움). 일·주·개월선을 고르면 plans[].startAuto=true(직접이면 delete)로
 // 종료 기준가처럼 채운다(prices.js). 옛 기록(startAuto 없음)은 직접.
 // 평가액 칸: 보유 수량이 있으면 보유 수량 × 현재가(× 환율)로 자동(읽기 전용, 저장 안 함), 없으면 직접 입력(valueKrw — 평가액만 있는 계획).
+// 자동 여부는 칸 이름 옆 .field-note, 긴 설명은 .dialog-help로 접는다. 제목 연필로 창을 열고 삭제는 창 아래 왼쪽.
 const lineOf = (f, k) => `${Math.round(Number(f[k+"N"].value))||""}${f[k+"Unit"].value}`; // k: "start"·"end"
 // 시작 기준선 칸: 직접이면 이름 칸, 일·주·개월선이면 숫자 칸(보이는 칸만 필수). 직접으로 바꾸면 이름은 고르던 기준선 이름으로 둔다.
 function startMode(f, switched){const auto=!!f.startUnit.value;if(switched&&!auto&&f.startN.value)f.startLabel.value=`${Math.round(Number(f.startN.value))}${f.startUnit.dataset.last||"일선"}`;
