@@ -5,7 +5,7 @@ const A_PRICE_KEY="etf-planner-assets-prices", A_FILE="etf-planner-assets.json",
 const A_REPO_KEY="etf-planner-data-repo", A_TOKEN_KEY="etf-planner-github-token";
 const readJson=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||"null")??d;}catch{return d;}};
 const writeJson=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch{return false;}};
-let doc=cleanAssets(readJson(A_KEY,null))||{version:1}, prices=readJson(A_PRICE_KEY,null), priceMessage="", started=false;
+let doc=cleanAssets(readJson(A_KEY,null))||{version:1}, prices=readJson(A_PRICE_KEY,null), priceMessage="", priceRefreshBusy=false, started=false;
 let lastLocal=JSON.parse(JSON.stringify(doc)); // 같은 브라우저의 다른 페이지가 바꾼 기록도 공통 기준으로 병합
 const listeners=new Set(), emit=type=>listeners.forEach(fn=>fn(type));
 function writeLocal(){writeJson(A_KEY,doc);lastLocal=JSON.parse(JSON.stringify(doc));}
@@ -17,6 +17,7 @@ function saveSection(section){
 }
 const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", message:"", at:"", remote:null};
 function assetConfig(){ try { const repo=(localStorage.getItem(A_REPO_KEY)||"").trim(), token=localStorage.getItem(A_TOKEN_KEY)||""; return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null; } catch { return null; } }
+const sameConfig=cfg=>{const current=assetConfig();return !!current&&current.repo===cfg.repo&&current.token===cfg.token;};
 const toB64A = text => { const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
 const fromB64A = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
 async function aGh(cfg, path, options={}){
@@ -44,19 +45,22 @@ async function writeAssetRemote(cfg, data, sha){
   if(!r.ok) throw Error(`기록 저장 실패 (${r.status})`);
   const res=await r.json(); aSync.remote={repo:cfg.repo,sha:res.content?.sha||"",doc:JSON.parse(JSON.stringify(data)),etag:""};
 }
-// 시세 파일은 ETag로 읽고 종가·환율만 이 기기에 둔다. 자산 종목은 kis_prices.py가 마감 후 하루 한 번 수집한다. 시세가 바뀌었으면 true.
-async function readAssetPrices(cfg){
+// 시세 파일은 ETag로 읽고 종가·환율만 이 기기에 둔다. 수동 조회(force)는 ETag 없이 다시 받으며 연결이 바뀐 뒤의 응답은 무시한다. 자산 종목은 kis_prices.py가 마감 후 하루 한 번 수집한다. 시세가 바뀌었으면 true.
+async function readAssetPrices(cfg,force=false){
   try{
-    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(same&&prices.etag?{"If-None-Match":prices.etag}:{})}});
+    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&same&&prices.etag?{"If-None-Match":prices.etag}:{})}});
+    if(!sameConfig(cfg))return false;
     if(r.status===304){ priceLine(); return false; }
     if(r.status===404){ const had=!!prices; prices=null; localStorage.removeItem(A_PRICE_KEY); priceLine("데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다."); return had; }
     if(!r.ok) throw Error(`시세 읽기 실패 (${r.status})`);
-    return acceptPrices(cfg,JSON.parse(await r.text()),r.headers.get("ETag")||"",false);
-  }catch(error){ priceLine(`시세 확인 실패 · ${error.message}`); return false; }
+    const d=JSON.parse(await r.text());
+    if(!d||!d.stocks||typeof d.stocks!=="object"||Array.isArray(d.stocks))throw Error("시세 파일 형식을 확인할 수 없습니다.");
+    return acceptPrices(cfg,d,r.headers.get("ETag")||"",false);
+  }catch(error){ if(sameConfig(cfg))priceLine(`시세 확인 실패 · ${error.message}`); return false; }
 }
 // 메인에서 즉시 읽은 시세 파일을 분할매수·자산 평가에도 반영한다. 연결 변경 뒤의 응답은 받지 않는다.
 function acceptPrices(cfg,d,etag="",notify=true){
-  const current=assetConfig();if(!current||current.repo!==cfg.repo||current.token!==cfg.token)return false;
+  if(!sameConfig(cfg))return false;
   let next=null;
   if(d){const stocks={};for(const [k,e] of Object.entries(d.stocks||{})){if(!e||typeof e!=="object")continue;stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true};}
     const fx=d.fx?.USDKRW;next={repo:cfg.repo,etag,updatedAt:String(d.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf}:null};}
@@ -65,6 +69,19 @@ function acceptPrices(cfg,d,etag="",notify=true){
   priceLine(next?"":"데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다.");if(changed&&notify)emit("change");return changed;
 }
 function priceLine(message=""){ priceMessage=message; emit("prices"); }
+// 수집된 시세 파일만 즉시 다시 읽는다. 보유량·금액·체결 기록은 변경하지 않고, 기록 동기화와 중복 조회는 겹치지 않게 한다.
+async function refreshPrices(){
+  if(aSync.busy||priceRefreshBusy)return;
+  const cfg=assetConfig();
+  if(!cfg){priceLine("먼저 메인 플래너의 동기화 설정에서 데이터 저장소와 토큰을 연결해 주세요.");return;}
+  priceRefreshBusy=true;priceLine("시세 불러오는 중…");
+  try{
+    const changed=await readAssetPrices(cfg,true);
+    if(!sameConfig(cfg)){priceLine("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");return;}
+    if(changed)emit("change");
+    if(!priceMessage)priceLine(`시세 불러오기 완료${prices?.updatedAt?` · 최근 수집 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`);
+  }finally{priceRefreshBusy=false;emit("prices");if(aSync.again)scheduleAssetSync(300);}
+}
 function setAssetSync(state, message=""){
   aSync.state=state; aSync.message=message;
   if(state==="done") aSync.at=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
@@ -77,7 +94,7 @@ function keepLost(lost){
 async function syncAssets(){
   const cfg=assetConfig();
   if(!cfg){ clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("off"); return; }
-  if(aSync.busy){ aSync.again=true; return; }
+  if(aSync.busy||priceRefreshBusy){ aSync.again=true; return; }
   aSync.busy=true; aSync.again=false; clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("busy");
   try{
     if(aSync.checked!==cfg.repo){ const r=await aGh(cfg,`/repos/${cfg.repo}`); if(r.status===404) throw Error(`저장소 ${cfg.repo}를 찾을 수 없습니다.`); if(!r.ok) throw Error(`저장소 확인 실패 (${r.status})`); if(!(await r.json()).private) throw Error(`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`); aSync.checked=cfg.repo; }
@@ -117,7 +134,7 @@ function start(){
   if(doc.allocation&&prices&&fillBases(doc.allocation,prices))saveSection("allocation");
   syncAssets();
 }
-return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get status(){return {...aSync};},
-  config:assetConfig,saveSection,sync:syncAssets,start,refreshConfig,restore,keepLost,acceptPrices,
+return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
+  config:assetConfig,saveSection,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();

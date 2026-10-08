@@ -355,7 +355,13 @@ function renderSavings(){
 
 // ---------- 동기화 표시(기록·시세·병합은 assets-store.js에서 두 페이지가 공유) ----------
 const assetConfig=()=>assetStore.config();
-function priceLine(message=assetStore.priceMessage){ const n=prices?Object.values(prices.stocks).filter(e=>e.close).length:0; el("assetPriceStatus").textContent=message||(prices?`시세 파일 ${prices.updatedAt?new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""} · 종목 ${n}개${prices.fx?` · 현물 환율 ${nf2.format(prices.fx.close)}원`:""}. 자산 배분 종목 코드는 데이터 저장소 수집 작업이 장 마감 후 하루 한 번(국내 16:40·미국 06:40) 종가를 받습니다.`:""); }
+function priceLine(message=assetStore.priceMessage){
+  const n=prices?Object.values(prices.stocks).filter(e=>e.close).length:0,at=prices?.updatedAt,busy=assetStore.priceRefreshing,status=el("priceRefreshStatus");
+  el("assetPriceStatus").textContent=message||(prices?`시세 파일 ${at?new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):""} · 종목 ${n}개${prices.fx?` · 현물 환율 ${nf2.format(prices.fx.close)}원`:""}. 자산 배분 종목 코드는 데이터 저장소 수집 작업이 장 마감 후 하루 한 번(국내 16:40·미국 06:40) 종가를 받습니다.`:"");
+  status.className=message&&!busy&&!message.startsWith("시세 불러오기 완료")?"warning":"";
+  status.textContent=message||(at?`최근 수집 ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:assetConfig()?"수집된 최신 시세를 바로 불러옵니다.":"동기화를 연결하면 시세를 불러올 수 있습니다.");
+  for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=el(key);btn.disabled=assetStore.status.busy||busy;btn.ariaBusy=String(busy);btn.textContent=busy?"시세 불러오는 중…":"시세 즉시 불러오기";}
+}
 function setAssetSync(){
   const cfg=assetConfig(),s=assetStore.status;
   const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`}[s.state];
@@ -367,6 +373,9 @@ function setAssetSync(){
 assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;setAssetSync();priceLine();if(type==="change")redrawIdle();});
 el("syncBtn").onclick=()=>el("syncDialog").showModal();
 el("syncNowBtn").onclick=()=>assetStore.refreshConfig();
+async function refreshAssetPrices(){await assetStore.refreshPrices();if(!assetConfig()&&!el("syncDialog").open)el("syncDialog").showModal();}
+el("refreshPricesBtn").onclick=refreshAssetPrices;
+el("refreshPricesDialogBtn").onclick=refreshAssetPrices;
 el("downloadRecovery").hidden=!assetStore.recovery().length;
 const downloadA = (value, name) => { const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}), a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
 el("downloadRecovery").onclick=()=>downloadA(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
