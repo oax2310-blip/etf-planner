@@ -10,6 +10,8 @@ const numIn=v=>String(v??"").trim()===""?null:finite(v);
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null;
+// 완료 회차는 기본 접기. 종목별 펼침 상태는 현재 화면에서만 유지하고 자산·체결·동기화 기록에는 저장하지 않는다.
+const openCompletedPurchases=new Set();
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
 const render=()=>renderPurchases(),saveSection=section=>assetStore.saveSection(section);
 const onChange=(sel,section,set)=>all(sel).forEach(x=>x.onchange=()=>{if(set(x.value,x)!==false)saveSection(section);render();});
@@ -100,6 +102,7 @@ function renderPurchases(){
     const nowText=now!==null&&priced?`현재가 ${pt(now)}<span class="price-date">${escA(q.asOf.slice(5))}</span>${next?` · 다음 ${escA(next.label)}까지 ${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`:""}`:"";
     const known=lines?lineKnown(lines,entry):[], missing=lines?purchaseLineNames(lines).filter(n=>!known.includes(n)):[];
     const partialCount=rows.filter(r=>r.recorded&&!r.done).length;
+    const done=rows.filter(r=>r.done).length, completedOpen=openCompletedPurchases.has(it.id);
     const head=lines?`<p class="purchase-ladder-line"><b>이동평균선 돌파</b> ${escA(rangeText(purchaseLineNames(lines)))} · 목표가 ${pt(lines.end)} · 총 ${man(lines.budget)}${open.length?` · 남은 ${open.length}회${partialCount?` · 부분 체결 ${partialCount}회`:` 회당 약 ${man(open[0].amount)}`}`:""}</p>
         ${!known.length?`<p class="purchase-wait">이동평균 시세를 기다리는 중입니다. 다음 수집(장중 30분마다) 뒤 단계 회차가 보이고, 그 전에는 목표가 회차만 있습니다.</p>`
           :missing.length?`<p class="purchase-wait">아직 시세가 없는 단계 ${escA(missing.join("·"))}는 건너뜁니다(60분봉 긴 선은 수집이 과거 봉을 받는 동안 며칠 걸릴 수 있음).</p>`:""}`:"";
@@ -121,7 +124,7 @@ function renderPurchases(){
       <p>${escA(g.name)} · 현재 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}${s.base>0&&t/100*s.base>v?` · 목표까지 ${man(t/100*s.base-v)}`:""}`:" · 목표 미입력"}</p>
       ${head}${nowText?`<p class="purchase-now">${nowText}</p>`:""}${tracksETF(it)?`<p class="purchase-target">${targetInfo({g,it},s)}</p><p class="purchase-tracking">${trackingInfo(it)}</p>`:""}
       <div class="purchase-progress"><span class="purchase-status${p.count&&p.done===p.count?" done":""}">${status} · ${p.done}/${p.count}회</span><span>${sharesKnown?`체결 ${qtyText(Number(filledShares.toFixed(8)),it)} · 남은 매수 ${qtyText(Number(remainingShares.toFixed(8)),it)}`:`부분 체결 ${partialCount}회 · 미완료 ${open.length}회`}</span>${alertLine}</div></div>
-      ${rows.map(row).join("")}<p class="purchase-note">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다.</p>
+      <div class="purchase-table${completedOpen?"":" hide-completed"}" id="purchaseTable"><div class="purchase-table-head${lines?" line":""}"><span>회차</span><span>기준가 · 계획</span><span>체결 · 알림</span></div>${done?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"><span>매수 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="purchaseRows">${rows.map(row).join("")}</div>${rows.length&&done===rows.length?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}</div><p class="purchase-note">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다.</p>
       ${plan.note?`<p class="purchase-note">${escA(plan.note)}</p>`:""}</section>`;
   };
   const list=plans.map(({g,it},i)=>{
@@ -141,6 +144,10 @@ function renderPurchases(){
   all("[data-purchase-select]").forEach(b=>b.onclick=()=>{selectPurchase(b.dataset.purchaseSelect);render();[...all("[data-purchase-select]")].find(x=>x.dataset.purchaseSelect===selectedPurchaseId)?.focus?.();});
   all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
   const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseShares||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
+  all("[data-purchase-fold]").forEach(b=>b.onclick=()=>{
+    const id=b.dataset.purchaseFold,open=!openCompletedPurchases.has(id);if(open)openCompletedPurchases.add(id);else openCompletedPurchases.delete(id);
+    el("purchaseTable").classList.toggle("hide-completed",!open);b.setAttribute("aria-expanded",String(open));b.querySelector("[data-completed-action]").textContent=open?"접기":"펼치기";
+  });
   // 회차의 누적 체결 수량을 저장·반영한다. 첫 체결 때 계획 수량을 고정하고, 추가 체결은 같은 반영 키의 총량을 맞춰 차이만 자산에 반영한다.
   // 반영 키: 'buy:종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'. 수량 없는 옛 기록은 이미 반영한 수량을 먼저 읽고, 사용자가 고칠 때만 shares에 기록한다.
   const stageKey=(id,x)=>{const stage=stageOf(x);return stage?`buy:${id}:${stage.id||`#${x.dataset.stage}`}`:"";};
