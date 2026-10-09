@@ -91,16 +91,17 @@ function buildTradeAlertRules(data,priceDoc){
   const f=d.futures,month=priceMonth(f);
   if(f&&month)for(const [i,l] of (Array.isArray(f.levels)?f.levels:[]).entries()){
     const tr=Array.isArray(l.tranches)?l.tranches:[],done=Number(l.contracts)>0&&tr.length>=Number(l.contracts)&&tr.every(t=>t.completed===true);
-    if(done)continue;
-    const line=futureLineName(l),name=line||`추가 ${i+1}`,next=nextFutureLine(f.levels,i);
+    if(done||f.buyPlan&&!(Number(l.contracts)>0))continue;
+    // 종료가 회차도 기존 추가매수 라벨을 유지해 수집 작업의 알림 검증과 호환한다.
+    const line=futureLineName(l),name=line||`추가 ${i+1}`,next=nextFutureLine(f.levels,i),direction=line||l.planEnd?"up":"down";
     const basisOf=level=>{const name=futureLineName(level),mark=Number(f.auto?.[name]);return name?[name,Number(level.price)>0&&(!(mark>0)||Number(level.price)!==mark)?Number(level.price):null]:[Number(level.price)];};
     const prices=line?futureBuyPrices(f.levels,i):[Number(l.price)];
     for(const [t,price] of prices.entries()){
       // 같은 가격 회차에 여러 계약이 있으면 알림을 켠 미완료 계약이 하나라도 있을 때 기존 회차 id로 한 번 알린다.
       // 계약 수가 없는 기준선의 옛 알림 설정은 그대로 유지한다.
       if(Number(l.contracts)>0?!tr.some((x,ti)=>!x.completed&&tradeFutureTrancheEnabled(f,l,x)&&(prices.length===1||futureTrancheSlot(l,x,ti)===t)):!tradeLevelEnabled(f,l))continue;
-      const basis=[line?"up":"down",...basisOf(l),...(t?[t,...basisOf(next.level)]:[])];
-      add(`trade:future:${i}${t?`:${t+1}`:""}`,month,`달러선물 ${name}${t?` ${t+1}차`:""}`,price,line?"up":"down",basis,"futures","달러선물");
+      const basis=[direction,...basisOf(l),...(t?[t,...basisOf(next.level)]:[])];
+      add(`trade:future:${i}${t?`:${t+1}`:""}`,month,`달러선물 ${name}${t?` ${t+1}차`:""}`,price,direction,basis,"futures","달러선물");
     }
   }
   if(f?.rebuy&&month){

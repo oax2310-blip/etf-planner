@@ -101,10 +101,37 @@ function applyFuturePlanEdits(f,base,edited,alertEdits=[]){
 }
 
 function openFuturePlanDialog(){
-  const base=JSON.parse(JSON.stringify(state.futures.levels));
+  const f=state.futures,base=JSON.parse(JSON.stringify(f.levels));
   const active=base.find(l=>Number(l.contracts)>0),unit=active?movingLineUnit(futureLineName(active)):"일선";
-  futurePlanDraft={base,levels:JSON.parse(JSON.stringify(base)),unit,alertEdits:new Set()};
+  const contracts=base.reduce((n,l)=>n+Number(l.contracts||0),0);
+  futurePlanDraft={base,levels:JSON.parse(JSON.stringify(base)),unit,alertEdits:new Set(),basePlan:JSON.stringify(f.buyPlan),autoEnabled:!!f.buyPlan||!contracts,autoDirty:false,
+    auto:f.buyPlan?JSON.parse(JSON.stringify(f.buyPlan)):{startLine:futureLineName(active)||"25일선",endPrice:"",contracts:contracts||"",units:["선","일선","개월선"]}};
   renderFuturePlanDialog();$("futurePlanDialog").showModal();
+}
+
+// 새 시작선에는 확인된 이동평균 시세만 채운다. 미리보기·저장 준비는 원본 기록을 바꾸지 않는다.
+function futureAutoSource(f,config,entry){
+  const levels=JSON.parse(JSON.stringify(f.levels)),name=movingLineName(config.startLine);
+  if(name&&!levels.some(l=>futureLineName(l)===name))levels.push({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]});
+  const start=levels.find(l=>futureLineName(l)===name),price=maValue(entry,name);
+  if(start&&!(Number(start.price)>0)&&price>0)start.price=priceRound(price,2);
+  return {...f,levels};
+}
+
+function futureAutoBreakdown(f){
+  const groups=new Map();
+  for(const l of f.levels){
+    if(!(Number(l.contracts)>0))continue;
+    const name=futureLineName(l),unit=movingLineUnit(name),key=l.planEnd?"end":unit||"manual";
+    if(!groups.has(key))groups.set(key,{names:[],rounds:new Set(),contracts:0});
+    const group=groups.get(key);if(name)group.names.push(name);group.contracts+=l.tranches.length;
+    l.tranches.forEach((t,i)=>group.rounds.add(`${name||l.label}:${futureTrancheSlot(l,t,i)}`));
+  }
+  const labels={선:"시선",일선:"일선",주선:"주선",개월선:"월선",end:"종료가",manual:"기존 매수"};
+  return [...MA_UNITS,"end","manual"].filter(key=>groups.has(key)).map(key=>{
+    const g=groups.get(key),last=g.names.sort((a,b)=>parseInt(a)-parseInt(b)).at(-1);
+    return `<div><strong>${labels[key]}</strong><span>${last?`${esc(last)}까지 · `:""}${g.rounds.size}분할 · ${g.contracts}계약</span></div>`;
+  }).join("");
 }
 
 function renderFuturePlanDialog(){
@@ -113,11 +140,36 @@ function renderFuturePlanDialog(){
   const units=[["선","시선 · 60분봉"],["일선","일선"],["주선","주선"],["개월선","월선"],["","직접 입력"]];
   const options=selected=>units.map(([value,name])=>`<option value="${value}"${selected===value?" selected":""}>${name}</option>`).join("");
   dialog.innerHTML=`<form id="futurePlanForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futurePlanTitle">분할매수 계획 수정</h2><button class="btn mini ghost" type="button" id="closeFuturePlan" aria-label="수정 창 닫기">닫기</button></div>
+    <label class="field future-plan-mode"><span>배분 방식</span><select id="futurePlanMode"><option value="auto"${draft.autoEnabled?" selected":""}>시작·종료 기준으로 자동 배분</option><option value="manual"${draft.autoEnabled?"":" selected"}>기준선별 직접 설정</option></select></label>
+    <div id="futureAutoFields"${draft.autoEnabled?"":' class="hidden"'}><div class="future-auto-grid"><label class="field future-auto-start"><span>시작기준선</span><div><input id="futureAutoPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.auto.startLine)||""}" required aria-label="시작 이동평균 기간"><select id="futureAutoStartUnit" aria-label="시작 이동평균 시간축">${units.filter(([value])=>value).map(([value,label])=>`<option value="${value}"${movingLineUnit(draft.auto.startLine)===value?" selected":""}>${label}</option>`).join("")}</select></div><small id="futureAutoStartPrice"></small></label><label class="field"><span>종료가격 (원)</span><input id="futureAutoEnd" type="number" min="0.0001" step="any" inputmode="decimal" value="${esc(draft.auto.endPrice)}" required></label><label class="field"><span>총 매수 계약 수</span><input id="futureAutoContracts" type="number" min="1" max="100" step="1" inputmode="numeric" value="${esc(draft.auto.contracts)}" required></label></div>
+    <fieldset class="future-auto-units"><legend>배분할 기준선</legend>${units.filter(([value])=>value).map(([value,label])=>`<label><input type="checkbox" data-future-auto-unit="${value}"${draft.auto.units.includes(value)?" checked":""}>${label}</label>`).join("")}</fieldset>
+    <div id="futureAutoPreview" class="future-auto-preview" aria-live="polite"></div><p class="hint future-auto-hint">시세가 있는 기준선으로 회차와 계약 수를 계산합니다. 이미 매수한 계약은 포함하고, 남은 계약만 자동 배분합니다.</p></div>
+    <div id="futureManualFields"${draft.autoEnabled?' class="hidden"':""}>
     <div class="future-plan-toolbar"><label class="field"><span>시간축</span><select id="futurePlanUnit">${options(draft.unit)}</select></label><span id="futurePlanCount"></span></div>
     <div class="future-plan-head"><span>기준선</span><span>기준가 (원)</span><span>계약 수</span></div><div class="future-plan-rows">${draft.levels.map((l,i)=>{const name=futureLineName(l),unit=movingLineUnit(name),bought=l.tranches.filter(t=>t.completed).length;return `<div class="future-plan-row${unit===draft.unit?"":" hidden"}" data-future-plan-unit="${unit}"><strong>${esc(name||l.label||`추가 ${i+1}`)}${bought?`<small>완료 ${bought}계약</small>`:""}</strong><input data-future-plan-price="${i}" type="number" min="0" step="any" inputmode="decimal" value="${shown(l.price)}" required aria-label="${esc(name||l.label||`추가 ${i+1}`)} 기준가"><input data-future-plan-qty="${i}" type="number" min="${bought}" max="100" step="1" inputmode="numeric" value="${l.contracts}" required aria-label="${esc(name||l.label||`추가 ${i+1}`)} 계획 계약 수"><small class="future-plan-preview" data-future-plan-preview="${i}"></small></div>`;}).join("")}</div>
     <details class="future-plan-add"><summary>기준선 추가</summary><div class="future-line-add"><input id="newLevelPeriod" type="number" min="1" max="400" step="1" value="200" aria-label="추가할 이동평균 기간"><select id="newLevelUnit" aria-label="추가할 이동평균 시간축">${options(draft.unit)}</select><button class="btn mini" id="addLevel" type="button">추가</button></div></details>
     ${typeof tradeAlertToggle==="function"?`<details class="future-plan-notify"><summary>기준선 전체 알림</summary><p class="hint">변경한 기준선의 모든 회차에 적용합니다.</p><div class="future-plan-notify-grid">${draft.levels.map((l,i)=>{const name=futureLineName(l),done=Number(l.contracts)>0&&l.tranches.length>=Number(l.contracts)&&l.tranches.every(t=>t.completed);return `<div class="${movingLineUnit(name)===draft.unit?"":"hidden"}" data-future-notify-unit="${movingLineUnit(name)}">${tradeAlertToggle(tradeLevelEnabled(f,l),`data-future-plan-alert="${i}"`,`${name||l.label||`추가 ${i+1}`} 매수`,done,name||l.label||`추가 ${i+1}`)}</div>`;}).join("")}</div></details>`:""}
+    </div>
     <p class="future-plan-error" id="futurePlanError" role="alert"></p><div class="dialog-foot"><button class="btn" id="cancelFuturePlan" type="button">취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
+  const updateAutoPreview=()=>{
+    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe),plan=futureAutoBuyPlan(source,draft.auto);
+    $("futureAutoStartPrice").textContent=plan.startPrice>0?`시작 기준가 ${fmtPrice(plan.startPrice)}원`:"시작 기준선 시세 대기";
+    if(plan.error){$("futureAutoPreview").innerHTML=`<p class="hint">${esc(draft.auto.endPrice===""||draft.auto.contracts===""?"종료가격과 총 계약 수를 입력하면 자동 배분 결과를 보여 줍니다.":plan.error)}</p>`;return;}
+    const used=new Set(plan.rows.map(r=>r.key));
+    const body=plan.rows.map(r=>`<div class="future-auto-preview-row"><span>${esc(r.line)}${r.key==="end"?"":` <small>${r.slot+1}차</small>`}</span><span>${fmtPrice(r.price)}원</span><strong>${r.contracts}계약</strong></div>`).join("");
+    const arranged=JSON.parse(JSON.stringify(source));applyFutureAutoBuyPlan(arranged,draft.auto);
+    $("futureAutoPreview").innerHTML=`<div class="future-auto-preview-head"><strong>${plan.waiting?"추가 매수 대기":`${used.size}분할 · 남은 ${plan.remaining}계약`}</strong><span>총 ${plan.config.contracts}계약${plan.completed?` · 매수 완료 ${plan.completed}`:""}</span></div>${plan.waiting?`<p class="hint">${esc(plan.waiting)}</p>`:`<div class="future-auto-breakdown">${futureAutoBreakdown(arranged)}</div><div class="future-auto-preview-table"><div class="future-auto-preview-row head"><span>기준선 · 회차</span><span>매수가</span><span>계약 수</span></div>${body}</div>`}`;
+  };
+  const readAuto=()=>{
+    const unit=$("futureAutoStartUnit").value;
+    $$("[data-future-auto-unit]").forEach(input=>{input.disabled=input.dataset.futureAutoUnit===unit;if(input.disabled)input.checked=true;});
+    draft.auto={startLine:`${$("futureAutoPeriod").value}${unit}`,endPrice:$("futureAutoEnd").value,contracts:$("futureAutoContracts").value,units:[...$$("[data-future-auto-unit]")].filter(x=>x.checked).map(x=>x.dataset.futureAutoUnit)};
+    draft.autoDirty=true;$("futurePlanError").textContent="";updateAutoPreview();
+  };
+  $$("#futureAutoPeriod, #futureAutoEnd, #futureAutoContracts").forEach(input=>input.oninput=readAuto);
+  $("futureAutoStartUnit").onchange=readAuto;$$("[data-future-auto-unit]").forEach(input=>{input.onchange=readAuto;input.disabled=input.dataset.futureAutoUnit===movingLineUnit(draft.auto.startLine);if(input.disabled)input.checked=true;});
+  $("futurePlanMode").onchange=e=>{draft.autoEnabled=e.target.value==="auto";$("futureAutoFields").classList.toggle("hidden",!draft.autoEnabled);$("futureManualFields").classList.toggle("hidden",draft.autoEnabled);$("futurePlanError").textContent="";updateAutoPreview();};
+  updateAutoPreview();
   const updatePreview=()=>{
     $("futurePlanCount").textContent=`총 ${draft.levels.reduce((n,l)=>n+Number(l.contracts||0),0)}계약`;
     $$("[data-future-plan-preview]").forEach(el=>{const i=Number(el.dataset.futurePlanPreview),l=draft.levels[i],prices=futureLineName(l)?futureBuyPrices(draft.levels,i):[Number(l.price)];el.textContent=Number(l.contracts)>0&&Number(l.price)>0?prices.map((p,j)=>`${j+1}차 ${fmtPrice(Math.round(p*10000)/10000)}원`).join(" · "):"";});
@@ -136,13 +188,22 @@ function renderFuturePlanDialog(){
   dialog.onclose=()=>{futurePlanDraft=null;};
   $("futurePlanForm").onsubmit=e=>{
     e.preventDefault();
-    const invalid=e.currentTarget.querySelector("[data-future-plan-price]:invalid, [data-future-plan-qty]:invalid");
+    const invalid=e.currentTarget.querySelector(draft.autoEnabled?"#futureAutoFields input:invalid":"[data-future-plan-price]:invalid, [data-future-plan-qty]:invalid");
     if(invalid){
       const unit=invalid.closest("[data-future-plan-unit]")?.dataset.futurePlanUnit;
       if(unit!=null){$("futurePlanUnit").value=unit;$("futurePlanUnit").dispatchEvent(new Event("change"));}
       invalid.reportValidity();return;
     }
-    if(!applyFuturePlanEdits(state.futures,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
+    const latest=state.futures,next=JSON.parse(JSON.stringify(latest));
+    if(JSON.stringify(latest.buyPlan)!==draft.basePlan||!applyFuturePlanEdits(next,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
+    if(draft.autoEnabled&&(!latest.buyPlan||draft.autoDirty||JSON.stringify(draft.levels)!==JSON.stringify(draft.base))){
+      const source=futureAutoSource(next,draft.auto,futuresEntry(priceData,latest)),plan=futureAutoBuyPlan(source,draft.auto);
+      if(plan.error||plan.startPrice>plan.config.endPrice){$("futurePlanError").textContent=plan.error||"종료가격은 시작 기준가 이상으로 입력하세요.";return;}
+      if(source.levels.length+(source.levels.some(l=>l.planEnd)?0:1)>80){$("futurePlanError").textContent="종료가를 포함해 기준선은 80개까지 설정할 수 있습니다.";return;}
+      applyFutureAutoBuyPlan(source,draft.auto);next.levels=source.levels;next.buyPlan=source.buyPlan;
+    }
+    if(!draft.autoEnabled)delete next.buyPlan;
+    latest.levels=next.levels;if(next.buyPlan)latest.buyPlan=next.buyPlan;else delete latest.buyPlan;
     save();dialog.close();renderFutures();
   };
   $("addLevel").onclick=()=>{
@@ -158,18 +219,20 @@ function renderFuturePlanDialog(){
 }
 
 function futureBuyTable(f,fe){
-  const near=nearestMonth(f),target=decimal.format(f.targetPrice),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length;
+  const near=nearestMonth(f),target=decimal.format(f.targetPrice),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length,auto=f.buyPlan?futureAutoBuyPlan(f):null;
+  if(auto)rows.sort((a,b)=>Number(a.t.completed?(a.t.executionPrice??a.t.price):a.t.price)-Number(b.t.completed?(b.t.executionPrice??b.t.price):b.t.price)||a.li-b.li||a.ti-b.ti);
   const row=({l,li,t,ti})=>{
     const line=futureLineName(l),name=line||l.label||`추가 ${li+1}`,slot=futureTrancheSlot(l,t,ti),part=line?futureBuyPrices(f.levels,li).length>1?slot:0:ti,key=`${li}:${ti}`,price=Number(t.completed?(t.executionPrice??t.price):t.price),title=`${name} ${part+1}회차 ${ti+1}번째 계약`;
     const tag=`${esc(name)}<span class="tr-no">${part+1}</span>`,priceText=price>0?`${fmtPrice(price)}원`:"—";
-    const pricePart=t.completed?`<strong>${priceText} · 1계약</strong>`:`<label class="future-buy-price"><input data-tranche-price="${key}" type="number" min="0" step="any" inputmode="decimal" value="${shown(price)}" aria-label="${esc(title)} 매수가">원 <span>· 1계약</span></label>`;
+    const pricePart=t.completed||auto?`<strong>${priceText} · 1계약</strong>`:`<label class="future-buy-price"><input data-tranche-price="${key}" type="number" min="0" step="any" inputmode="decimal" value="${shown(price)}" aria-label="${esc(title)} 매수가">원 <span>· 1계약</span></label>`;
     const monthPart=t.completed?t.mergedMonth?`<span class="merged-tag">${esc(t.mergedMonth)} 편입</span>`:'<span class="merged-tag outside" title="보유 월물 밖에서 따로 계산하는 예전 매수">월물 밖</span>':`<label class="future-buy-month">월물<input data-tranche-month="${key}" list="posMonths" inputmode="numeric" maxlength="6" placeholder="YYYYMM" title="합칠 보유 월물" value="${esc(t.month||near)}" aria-label="${esc(title)} 편입 월물"></label>`;
     const alert=!t.completed&&typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeFutureTrancheEnabled(f,l,t),`data-tranche-alert="${key}"`,`${title} 매수`):"";
     return `<div class="future-buy-row${t.completed?" done":""}"><label class="check"><input type="checkbox" data-tranche-check="${key}"${t.completed?" checked":""} aria-label="${esc(title)} 매수 완료"><b class="tr-name">${tag}</b></label><div class="future-buy-condition">${pricePart}<small>기대손익 ${price>0?money((f.targetPrice-price)*contractSize):"—"}</small></div><div class="future-buy-meta">${monthPart}${alert}</div></div>`;
   };
-  const count=rows.length,summary=count?`${completed===count?"매수 완료":completed?"매수 진행":"매수 대기"} · ${completed}/${count}계약`:"계획 미입력";
-  return `<section class="card future-buy-card" id="futureBuyCard"><div class="purchase-head"><div class="title-row"><h2>분할매수</h2><button class="btn icon-btn" id="editFuturePlan" type="button" aria-label="달러선물 분할매수 계획 수정" title="계획 수정">${PENCIL}</button></div>${fe?`<p class="purchase-now">${esc(near)} · 현재 ${fmtPrice(fe.close)}원 ${priceStamp(fe)}</p>`:""}<div class="purchase-progress"><span class="purchase-status${count&&completed===count?" done":""}">${summary}</span>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-level-alert-all"):""}</div></div>
-    <div class="future-buy-table${futureCompletedOpen?"":" hide-completed"}" id="futureBuyTable"><div class="future-buy-table-head"><span>기준선 · 회차</span><span>매수가 · 계획</span><span>월물 · 알림</span></div>${completed?`<button class="completed-fold-bar" id="toggleCompletedFutureBuys" type="button" aria-expanded="${futureCompletedOpen}" aria-controls="futureBuyRows"><span>매수 완료 <b>${completed}계약</b></span><span class="completed-fold-action" data-completed-action>${futureCompletedOpen?"접기":"펼치기"}</span></button>`:""}<div id="futureBuyRows">${rows.map(row).join("")}</div>${count&&completed===count?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}${!count?'<div class="empty"><h3>매수 계획이 없습니다</h3><p>계획 수정에서 기준가와 계약 수를 입력하세요.</p><button class="btn primary" type="button" id="startFuturePlan">계획 입력</button></div>':""}</div>${count?`<div class="future-buy-foot">목표 환율 ${target}원 기준 · 남은 ${count-completed}계약</div>`:""}</section>`;
+  const count=rows.length,planned=Number(auto?.config?.contracts)||count,done=planned>0&&completed===planned,summary=planned?`${done?"매수 완료":auto?.waiting?"추가 매수 대기":completed?"매수 진행":"매수 대기"} · ${completed}/${planned}계약`:"계획 미입력";
+  const autoInfo=auto?.config?`<p class="purchase-ladder-line"><b>자동 배분</b> ${esc(auto.config.startLine)} → ${fmtPrice(auto.config.endPrice)}원 · 총 ${planned}계약</p><div class="future-auto-breakdown">${futureAutoBreakdown(f)}</div>${auto.waiting?`<p class="hint future-auto-hint">${esc(auto.waiting)}</p>`:""}`:"";
+  return `<section class="card future-buy-card" id="futureBuyCard"><div class="purchase-head"><div class="title-row"><h2>분할매수</h2><button class="btn icon-btn" id="editFuturePlan" type="button" aria-label="달러선물 분할매수 계획 수정" title="계획 수정">${PENCIL}</button></div>${fe?`<p class="purchase-now">${esc(near)} · 현재 ${fmtPrice(fe.close)}원 ${priceStamp(fe)}</p>`:""}${autoInfo}<div class="purchase-progress"><span class="purchase-status${done?" done":""}">${summary}</span>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-level-alert-all"):""}</div></div>
+    <div class="future-buy-table${futureCompletedOpen?"":" hide-completed"}" id="futureBuyTable"><div class="future-buy-table-head"><span>기준선 · 회차</span><span>매수가 · 계획</span><span>월물 · 알림</span></div>${completed?`<button class="completed-fold-bar" id="toggleCompletedFutureBuys" type="button" aria-expanded="${futureCompletedOpen}" aria-controls="futureBuyRows"><span>매수 완료 <b>${completed}계약</b></span><span class="completed-fold-action" data-completed-action>${futureCompletedOpen?"접기":"펼치기"}</span></button>`:""}<div id="futureBuyRows">${rows.map(row).join("")}</div>${done?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}${!count?`<div class="empty"><h3>${auto?"매수 기준 대기":"매수 계획이 없습니다"}</h3><p>${auto?"시작선 시세가 채워지면 회차를 자동 배분합니다.":"계획 수정에서 시작·종료 기준과 총 계약 수를 입력하세요."}</p><button class="btn primary" type="button" id="startFuturePlan">계획 ${auto?"수정":"입력"}</button></div>`:""}</div>${planned?`<div class="future-buy-foot">목표 환율 ${target}원 기준 · 남은 ${planned-completed}계약</div>`:""}</section>`;
 }
 
 // 월물교체는 계좌를 보고 보유 월물·단순평균가·누적 정산손익을 직접 수정(교체 실행 기능 없음).
