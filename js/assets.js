@@ -48,6 +48,15 @@ function quoteText(q,current=false){
 // ---------- 자산 배분 ----------
 // 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 화면 목록만 거른다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하며 기록·합계는 바꾸지 않는다.
 let allocQuery = "";
+// 그룹·현금·메모는 기본 접기. 펼침은 현재 화면 메모리에만 두며 다시 그려도 유지하고, 새로 열면 접는다.
+const allocOpenCards = new Set();
+function setAllocCardOpen(button,open){
+  const body=el(button.getAttribute("aria-controls"));if(!body)return;
+  body.hidden=!open;button.setAttribute("aria-expanded",String(open));
+  const action=open?"접기":"펼치기";
+  button.querySelector("[data-alloc-fold-action]").textContent=action;
+  button.setAttribute("aria-label",`${button.dataset.foldLabel} ${action}`);
+}
 const allocSearchText = v => String(v??"").normalize("NFKC").toLowerCase().replace(/\s+/g,"");
 function filterAllocItems(){
   const input=el("allocSearch"), list=el("allocItems"); if(!input||!list)return;
@@ -61,6 +70,8 @@ function filterAllocItems(){
   }
   list.querySelectorAll("[data-alloc-item]").forEach(row=>row.classList.toggle("hidden",!matches.has(row.dataset.allocItem)));
   list.querySelectorAll(".asset-section, .group-card, .alloc-class").forEach(box=>box.classList.toggle("hidden",!!terms.length&&!box.querySelector(".asset-row:not(.hidden)")));
+  // 검색 중에는 일치한 그룹을 펼쳐 종목을 보여 주고, 검색을 비우면 직접 고른 접힘 상태로 돌아간다.
+  list.querySelectorAll("[data-alloc-fold]").forEach(button=>setAllocCardOpen(button,terms.length?!button.closest(".group-card").classList.contains("hidden"):allocOpenCards.has(button.dataset.allocFold)));
   el("allocSearchStatus").textContent=terms.length?`검색 결과 ${matches.size} / ${count}개 종목`:`전체 ${count}개 종목`;
   el("allocSearchClear").classList.toggle("hidden",!allocQuery);
   el("allocSearchEmpty").classList.toggle("hidden",!terms.length||matches.size>0);
@@ -76,6 +87,7 @@ function renderAlloc(tab="alloc"){
   const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
   const bar=(cur,t)=>{ const top=Math.max(cur,finite(t)||0,.01); return `<span class="bar" aria-hidden="true"><i style="width:${Math.min(100,cur/top*100)}%"></i>${finite(t)!==null?`<em style="left:${Math.min(100,t/top*100)}%"></em>`:""}</span>`; };
+  const foldButton=(key,id,label,title)=>{const open=allocOpenCards.has(key);return `<button class="alloc-fold" type="button" data-alloc-fold="${escA(key)}" data-fold-label="${escA(label)}" aria-expanded="${open}" aria-controls="${escA(id)}" aria-label="${escA(label)} ${open?"접기":"펼치기"}">${title}<span class="alloc-fold-action" data-alloc-fold-action>${open?"접기":"펼치기"}</span></button>`;};
   const classLabels=new Map(s.regions.flatMap(r=>r.classes.map(c=>[c.id,`${r.name} · ${c.name}`])));
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
@@ -87,11 +99,13 @@ function renderAlloc(tab="alloc"){
       ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}</div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
-    return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${escA(g.name)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
+    const key=`group:${g.id}`,bodyId=`allocGroup-${encodeURIComponent(g.id)}`;
+    return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${foldButton(key,bodyId,`${g.name} 상세`,`<span>${escA(g.name)}</span>`)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
       <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} (${man(t/100*s.base)})${target.linked?" · 하위 합산":""}`:""} ${gap(t,v)}</p></div>
+      <div class="alloc-fold-body" id="${escA(bodyId)}"${allocOpenCards.has(key)?"":" hidden"}>
       ${g.note?`<p class="group-note" title="${escA(g.note)}"><span class="alloc-note-label">메모</span>${noteLineA(g.note)}</p>`:""}
       ${plain.map(itemRow).join("")}${names.map(n=>`<div class="asset-section">${sec(n)}${g.items.filter(it=>it.section===n).map(itemRow).join("")}</div>`).join("")}
-      ${g.items.length?"":`<p class="group-empty">종목 없음</p>`}<div class="group-foot"><button class="btn mini ghost" type="button" data-add-item="${escA(g.id)}">＋ 종목</button></div></section>`; };
+      ${g.items.length?"":`<p class="group-empty">종목 없음</p>`}<div class="group-foot"><button class="btn mini ghost" type="button" data-add-item="${escA(g.id)}">＋ 종목</button></div></div></section>`; };
   // 종목별 목록은 저장된 그룹 순서를 그대로 따른다. 연속한 같은 분류만 묶고, 지역·분류별로 다시 정렬하거나 기록을 바꾸지 않는다.
   const detailBlocks=[];
   for(const g of a.groups){
@@ -113,8 +127,19 @@ function renderAlloc(tab="alloc"){
     <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
     <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
     <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
-    <section class="card cash-card">${cashRows||`<p class="group-empty">현금 항목 없음</p>`}<div class="cash-total"><span>합계</span><b>${man(s.cash)}</b></div></section>`}
-    <section class="card panel memo assets-memo"><div class="memo-head"><h2><label for="allocMemo">배분 메모</label></h2></div><textarea id="allocMemo" maxlength="4000">${escA(a.memo||"")}</textarea></section>`;
+    <section class="card cash-card"><div class="cash-total">${foldButton("cash","allocCashBody","현금 상세",`<span>합계</span><b>${man(s.cash)}</b>`)}</div><div class="alloc-fold-body" id="allocCashBody"${allocOpenCards.has("cash")?"":" hidden"}>${cashRows||`<p class="group-empty">현금 항목 없음</p>`}</div></section>`}
+    <section class="card panel memo assets-memo"><div class="memo-head"><h2>${strategy?'<label for="allocMemo">배분 메모</label>':foldButton("memo","allocMemoBody","배분 메모","<span>배분 메모</span>")}</h2></div><div class="alloc-fold-body" id="allocMemoBody"${strategy||allocOpenCards.has("memo")?"":" hidden"}><textarea id="allocMemo" aria-label="배분 메모" maxlength="4000">${escA(a.memo||"")}</textarea></div></section>`;
+  view.querySelectorAll("[data-alloc-fold]").forEach(button=>{
+    // 입력 저장으로 화면이 다시 그려져 클릭이 사라지지 않게, 접힘을 먼저 바꾼 뒤 포커스를 옮긴다.
+    button.onpointerdown=e=>{if(e.button===0)e.preventDefault();};
+    button.onclick=()=>{
+      const open=button.getAttribute("aria-expanded")!=="true",key=button.dataset.allocFold;
+      if(open)allocOpenCards.add(key);else allocOpenCards.delete(key);
+      setAllocCardOpen(button,open);
+      if(document.activeElement!==button)document.activeElement?.blur();
+      [...view.querySelectorAll("[data-alloc-fold]")].find(b=>b.dataset.allocFold===key)?.focus({preventScroll:true});
+    };
+  });
   const totalInput=el("allocTotal");
   totalInput.oninput=()=>{totalInput.setCustomValidity("");totalInput.style.width=totalWidth(totalInput.value||totalPlaceholder);};
   totalInput.onchange=()=>{const n=parseAllocationTotal(totalInput.value);
