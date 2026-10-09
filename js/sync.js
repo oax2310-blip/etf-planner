@@ -78,23 +78,32 @@ async function readPrices(force=false){
     if(!response.ok)throw Error(`시세 읽기 실패 (${response.status})`);
     let doc;try{doc=JSON.parse(await response.text());}catch{throw Error("시세 파일을 읽을 수 없습니다.");}
     if(!same())return false;
-    const next={...slimPrices(doc),etag:response.headers?.get?.("ETag")||""},plain=d=>JSON.stringify({...d,etag:""}),changed=!priceData||plain(priceData)!==plain(next);
-    priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,doc,next.etag);priceStatus();return changed;
+    return acceptPlannerPrices(cfg,doc,response.headers?.get?.("ETag")||"");
   }catch(error){if(same())priceStatus(`시세 확인 실패 · ${error.message}`);return false;}
 }
-// 수집된 시세만 즉시 다시 읽는다. 기록 충돌 창이나 새 수집 작업을 실행하지 않으며, 일반 동기화와 겹치지 않게 한다.
+function acceptPlannerPrices(cfg,doc,etag){
+  const next={...slimPrices(doc),etag},plain=d=>JSON.stringify({...d,etag:""}),changed=!priceData||plain(priceData)!==plain(next);
+  priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,doc,etag);priceStatus();return changed;
+}
+// 저장 대기 중인 종목을 먼저 동기화한 뒤 실제 수집을 요청한다. 수집 결과가 확인되기 전에는 마지막 시세를 유지한다.
 async function refreshPrices(){
   if(sync.busy||priceRefreshBusy)return;
   if(!connected()){priceStatus("먼저 동기화 설정에서 데이터 저장소와 토큰을 연결해 주세요.");$("syncDialog").showModal();return;}
   const repo=sync.repo,token=sync.token;
-  priceRefreshBusy=true;priceRefreshControls();$("priceRefreshStatus").className="";$("priceRefreshStatus").textContent="시세 불러오는 중…";
+  priceRefreshBusy=true;priceRefreshControls();$("priceRefreshStatus").className="";$("priceRefreshStatus").textContent="시세 수집 준비 중…";
   try{
-    if(await readPrices(true))sync.redraw=true;
+    if(dataSnapshot()!==sync.base&&!sync.blocked)await syncNow(true);
+    if(sync.blocked||sync.failed)throw Error("먼저 기록 동기화를 완료한 뒤 시세를 수집해 주세요.");
+    if(typeof assetStore!=="undefined"&&assetStore.status?.state==="pending"){
+      await assetStore.sync();if(assetStore.status.state==="error")throw Error("먼저 분할매수·자산 기록 동기화를 완료한 뒤 시세를 수집해 주세요.");
+    }
+    const result=await collectPricesNow({repo,token},message=>{$("priceRefreshStatus").textContent=message;},()=>sync.repo===repo&&sync.token===token);
     if(sync.repo!==repo||sync.token!==token){priceStatus("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");return;}
+    if(acceptPlannerPrices({repo,token},result.doc,result.etag))sync.redraw=true;
     if(fillPrices(state,priceData)){save();sync.redraw=true;}
     if(!priceReadMessage){
       const missing=typeof assetStore!=="undefined"?assetStore.missingPriceMessage:"";
-      if(missing)priceStatus(missing);
+      if(missing||result.message)priceStatus(missing||result.message);
       else $("priceRefreshStatus").textContent=`시세 불러오기 완료${priceData?.updatedAt?` · 최근 수집 ${new Date(priceData.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`;
     }
   }catch(error){priceStatus(`시세 확인 실패 · ${error.message}`);}
@@ -102,7 +111,7 @@ async function refreshPrices(){
 }
 // 시세 줄: 종목 수(비트코인 제외)·달러선물 월물 수·현물 환율·비트코인(BTC-USD, 달러) 현재가
 function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt),fx=fxEntry(d),btc=btcEntry(d),stocks=Object.values(d?.stocks||{}).filter(e=>e?.kind!=="코인").length;
-  priceReadMessage=message||"";$("priceRefreshStatus").className=message?"warning":"";$("priceRefreshStatus").textContent=message||(at?`최근 수집 ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:connected()?"수집된 최신 시세를 바로 불러옵니다.":"동기화를 연결하면 시세를 불러올 수 있습니다.");
+  priceReadMessage=message||"";$("priceRefreshStatus").className=message?"warning":"";$("priceRefreshStatus").textContent=message||(at?`최근 수집 ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:connected()?"시세를 바로 수집한 뒤 불러옵니다.":"동기화를 연결하면 시세를 불러올 수 있습니다.");
   $("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${stocks}개 · 달러선물 ${Object.keys(d.futures).length}개 월물 · ${fx?`현물 환율 ${priceRound(fx.close,2)}원 (${fx.asOf}${fx.stale?" · 조회 실패":""}${priceOld(fx)?" · 지난 시세":""})`:"현물 환율 없음(기존 값 유지)"}${btc?` · 비트코인 $${priceRound(btc.close,2).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} (${btc.asOf} UTC${btc.stale?" · 조회 실패":""}${priceOld(btc)?" · 지난 시세":""})`:""}. 현재가·이동평균선 기준가·달러 계획 환율을 자동으로 채웁니다.`:"");}
 // 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
@@ -116,9 +125,9 @@ function chooseConflict(local,remote){return new Promise(resolve=>{
   $("keepLocal").onclick=()=>finish("local");$("keepRemote").onclick=()=>finish("remote");$("conflictLater").onclick=()=>finish("later");
   dialog.onclose=()=>finish("later");dialog.showModal();
 });}
-async function syncNow(){
+async function syncNow(beforePriceCollection=false){
   if(!connected())return;
-  if(sync.busy||priceRefreshBusy){sync.again=true;return;}
+  if(sync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){sync.again=true;return;}
   const repo=sync.repo,token=sync.token,same=()=>sync.repo===repo&&sync.token===token;
   sync.busy=true;sync.again=false;sync.failed=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
   try{

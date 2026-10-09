@@ -15,9 +15,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=73"></script>
-  <link rel="stylesheet" href="css/app.css?v=73" />
-  <link rel="stylesheet" href="css/assets.css?v=73" />
+  <script src="js/theme.js?v=74"></script>
+  <link rel="stylesheet" href="css/app.css?v=74" />
+  <link rel="stylesheet" href="css/assets.css?v=74" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -33,7 +33,7 @@
 
   <main>
     <div class="price-refresh">
-      <button class="btn mini" id="refreshPricesBtn" type="button" title="데이터 저장소에 수집된 최신 시세를 불러옵니다. 새 시세 수집은 기존 예약대로 실행됩니다." aria-describedby="priceRefreshStatus">시세 즉시 불러오기</button>
+      <button class="btn mini" id="refreshPricesBtn" type="button" title="시세를 바로 수집하도록 요청하고, 완료된 최신 시세를 자동으로 불러옵니다." aria-describedby="priceRefreshStatus">시세 즉시 불러오기</button>
       <span id="priceRefreshStatus" role="status"></span>
     </div>
     <section id="strategyView" class="hidden"></section>
@@ -125,9 +125,10 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=73"></script>
-  <script src="js/assets-calc.js?v=73"></script>
-  <script src="js/assets-store.js?v=73"></script>
-  <script src="js/assets.js?v=73"></script>
+  <script src="js/ma-ladder.js?v=74"></script>
+  <script src="js/assets-calc.js?v=74"></script>
+  <script src="js/price-collection.js?v=74"></script>
+  <script src="js/assets-store.js?v=74"></script>
+  <script src="js/assets.js?v=74"></script>
 </body>
 </html>
