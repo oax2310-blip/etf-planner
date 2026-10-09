@@ -106,6 +106,16 @@ test('달러 손절·재매수만 설정한 기기도 빈 기기로 보지 않�
   assert.deepEqual(JSON.parse(other.items.get('test-state')).futures.rebuy,local.futures.rebuy);
 });
 
+test('달러선물 회차별 알림 선택과 미입력 회차를 다른 기기에 그대로 보낸다', async () => {
+  const local=empty();local.futures.levels=[{days:25,price:1400,contracts:3,notify:true,tranches:[
+    {slot:0,completed:false,notify:false},{slot:1,completed:false,notify:true},{slot:2,completed:false},
+  ]}];
+  const h=harness({local});await h.restored();
+  assert.deepEqual(h.remoteData().futures.levels,local.futures.levels);
+  const other=harness({remote:h.remoteData(),hadStoredState:false});await other.restored();
+  assert.deepEqual(JSON.parse(other.items.get('test-state')).futures.levels,local.futures.levels);
+});
+
 test('기존 기기에서 처음 연결하면 현재 기록을 저장소에 올린다', async () => {
   const local = {plans: [{id: 'abc'}], futures: {positions: []}, actions: {}};
   const h = harness({local});

@@ -62,7 +62,7 @@ let futureCompletedOpen=false, futurePlanDraft=null;
 
 // 수정 창에서 바꾼 기준가·계약 수·알림만 최신 구간에 적용한다. 그 사이 채워진 시세·체결·알림은 보존한다.
 // 실패 시 원본을 건드리지 않으며, 이미 매수한 계약보다 줄이거나 같은 평균선을 중복 추가하지 않는다.
-function applyFuturePlanEdits(f,base,edited){
+function applyFuturePlanEdits(f,base,edited,alertEdits=[]){
   if(!Array.isArray(base)||!Array.isArray(edited)||edited.length<base.length||edited.length>80)return false;
   const next={levels:JSON.parse(JSON.stringify(f.levels))},changedNames=[];let changed=false;
   for(let i=0;i<edited.length;i++){
@@ -78,9 +78,9 @@ function applyFuturePlanEdits(f,base,edited){
     const index=oldName?next.levels.findIndex(l=>futureLineName(l)===oldName):next.levels.findIndex((l,j)=>j===i&&!futureLineName(l)&&l.label===original.label);
     if(index<0)return false;
     const level=next.levels[index];
-    if(row.notify!==original.notify){
+    if(row.notify!==original.notify||alertEdits.includes(i)){
       if(typeof row.notify!=="boolean")return false;
-      level.notify=row.notify;changed=true;
+      level.notify=row.notify;level.tranches.forEach(t=>delete t.notify);changed=true;
     }
     if(qty!==Number(original.contracts)){
       if(qty<level.tranches.filter(t=>t.completed).length)return false;
@@ -103,7 +103,7 @@ function applyFuturePlanEdits(f,base,edited){
 function openFuturePlanDialog(){
   const base=JSON.parse(JSON.stringify(state.futures.levels));
   const active=base.find(l=>Number(l.contracts)>0),unit=active?movingLineUnit(futureLineName(active)):"일선";
-  futurePlanDraft={base,levels:JSON.parse(JSON.stringify(base)),unit};
+  futurePlanDraft={base,levels:JSON.parse(JSON.stringify(base)),unit,alertEdits:new Set()};
   renderFuturePlanDialog();$("futurePlanDialog").showModal();
 }
 
@@ -116,7 +116,7 @@ function renderFuturePlanDialog(){
     <div class="future-plan-toolbar"><label class="field"><span>시간축</span><select id="futurePlanUnit">${options(draft.unit)}</select></label><span id="futurePlanCount"></span></div>
     <div class="future-plan-head"><span>기준선</span><span>기준가 (원)</span><span>계약 수</span></div><div class="future-plan-rows">${draft.levels.map((l,i)=>{const name=futureLineName(l),unit=movingLineUnit(name),bought=l.tranches.filter(t=>t.completed).length;return `<div class="future-plan-row${unit===draft.unit?"":" hidden"}" data-future-plan-unit="${unit}"><strong>${esc(name||l.label||`추가 ${i+1}`)}${bought?`<small>완료 ${bought}계약</small>`:""}</strong><input data-future-plan-price="${i}" type="number" min="0" step="any" inputmode="decimal" value="${shown(l.price)}" required aria-label="${esc(name||l.label||`추가 ${i+1}`)} 기준가"><input data-future-plan-qty="${i}" type="number" min="${bought}" max="100" step="1" inputmode="numeric" value="${l.contracts}" required aria-label="${esc(name||l.label||`추가 ${i+1}`)} 계획 계약 수"><small class="future-plan-preview" data-future-plan-preview="${i}"></small></div>`;}).join("")}</div>
     <details class="future-plan-add"><summary>기준선 추가</summary><div class="future-line-add"><input id="newLevelPeriod" type="number" min="1" max="400" step="1" value="200" aria-label="추가할 이동평균 기간"><select id="newLevelUnit" aria-label="추가할 이동평균 시간축">${options(draft.unit)}</select><button class="btn mini" id="addLevel" type="button">추가</button></div></details>
-    ${typeof tradeAlertToggle==="function"?`<details class="future-plan-notify"><summary>기준선 알림</summary><div class="future-plan-notify-grid">${draft.levels.map((l,i)=>{const name=futureLineName(l),done=Number(l.contracts)>0&&l.tranches.length>=Number(l.contracts)&&l.tranches.every(t=>t.completed);return `<div class="${movingLineUnit(name)===draft.unit?"":"hidden"}" data-future-notify-unit="${movingLineUnit(name)}">${tradeAlertToggle(tradeLevelEnabled(f,l),`data-future-plan-alert="${i}"`,`${name||l.label||`추가 ${i+1}`} 매수`,done,name||l.label||`추가 ${i+1}`)}</div>`;}).join("")}</div></details>`:""}
+    ${typeof tradeAlertToggle==="function"?`<details class="future-plan-notify"><summary>기준선 전체 알림</summary><p class="hint">변경한 기준선의 모든 회차에 적용합니다.</p><div class="future-plan-notify-grid">${draft.levels.map((l,i)=>{const name=futureLineName(l),done=Number(l.contracts)>0&&l.tranches.length>=Number(l.contracts)&&l.tranches.every(t=>t.completed);return `<div class="${movingLineUnit(name)===draft.unit?"":"hidden"}" data-future-notify-unit="${movingLineUnit(name)}">${tradeAlertToggle(tradeLevelEnabled(f,l),`data-future-plan-alert="${i}"`,`${name||l.label||`추가 ${i+1}`} 매수`,done,name||l.label||`추가 ${i+1}`)}</div>`;}).join("")}</div></details>`:""}
     <p class="future-plan-error" id="futurePlanError" role="alert"></p><div class="dialog-foot"><button class="btn" id="cancelFuturePlan" type="button">취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   const updatePreview=()=>{
     $("futurePlanCount").textContent=`총 ${draft.levels.reduce((n,l)=>n+Number(l.contracts||0),0)}계약`;
@@ -124,7 +124,13 @@ function renderFuturePlanDialog(){
   };
   updatePreview();
   $("futurePlanUnit").onchange=e=>{draft.unit=e.target.value;$$("[data-future-plan-unit]").forEach(row=>row.classList.toggle("hidden",row.dataset.futurePlanUnit!==draft.unit));$$("[data-future-notify-unit]").forEach(row=>row.classList.toggle("hidden",row.dataset.futureNotifyUnit!==draft.unit));};
-  $$("[data-future-plan-alert]").forEach(input=>input.onchange=()=>{const l=draft.levels[Number(input.dataset.futurePlanAlert)];l.notify=input.checked;input.nextElementSibling.textContent=`${futureLineName(l)||l.label} 알림 ${input.checked?"ON":"OFF"}`;});
+  $$("[data-future-plan-alert]").forEach(input=>{
+    if(input.disabled)return;
+    const i=Number(input.dataset.futurePlanAlert),l=draft.levels[i],flags=l.tranches.filter(t=>!t.completed).map(t=>tradeFutureTrancheEnabled(f,l,t)),name=futureLineName(l)||l.label||`추가 ${i+1}`;
+    input.checked=flags.length?flags.every(Boolean):tradeLevelEnabled(f,l);input.indeterminate=flags.some(Boolean)&&!flags.every(Boolean);
+    input.nextElementSibling.textContent=`${name} 알림 ${input.indeterminate?"일부 ON":input.checked?"ON":"OFF"}`;
+    input.onchange=()=>{l.notify=input.checked;l.tranches.forEach(t=>delete t.notify);draft.alertEdits.add(i);input.nextElementSibling.textContent=`${name} 알림 ${input.checked?"ON":"OFF"}`;};
+  });
   $$("[data-future-plan-price], [data-future-plan-qty]").forEach(input=>input.oninput=()=>{const isPrice=input.dataset.futurePlanPrice!=null,index=Number(isPrice?input.dataset.futurePlanPrice:input.dataset.futurePlanQty);draft.levels[index][isPrice?"price":"contracts"]=Number(input.value);updatePreview();});
   const close=()=>dialog.close();$("closeFuturePlan").onclick=close;$("cancelFuturePlan").onclick=close;
   dialog.onclose=()=>{futurePlanDraft=null;};
@@ -136,7 +142,7 @@ function renderFuturePlanDialog(){
       if(unit!=null){$("futurePlanUnit").value=unit;$("futurePlanUnit").dispatchEvent(new Event("change"));}
       invalid.reportValidity();return;
     }
-    if(!applyFuturePlanEdits(state.futures,draft.base,draft.levels)){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
+    if(!applyFuturePlanEdits(state.futures,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
     save();dialog.close();renderFutures();
   };
   $("addLevel").onclick=()=>{
@@ -154,11 +160,11 @@ function renderFuturePlanDialog(){
 function futureBuyTable(f,fe){
   const near=nearestMonth(f),target=decimal.format(f.targetPrice),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length;
   const row=({l,li,t,ti})=>{
-    const line=futureLineName(l),name=line||l.label||`추가 ${li+1}`,slot=futureTrancheSlot(l,t,ti),part=line?futureBuyPrices(f.levels,li).length>1?slot:0:ti,key=`${li}:${ti}`,price=Number(t.completed?(t.executionPrice??t.price):t.price),title=`${name} ${part+1}회차 ${ti+1}번째 계약`,firstOpen=l.tranches.findIndex(x=>!x.completed)===ti;
+    const line=futureLineName(l),name=line||l.label||`추가 ${li+1}`,slot=futureTrancheSlot(l,t,ti),part=line?futureBuyPrices(f.levels,li).length>1?slot:0:ti,key=`${li}:${ti}`,price=Number(t.completed?(t.executionPrice??t.price):t.price),title=`${name} ${part+1}회차 ${ti+1}번째 계약`;
     const tag=`${esc(name)}<span class="tr-no">${part+1}</span>`,priceText=price>0?`${fmtPrice(price)}원`:"—";
     const pricePart=t.completed?`<strong>${priceText} · 1계약</strong>`:`<label class="future-buy-price"><input data-tranche-price="${key}" type="number" min="0" step="any" inputmode="decimal" value="${shown(price)}" aria-label="${esc(title)} 매수가">원 <span>· 1계약</span></label>`;
     const monthPart=t.completed?t.mergedMonth?`<span class="merged-tag">${esc(t.mergedMonth)} 편입</span>`:'<span class="merged-tag outside" title="보유 월물 밖에서 따로 계산하는 예전 매수">월물 밖</span>':`<label class="future-buy-month">월물<input data-tranche-month="${key}" list="posMonths" inputmode="numeric" maxlength="6" placeholder="YYYYMM" title="합칠 보유 월물" value="${esc(t.month||near)}" aria-label="${esc(title)} 편입 월물"></label>`;
-    const alert=!t.completed&&firstOpen&&typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeLevelEnabled(f,l),`data-level-alert="${li}"`,`${name} 매수`):"";
+    const alert=!t.completed&&typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeFutureTrancheEnabled(f,l,t),`data-tranche-alert="${key}"`,`${title} 매수`):"";
     return `<div class="future-buy-row${t.completed?" done":""}"><label class="check"><input type="checkbox" data-tranche-check="${key}"${t.completed?" checked":""} aria-label="${esc(title)} 매수 완료"><b class="tr-name">${tag}</b></label><div class="future-buy-condition">${pricePart}<small>기대손익 ${price>0?money((f.targetPrice-price)*contractSize):"—"}</small></div><div class="future-buy-meta">${monthPart}${alert}</div></div>`;
   };
   const count=rows.length,summary=count?`${completed===count?"매수 완료":completed?"매수 진행":"매수 대기"} · ${completed}/${count}계약`:"계획 미입력";

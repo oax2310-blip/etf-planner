@@ -68,3 +68,23 @@ test('기준선 알림은 수정한 선택만 저장하고 최신 다른 구간�
   assert.equal(ctx.applyFuturePlanEdits(f,base,edited),true);
   assert.equal(f.levels[0].notify,false);assert.equal(f.levels[1].notify,true);
 });
+
+test('가격·계약 수를 수정해도 창을 연 뒤 바뀐 회차별 알림을 보존한다',()=>{
+  const ctx=load(),f={levels:[level(25,1400),level(32,1430)]},base=clone(f.levels),edited=clone(base);
+  edited[0].price=1402;edited[1].contracts=4;
+  f.levels[0].tranches[1].notify=true;f.levels[1].tranches[0].notify=false;
+  assert.equal(ctx.applyFuturePlanEdits(f,base,edited),true);
+  assert.equal(f.levels[0].tranches[1].notify,true);assert.equal(f.levels[1].tranches[0].notify,false);
+  assert.equal(Object.hasOwn(f.levels[1].tranches[3],'notify'),false,'늘린 계약은 기존 기본 알림을 따른다');
+});
+
+test('기준선 전체 알림을 직접 선택하면 같은 기본값도 회차 예외를 지우고 다른 구간을 보존한다',()=>{
+  const ctx=load(),f={levels:[level(25,1400),level(32,1430)]};
+  f.levels[0].notify=false;f.levels[0].tranches[1].notify=true;f.levels[1].tranches[0].notify=true;
+  const base=clone(f.levels),edited=clone(base);
+  assert.equal(ctx.applyFuturePlanEdits(f,base,edited,[0]),true);
+  assert.equal(f.levels[0].notify,false);assert.ok(f.levels[0].tranches.every(t=>!Object.hasOwn(t,'notify')));
+  assert.equal(f.levels[1].tranches[0].notify,true);
+  const before=JSON.stringify(f),invalid=clone(base);invalid[1].contracts=-1;
+  assert.equal(ctx.applyFuturePlanEdits(f,base,invalid,[0]),false);assert.equal(JSON.stringify(f),before);
+});
