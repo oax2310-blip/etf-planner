@@ -135,7 +135,7 @@ function renderPurchases(){
   }).join("");
   const empty=items.length?emptyCard("아직 분할매수 계획이 없습니다","저장된 계획의 ＋ 추가를 눌러 종목과 매수 방식을 고르세요.",""):emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);
   view.innerHTML=`<div class="layout"><aside class="side card" aria-label="저장된 분할매수 계획"><div class="side-head"><h2>저장된 계획</h2><button class="btn primary mini" id="addPurchase" type="button" aria-label="새 분할매수 계획 추가">＋ 추가</button></div><div id="purchaseList" class="plan-list">${list||"<div class='empty'>계획 없음</div>"}</div><p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p></aside>
-    <section id="purchaseMain"><div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1><p>이동평균선 돌파로 나눠 사거나 원하는 선까지 매수를 기다립니다. 목록에서 계획을 고르면 상세 내용과 회차를 확인할 수 있습니다.</p></div></div>
+    <section id="purchaseMain"><div class="heading"><div><div class="eyebrow">목표 비중과 연결한 매수 계획</div><h1>분할매수</h1></div></div>
     <div class="card metrics"><div class="metric"><label>전체 매수 예정액</label><strong>${man(totals.planned)}</strong><small>${plans.length}개 종목 · ${summaries.filter(p=>p.count&&p.done===p.count).length}개 매수 완료</small></div><div class="metric"><label>전체 매수 진행</label><strong>${completed} / ${count}회 완료</strong><small>부분 체결 ${partials}회${waiting?` · 매수대기 ${waiting}개`:""}</small></div><div class="metric"><label>전체 남은 예정액</label><strong>${man(totals.remaining)}</strong><small>부분 체결 잔량과 미체결 회차의 예정액</small></div></div>
     ${selected?card(selected):empty}</section></div>`;
   updateStatus();
