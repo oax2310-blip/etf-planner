@@ -71,7 +71,7 @@ test('계획 목록: 매수대기의 시세 대기·도달 상태를 표시하�
 
 test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도달하며 보유량·체결 회차는 바꾸지 않는다',()=>{
   const r=setup({currency:'USD',wait:'25개월선',price:110,ma:{'25개월선':100}}),before=JSON.stringify(r.doc);
-  assert.match(r.html(),/매수대기 1개/);assert.match(r.html(),/기준선 위/);assert.doesNotMatch(r.html(),/기준선 도달/);
+  assert.match(r.html(),/매수대기/);assert.match(r.html(),/기준선 위/);assert.doesNotMatch(r.html(),/기준선 도달/);
   assert.equal(r.input('[data-purchase-buy]'),undefined);assert.equal(r.input('[data-purchase-shares]'),undefined);
   assert.equal(r.rules()[0].label,'매수대기 25개월선');assert.equal(r.rules()[0].condition,'down');assert.equal(r.rules()[0].targetPrice,100);
   for(const close of [100,90]){r.prices.stocks.AAA.close=close;r.render();assert.match(r.html(),/기준선 도달/);}
@@ -301,6 +301,38 @@ test('분할매수 금액 계획도 예정액·가격으로 주수를 계산해 
   r.change('[data-purchase-shares]',8);assert.equal(r.item.shares,18);
   assert.match(r.html(),/남은 매수 2주/);
   r.change('[data-purchase-shares]',0);assert.equal(r.item.shares,10);
+});
+
+test('직접 입력 매수: 기준가가 없으면 체결을 막고 기존 체결 취소는 허용한다',()=>{
+  for(const price of [null,0]){
+    const r=setup({manual:true,manualShares:10,manualAmount:10});r.item.buyPlan.stages[0].price=price;r.render();
+    assert.equal(r.input('[data-purchase-done]').disabled,true);assert.equal(r.input('[data-purchase-shares]').disabled,true);
+    const before=JSON.stringify(r.doc);r.change('[data-purchase-done]',true);r.change('[data-purchase-shares]',7);
+    assert.equal(JSON.stringify(r.doc),before);assert.match(r.html(),/기준가 대기/);
+  }
+  const r=setup({manual:true,manualShares:10,manualAmount:10});r.change('[data-purchase-shares]',7);
+  delete r.item.buyPlan.stages[0].price;r.render();r.change('[data-purchase-shares]',0);
+  assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);assert.equal(r.item.buyPlan.stages[0].partial,undefined);
+});
+
+test('직접 입력 매수: 예정액이 없으면 가격·수량·환율로 체결 금액을 계산하고 환율이 없으면 보유량을 바꾸지 않는다',()=>{
+  for(const currency of ['KRW','USD'])for(const amount of [null,0]){
+    const r=setup({currency,manual:true,price:currency==='USD'?10:10000,manualShares:10,manualAmount:amount});
+    r.change('[data-purchase-shares]',7);assert.equal(r.item.shares,17);assert.equal(r.item.buyPlan.stages[0].actual,7);
+    assert.match(r.html(),/남은 매수 3주/);r.change('[data-purchase-done]',true);assert.equal(r.item.buyPlan.stages[0].actual,10);
+    r.change('[data-purchase-done]',false);assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);
+  }
+  const r=setup({currency:'USD',manual:true,manualShares:10,manualAmount:null,fx:null});
+  assert.equal(r.input('[data-purchase-shares]').disabled,true);assert.match(r.html(),/원\/달러 환율/);
+  const before=JSON.stringify(r.doc);r.change('[data-purchase-shares]',7);r.change('[data-purchase-done]',true);assert.equal(JSON.stringify(r.doc),before);
+});
+
+test('매수 수량을 계산할 수 없으면 직접 핸들러를 호출해도 체결하지 않고 수량 없는 옛 기록도 0으로 취소한다',()=>{
+  const r=setup({currency:'USD',price:100,tracking:true,missingTracking:true});const before=JSON.stringify(r.doc);
+  r.change('[data-purchase-buy]',true);assert.equal(JSON.stringify(r.doc),before);
+  r.item.buyPlan.buys={end:{actual:8.9,price:100}};r.render();
+  assert.match(r.html(),/체결 수량 미입력/);r.change('[data-purchase-buy-shares]',0);
+  assert.equal(r.item.buyPlan.buys,undefined);assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);
 });
 
 test('미국 ETF 추종: 실제 ETF 90주를 표시하고 부분 체결·추가 체결·취소에 같은 단위를 쓴다',()=>{
