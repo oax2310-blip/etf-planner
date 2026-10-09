@@ -23,7 +23,7 @@ function load(){
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
     id:()=> 'test-plan',priceText:v=>String(v),fxText:v=>String(v),esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
   for(const file of ['ma-ladder.js','prices.js','assets-calc.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
-  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stagePrice,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
+  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stagePrice,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,movePlanSalePriority,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
 }
 
@@ -417,16 +417,85 @@ test('통합 매도: 여러 계좌의 같은 ETF 주수 전체를 균등 배분�
 });
 
 test('통합 매도: 계좌별 부분 체결·정정·전체 완료·취소가 해당 계좌에 정확히 반영된다',()=>{
-  const r=groupSale(),e=r.api.planSaleExecution(r.p,0),a=e.rows.find(x=>x.targetId===r.isa.id).plannedQty,b=e.rows.find(x=>x.targetId===r.pension.id).plannedQty;
-  r.member(0,r.isa.id,3);assert.deepEqual([r.isa.shares,r.pension.shares],[50,34]);assert.equal(r.p.checked[0],false);
-  assert.deepEqual(JSON.parse(JSON.stringify(r.alloc.trades['sell:sale:0'].items.map(x=>[x.id,x.shares]))),[[r.isa.id,-3]]);
-  r.member(0,r.pension.id,2);assert.deepEqual([r.isa.shares,r.pension.shares],[50,32]);
-  r.member(0,r.isa.id,1);assert.deepEqual([r.isa.shares,r.pension.shares],[52,32]);
-  const locked=r.api.planSaleExecution(r.p,0);r.p.fx=2000;r.prices.stocks['111111'].close=30000;r.p.startPrice=150;
-  assert.equal(r.api.planSaleExecution(r.p,0).rows.find(x=>x.targetId===r.isa.id).price,locked.rows.find(x=>x.targetId===r.isa.id).price);
-  r.finish(0);assert.deepEqual([r.isa.shares,r.pension.shares],[53-a,34-b]);assert.equal(r.p.checked[0],true);
+  const r=groupSale(),i=4,e=r.api.planSaleExecution(r.p,i),a=e.rows.find(x=>x.targetId===r.isa.id).plannedQty,b=e.rows.find(x=>x.targetId===r.pension.id).plannedQty;
+  r.member(i,r.isa.id,3);assert.deepEqual([r.isa.shares,r.pension.shares],[50,34]);assert.equal(r.p.checked[i],false);
+  assert.deepEqual(JSON.parse(JSON.stringify(r.alloc.trades[`sell:sale:${i}`].items.map(x=>[x.id,x.shares]))),[[r.isa.id,-3]]);
+  r.member(i,r.pension.id,2);assert.deepEqual([r.isa.shares,r.pension.shares],[50,32]);
+  r.member(i,r.isa.id,1);assert.deepEqual([r.isa.shares,r.pension.shares],[52,32]);
+  const locked=r.api.planSaleExecution(r.p,i);r.p.fx=2000;r.prices.stocks['111111'].close=30000;r.p.startPrice=150;
+  assert.equal(r.api.planSaleExecution(r.p,i).rows.find(x=>x.targetId===r.isa.id).price,locked.rows.find(x=>x.targetId===r.isa.id).price);
+  r.finish(i);assert.deepEqual([r.isa.shares,r.pension.shares],[53-a,34-b]);assert.equal(r.p.checked[i],true);
   assert.equal(Array.from({length:7},(_,i)=>r.api.planQuantityProgress(r.p,i).target).reduce((n,v)=>n+v,0),87,'고정 회차와 남은 회차의 합계 보존');
-  r.api.recordPlanQuantity(r.p,0,0,()=>{});assert.deepEqual([r.isa.shares,r.pension.shares],[53,34]);assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
+  r.api.recordPlanQuantity(r.p,i,0,()=>{});assert.deepEqual([r.isa.shares,r.pension.shares],[53,34]);assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
+});
+
+test('통합 매도 우선순위: 앞 계좌를 소진한 뒤 다음 계좌로 넘어가고 변경은 보유 자산을 바꾸지 않는다',()=>{
+  const r=groupSale(),before=JSON.stringify(r.alloc),first=r.api.planSaleExecution(r.p,0);
+  assert.deepEqual(Array.from(first.rows,x=>x.plannedQty),[13,0,0]);
+  const boundary=r.api.planSaleExecution(r.p,4);assert.deepEqual(Array.from(boundary.rows,x=>x.plannedQty),[3,10,0]);
+  r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});
+  assert.deepEqual(Array.from(r.p.sellPriority),[r.pension.id,r.isa.id,r.native.id]);
+  assert.equal(JSON.stringify(r.alloc),before,'순서를 바꾸는 동작은 자산·체결 기록을 바꾸지 않는다');
+  assert.deepEqual(Array.from(r.api.planSaleExecution(r.p,0).rows,x=>x.plannedQty),[13,0,0]);
+  assert.equal(r.api.planSaleExecution(r.p,0).rows[0].targetId,r.pension.id);
+  assert.deepEqual(Array.from(r.api.planSaleExecution(r.p,2).rows,x=>x.plannedQty),[9,4,0]);
+  for(let i=0;i<7;i++)r.finish(i);
+  assert.deepEqual([r.isa.shares,r.pension.shares],[0,0]);
+});
+
+test('통합 매도 우선순위: 매도 비중은 같은 코드의 합계에 적용하고 우선 계좌부터 목표를 채운다',()=>{
+  const r=groupSale({a:11,b:11,native:5,salePct:50,stages:3});
+  assert.deepEqual(Array.from(r.api.planLinkedSaleSchedule(r.p).rows,x=>x.quota),[11,0,2]);
+  r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});
+  assert.deepEqual(Array.from(r.api.planLinkedSaleSchedule(r.p).rows,x=>x.quota),[11,0,2]);
+  assert.deepEqual(Array.from(r.api.planSaleExecution(r.p,0).rows,x=>[x.targetId,x.plannedQty]),[[r.pension.id,5],[r.isa.id,0],[r.native.id,0]]);
+  for(let i=0;i<3;i++)r.finish(i);
+  assert.deepEqual([r.isa.shares,r.pension.shares,r.native.shares],[11,0,3]);
+});
+
+test('통합 매도 우선순위: 일부 체결 후 순서를 바꿔도 고정 회차와 매도 비중의 합계를 보존한다',()=>{
+  const r=groupSale({a:11,b:11,salePct:50,stages:3});r.member(0,r.isa.id,2);
+  const locked=JSON.stringify(r.p.fills[0]),assets=JSON.stringify(r.alloc);
+  r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});
+  assert.equal(JSON.stringify(r.p.fills[0]),locked);assert.equal(JSON.stringify(r.alloc),assets);
+  const schedule=r.api.planLinkedSaleSchedule(r.p);
+  assert.equal(schedule.rows.find(x=>x.targetId===r.isa.id).quota,4);
+  assert.equal(schedule.rows.find(x=>x.targetId===r.pension.id).quota,7);
+  assert.equal(Array.from({length:3},(_,i)=>r.api.planQuantityProgress(r.p,i).target).reduce((a,b)=>a+b,0),11);
+  for(let i=0;i<3;i++)r.finish(i);
+  assert.deepEqual([r.isa.shares,r.pension.shares],[7,4]);
+  for(let i=0;i<3;i++)r.api.recordPlanQuantity(r.p,i,0,()=>{});
+  assert.deepEqual([r.isa.shares,r.pension.shares],[11,11]);
+});
+
+test('통합 매도 우선순위: 실제 ETF 코드가 달라도 전체 종목을 한 순서로 배정한다',()=>{
+  const r=groupSale({a:20,b:15,native:5,stages:4});r.pension.tradeTicker='222222';
+  r.api.movePlanSalePriority(r.p,r.native.id,-1,()=>{});r.api.movePlanSalePriority(r.p,r.native.id,-1,()=>{});
+  r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});
+  const planned=Array.from({length:4},(_,i)=>Array.from(r.api.planSaleExecution(r.p,i).rows,x=>x.plannedQty));
+  assert.deepEqual(planned,[[5,5,0],[0,10,0],[0,0,10],[0,0,10]]);
+  for(let i=0;i<4;i++)r.finish(i);
+  assert.deepEqual([r.isa.shares,r.pension.shares,r.native.shares],[0,0,0]);
+});
+
+test('통합 매도 우선순위: 새 연결 종목은 마지막에 추가하며 삭제·중복 id와 이름 변경에도 자산 id 순서를 유지한다',()=>{
+  const r=groupSale();r.p.sellPriority=['removed',r.pension.id,r.pension.id,r.isa.id];
+  r.isa.name=r.pension.name='같은 종목 이름';r.alloc.groups[0].name=r.alloc.groups[1].name='같은 계좌 이름';
+  const extra={id:'new',name:'새 보유',ticker:'AAA',tradeTicker:'111111',shares:6};r.alloc.groups.unshift({id:'new-account',items:[extra]});
+  const before=JSON.stringify(r.p),rows=r.api.planLinkedSaleSchedule(r.p).rows;
+  assert.deepEqual(Array.from(rows,x=>x.targetId),[r.pension.id,r.isa.id,extra.id,r.native.id]);
+  assert.equal(rows.find(x=>x.targetId===extra.id).planned.reduce((a,b)=>a+b,0),6);
+  assert.equal(JSON.stringify(r.p),before,'불러온 순서는 조회할 때 수정하지 않는다');
+  r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});assert.equal(JSON.stringify(r.p),before,'첫 종목의 올리기는 저장하지 않는다');
+});
+
+test('통합 매도 우선순위: 경계 회차에서 한 계좌의 잔량만 체결해도 다음 계좌와 완료 상태를 유지한다',()=>{
+  const r=groupSale(),e=r.api.planSaleExecution(r.p,4),first=e.rows.find(x=>x.targetId===r.isa.id);
+  r.member(4,first.targetId,first.plannedQty);
+  assert.deepEqual([r.isa.shares,r.pension.shares],[50,34]);assert.equal(r.p.checked[4],false);
+  const pending=r.api.planSaleExecution(r.p,4).rows.find(x=>x.targetId===r.pension.id);
+  r.member(4,pending.targetId,pending.plannedQty);assert.equal(r.p.checked[4],true);
+  r.member(4,first.targetId,0);assert.deepEqual([r.isa.shares,r.pension.shares],[53,24]);assert.equal(r.p.checked[4],false);
 });
 
 test('통합 매도: 나중에 직접 매수한 기준 종목과 다른 계좌의 추종 ETF도 미체결 회차에 자동 포함한다',()=>{
@@ -455,7 +524,7 @@ test('통합 매도: 가격·환율 누락은 체결을 막고 보유량 초과�
   const r=groupSale({native:5}),e=r.api.planSaleExecution(r.p,0),a=e.rows.find(x=>x.targetId===r.isa.id).plannedQty;
   for(const n of [a+1,1.5,-1,NaN])r.member(0,r.isa.id,n);assert.equal(r.p.fills,undefined);
   delete r.prices.stocks['111111'];r.member(0,r.isa.id,1);assert.equal(r.isa.shares,53);assert.equal(r.p.fills,undefined);
-  r.p.fx=0;r.member(0,r.native.id,1);assert.equal(r.native.shares,5);
+  r.p.fx=0;r.member(6,r.native.id,1);assert.equal(r.native.shares,5);
   r.p.fx=1500;r.prices.stocks['111111']={kind:'국내',close:10000,asOf:'2026-10-08'};r.member(0,r.isa.id,3);
   r.isa.shares=1;r.member(0,r.isa.id,a);assert.equal(r.isa.shares,1,'추가 체결이 실제 남은 보유량보다 크면 막는다');
   r.alloc.groups[0].items=[];r.finish(0);assert.equal(r.pension.shares,34,'삭제된 체결 계좌가 있는 전체 체크는 다른 계좌도 바꾸지 않는다');
