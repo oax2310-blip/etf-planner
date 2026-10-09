@@ -175,7 +175,10 @@ function purchaseTrackingFill(row, it, prices, fx, currency="USD"){
 }
 // 회차 목록(화면·합계·알림 공통): 체결 기록(완료·부분 체결) + 아직 안 산 회차(지금 이동평균 기준).
 // 부분 체결의 잔량 예산을 먼저 남겨 두고, 나머지 예산만 새 회차에 나눈다. 시세·단계·예산이 바뀌어도 부분 체결 잔량은 사라지지 않는다.
-function purchaseLineRows(plan, entry){
+// 각 회차에 최소 1주(실제 추종 ETF도 같은 단위)를 남길 수 있는 최대 회차 수를 고른다. 부족하면 시작~종료 전체 구간에서 회차 간격을 고르게 넓힌다.
+// 체결한 회차도 간격 계산에 포함해 건너뛴 앞 회차를 다시 만들지 않는다. 금액은 최소 매수액을 먼저 확보하고 나머지를 가능한 한 같게 나눈다.
+// trade는 화면·알림이 쓰는 실제 종목·시세·환율·계획 통화. 필요한 시세나 환율이 없으면 기존 균등 예산을 유지하며 수량을 추정하지 않는다.
+function purchaseLineRows(plan, entry, trade={}){
   const lines=plan?.lines, buys=purchaseBuys(plan), names=purchaseLineNames(lines);
   const parse=key=>{if(key==="end")return {line:"목표가",t:0};const m=/^(.+):([0-2])$/.exec(key);return m&&purchaseLineName(m[1])?{line:m[1],t:Number(m[2])}:null;};
   const records=Object.entries(buys).map(([key,b])=>{
@@ -184,17 +187,39 @@ function purchaseLineRows(plan, entry){
     return {key,...at,price:plus(b.price),...(shares!==null?{shares}:{}),done:!remaining,actual:Math.max(0,finite(b.actual)||0),
       ...(planned?{plannedShares:planned,remainingShares:remaining,next:b.next??null,amount:remaining*(plus(b.plannedActual)??plus(b.actual)??0)/(planned||1)}:{})};
   }).filter(Boolean);
-  const spent=records.reduce((s,r)=>s+r.actual,0), reserved=records.filter(r=>!r.done).reduce((s,r)=>s+r.amount,0), left=Math.max(0,(finite(lines?.budget)||0)-spent-reserved);
-  const open=left>0?purchaseLineLevels(lines,entry).filter(x=>!buys[x.key]):[];
+  const budget=Math.max(0,finite(lines?.budget)||0), spent=records.reduce((s,r)=>s+r.actual,0), reserved=records.filter(r=>!r.done).reduce((s,r)=>s+r.amount,0), left=Math.max(0,budget-spent-reserved);
+  const levels=purchaseLineLevels(lines,entry), currency=trade.currency||plan?.currency||(["해외","코인"].includes(entry?.kind)?"USD":"KRW"), step=trade.item?linkStep(trade.item):1;
+  let open=left>0?levels.filter(x=>!buys[x.key]):[];
+  const amounts=new Map(), costs=new Map(open.map(r=>{
+    const fill=trade.item?purchaseTrackingFill({...r,amount:left},trade.item,trade.prices,trade.fx,currency):purchaseFill({...r,amount:left},currency,trade.fx,step);
+    const price=fill?.tradePrice??fill?.price, rate=(fill?.tradeCurrency||currency)==="USD"?plus(trade.fx):1;
+    return [r.key,price&&rate?price*rate*step/1e4:null];
+  }));
+  if(open.length&&[...costs.values()].every(v=>v>0)){
+    const eligible=levels.filter(r=>buys[r.key]||costs.get(r.key)<=budget+1e-8);
+    let selected=null;
+    for(let count=eligible.length;count>0;count--){
+      const spaced=count===1?[eligible[eligible.length-1]]:Array.from({length:count},(_,i)=>eligible[Math.round(i*(eligible.length-1)/(count-1))]);
+      const fresh=spaced.filter(r=>!buys[r.key]);
+      if(fresh.reduce((sum,r)=>sum+costs.get(r.key),0)<=left+1e-8){selected=fresh;break;}
+    }
+    // 총예산으로도 1주를 못 사거나 체결 뒤 종료선 가격이 올라 더 살 수 없으면 한 회차에서 실제 부족액을 보여 준다.
+    open=selected??[!records.length?open.reduce((a,b)=>costs.get(a.key)<=costs.get(b.key)?a:b):open[open.length-1]];
+    let remaining=left;
+    [...open].sort((a,b)=>costs.get(b.key)-costs.get(a.key)).forEach((r,i)=>{
+      const amount=Math.min(remaining,Math.max(costs.get(r.key),remaining/(open.length-i)));
+      amounts.set(r.key,amount);remaining-=amount;
+    });
+  }
   const order=r=>r.key==="end"?1e6:(names.indexOf(r.line)+1||999)*3+r.t;
-  return [...records,...open.map(x=>({...x,done:false,amount:left/open.length}))].sort((a,b)=>order(a)-order(b));
+  return [...records,...open.map(x=>({...x,done:false,amount:amounts.get(x.key)??left/open.length}))].sort((a,b)=>order(a)-order(b));
 }
 // 합계: 예정 = 총 매수 금액(이동평균선 돌파) 또는 회차 예정액 합(직접 입력), 체결 = 부분 체결·완료의 실제 금액, 남은 예정 = 예산 차이·미체결 잔량 예정액.
 // 이동평균선 돌파의 회차 수는 지금 이동평균 기준이라 entry(시세 파일 종목)가 필요하다(없으면 목표 가격을 넣은 계획만 목표가 회차).
-function purchaseSummary(plan, entry=null){
+function purchaseSummary(plan, entry=null, trade={}){
   if(plan?.wait)return {count:0,done:0,planned:0,actual:0,remaining:0};
   if(plan?.lines){
-    const rows=purchaseLineRows(plan,entry), actual=rows.reduce((s,r)=>s+(r.actual||0),0), budget=Math.max(0,finite(plan.lines.budget)||0);
+    const rows=purchaseLineRows(plan,entry,trade), actual=rows.reduce((s,r)=>s+(r.actual||0),0), budget=Math.max(0,finite(plan.lines.budget)||0);
     return {count:rows.length,done:rows.filter(r=>r.done).length,planned:budget,actual,remaining:Math.max(0,budget-actual)};
   }
   const stages=Array.isArray(plan?.stages)?plan.stages:[];
@@ -241,7 +266,8 @@ function purchaseAlertRules(assets, prices){
     }
     if(plan.lines){
       const entry=prices?.stocks?.[ticker];
-      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null))if(!r.done&&r.price&&purchaseAlertOn(plan,r))
+      const trade={item:it,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
+      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade))if(!r.done&&r.price&&purchaseAlertOn(plan,r)&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency)?.shares!==0))
         add(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next]);
       continue;
     }

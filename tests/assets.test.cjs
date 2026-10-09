@@ -117,6 +117,54 @@ test('분할매수 이동평균선 돌파: 단계마다 다음 단계까지 3분
   assert.equal(c.purchaseLineLevels({end:200}, {ma:{'25선':1}}).length, 2, '단계 이름이 없으면 재매수 기본 14단계');
 });
 
+test('분할매수는 같은 회차 예산으로 1주를 못 사더라도 총예산이 충분하면 모든 회차를 유지한다',()=>{
+  const plan={lines:{names:['25일선','32일선'],budget:100}},entry={ma:{'25일선':100000,'32일선':400000}},before=JSON.stringify(plan);
+  const rows=c.purchaseLineRows(plan,entry);
+  assert.deepEqual(rows.map(r=>[r.key,r.amount]),[['25일선:0',10],['25일선:1',20],['25일선:2',30],['32일선:0',40]]);
+  assert.ok(rows.every(r=>c.purchaseFill(r,'KRW',null).shares===1));
+  assert.equal(rows.reduce((sum,r)=>sum+r.amount,0),100);
+  assert.equal(JSON.stringify(plan),before,'회차를 조정해도 저장된 계획에 필드를 추가하지 않는다');
+});
+
+test('분할매수는 부족한 예산을 앞에서 소진하지 않고 최대한 많은 회차를 종료선까지 고르게 배치한다',()=>{
+  const names=['25일선','32일선','42일선','60일선','80일선'],entry={ma:Object.fromEntries(names.map((n,i)=>[n,(i+1)*100000]))};
+  for(const end of [null,500000]){
+    const plan={lines:{names,budget:150,...(end?{end}:{})}},rows=c.purchaseLineRows(plan,entry);
+    assert.equal(c.purchaseLineLevels(plan.lines,entry).length,13);
+    assert.deepEqual(rows.map(r=>r.key),['25일선:0','32일선:0','42일선:0','60일선:0',end?'end':'80일선:0']);
+    assert.ok(rows.every(r=>c.purchaseFill(r,'KRW',null).shares===1));
+    near(rows.reduce((sum,r)=>sum+r.amount,0),150);
+    assert.equal(c.purchaseSummary(plan,entry).count,5);
+    for(const row of rows){
+      (plan.buys??={})[row.key]=c.purchaseFill(row,'KRW',null);
+      const next=c.purchaseLineRows(plan,entry);
+      assert.deepEqual(next.map(r=>r.key),rows.map(r=>r.key),'체결 뒤에도 건너뛴 앞 회차를 다시 만들지 않는다');
+      assert.ok(next.filter(r=>!r.done).every(r=>c.purchaseFill(r,'KRW',null).shares>0));
+      assert.ok(next.reduce((sum,r)=>sum+(r.done?r.actual:r.amount),0)<=150+1e-8);
+    }
+    assert.deepEqual(c.purchaseSummary(plan,entry),{count:5,done:5,planned:150,actual:150,remaining:0});
+  }
+});
+
+test('분할매수는 원화 표시 가격 반올림 경계에서도 1주 예산을 확보한다',()=>{
+  const plan={lines:{names:['25일선','32일선'],budget:20.0001}},entry={ma:{'25일선':100000.49,'32일선':100000.51}};
+  const rows=c.purchaseLineRows(plan,entry);
+  assert.deepEqual(rows.map(r=>r.key),['25일선:0','32일선:0']);
+  assert.ok(rows.every(r=>c.purchaseFill(r,'KRW',null).shares===1));
+  near(rows.reduce((sum,r)=>sum+c.purchaseFill(r,'KRW',null).actual,0),20.0001);
+});
+
+test('분할매수는 체결 뒤 종료선이 급등해 남은 예산으로 못 사면 매수 완료로 오인하지 않는다',()=>{
+  const names=['25일선','32일선','42일선','60일선','80일선'],entry={ma:Object.fromEntries(names.map((n,i)=>[n,(i+1)*100000]))},plan={lines:{names,budget:150},buys:{}};
+  const initial=c.purchaseLineRows(plan,entry);
+  for(const row of initial.slice(0,-1))plan.buys[row.key]=c.purchaseFill(row,'KRW',null);
+  entry.ma['80일선']=1000000;
+  const rows=c.purchaseLineRows(plan,entry),last=rows.at(-1);
+  assert.equal(last.key,'80일선:0');assert.equal(last.done,false);assert.equal(last.amount,50);
+  assert.equal(c.purchaseFill(last,'KRW',null).shares,0);
+  assert.deepEqual(c.purchaseSummary(plan,entry),{count:5,done:4,planned:150,actual:100,remaining:50});
+});
+
 test('목표 가격 없는 분할매수는 마지막 선택 평균선의 도달 회차까지 예산을 배분한다', () => {
   for(const unit of ['선','일선','주선','개월선']){
     const names=[`32${unit}`,`42${unit}`],plan={lines:{names,budget:400}},entry={ma:{[names[0]]:1350,[names[1]]:1380}},before=JSON.stringify(plan);

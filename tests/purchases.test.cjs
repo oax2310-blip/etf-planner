@@ -168,6 +168,73 @@ test('분할매수: 옛 9주 반영 기록을 표시하고 실제 체결 수량 
 test('분할매수: 1주도 살 수 없는 예산은 0주로 표시하고 체크로 보유량을 늘리지 않는다',()=>{
   const r=setup({budget:0.9});assert.match(r.html(),/매수 0주/);assert.equal(r.input('[data-purchase-buy]').disabled,true);
   r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
+  r.item.buyPlan.notify={stages:true};assert.equal(r.rules().length,0,'총예산으로도 살 수 없는 회차는 매수 알림을 보내지 않는다');
+});
+
+test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선까지 분산하고 순차 체결·취소에도 같은 간격을 유지한다',()=>{
+  const names=['25일선','32일선','42일선','60일선','80일선'];
+  for(const currency of ['KRW','USD']){
+    const scale=currency==='KRW'?100000:100,ma=Object.fromEntries(names.map((n,i)=>[n,(i+1)*scale]));
+    const r=setup({currency,end:null,budget:150,price:scale*.8,names,ma});r.item.buyPlan.notify={stages:true};r.render();
+    const keys=names.map(n=>`${n}:0`),before=JSON.stringify(r.doc);
+    assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);
+    assert.equal(r.rules().length,5);assert.match(r.html(),/매수 전 · 0\/5회/);assert.match(r.html(),/남은 매수 5주/);
+    assert.doesNotMatch(r.html(),/· 매수 0주|1주를 살 수 없습니다/);assert.match(r.html(),/회차 간격을 넓혀/);
+    r.edit();assert.equal(JSON.stringify(r.doc),before,'미리보기만으로 기록을 바꾸지 않는다');
+    assert.equal((r.html().match(/매수 1주/g)||[]).length,5);
+    for(let i=0;i<keys.length;i++){
+      const input=r.inputs('[data-purchase-buy]').find(x=>!x.checked);assert.equal(input.dataset.key,keys[i]);
+      input.checked=true;input.onchange();
+      assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);
+      assert.equal(r.item.shares,11+i);assert.equal(r.rules().length,4-i);
+      assert.doesNotMatch(r.html(),/· 매수 0주|1주를 살 수 없습니다/);
+    }
+    assert.match(r.html(),/매수 완료 · 5\/5회/);
+    for(let i=0;i<keys.length;i++){const input=r.inputs('[data-purchase-buy]').find(x=>x.checked);input.checked=false;input.onchange();}
+    assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);assert.equal(r.doc.allocation.trades,undefined);
+    assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);
+  }
+});
+
+test('고가주 분할매수: 총예산이 모든 회차의 1주 가격 합계이면 회차를 줄이지 않는다',()=>{
+  const r=setup({end:null,budget:100,price:90000,names:['25일선','32일선'],ma:{'25일선':100000,'32일선':400000}});
+  assert.equal(r.inputs('[data-purchase-buy]').length,4);assert.ok(r.inputs('[data-purchase-buy]').every(x=>!x.disabled));
+  assert.equal((r.html().match(/매수 1주/g)||[]).length,4);assert.match(r.html(),/회당 10만원~40만원/);
+  assert.doesNotMatch(r.html(),/매수 0주|회차 간격을 넓혀/);
+});
+
+test('추종 ETF 분할매수: 기준 가격이 아닌 실제 ETF 가격으로 회차 수를 정하고 알림도 같은 회차만 사용한다',()=>{
+  const names=['25일선','32일선','42일선','60일선','80일선'],ma=Object.fromEntries(names.map((n,i)=>[n,(i+1)*10]));
+  for(const trackingCurrency of ['KRW','USD']){
+    const r=setup({currency:'USD',tracking:true,trackingCurrency,trackingPrice:trackingCurrency==='KRW'?300000:300,end:null,budget:150,price:8,names,ma});
+    r.item.buyPlan.notify={stages:true};r.render();
+    const keys=names.map(n=>`${n}:0`);
+    assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);assert.equal(r.rules().length,5);
+    assert.ok(r.inputs('[data-purchase-buy]').every(x=>!x.disabled));assert.match(r.html(),/남은 매수 5주/);
+    r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,11);assert.equal(r.item.buyPlan.buys[keys[0]].actual,30);
+    assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);assert.equal(r.rules().length,4);
+    r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);
+  }
+});
+
+test('고가주 분할매수: 예산을 줄여 회차 간격을 넓혀도 부분 체결의 원래 3주와 잔량 2주를 유지한다',()=>{
+  const names=['25일선','32일선','42일선','60일선','80일선'],ma=Object.fromEntries(names.map((n,i)=>[n,(i+1)*100000]));
+  const r=setup({end:null,budget:500,price:80000,names,ma});r.change('[data-purchase-buy-shares]',1);
+  assert.equal(r.item.buyPlan.buys['25일선:0'].plannedShares,3);assert.equal(r.item.shares,11);
+  r.item.buyPlan.lines.budget=150;r.render();
+  assert.match(r.html(),/부분 체결 · 체결 1주 · 남은 매수 2주/);
+  assert.equal(r.item.buyPlan.buys['25일선:0'].price,100000);assert.equal(r.item.buyPlan.buys['25일선:0'].plannedActual,30);
+  assert.equal(r.inputs('[data-purchase-buy]').at(-1).dataset.key,'80일선:0');assert.doesNotMatch(r.html(),/· 매수 0주|1주를 살 수 없습니다/);
+  r.change('[data-purchase-buy-shares]',3);assert.equal(r.item.shares,13);
+  r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);
+});
+
+test('추종 ETF 분할매수: 부분 체결 뒤 실제 ETF 가격이 급등해도 고정 잔량과 켜 둔 알림을 보존한다',()=>{
+  const r=setup({currency:'USD',price:100,budget:135,tracking:true,trackingPrice:15000,fx:1350});
+  r.item.buyPlan.notify={stages:true};r.change('[data-purchase-buy-shares]',70);
+  r.prices.stocks['222222'].close=1000000;r.render();
+  assert.match(r.html(),/부분 체결 · 체결 70주 · 남은 매수 20주/);assert.equal(r.item.shares,80);
+  assert.equal(r.item.buyPlan.buys.end.tradePrice,15000);assert.equal(r.rules().length,1,'이미 고정한 부분 체결의 알림은 현재 ETF 가격과 무관하게 유지');
 });
 
 test('분할매수 직접 입력: 체결 주수만 입력하고 금액은 자동 계산한다',()=>{
