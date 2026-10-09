@@ -241,13 +241,13 @@ test('분할매수 휴대폰 알림(이동평균선 돌파): 지금 이동평균
   assert.deepEqual(c.purchaseAlertRules(assets, doc).map(r => r.id), ['trade:buy:a:end'], '시세 종류가 다르면 이동평균을 쓰지 않음(목표가 회차만)');
 });
 
-test('분할매수 계획은 JSON 복원과 기기 간 병합에서 체결 기록을 보존하고 보유량·조정 기록과 독립적이다', () => {
+test('분할매수 계획은 JSON 복원과 기기 간 병합에서 체결 기록을 보존하고 보유량·점검 기록과 독립적이다', () => {
   const base={version:1,allocation:{savedAt:'2026-01-01',classes:[{id:'c',region:'국내'}],cash:[],groups:[{id:'g',classId:'c',items:[{id:'a',amount:100,target:10,done:true,buyPlan:{stages:[{id:'s',amount:30}],note:'예시 계획'}}]}]}};
   const remote=JSON.parse(JSON.stringify(base));remote.allocation.savedAt='2026-01-02';
   const item=remote.allocation.groups[0].items[0];item.buyPlan.stages[0].done=true;item.buyPlan.stages[0].actual=25;
   const restored=c.cleanAssets(JSON.parse(JSON.stringify(remote))),merged=c.mergeAssets(base,restored,base);
   assert.deepEqual(merged.doc,remote,'완료·실제 금액·메모가 복원·구역 병합에서 유지된다');
-  assert.equal(merged.doc.allocation.groups[0].items[0].done,true,'종목 비중 조정 완료는 별도 기록');
+  assert.equal(merged.doc.allocation.groups[0].items[0].done,true,'종목 점검완료는 별도 기록');
   assert.equal(c.allocationSummary(merged.doc.allocation,null).invest,c.allocationSummary(base.allocation,null).invest,'매수 완료 체크는 평가액에 반영하지 않는다');
   assert.equal(c.allocationTargets(merged.doc.allocation).classes.get('c').target,10,'목표도 그대로 유지한다');
 });
