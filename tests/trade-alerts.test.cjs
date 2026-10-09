@@ -30,6 +30,20 @@ test('분할매도 부분 체결은 잔량 알림을 유지하고 첫 체결 기
   assert.equal(JSON.stringify(p),before,'알림 계산은 기록을 변경하지 않음');
   p.checked[0]=true;assert.equal(ctx.buildTradeAlertRules({plans:[p]},quote()).length,0);
 });
+test('빈 자동 기준가는 알림을 보간하지 않고 두 시세가 준비되면 정상 기준가를 사용한다',()=>{
+  const ctx=load();
+  for(const [startPrice,endPrice] of [[undefined,undefined],[null,80],[100,null],[0,80],[undefined,80],[100,undefined]]){
+    const p=sale({startAuto:true,startLabel:'60일선',startPrice,endPrice,notify:{start:true,sales:true}}),before=JSON.stringify(p);
+    assert.equal(ctx.buildTradeAlertRules({plans:[p]},quote()).length,0);
+    assert.equal(JSON.stringify(p),before);
+    const rules=plain(ctx.buildTradeAlertRules({plans:[p]},quote({'60일선':110,'25개월선':90})));
+    assert.deepEqual(rules.map(r=>r.targetPrice),[110,100,90]);
+  }
+});
+test('자동 기준가 대기 중에도 부분 체결의 고정 가격 알림은 유지한다',()=>{
+  const ctx=load(),p=sale({startPrice:undefined,endPrice:undefined,notify:{start:true,sales:true},fills:{0:{plannedQty:10,qty:7,price:100}}});
+  const rules=plain(ctx.buildTradeAlertRules({plans:[p]},quote()));assert.equal(rules.length,1);assert.equal(rules[0].targetPrice,100);
+});
 test('닫힌 화면의 자동 기준가·통화·보간은 시세 채우기와 같고 원본을 바꾸지 않는다',()=>{
   const ctx=load(),p=sale({startAuto:true,startLabel:'60일선',notify:{start:true,sales:true}}),data={plans:[p]},before=JSON.stringify(data);
   const rules=plain(ctx.buildTradeAlertRules(data,quote({'60일선':110,'25개월선':90})));
