@@ -10,7 +10,7 @@ const plain=v=>JSON.parse(JSON.stringify(v));
 const futures=(extra={})=>({positions:[{month:'202612',contracts:20,settlementPrice:1450}],levels:[],baselinePnl:0,rebuy:{lowPrice:1400,floorPrice:1300,contracts:20,steps:3,...extra}});
 const quote=(close=1340,ma={})=>({updatedAt:'2026-10-04T00:00:00Z',stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-02',close,ma}}});
 
-test('달러 손절은 하단에서 끝나며 홀수 계약도 절반 이상을 남긴다',()=>{
+test('기본 50% 달러 손절은 하단에서 끝나며 홀수 계약도 절반 이상을 남긴다',()=>{
   const ctx=load();
   for(let contracts=2;contracts<=101;contracts++)for(const steps of [1,2,3,7,10,60]){
     const f=futures({contracts,steps}),cuts=ctx.futureCutPlan(f),goal=Math.floor(contracts/2);
@@ -21,6 +21,97 @@ test('달러 손절은 하단에서 끝나며 홀수 계약도 절반 이상을 
     for(let i=0;i<cuts.length;i++)assert.notEqual(ctx.setFutureCutDone(f,i,true),false);
     assert.equal(ctx.futureRebuySummary(f).sold,goal);
   }
+});
+
+test('손절 비중에 따라 목표를 내림해 분할하고 0%·100%·1계약도 처리한다',()=>{
+  const ctx=load();
+  const cases=[[20,25,5],[20,75,15],[21,50,10],[20,27.5,5],[100,29,29],[1,100,1],[1,50,0],[20,0,0],[0,100,0]];
+  for(const [contracts,sellPct,goal] of cases)for(const steps of [1,3,10,60]){
+    const f=futures({contracts,sellPct,steps}),before=JSON.stringify(f),s=ctx.futureRebuySummary(f);
+    assert.equal(s.goal,goal);assert.equal(s.sellPct,sellPct);
+    assert.equal(s.cuts.reduce((n,c)=>n+c.qty,0),goal);
+    assert.equal(s.cuts.length,Math.min(steps,goal));
+    assert.ok(s.cuts.every(c=>Number.isInteger(c.qty)&&c.qty>0&&c.left>=contracts-goal));
+    assert.equal(JSON.stringify(f),before,'계산만 하면 기록을 바꾸지 않는다');
+    if(!goal){assert.equal(s.ready,false);continue;}
+    assert.equal(s.cuts.at(-1).price,1300);
+    if(s.cuts.length>1)assert.equal(s.cuts[0].price,1400);
+    for(let i=0;i<s.cuts.length;i++)assert.notEqual(ctx.setFutureCutDone(f,i,true),false);
+    assert.equal(ctx.futureRebuySummary(f).sold,goal);
+  }
+});
+
+test('옛 체결 기록은 비중 필드 없이 50%를 쓰고 입력·빈칸·0%를 구분해 저장한다',()=>{
+  const ctx=load(),old=futures({cuts:[{contracts:3,price:1399.7,targetPrice:1400}]}),before=JSON.stringify(old);
+  const s=ctx.futureRebuySummary(old);assert.equal(s.sellPct,50);assert.equal(s.goal,10);assert.equal(s.sold,3);
+  assert.equal(JSON.stringify(old),before);assert.equal(Object.hasOwn(old.rebuy,'sellPct'),false);
+  const f=futures();
+  for(const value of ['25','27.5','100','0']){
+    assert.notEqual(ctx.setFutureRebuyField(f,'sellPct',value),false);
+    assert.equal(f.rebuy.sellPct,Number(value));
+  }
+  assert.equal(ctx.futureCutPlan(f).length,0);
+  assert.notEqual(ctx.setFutureRebuyField(f,'sellPct','  '),false);
+  assert.equal(Object.hasOwn(f.rebuy,'sellPct'),false);assert.equal(ctx.futureRebuySummary(f).goal,10);
+  const fresh={positions:[],levels:[]};
+  for(const value of ['-1','100.1','Infinity','NaN','abc'])assert.equal(ctx.setFutureRebuyField(fresh,'sellPct',value),false);
+  assert.equal(ctx.setFutureRebuyField(fresh,'unknown','50'),false);assert.equal(fresh.rebuy,undefined);
+});
+
+test('손절 뒤 비중을 바꾸면 체결을 보존하고 남은 회차만 새 목표에 맞춘다',()=>{
+  const ctx=load(),f=futures();ctx.setFutureCutDone(f,0,true);
+  f.rebuy.cuts[0].price=1399.7;const record=JSON.stringify(f.rebuy.cuts[0]);
+  assert.notEqual(ctx.setFutureRebuyField(f,'sellPct','75'),false);
+  let s=ctx.futureRebuySummary(f);assert.equal(s.goal,15);assert.equal(s.sold,3);
+  assert.equal(s.cuts.filter(c=>!c.done).reduce((n,c)=>n+c.qty,0),12);
+  assert.equal(JSON.stringify(f.rebuy.cuts[0]),record);
+  assert.notEqual(ctx.setFutureRebuyField(f,'sellPct','15'),false);
+  s=ctx.futureRebuySummary(f);assert.equal(s.goal,3);assert.equal(s.cuts.filter(c=>!c.done).reduce((n,c)=>n+c.qty,0),0);
+  const before=JSON.stringify(f);
+  assert.equal(ctx.setFutureRebuyField(f,'sellPct','14.9'),false);assert.equal(JSON.stringify(f),before);
+  assert.notEqual(ctx.setFutureRebuyField(f,'sellPct','75'),false);
+  for(let i=1;i<ctx.futureCutPlan(f).length;i++)ctx.setFutureCutDone(f,i,true);
+  const overHalf=JSON.stringify(f);assert.equal(ctx.setFutureRebuyField(f,'sellPct',''),false);
+  assert.equal(JSON.stringify(f),overHalf,'비우면 50%가 되지만 이미 판 15계약보다 작아져 거절한다');
+});
+
+test('손절 목표 완료 뒤 비중을 늘리면 남은 계약을 하단에서 추가 손절할 수 있다',()=>{
+  const ctx=load();
+  for(const [contracts,steps,sellPct,sold,extra] of [[20,3,75,10,5],[4,10,100,2,2],[2,60,100,1,1]]){
+    const f=futures({contracts,steps});
+    for(let i=0;i<ctx.futureCutPlan(f).length;i++)ctx.setFutureCutDone(f,i,true);
+    const records=JSON.stringify(f.rebuy.cuts);assert.equal(ctx.futureRebuySummary(f).sold,sold);
+    assert.notEqual(ctx.setFutureRebuyField(f,'sellPct',String(sellPct)),false);
+    const cuts=ctx.futureCutPlan(f),pending=cuts.filter(c=>!c.done);
+    assert.equal(JSON.stringify(f.rebuy.cuts),records);
+    assert.equal(pending.length,1);assert.equal(pending[0].price,1300);assert.equal(pending[0].qty,extra);
+    assert.notEqual(ctx.setFutureCutDone(f,cuts.length-1,true),false);
+    assert.equal(ctx.futureRebuySummary(f).sold,sold+extra);
+  }
+});
+
+test('재매수 시작 뒤 비중은 고정하고 새 비중으로 판 계약만 복원한다',()=>{
+  const ctx=load(),f=futures({sellPct:75,currentPrice:1250,stages:[{name:'25선',price:1260},{name:'25일선',price:1270}]});
+  for(let i=0;i<ctx.futureCutPlan(f).length;i++)ctx.setFutureCutDone(f,i,true);
+  assert.equal(ctx.futureRebuySummary(f).sold,15);
+  const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);
+  assert.notEqual(ctx.setFutureBuyDone(f,first.i,first.t,true),false);
+  const before=JSON.stringify(f);assert.equal(ctx.setFutureRebuyField(f,'sellPct','100'),false);assert.equal(JSON.stringify(f),before);
+  for(const x of ctx.futureRebuySummary(f).tranches.filter(x=>!x.done&&x.amount>0))assert.notEqual(ctx.setFutureBuyDone(f,x.i,x.t,true),false);
+  const s=ctx.futureRebuySummary(f);assert.equal(s.rebought,15);assert.equal(s.rest,0);assert.equal(s.held,20);
+  assert.equal(f.positions[0].contracts,20);assert.equal(f.baselinePnl,0);
+});
+
+test('비중이 0%이면 손절 알림이 없고 늘린 목표의 예정 회차만 알린다',()=>{
+  const ctx=load(),f=futures({sellPct:0,notify:{breakdown:true,cuts:true}});
+  assert.equal(ctx.buildTradeAlertRules({futures:f},quote()).length,0);
+  ctx.setFutureRebuyField(f,'sellPct','10');
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},quote())).map(x=>x.targetPrice),[1400,1400,1300]);
+  ctx.setFutureCutDone(f,0,true);
+  ctx.setFutureRebuyField(f,'sellPct','100');
+  const rules=plain(ctx.buildTradeAlertRules({futures:f},quote()));
+  assert.deepEqual(rules.filter(x=>x.id.includes(':cut:')).map(x=>x.targetPrice),[1350,1300]);
+  assert.ok(!JSON.stringify(rules).includes('contracts'),'비중을 바꿔도 발송 규칙에 보유·거래 수량을 담지 않는다');
 });
 
 test('기준을 읽어도 새 기록을 만들지 않고 최초 입력 때 이탈 전 계약 수를 고정한다',()=>{
