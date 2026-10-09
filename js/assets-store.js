@@ -80,18 +80,23 @@ function missingPriceMessage(){
   }
   return missing.size?`시세 없음 ${missing.size}종목 (${[...missing].join(", ")}) · 다음 시세 수집 후 다시 불러와 주세요.`:"";
 }
-// 수집된 시세 파일만 즉시 다시 읽는다. 보유량·금액·체결 기록은 변경하지 않고, 기록 동기화와 중복 조회는 겹치지 않게 한다.
+// 저장 대기 중인 자산 종목을 먼저 동기화하고 새 수집 결과를 받는다. 보유량·금액·체결 기록은 시세로 변경하지 않는다.
 async function refreshPrices(){
   if(aSync.busy||priceRefreshBusy)return;
   const cfg=assetConfig();
   if(!cfg){priceLine("먼저 메인 플래너의 동기화 설정에서 데이터 저장소와 토큰을 연결해 주세요.");return;}
-  priceRefreshBusy=true;priceLine("시세 불러오는 중…");
+  priceRefreshBusy=true;priceLine("시세 수집 준비 중…");
   try{
-    const changed=await readAssetPrices(cfg,true);
+    if(aSync.timer||aSync.state==="pending"){
+      await syncAssets(true);if(aSync.state==="error")throw Error("먼저 자산 기록 동기화를 완료한 뒤 시세를 수집해 주세요.");
+    }
+    const result=await collectPricesNow(cfg,message=>priceLine(message),()=>sameConfig(cfg));
     if(!sameConfig(cfg)){priceLine("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");return;}
+    const changed=acceptPrices(cfg,result.doc,result.etag,false);
     if(changed)emit("change");
-    if(!priceMessage)priceLine(missingPriceMessage()||`시세 불러오기 완료${prices?.updatedAt?` · 최근 수집 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`);
-  }finally{priceRefreshBusy=false;emit("prices");if(aSync.again)scheduleAssetSync(300);}
+    if(!priceMessage)priceLine(missingPriceMessage()||result.message||`시세 불러오기 완료${prices?.updatedAt?` · 최근 수집 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`);
+  }catch(error){priceLine(`시세 확인 실패 · ${error.message}`);}
+  finally{priceRefreshBusy=false;emit("prices");if(aSync.again)scheduleAssetSync(300);}
 }
 function setAssetSync(state, message=""){
   aSync.state=state; aSync.message=message;
@@ -102,10 +107,10 @@ function keepLost(lost){
   if(!lost.length)return; const list=readJson(A_RECOVERY_KEY,[]);
   lost.forEach(x=>list.push({...x,keptAt:new Date().toISOString()})); writeJson(A_RECOVERY_KEY,list.slice(-20)); emit("recovery");
 }
-async function syncAssets(){
+async function syncAssets(beforePriceCollection=false){
   const cfg=assetConfig();
   if(!cfg){ clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("off"); return; }
-  if(aSync.busy||priceRefreshBusy){ aSync.again=true; return; }
+  if(aSync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){ aSync.again=true; return; }
   aSync.busy=true; aSync.again=false; clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("busy");
   try{
     if(aSync.checked!==cfg.repo){ const r=await aGh(cfg,`/repos/${cfg.repo}`); if(r.status===404) throw Error(`저장소 ${cfg.repo}를 찾을 수 없습니다.`); if(!r.ok) throw Error(`저장소 확인 실패 (${r.status})`); if(!(await r.json()).private) throw Error(`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`); aSync.checked=cfg.repo; }

@@ -7,13 +7,21 @@ const root=path.join(__dirname,'..'),KEY='etf-planner-assets-v1',BASE='etf-plann
 const fake=()=>({version:1,allocation:{savedAt:'2026-01-01',classes:[],cash:[],groups:[{id:'g',items:[{id:'a',amount:100,target:10,buyPlan:{stages:[{id:'s',amount:30}]}}]}]},ledger:{savedAt:'2026-01-01',years:[]}});
 function setup(initial,fetcher,shared){
   const storage=shared||new Map(initial?[[KEY,JSON.stringify(initial)]]:[]),listeners=new Map();
+  const collection={id:'',dispatches:[]};
   const context={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
-    setTimeout:()=>1,clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
-    fetch:fetcher||(()=>{throw Error('unexpected network call');})};
-  const code=['js/ma-ladder.js','js/assets-calc.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+    AbortController,crypto:require('node:crypto').webcrypto,setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);return 1;},clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
+    async fetch(url,options){
+      if(url.endsWith('/dispatches')){const body=JSON.parse(options.body);collection.id=body.client_payload.request_id;collection.dispatches.push(body);return new Response(null,{status:204});}
+      const r=await (fetcher||(()=>{throw Error('unexpected network call');}))(url,options);
+      if(url.endsWith('/contents/etf-planner-prices.json')&&r.ok&&collection.id){
+        try{const d=await r.clone().json();return new Response(JSON.stringify({...d,collectionRequests:[{id:collection.id,failed:false}]}),{status:r.status,headers:r.headers});}catch{}
+      }
+      return r;
+    }};
+  const code=['js/ma-ladder.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
-  return {store,storage,event:()=>listeners.get('storage')?.({key:KEY})};
+  return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
@@ -124,17 +132,37 @@ test('자동 시세 조회 실패도 완료로 표시하지 않으며 유효한 
   await store.refreshPrices();assert.match(store.priceMessage,/시세 불러오기 완료/);
 });
 
-test('자산 시세 즉시 불러오기는 ETag 없이 시세 파일만 읽고 보유량·금액·체결 기록을 보존한다',async()=>{
-  const original=fake(),asks=[],events=[],{store,storage}=setup(original,async(url,options)=>{asks.push({url,options});return priceReply(150);});
+test('자산 시세 즉시 불러오기는 수집 결과를 반영하고 보유량·금액·체결 기록을 보존한다',async()=>{
+  const original=fake(),asks=[],events=[],{store,storage,collection}=setup(original,async(url,options)=>{asks.push({url,options});return priceReply(150);});
   connect(storage);store.acceptPrices(store.config(),quotes(100),'"same-etag"');store.subscribe(type=>events.push(type));
   await store.refreshPrices();
   assert.equal(asks.length,1);assert.ok(asks[0].url.endsWith('/contents/etf-planner-prices.json'));
+  assert.equal(collection.dispatches.length,1);assert.equal(collection.dispatches[0].event_type,'collect-prices-now');
   assert.equal(asks[0].options.headers['If-None-Match'],undefined);assert.equal(asks[0].options.method,undefined);
   assert.equal(store.prices.stocks.AAA.close,150);assert.equal(store.prices.fx.close,1400);
   assert.equal(JSON.parse(storage.get('etf-planner-assets-prices')).stocks.AAA.close,150);
   assert.deepEqual(clone(store.doc),original);assert.deepEqual(JSON.parse(storage.get(KEY)),original);assert.equal(storage.has(BASE),false);
   assert.ok(events.includes('change'));assert.match(store.priceMessage,/시세 불러오기 완료.*최근 수집/);assert.equal(store.priceRefreshing,false);
   events.length=0;await store.refreshPrices();assert.ok(!events.includes('change'),'같은 시세면 평가 화면을 다시 그리지 않는다');
+});
+
+test('새 자산 종목의 저장 대기를 먼저 처리하고 동기화가 실패하면 수집을 요청하지 않는다',async()=>{
+  const original=fake();let remote=clone(original);
+  const h=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return priceReply(150);
+    if(options.method==='PUT'){remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new-sha'}});}
+    return contents(remote);
+  });
+  connect(h.storage);h.store.doc.allocation.groups[0].items[0].ticker='AAA';h.store.saveSection('allocation');
+  const fetch=h.context.fetch;h.context.fetch=async(url,options)=>{
+    if(url.endsWith('/dispatches'))assert.equal(remote.allocation.groups[0].items[0].ticker,'AAA');
+    return fetch(url,options);
+  };
+  await h.store.refreshPrices();assert.equal(h.collection.dispatches.length,1);assert.match(h.store.priceMessage,/시세 불러오기 완료/);
+  const failed=setup(original,async()=>json({message:'failure'},500));connect(failed.storage);
+  failed.store.saveSection('allocation');await failed.store.refreshPrices();assert.equal(failed.collection.dispatches.length,0);
+  assert.match(failed.store.priceMessage,/먼저 자산 기록 동기화/);assert.equal(failed.store.priceRefreshing,false);
 });
 
 test('자산 수동 시세 조회 실패는 마지막 시세를 유지하고 다시 시도할 수 있다',async()=>{
@@ -148,17 +176,18 @@ test('자산 수동 시세 조회 실패는 마지막 시세를 유지하고 다
   reply=()=>priceReply(150);await store.refreshPrices();assert.equal(store.prices.stocks.AAA.close,150);assert.match(store.priceMessage,/시세 불러오기 완료/);
 });
 
-test('자산 시세 조회는 연결 전 요청하지 않고 시세 파일이 없으면 완료로 표시하지 않는다',async()=>{
+test('자산 시세 수집은 연결 전 요청하지 않고 수집 결과가 없으면 마지막 시세를 유지한다',async()=>{
   let requests=0;const {store,storage}=setup(fake(),async()=>{requests++;return new Response('',{status:404});});
   await store.refreshPrices();assert.equal(requests,0);assert.match(store.priceMessage,/연결해 주세요/);
-  connect(storage);store.acceptPrices(store.config(),quotes(100));await store.refreshPrices();
-  assert.equal(requests,1);assert.equal(store.prices,null);assert.equal(storage.has('etf-planner-assets-prices'),false);
-  assert.match(store.priceMessage,/시세 파일이 없어/);assert.doesNotMatch(store.priceMessage,/완료/);assert.equal(store.priceRefreshing,false);
+  connect(storage);store.acceptPrices(store.config(),quotes(100));const cached=storage.get('etf-planner-assets-prices');await store.refreshPrices();
+  assert.equal(requests,60);assert.equal(store.prices.stocks.AAA.close,100);assert.equal(storage.get('etf-planner-assets-prices'),cached);
+  assert.match(store.priceMessage,/수집 완료를 아직 확인하지 못했습니다/);assert.doesNotMatch(store.priceMessage,/불러오기 완료/);assert.equal(store.priceRefreshing,false);
 });
 
 test('자산 시세 수동 조회 중 중복 클릭과 자동 동기화는 요청을 겹치지 않는다',async()=>{
   let release,requests=0;const {store,storage}=setup(fake(),async()=>{requests++;await new Promise(resolve=>release=resolve);return priceReply(150);});connect(storage);
-  const work=store.refreshPrices();assert.equal(store.priceRefreshing,true);assert.match(store.priceMessage,/불러오는 중/);
+  const work=store.refreshPrices();assert.equal(store.priceRefreshing,true);assert.match(store.priceMessage,/수집/);
+  for(let i=0;i<20&&!release;i++)await Promise.resolve();
   await store.refreshPrices();await store.sync();assert.equal(requests,1);assert.equal(store.status.again,true);
   release();await work;assert.equal(store.priceRefreshing,false);assert.equal(store.status.state,'pending');
   let finish;const syncing=setup(fake(),async()=>{await new Promise(resolve=>finish=resolve);return json({private:false});});connect(syncing.storage);
@@ -170,6 +199,7 @@ test('자산 수동 시세 조회 중 연결을 바꾸면 이전 시세·404·�
   for(const reply of [()=>priceReply(150),()=>new Response('',{status:404}),()=>new Response('',{status:500})]){
     let release;const {store,storage}=setup(fake(),async()=>{await new Promise(resolve=>release=resolve);return reply();});connect(storage);
     store.acceptPrices(store.config(),quotes(100),'"cached"');const cached=storage.get('etf-planner-assets-prices'),work=store.refreshPrices();
+    for(let i=0;i<20&&!release;i++)await Promise.resolve();
     storage.set('etf-planner-github-token','different-fake-token');release();await work;
     assert.equal(storage.get('etf-planner-assets-prices'),cached);assert.equal(store.prices.stocks.AAA.close,100);
     assert.match(store.priceMessage,/연결 설정이 바뀌었습니다/);assert.equal(store.priceRefreshing,false);
