@@ -87,8 +87,12 @@ function initialize(){
 // ---------- 출처 화면이 부르는 함수 ----------
 // 체크: o = {ticker, ownId?, targetId?, trade(assets-calc.js 체결), label, prefer?: [반영 키 앞부분…], commit: () => 출처 키(체크를 저장한 뒤) 또는 false, redraw}
 // 연결 종목이 없으면 체크만, 하나면 바로 반영, 여럿이거나 반영량을 계산할 수 없으면 linkDialog에서 계좌·양을 고른다.
-// targetId가 있으면 그 자산 항목에만 반영한다(추종 ETF 분할매수에서 계획을 붙인 기존 종목). 같은 코드의 다른 계좌를 자동으로 연결하지 않는다.
+// 통합 매도의 picks는 지정한 계좌별 누적량 그대로 반영한다. 기존 targetId는 해당 자산 항목에만 반영한다(추종 ETF 분할매수 등).
 function check(o){
+  if(Array.isArray(o.picks)){
+    const a=allocOf();if(!a||o.picks.some(p=>!allocItemById(a,p.id)||!Number.isFinite(p.n)||p.n<0)){o.redraw?.();return;}
+    const key=o.commit();if(key)apply(key,o,o.picks);o.redraw?.();return;
+  }
   const a=allocOf(), size=plus(o.trade?.qty)||plus(o.trade?.value), rows=a&&size?tradeRows(a,assetStore.prices,o.ticker,o.trade,o.ownId).filter(r=>!o.targetId||r.it.id===o.targetId):[]; // 0주 회차는 체크만
   if(o.targetId&&size&&!rows.length){toast("매수를 반영할 자산 항목을 다시 확인하세요.");o.redraw?.();return;}
   if(rows.length>1||rows.length===1&&rows[0].n===null){openDialog(o,rows);return;}
