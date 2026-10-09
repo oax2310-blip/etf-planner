@@ -70,7 +70,7 @@ function renderAlloc(tab="alloc"){
   el((strategy?"alloc":"strategy")+"View").innerHTML=""; // 같은 입력칸 id가 두 화면에 남지 않게
   if(!a){ view.innerHTML=emptyCard("자산 배분 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다. 동기화 창의 JSON 복원으로 넣거나 새로 시작할 수 있습니다.",`<button class="btn primary" id="startAlloc" type="button">새로 시작</button>`);
     el("startAlloc").onclick=()=>{ doc.allocation={savedAt:"",total:null,cashFx:null,memo:"",classes:[{id:newId(),region:"미국",name:"주식"},{id:newId(),region:"국내",name:"주식"},{id:newId(),region:"해외",name:"중국"},{id:newId(),region:"현금",name:"현금",cash:true}],groups:[],cash:[]}; saveSection("allocation"); render(); }; return; }
-  const s=allocationSummary(a,prices), rows=[...s.items.values()], live=rows.filter(r=>r.how!=="amount").length, count=rows.length;
+  const s=allocationSummary(a,prices), rows=[...s.items.values()], live=rows.filter(r=>r.how!=="amount").length, count=rows.length, reviewed=a.groups.some(g=>g.items.some(it=>it.done));
   const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
   const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
@@ -101,7 +101,7 @@ function renderAlloc(tab="alloc"){
     ${strategy?`<div class="section-heading"><h2>배분 개요</h2><span>지역별 합계와 목표 · 목표 합계 ${pc(s.regions.some(r=>r.target!==null)?s.regions.reduce((n,r)=>n+(r.target??0),0):null)}</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
     <p class="footnote">모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>
-    <section class="card panel memo assets-memo"><div class="memo-head"><h2>배분 메모</h2></div><textarea id="allocMemo" maxlength="4000">${escA(a.memo||"")}</textarea></section>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div>
+    <section class="card panel memo assets-memo"><div class="memo-head"><h2>배분 메모</h2></div><textarea id="allocMemo" maxlength="4000">${escA(a.memo||"")}</textarea></section>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
     <div class="alloc-search"><label class="field"><span>종목 검색</span><input id="allocSearch" type="search" value="${escA(allocQuery)}" placeholder="종목명 · 코드 · 그룹 · 소분류" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="allocItems" aria-describedby="allocSearchStatus"></label><button class="btn hidden" id="allocSearchClear" type="button">초기화</button><p class="hint" id="allocSearchStatus" role="status" aria-live="polite" aria-atomic="true"></p></div>
     <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
     <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
@@ -115,6 +115,13 @@ function renderAlloc(tab="alloc"){
   totalInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();totalInput.blur();}if(e.key==="Escape"){e.preventDefault();render();}};
   onChange("#allocMemo","allocation",v=>{a.memo=v;});
   onChange("[data-done]","allocation",(v,x)=>{const it=findItem(x.dataset.done)?.it;if(!it)return false;if(x.checked)it.done=true;else delete it.done;});
+  // 검색 결과와 관계없이 모든 그룹의 점검완료만 해제하고, 바뀐 기록이 있을 때 한 번 저장한다.
+  const clearDone=el("clearAllocDone");
+  if(clearDone)clearDone.onclick=()=>{
+    let changed=false;
+    for(const g of doc.allocation?.groups||[])for(const it of g.items)if(it.done){delete it.done;changed=true;}
+    if(changed){saveSection("allocation");render();}
+  };
   all("[data-item]").forEach(b=>b.onclick=()=>openItem(b.dataset.item));
   all("[data-add-item]").forEach(b=>b.onclick=()=>openItem(null,b.dataset.addItem));
   all("[data-group]").forEach(b=>b.onclick=()=>openGroup(b.dataset.group));
