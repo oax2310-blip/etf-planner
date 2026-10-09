@@ -4,6 +4,7 @@
 const tradeNotify = obj => obj?.notify&&typeof obj.notify==="object"&&!Array.isArray(obj.notify)?obj.notify:{};
 function tradePlanEnabled(p,i){const n=tradeNotify(p);return i===0?n.start===true:typeof n.saleOverrides?.[i]==="boolean"?n.saleOverrides[i]:n.sales===true;}
 function tradeLevelEnabled(f,l){return typeof l?.notify==="boolean"?l.notify:tradeNotify(f).levels===true;}
+function tradeFutureTrancheEnabled(f,l,t){return typeof t?.notify==="boolean"?t.notify:tradeLevelEnabled(f,l);}
 function tradeRebuyEnabled(r,kind,i){
   const n=tradeNotify(r);
   if(kind==="buys"){const s=stagesOf(r)[i];return typeof s?.notify==="boolean"?s.notify:n.buys===true;}
@@ -13,8 +14,10 @@ function editTradeNotify(obj){if(obj.notify!==tradeNotify(obj))obj.notify={};ret
 // plans[].notify: 첫 매도 start, 나머지 전체 sales, 회차별 saleOverrides. 전체 설정은 개별 예외를 지운다.
 function setTradePlanAlert(p,i,on){const n=editTradeNotify(p);if(i===0)n.start=on;else(n.saleOverrides??={})[i]=on;}
 function setTradePlanAll(p,on){Object.assign(editTradeNotify(p),{start:on,sales:on});delete p.notify.saleOverrides;}
-// futures.notify.levels는 전체, levels[].notify는 개별 기준. 입력하기 전에는 필드를 만들지 않는다.
-function setTradeLevelAll(f,on){editTradeNotify(f).levels=on;f.levels.forEach(l=>delete l.notify);}
+// futures.notify.levels는 전체, levels[].notify는 기준선, tranches[].notify는 회차별 선택(우선 적용).
+// 전체 설정은 기준선·회차별 예외를 지운다. 입력하기 전에는 필드를 만들지 않는다.
+function setTradeFutureTrancheAlert(l,i,on){const t=l?.tranches?.[i];if(t)t.notify=on;}
+function setTradeLevelAll(f,on){editTradeNotify(f).levels=on;f.levels.forEach(l=>{delete l.notify;(l.tranches||[]).forEach(t=>delete t.notify);});}
 // rebuy.items[].notify: 이탈 breakdown·손절 cuts·재매수 buys와 손절 cutsOverrides.
 // stages[].notify 하나는 그 단계의 1·2·3차 모두에 적용한다. 옛 deadlines는 읽지 않는다.
 function setTradeRebuyAlert(r,kind,i,on){
@@ -35,7 +38,7 @@ function bindTradePlanAlerts(p){
   $$("[data-sale-alert-all]").forEach(b=>b.onclick=()=>{setTradePlanAll(p,b.dataset.saleAlertAll==="on");save();renderPlans();});
 }
 function bindTradeFuturesAlerts(f){
-  onEdit("[data-level-alert]",(v,el)=>{f.levels[Number(el.dataset.levelAlert)].notify=el.checked;},renderFutures);
+  onEdit("[data-tranche-alert]",(v,el)=>{const [li,ti]=el.dataset.trancheAlert.split(":").map(Number);setTradeFutureTrancheAlert(f.levels[li],ti,el.checked);},renderFutures);
   $$("[data-level-alert-all]").forEach(b=>b.onclick=()=>{setTradeLevelAll(f,b.dataset.levelAlertAll==="on");save();renderFutures();});
 }
 function bindTradeRebuyAlerts(){
@@ -88,12 +91,14 @@ function buildTradeAlertRules(data,priceDoc){
   const f=d.futures,month=priceMonth(f);
   if(f&&month)for(const [i,l] of (Array.isArray(f.levels)?f.levels:[]).entries()){
     const tr=Array.isArray(l.tranches)?l.tranches:[],done=Number(l.contracts)>0&&tr.length>=Number(l.contracts)&&tr.every(t=>t.completed===true);
-    if(!tradeLevelEnabled(f,l)||done)continue;
+    if(done)continue;
     const line=futureLineName(l),name=line||`추가 ${i+1}`,next=nextFutureLine(f.levels,i);
     const basisOf=level=>{const name=futureLineName(level),mark=Number(f.auto?.[name]);return name?[name,Number(level.price)>0&&(!(mark>0)||Number(level.price)!==mark)?Number(level.price):null]:[Number(level.price)];};
     const prices=line?futureBuyPrices(f.levels,i):[Number(l.price)];
     for(const [t,price] of prices.entries()){
-      if(Number(l.contracts)>0&&!tr.some((x,ti)=>!x.completed&&(prices.length===1||futureTrancheSlot(l,x,ti)===t)))continue;
+      // 같은 가격 회차에 여러 계약이 있으면 알림을 켠 미완료 계약이 하나라도 있을 때 기존 회차 id로 한 번 알린다.
+      // 계약 수가 없는 기준선의 옛 알림 설정은 그대로 유지한다.
+      if(Number(l.contracts)>0?!tr.some((x,ti)=>!x.completed&&tradeFutureTrancheEnabled(f,l,x)&&(prices.length===1||futureTrancheSlot(l,x,ti)===t)):!tradeLevelEnabled(f,l))continue;
       const basis=[line?"up":"down",...basisOf(l),...(t?[t,...basisOf(next.level)]:[])];
       add(`trade:future:${i}${t?`:${t+1}`:""}`,month,`달러선물 ${name}${t?` ${t+1}차`:""}`,price,line?"up":"down",basis,"futures","달러선물");
     }

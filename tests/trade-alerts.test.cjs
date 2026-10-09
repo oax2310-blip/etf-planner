@@ -84,6 +84,60 @@ test('달러선물은 실제 보유 근월물 시세를 사용하고 매수 완�
   const rules=plain(ctx.buildTradeAlertRules({futures:f},q));assert.equal(rules.length,1);assert.deepEqual([rules[0].ticker,rules[0].targetPrice,rules[0].quoteGroup],['202611',1350.13,'futures']);
   f.positions=[];assert.equal(ctx.buildTradeAlertRules({futures:f},q).length,0);
 });
+// 회차·시세 모두 가상 데이터. 32일선은 25일선 구간의 끝 가격으로만 사용한다.
+const futurePlan=(extra={})=>({positions:[{month:'202612',contracts:1}],levels:[
+  {days:25,price:1400,contracts:3,tranches:[0,1,2].map(slot=>({slot,price:1400+slot*10,completed:false}))},
+  {days:32,price:1430,contracts:0,tranches:[],notify:false},
+],...extra});
+test('달러선물 회차별 선택은 기존 기준선·전체 설정을 따르고 읽을 때 필드를 만들지 않는다',()=>{
+  const ctx=load(),f=futurePlan(),l=f.levels[0],t=l.tranches[0],before=JSON.stringify(f);
+  assert.equal(ctx.tradeFutureTrancheEnabled(f,l,t),false);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[]);
+  assert.equal(JSON.stringify(f),before);
+  f.notify={levels:true};assert.equal(ctx.tradeFutureTrancheEnabled(f,l,t),true);
+  l.notify=false;assert.equal(ctx.tradeFutureTrancheEnabled(f,l,t),false);
+  t.notify=true;assert.equal(ctx.tradeFutureTrancheEnabled(f,l,t),true);
+  l.notify=true;t.notify=false;assert.equal(ctx.tradeFutureTrancheEnabled(f,l,t),false);
+  const inherited=futurePlan({notify:{levels:true}}),snapshot=JSON.stringify(inherited);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:inherited},null)).map(r=>r.targetPrice),[1400,1410,1420]);
+  assert.equal(JSON.stringify(inherited),snapshot);
+});
+test('달러선물 회차별 ON·OFF는 실제 발송 규칙만 고르고 기존 id·라벨·이력을 보존한다',()=>{
+  const ctx=load(),f=futurePlan({notify:{levels:true}}),l=f.levels[0],before=plain(ctx.buildTradeAlertRules({futures:f},null));
+  ctx.setTradeFutureTrancheAlert(l,1,false);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[before[0],before[2]]);
+  assert.equal(Object.hasOwn(l,'notify'),false);assert.equal(Object.hasOwn(l.tranches[0],'notify'),false);
+  l.notify=false;ctx.setTradeFutureTrancheAlert(l,1,true);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[before[1]],'기준선 OFF여도 직접 켠 회차는 보낸다');
+  assert.equal(before[1].id,'trade:future:0:2');assert.equal(before[1].label,'달러선물 25일선 2차');
+  l.tranches[1].completed=true;assert.equal(ctx.buildTradeAlertRules({futures:f},null).length,0);
+  l.tranches[1].completed=false;assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[before[1]],'완료 해제 시 기존 회차 선택으로 돌아간다');
+});
+test('달러선물 같은 가격의 여러 계약은 켠 미완료 계약이 있을 때 중복 없이 한 번 알린다',()=>{
+  const ctx=load(),f=futurePlan(),l=f.levels[0];
+  l.contracts=6;l.tranches=[0,0,1,1,2,2].map(slot=>({slot,completed:false,notify:false}));
+  ctx.setTradeFutureTrancheAlert(l,2,true);ctx.setTradeFutureTrancheAlert(l,3,true);
+  const get=()=>plain(ctx.buildTradeAlertRules({futures:f},null));
+  assert.deepEqual(get().map(r=>r.id),['trade:future:0:2']);
+  l.tranches[2].completed=true;assert.equal(get().length,1);
+  ctx.setTradeFutureTrancheAlert(l,3,false);assert.equal(get().length,0);
+  f.levels[1].price=0;ctx.setTradeFutureTrancheAlert(l,5,true);
+  assert.deepEqual(get().map(r=>[r.id,r.targetPrice]),[['trade:future:0',1400]],'중간 가격이 없으면 기존 한 번 알림을 유지한다');
+  l.days=0;l.label='가상 추가';
+  assert.deepEqual(get().map(r=>[r.id,r.label,r.condition]),[['trade:future:0','달러선물 추가 1','down']]);
+});
+test('달러선물 전체 ON·OFF는 회차 예외를 지우고 체결·가격·다른 알림을 보존한다',()=>{
+  const ctx=load(),f=futurePlan({notify:{levels:false,other:true}}),l=f.levels[0];
+  l.notify=false;l.tranches[0].notify=false;l.tranches[1].notify=true;
+  Object.assign(l.tranches[2],{completed:true,executionPrice:1419,mergedMonth:'202612',notify:false});
+  const tranches=plain(l.tranches);tranches.forEach(t=>delete t.notify);
+  ctx.setTradeLevelAll(f,true);
+  assert.deepEqual(plain(l.tranches),tranches);assert.deepEqual(plain(f.notify),{levels:true,other:true});
+  assert.ok(f.levels.every(x=>!Object.hasOwn(x,'notify')));
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)).map(r=>r.targetPrice),[1400,1410,1430]);
+  ctx.setTradeFutureTrancheAlert(l,0,true);ctx.setTradeLevelAll(f,false);
+  assert.equal(ctx.buildTradeAlertRules({futures:f},null).length,0);assert.deepEqual(plain(l.tranches),tranches);
+});
 test('재매수의 이탈·회차 손절·단계 회차를 기존 배분에 연결하고 빈 추정가격을 제외한다',()=>{
   const ctx=load(),r=rebuy({notify:{breakdown:true,cuts:true,buys:true,deadlines:true},cuts:[{shares:10,price:9900}]});
   r.stages.push({name:'60분봉',price:0,done:false});
