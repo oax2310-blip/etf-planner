@@ -75,7 +75,7 @@ function renderAlloc(tab="alloc"){
   const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
   const bar=(cur,t)=>{ const top=Math.max(cur,finite(t)||0,.01); return `<span class="bar" aria-hidden="true"><i style="width:${Math.min(100,cur/top*100)}%"></i>${finite(t)!==null?`<em style="left:${Math.min(100,t/top*100)}%"></em>`:""}</span>`; };
-  const classOf=id=>a.classes.find(c=>c.id===id);
+  const classLabels=new Map(s.regions.flatMap(r=>r.classes.map(c=>[c.id,`${r.name} · ${c.name}`])));
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
   const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)];
@@ -90,8 +90,14 @@ function renderAlloc(tab="alloc"){
       ${g.note?`<details class="group-note"><summary>메모</summary><p>${escA(g.note)}</p></details>`:""}
       ${plain.map(itemRow).join("")}${names.map(n=>`<div class="asset-section">${sec(n)}${g.items.filter(it=>it.section===n).map(itemRow).join("")}</div>`).join("")}
       ${g.items.length?"":`<p class="group-empty">종목 없음</p>`}<div class="group-foot"><button class="btn mini ghost" type="button" data-add-item="${escA(g.id)}">＋ 종목</button></div></section>`; };
-  const detail=s.regions.map(r=>r.classes.map(c=>{const gs=a.groups.filter(g=>g.classId===c.id);return gs.length?`<div class="alloc-class"><div class="class-label">${escA(r.name)} · ${escA(c.name)}</div>${gs.map(groupCard).join("")}</div>`:"";}).join("")).join("")
-    +a.groups.filter(g=>!classOf(g.classId)).map(g=>`<div class="alloc-class"><div class="class-label">분류 없음</div>${groupCard(g)}</div>`).join("");
+  // 종목별 목록은 저장된 그룹 순서를 그대로 따른다. 연속한 같은 분류만 묶고, 지역·분류별로 다시 정렬하거나 기록을 바꾸지 않는다.
+  const detailBlocks=[];
+  for(const g of a.groups){
+    const prev=detailBlocks[detailBlocks.length-1];
+    if(prev&&prev.classId===g.classId)prev.groups.push(g);
+    else detailBlocks.push({classId:g.classId,label:classLabels.get(g.classId)||"분류 없음",groups:[g]});
+  }
+  const detail=detailBlocks.map(b=>`<div class="alloc-class"><div class="class-label">${escA(b.label)}</div>${b.groups.map(groupCard).join("")}</div>`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
   const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(s.grand), totalWidth=v=>`${Math.max(3,v.replace(/[억만원]/g,"00").length)+.6}ch`;
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">${strategy?"지역과 자산군별 배분":"종목과 현금"}</div><h1>${strategy?"투자구성":"자산 배분"}</h1><p>${strategy?"지역·자산 분류별 현재 비중과 목표를 한눈에 확인합니다. 목표 비중은 종목별에서 수정하면 소분류·그룹·분류에 자동 합산됩니다.":"금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 점검을 끝냈다는 직접 표시입니다."}</p></div></div>
