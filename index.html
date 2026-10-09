@@ -14,9 +14,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=67"></script>
-  <link rel="stylesheet" href="css/app.css?v=67" />
-  <link rel="stylesheet" href="css/purchases.css?v=67" />
+  <script src="js/theme.js?v=68"></script>
+  <link rel="stylesheet" href="css/app.css?v=68" />
+  <link rel="stylesheet" href="css/purchases.css?v=68" />
 </head>
 <body>
   <header class="top">
@@ -116,7 +116,7 @@
       <label class="field"><span>매도 비중 (%)<small class="field-note" id="saleNote"></small></span><input name="salePct" type="number" min="1" max="100" step="1" inputmode="numeric" value="100" placeholder="100 = 전량" /></label>
       <label class="field"><span>평가액 (만원)<small class="field-note" id="worthNote"></small></span><input name="valueKrw" type="number" step="any" /></label>
       <p class="hint dialog-wide alloc-hold" id="planAllocHold" hidden></p>
-      <details class="dialog-wide dialog-help"><summary>입력 설명</summary><p class="hint">종목 코드에 비트코인을 입력하면 달러(USD) 시세를 자동으로 불러옵니다. BTC-USD도 같은 방식으로 사용할 수 있습니다. 수량은 소수점 8자리까지 입력할 수 있습니다. 주식은 1주, 비트코인은 0.00000001 BTC 단위로 회차에 고르게 나누고, 평가액은 보유 수량 × 현재가로 자동 계산합니다. 수량 없이 평가액만 넣으면 회차별 매도액으로 나눕니다. 매도 비중을 100% 아래로 두면 보유 수량(또는 평가액)의 그 비중만 회차에 나눠 팔고 나머지는 남깁니다(수량은 최소 단위로 내림). 시작 기준선이 ‘직접’이면 시작 기준가는 직접 정하고, 일선·주선·개월선을 고르면 종료 기준가처럼 시세로 채웁니다. 동기화를 연결하면 종료 기준가(종료 기준선의 이동평균)와 달러 계획의 현물 USD/KRW 환율을 시세로 채웁니다. 자동으로 채우는 칸을 직접 고치면 그 칸 시세가 다음에 바뀔 때 덮어씁니다.</p></details>
+      <details class="dialog-wide dialog-help"><summary>입력 설명</summary><p class="hint">종목 코드에 비트코인을 입력하면 달러(USD) 시세를 자동으로 불러옵니다. BTC-USD도 같은 방식으로 사용할 수 있습니다. 수량은 소수점 8자리까지 입력할 수 있습니다. 주식은 1주, 비트코인은 0.00000001 BTC 단위로 회차에 고르게 나누고, 평가액은 보유 수량 × 현재가로 자동 계산합니다. 수량 없이 평가액만 넣으면 회차별 매도액으로 나눕니다. 매도 비중을 100% 아래로 두면 보유 수량(또는 평가액)의 그 비중만 회차에 나눠 팔고 나머지는 남깁니다(수량은 최소 단위로 내림). 시작 기준선이 ‘직접’이면 시작 기준가는 직접 정하고, 일선·주선·개월선을 고르면 종료 기준가처럼 시세로 채웁니다. 자동 기준가는 비워 두고 저장할 수 있으며, 두 기준가가 준비될 때까지 체결 입력과 회차 알림은 기다립니다. 동기화를 연결하면 종료 기준가(종료 기준선의 이동평균)와 달러 계획의 현물 USD/KRW 환율을 시세로 채웁니다. 자동으로 채우는 칸을 직접 고치면 그 칸 시세가 다음에 바뀔 때 덮어씁니다.</p></details>
     </div>
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
@@ -199,21 +199,21 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=67"></script>
-  <script src="js/core.js?v=67"></script>
-  <script src="js/sync.js?v=67"></script>
-  <script src="js/prices.js?v=67"></script>
-  <script src="js/assets-calc.js?v=67"></script>
-  <script src="js/assets-store.js?v=67"></script>
-  <script src="js/alloc-link.js?v=67"></script>
-  <script src="js/purchases.js?v=67"></script>
-  <script src="js/trade-alerts.js?v=67"></script>
-  <script src="js/plans.js?v=67"></script>
-  <script src="js/futures.js?v=67"></script>
-  <script src="js/rebuy.js?v=67"></script>
-  <script src="js/alerts.js?v=67"></script>
-  <script src="js/alert-target.js?v=67"></script>
-  <script src="js/push.js?v=67"></script>
+  <script src="js/ma-ladder.js?v=68"></script>
+  <script src="js/core.js?v=68"></script>
+  <script src="js/sync.js?v=68"></script>
+  <script src="js/prices.js?v=68"></script>
+  <script src="js/assets-calc.js?v=68"></script>
+  <script src="js/assets-store.js?v=68"></script>
+  <script src="js/alloc-link.js?v=68"></script>
+  <script src="js/purchases.js?v=68"></script>
+  <script src="js/trade-alerts.js?v=68"></script>
+  <script src="js/plans.js?v=68"></script>
+  <script src="js/futures.js?v=68"></script>
+  <script src="js/rebuy.js?v=68"></script>
+  <script src="js/alerts.js?v=68"></script>
+  <script src="js/alert-target.js?v=68"></script>
+  <script src="js/push.js?v=68"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>

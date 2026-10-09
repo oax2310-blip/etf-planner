@@ -15,7 +15,7 @@ function load(){
   const fields=Object.fromEntries(Object.entries({ticker:'비트코인',title:'테스트 계획',cardName:'',currency:'USD',shares:'0.01234567',
     fx:'1000',startUnit:'',startN:'60',startLabel:'직접',startPrice:'60000',endN:'25',endUnit:'개월선',endPrice:'50000',stages:'3',salePct:'100',valueKrw:''})
     .map(([key,value])=>[key,Object.assign(node('field:'+key),{value})]));
-  const form=node('planForm');form.elements=fields;form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage);
+  const form=node('planForm');form.elements=fields;form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage&&(!f.required||f.disabled||f.readOnly||String(f.value??'')!==''));
   form.reset=()=>{for(const [key,value] of Object.entries({ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1354.91',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''}))fields[key].value=value;};
   const ctx=vm.createContext({$:node,$$:()=>[],addEventListener(){},state:{plans:[],futures:{positions:[]}},save(){},render(){},
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
@@ -23,9 +23,57 @@ function load(){
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
     id:()=> 'test-plan',priceText:v=>String(v),fxText:v=>String(v),esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
   for(const file of ['ma-ladder.js','prices.js','assets-calc.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
-  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
+  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stagePrice,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
 }
+
+test('자동 기준가는 시세 없이 저장·수정하고 두 기준가를 채운 뒤에만 체결할 수 있다',()=>{
+  const {ctx,api,fields,node,submit}=load();ctx.priceData=null;
+  fields.ticker.value='AAA';fields.shares.value='10';fields.startUnit.value='일선';fields.startPrice.value='';fields.endPrice.value='';
+  api.planLive();assert.equal(fields.startPrice.required,false);assert.equal(fields.endPrice.required,false);
+  assert.equal(node('startNote').textContent,'다음 시세 수집 때 자동');assert.equal(node('endNote').textContent,'다음 시세 수집 때 자동');
+  submit();assert.equal(ctx.state.plans.length,1);
+  const p=ctx.state.plans[0];assert.equal(p.startAuto,true);assert.equal('startPrice' in p,false);assert.equal('endPrice' in p,false);
+  assert.equal(api.stagePrice(p,0),null);assert.equal(api.stagePrice(p,2),null);
+  assert.match(api.planSaleRow(p,0,''),/data-stage="0"[^>]* disabled/);
+  assert.match(api.planSaleRow(p,0,''),/data-sale-filled="0"[^>]* disabled/);
+  api.recordPlanQuantity(p,0,1,()=>{});assert.equal(p.fills,undefined);assert.equal(p.checked[0],false);
+  api.openPlanDialog(p);assert.equal(fields.startPrice.value,'');assert.equal(fields.endPrice.value,'');
+  const prices={updatedAt:'2026-10-09T01:00:00Z',stocks:{AAA:{kind:'해외',asOf:'2026-10-09',close:105,ma:{'60일선':110}}}};
+  assert.equal(ctx.fillPrices({plans:[p]},prices),true);assert.equal(p.startPrice,110);assert.equal(api.stagePrice(p,1),null);
+  api.recordPlanQuantity(p,0,1,()=>{});assert.equal(p.fills,undefined);
+  prices.stocks.AAA.ma['25개월선']=90;
+  assert.equal(ctx.fillPrices({plans:[p]},prices),true);assert.equal(p.endPrice,90);assert.equal(api.stagePrice(p,1),100);
+  api.recordPlanQuantity(p,0,1,()=>{});assert.equal(p.fills[0].qty,1);assert.equal(p.fills[0].price,110);
+});
+
+test('시작 기준선이 직접이면 시작 기준가만 필수이며 자동 모드와 전환해도 검증을 갱신한다',()=>{
+  const {ctx,api,fields,submit}=load();ctx.priceData=null;
+  fields.ticker.value='AAA';fields.shares.value='10';fields.startPrice.value='';fields.endPrice.value='';
+  submit();assert.equal(ctx.state.plans.length,0);assert.equal(fields.startPrice.required,true);assert.equal(fields.endPrice.required,false);
+  fields.startUnit.value='주선';api.planLive();assert.equal(fields.startPrice.required,false);
+  fields.startUnit.value='';api.planLive();assert.equal(fields.startPrice.required,true);
+  fields.startPrice.value='100';submit();const p=ctx.state.plans[0];assert.equal(p.startPrice,100);assert.equal('endPrice' in p,false);assert.equal('startAuto' in p,false);
+});
+
+test('이미 있는 자동 시세는 빈 칸을 바로 채우고 직접 고친 기준가는 같은 시세에서 유지한다',()=>{
+  const {ctx,api,fields,submit}=load();
+  ctx.priceData={updatedAt:'2026-10-09T01:00:00Z',stocks:{AAA:{kind:'해외',asOf:'2026-10-09',close:105,ma:{'60일선':110,'25개월선':90}}}};
+  fields.ticker.value='AAA';fields.shares.value='10';fields.startUnit.value='일선';fields.startPrice.value='';fields.endPrice.value='';
+  api.planLive();assert.equal(fields.startPrice.value,110);assert.equal(fields.endPrice.value,90);
+  fields.startPrice.value='107';fields.endPrice.value='87';submit();const p=ctx.state.plans[0];
+  assert.equal(p.startPrice,107);assert.equal(p.endPrice,87);assert.equal(ctx.fillPrices({plans:[p]},ctx.priceData),false);
+  api.openPlanDialog(p);fields.startPrice.value='';delete ctx.priceData.stocks.AAA.ma['60일선'];submit();
+  assert.equal('startPrice' in p,false);assert.equal('startPrice' in p.auto,false);
+  ctx.priceData.stocks.AAA.ma['60일선']=110;assert.equal(ctx.fillPrices({plans:[p]},ctx.priceData),true);assert.equal(p.startPrice,110);
+});
+
+test('평가액만 있는 계획의 빈 자동 기준가는 회차 금액을 0으로 계산하지 않는다',()=>{
+  const {ctx,api,fields,submit}=load();ctx.priceData=null;
+  fields.ticker.value='AAA';fields.shares.value='';fields.valueKrw.value='100';fields.startUnit.value='일선';fields.startPrice.value='';fields.endPrice.value='';
+  submit();const p=ctx.state.plans[0];assert.equal(api.stageWorth(p,null),null);assert.equal(api.planQuantityProgress(p,0).target,null);
+  api.recordPlanQuantity(p,0,1,()=>{});assert.equal(p.fills,undefined);
+});
 
 function linkedPlanDialog(){
   const r=load(),allocation={classes:[],cash:[],cashFx:1200,groups:[
