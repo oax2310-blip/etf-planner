@@ -76,15 +76,18 @@ test('손절 뒤 비중을 바꾸면 체결을 보존하고 남은 회차만 새
 });
 
 test('손절 목표 완료 뒤 비중을 늘리면 남은 계약을 하단에서 추가 손절할 수 있다',()=>{
-  const ctx=load(),f=futures();
-  for(let i=0;i<ctx.futureCutPlan(f).length;i++)ctx.setFutureCutDone(f,i,true);
-  const records=JSON.stringify(f.rebuy.cuts);assert.equal(ctx.futureRebuySummary(f).sold,10);
-  assert.notEqual(ctx.setFutureRebuyField(f,'sellPct','75'),false);
-  const cuts=ctx.futureCutPlan(f),pending=cuts.filter(c=>!c.done);
-  assert.equal(JSON.stringify(f.rebuy.cuts),records);
-  assert.equal(pending.length,1);assert.equal(pending[0].price,1300);assert.equal(pending[0].qty,5);
-  assert.notEqual(ctx.setFutureCutDone(f,cuts.length-1,true),false);
-  assert.equal(ctx.futureRebuySummary(f).sold,15);
+  const ctx=load();
+  for(const [contracts,steps,sellPct,sold,extra] of [[20,3,75,10,5],[4,10,100,2,2],[2,60,100,1,1]]){
+    const f=futures({contracts,steps});
+    for(let i=0;i<ctx.futureCutPlan(f).length;i++)ctx.setFutureCutDone(f,i,true);
+    const records=JSON.stringify(f.rebuy.cuts);assert.equal(ctx.futureRebuySummary(f).sold,sold);
+    assert.notEqual(ctx.setFutureRebuyField(f,'sellPct',String(sellPct)),false);
+    const cuts=ctx.futureCutPlan(f),pending=cuts.filter(c=>!c.done);
+    assert.equal(JSON.stringify(f.rebuy.cuts),records);
+    assert.equal(pending.length,1);assert.equal(pending[0].price,1300);assert.equal(pending[0].qty,extra);
+    assert.notEqual(ctx.setFutureCutDone(f,cuts.length-1,true),false);
+    assert.equal(ctx.futureRebuySummary(f).sold,sold+extra);
+  }
 });
 
 test('재매수 시작 뒤 비중은 고정하고 새 비중으로 판 계약만 복원한다',()=>{

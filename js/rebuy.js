@@ -135,7 +135,8 @@ function futureCutPlan(f){
   const valid=Number.isFinite(low)&&Number.isFinite(floor)&&low>floor&&floor>0&&goal>0;
   const lastDone=records.reduce((n,c,i)=>c?i+1:n,0),sold=records.reduce((n,c)=>n+futureRebuyQty(c?.contracts),0),rest=Math.max(0,goal-sold);
   let n=Math.max(lastDone,valid?Math.min(60,Math.max(1,futureRebuyQty(r.steps)||10),goal):0);
-  if(valid&&rest>0&&Array.from({length:n},(_,i)=>records[i]).every(Boolean))n++;
+  const finished=lastDone>0&&Number(records[lastDone-1]?.targetPrice)===floor&&Array.from({length:lastDone},(_,i)=>records[i]).every(Boolean);
+  if(valid&&rest>0){if(finished)n=lastDone+1;else if(Array.from({length:n},(_,i)=>records[i]).every(Boolean))n++;}
   const nominal=i=>Math.round(goal*(i+1)/n)-Math.round(goal*i/n),weights=Array.from({length:n},(_,i)=>records[i]?0:nominal(i)),openWeight=weights.reduce((a,b)=>a+b,0);
   let pending=0,left=hold;
   return Array.from({length:n},(_,i)=>{
