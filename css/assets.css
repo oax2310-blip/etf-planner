@@ -4,6 +4,10 @@
 /* 종목 창: 설명 유무에 따라 입력칸이 늘어나지 않게 위쪽부터 배치한다. */
 #itemDialog .dialog-grid>.field{align-content:start}
 #itemDialog .field>input,#itemDialog .field>select,#itemDialog .check-field>.check{height:44px}
+#itemDialog .field-caption .field-hint{font-weight:400;word-break:keep-all}
+#itemDialog .field-caption .field-hint>span{white-space:nowrap}
+/* 두 열에서는 라벨·입력·설명 행을 공유해 안내가 줄바꿈되어도 입력칸을 맞춘다. */
+@media(min-width:701px){#itemDialog .dialog-grid>.field:not(.dialog-wide){grid-row:span 3;grid-template-rows:subgrid;row-gap:6px}}
 .assets-empty{display:grid;justify-items:center;gap:10px}.assets-empty p{margin:0;max-width:52ch;font-size:13.5px;line-height:1.6;word-break:keep-all}
 /* 투자구성: 지역 카드 · 분류 줄(이름 · 평가액 · 현재/목표 비중 · 막대 · 목표까지 차이) */
 .region-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:14px}

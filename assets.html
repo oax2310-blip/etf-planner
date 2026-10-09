@@ -15,9 +15,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=71"></script>
-  <link rel="stylesheet" href="css/app.css?v=71" />
-  <link rel="stylesheet" href="css/assets.css?v=71" />
+  <script src="js/theme.js?v=72"></script>
+  <link rel="stylesheet" href="css/app.css?v=72" />
+  <link rel="stylesheet" href="css/assets.css?v=72" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -50,7 +50,7 @@
       <label class="field"><span>소분류 (선택)</span><input name="section" maxlength="30" list="sectionList" autocomplete="off" placeholder="예: 커버드콜" /><datalist id="sectionList"></datalist></label>
       <label class="field"><span>금액 (만원)</span><input name="amount" type="number" step="any" inputmode="decimal" /></label>
       <label class="field"><span>기준 티커 / 시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
-      <label class="field"><span>실제 매수 ETF 코드 (추종할 때)</span><input name="tradeTicker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼" /><small class="field-hint">같은 지수를 따르는 일반 ETF · 비우면 기준 티커를 직접 거래</small></label>
+      <label class="field"><span class="field-caption">실제 매수 ETF 코드 (추종할 때) <small class="field-hint">(기준 지수를 따르는 ETF <span>(비우면 기준티커 적용))</span></small></span><input name="tradeTicker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼" /></label>
       <label class="field"><span id="itemTradePriceLabel">매수 ETF 현재가 (원 · 시세 없을 때)</span><input name="tradePrice" type="number" min="0" step="any" inputmode="decimal" placeholder="자동 시세가 없을 때 직접 입력" /><small class="field-hint" id="itemTradePriceNote">자동 시세를 우선 사용하며, 분할매수 주수와 보유 평가액에 반영합니다.</small></label>
       <label class="field"><span>보유 수량 (선택)</span><input name="shares" type="number" min="0" step="any" inputmode="decimal" placeholder="넣으면 수량 × 현재가" /></label>
       <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 소분류·그룹·분류 목표에 자동 합산</small></label>
@@ -125,9 +125,9 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=71"></script>
-  <script src="js/assets-calc.js?v=71"></script>
-  <script src="js/assets-store.js?v=71"></script>
-  <script src="js/assets.js?v=71"></script>
+  <script src="js/ma-ladder.js?v=72"></script>
+  <script src="js/assets-calc.js?v=72"></script>
+  <script src="js/assets-store.js?v=72"></script>
+  <script src="js/assets.js?v=72"></script>
 </body>
 </html>
