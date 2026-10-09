@@ -279,12 +279,13 @@ function renderFutures(){
 let futureRebuyExpanded=false;
 function renderFutureRebuy(f){
   const r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),cur=Number(r.currentPrice)||0,pctText=shown(s.sellPct),opt=v=>Number(v)>0?shown(v):"",px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—";
+  const cutPx=v=>Number(v)>0?`${decimal.format(v)}원`:"—";
   const nextCut=s.cuts.find(c=>!c.done&&c.qty>0),nextTr=s.tranches.find(x=>!x.done&&x.amount>0),auto=fe?'<small class="auto-tag">(자동)</small>':"";
   if(!locked&&!futureRebuyExpanded){
     const low=Number(r.lowPrice)||0,dueCut=!!nextCut&&cur>0&&cur<=nextCut.price,broken=s.ready&&cur>0&&cur<low;
     const line=!s.goal&&s.hold>0?"손절 목표 0계약 · 펼쳐서 손절 비중을 확인하세요":!s.ready?"기준 미입력 · 펼쳐서 신저점·하단·이탈 전 계약 수를 넣으세요"
-      :dueCut?`<b>손절 시점</b> · ${nextCut.k}회 ${px(nextCut.price)} 이하 ${nextCut.qty}계약`
-      :broken?`<b>신저점 이탈</b> · 다음 손절 ${nextCut?`${nextCut.k}회 ${px(nextCut.price)} 이하`:"없음"}`
+      :dueCut?`<b>손절 시점</b> · ${nextCut.k}회 ${cutPx(nextCut.price)} 이하 ${nextCut.qty}계약`
+      :broken?`<b>신저점 이탈</b> · 다음 손절 ${nextCut?`${nextCut.k}회 ${cutPx(nextCut.price)} 이하`:"없음"}`
       :`실행 전 · 신저점 ${px(low)} · 하단 ${px(r.floorPrice)} · 최대 ${s.goal}계약 손절`;
     const text=line+(s.ready&&cur>0?` · 현재 ${px(cur)}`:"");
     $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><div class="card rebuy-fold${dueCut||broken?" due":""}"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text}</span><button class="btn mini ghost" type="button" id="frToggle">펼치기</button></div></section>`;
@@ -298,12 +299,12 @@ function renderFutureRebuy(f){
   const next=!s.ready?s.sellPct===0?"손절 비중이 0%라 분할 손절을 계획하지 않습니다.":"신저점 환율·손절 하단·이탈 전 계약 수·손절 비중을 확인하세요. 손절 목표가 1계약 이상이어야 회차가 계산됩니다."
     :s.started&&!s.rest?`재매수 완료 · 손절 ${s.sold}계약 → 재매수 ${s.rebought}계약`
     :s.started?`다음 재매수 <b>${nextTr?`${trName(nextTr)}${trAt(nextTr)}에서 ${nextTr.amount}계약`:"없음 · 체결 수량을 확인하세요"}</b> · 남은 ${s.rest}계약 · 남은 손절은 멈춤`
-    :`다음 손절 <b>${nextCut?`${nextCut.k}회 · ${px(nextCut.price)} 이하에서 ${nextCut.qty}계약`:"없음 (손절 목표 완료)"}</b>${s.sold?` · ${nextTr?`${first} 반등 신호가 나오면 재매수 시작 <b>${nextTr.amount}계약</b>`:"반등 신호에 재매수 시작"} · ${splitText}`:""}`;
+    :`다음 손절 <b>${nextCut?`${nextCut.k}회 · ${cutPx(nextCut.price)} 이하에서 ${nextCut.qty}계약`:"없음 (손절 목표 완료)"}</b>${s.sold?` · ${nextTr?`${first} 반등 신호가 나오면 재매수 시작 <b>${nextTr.amount}계약</b>`:"반등 신호에 재매수 시작"} · ${splitText}`:""}`;
   const notify=(kind,key,label,done,lead)=>typeof futureRebuyAlertEnabled==="function"?tradeAlertToggle(futureRebuyAlertEnabled(f,kind,key),`data-frebuy-alert="${kind}"${key==null?"":` data-alert-key="${esc(key)}"`}`,label,done,lead):"";
   const all=kind=>typeof futureRebuyAllButtons==="function"?futureRebuyAllButtons(kind):"";
   const cutRows=(s.started?s.cuts.filter(c=>c.done):s.cuts).map(c=>{
     const due=!c.done&&cur>0&&cur<=c.price;
-    return `<div class="sale-row ${c.done?"done":""} ${due?"due":""}"><label class="check"><input type="checkbox" data-fcut="${c.k-1}" ${c.done?"checked":""} ${!c.done&&(s.started||!c.qty)?"disabled":""}>${c.k}회</label><div class="stage-price"><span class="price">${px(c.price)}</span>${notify("cuts",c.k-1,`${c.k}회 손절`,c.done)}</div><div class="shares">${c.done?`<span class="exec-fields"><input class="qty" data-fcut-qty="${c.k-1}" type="number" min="1" step="1" value="${c.qty}" aria-label="${c.k}회 손절 계약 수">계약 <input data-fcut-price="${c.k-1}" type="number" min="0" step="any" value="${opt(c.execPrice)}" aria-label="${c.k}회 손절 체결 환율">원</span>`:`${c.qty}계약<div class="sub">계획상 남은 ${c.left}계약</div>`}</div><div class="status ${c.done?"done":due?"due":""}">${c.done?"손절 완료":due?"손절 시점":"대기"}</div></div>`;
+    return `<div class="sale-row ${c.done?"done":""} ${due?"due":""}"><label class="check"><input type="checkbox" data-fcut="${c.k-1}" ${c.done?"checked":""} ${!c.done&&(s.started||!c.qty)?"disabled":""}>${c.k}회</label><div class="stage-price"><span class="price">${cutPx(c.price)}</span>${notify("cuts",c.k-1,`${c.k}회 손절`,c.done)}</div><div class="shares">${c.done?`<span class="exec-fields"><input class="qty" data-fcut-qty="${c.k-1}" type="number" min="1" step="1" value="${c.qty}" aria-label="${c.k}회 손절 계약 수">계약 <input data-fcut-price="${c.k-1}" type="number" min="0" step="any" value="${opt(c.execPrice)}" aria-label="${c.k}회 손절 체결 환율">원</span>`:`${c.qty}계약<div class="sub">계획상 남은 ${c.left}계약</div>`}</div><div class="status ${c.done?"done":due?"due":""}">${c.done?"손절 완료":due?"손절 시점":"대기"}</div></div>`;
   }).join("")||'<div class="empty">기준을 입력하면 손절 회차가 계산됩니다.</div>';
   // 분할 범위 단계(또는 산 단계)는 회차마다 한 줄(첫 줄에 단계 기준 환율·알림), 나머지 단계는 기준 환율만 한 줄.
   const buyRows=s.stages.map((x,i)=>{
