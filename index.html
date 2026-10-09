@@ -14,9 +14,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=66"></script>
-  <link rel="stylesheet" href="css/app.css?v=66" />
-  <link rel="stylesheet" href="css/purchases.css?v=66" />
+  <script src="js/theme.js?v=67"></script>
+  <link rel="stylesheet" href="css/app.css?v=67" />
+  <link rel="stylesheet" href="css/purchases.css?v=67" />
 </head>
 <body>
   <header class="top">
@@ -101,6 +101,7 @@
   <dialog id="planDialog"><form method="dialog" class="dialog-inner" id="planForm">
     <div class="dialog-head"><h2 id="dialogTitle">새 분할매도 계획</h2><button class="btn ghost" type="button" data-close-plan>닫기</button></div>
     <div class="dialog-grid">
+      <label class="field dialog-wide"><span>연결된 종목 불러오기</span><select id="planAllocTicker" aria-describedby="planAllocPickerHint"><option value="">직접 입력</option></select><small class="hint" id="planAllocPickerHint">자산 배분에 등록한 종목의 코드·이름·통화·보유량을 함께 가져옵니다.</small></label>
       <label class="field"><span>종목 코드<small class="field-note" id="tickerNote"></small></span><input name="ticker" required placeholder="예: SPY / 비트코인" /></label>
       <label class="field"><span>계획 이름</span><input name="title" required placeholder="예: S&amp;P500 추종 ETF" /></label>
       <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" placeholder="저장된 계획 목록에 표시, 비우면 종목 코드" /></label>
@@ -198,21 +199,21 @@
     <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=66"></script>
-  <script src="js/core.js?v=66"></script>
-  <script src="js/sync.js?v=66"></script>
-  <script src="js/prices.js?v=66"></script>
-  <script src="js/assets-calc.js?v=66"></script>
-  <script src="js/assets-store.js?v=66"></script>
-  <script src="js/alloc-link.js?v=66"></script>
-  <script src="js/purchases.js?v=66"></script>
-  <script src="js/trade-alerts.js?v=66"></script>
-  <script src="js/plans.js?v=66"></script>
-  <script src="js/futures.js?v=66"></script>
-  <script src="js/rebuy.js?v=66"></script>
-  <script src="js/alerts.js?v=66"></script>
-  <script src="js/alert-target.js?v=66"></script>
-  <script src="js/push.js?v=66"></script>
+  <script src="js/ma-ladder.js?v=67"></script>
+  <script src="js/core.js?v=67"></script>
+  <script src="js/sync.js?v=67"></script>
+  <script src="js/prices.js?v=67"></script>
+  <script src="js/assets-calc.js?v=67"></script>
+  <script src="js/assets-store.js?v=67"></script>
+  <script src="js/alloc-link.js?v=67"></script>
+  <script src="js/purchases.js?v=67"></script>
+  <script src="js/trade-alerts.js?v=67"></script>
+  <script src="js/plans.js?v=67"></script>
+  <script src="js/futures.js?v=67"></script>
+  <script src="js/rebuy.js?v=67"></script>
+  <script src="js/alerts.js?v=67"></script>
+  <script src="js/alert-target.js?v=67"></script>
+  <script src="js/push.js?v=67"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
