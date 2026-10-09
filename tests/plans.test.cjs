@@ -20,9 +20,9 @@ function load(){
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
     priceData:{updatedAt:'2026-10-02T12:00:00Z',stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-02',close:60000,ma:{'25개월선':50000}},
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
-    id:()=> 'test-plan',priceText:v=>String(v),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
+    id:()=> 'test-plan',priceText:v=>String(v),fxText:v=>String(v),esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
   for(const file of ['ma-ladder.js','prices.js','assets-calc.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
-  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,applyTrade,revertTrade,rescaleTrade})',ctx);
+  const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,recordPlanGroupFill,applyTrade,revertTrade,rescaleTrade})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
 }
 
@@ -129,7 +129,7 @@ function partialSale({bitcoin=false,valueOnly=false}={}){
   const {api,ctx}=load(),ticker=bitcoin?'BTC-USD':'111111',qty=bitcoin?0.02:20;
   const p={id:'sale',title:'가상 매도 계획',ticker,currency:'KRW',holdings:valueOnly?[]:[{shares:qty}],valueKrw:valueOnly?20:null,startPrice:10000,endPrice:9000,stages:2,checked:[false,false]};
   const it={id:'asset',ticker,...(valueOnly?{amount:20}:{shares:qty})},alloc={groups:[{items:[it]}]},prices={stocks:{[ticker]:{kind:bitcoin?'코인':'국내',close:10000,asOf:'2026-01-02'}}};
-  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},saveSection(){}};ctx.allocLink={
+  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},prices,saveSection(){}};ctx.allocLink={
     check(o){const key=o.commit();if(key)api.applyTrade(alloc,prices,key,o.trade,o.label,[{id:it.id,unit:valueOnly?'amount':'shares',n:valueOnly?o.trade.value:o.trade.qty}]);o.redraw?.();},
     rescale(key,trade){api.rescaleTrade(alloc,key,trade);},uncheck(key){api.revertTrade(alloc,key);}
   };
@@ -142,7 +142,7 @@ function accountSale(){
   const prices={fx:{close:1500},stocks:{'111111':{kind:'국내',close:10000,asOf:'2026-10-08'},'222222':{kind:'국내',close:15000,asOf:'2026-10-08'}}};
   ctx.priceData.stocks.AAA={kind:'해외',close:100,asOf:'2026-10-08'};
   ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},prices,saveSection(){}};ctx.allocLink={
-    check(o){assert.equal(o.ownId,o.targetId);const key=o.commit();if(key)api.applyTrade(alloc,prices,key,{...o.trade,ticker:o.ticker},o.label,[{id:o.targetId,unit:'shares',n:o.trade.qty}]);o.redraw?.();},
+    check(o){assert.equal(o.ownId,o.targetId);const key=o.commit();if(key)api.applyTrade(alloc,prices,key,{...o.trade,ticker:o.ticker},o.label,o.picks||[{id:o.targetId,unit:'shares',n:o.trade.qty}]);o.redraw?.();},
     rescale(key,trade){api.rescaleTrade(alloc,key,trade);},uncheck(key){api.revertTrade(alloc,key);}
   };
   return {api,ctx,p,isa,pension,alloc,prices,fill:(i,n)=>api.recordPlanQuantity(p,i,n,()=>{})};
@@ -189,9 +189,9 @@ test('평가액 추종 ETF 매도: 부분 체결·수량 고정·추가 체결·
   r.fill(0,0);assert.equal(r.isa.shares,100);assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
 });
 
-test('평가액 계획의 기준 ETF 직접 매도와 옛 체결 기록은 정수 주수 계산을 유지한다',()=>{
+test('연결된 직접 보유 종목은 실제 보유량을 쓰고 옛 체결 기록은 기준 ETF 단위를 유지한다',()=>{
   const r=accountSale();Object.assign(r.p,{holdings:[],valueKrw:20,valueBase:100});r.isa.ticker='AAA';
-  assert.equal(r.api.planQuantityProgress(r.p,0).target,0);
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,50,'연결된 실제 보유 100주를 2회로 나눈다');
   r.isa.ticker='111111';r.p.checked[0]=true;
   assert.equal(r.api.planQuantityProgress(r.p,0).target,0,'옛 완료 회차는 기준 ETF 단위 유지');
   r.p.checked[0]=false;delete r.p.sellTargetId;delete r.p.sellAccountId;
@@ -210,9 +210,10 @@ test('매도 ETF 시세·보유 부족·계좌 미선택·삭제를 처리하고
   const r=accountSale();r.isa.shares=5;assert.equal(r.api.planQuantityProgress(r.p,0).target,5);assert.equal(r.api.planSaleExecution(r.p,0).capped,true);
   r.isa.shares=0;assert.equal(r.api.planQuantityProgress(r.p,0).target,0);r.fill(0,1);assert.equal(r.p.fills,undefined);
   r.isa.shares=100;delete r.prices.stocks['111111'];assert.equal(r.api.planQuantityProgress(r.p,0).target,null);r.fill(0,1);assert.equal(r.isa.shares,100);
-  r.isa.ticker='AAA';r.isa.tradeTicker='111111';r.isa.tradePrice=10000;r.isa.tradePriceAt='2026-10-08';assert.equal(r.api.planQuantityProgress(r.p,0).target,30);
-  delete r.p.sellTargetId;assert.equal(r.api.planQuantityProgress(r.p,0).target,null);r.fill(0,1);assert.equal(r.p.fills,undefined);
-  delete r.p.sellAccountId;assert.equal(r.api.planQuantityProgress(r.p,0).target,2,'연결 없는 기존 계획은 그대로');
+  r.isa.ticker='AAA';r.isa.tradeTicker='111111';r.isa.tradePrice=10000;r.isa.tradePriceAt='2026-10-08';assert.equal(r.api.planQuantityProgress(r.p,0).target,50);
+  delete r.p.sellTargetId;assert.equal(r.api.planQuantityProgress(r.p,0).target,50,'기준 티커가 연결됐으면 계좌 선택 없이 포함');
+  delete r.p.sellAccountId;assert.equal(r.api.planQuantityProgress(r.p,0).target,50);
+  r.isa.ticker='111111';assert.equal(r.api.planQuantityProgress(r.p,0).target,2,'연결 없는 기존 계획은 그대로');
   r.p.sellTargetId='gone';assert.equal(r.api.planQuantityProgress(r.p,0).target,null);
   r.p.checked[0]=true;assert.equal(r.api.planQuantityProgress(r.p,0).target,2,'옛 완료 회차는 기준 ETF 단위 유지');
 });
@@ -254,17 +255,100 @@ test('분할매도: 평가액만 있는 계획도 부분 체결액과 남은 금
   fill(0);assert.equal(it.amount,20);
 });
 
-test('분할매도: 평가액 계획도 입력은 주수로 하고 금액은 자동 계산한다',()=>{
+test('분할매도: 연결된 금액 보유 항목도 실제 ETF 주수로 입력하고 금액을 자동 계산한다',()=>{
   const {api,p,it,fillQuantity}=partialSale({valueOnly:true});
   assert.equal(api.planQuantityProgress(p,0).target,10);
-  fillQuantity(7);assert.equal(it.amount,13);assert.equal(p.fills[0].qty,7);assert.equal(p.fills[0].plannedQty,10);
+  fillQuantity(7);assert.equal(it.amount,13);assert.equal(p.fills[0].execution.qty,7);assert.equal(p.fills[0].execution.plannedQty,10);
   assert.equal(api.planQuantityProgress(p,0).remaining,3);assert.equal(p.checked[0],false);
   assert.match(api.planSaleRow(p,0,''),/누적 체결 수량 \(주\)/);assert.doesNotMatch(api.planSaleRow(p,0,''),/금액 \(만원\)/);
   p.fx=2000;fillQuantity(10);assert.equal(it.amount,10);assert.equal(p.checked[0],true);
   fillQuantity(0);assert.equal(it.amount,20);
   p.startPrice=18000;
-  assert.equal(api.planQuantityProgress(p,0).target,5);
-  fillQuantity(5);assert.equal(p.checked[0],true,'계획 5주가 체결되면 내림 뒤 남는 예산과 관계없이 완료');assert.equal(it.amount,11);
+  assert.equal(api.planQuantityProgress(p,0).target,10,'매도 기준가 변경으로 실제 보유량을 다시 환산하지 않는다');
+  fillQuantity(10);assert.equal(p.checked[0],true);assert.equal(it.amount,10);
+});
+
+function groupSale({stages=7,a=53,b=34,native=0,salePct=100}={}){
+  const r=accountSale();Object.assign(r.p,{holdings:[],valueKrw:12,stages,checked:Array(stages).fill(false),salePct});
+  Object.assign(r.isa,{ticker:'AAA',tradeTicker:'111111',shares:a});Object.assign(r.pension,{ticker:'AAA',tradeTicker:'111111',shares:b});
+  r.native={id:'direct',name:'가상 직접 보유',ticker:'AAA',shares:native};r.alloc.groups.push({id:'direct-account',name:'예시 일반 계좌',items:[r.native]});
+  r.member=(i,id,n)=>r.api.recordPlanGroupFill(r.p,i,new Map([[id,n]]),false,()=>{});
+  r.finish=i=>{const e=r.api.planSaleExecution(r.p,i);r.api.recordPlanGroupFill(r.p,i,new Map(e.rows.map(row=>[row.targetId,row.plannedQty])),true,()=>{});};
+  return r;
+}
+
+test('통합 매도: 여러 계좌의 같은 ETF 주수 전체를 균등 배분하고 평가액·선택 계좌로 제한하지 않는다',()=>{
+  const r=groupSale(),before=JSON.stringify([r.p,r.alloc]),targets=Array.from({length:7},(_,i)=>r.api.planQuantityProgress(r.p,i).target);
+  assert.equal(targets.reduce((n,v)=>n+v,0),87);assert.ok(Math.max(...targets)-Math.min(...targets)<=1);
+  const schedule=r.api.planLinkedSaleSchedule(r.p);
+  assert.equal(schedule.rows.find(x=>x.targetId===r.isa.id).planned.reduce((n,v)=>n+v,0),53);
+  assert.equal(schedule.rows.find(x=>x.targetId===r.pension.id).planned.reduce((n,v)=>n+v,0),34);
+  assert.equal(JSON.stringify([r.p,r.alloc]),before,'조회·화면 계산으로 저장 필드를 만들지 않는다');
+  r.p.fx=2000;r.ctx.priceData.stocks.AAA.close=250;r.prices.stocks['111111'].close=20000;r.p.valueKrw=1;
+  assert.deepEqual(Array.from({length:7},(_,i)=>r.api.planQuantityProgress(r.p,i).target),targets);
+  assert.match(r.api.planSaleAccountView(r.p),/87주 보유/);assert.doesNotMatch(r.api.planSaleAccountView(r.p),/id="saleAccount"/);
+  for(let i=0;i<7;i++)r.finish(i);
+  assert.deepEqual([r.isa.shares,r.pension.shares,r.native.shares],[0,0,0]);assert.ok(r.p.checked.every(Boolean));
+});
+
+test('통합 매도: 계좌별 부분 체결·정정·전체 완료·취소가 해당 계좌에 정확히 반영된다',()=>{
+  const r=groupSale(),e=r.api.planSaleExecution(r.p,0),a=e.rows.find(x=>x.targetId===r.isa.id).plannedQty,b=e.rows.find(x=>x.targetId===r.pension.id).plannedQty;
+  r.member(0,r.isa.id,3);assert.deepEqual([r.isa.shares,r.pension.shares],[50,34]);assert.equal(r.p.checked[0],false);
+  assert.deepEqual(JSON.parse(JSON.stringify(r.alloc.trades['sell:sale:0'].items.map(x=>[x.id,x.shares]))),[[r.isa.id,-3]]);
+  r.member(0,r.pension.id,2);assert.deepEqual([r.isa.shares,r.pension.shares],[50,32]);
+  r.member(0,r.isa.id,1);assert.deepEqual([r.isa.shares,r.pension.shares],[52,32]);
+  const locked=r.api.planSaleExecution(r.p,0);r.p.fx=2000;r.prices.stocks['111111'].close=30000;r.p.startPrice=150;
+  assert.equal(r.api.planSaleExecution(r.p,0).rows.find(x=>x.targetId===r.isa.id).price,locked.rows.find(x=>x.targetId===r.isa.id).price);
+  r.finish(0);assert.deepEqual([r.isa.shares,r.pension.shares],[53-a,34-b]);assert.equal(r.p.checked[0],true);
+  assert.equal(Array.from({length:7},(_,i)=>r.api.planQuantityProgress(r.p,i).target).reduce((n,v)=>n+v,0),87,'고정 회차와 남은 회차의 합계 보존');
+  r.api.recordPlanQuantity(r.p,0,0,()=>{});assert.deepEqual([r.isa.shares,r.pension.shares],[53,34]);assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
+});
+
+test('통합 매도: 나중에 직접 매수한 기준 종목과 다른 계좌의 추종 ETF도 미체결 회차에 자동 포함한다',()=>{
+  const r=groupSale();r.member(0,r.isa.id,3);const locked=JSON.stringify(r.p.fills[0].execution);
+  r.native.shares=5;
+  r.extra={id:'new-account-etf',name:'추가 계좌 ETF',ticker:'AAA',tradeTicker:'111111',shares:9};r.alloc.groups.push({id:'new',name:'추가 계좌',items:[r.extra]});
+  const schedule=r.api.planLinkedSaleSchedule(r.p);
+  assert.equal(schedule.rows.find(x=>x.targetId===r.native.id).planned.reduce((n,v)=>n+v,0),5);
+  assert.equal(schedule.rows.find(x=>x.targetId===r.extra.id).planned.reduce((n,v)=>n+v,0),9);
+  assert.equal(JSON.stringify(r.p.fills[0].execution),locked,'이미 체결한 회차의 계좌·계획은 바꾸지 않는다');
+  r.finish(0);for(let i=1;i<7;i++)r.finish(i);
+  assert.deepEqual([r.isa.shares,r.pension.shares,r.native.shares,r.extra.shares],[0,0,0,0]);
+});
+
+test('통합 매도: 같은 ETF 여러 계좌의 매도 비중을 한 번 내림하고 다른 기준 티커는 제외한다',()=>{
+  const r=groupSale({a:11,b:11,native:5,salePct:50,stages:3});r.alloc.groups.push({id:'other',items:[{id:'other-etf',ticker:'BBB',tradeTicker:'111111',shares:10}]});
+  const schedule=r.api.planLinkedSaleSchedule(r.p);
+  assert.equal(schedule.rows.filter(x=>x.ticker==='111111').reduce((n,r)=>n+r.quota,0),11,'계좌별 5주+5주가 아니라 합계 22주의 50%');
+  assert.equal(schedule.rows.find(x=>x.targetId===r.native.id).quota,2);
+  assert.equal(schedule.rows.some(x=>x.targetId==='other-etf'),false);
+  for(let i=0;i<3;i++)r.finish(i);
+  assert.equal(r.isa.shares+r.pension.shares,11);assert.equal(r.native.shares,3);assert.equal(r.alloc.groups.at(-1).items[0].shares,10);
+});
+
+test('통합 매도: 가격·환율 누락은 체결을 막고 보유량 초과·종목 삭제는 추가 차감을 막는다',()=>{
+  const r=groupSale({native:5}),e=r.api.planSaleExecution(r.p,0),a=e.rows.find(x=>x.targetId===r.isa.id).plannedQty;
+  for(const n of [a+1,1.5,-1,NaN])r.member(0,r.isa.id,n);assert.equal(r.p.fills,undefined);
+  delete r.prices.stocks['111111'];r.member(0,r.isa.id,1);assert.equal(r.isa.shares,53);assert.equal(r.p.fills,undefined);
+  r.p.fx=0;r.member(0,r.native.id,1);assert.equal(r.native.shares,5);
+  r.p.fx=1500;r.prices.stocks['111111']={kind:'국내',close:10000,asOf:'2026-10-08'};r.member(0,r.isa.id,3);
+  r.isa.shares=1;r.member(0,r.isa.id,a);assert.equal(r.isa.shares,1,'추가 체결이 실제 남은 보유량보다 크면 막는다');
+  r.alloc.groups[0].items=[];r.finish(0);assert.equal(r.pension.shares,34,'삭제된 체결 계좌가 있는 전체 체크는 다른 계좌도 바꾸지 않는다');
+});
+
+test('통합 매도: 수량 없는 회차도 완료할 수 있고 전량 완료 뒤 취소하면 원래 계좌에 복원된다',()=>{
+  const r=groupSale({a:2,b:1,stages:7});for(let i=0;i<7;i++)r.finish(i);
+  assert.ok(r.p.checked.every(Boolean));assert.equal(r.isa.shares+r.pension.shares,0);
+  for(let i=0;i<7;i++)r.api.recordPlanQuantity(r.p,i,0,()=>{});
+  assert.deepEqual([r.isa.shares,r.pension.shares],[2,1]);assert.equal(r.alloc.trades,undefined);
+});
+
+test('통합 매도: 옛 단일 계좌 체결은 유지하고 아직 체결하지 않은 회차부터 전체 계좌 잔량을 나눈다',()=>{
+  const r=accountSale();r.fill(0,12);const old=JSON.stringify(r.p.fills[0]);
+  Object.assign(r.isa,{ticker:'AAA',tradeTicker:'111111'});Object.assign(r.pension,{ticker:'AAA',tradeTicker:'222222'});
+  assert.equal(r.api.planQuantityProgress(r.p,0).target,30);assert.equal(JSON.stringify(r.p.fills[0]),old);
+  const next=r.api.planSaleExecution(r.p,1);assert.equal(next.rows.find(x=>x.targetId===r.isa.id).plannedQty,70);assert.equal(next.rows.find(x=>x.targetId===r.pension.id).plannedQty,80);
+  r.fill(0,30);r.api.recordPlanQuantity(r.p,1,150,()=>{});assert.deepEqual([r.isa.shares,r.pension.shares],[0,0]);
 });
 
 test('분할매도: 수량 없는 옛 금액 체결도 이미 차감한 주수를 읽고 차이만 정정한다',()=>{
