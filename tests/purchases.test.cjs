@@ -69,6 +69,17 @@ test('계획 목록: 매수대기의 시세 대기·도달 상태를 표시하�
   delete r.prices.stocks['111111'].ma;r.render();assert.equal(progress(),'시세 대기');assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
 });
 
+test('분할매수 시세 대기에도 전체 알림을 켜 두면 시세 도착 후 같은 회차에 적용한다',()=>{
+  const r=setup({end:null,names:['25일선','32일선']});
+  assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  const on=r.inputs('[data-purchase-alert-all]').find(x=>x.dataset.on==='on');assert.ok(on);on.onclick();
+  assert.equal(r.item.buyPlan.notify.stages,true);assert.equal(r.rules().length,0);assert.equal(r.item.shares,10);
+  r.prices.stocks['111111'].ma={'25일선':10000,'32일선':11000};r.render();
+  assert.ok(r.inputs('[data-purchase-buy]').length>0);assert.equal(r.rules().length,r.inputs('[data-purchase-buy]').length);
+  assert.equal(r.item.buyPlan.buys,undefined);assert.equal(r.doc.allocation.trades,undefined);
+  r.inputs('[data-purchase-alert-all]').find(x=>x.dataset.on==='off').onclick();assert.equal(r.rules().length,0);
+});
+
 test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도달하며 보유량·체결 회차는 바꾸지 않는다',()=>{
   const r=setup({currency:'USD',wait:'25개월선',price:110,ma:{'25개월선':100}}),before=JSON.stringify(r.doc);
   assert.match(r.html(),/매수대기/);assert.match(r.html(),/기준선 위/);assert.doesNotMatch(r.html(),/기준선 도달/);
