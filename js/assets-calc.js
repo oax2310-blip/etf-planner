@@ -437,20 +437,6 @@ function pnlEntriesTotal(entries){
   return Math.round(total);
 }
 const monthPnl = m => Array.isArray(m?.pnlEntries)&&m.pnlEntries.length?pnlEntriesTotal(m.pnlEntries):finite(m?.pnl);
-const ledgerWonFormat = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0});
-const ledgerDollarFormat = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:8});
-// 월별 복사·표시 공통 텍스트. 증권사는 첫 입력 순서대로 묶고, 양수는 +, 손실은 -로 표시한다.
-function ledgerPnlText(m){
-  const signed=(n,format)=>`${n>0?"+":""}${format.format(n)}`, groups=new Map();
-  for(const e of Array.isArray(m?.pnlEntries)?m.pnlEntries:[]){
-    const broker=String(e?.broker||"").trim()||"증권사 미입력", amount=finite(e?.amount), krw=finite(e?.krw), label=String(e?.label||"").trim();
-    const text=amount===null?"금액 미입력":e.currency==="USD"?`${signed(amount,ledgerDollarFormat)}달러(${krw===null?"원화 미입력":`${signed(krw,ledgerWonFormat)}원`})`:`${signed(amount,ledgerWonFormat)}원`;
-    if(!groups.has(broker))groups.set(broker,[]);
-    groups.get(broker).push(text+(label?`(${label})`:""));
-  }
-  const pnl=monthPnl(m);
-  return [`-${String(m.m).padStart(2,"0")}월-`,`[손익] ${pnl===null?"—":`${signed(pnl,ledgerWonFormat)}원`}`,...[...groups].map(([broker,parts])=>`${broker} ${parts.join(" ")}`)].join("\n");
-}
 // 달 총자산(원): 계좌 잔액이 있으면 합계(대출 계좌 포함), 없으면 직접 넣은 total. noLoan은 대출 계좌를 뺀 합계(대출 계좌가 없으면 null).
 function monthTotals(year, m){
   const bal=Array.isArray(m?.balances)?m.balances:[], acc=year?.accounts||[];

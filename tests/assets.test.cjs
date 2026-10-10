@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,pnlEntriesTotal,monthPnl,ledgerPnlText,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,pnlEntriesTotal,monthPnl,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
   for(const line of ['25선','60일선','20주선','25개월선']){
@@ -393,7 +393,7 @@ test('월별 손익: 계좌 합계·대출 제외, 월 수익률 합, 선물옵�
   assert.equal(c.yearSummary({accounts: [], months: []}).annual, null);
 });
 
-test('손익 상세: 원화와 달러 입금액을 한 번씩 합산하고 월·연도 요약과 복사 내역이 같은 기록을 사용한다',()=>{
+test('손익 상세: 원화와 달러 입금액을 한 번씩 합산하고 월·연도 요약이 같은 기록을 사용한다',()=>{
   const month={m:9,pnl:999999,pnlEntries:[
     {broker:'A증권',label:'기본계좌+ISA',amount:2400},
     {broker:'A증권',label:'연금저축',amount:900},
@@ -402,7 +402,6 @@ test('손익 상세: 원화와 달러 입금액을 한 번씩 합산하고 월·
   const year={accounts:[{name:'자산'},{name:'대출',loan:true}],months:[month],futures:500},before=JSON.stringify(year);
   assert.equal(c.monthPnl(month),-1500);assert.equal(c.pnlEntriesTotal(month.pnlEntries),-1500);
   assert.equal(c.yearSummary(year).pnl,-1000);near(c.yearSummary(year).rateNoLoan,-1,'월 손익과 선물 모두 대출 제외 기준');
-  assert.equal(c.ledgerPnlText(month),'-09월-\n[손익] -1,500원\nA증권 +2,400원(기본계좌+ISA) +900원(연금저축)\nB증권 -10,000원(실현손익) +4달러(+5,200원)(배당입금내역)');
   assert.equal(JSON.stringify(year),before,'표시·계산 중 저장된 합계나 상세 필드를 바꾸지 않는다');
   assert.equal(c.monthPnl({m:1,pnl:0}),0);assert.equal(c.monthPnl({m:1,pnl:123,pnlEntries:[]}),123);
   assert.equal(c.pnlEntriesTotal([{amount:0,currency:'USD',krw:0}]),0);

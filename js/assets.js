@@ -296,7 +296,6 @@ function renderLedger(){
   const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=monthPnl(m), r=p!==null&&t.total>0?p/t.total*100:null, rf=p!==null&&t.noLoan>0?p/t.noLoan*100:null;
     return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${m?.pnlEntries?.length?`<small>내역 ${m.pnlEntries.length}건</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}${hasLoan&&rf!==null?`<small>대출 제외 ${pc(rf)}</small>`:""}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${hasLoan&&finite(t.noLoan)!==null?`<small>대출 제외 ${wonA(t.noLoan)}</small>`:""}${m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
   const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${x.year}"><span>${x.year}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rateNoLoan<0?"neg":""}">${pc(t.rateNoLoan)}</span><span>${t.last?wonA(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
-  const details=[...y.months].filter(m=>monthPnl(m)!==null||m.pnlEntries?.length).sort((a,b)=>a.m-b.m);
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">월별 손익</div><h1>월별 손익</h1><p>월별 실현손익과 증권사별 내역을 기록합니다. 연도별 수익률은 대출 계좌를 뺀 자산 기준이며, 선물·옵션 손익도 포함합니다.</p></div><button class="btn" id="addYear" type="button">＋ 연도</button></div>
     <div class="chip-row" role="tablist">${years.map(x=>`<button class="chip${x===y?" active":""}" type="button" data-pick-year="${x.year}">${x.year}</button>`).join("")}</div>
     <div class="card metrics"><div class="metric"><label>${y.year}년 실현손익</label><strong class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</strong><small>${ys.months}개월${ys.futures!==null?` · 선물·옵션 ${wonA(ys.futures)} 포함`:""}</small></div>
@@ -309,56 +308,68 @@ function renderLedger(){
       <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}${hasLoan?`<small>대출 제외 ${pc(ys.rateNoLoan)}</small>`:""}</span><span></span></div></section>
     ${y.note?`<p class="footnote">${escA(y.note)}</p>`:""}
     <div class="section-heading"><h2>연도별 요약</h2><span>대출 제외 수익률 · 선물·옵션 포함</span></div>
-    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>대출 제외<br>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연평균 수익률 <small>대출 제외 · ${avg.years}개 연도의 연 수익률 평균</small></span><strong class="${avg.rate<0?"neg":""}">${pc(avg.rate)}</strong></div></section>
-    ${details.length?`<div class="section-heading"><h2>실현손익 내역</h2><span>증권사별 기록 · 월 합계</span></div><div class="pnl-details">${details.map(m=>`<article class="card pnl-detail"><div class="pnl-detail-actions"><button class="btn mini ghost" type="button" data-copy-month="${m.m}">복사</button><button class="btn mini" type="button" data-month="${m.m}">${m.m}월 수정</button></div><pre>${escA(ledgerPnlText(m))}</pre></article>`).join("")}</div>`:""}`;
+    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>대출 제외<br>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연평균 수익률 <small>대출 제외 · ${avg.years}개 연도의 연 수익률 평균</small></span><strong class="${avg.rate<0?"neg":""}">${pc(avg.rate)}</strong></div></section>`;
   all("[data-pick-year]").forEach(b=>b.onclick=()=>{ setUi({year:Number(b.dataset.pickYear)}); renderLedger(); });
   all("[data-month]").forEach(b=>b.onclick=()=>openMonth(y,Number(b.dataset.month)));
   el("editYear").onclick=()=>openYear(y);
   el("editFutures").onclick=()=>{openYear(y);el("yearForm").futures.focus();};
-  all("[data-copy-month]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(ledgerPnlText(y.months.find(m=>m.m===Number(b.dataset.copyMonth))));b.textContent="복사됨";}catch{alert("복사하지 못했습니다. 내역을 직접 선택해 복사해 주세요.");}});
   el("addYear").onclick=()=>{ const next=Math.max(...years.map(x=>x.year))+1, last=years[years.length-1];
     if(!confirm(`${next}년을 추가할까요? 계좌 목록은 ${last.year}년과 같게 시작합니다.`)) return;
     L.years.push({year:next,accounts:last.accounts.map(x=>({...x})),months:[]}); setUi({year:next}); saveSection("ledger"); render(); };
 }
+// 자주 적는 손익 항목은 빈 전용 칸으로 보여 준다. 실제 금액을 넣은 항목만 pnlEntries에 저장하고, 열기만 해서는 기록을 만들지 않는다.
+const LEDGER_PNL_FIELDS=[{broker:"신한",label:"기본계좌+ISA"},{broker:"신한",label:"연금저축"},{broker:"신한",label:"배당"},
+  {broker:"키움(영웅문)",label:"실현손익"},{broker:"키움(영웅문)",label:"배당입금내역",currency:"USD"}];
 function openMonth(y, n){
   const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[];
+  const fixed=LEDGER_PNL_FIELDS.map(p=>({...p})), extra=[], matched=new Set();
+  const brokerKey=v=>String(v||"").replace(/\s|\(영웅문\)/g,""), labelKey=v=>String(v||"").replace(/\s/g,"").replace(/·/g,"+");
+  for(const entry of Array.isArray(m.pnlEntries)?m.pnlEntries:[]){
+    const i=LEDGER_PNL_FIELDS.findIndex((p,i)=>!matched.has(i)&&brokerKey(p.broker)===brokerKey(entry.broker)&&labelKey(p.label)===labelKey(entry.label)&&(p.currency||"KRW")===(entry.currency||"KRW"));
+    if(i<0)extra.push({...entry});else{fixed[i]={...entry};matched.add(i);}
+  }
+  const input=(i,label,k="amount")=>`<label class="field"><span>${label}</span><input data-pnl-fixed="${i}" data-k="${k}" ${moneyAttrs} value="${moneyText(fixed[i][k])}" placeholder="미입력"></label>`;
   el("monthTitle").textContent=`${y.year}년 ${n}월`;
   el("monthFields").innerHTML=`<label class="field dialog-wide"><span>실현손익 합계 (원)</span><input name="pnl" ${moneyAttrs} value="${moneyText(monthPnl(m))}"><small class="field-hint" id="pnlTotalHint"></small></label>
-    <section class="dialog-wide pnl-editor"><div class="pnl-editor-head"><h3>증권사별 손익 내역</h3><button class="btn mini" type="button" id="addPnlEntry">＋ 내역</button></div><div id="pnlEntryRows"></div><pre class="pnl-preview" id="pnlPreview" aria-live="polite"></pre></section>
+    <div class="dialog-wide pnl-broker-grid"><section class="pnl-broker"><h3>신한</h3>${input(0,"기본계좌+ISA (원)")}${input(1,"연금저축 (원)")}${input(2,"배당 (원)")}</section>
+      <section class="pnl-broker"><h3>키움(영웅문)</h3>${input(3,"실현손익 (원)")}${input(4,"배당 (달러)")}${input(4,"배당 원화 입금액 (원)","krw")}<small class="field-hint">달러 배당은 당시 원화 입금액으로 합산합니다.</small></section></div>
+    <details class="dialog-wide pnl-other" id="pnlOther"${extra.length?" open":""}><summary>다른 증권사·항목 추가</summary><div id="pnlEntryRows"></div><button class="btn mini" type="button" id="addPnlEntry">＋ 내역</button></details>
     <h3 class="dialog-wide pnl-balance-title">계좌 잔액 (원)</h3>
     ${y.accounts.length?y.accounts.map((acc,i)=>`<label class="field"><span>${escA(acc.name)}${acc.loan?` <small class="loan-tag">대출</small>`:""}</span><input name="bal${i}" ${moneyAttrs} value="${moneyText(bal[i])}"></label>`).join("")
       :`<label class="field"><span>총자산 (원)</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`}
     <p class="hint dialog-wide">${y.accounts.length?"총자산은 계좌 잔액 합계입니다(대출 계좌 포함). 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
-  let rows=(Array.isArray(m.pnlEntries)?m.pnlEntries:[]).map(e=>({...e})), manualPnl=f.pnl.value;
+  let manualPnl=f.pnl.value;
+  const entries=()=>[...fixed.filter(r=>finite(r.amount)!==null||finite(r.krw)!==null),...extra];
   const update=()=>{
-    f.pnl.readOnly=!!rows.length;
-    if(rows.length)f.pnl.value=moneyText(pnlEntriesTotal(rows));
-    f.pnl.setCustomValidity("");
-    el("pnlTotalHint").textContent=rows.length?"상세 내역의 원화 합계로 자동 계산합니다. 달러 배당은 입력한 원화 입금액을 더합니다.":"합계만 직접 입력하거나, 내역을 추가해 자동으로 합산할 수 있습니다.";
-    el("pnlPreview").textContent=ledgerPnlText({m:n,pnl:numIn(f.pnl.value),...(rows.length?{pnlEntries:rows}:{})});
+    const rows=entries(), wasAuto=f.pnl.readOnly;f.pnl.readOnly=!!rows.length;
+    if(rows.length){f.pnl.value=assetNumberText(pnlEntriesTotal(rows));f.pnl.setCustomValidity("");}
+    else if(wasAuto)f.pnl.value=manualPnl;
+    el("pnlTotalHint").textContent=rows.length?"입력한 손익과 배당의 원화 합계입니다.":"아래 항목을 입력하면 자동 합산합니다. 합계만 직접 기록할 수도 있습니다.";
+    const usd=el("monthFields").querySelectorAll('[data-pnl-fixed="4"]'), needed=[...usd].some(x=>x.value.trim());usd.forEach(x=>x.required=needed);
   };
+  all("[data-pnl-fixed]").forEach(x=>x.oninput=()=>{setNum(fixed[Number(x.dataset.pnlFixed)],x.dataset.k,x.value);update();});
   const draw=()=>{
-    el("pnlEntryRows").innerHTML=rows.map((r,i)=>`<div class="pnl-entry"><div class="pnl-entry-head"><span>내역 ${i+1}</span><button class="remove" type="button" data-pnl-del="${i}" aria-label="내역 ${i+1} 삭제">삭제</button></div><div class="pnl-entry-grid">
+    el("pnlEntryRows").innerHTML=extra.map((r,i)=>`<div class="pnl-entry"><div class="pnl-entry-head"><span>추가 내역 ${i+1}</span><button class="remove" type="button" data-pnl-del="${i}" aria-label="추가 내역 ${i+1} 삭제">삭제</button></div><div class="pnl-entry-grid">
       <label class="field"><span>증권사</span><input data-pnl-entry="${i}" data-k="broker" maxlength="40" required value="${escA(r.broker)}" placeholder="증권사 이름"></label>
-      <label class="field"><span>구분 (선택)</span><input data-pnl-entry="${i}" data-k="label" maxlength="80" value="${escA(r.label)}" placeholder="실현손익·연금저축·배당 등"></label>
+      <label class="field"><span>구분 (선택)</span><input data-pnl-entry="${i}" data-k="label" maxlength="80" value="${escA(r.label)}" placeholder="계좌·배당 등"></label>
       <label class="field"><span>금액${r.currency==="USD"?" (달러)":" (원)"}</span><input data-pnl-entry="${i}" data-k="amount" ${moneyAttrs} required value="${moneyText(r.amount)}"></label>
       <label class="field"><span>통화</span><select data-pnl-entry="${i}" data-k="currency"><option value="KRW"${r.currency!=="USD"?" selected":""}>원화</option><option value="USD"${r.currency==="USD"?" selected":""}>달러</option></select></label>
-      ${r.currency==="USD"?`<label class="field dialog-wide"><span>원화 입금액 (원)</span><input data-pnl-entry="${i}" data-k="krw" ${moneyAttrs} required value="${moneyText(r.krw)}"><small class="field-hint">당시 원화 환산액을 입력합니다. 월 합계에는 이 금액을 한 번 더합니다.</small></label>`:""}</div></div>`).join("");
+      ${r.currency==="USD"?`<label class="field dialog-wide"><span>원화 입금액 (원)</span><input data-pnl-entry="${i}" data-k="krw" ${moneyAttrs} required value="${moneyText(r.krw)}"></label>`:""}</div></div>`).join("");
     all("[data-pnl-entry]").forEach(x=>{
-      const change=()=>{const r=rows[Number(x.dataset.pnlEntry)],k=x.dataset.k;
+      const change=()=>{const r=extra[Number(x.dataset.pnlEntry)],k=x.dataset.k;
         if(k==="currency"){if(x.value==="USD")r.currency="USD";else{delete r.currency;delete r.krw;}draw();return;}
         if(k==="amount"||k==="krw")setNum(r,k,x.value);else setText(r,k,x.value);update();};
       if(x.tagName==="SELECT")x.onchange=change;else x.oninput=change;
     });
-    all("[data-pnl-del]").forEach(b=>b.onclick=()=>{rows.splice(Number(b.dataset.pnlDel),1);if(!rows.length)f.pnl.value=manualPnl;draw();});
-    update();
+    all("[data-pnl-del]").forEach(b=>b.onclick=()=>{extra.splice(Number(b.dataset.pnlDel),1);draw();});update();
   };
-  f.pnl.oninput=()=>{manualPnl=f.pnl.value;update();};
-  el("addPnlEntry").onclick=()=>{rows.push({broker:""});draw();el("pnlEntryRows").querySelector(`[data-pnl-entry="${rows.length-1}"][data-k="broker"]`).focus();};
+  f.pnl.oninput=()=>{manualPnl=f.pnl.value;};
+  el("addPnlEntry").onclick=()=>{extra.push({broker:""});draw();el("pnlEntryRows").querySelector(`[data-pnl-entry="${extra.length-1}"][data-k="broker"]`).focus();};
   draw();
   el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>x.m!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); if(!f.reportValidity())return;
     const t={...m,m:n}; setNum(t,"pnl",f.pnl.value);delete t.pnlEntries;delete t.balances;delete t.total;
+    const rows=entries();
     if(rows.length){if(rows.some(r=>!String(r.broker||"").trim())){alert("내역의 증권사 이름을 넣어 주세요.");return;}if(pnlEntriesTotal(rows)===null){alert("내역의 금액과 원화 입금액을 모두 넣어 주세요.");return;}t.pnlEntries=rows.map(r=>({...r}));t.pnl=pnlEntriesTotal(rows);}
     if(y.accounts.length){ const b=y.accounts.map((_,i)=>numIn(f[`bal${i}`].value)); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) t.balances=b; }
     else setNum(t,"total",f.total.value);
