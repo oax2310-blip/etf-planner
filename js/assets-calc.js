@@ -424,48 +424,60 @@ function rescaleTrade(alloc, key, trade){
 }
 
 // ---------- 월별 손익 ----------
-// pnlEntries = [{broker, label?, amount, currency?:"USD", krw?}]. 원화 내역은 amount, 달러 내역은 당시 직접 넣은 원화 입금액 krw만 합산한다.
-// 환율·현재 시세로 과거 손익을 바꾸지 않는다. 한 내역이라도 금액이 빠졌으면 합계는 null. 상세가 없는 기존 기록은 pnl을 그대로 쓴다.
+// 달러 배당은 입력 금액 × 적용 환율을 원 단위로 반올림한다. 0달러는 환율 없이도 0원이며, 양수 환율이 없으면 null.
+function pnlDollarKrw(amount, fx){
+  const n=finite(amount), rate=plus(fx);
+  if(n===null)return null;
+  return n===0?0:rate&&Number.isFinite(n*rate)?Math.round(n*rate):null;
+}
+// 저장된 환율을 우선하고, 옛 달러·원화 기록은 당시 환율을 역산한다. 새 기록만 현재 시세(또는 직접 넣은 자산 배분 환율)를 기본값으로 쓴다.
+function pnlDollarFx(entry, fallback){
+  const amount=finite(entry?.amount), won=finite(entry?.krw);
+  return plus(entry?.fx)||(amount&&won!==null?plus(won/amount):null)||plus(fallback);
+}
+// pnlEntries = [{broker, label?, amount, currency?:"USD", krw?, fx?}]. 원화는 amount, 달러는 저장한 원화 환산액 krw만 한 번 합산한다.
+// krw 없는 새 형식은 저장된 fx로 계산한다. 현재 시세로 과거 손익을 바꾸지 않는다. 미완성 내역은 null, 상세 없는 기존 기록은 pnl을 쓴다.
 function pnlEntriesTotal(entries){
   if(!Array.isArray(entries)||!entries.length)return null;
   let total=0;
   for(const e of entries){
-    const amount=finite(e?.amount), won=e?.currency==="USD"?finite(e.krw):amount;
+    const amount=finite(e?.amount), won=e?.currency==="USD"?finite(e.krw)??pnlDollarKrw(amount,e.fx):amount;
     if(amount===null||won===null)return null;
     total+=won;
   }
   return Math.round(total);
 }
 const monthPnl = m => Array.isArray(m?.pnlEntries)&&m.pnlEntries.length?pnlEntriesTotal(m.pnlEntries):finite(m?.pnl);
-// 달 총자산(원): 계좌 잔액이 있으면 합계(대출 계좌 포함), 없으면 직접 넣은 total. noLoan은 대출 계좌를 뺀 합계(대출 계좌가 없으면 null).
+// 옛 기록의 loan 계좌는 표시·입력·계산에서 제외한다. 원래 잔액 배열의 인덱스를 유지하며 읽기만 해서는 저장 기록을 바꾸지 않는다.
+const ledgerAccounts = year => (year?.accounts||[]).map((account,index)=>({account,index})).filter(x=>!x.account?.loan);
+// 달 총자산(원): 남은 계좌 잔액 합계, 계좌별 잔액이 없으면 직접 넣은 total. 옛 loan 계좌가 있으면 총액만으로 자산을 추정하지 않는다.
+// noLoan은 이전 호출부 호환을 위한 total의 별칭이다.
 function monthTotals(year, m){
   const bal=Array.isArray(m?.balances)?m.balances:[], acc=year?.accounts||[];
-  if(!bal.some(v=>finite(v)!==null))return {total:finite(m?.total), noLoan:null};
-  let total=0,free=0;
-  bal.forEach((v,i)=>{const n=finite(v)||0;total+=n;if(!acc[i]?.loan)free+=n;});
-  return {total, noLoan:acc.some(a=>a?.loan)?free:null};
+  if(!bal.some(v=>finite(v)!==null)){const total=acc.some(a=>a?.loan)?null:finite(m?.total);return {total,noLoan:total};}
+  let total=0;
+  bal.forEach((v,i)=>{if(!acc[i]?.loan)total+=finite(v)||0;});
+  return {total,noLoan:total};
 }
 // 연 요약: 월 손익 ÷ 그 달 총자산을 합산하고, 선물옵션은 마지막 잔액의 총자산으로 나눈다.
-// rateNoLoan은 대출 계좌 잔액을 뺀 동일 계산. 대출이 없는 해는 total을 사용하고, 대출이 있는데 제외 잔액을 모르면 null이다.
 // 실현손익이 있는 달의 분모가 하나라도 없거나 0 이하면 해당 연 수익률은 null. 빈 해도 null(연평균에 0%로 섞지 않는다).
-// annual·annualNoLoan은 해당 월 수익률 합 × 12 ÷ 실현손익 기록 개월 수(선물옵션 제외). 읽기·계산은 원본 기록을 바꾸지 않는다.
+// annual은 월 수익률 합 × 12 ÷ 실현손익 기록 개월 수(선물옵션 제외). rateNoLoan·annualNoLoan은 이전 호출부 호환 별칭이다.
 function yearSummary(year){
-  let pnl=0,rate=0,rateFree=0,months=0,rated=0,ratedFree=0,interest=0,hasInterest=false,last=null;
-  const loan=(year?.accounts||[]).some(a=>a?.loan);
+  let pnl=0,rate=0,months=0,rated=0,interest=0,hasInterest=false,last=null;
   for(const m of [...(year?.months||[])].sort((a,b)=>a.m-b.m)){
-    const t=monthTotals(year,m), p=monthPnl(m), free=loan?t.noLoan:t.total;
+    const t=monthTotals(year,m), p=monthPnl(m);
     if(t.total!==null)last={m:m.m,...t};
-    if(p!==null){pnl+=p;months++;if(t.total>0){rate+=p/t.total*100;rated++;}if(free>0){rateFree+=p/free*100;ratedFree++;}}
+    if(p!==null){pnl+=p;months++;if(t.total>0){rate+=p/t.total*100;rated++;}}
     if(finite(m.interest)!==null){interest+=Number(m.interest);hasInterest=true;}
   }
-  const fut=finite(year?.futures), free=loan?last?.noLoan:last?.total;
-  const yearly=(sum,count,base)=>(months||fut!==null)&&count===months&&(fut===null||base>0)?sum+(fut!==null?fut/base*100:0):null;
-  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:yearly(rate,rated,last?.total), rateNoLoan:yearly(rateFree,ratedFree,free),
-    annual:months&&rated===months?rate*12/months:null, annualNoLoan:months&&ratedFree===months?rateFree*12/months:null, interest:hasInterest?interest:null, last};
+  const fut=finite(year?.futures), yearly=(months||fut!==null)&&rated===months&&(fut===null||last?.total>0)?rate+(fut!==null?fut/last.total*100:0):null;
+  const annual=months&&rated===months?rate*12/months:null;
+  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:yearly, rateNoLoan:yearly,
+    annual, annualNoLoan:annual, interest:hasInterest?interest:null, last};
 }
-// 연평균 수익률: 계산 가능한 해의 대출 제외 연 수익률(선물옵션 포함) 산술평균. 빈 해·분모가 부족한 해는 개수에서도 제외한다.
+// 연평균 수익률: 계산 가능한 해의 연 수익률(선물옵션 포함) 산술평균. 빈 해·분모가 부족한 해는 개수에서도 제외한다.
 function averageYearReturn(years){
-  const rates=(years||[]).map(y=>yearSummary(y).rateNoLoan).filter(r=>r!==null);
+  const rates=(years||[]).map(y=>yearSummary(y).rate).filter(r=>r!==null);
   return {rate:rates.length?rates.reduce((sum,r)=>sum+r,0)/rates.length:null,years:rates.length};
 }
 
