@@ -24,7 +24,7 @@
 .group-head h3,.assets-memo .memo-head h2{flex:1;min-width:0}
 .alloc-fold{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left}.alloc-fold>span:first-child{min-width:0;overflow-wrap:anywhere}.alloc-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 .alloc-fold-action{display:inline-flex;align-items:center;gap:9px;flex:none;color:var(--text-3);font-size:12px;font-weight:500;white-space:nowrap}.alloc-fold-action::after{content:"";width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translate(-1px,-1px)}.alloc-fold[aria-expanded=true] .alloc-fold-action::after{transform:rotate(225deg) translate(-1px,-1px)}
-.alloc-fold-body[hidden]{display:none}.cash-total .alloc-fold>b{margin-left:auto}
+.alloc-fold-body[hidden]{display:none}.cash-total .alloc-fold>b{display:flex;align-items:baseline;justify-content:flex-end;flex-wrap:wrap;gap:4px 8px;margin-left:auto}.cash-total .alloc-fold>b>span,.cash-pct{white-space:nowrap}.cash-pct{font-size:13px;font-weight:500;color:var(--text-2)}
 .assets-memo .alloc-fold>span:first-child{color:var(--text);font-size:inherit}
 /* 메모는 한 줄로 표시하고 넘치면 말줄임한다. 원문은 수정 창·title로 확인한다. */
 .group-note,.asset-note{min-width:0;font-size:12.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.6}.group-note{margin:0 16px 10px}.asset-note{grid-column:1/-1;margin:0}.alloc-note-label{margin-right:6px;font-size:11px;font-weight:600;color:var(--text-3)}

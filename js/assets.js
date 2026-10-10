@@ -127,7 +127,7 @@ function renderAlloc(tab="alloc"){
     <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
     <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
     <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
-    <section class="card cash-card"><div class="cash-total">${foldButton("cash","allocCashBody","현금 상세",`<span>합계</span><b>${man(s.cash)}</b>`)}</div><div class="alloc-fold-body" id="allocCashBody"${allocOpenCards.has("cash")?"":" hidden"}>${cashRows||`<p class="group-empty">현금 항목 없음</p>`}</div></section>`}
+    <section class="card cash-card"><div class="cash-total">${foldButton("cash","allocCashBody","현금 상세",`<span>합계</span><b><span>${man(s.cash)}</span><small class="cash-pct" title="기준 총자산 대비 비중">(${pc(s.pct(s.cash))})</small></b>`)}</div><div class="alloc-fold-body" id="allocCashBody"${allocOpenCards.has("cash")?"":" hidden"}>${cashRows||`<p class="group-empty">현금 항목 없음</p>`}</div></section>`}
     <section class="card panel memo assets-memo"><div class="memo-head"><h2>${strategy?'<label for="allocMemo">배분 메모</label>':foldButton("memo","allocMemoBody","배분 메모","<span>배분 메모</span>")}</h2></div><div class="alloc-fold-body" id="allocMemoBody"${strategy||allocOpenCards.has("memo")?"":" hidden"}><textarea id="allocMemo" aria-label="배분 메모" maxlength="4000">${escA(a.memo||"")}</textarea></div></section>`;
   view.querySelectorAll("[data-alloc-fold]").forEach(button=>{
     // 입력 저장으로 화면이 다시 그려져 클릭이 사라지지 않게, 접힘을 먼저 바꾼 뒤 포커스를 옮긴다.
