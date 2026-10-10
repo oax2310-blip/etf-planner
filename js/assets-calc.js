@@ -486,11 +486,22 @@ function averageYearReturn(years){
 // ---------- 저축 계획 ----------
 // 금액은 원, giving·growth·returnRate는 % 숫자(3 = 3%).
 // 엑셀 '복리 저축 계산' 시트 규칙: 매달 저축총액 += 월급 − 기부(월급 × giving%) − 사용금액 − 할부. 12월에는 투자수익(전년 12월 저축총액 × 연 수익률)에서
-// 수익 기부(giving%)를 뺀 값을 더한다. 사용금액은 spendingYear의 월 금액에서 해마다 growth%씩 늘고, 단계(stages: 그 나이부터 월급·증가율·수익률을 바꾸고
+// 양수 수익의 기부(giving%)를 뺀 값을 더하고, 투자손실은 그대로 반영한다. 연 기부금은 월급 기부(salaryGiving) + 수익 기부(returnGiving), returns는 기부 후 투자수익이다.
+// 사용금액은 spendingYear의 월 금액에서 해마다 growth%씩 늘고, 단계(stages: 그 나이부터 월급·증가율·수익률을 바꾸고
 // spending이 있으면 그해 월 사용금액을 그 값으로)로 바꾼다. 나이는 해마다 1살(startYear에 startAge). 마지막 실제 기록(actual) 다음 달부터 endAge 해 12월까지 계산.
 // 할부(events): start 달에 down(선수금·일시불), start 달부터 months개월 동안 monthly. 실제 기록 기간의 지출은 기록에 이미 들어 있어 빼지 않는다.
 const ymNum = ym => { const m=/^(\d{4})-(\d{2})$/.exec(String(ym||"")); return m&&Number(m[2])>=1&&Number(m[2])<=12 ? Number(m[1])*12+Number(m[2])-1 : null; };
 const ymText = n => `${Math.floor(n/12)}-${String(n%12+1).padStart(2,"0")}`;
+// 월별 실제 저축총액 입력만 actual에 저장한다. 빈칸은 그 달 기록 삭제, 0은 유효한 기록. 기존 달의 다른 필드는 보존하며 잘못된 입력은 기록을 바꾸지 않는다.
+function setSavingsActual(sv, ym, value){
+  if(!Array.isArray(sv?.actual)||ymNum(ym)===null)return false;
+  const text=String(value??"").trim(), total=parseAssetNumber(text), records=sv.actual.filter(a=>a.ym===ym), previous=records[records.length-1];
+  if(text&&total===null)return false;
+  if((!text&&!records.length)||(text&&records.length===1&&finite(previous.total)===total))return false;
+  sv.actual=sv.actual.filter(a=>a.ym!==ym);
+  if(text)sv.actual.push(previous?{...previous,total}:{ym,total});
+  sv.actual.sort((a,b)=>String(a.ym).localeCompare(String(b.ym)));return true;
+}
 function savingsStage(sc, age){
   const p={salary:finite(sc.salary)||0, growth:finite(sc.growth)||0, returnRate:finite(sc.returnRate)||0};
   for(const s of [...(sc.stages||[])].filter(s=>finite(s.age)!==null&&Number(s.age)<=age).sort((a,b)=>a.age-b.age))
@@ -517,15 +528,15 @@ function simulateSavings(sv, sc){
   const events=(sc.events||[]).map(e=>({n:ymNum(e.start),down:finite(e.down)||0,monthly:finite(e.monthly)||0,months:Math.max(0,Math.round(finite(e.months)||0))})).filter(e=>e.n!==null);
   const actualAt=n=>{let v=null;for(const a of actual){if(a.n>n)break;v=a.total;}return v;}, dec=new Map();
   const decBalance=y=>dec.has(y)?dec.get(y):actualAt(y*12+11);
-  const years=new Map(), row=y=>{if(!years.has(y))years.set(y,{year:y,age:age(y),salary:0,giving:0,spending:0,payments:0,returns:0,end:null,actual:false});return years.get(y);};
+  const years=new Map(), row=y=>{if(!years.has(y))years.set(y,{year:y,age:age(y),salary:0,giving:0,salaryGiving:0,returnGiving:0,spending:0,payments:0,returns:0,end:null,actual:false});return years.get(y);};
   for(const a of actual){const r=row(Math.floor(a.n/12));r.end=a.total;r.actual=true;r.endYm=ymText(a.n);}
   let bal=last.total;
   for(let n=last.n+1;n<=endYear*12+11;n++){
     const y=Math.floor(n/12), p=savingsStage(sc,age(y)), r=row(y), s=spending(y);
     const pay=events.reduce((t,e)=>t+(n===e.n?e.down:0)+(n>=e.n&&n<e.n+e.months?e.monthly:0),0);
     bal+=p.salary-p.salary*giving-s-pay;
-    r.salary+=p.salary;r.giving+=p.salary*giving;r.spending+=s;r.payments+=pay;
-    if(n%12===11){const base=decBalance(y-1), ret=base>0?base*p.returnRate/100:0;bal+=ret-ret*giving;r.returns+=ret-ret*giving;r.giving+=ret*giving;dec.set(y,bal);}
+    r.salary+=p.salary;r.salaryGiving+=p.salary*giving;r.giving+=p.salary*giving;r.spending+=s;r.payments+=pay;
+    if(n%12===11){const base=decBalance(y-1), ret=base>0?base*p.returnRate/100:0, donated=Math.max(0,ret)*giving;bal+=ret-donated;r.returns+=ret-donated;r.returnGiving+=donated;r.giving+=donated;dec.set(y,bal);}
     r.end=bal;r.endYm=ymText(n);r.actual=false;
   }
   const rows=[...years.values()].filter(r=>r.year<=endYear).sort((a,b)=>a.year-b.year);

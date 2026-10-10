@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
   for(const line of ['25선','60일선','20주선','25개월선']){
@@ -487,9 +487,11 @@ test('저축 계획: 매달 월급 − 기부 − 사용금액 − 할부, 12월
   // 2021: 11월 2000 + 100 − 10 − 20 = 2070, 12월 + 70 − 10(선수금 7 + 할부 3) + 1000 × 10% × 0.9 = 2220
   const y21 = r.rows.find(x => x.year === 2021);
   near(y21.end, 2220, '2021년 말'); near(y21.payments, 10, '2021 할부'); near(y21.returns, 90, '기부 뺀 수익'); assert.equal(y21.actual, false);
+  near(y21.salaryGiving, 20, '실제 기록 이후 2개월의 월급 기부');near(y21.returnGiving, 10, '연 투자수익 기부');near(y21.giving, 30, '월급 기부 + 투자수익 기부');
   // 2022(32세): 월급 50, 사용금액 20 × 1.1 = 22, 1월 할부 3, 12월 수익 = 2220 × 20% × 0.9
   const y22 = r.rows.find(x => x.year === 2022);
   near(y22.end, 2220 + 12 * (50 - 5 - 22) - 3 + 2220 * 0.2 * 0.9, '2022년 말');
+  near(y22.returnGiving, 44.4, '나이별 연 수익률 변경을 투자수익 기부에도 적용');near(y22.giving, 60 + 44.4, '매년 월급·투자수익 기부 합산');
   // 2023(33세): 사용금액 5로 재설정
   const y23 = r.rows.find(x => x.year === 2023);
   near(y23.end, y22.end + 12 * (50 - 5 - 5) + y22.end * 0.2 * 0.9, '2023년 말');
@@ -501,6 +503,31 @@ test('저축 계획: 매달 월급 − 기부 − 사용금액 − 할부, 12월
   assert.equal(c.ymText(c.ymNum('2026-12') + 1), '2027-01'); assert.equal(c.ymNum('2026-13'), null);
   assert.deepEqual(c.missingActual({actual: [{ym: '2026-03', total: 1}, {ym: '2025-12', total: 1}, {ym: '2026-02', total: null}]}), ['2026-01', '2026-02'], '첫 달~마지막 달 사이 빈 달');
   assert.deepEqual(c.missingActual({actual: []}), []);
+});
+
+test('저축 계획: 투자손실·수익률 0은 수익 기부를 만들지 않고 손실은 전액 반영한다',()=>{
+  for(const rate of [-10,0,10]){
+    const sv={startYear:2020,startAge:30,actual:[{ym:'2020-12',total:1000}]},sc={salary:100,giving:10,spending:20,spendingYear:2021,growth:0,returnRate:rate,endAge:31};
+    const before=JSON.stringify([sv,sc]),row=c.simulateSavings(sv,sc).rows[1],donation=rate>0?10:0;
+    near(row.returnGiving,donation,'양수 투자수익만 기부');near(row.salaryGiving,120,'월급 기부');near(row.giving,120+donation,'연 기부 합계');
+    near(row.returns,1000*rate/100-donation,'기부 후 투자수익·손실');near(row.end,1000+12*70+1000*rate/100-donation,'기부와 손실을 중복 차감하지 않음');
+    assert.equal(JSON.stringify([sv,sc]),before,'조회만으로 실제 기록·가정에 필드를 생성하지 않음');
+  }
+});
+
+test('저축 계획: 연도별 월 입력은 기존 기록과 필드를 보존하고 0·쉼표·빈칸을 구분한다',()=>{
+  const sv={startYear:2020,startAge:30,actual:[{ym:'2020-12',total:1000,note:'가상 기록'}],scenarios:[{id:'s',endAge:31}]};
+  assert.equal(c.setSavingsActual(sv,'2021-06','2,000'),true);assert.deepEqual(sv.actual,[{ym:'2020-12',total:1000,note:'가상 기록'},{ym:'2021-06',total:2000}]);
+  const sc={salary:100,giving:10,spending:20,spendingYear:2021,growth:0,returnRate:10,endAge:31};
+  assert.equal(c.simulateSavings(sv,sc).last.ym,'2021-06');near(c.simulateSavings(sv,sc).rows[1].salary,600,'새 마지막 기록 다음 달부터 다시 계산');
+  assert.equal(c.setSavingsActual(sv,'2020-12','1,500'),true);assert.equal(sv.actual[0].note,'가상 기록');
+  assert.equal(c.setSavingsActual(sv,'2021-06','0'),true);assert.equal(c.simulateSavings(sv,sc).last.total,0,'0원도 실제 기록');
+  const before=JSON.stringify(sv);
+  for(const [ym,value] of [['2021-06','0'],['2021-13','100'],['2021-06','잘못된 값'],['2021-06','Infinity'],['2021-07','']])assert.equal(c.setSavingsActual(sv,ym,value),false);
+  assert.equal(JSON.stringify(sv),before,'같은 값·잘못된 입력·이미 빈 달은 저장 기록을 바꾸지 않음');
+  assert.equal(c.setSavingsActual(sv,'2021-06',''),true);assert.equal(c.simulateSavings(sv,sc).last.ym,'2020-12');
+  assert.deepEqual(sv.scenarios,[{id:'s',endAge:31}]);assert.deepEqual(sv.actual,[{ym:'2020-12',total:1500,note:'가상 기록'}]);
+  assert.equal(c.setSavingsActual(sv,'2020-12',''),true);assert.equal(c.simulateSavings(sv,sc),null,'마지막 기록도 비우면 예상 계산을 멈춤');
 });
 
 test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저장 우선 + 버린 쪽 보관', () => {
