@@ -35,6 +35,26 @@ test('공유 자산 기록: 입력 없이 열면 기존 분할매수·목표·�
   assert.equal(storage.has(BASE),false);
 });
 
+test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른 페이지의 변경을 보존한다',async()=>{
+  const original={...fake(),savings:{savedAt:'2026-01-01',actual:[],scenarios:[{id:'s',name:'기존 계획'}]}},first=setup(original),second=setup(null,null,first.storage);
+  first.store.start();second.store.start();assert.equal(first.store.doc.installments,undefined);
+  first.store.doc.installments={price:3600000,returnRate:3,methods:{m36:{rewardsEnabled:false}}};first.store.saveSection('installments');second.event();
+  assert.equal(second.store.doc.installments.price,3600000);
+  assert.deepEqual(clone(first.store.doc.savings),original.savings);
+  second.store.doc.allocation.groups[0].items[0].target=20;second.store.saveSection('allocation');first.event();
+  assert.equal(first.store.doc.installments.methods.m36.rewardsEnabled,false);assert.equal(first.store.doc.allocation.groups[0].items[0].target,20);
+  assert.equal(first.store.recovery().length,0);
+  let uploaded;
+  const synced=setup(clone(first.store.doc),async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+    if(options.method==='PUT'){uploaded=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new'}});}
+    return contents(original);
+  });
+  connect(synced.storage);await synced.store.sync();
+  assert.equal(synced.store.status.state,'done');assert.equal(uploaded.installments.price,3600000);assert.deepEqual(uploaded.savings,original.savings);
+});
+
 test('플래너와 자산 페이지의 변경을 같은 기록에서 맞추고 다른 구역과 체결 기록을 보존한다',()=>{
   const original=fake(),first=setup(original),second=setup(null,null,first.storage);first.store.start();second.store.start();
   first.store.doc.allocation.groups[0].items[0].buyPlan.stages[0].done=true;

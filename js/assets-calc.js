@@ -1,6 +1,6 @@
 // 자산 현황·플래너 분할매수의 계산, 자산 배분 연동, 구역별 병합. 계산 기준은 각 함수 주석, 공통 작업 규칙은 AGENTS.md.
 // tests/assets.test.cjs·시세 수집도 DOM 없이 실행하므로 함수 밖에서 화면을 건드리지 않는다.
-const ASSET_SECTIONS = ["allocation","ledger","savings"]; // 기록 파일의 세 구역. 기기 간 병합은 구역마다 따로(savedAt)
+const ASSET_SECTIONS = ["allocation","ledger","savings","installments"]; // 기기 간 병합은 구역마다 따로(savedAt)
 const ASSET_REGIONS = ["미국","국내","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
 const finite = v => v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v)) ? Number(v) : null;
 const plus = v => { const n=finite(v); return n!==null&&n>0 ? n : null; };
@@ -543,8 +543,56 @@ function simulateSavings(sv, sc){
   return {rows, last:{ym:ymText(last.n),total:last.total}, endYear, at:a=>rows.find(r=>r.age===a)?.end??null};
 }
 
+// ---------- 카드 결제·무이자 할부 ----------
+const INSTALLMENT_TERMS = [{id:"once",name:"일시불",months:1},{id:"m12",name:"12개월 무이자",months:12},{id:"m36",name:"36개월 무이자",months:36}];
+// 같은 구매대금(price, 원)을 처음부터 보유하고, 첫 납부는 firstMonth(0=지금, 1=한 달 뒤)부터 매달 한다.
+// 할인은 구매금액 × 할인율을 원 단위로 반올림한 뒤 고정 할인액을 더해 구매금액까지만 적용한다. 할인 후 금액을
+// 개월 수로 나눠 원 미만을 버리고 마지막 납부에 나머지를 더한다. 적립은 할인 후 금액 × 적립률(원 반올림, 한도 적용),
+// rewardsEnabled=false면 0이다. 적립·추가 비용은 첫 납부 때 한 번 반영한다. 비운 한도는 무제한, 0원 한도는 적립 없음.
+// 월 수익률=(1+세후 연 수익률/100)^(1/12)-1. 매월 전월 말의 남은 양수 잔액에 수익을 붙인 뒤 납부한다.
+// 부족한 잔액에는 수익·대출이자를 붙이지 않으며 minBalance로 알린다. 할부 종료 후에도 남은 이득만 같은 수익률로 운용한다.
+// benefit=보유잔액-남은 납부원금(채무를 이득으로 세지 않음). 모든 방식이 끝난 같은 3·5·10년 시점에서 비교한다.
+// 총 이득=할인+적립-추가 비용+보유자금 수익. 일시불 대비=해당 방식 총 이득-일시불 총 이득. 입력·기록은 바꾸지 않는다.
+function calculateInstallments(settings){
+  const price=finite(settings?.price), annualRate=settings?.returnRate===undefined||settings?.returnRate===null||settings?.returnRate===""?0:finite(settings.returnRate);
+  if(!Number.isSafeInteger(price)||price<=0||price>1e12||annualRate===null||annualRate<0||annualRate>100)return null;
+  const years=[3,5,10].includes(settings?.years)?settings.years:3, firstMonth=settings?.firstMonth===0?0:1;
+  const monthlyRate=Math.expm1(Math.log1p(annualRate/100)/12), horizon=years*12;
+  const value=(v,max=1e12)=>{const n=v===undefined||v===null||v===""?0:finite(v);return n!==null&&n>=0&&n<=max?n:null;};
+  const plans=[];
+  for(const term of INSTALLMENT_TERMS){
+    const p=settings?.methods?.[term.id]||{}, discountRate=value(p.discountRate,100), fixedDiscount=value(p.fixedDiscount), rewardRate=value(p.rewardRate,100), fee=value(p.fee);
+    const rewardCap=p.rewardCap===undefined||p.rewardCap===null||p.rewardCap===""?null:value(p.rewardCap);
+    if([discountRate,fixedDiscount,rewardRate,fee].some(n=>n===null)||(p.rewardCap!==undefined&&p.rewardCap!==null&&p.rewardCap!==""&&rewardCap===null))return null;
+    const discount=Math.min(price,Math.round(price*discountRate/100)+Math.round(fixedDiscount)), principal=price-discount;
+    const reward=p.rewardsEnabled===false?0:Math.min(Math.round(principal*rewardRate/100),rewardCap===null?Infinity:Math.round(rewardCap));
+    const extraCost=Math.round(fee), monthly=Math.floor(principal/term.months), lastPayment=principal-monthly*(term.months-1), endMonth=firstMonth+term.months-1;
+    let balance=price, earned=0, paid=0, minBalance=price;
+    const rows=[];
+    for(let month=0;month<=120;month++){
+      const interest=month?Math.max(0,balance)*monthlyRate:0;
+      balance+=interest;earned+=interest;
+      const payment=month>=firstMonth&&month<=endMonth?(month===endMonth?lastPayment:monthly):0;
+      const credit=month===firstMonth?reward:0, cost=month===firstMonth?extraCost:0;
+      paid+=payment;balance+=credit-cost-payment;minBalance=Math.min(minBalance,balance);
+      const remaining=Math.max(0,principal-paid);
+      rows.push({month,payment,reward:credit,fee:cost,interest,earned,balance,remaining,benefit:balance-remaining});
+    }
+    plans.push({...term,discount,reward,fee:extraCost,principal,monthly,lastPayment,endMonth,cardBenefit:discount+reward-extraCost,rows,minBalance});
+  }
+  const baseline=plans[0];
+  for(const p of plans){
+    const end=p.rows[horizon];p.totalBenefit=end.benefit;p.holdingReturn=end.earned;
+    p.advantage=end.benefit-baseline.rows[horizon].benefit;
+    p.cardDifference=p.cardBenefit-baseline.cardBenefit;p.holdingDifference=end.earned-baseline.rows[horizon].earned;
+  }
+  const max=Math.max(...plans.map(p=>p.totalBenefit)), winners=plans.filter(p=>max-p.totalBenefit<.5), best=winners[0];
+  const tied=plans.every(p=>Math.abs(p.totalBenefit-plans[0].totalBenefit)<.5);
+  return {price,annualRate,monthlyRate,years,firstMonth,horizon,plans,best,winners,tied};
+}
+
 // ---------- 기록 파일·기기 간 병합 ----------
-// 기록 파일(etf-planner-assets.json) = {version:1, allocation, ledger, savings}. 구역마다 savedAt(바꿀 때만 갱신)을 둔다.
+// 기록 파일(etf-planner-assets.json) = {version:1, allocation, ledger, savings, installments?}. 구역마다 savedAt(바꿀 때만 갱신)을 둔다.
 function cleanAssets(doc){
   if(!doc||typeof doc!=="object"||Array.isArray(doc)||(doc.version!==undefined&&doc.version!==1))return null;
   const out={version:1};

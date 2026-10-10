@@ -15,9 +15,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=104"></script>
-  <link rel="stylesheet" href="css/app.css?v=104" />
-  <link rel="stylesheet" href="css/assets.css?v=104" />
+  <script src="js/theme.js?v=105"></script>
+  <link rel="stylesheet" href="css/app.css?v=105" />
+  <link rel="stylesheet" href="css/assets.css?v=105" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -27,6 +27,7 @@
       <button class="tab active" data-tab="alloc" type="button">자산 배분</button>
       <button class="tab" data-tab="ledger" type="button">월별 손익</button>
       <button class="tab" data-tab="savings" type="button">저축 계획</button>
+      <button class="tab" data-tab="installments" type="button">무이자 계산</button>
     </nav>
     <div class="sync-head"><a class="btn mini scenario-link" href="index.html">플래너</a><span data-theme-pick></span><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini sync-btn off" id="syncBtn" type="button" title="이 기기에 저장 중"><span class="sync-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.3L3 9M3 4v5h5M4 13a8 8 0 0 0 14.3 4.3L21 15M21 20v-5h-5"/></svg></span>동기화</button></div>
   </header>
@@ -40,6 +41,7 @@
     <section id="allocView"></section>
     <section id="ledgerView" class="hidden"></section>
     <section id="savingsView" class="hidden"></section>
+    <section id="installmentsView" class="hidden"></section>
   </main>
 
   <dialog id="itemDialog"><form method="dialog" class="dialog-inner" id="itemForm">
@@ -117,7 +119,7 @@
   <dialog id="syncDialog"><div class="dialog-inner">
     <div class="dialog-head"><h2>기기 간 동기화</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <p class="sync-details" id="syncOff"><a href="index.html">메인 플래너</a>의 <b>동기화</b>에서 비공개 데이터 저장소를 연결하면, 이 페이지의 기록도 같은 저장소의 <b>etf-planner-assets.json</b>에 함께 동기화됩니다.</p>
-    <p class="sync-details" id="syncOn" hidden><b id="syncRepo"></b> 저장소의 etf-planner-assets.json에 저장합니다. 자산 배분·월별 손익·저축 계획은 따로 맞추고, 두 기기에서 같은 화면을 함께 바꿨으면 나중에 저장한 쪽을 씁니다(다른 쪽은 이 기기에 보관).</p>
+    <p class="sync-details" id="syncOn" hidden><b id="syncRepo"></b> 저장소의 etf-planner-assets.json에 저장합니다. 자산 배분·월별 손익·저축 계획·무이자 계산은 따로 맞추고, 두 기기에서 같은 화면을 함께 바꿨으면 나중에 저장한 쪽을 씁니다(다른 쪽은 이 기기에 보관).</p>
     <p class="sync-details" id="syncDialogStatus" role="status"></p>
     <p class="sync-details" id="assetPriceStatus"></p>
     <div class="sync-controls"><button class="btn primary" id="syncNowBtn" type="button">지금 동기화</button><button class="btn mini" id="refreshPricesDialogBtn" type="button" aria-describedby="priceRefreshStatus assetPriceStatus">시세 즉시 불러오기</button></div>
@@ -125,10 +127,10 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=104"></script>
-  <script src="js/assets-calc.js?v=104"></script>
-  <script src="js/price-collection.js?v=104"></script>
-  <script src="js/assets-store.js?v=104"></script>
-  <script src="js/assets.js?v=104"></script>
+  <script src="js/ma-ladder.js?v=105"></script>
+  <script src="js/assets-calc.js?v=105"></script>
+  <script src="js/price-collection.js?v=105"></script>
+  <script src="js/assets-store.js?v=105"></script>
+  <script src="js/assets.js?v=105"></script>
 </body>
 </html>
