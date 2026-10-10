@@ -1,5 +1,6 @@
 /* 자산 현황 전용 스타일. 공통 토큰·레이아웃 규칙은 app.css, 작업 규칙은 AGENTS.md. */
 .assets-page .neg{color:var(--danger)}.assets-page .metric strong.neg{color:var(--danger)}
+.metric .cash-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px}.cash-value>span{white-space:nowrap}.cash-value .cash-pct{font-size:16px;letter-spacing:0}
 .assets-page .section-heading>.btn{margin-left:auto}.field>.unit-input{font-size:15px;font-weight:400;color:var(--text)}.field-hint{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.group-head .gap{white-space:nowrap}
 /* 종목 창: 설명 유무에 따라 입력칸이 늘어나지 않게 위쪽부터 배치한다. */
 #itemDialog .dialog-grid{row-gap:12px}
