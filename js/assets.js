@@ -415,7 +415,7 @@ function openYear(y){
 const KEY_AGES = [35,40,45,50,60,70,80,90];
 let savingsAllYears = false; // 모든 연도를 표시하는지(화면 상태, 저장 안 함)
 const savingsOpenYears = new Set(); // 월별 입력의 펼침 상태만 유지한다. 다시 그리거나 시나리오를 바꿔도 실제 기록을 만들지 않는다.
-let savingsAssumptionsOpen = true; // 가정창은 기본 펼침. 화면을 다시 그려도 접힘을 유지하며 설정·저장 기록은 바꾸지 않는다.
+let savingsAssumptionsOpen = false; // 가정창은 기본 접기. 화면을 다시 그려도 접힘을 유지하며 설정·저장 기록은 바꾸지 않는다.
 function renderSavings(){
   const S=doc.savings, view=el("savingsView");
   if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
