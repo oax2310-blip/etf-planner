@@ -69,6 +69,7 @@
 #sectionTargets{align-content:start}.sub-target{display:grid;grid-template-columns:minmax(0,1fr) 90px;align-items:center;gap:8px;font-size:13px;color:var(--text-2)}.sub-target input{min-height:34px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);width:100%}
 .assets-page input:disabled{opacity:1;background:var(--surface-2);color:var(--text-3);cursor:default}.assets-page .field-hint{line-height:1.5;word-break:keep-all}
 /* 저축 계획: 가정 칸 · 나이별 변경·할부 줄 · 표 */
+.panel:has(>.savings-assumptions-head .alloc-fold[aria-expanded=false]){padding-block:4px}
 .savings-assumptions-head{margin-bottom:0}.savings-assumptions-head>h2{flex:1;min-width:0;margin:0}.savings-assumptions-head>[hidden]{display:none}.savings-assumptions-body{margin-top:14px}
 .param-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 6px}.unit-input{position:relative;display:block}.unit-input input{padding-right:34px!important}.unit-input em{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-style:normal;font-size:12.5px;color:var(--text-3);pointer-events:none}
 .sub-title{margin:20px 0 8px;font-size:14.5px;font-weight:700}.sub-title small{margin-left:6px;font-size:12px;font-weight:500;color:var(--text-3)}
