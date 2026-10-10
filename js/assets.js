@@ -413,7 +413,8 @@ function openYear(y){
 
 // ---------- 저축 계획 ----------
 const KEY_AGES = [35,40,45,50,60,70,80,90];
-let savingsAllYears = false; // 연도별 표를 모두 펼쳤는지(화면 상태, 저장 안 함)
+let savingsAllYears = false; // 모든 연도를 표시하는지(화면 상태, 저장 안 함)
+const savingsOpenYears = new Set(); // 월별 입력의 펼침 상태만 유지한다. 다시 그리거나 시나리오를 바꿔도 실제 기록을 만들지 않는다.
 function renderSavings(){
   const S=doc.savings, view=el("savingsView");
   if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
@@ -427,37 +428,53 @@ function renderSavings(){
   const eventRow=(ev,i)=>`<div class="plan-line event"><label class="wide"><span>이름</span><input data-event="${i}" data-k="name" value="${escA(ev.name||"")}" maxlength="40"></label><label><span>시작 달</span><input data-event="${i}" data-k="start" type="month" value="${escA(ev.start||"")}"></label><label><span>선수금 (원)</span><input data-event="${i}" data-k="down" ${moneyAttrs} value="${moneyText(ev.down)}"></label><label><span>월 할부 (원)</span><input data-event="${i}" data-k="monthly" ${moneyAttrs} value="${moneyText(ev.monthly)}"></label><label><span>개월</span><input data-event="${i}" data-k="months" type="number" step="1" min="0" value="${ev.months??""}"></label><button class="remove" type="button" data-event-del="${i}" aria-label="할부 삭제">삭제</button>${eventNote(ev)}</div>`;
   const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
   const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?wonA(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
-  const shownRows=sim?sim.rows.filter((r,i)=>savingsAllYears||r.actual||i===sim.rows.length-1||r.age%5===0||sim.rows.slice(0,i).filter(x=>!x.actual).length<10):[];
-  const yearRows=sim?shownRows.map(r=>`<tr class="${r.actual?"actual":""}"><th scope="row">${r.year} <small>${r.age}세</small></th><td><b>${wonA(r.end)}</b>${r.actual?`<small>실제 ${r.endYm.slice(5)}월</small>`:""}</td><td>${r.actual?"—":wonA(r.returns)}</td><td class="hide-m">${r.actual?"—":wonA(r.salary)}</td><td class="hide-m">${r.actual?"—":wonA(r.spending)}</td><td class="hide-m">${r.payments?wonA(r.payments):"—"}</td></tr>`).join(""):"";
+  const actual=[...S.actual].filter(a=>ymNum(a.ym)!==null).sort((a,b)=>String(a.ym).localeCompare(String(b.ym))), actualByMonth=new Map(actual.map(a=>[a.ym,a]));
+  const actualYears=[...new Set(actual.map(a=>Math.floor(ymNum(a.ym)/12)))], missing=missingActual(S);
+  const startYear=finite(S.startYear)??new Date().getFullYear(), startAge=finite(S.startAge)??0;
+  const firstYear=Math.min(startYear,...actualYears), lastYear=Math.max(startYear,startYear+Math.round((finite(sc?.endAge)??startAge)-startAge),...actualYears), simulated=new Map((sim?.rows||[]).map(r=>[r.year,r]));
+  const yearData=Array.from({length:lastYear-firstYear+1},(_,i)=>{
+    const year=firstYear+i, records=actual.filter(a=>Math.floor(ymNum(a.ym)/12)===year&&finite(a.total)!==null), last=records[records.length-1];
+    return {...(simulated.get(year)||{year,age:startAge+year-startYear,actual:!!last,end:last?.total??null,endYm:last?.ym}),recordCount:records.length};
+  });
+  const shownRows=yearData.filter((r,i)=>savingsAllYears||r.recordCount||savingsOpenYears.has(r.year)||i<10||i===yearData.length-1||r.age%5===0);
+  const yearRows=shownRows.map(r=>{
+    const open=savingsOpenYears.has(r.year), predicted=simulated.has(r.year)&&!r.actual, hintId=`savings-year-hint-${r.year}`;
+    const months=Array.from({length:12},(_,i)=>{const ym=ymText(r.year*12+i), a=actualByMonth.get(ym);return `<label class="field savings-month"><span>${i+1}월 <small>${finite(a?.total)!==null?"실제":"미기록"}</small></span><input data-actual="${ym}" ${moneyAttrs} value="${moneyText(a?.total)}" placeholder="저축총액 (원)" aria-label="${r.year}년 ${i+1}월 실제 저축총액 (원)" aria-describedby="${hintId}">${finite(a?.total)!==null?`<small class="field-hint">${eok(a.total)}</small>`:""}</label>`;}).join("");
+    const totals=predicted?`<div class="savings-year-totals">${[["월급",r.salary],["사용금액",r.spending],["할부·큰 지출",r.payments],["월급 기부",r.salaryGiving],["투자수익 기부",r.returnGiving]].map(([label,value])=>`<div><span>${label}</span><b>${wonA(value)}</b></div>`).join("")}</div>`:"";
+    const gaps=missing.filter(ym=>ym.startsWith(`${r.year}-`));
+    return `<section class="savings-year"><button class="savings-year-toggle" type="button" data-savings-year="${r.year}" aria-expanded="${open}" aria-controls="savings-year-${r.year}" aria-label="${r.year}년 월별 저축 기록 ${open?"접기":"펼치기"}">
+      <span class="savings-year-label"><b>${r.year}년</b><small>${r.age}세 <span data-savings-fold-action>${open?"접기":"펼치기"}</span></small></span>
+      <span class="savings-year-balance"><small class="savings-column-label">저축총액</small><b>${r.end!==null?wonA(r.end):"—"}</b><small>${predicted?`예상 12월${r.recordCount?` · 실제 ${r.recordCount}개월`:""}`:r.actual?`실제 ${Number(r.endYm.slice(5))}월 · ${r.recordCount}개월`:"기록 없음"}</small></span>
+      <span class="savings-year-return"><small class="savings-column-label">투자수익 · 기부 후</small><b>${predicted?wonA(r.returns):"—"}</b></span>
+      <span class="savings-year-giving"><small class="savings-column-label">기부금</small><b>${predicted?wonA(r.giving):"—"}</b></span></button>
+      <div class="savings-year-body" id="savings-year-${r.year}"${open?"":" hidden"}>${totals}<div class="savings-record-heading"><h3>월별 실제 저축총액</h3><span>원 단위 · 입력 후 자동 저장</span></div>
+        <p class="hint" id="${hintId}">빈칸은 미기록이며, 입력한 값을 비우면 그 달 기록이 삭제됩니다.${predicted&&r.recordCount?" 수익·기부·지출은 마지막 실제 기록 다음 달부터의 예상입니다.":!predicted&&r.actual?" 실제 기록 기간의 수익·기부·지출은 추정하지 않습니다.":""}</p>
+        ${gaps.length?`<p class="hint missing-note">기록 사이에 빠진 달: ${gaps.map(ym=>`${Number(ym.slice(5))}월`).join(", ")}</p>`:""}<div class="savings-month-grid">${months}</div></div></section>`;
+  }).join("");
   const endRow=sim?.rows[sim.rows.length-1], at40=sim?.rows.find(r=>r.age===40&&!r.actual);
-  const actual=[...S.actual].sort((a,b)=>String(a.ym).localeCompare(String(b.ym))), missing=missingActual(S);
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">저축 계획 · 엑셀 복리 저축 계산 시트(보이는 시트만)</div><h1>저축 계획</h1><p>매달 월급 − 기부 − 사용금액 − 할부를 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></div><button class="btn" id="copyScenario" type="button">＋ 시나리오 복사</button></div>
     <div class="chip-row">${S.scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
-    ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 실제 기록을 한 달 이상 넣으세요"}</small></div>
+    ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 연도를 펼쳐 실제 저축액을 입력하세요"}</small></div>
       <div class="metric"><label>40세 말 (예상)</label><strong>${at40?wonA(at40.end):"—"}</strong><small>${at40?`${eok(at40.end)} · ${at40.year}년 12월`:"계산 범위 밖"}</small></div>
       <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?wonA(endRow.end):"—"}</strong><small>${endRow?`${eok(endRow.end)} · ${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
     <section class="card panel"><div class="future-panel-head"><h2>${escA(sc.name)} 가정</h2><button class="btn mini danger" type="button" id="deleteScenario"${S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
-      <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
+      <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
       <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 빈칸은 그대로 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
       <h3 class="sub-title">할부·큰 지출 <small>시작 달에 선수금(일시불), 시작 달부터 개월 수만큼 월 할부</small></h3><div class="plan-lines">${(sc.events||[]).map(eventRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addEvent">＋ 할부·지출</button>
       <label class="field scenario-note"><span>메모</span><textarea data-param="note" maxlength="2000">${escA(sc.note||"")}</textarea></label></section>`:""}
     <div class="section-heading"><h2>시나리오 비교</h2><span>나이별 연말 저축총액</span></div>
     <section class="card table-scroll"><table class="data-table"><thead><tr><th>시나리오</th>${ages.map(a=>`<th>${a}세</th>`).join("")}</tr></thead><tbody>${compare}</tbody></table></section>
-    ${sim?`<div class="section-heading"><h2>${escA(sc.name)} · 연도별</h2><span>실제 기록 연도는 그해 마지막 기록, 계산한 해는 12월 기준${savingsAllYears?"":" · 처음 10년 뒤로는 5년마다"}</span></div>
-    <section class="card table-scroll"><table class="data-table years"><thead><tr><th>연도</th><th>연말 저축총액</th><th>투자수익</th><th class="hide-m">월급</th><th class="hide-m">사용금액</th><th class="hide-m">할부</th></tr></thead><tbody>${yearRows}</tbody></table>${sim.rows.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${sim.rows.length}년)`}</button></div>`:""}</section>`:""}
-    <details class="card panel actual-panel"${S.actual.length?"":" open"}><summary>실제 저축총액 기록 <small>${S.actual.length}개월${actual.length?` · ${actual[0].ym} ~ ${actual[actual.length-1].ym}`:""}</small></summary>
-      ${missing.length?`<p class="hint missing-note">사이에 빠진 달: ${missing.join(", ")} — 계산은 마지막 기록부터라 결과에는 영향이 없고, 기록만 비어 있습니다.</p>`:""}
-      <div class="param-grid"><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label></div>
-      <div class="actual-list">${actual.map(r=>`<div class="actual-row"><span>${escA(r.ym)}</span><input data-actual="${escA(r.ym)}" ${moneyAttrs} value="${moneyText(r.total)}" aria-label="${escA(r.ym)} 저축총액"><small>${eok(r.total)}</small><button class="remove" type="button" data-actual-del="${escA(r.ym)}">삭제</button></div>`).join("")}</div>
-      <div class="actual-row add"><input id="newActualYm" type="month" aria-label="기록할 달"><input id="newActualTotal" ${moneyAttrs} placeholder="저축총액 (원)" aria-label="저축총액 (원)"><button class="btn mini" type="button" id="addActual">추가</button></div></details>`;
+    <div class="section-heading"><h2>${sc?`${escA(sc.name)} · `:""}연도별</h2><span>연도를 펼쳐 월별 실제 저축액 수정 · 수익과 기부는 마지막 기록 다음 달부터 예상</span></div>
+    <section class="card savings-years"><div class="savings-years-head"><span>연도</span><span>저축총액 <small>실제 마지막 기록 / 예상 12월</small></span><span>투자수익 <small>기부 후</small></span><span>기부금 <small>월급 + 투자수익</small></span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</section>`;
   all("[data-scenario]").forEach(b=>b.onclick=()=>{ setUi({scenario:b.dataset.scenario}); renderSavings(); });
   if(el("toggleYears")) el("toggleYears").onclick=()=>{ savingsAllYears=!savingsAllYears; renderSavings(); };
+  all("[data-savings-year]").forEach(b=>b.onclick=()=>{
+    const year=Number(b.dataset.savingsYear), open=!savingsOpenYears.has(year);if(open)savingsOpenYears.add(year);else savingsOpenYears.delete(year);
+    el(b.getAttribute("aria-controls")).hidden=!open;b.setAttribute("aria-expanded",String(open));b.setAttribute("aria-label",`${year}년 월별 저축 기록 ${open?"접기":"펼치기"}`);b.querySelector("[data-savings-fold-action]").textContent=open?"접기":"펼치기";
+  });
   el("copyScenario").onclick=()=>{ const base=sc||{}; const copy=JSON.parse(JSON.stringify({...base,id:newId(),name:`${base.name||"시나리오"} 복사`})); S.scenarios.push(copy); setUi({scenario:copy.id}); saveSection("savings"); render(); };
   onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null) return false; S[x.dataset.base]=Math.round(n); });
-  onChange("[data-actual]","savings",(v,x)=>{ const n=numIn(v); const r=S.actual.find(a=>a.ym===x.dataset.actual); if(!r||n===null) return false; r.total=n; });
-  all("[data-actual-del]").forEach(b=>b.onclick=()=>{ if(!confirm(`${b.dataset.actualDel} 기록을 지울까요?`)) return; S.actual=S.actual.filter(a=>a.ym!==b.dataset.actualDel); saveSection("savings"); render(); });
-  el("addActual").onclick=()=>{ const ym=el("newActualYm").value, input=el("newActualTotal"), n=numIn(input.value); if(!input.checkValidity()||ymNum(ym)===null||n===null){ alert("달과 저축총액을 숫자로 넣어 주세요."); return; }
-    S.actual=S.actual.filter(a=>a.ym!==ym); S.actual.push({ym,total:n}); S.actual.sort((a,b)=>a.ym.localeCompare(b.ym)); saveSection("savings"); render(); };
+  onChange("[data-actual]","savings",(v,x)=>setSavingsActual(S,x.dataset.actual,v));
   if(!sc) return;
   onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
     const n=numIn(v); if(n===null) return false; sc[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
