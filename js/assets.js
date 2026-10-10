@@ -415,6 +415,7 @@ function openYear(y){
 const KEY_AGES = [35,40,45,50,60,70,80,90];
 let savingsAllYears = false; // 모든 연도를 표시하는지(화면 상태, 저장 안 함)
 const savingsOpenYears = new Set(); // 월별 입력의 펼침 상태만 유지한다. 다시 그리거나 시나리오를 바꿔도 실제 기록을 만들지 않는다.
+let savingsAssumptionsOpen = true; // 가정창은 기본 펼침. 화면을 다시 그려도 접힘을 유지하며 설정·저장 기록은 바꾸지 않는다.
 function renderSavings(){
   const S=doc.savings, view=el("savingsView");
   if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
@@ -457,11 +458,12 @@ function renderSavings(){
     ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 연도를 펼쳐 실제 저축액을 입력하세요"}</small></div>
       <div class="metric"><label>40세 말 (예상)</label><strong>${at40?wonA(at40.end):"—"}</strong><small>${at40?`${eok(at40.end)} · ${at40.year}년 12월`:"계산 범위 밖"}</small></div>
       <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?wonA(endRow.end):"—"}</strong><small>${endRow?`${eok(endRow.end)} · ${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
-    <section class="card panel"><div class="future-panel-head"><h2>${escA(sc.name)} 가정</h2><button class="btn mini danger" type="button" id="deleteScenario"${S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
+    <section class="card panel"><div class="future-panel-head savings-assumptions-head"><h2><button class="alloc-fold" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}" aria-label="${escA(sc.name)} 가정 ${savingsAssumptionsOpen?"접기":"펼치기"}"><span>${escA(sc.name)} 가정</span><span class="alloc-fold-action"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"접기":"펼치기"}</span></span></button></h2><button class="btn mini danger" type="button" id="deleteScenario"${!savingsAssumptionsOpen||S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
+      <div class="alloc-fold-body savings-assumptions-body" id="savingsAssumptionsBody"${savingsAssumptionsOpen?"":" hidden"}>
       <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
       <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 빈칸은 그대로 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
       <h3 class="sub-title">할부·큰 지출 <small>시작 달에 선수금(일시불), 시작 달부터 개월 수만큼 월 할부</small></h3><div class="plan-lines">${(sc.events||[]).map(eventRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addEvent">＋ 할부·지출</button>
-      <label class="field scenario-note"><span>메모</span><textarea data-param="note" maxlength="2000">${escA(sc.note||"")}</textarea></label></section>`:""}
+      <label class="field scenario-note"><span>메모</span><textarea data-param="note" maxlength="2000">${escA(sc.note||"")}</textarea></label></div></section>`:""}
     <div class="section-heading"><h2>시나리오 비교</h2><span>나이별 연말 저축총액</span></div>
     <section class="card table-scroll"><table class="data-table"><thead><tr><th>시나리오</th>${ages.map(a=>`<th>${a}세</th>`).join("")}</tr></thead><tbody>${compare}</tbody></table></section>
     <div class="section-heading"><h2>${sc?`${escA(sc.name)} · `:""}연도별</h2><span>연도를 펼쳐 월별 실제 저축액 수정 · 수익과 기부는 마지막 기록 다음 달부터 예상</span></div>
@@ -476,6 +478,12 @@ function renderSavings(){
   onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null) return false; S[x.dataset.base]=Math.round(n); });
   onChange("[data-actual]","savings",(v,x)=>setSavingsActual(S,x.dataset.actual,v));
   if(!sc) return;
+  el("toggleSavingsAssumptions").onclick=()=>{
+    savingsAssumptionsOpen=!savingsAssumptionsOpen;
+    const button=el("toggleSavingsAssumptions"), action=savingsAssumptionsOpen?"접기":"펼치기";
+    el("savingsAssumptionsBody").hidden=!savingsAssumptionsOpen;button.setAttribute("aria-expanded",String(savingsAssumptionsOpen));button.setAttribute("aria-label",`${sc.name} 가정 ${action}`);button.querySelector("[data-savings-assumptions-action]").textContent=action;
+    el("deleteScenario").hidden=!savingsAssumptionsOpen||S.scenarios.length<2;
+  };
   onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
     const n=numIn(v); if(n===null) return false; sc[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
   onChange("[data-stage]","savings",(v,x)=>{ const st=sc.stages[Number(x.dataset.stage)]; if(x.dataset.k==="age"&&numIn(v)===null) return false; setNum(st,x.dataset.k,v); sc.stages.sort((a,b)=>a.age-b.age); });
