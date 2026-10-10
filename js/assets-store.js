@@ -2,6 +2,7 @@
 const assetStore = (()=>{
 const A_KEY="etf-planner-assets-v1", A_BASE_KEY="etf-planner-assets-sync-base:", A_RECOVERY_KEY="etf-planner-assets-recovery";
 const A_PRICE_KEY="etf-planner-assets-prices", A_FILE="etf-planner-assets.json", A_PRICE_FILE="etf-planner-prices.json";
+const A_PRICE_FORMAT=2; // 125개월 평균선을 버리던 옛 시세 캐시는 ETag 없이 한 번 다시 받는다.
 const A_REPO_KEY="etf-planner-data-repo", A_TOKEN_KEY="etf-planner-github-token";
 const readJson=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||"null")??d;}catch{return d;}};
 const writeJson=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch{return false;}};
@@ -48,7 +49,7 @@ async function writeAssetRemote(cfg, data, sha){
 // 시세 파일은 ETag로 읽고 종가·환율만 이 기기에 둔다. 수동 조회(force)는 ETag 없이 다시 받으며 연결이 바뀐 뒤의 응답은 무시한다. 자산 종목은 kis_prices.py가 마감 후 하루 한 번 수집한다. 시세가 바뀌었으면 true.
 async function readAssetPrices(cfg,force=false){
   try{
-    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&same&&prices.etag?{"If-None-Match":prices.etag}:{})}});
+    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&same&&prices.format===A_PRICE_FORMAT&&prices.etag?{"If-None-Match":prices.etag}:{})}});
     if(!sameConfig(cfg))return false;
     if(r.status===304){ priceLine(); return false; }
     if(r.status===404){ const had=!!prices; prices=null; localStorage.removeItem(A_PRICE_KEY); priceLine("데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다."); return had; }
@@ -63,7 +64,7 @@ function acceptPrices(cfg,d,etag="",notify=true){
   if(!sameConfig(cfg))return false;
   let next=null;
   if(d){const stocks={};for(const [k,e] of Object.entries(d.stocks||{})){if(!e||typeof e!=="object")continue;stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true};}
-    const fx=d.fx?.USDKRW;next={repo:cfg.repo,etag,updatedAt:String(d.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf}:null};}
+    const fx=d.fx?.USDKRW;next={format:A_PRICE_FORMAT,repo:cfg.repo,etag,updatedAt:String(d.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf,ma:{"125개월선":plus(fx.ma?.["125개월선"])},...(fx.maAsOf?{maAsOf:fx.maAsOf}:{}),...(fx.maStale?{maStale:true}:{})}:null};}
   const changed=JSON.stringify({...prices,etag:""})!==JSON.stringify({...next,etag:""});prices=next;
   if(next)writeJson(A_PRICE_KEY,next);else localStorage.removeItem(A_PRICE_KEY);
   priceLine(next?"":"데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다.");if(changed&&notify)emit("change");return changed;

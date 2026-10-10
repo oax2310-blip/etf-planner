@@ -15,7 +15,21 @@ const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><pa
 const readJson = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v ?? d; } catch { return d; } };
 const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 const newId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-const numIn = v => { const s=String(v??"").trim(); return s===""?null:finite(s); };
+const numIn = parseAssetNumber;
+const moneyAttrs = 'type="text" inputmode="decimal" autocomplete="off" data-money';
+const moneyText = v => escA(assetNumberText(v));
+// 금액 칸은 입력 중에도 천 단위 쉼표를 표시한다. 쉼표 삽입 전의 숫자 위치로 커서를 맞춰 중간 자리 수정도 유지한다.
+document.addEventListener("input",e=>{
+  const x=e.target;if(!x.matches("input[data-money]"))return;
+  const value=x.value, raw=value.replace(/,/g,""), before=value.slice(0,x.selectionStart??value.length).replace(/,/g,"").length;
+  const valid=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw.trim())&&numIn(raw)!==null;
+  x.setCustomValidity(value.trim()&&!valid?"금액을 숫자로 입력해 주세요.":"");
+  if(!/^[+-]?\d*(?:\.\d*)?$/.test(raw))return;
+  const formatted=assetNumberText(raw);if(value===formatted)return;
+  x.value=formatted;let pos=0,count=0;
+  while(pos<formatted.length&&count<before){if(formatted[pos]!==",")count++;pos++;}
+  x.setSelectionRange(pos,pos);
+});
 
 let doc=assetStore.doc, prices=assetStore.prices;
 // 고른 탭·연도·시나리오는 이 기기 etf-planner-assets-ui에만 저장하고 동기화하지 않는다.
@@ -35,7 +49,7 @@ let redrawLater = false;
 function redrawIdle(){ const a=document.activeElement; if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&!a.closest("dialog")){ redrawLater=true; return; } redrawLater=false; render(); }
 document.addEventListener("focusout",()=>setTimeout(()=>{ if(redrawLater) redrawIdle(); },0));
 // 칸 공통: 바뀌면 set(값, 칸) → false가 아니면 저장 → 다시 그림
-const onChange = (sel, section, set) => all(sel).forEach(x=>x.onchange=()=>{ if(set(x.value,x)!==false) saveSection(section); render(); });
+const onChange = (sel, section, set) => all(sel).forEach(x=>x.onchange=()=>{ if(!x.validity.valid)return; if(set(x.value,x)!==false) saveSection(section); render(); });
 function emptyCard(title, text, button){ return `<div class="card empty assets-empty"><h2>${title}</h2><p>${text}</p>${button}</div>`; }
 const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n=new Date(); return Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(y,m-1,d))/864e5); };
 function quoteText(q,current=false){
@@ -276,43 +290,104 @@ function renderLedger(){
   if(!L||!L.years.length){ view.innerHTML=emptyCard("월별 손익 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startLedger" type="button">올해부터 시작</button>`);
     el("startLedger").onclick=()=>{ doc.ledger={savedAt:"",years:[{year:new Date().getFullYear(),accounts:[],months:[]}]}; saveSection("ledger"); render(); }; return; }
   const years=[...L.years].sort((a,b)=>a.year-b.year), y=years.find(x=>x.year===ui.year)||years[years.length-1], ys=yearSummary(y);
-  const hasInterest=y.months.some(m=>finite(m.interest)!==null), hasLoan=y.accounts.some(x=>x.loan);
+  const accounts=ledgerAccounts(y), avg=averageYearReturn(years);
   // 잔액이 전달과 똑같은 달(엑셀에서 전달 값을 그대로 둔 것일 수 있음)은 작게 표시
-  const sameAsPrev=m=>{ const prev=y.months.find(x=>x.m===m.m-1); return Array.isArray(m.balances)&&m.balances.some(v=>finite(v))&&JSON.stringify(m.balances)===JSON.stringify(prev?.balances); };
-  const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=finite(m?.pnl), r=p!==null&&t.total>0?p/t.total*100:null, rf=p!==null&&t.noLoan>0?p/t.noLoan*100:null;
-    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}</span><span class="${r<0?"neg":""}">${r!==null?pc(r):"—"}${hasLoan&&rf!==null?`<small>대출 제외 ${pc(rf)}</small>`:""}</span><span>${t.total>0?eok(t.total):"—"}${hasLoan&&t.noLoan!==null?`<small>대출 제외 ${eok(t.noLoan)}</small>`:""}${m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span>${hasInterest?`<span class="hide-m">${finite(m?.interest)!==null?wonA(m.interest):"—"}</span>`:""}</button>`; };
-  const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${x.year}"><span>${x.year}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}${t.rateNoLoan!==null?`<small>대출 제외 ${pc(t.rateNoLoan)}</small>`:""}</span><span>${t.last?eok(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
-  view.innerHTML=`<div class="heading"><div><div class="eyebrow">월별 손익 · 엑셀 손익 시트</div><h1>월별 손익</h1><p>달마다 실현손익과 계좌 잔액을 적습니다. 수익률은 엑셀처럼 실현손익 ÷ 그 달 총자산(대출 계좌 포함)이고, 선물옵션은 한 해 합계를 마지막 달 총자산으로 나눕니다.</p></div><button class="btn" id="addYear" type="button">＋ 연도</button></div>
+  const sameAsPrev=m=>{ const prev=y.months.find(x=>x.m===m.m-1), values=r=>accounts.map(x=>finite(r?.balances?.[x.index]));return Array.isArray(m.balances)&&values(m).some(v=>v!==null)&&JSON.stringify(values(m))===JSON.stringify(values(prev)); };
+  const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=monthPnl(m), r=p!==null&&t.total>0?p/t.total*100:null;
+    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${m?.pnlEntries?.length?`<small>내역 ${m.pnlEntries.length}건</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
+  const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${x.year}"><span>${x.year}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}</span><span>${t.last?wonA(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
+  view.innerHTML=`<div class="heading"><div><div class="eyebrow">월별 손익</div><h1>월별 손익</h1><p>월별 실현손익과 증권사별 내역을 기록합니다. 연도별 수익률은 계좌 자산 기준이며, 선물·옵션 손익도 포함합니다.</p></div><button class="btn" id="addYear" type="button">＋ 연도</button></div>
     <div class="chip-row" role="tablist">${years.map(x=>`<button class="chip${x===y?" active":""}" type="button" data-pick-year="${x.year}">${x.year}</button>`).join("")}</div>
-    <div class="card metrics"><div class="metric"><label>${y.year}년 실현손익</label><strong class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</strong><small>${ys.months}개월${ys.futures!==null?` · 선물옵션 ${wonA(ys.futures)} 포함`:""}${ys.interest!==null?` · 이자 ${wonA(ys.interest)}`:""}</small></div>
-      <div class="metric"><label>연 수익률 (월 합)</label><strong class="${ys.rate<0?"neg":""}">${pc(ys.rate)}</strong><small>${ys.rateNoLoan!==null?`대출 제외 ${pc(ys.rateNoLoan)} · `:""}연환산 ${pc(ys.annual)} (선물옵션 제외, 실현손익 ${ys.months}개월 기준)</small></div>
-      <div class="metric"><label>마지막 총자산</label><strong>${ys.last?eok(ys.last.total):"—"}</strong><small>${ys.last?`${ys.last.m}월 · 대출 포함${ys.last.noLoan!==null?` · 대출 제외 ${eok(ys.last.noLoan)}`:""}`:"계좌 잔액을 넣으세요"}</small></div></div>
-    <div class="section-heading"><h2>${y.year}년</h2><span>줄을 누르면 그 달 실현손익·계좌 잔액을 고칩니다. 계좌 ${y.accounts.length}개</span><button class="btn mini" type="button" id="editYear">연도 설정</button></div>
-    <section class="card ledger-table${hasInterest?" with-interest":""}"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span>${hasInterest?`<span class="hide-m">이자</span>`:""}</div>
+    <div class="card metrics"><div class="metric"><label>${y.year}년 실현손익</label><strong class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</strong><small>${ys.months}개월${ys.futures!==null?` · 선물·옵션 ${wonA(ys.futures)} 포함`:""}</small></div>
+      <div class="metric"><label>연 수익률</label><strong class="${ys.rate<0?"neg":""}">${pc(ys.rate)}</strong><small>월 수익률 합 · 선물·옵션 포함<br>연환산 ${pc(ys.annual)} (선물·옵션 제외, ${ys.months}개월 기준)</small></div>
+      <div class="metric"><label>마지막 총자산</label><strong>${ys.last?wonA(ys.last.total):"—"}</strong><small>${ys.last?`${ys.last.m}월`:"계좌 잔액을 넣으세요"}</small></div></div>
+    <div class="section-heading"><h2>${y.year}년</h2><span>줄을 누르면 그 달 실현손익·계좌 잔액을 고칩니다. 계좌 ${accounts.length}개</span><button class="btn mini" type="button" id="editYear">연도 설정</button></div>
+    <section class="card ledger-table"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>
       ${Array.from({length:12},(_,i)=>monthRow(i+1)).join("")}
-      ${ys.futures!==null?`<div class="ledger-row foot"><span>선물옵션</span><span class="${ys.futures<0?"neg":""}">${wonA(ys.futures)}</span><span>${ys.last?.total>0?pc(ys.futures/ys.last.total*100):"—"}</span><span></span>${hasInterest?`<span class="hide-m"></span>`:""}</div>`:""}
-      <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}</span><span></span>${hasInterest?`<span class="hide-m">${ys.interest!==null?wonA(ys.interest):""}</span>`:""}</div></section>
+      <button class="ledger-row foot" type="button" id="editFutures" aria-label="${y.year}년 선물·옵션 손익 수정"><span>선물·<wbr>옵션<small>수정</small></span><span class="${ys.futures<0?"neg":""}">${ys.futures!==null?wonA(ys.futures):"입력"}</span><span>${ys.futures!==null&&ys.last?.total>0?pc(ys.futures/ys.last.total*100):"—"}</span><span></span></button>
+      <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}</span><span></span></div></section>
     ${y.note?`<p class="footnote">${escA(y.note)}</p>`:""}
-    <div class="section-heading"><h2>연도별 요약</h2><span>실현손익(선물옵션 포함) · 연 수익률 · 마지막 총자산</span></div>
-    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}</section>`;
+    <div class="section-heading"><h2>연도별 요약</h2><span>연 수익률 · 선물·옵션 포함</span></div>
+    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연평균 수익률 <small>${avg.years}개 연도의 연 수익률 평균</small></span><strong class="${avg.rate<0?"neg":""}">${pc(avg.rate)}</strong></div></section>`;
   all("[data-pick-year]").forEach(b=>b.onclick=()=>{ setUi({year:Number(b.dataset.pickYear)}); renderLedger(); });
   all("[data-month]").forEach(b=>b.onclick=()=>openMonth(y,Number(b.dataset.month)));
   el("editYear").onclick=()=>openYear(y);
+  el("editFutures").onclick=()=>{openYear(y);el("yearForm").futures.focus();};
   el("addYear").onclick=()=>{ const next=Math.max(...years.map(x=>x.year))+1, last=years[years.length-1];
     if(!confirm(`${next}년을 추가할까요? 계좌 목록은 ${last.year}년과 같게 시작합니다.`)) return;
-    L.years.push({year:next,accounts:last.accounts.map(x=>({...x})),months:[]}); setUi({year:next}); saveSection("ledger"); render(); };
+    L.years.push({year:next,accounts:ledgerAccounts(last).map(x=>({...x.account})),months:[]}); setUi({year:next}); saveSection("ledger"); render(); };
 }
+// 자주 적는 손익 항목은 빈 전용 칸으로 보여 준다. 실제 금액을 넣은 항목만 pnlEntries에 저장하고, 열기만 해서는 기록을 만들지 않는다.
+let updateLedgerDividendFx=null;
+const LEDGER_PNL_FIELDS=[{broker:"신한",label:"기본계좌+ISA"},{broker:"신한",label:"연금저축"},{broker:"신한",label:"배당"},
+  {broker:"키움(영웅문)",label:"실현손익"},{broker:"키움(영웅문)",label:"배당",currency:"USD"}];
 function openMonth(y, n){
-  const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[];
+  const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
+  const fixed=LEDGER_PNL_FIELDS.map(p=>({...p})), extra=[], matched=new Set();
+  const brokerKey=v=>String(v||"").replace(/\s|\(영웅문\)|증권/g,""), labelKey=v=>String(v||"").replace(/\s/g,"").replace(/·/g,"+").replace(/^배당입금내역$/, "배당");
+  for(const entry of Array.isArray(m.pnlEntries)?m.pnlEntries:[]){
+    const i=LEDGER_PNL_FIELDS.findIndex((p,i)=>!matched.has(i)&&brokerKey(p.broker)===brokerKey(entry.broker)&&labelKey(p.label)===labelKey(entry.label)&&(p.currency||"KRW")===(entry.currency||"KRW"));
+    if(i<0)extra.push({...entry});else{fixed[i]={...entry};matched.add(i);}
+  }
+  const fxLine="125개월선", savedDividend=finite(fixed[4].amount)!==null&&finite(fixed[4].krw)!==null;
+  let dividendFx=pnlDollarFx(fixed[4],assetDividendFx(prices)), dividendBasis=savedDividend?fixed[4].fxBasis:fxLine;
+  let dividendFxAt=savedDividend?fixed[4].fxAt:prices?.fx?.maAsOf||prices?.fx?.asOf;
+  if(finite(fixed[4].amount)!==null&&finite(fixed[4].krw)===null){const won=pnlDollarKrw(fixed[4].amount,dividendFx);if(won!==null){fixed[4].krw=won;if(dividendFx)fixed[4].fx=dividendFx;}}
+  const input=(i,label,k="amount")=>`<label class="field"><span>${label}</span><input data-pnl-fixed="${i}" data-k="${k}" ${moneyAttrs} value="${moneyText(fixed[i][k])}" placeholder="미입력"></label>`;
   el("monthTitle").textContent=`${y.year}년 ${n}월`;
-  el("monthFields").innerHTML=`<label class="field"><span>실현손익 (원)</span><input name="pnl" type="number" step="any" inputmode="decimal" value="${m.pnl??""}"></label>
-    <label class="field"><span>이자 (원, 선택 · 비용은 −)</span><input name="interest" type="number" step="any" inputmode="decimal" value="${m.interest??""}"></label>
-    ${y.accounts.length?y.accounts.map((acc,i)=>`<label class="field"><span>${escA(acc.name)}${acc.loan?` <small class="loan-tag">대출</small>`:""}</span><input name="bal${i}" type="number" step="any" inputmode="decimal" value="${bal[i]??""}"></label>`).join("")
-      :`<label class="field"><span>총자산 (원)</span><input name="total" type="number" step="any" inputmode="decimal" value="${m.total??""}"></label>`}
-    <p class="hint dialog-wide">${y.accounts.length?"총자산은 계좌 잔액 합계입니다(대출 계좌 포함). 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
+  el("monthFields").innerHTML=`<label class="field dialog-wide"><span>실현손익 합계 (원)</span><input name="pnl" ${moneyAttrs} value="${moneyText(monthPnl(m))}"><small class="field-hint" id="pnlTotalHint"></small></label>
+    <div class="dialog-wide pnl-broker-grid"><section class="pnl-broker"><h3>신한</h3>${input(0,"기본계좌+ISA (원)")}${input(1,"연금저축 (원)")}${input(2,"배당 (원)")}</section>
+      <section class="pnl-broker"><h3>키움증권</h3>${input(3,"실현손익 (원)")}${input(4,"배당 (달러)")}<label class="field"><span id="dividendFxLabel"></span><input name="dividendFx" ${moneyAttrs} readonly placeholder="평균선 필요"><small class="field-hint" id="dividendFxHint"></small></label><div class="pnl-conversion"><span>배당 원화 환산액</span><output id="kiwoomDividendWon"></output></div><button class="btn mini ghost" type="button" id="refreshDividendFx">125개월 평균선 갱신</button></section></div>
+    <details class="dialog-wide pnl-other" id="pnlOther"${extra.length?" open":""}><summary>다른 증권사·항목 추가</summary><div id="pnlEntryRows"></div><button class="btn mini" type="button" id="addPnlEntry">＋ 내역</button></details>
+    <h3 class="dialog-wide pnl-balance-title">계좌 잔액 (원)</h3>
+    ${accounts.map(({account,index})=>`<label class="field"><span>${escA(account.name)}</span><input name="bal${index}" ${moneyAttrs} value="${moneyText(bal[index])}"></label>`).join("")}
+    ${!y.accounts.length?`<label class="field"><span>총자산 (원)</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`:""}
+    <p class="hint dialog-wide">${accounts.length?"총자산은 계좌 잔액 합계입니다. 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":y.accounts.length?"‘연도 설정’에서 계좌를 추가한 뒤 잔액을 입력해 주세요.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
+  let manualPnl=f.pnl.value;
+  const entries=()=>[...fixed.filter(r=>finite(r.amount)!==null||finite(r.krw)!==null),...extra];
+  const update=()=>{
+    const rows=entries(), wasAuto=f.pnl.readOnly;f.pnl.readOnly=!!rows.length;
+    if(rows.length){f.pnl.value=assetNumberText(pnlEntriesTotal(rows));f.pnl.setCustomValidity("");}
+    else if(wasAuto)f.pnl.value=manualPnl;
+    el("pnlTotalHint").textContent=rows.length?"입력한 손익과 배당의 원화 합계입니다.":"아래 항목을 입력하면 자동 합산합니다. 합계만 직접 기록할 수도 있습니다.";
+    const amount=finite(fixed[4].amount);f.dividendFx.value=assetNumberText(dividendFx);
+    el("dividendFxLabel").textContent=dividendBasis===fxLine?"125개월 평균 환율 (원/달러)":"기록된 환율 (원/달러)";
+    el("dividendFxHint").textContent=dividendBasis!==fxLine?"기존 기록의 환율입니다. 새 배당은 125개월 평균선을 적용합니다.":dividendFx?`${dividendFxAt?`${dividendFxAt} 기준 · `:""}자동 적용${prices?.fx?.maStale?" · 갱신 필요":""}`:"125개월 평균선을 불러오면 자동 적용됩니다.";
+    el("kiwoomDividendWon").textContent=amount!==null?(finite(fixed[4].krw)!==null?wonA(fixed[4].krw):"평균선 필요"):"—";
+  };
+  const convertDividend=()=>{
+    const row=fixed[4], won=pnlDollarKrw(row.amount,dividendFx);delete row.krw;delete row.fx;delete row.fxBasis;delete row.fxAt;
+    if(finite(row.amount)!==null){if(plus(dividendFx)){row.fx=dividendFx;if(dividendBasis===fxLine){row.fxBasis=fxLine;if(dividendFxAt)row.fxAt=dividendFxAt;}}if(won!==null)row.krw=won;}
+  };
+  const useAverage=()=>{dividendFx=assetDividendFx(prices);dividendBasis=fxLine;dividendFxAt=prices?.fx?.maAsOf||prices?.fx?.asOf;};
+  all("[data-pnl-fixed]").forEach(x=>x.oninput=()=>{setNum(fixed[Number(x.dataset.pnlFixed)],x.dataset.k,x.value);if(Number(x.dataset.pnlFixed)===4){if(dividendBasis!==fxLine||!plus(fixed[4].fx))useAverage();convertDividend();}update();});
+  const fxButton=el("refreshDividendFx");
+  updateLedgerDividendFx=()=>{if(!fxButton.isConnected||!dlg("monthDialog").open||dividendBasis!==fxLine||(finite(fixed[4].amount)!==null&&finite(fixed[4].krw)!==null))return;useAverage();convertDividend();update();};
+  fxButton.onclick=async()=>{fxButton.disabled=true;fxButton.textContent="평균선 불러오는 중…";try{await refreshAssetPrices();if(!fxButton.isConnected||!dlg("monthDialog").open)return;useAverage();convertDividend();update();if(!dividendFx)el("dividendFxHint").textContent=assetConfig()?"125개월 평균선을 받지 못했습니다. 잠시 후 다시 불러와 주세요.":"동기화를 연결해 125개월 평균선을 불러와 주세요.";}finally{fxButton.disabled=false;fxButton.textContent="125개월 평균선 갱신";}};
+  const draw=()=>{
+    el("pnlEntryRows").innerHTML=extra.map((r,i)=>`<div class="pnl-entry"><div class="pnl-entry-head"><span>추가 내역 ${i+1}</span><button class="remove" type="button" data-pnl-del="${i}" aria-label="추가 내역 ${i+1} 삭제">삭제</button></div><div class="pnl-entry-grid">
+      <label class="field"><span>증권사</span><input data-pnl-entry="${i}" data-k="broker" maxlength="40" required value="${escA(r.broker)}" placeholder="증권사 이름"></label>
+      <label class="field"><span>구분 (선택)</span><input data-pnl-entry="${i}" data-k="label" maxlength="80" value="${escA(r.label)}" placeholder="계좌·배당 등"></label>
+      <label class="field"><span>금액${r.currency==="USD"?" (달러)":" (원)"}</span><input data-pnl-entry="${i}" data-k="amount" ${moneyAttrs} required value="${moneyText(r.amount)}"></label>
+      <label class="field"><span>통화</span><select data-pnl-entry="${i}" data-k="currency"><option value="KRW"${r.currency!=="USD"?" selected":""}>원화</option><option value="USD"${r.currency==="USD"?" selected":""}>달러</option></select></label>
+      ${r.currency==="USD"?`<label class="field dialog-wide"><span>원화 입금액 (원)</span><input data-pnl-entry="${i}" data-k="krw" ${moneyAttrs} required value="${moneyText(r.krw)}"></label>`:""}</div></div>`).join("");
+    all("[data-pnl-entry]").forEach(x=>{
+      const change=()=>{const r=extra[Number(x.dataset.pnlEntry)],k=x.dataset.k;
+        if(k==="currency"){if(x.value==="USD")r.currency="USD";else{delete r.currency;delete r.krw;}draw();return;}
+        if(k==="amount"||k==="krw")setNum(r,k,x.value);else setText(r,k,x.value);update();};
+      if(x.tagName==="SELECT")x.onchange=change;else x.oninput=change;
+    });
+    all("[data-pnl-del]").forEach(b=>b.onclick=()=>{extra.splice(Number(b.dataset.pnlDel),1);draw();});update();
+  };
+  f.pnl.oninput=()=>{manualPnl=f.pnl.value;};
+  el("addPnlEntry").onclick=()=>{extra.push({broker:""});draw();el("pnlEntryRows").querySelector(`[data-pnl-entry="${extra.length-1}"][data-k="broker"]`).focus();};
+  draw();
   el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>x.m!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t={m:n}; setNum(t,"pnl",f.pnl.value); setNum(t,"interest",f.interest.value);
-    if(y.accounts.length){ const b=y.accounts.map((_,i)=>numIn(f[`bal${i}`].value)); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) t.balances=b; }
+  f.onsubmit=e=>{ e.preventDefault();update();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
+    const t={...m,m:n}; setNum(t,"pnl",f.pnl.value);delete t.pnlEntries;delete t.balances;delete t.total;
+    const rows=entries();
+    if(rows.length){if(rows.some(r=>!String(r.broker||"").trim())){alert("내역의 증권사 이름을 넣어 주세요.");return;}if(pnlEntriesTotal(rows)===null){alert("내역의 금액과 원화 입금액을 모두 넣어 주세요.");return;}t.pnlEntries=rows.map(r=>({...r}));t.pnl=pnlEntriesTotal(rows);}
+    if(y.accounts.length){ const b=y.accounts.map((acc,i)=>acc.loan?finite(bal[i]):numIn(f[`bal${i}`].value)); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) t.balances=b; }
     else setNum(t,"total",f.total.value);
     y.months=y.months.filter(x=>x.m!==n); if(Object.keys(t).length>1){ y.months.push(t); y.months.sort((a,b)=>a.m-b.m); }
     saveSection("ledger"); dlg("monthDialog").close(); render(); };
@@ -320,16 +395,17 @@ function openMonth(y, n){
 }
 function openYear(y){
   const f=el("yearForm"); el("yearTitle").textContent=`${y.year}년 설정`;
-  f.futures.value=y.futures??""; f.note.value=y.note||"";
-  let rows=y.accounts.map((a,i)=>({from:i,name:a.name,loan:!!a.loan}));
-  const draw=()=>{ el("accountRows").innerHTML=rows.map((r,i)=>`<div class="account-row"><input data-acc-name="${i}" value="${escA(r.name)}" maxlength="40" aria-label="계좌 이름"><label class="check"><input type="checkbox" data-acc-loan="${i}"${r.loan?" checked":""}> 대출</label><button class="remove" type="button" data-acc-del="${i}" aria-label="계좌 삭제">삭제</button></div>`).join("")||`<p class="hint">계좌 없음 · 총자산만 적습니다</p>`;
+  f.futures.value=assetNumberText(y.futures); f.futures.setCustomValidity(""); f.note.value=y.note||"";
+  // 숨긴 옛 계좌·잔액은 저장 호환을 위해 보존한다. 새 계좌에는 loan 필드를 만들지 않는다.
+  const hidden=y.accounts.map((a,i)=>({from:i,name:a.name})).filter(r=>y.accounts[r.from].loan);
+  let rows=ledgerAccounts(y).map(({account,index})=>({from:index,name:account.name}));
+  const draw=()=>{ el("accountRows").innerHTML=rows.map((r,i)=>`<div class="account-row"><input data-acc-name="${i}" value="${escA(r.name)}" maxlength="40" aria-label="계좌 이름"><button class="remove" type="button" data-acc-del="${i}" aria-label="계좌 삭제">삭제</button></div>`).join("")||`<p class="hint">계좌 없음 · 총자산만 적습니다</p>`;
     all("[data-acc-name]").forEach(x=>x.oninput=()=>{rows[Number(x.dataset.accName)].name=x.value;});
-    all("[data-acc-loan]").forEach(x=>x.onchange=()=>{rows[Number(x.dataset.accLoan)].loan=x.checked;});
     all("[data-acc-del]").forEach(x=>x.onclick=()=>{const r=rows[Number(x.dataset.accDel)];if(r.from!==null&&y.months.some(m=>finite(m.balances?.[r.from])!==null)&&!confirm(`'${r.name}' 계좌를 지우면 이 해의 그 계좌 잔액도 지워집니다. 계속할까요?`))return;rows.splice(Number(x.dataset.accDel),1);draw();}); };
-  draw(); el("addAccount").onclick=()=>{ rows.push({from:null,name:"",loan:false}); draw(); el("accountRows").querySelector(`[data-acc-name="${rows.length-1}"]`)?.focus(); };
+  draw(); el("addAccount").onclick=()=>{ rows.push({from:null,name:""}); draw(); el("accountRows").querySelector(`[data-acc-name="${rows.length-1}"]`)?.focus(); };
   el("yearDelete").onclick=()=>{ if(!confirm(`${y.year}년 손익 기록을 모두 지울까요?`)) return; doc.ledger.years=doc.ledger.years.filter(x=>x!==y); setUi({year:null}); saveSection("ledger"); dlg("yearDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); setNum(y,"futures",f.futures.value); setText(y,"note",f.note.value);
-    rows=rows.filter(r=>r.name.trim()); y.accounts=rows.map(r=>({name:r.name.trim(),...(r.loan?{loan:true}:{})}));
+  f.onsubmit=e=>{ e.preventDefault(); if(!f.reportValidity())return;setNum(y,"futures",f.futures.value); setText(y,"note",f.note.value);
+    rows=[...rows.filter(r=>r.name.trim()),...hidden];y.accounts=rows.map(r=>({...y.accounts[r.from],name:r.name.trim()}));
     y.months.forEach(m=>{ if(!Array.isArray(m.balances)) return; const b=rows.map(r=>r.from===null?null:m.balances[r.from]??null); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) m.balances=b; else delete m.balances; });
     saveSection("ledger"); dlg("yearDialog").close(); render(); };
   dlg("yearDialog").showModal();
@@ -343,23 +419,23 @@ function renderSavings(){
   if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
     el("startSavings").onclick=()=>{ const y=new Date().getFullYear(); doc.savings={savedAt:"",startYear:y,startAge:30,actual:[],scenarios:[{id:newId(),name:"기본",salary:0,giving:0,spending:0,spendingYear:y,growth:2,returnRate:5,endAge:60,stages:[]}]}; saveSection("savings"); render(); }; return; }
   const sc=S.scenarios.find(x=>x.id===ui.scenario)||S.scenarios[0], sim=sc?simulateSavings(S,sc):null;
-  const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" type="number" step="any" inputmode="decimal" value="${sc[key]??""}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
-  const stageRow=(st,i)=>`<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${st.age??""}"></label><label><span>월급 (원)</span><input data-stage="${i}" data-k="salary" type="number" step="any" value="${st.salary??""}" placeholder="그대로"></label><label><span>사용금액 (원)</span><input data-stage="${i}" data-k="spending" type="number" step="any" value="${st.spending??""}" placeholder="그대로"></label><label><span>증가율 (%)</span><input data-stage="${i}" data-k="growth" type="number" step="any" value="${st.growth??""}" placeholder="그대로"></label><label><span>수익률 (%)</span><input data-stage="${i}" data-k="returnRate" type="number" step="any" value="${st.returnRate??""}" placeholder="그대로"></label><button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
+  const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):sc[key]??""}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
+  const stageRow=(st,i)=>`<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${st.age??""}"></label><label><span>월급 (원)</span><input data-stage="${i}" data-k="salary" ${moneyAttrs} value="${moneyText(st.salary)}" placeholder="그대로"></label><label><span>사용금액 (원)</span><input data-stage="${i}" data-k="spending" ${moneyAttrs} value="${moneyText(st.spending)}" placeholder="그대로"></label><label><span>증가율 (%)</span><input data-stage="${i}" data-k="growth" type="number" step="any" value="${st.growth??""}" placeholder="그대로"></label><label><span>수익률 (%)</span><input data-stage="${i}" data-k="returnRate" type="number" step="any" value="${st.returnRate??""}" placeholder="그대로"></label><button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
   const lastN=sim?ymNum(sim.last.ym):null;
   const eventNote=ev=>{ const n=ymNum(ev.start); if(n===null||lastN===null||n>lastN) return ""; const left=Math.max(0,n+Math.round(finite(ev.months)||0)-1-lastN);
     return `<p class="event-note">시작 달이 마지막 실제 기록(${sim.last.ym}) 이전이라 선수금${left?`과 그때까지의 할부는 계산에서 빠지고 남은 ${left}개월만`:"·할부 모두 이미 지난 일이라"} 계산${left?"합니다":"하지 않습니다"}.</p>`; };
-  const eventRow=(ev,i)=>`<div class="plan-line event"><label class="wide"><span>이름</span><input data-event="${i}" data-k="name" value="${escA(ev.name||"")}" maxlength="40"></label><label><span>시작 달</span><input data-event="${i}" data-k="start" type="month" value="${escA(ev.start||"")}"></label><label><span>선수금 (원)</span><input data-event="${i}" data-k="down" type="number" step="any" value="${ev.down??""}"></label><label><span>월 할부 (원)</span><input data-event="${i}" data-k="monthly" type="number" step="any" value="${ev.monthly??""}"></label><label><span>개월</span><input data-event="${i}" data-k="months" type="number" step="1" min="0" value="${ev.months??""}"></label><button class="remove" type="button" data-event-del="${i}" aria-label="할부 삭제">삭제</button>${eventNote(ev)}</div>`;
+  const eventRow=(ev,i)=>`<div class="plan-line event"><label class="wide"><span>이름</span><input data-event="${i}" data-k="name" value="${escA(ev.name||"")}" maxlength="40"></label><label><span>시작 달</span><input data-event="${i}" data-k="start" type="month" value="${escA(ev.start||"")}"></label><label><span>선수금 (원)</span><input data-event="${i}" data-k="down" ${moneyAttrs} value="${moneyText(ev.down)}"></label><label><span>월 할부 (원)</span><input data-event="${i}" data-k="monthly" ${moneyAttrs} value="${moneyText(ev.monthly)}"></label><label><span>개월</span><input data-event="${i}" data-k="months" type="number" step="1" min="0" value="${ev.months??""}"></label><button class="remove" type="button" data-event-del="${i}" aria-label="할부 삭제">삭제</button>${eventNote(ev)}</div>`;
   const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
-  const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?eok(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
+  const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?wonA(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
   const shownRows=sim?sim.rows.filter((r,i)=>savingsAllYears||r.actual||i===sim.rows.length-1||r.age%5===0||sim.rows.slice(0,i).filter(x=>!x.actual).length<10):[];
-  const yearRows=sim?shownRows.map(r=>`<tr class="${r.actual?"actual":""}"><th scope="row">${r.year} <small>${r.age}세</small></th><td><b>${eok(r.end)}</b>${r.actual?`<small>실제 ${r.endYm.slice(5)}월</small>`:""}</td><td>${r.actual?"—":eok(r.returns)}</td><td class="hide-m">${r.actual?"—":eok(r.salary)}</td><td class="hide-m">${r.actual?"—":eok(r.spending)}</td><td class="hide-m">${r.payments?eok(r.payments):"—"}</td></tr>`).join(""):"";
+  const yearRows=sim?shownRows.map(r=>`<tr class="${r.actual?"actual":""}"><th scope="row">${r.year} <small>${r.age}세</small></th><td><b>${wonA(r.end)}</b>${r.actual?`<small>실제 ${r.endYm.slice(5)}월</small>`:""}</td><td>${r.actual?"—":wonA(r.returns)}</td><td class="hide-m">${r.actual?"—":wonA(r.salary)}</td><td class="hide-m">${r.actual?"—":wonA(r.spending)}</td><td class="hide-m">${r.payments?wonA(r.payments):"—"}</td></tr>`).join(""):"";
   const endRow=sim?.rows[sim.rows.length-1], at40=sim?.rows.find(r=>r.age===40&&!r.actual);
   const actual=[...S.actual].sort((a,b)=>String(a.ym).localeCompare(String(b.ym))), missing=missingActual(S);
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">저축 계획 · 엑셀 복리 저축 계산 시트(보이는 시트만)</div><h1>저축 계획</h1><p>매달 월급 − 기부 − 사용금액 − 할부를 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></div><button class="btn" id="copyScenario" type="button">＋ 시나리오 복사</button></div>
     <div class="chip-row">${S.scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
-    ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?eok(sim.last.total):"—"}</strong><small>${sim?`${sim.last.ym.replace("-","년 ")}월`:"아래 실제 기록을 한 달 이상 넣으세요"}</small></div>
-      <div class="metric"><label>40세 말 (예상)</label><strong>${at40?eok(at40.end):"—"}</strong><small>${at40?`${at40.year}년 12월`:"계산 범위 밖"}</small></div>
-      <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?eok(endRow.end):"—"}</strong><small>${endRow?`${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
+    ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 실제 기록을 한 달 이상 넣으세요"}</small></div>
+      <div class="metric"><label>40세 말 (예상)</label><strong>${at40?wonA(at40.end):"—"}</strong><small>${at40?`${eok(at40.end)} · ${at40.year}년 12월`:"계산 범위 밖"}</small></div>
+      <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?wonA(endRow.end):"—"}</strong><small>${endRow?`${eok(endRow.end)} · ${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
     <section class="card panel"><div class="future-panel-head"><h2>${escA(sc.name)} 가정</h2><button class="btn mini danger" type="button" id="deleteScenario"${S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
       <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
       <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 빈칸은 그대로 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
@@ -372,15 +448,15 @@ function renderSavings(){
     <details class="card panel actual-panel"${S.actual.length?"":" open"}><summary>실제 저축총액 기록 <small>${S.actual.length}개월${actual.length?` · ${actual[0].ym} ~ ${actual[actual.length-1].ym}`:""}</small></summary>
       ${missing.length?`<p class="hint missing-note">사이에 빠진 달: ${missing.join(", ")} — 계산은 마지막 기록부터라 결과에는 영향이 없고, 기록만 비어 있습니다.</p>`:""}
       <div class="param-grid"><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label></div>
-      <div class="actual-list">${actual.map(r=>`<div class="actual-row"><span>${escA(r.ym)}</span><input data-actual="${escA(r.ym)}" type="number" step="any" inputmode="decimal" value="${r.total??""}" aria-label="${escA(r.ym)} 저축총액"><small>${eok(r.total)}</small><button class="remove" type="button" data-actual-del="${escA(r.ym)}">삭제</button></div>`).join("")}</div>
-      <div class="actual-row add"><input id="newActualYm" type="month" aria-label="기록할 달"><input id="newActualTotal" type="number" step="any" inputmode="decimal" placeholder="저축총액 (원)"><button class="btn mini" type="button" id="addActual">추가</button></div></details>`;
+      <div class="actual-list">${actual.map(r=>`<div class="actual-row"><span>${escA(r.ym)}</span><input data-actual="${escA(r.ym)}" ${moneyAttrs} value="${moneyText(r.total)}" aria-label="${escA(r.ym)} 저축총액"><small>${eok(r.total)}</small><button class="remove" type="button" data-actual-del="${escA(r.ym)}">삭제</button></div>`).join("")}</div>
+      <div class="actual-row add"><input id="newActualYm" type="month" aria-label="기록할 달"><input id="newActualTotal" ${moneyAttrs} placeholder="저축총액 (원)" aria-label="저축총액 (원)"><button class="btn mini" type="button" id="addActual">추가</button></div></details>`;
   all("[data-scenario]").forEach(b=>b.onclick=()=>{ setUi({scenario:b.dataset.scenario}); renderSavings(); });
   if(el("toggleYears")) el("toggleYears").onclick=()=>{ savingsAllYears=!savingsAllYears; renderSavings(); };
   el("copyScenario").onclick=()=>{ const base=sc||{}; const copy=JSON.parse(JSON.stringify({...base,id:newId(),name:`${base.name||"시나리오"} 복사`})); S.scenarios.push(copy); setUi({scenario:copy.id}); saveSection("savings"); render(); };
   onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null) return false; S[x.dataset.base]=Math.round(n); });
   onChange("[data-actual]","savings",(v,x)=>{ const n=numIn(v); const r=S.actual.find(a=>a.ym===x.dataset.actual); if(!r||n===null) return false; r.total=n; });
   all("[data-actual-del]").forEach(b=>b.onclick=()=>{ if(!confirm(`${b.dataset.actualDel} 기록을 지울까요?`)) return; S.actual=S.actual.filter(a=>a.ym!==b.dataset.actualDel); saveSection("savings"); render(); });
-  el("addActual").onclick=()=>{ const ym=el("newActualYm").value, n=numIn(el("newActualTotal").value); if(ymNum(ym)===null||n===null){ alert("달과 저축총액을 넣어 주세요."); return; }
+  el("addActual").onclick=()=>{ const ym=el("newActualYm").value, input=el("newActualTotal"), n=numIn(input.value); if(!input.checkValidity()||ymNum(ym)===null||n===null){ alert("달과 저축총액을 숫자로 넣어 주세요."); return; }
     S.actual=S.actual.filter(a=>a.ym!==ym); S.actual.push({ym,total:n}); S.actual.sort((a,b)=>a.ym.localeCompare(b.ym)); saveSection("savings"); render(); };
   if(!sc) return;
   onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
@@ -411,7 +487,7 @@ function setAssetSync(){
   el("syncOff").hidden=!!cfg;el("syncOn").hidden=!cfg;el("syncRepo").textContent=cfg?.repo||"";el("syncNowBtn").hidden=!cfg;
   el("downloadRecovery").hidden=!assetStore.recovery().length;
 }
-assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;setAssetSync();priceLine();if(type==="change")redrawIdle();});
+assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;setAssetSync();priceLine();if(type==="prices"||type==="change")updateLedgerDividendFx?.();if(type==="change")redrawIdle();});
 el("syncBtn").onclick=()=>el("syncDialog").showModal();
 el("syncNowBtn").onclick=()=>assetStore.refreshConfig();
 async function refreshAssetPrices(){await assetStore.refreshPrices();if(!assetConfig()&&!el("syncDialog").open)el("syncDialog").showModal();}

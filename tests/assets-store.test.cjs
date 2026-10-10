@@ -104,6 +104,31 @@ test('즉시 읽은 공유 시세는 분할매수 평가에 반영하고 자산 
   assert.equal(store.acceptPrices(cfg,null),true);assert.equal(store.prices,null);
 });
 
+test('배당용 125개월선을 시세 캐시에 남기고 평균선만 바뀌어도 갱신을 알린다',()=>{
+  const original=fake(),{store,storage}=setup(original);connect(storage);const cfg=store.config();
+  const quote={updatedAt:'2026-01-02',stocks:{},fx:{USDKRW:{close:1800,asOf:'2026-01-02',ma:{'125개월선':1320,'125일선':1700},maAsOf:'2026-01-02'}}};
+  store.acceptPrices(cfg,quote,'p1');
+  assert.equal(store.prices.fx.ma['125개월선'],1320);assert.equal(store.prices.fx.close,1800);
+  assert.equal(store.prices.fx.ma['125일선'],undefined);
+  assert.equal(store.acceptPrices(cfg,{...quote,fx:{USDKRW:{...quote.fx.USDKRW,ma:{'125개월선':1340},maStale:true}}},'p2'),true);
+  assert.equal(store.prices.fx.ma['125개월선'],1340);assert.equal(store.prices.fx.maAsOf,'2026-01-02');assert.equal(store.prices.fx.maStale,true);
+  assert.deepEqual(JSON.parse(storage.get(KEY)),original,'평균선 수집은 개인 손익 기록을 바꾸지 않는다');
+});
+
+test('평균선을 버리던 옛 캐시는 ETag 없이 다시 받고 새 캐시는 ETag를 유지한다',async()=>{
+  const original=fake(),storage=new Map([[KEY,JSON.stringify(original)],['etf-planner-assets-prices',JSON.stringify({repo:'example/private-data',etag:'same',stocks:{},fx:{close:1800}})]]);
+  const asks=[],quote={updatedAt:'2026-01-02',stocks:{},fx:{USDKRW:{close:1800,asOf:'2026-01-02',ma:{'125개월선':1320}}}};
+  const {store}=setup(null,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json')){asks.push(options.headers);return asks.length===1?new Response(JSON.stringify(quote),{headers:{ETag:'same'}}):new Response(null,{status:304});}
+    if(url.endsWith('/contents/etf-planner-assets.json'))return contents(original);
+    throw Error('unexpected request');
+  },storage);connect(storage);
+  await store.sync();await store.sync();
+  assert.equal(asks[0]['If-None-Match'],undefined);assert.equal(asks[1]['If-None-Match'],'same');
+  assert.equal(store.prices.fx.ma['125개월선'],1320);assert.deepEqual(clone(store.doc),original);
+});
+
 const quotes=close=>({updatedAt:'2026-01-02T07:00:00Z',stocks:{AAA:{kind:'해외',close,asOf:'2026-01-02'}},fx:{USDKRW:{close:1400,asOf:'2026-01-02'}}});
 const priceReply=close=>new Response(JSON.stringify(quotes(close)),{headers:{ETag:'"same-etag"'}});
 test('실제 ETF 시세가 없으면 파일을 읽어도 완료로 표시하지 않고 중복 계좌는 한 종목으로 안내한다',async()=>{

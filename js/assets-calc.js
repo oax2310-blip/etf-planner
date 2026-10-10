@@ -4,6 +4,14 @@ const ASSET_SECTIONS = ["allocation","ledger","savings"]; // 기록 파일의 �
 const ASSET_REGIONS = ["미국","국내","해외","현금","외화·원자재","기타"]; // 큰 분류 지역 순서(목록에 없는 지역은 뒤에)
 const finite = v => v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v)) ? Number(v) : null;
 const plus = v => { const n=finite(v); return n!==null&&n>0 ? n : null; };
+// 금액 입력의 쉼표만 제거해 기존 숫자 저장 형식을 유지한다. 화면 표시는 부호·소수부·입력 중인 소수점을 보존한다.
+const parseAssetNumber = value => finite(String(value??"").trim().replace(/,/g,""));
+function assetNumberText(value){
+  const text=String(value??"").replace(/,/g,"");
+  if(!/^[+-]?\d*(?:\.\d*)?$/.test(text))return text;
+  const [whole,fraction]=text.split(".");
+  return whole.replace(/\B(?=(\d{3})+(?!\d))/g,",")+(fraction!==undefined?`.${fraction}`:"");
+}
 
 // ---------- 시세 ----------
 // prices = {updatedAt, stocks:{종목 코드:{kind, asOf, close, stale}}, fx:{close, asOf}} (assets-store.js가 시세 파일에서 필요한 값만 남긴 것)
@@ -14,6 +22,8 @@ function assetQuote(prices, ticker){
 }
 // 원/달러: 시세 파일의 현물 환율, 없으면 자산 배분에 직접 넣은 환율(cashFx)
 const assetFx = (prices, alloc) => plus(prices?.fx?.close) || plus(alloc?.cashFx);
+// 배당 환산 기본 환율은 원/달러 현물의 125개월선만 쓴다. 시세 수집기가 월봉으로 계산하며 값이 없으면 다른 환율로 대체하지 않는다.
+const assetDividendFx = prices => plus(prices?.fx?.ma?.["125개월선"]);
 // 1주(1단위) 원화 가격. 달러 시세는 × 환율, 환율이 없으면 null
 const krwPrice = (q, fx) => !q ? null : q.currency==="USD" ? (fx ? q.close*fx : null) : q.close;
 // ticker는 기준 가격·이동평균·알림용, tradeTicker는 실제 거래하는 일반 추종 ETF 코드. 빈칸이면 ticker를 직접 거래한다.
@@ -416,28 +426,61 @@ function rescaleTrade(alloc, key, trade){
 }
 
 // ---------- 월별 손익 ----------
-// 달 총자산(원): 계좌 잔액이 있으면 합계(대출 계좌 포함), 없으면 직접 넣은 total. noLoan은 대출 계좌를 뺀 합계(대출 계좌가 없으면 null).
+// 달러 배당은 입력 금액 × 적용 환율을 원 단위로 반올림한다. 0달러는 환율 없이도 0원이며, 양수 환율이 없으면 null.
+function pnlDollarKrw(amount, fx){
+  const n=finite(amount), rate=plus(fx);
+  if(n===null)return null;
+  return n===0?0:rate&&Number.isFinite(n*rate)?Math.round(n*rate):null;
+}
+// 저장된 환율을 우선하고, 옛 달러·원화 기록은 당시 환율을 역산한다. 새 기록은 호출부가 고른 평균 환율을 기본값으로 쓴다.
+function pnlDollarFx(entry, fallback){
+  const amount=finite(entry?.amount), won=finite(entry?.krw);
+  return plus(entry?.fx)||(amount&&won!==null?plus(won/amount):null)||plus(fallback);
+}
+// pnlEntries = [{broker, label?, amount, currency?:"USD", krw?, fx?, fxBasis?:"125개월선", fxAt?}]. 원화는 amount, 달러는 저장한 원화 환산액 krw만 한 번 합산한다.
+// krw 없는 새 형식은 저장된 fx로 계산한다. 현재 시세로 과거 손익을 바꾸지 않는다. 미완성 내역은 null, 상세 없는 기존 기록은 pnl을 쓴다.
+function pnlEntriesTotal(entries){
+  if(!Array.isArray(entries)||!entries.length)return null;
+  let total=0;
+  for(const e of entries){
+    const amount=finite(e?.amount), won=e?.currency==="USD"?finite(e.krw)??pnlDollarKrw(amount,e.fx):amount;
+    if(amount===null||won===null)return null;
+    total+=won;
+  }
+  return Math.round(total);
+}
+const monthPnl = m => Array.isArray(m?.pnlEntries)&&m.pnlEntries.length?pnlEntriesTotal(m.pnlEntries):finite(m?.pnl);
+// 옛 기록의 loan 계좌는 표시·입력·계산에서 제외한다. 원래 잔액 배열의 인덱스를 유지하며 읽기만 해서는 저장 기록을 바꾸지 않는다.
+const ledgerAccounts = year => (year?.accounts||[]).map((account,index)=>({account,index})).filter(x=>!x.account?.loan);
+// 달 총자산(원): 남은 계좌 잔액 합계, 계좌별 잔액이 없으면 직접 넣은 total. 옛 loan 계좌가 있으면 총액만으로 자산을 추정하지 않는다.
+// noLoan은 이전 호출부 호환을 위한 total의 별칭이다.
 function monthTotals(year, m){
   const bal=Array.isArray(m?.balances)?m.balances:[], acc=year?.accounts||[];
-  if(!bal.some(v=>finite(v)!==null))return {total:finite(m?.total), noLoan:null};
-  let total=0,free=0;
-  bal.forEach((v,i)=>{const n=finite(v)||0;total+=n;if(!acc[i]?.loan)free+=n;});
-  return {total, noLoan:acc.some(a=>a?.loan)?free:null};
+  if(!bal.some(v=>finite(v)!==null)){const total=acc.some(a=>a?.loan)?null:finite(m?.total);return {total,noLoan:total};}
+  let total=0;
+  bal.forEach((v,i)=>{if(!acc[i]?.loan)total+=finite(v)||0;});
+  return {total,noLoan:total};
 }
-// 연 요약: 실현손익 합계(선물옵션 포함), 월 수익률 합(엑셀 '연환산 %'와 같은 방식: 달마다 실현손익 ÷ 그 달 총자산, 선물옵션은 마지막 달 총자산으로),
-// 대출 계좌가 있는 해는 같은 방식의 대출 제외 수익률(엑셀 '대출 미 포함' 줄, rateNoLoan — 없으면 null),
-// 연환산(월 수익률 합 × 12 ÷ 실현손익을 넣은 달 수, 선물옵션 제외), 마지막 달 총자산.
+// 연 요약: 월 손익 ÷ 그 달 총자산을 합산하고, 선물옵션은 마지막 잔액의 총자산으로 나눈다.
+// 실현손익이 있는 달의 분모가 하나라도 없거나 0 이하면 해당 연 수익률은 null. 빈 해도 null(연평균에 0%로 섞지 않는다).
+// annual은 월 수익률 합 × 12 ÷ 실현손익 기록 개월 수(선물옵션 제외). rateNoLoan·annualNoLoan은 이전 호출부 호환 별칭이다.
 function yearSummary(year){
-  let pnl=0,rate=0,rateFree=0,months=0,interest=0,hasInterest=false,last=null;
+  let pnl=0,rate=0,months=0,rated=0,interest=0,hasInterest=false,last=null;
   for(const m of [...(year?.months||[])].sort((a,b)=>a.m-b.m)){
-    const t=monthTotals(year,m), p=finite(m.pnl);
-    if(t.total>0)last={m:m.m,...t};
-    if(p!==null){pnl+=p;months++;if(t.total>0)rate+=p/t.total*100;if(t.noLoan>0)rateFree+=p/t.noLoan*100;}
+    const t=monthTotals(year,m), p=monthPnl(m);
+    if(t.total!==null)last={m:m.m,...t};
+    if(p!==null){pnl+=p;months++;if(t.total>0){rate+=p/t.total*100;rated++;}}
     if(finite(m.interest)!==null){interest+=Number(m.interest);hasInterest=true;}
   }
-  const fut=finite(year?.futures), futRate=fut!==null&&last?.total>0?fut/last.total*100:0, loan=(year?.accounts||[]).some(a=>a?.loan);
-  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:rate+futRate, rateNoLoan:loan?rateFree+(fut!==null&&last?.noLoan>0?fut/last.noLoan*100:0):null,
-    annual:months?rate*12/months:null, interest:hasInterest?interest:null, last};
+  const fut=finite(year?.futures), yearly=(months||fut!==null)&&rated===months&&(fut===null||last?.total>0)?rate+(fut!==null?fut/last.total*100:0):null;
+  const annual=months&&rated===months?rate*12/months:null;
+  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:yearly, rateNoLoan:yearly,
+    annual, annualNoLoan:annual, interest:hasInterest?interest:null, last};
+}
+// 연평균 수익률: 계산 가능한 해의 연 수익률(선물옵션 포함) 산술평균. 빈 해·분모가 부족한 해는 개수에서도 제외한다.
+function averageYearReturn(years){
+  const rates=(years||[]).map(y=>yearSummary(y).rate).filter(r=>r!==null);
+  return {rate:rates.length?rates.reduce((sum,r)=>sum+r,0)/rates.length:null,years:rates.length};
 }
 
 // ---------- 저축 계획 ----------

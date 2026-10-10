@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
   for(const line of ['25선','60일선','20주선','25개월선']){
@@ -376,20 +376,105 @@ test('중국 분류: 기존 연결·목표·기록을 보존하고 해외의 인
   assert.deepEqual(c.allocationSummary(alloc,null).regions.find(r=>r.name==='해외').classes.map(x=>x.id),['jp','in','cn','eu']);
 });
 
-test('월별 손익: 계좌 합계·대출 제외, 월 수익률 합, 선물옵션은 마지막 달 총자산으로, 연환산', () => {
+test('월별 손익: 옛 대출 계좌는 계산에서 빼고 월·연도·연환산은 같은 자산 기준을 사용한다', () => {
   const year = {accounts: [{name: 'A'}, {name: '대출', loan: true}, {name: 'B'}], futures: -1000,
     months: [{m: 2, pnl: 2000, balances: [100000, 50000]}, {m: 1, total: 100000}, {m: 3, pnl: 1000, interest: -50, balances: [150000, null, 50000]}, {m: 4, balances: [200000]}]};
-  assert.deepEqual(c.monthTotals(year, year.months[0]), {total: 150000, noLoan: 100000});
-  assert.deepEqual(c.monthTotals(year, year.months[1]), {total: 100000, noLoan: null}, '계좌가 없으면 직접 넣은 총자산');
-  assert.deepEqual(c.monthTotals({accounts: [{name: 'A'}]}, {m: 1, balances: [10]}), {total: 10, noLoan: null}, '대출 계좌가 없으면 대출 제외 없음');
+  assert.deepEqual(c.monthTotals(year, year.months[0]), {total: 100000, noLoan: 100000});
+  assert.deepEqual(c.monthTotals(year, year.months[1]), {total: null, noLoan: null}, '옛 대출 계좌가 있으면 총액에서 자산을 추정하지 않는다');
+  assert.deepEqual(c.monthTotals({accounts: []}, {total: 100000}), {total: 100000, noLoan: 100000}, '계좌가 없으면 직접 넣은 총자산');
+  assert.deepEqual(c.monthTotals({accounts: [{name: 'A'}]}, {m: 1, balances: [10]}), {total: 10, noLoan: 10});
   const y = c.yearSummary(year);
   assert.equal(y.pnl, 2000, '실현손익 3,000 + 선물옵션 −1,000'); assert.equal(y.monthPnl, 3000); assert.equal(y.months, 2);
-  near(y.rate, 2000 / 150000 * 100 + 1000 / 200000 * 100 - 1000 / 200000 * 100, '월 수익률 합 + 선물옵션 ÷ 마지막 달(4월) 총자산');
-  near(y.annual, (2000 / 150000 + 1000 / 200000) * 100 * 12 / 2, '연환산은 실현손익을 넣은 달 수로');
+  near(y.rate, 2000 / 100000 * 100 + 1000 / 200000 * 100 - 1000 / 200000 * 100, '월 수익률 합 + 선물옵션 ÷ 마지막 달(4월) 총자산');
+  near(y.annual, (2000 / 100000 + 1000 / 200000) * 100 * 12 / 2, '연환산은 실현손익을 넣은 달 수로');
   assert.equal(y.interest, -50); assert.deepEqual(y.last, {m: 4, total: 200000, noLoan: 200000});
   near(y.rateNoLoan, 2000 / 100000 * 100 + 1000 / 200000 * 100 - 1000 / 200000 * 100, '대출 제외: 대출 계좌를 뺀 총자산으로 같은 방식');
-  assert.equal(c.yearSummary({accounts: [{name: 'A'}], months: [{m: 1, pnl: 1, balances: [10]}]}).rateNoLoan, null, '대출 계좌가 없는 해는 null');
+  near(y.annualNoLoan,(2000/100000+1000/200000)*100*12/2,'대출 제외 연환산도 같은 분모를 사용');
+  assert.equal(c.yearSummary({accounts: [{name: 'A'}], months: [{m: 1, pnl: 1, balances: [10]}]}).rateNoLoan, 10, '대출 계좌가 없는 해도 동일 자산 기준으로 수익률 표시');
   assert.equal(c.yearSummary({accounts: [], months: []}).annual, null);
+});
+
+test('달러 배당은 적용 환율로 반올림하고 저장된 환산액과 과거 환율을 유지한다',()=>{
+  assert.equal(c.pnlDollarKrw(12.75,1310),16703);
+  assert.equal(c.pnlDollarKrw(-2,1310),-2620);
+  assert.equal(c.pnlDollarKrw(0,null),0);
+  for(const rate of [null,0,-1,'bad'])assert.equal(c.pnlDollarKrw(2,rate),null);
+  assert.equal(c.pnlDollarKrw(null,1310),null);
+  assert.equal(c.pnlDollarKrw(Number.MAX_VALUE,1310),null);
+  const old={amount:4,currency:'USD',krw:5200}, snapshot={amount:4,currency:'USD',fx:1300,krw:5200};
+  assert.equal(c.pnlDollarFx(old,1500),1300);
+  assert.equal(c.pnlDollarFx(snapshot,1500),1300);
+  assert.equal(c.pnlDollarFx({},1500),1500);
+  assert.equal(c.pnlEntriesTotal([{amount:4,currency:'USD',fx:1300}]),5200);
+  assert.equal(c.pnlEntriesTotal([{...snapshot,fx:1500}]),5200,'원화 환산액을 현재 환율로 바꾸거나 이중 합산하지 않는다');
+  assert.deepEqual(old,{amount:4,currency:'USD',krw:5200},'읽기만 해서는 fx를 저장하지 않는다');
+});
+
+test('배당 자동 환율은 현물 환율과 125일선 대신 125개월선만 사용한다',()=>{
+  const prices={fx:{close:1800,ma:{'125일선':1700,'125개월선':1320}}};
+  assert.equal(c.assetDividendFx(prices),1320);
+  assert.equal(c.pnlDollarKrw(15,c.assetDividendFx(prices)),19800);
+  for(const value of [null,0,-1,'bad',Infinity])assert.equal(c.assetDividendFx({fx:{close:1800,ma:{'125개월선':value}}}),null);
+  assert.equal(c.assetDividendFx({fx:{close:1800,ma:{'125일선':1700}}}),null);
+  assert.equal(c.assetDividendFx(null),null);
+});
+
+test('옛 대출 계좌를 숨겨도 남은 계좌와 잔액의 원래 위치를 유지한다',()=>{
+  const year={accounts:[{name:'old',loan:true},{name:'A'},{name:'old2',loan:true},{name:'B'}],months:[{m:1,balances:[5000,2000,3000,4000],pnl:60}]};
+  const before=JSON.stringify(year), rows=c.ledgerAccounts(year);
+  assert.deepEqual(rows.map(r=>[r.index,r.account.name]),[[1,'A'],[3,'B']]);
+  assert.equal(c.monthTotals(year,year.months[0]).total,6000);
+  assert.equal(c.yearSummary(year).rate,1);
+  assert.equal(JSON.stringify(year),before,'기존 계좌와 잔액 배열을 정규화하거나 삭제하지 않는다');
+});
+
+test('손익 상세: 원화와 달러 입금액을 한 번씩 합산하고 월·연도 요약이 같은 기록을 사용한다',()=>{
+  const month={m:9,pnl:999999,pnlEntries:[
+    {broker:'A증권',label:'기본계좌+ISA',amount:2400},
+    {broker:'A증권',label:'연금저축',amount:900},
+    {broker:'B증권',label:'실현손익',amount:-10000},
+    {broker:'B증권',label:'배당입금내역',amount:4,currency:'USD',krw:5200}],balances:[100000,50000]};
+  const year={accounts:[{name:'자산'},{name:'대출',loan:true}],months:[month],futures:500},before=JSON.stringify(year);
+  assert.equal(c.monthPnl(month),-1500);assert.equal(c.pnlEntriesTotal(month.pnlEntries),-1500);
+  assert.equal(c.yearSummary(year).pnl,-1000);near(c.yearSummary(year).rateNoLoan,-1,'월 손익과 선물 모두 대출 제외 기준');
+  assert.equal(JSON.stringify(year),before,'표시·계산 중 저장된 합계나 상세 필드를 바꾸지 않는다');
+  assert.equal(c.monthPnl({m:1,pnl:0}),0);assert.equal(c.monthPnl({m:1,pnl:123,pnlEntries:[]}),123);
+  assert.equal(c.pnlEntriesTotal([{amount:0,currency:'USD',krw:0}]),0);
+  assert.equal(c.monthPnl({pnl:100,pnlEntries:[{amount:4,currency:'USD'}]}),null,'환산액이 빠지면 이전 합계를 대신 표시하지 않음');
+  assert.equal(c.pnlEntriesTotal([{krw:100,currency:'USD'}]),null,'달러 원금도 필요');
+});
+
+test('연평균: 대출 제외 연 수익률의 산술평균에 0% 해는 포함하고 빈 해·잔액 누락 해는 제외한다',()=>{
+  const years=[
+    {accounts:[{name:'자산'},{name:'대출',loan:true}],months:[{m:1,pnl:100,balances:[1000,1000]}],futures:20},
+    {accounts:[],months:[{m:1,pnl:-40,total:1000}]},
+    {accounts:[],months:[{m:1,pnl:0,total:1000}]},
+    {accounts:[],months:[]},
+    {accounts:[],months:[{m:1,pnl:100}]}];
+  const before=JSON.stringify(years);
+  near(c.averageYearReturn(years).rate,(12-4+0)/3,'선물 포함, 총자산의 대출 포함 수익률을 평균내지 않는다');
+  assert.equal(c.averageYearReturn(years).years,3);assert.deepEqual(c.averageYearReturn([]),{rate:null,years:0});
+  assert.equal(JSON.stringify(years),before);
+});
+
+test('잔액을 계산할 수 없으면 수익률을 0%나 일부 월 합으로 표시하지 않는다',()=>{
+  const noLoan={accounts:[],months:[{m:1,pnl:100,total:1000},{m:2,pnl:100}]};
+  assert.equal(c.yearSummary(noLoan).rateNoLoan,null);assert.equal(c.yearSummary(noLoan).annualNoLoan,null);
+  const loan={accounts:[{name:'대출',loan:true}],months:[{m:1,pnl:100,total:1000}]};
+  assert.equal(c.yearSummary(loan).rateNoLoan,null,'대출 계좌가 있는데 계좌별 잔액이 없으면 대출 제외 분모를 추정하지 않는다');
+  loan.months[0].balances=[1000];assert.equal(c.yearSummary(loan).rateNoLoan,null,'대출 제외 0원은 분모로 사용 불가');
+  const fut={accounts:[],futures:100,months:[{m:1,total:1000},{m:2,total:0}]};
+  assert.equal(c.yearSummary(fut).rateNoLoan,null,'최신 자산 0원일 때 이전 잔액으로 선물 수익률을 계산하지 않는다');
+  assert.equal(c.yearSummary(fut).last.m,2);
+});
+
+test('금액 쉼표는 음수·0·소수 입력을 유지하며 기존 숫자 저장·복원과 호환된다',()=>{
+  for(const [raw,shown,value] of [['12345678','12,345,678',12345678],['-1234567','-1,234,567',-1234567],['0','0',0],['12345.60','12,345.60',12345.6],['1234.','1,234.',1234],['.5','.5',.5]]){
+    assert.equal(c.assetNumberText(raw),shown);assert.equal(c.parseAssetNumber(shown),value);assert.equal(c.assetNumberText(shown),shown);
+  }
+  for(const raw of ['',null,'잘못된 금액','-',NaN,Infinity])assert.equal(c.parseAssetNumber(raw),null);
+  const original={version:1,ledger:{years:[{accounts:[],months:[{m:1,pnl:0,interest:-20,pnlEntries:[{broker:'A',amount:0}]}]}]}};
+  assert.deepEqual(c.cleanAssets(JSON.parse(JSON.stringify(original))),original,'옛 이자와 상세 내역을 불러오기만 할 때 바꾸지 않는다');
 });
 
 test('저축 계획: 매달 월급 − 기부 − 사용금액 − 할부, 12월에 전년 12월 × 수익률(기부 뺌), 나이별 단계', () => {
