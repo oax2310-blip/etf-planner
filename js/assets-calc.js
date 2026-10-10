@@ -22,6 +22,8 @@ function assetQuote(prices, ticker){
 }
 // 원/달러: 시세 파일의 현물 환율, 없으면 자산 배분에 직접 넣은 환율(cashFx)
 const assetFx = (prices, alloc) => plus(prices?.fx?.close) || plus(alloc?.cashFx);
+// 배당 환산 기본 환율은 원/달러 현물의 125개월선만 쓴다. 시세 수집기가 월봉으로 계산하며 값이 없으면 다른 환율로 대체하지 않는다.
+const assetDividendFx = prices => plus(prices?.fx?.ma?.["125개월선"]);
 // 1주(1단위) 원화 가격. 달러 시세는 × 환율, 환율이 없으면 null
 const krwPrice = (q, fx) => !q ? null : q.currency==="USD" ? (fx ? q.close*fx : null) : q.close;
 // ticker는 기준 가격·이동평균·알림용, tradeTicker는 실제 거래하는 일반 추종 ETF 코드. 빈칸이면 ticker를 직접 거래한다.
@@ -430,12 +432,12 @@ function pnlDollarKrw(amount, fx){
   if(n===null)return null;
   return n===0?0:rate&&Number.isFinite(n*rate)?Math.round(n*rate):null;
 }
-// 저장된 환율을 우선하고, 옛 달러·원화 기록은 당시 환율을 역산한다. 새 기록만 현재 시세(또는 직접 넣은 자산 배분 환율)를 기본값으로 쓴다.
+// 저장된 환율을 우선하고, 옛 달러·원화 기록은 당시 환율을 역산한다. 새 기록은 호출부가 고른 평균 환율을 기본값으로 쓴다.
 function pnlDollarFx(entry, fallback){
   const amount=finite(entry?.amount), won=finite(entry?.krw);
   return plus(entry?.fx)||(amount&&won!==null?plus(won/amount):null)||plus(fallback);
 }
-// pnlEntries = [{broker, label?, amount, currency?:"USD", krw?, fx?}]. 원화는 amount, 달러는 저장한 원화 환산액 krw만 한 번 합산한다.
+// pnlEntries = [{broker, label?, amount, currency?:"USD", krw?, fx?, fxBasis?:"125개월선", fxAt?}]. 원화는 amount, 달러는 저장한 원화 환산액 krw만 한 번 합산한다.
 // krw 없는 새 형식은 저장된 fx로 계산한다. 현재 시세로 과거 손익을 바꾸지 않는다. 미완성 내역은 null, 상세 없는 기존 기록은 pnl을 쓴다.
 function pnlEntriesTotal(entries){
   if(!Array.isArray(entries)||!entries.length)return null;

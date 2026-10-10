@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
   for(const line of ['25선','60일선','20주선','25개월선']){
@@ -408,6 +408,15 @@ test('달러 배당은 적용 환율로 반올림하고 저장된 환산액과 �
   assert.equal(c.pnlEntriesTotal([{amount:4,currency:'USD',fx:1300}]),5200);
   assert.equal(c.pnlEntriesTotal([{...snapshot,fx:1500}]),5200,'원화 환산액을 현재 환율로 바꾸거나 이중 합산하지 않는다');
   assert.deepEqual(old,{amount:4,currency:'USD',krw:5200},'읽기만 해서는 fx를 저장하지 않는다');
+});
+
+test('배당 자동 환율은 현물 환율과 125일선 대신 125개월선만 사용한다',()=>{
+  const prices={fx:{close:1800,ma:{'125일선':1700,'125개월선':1320}}};
+  assert.equal(c.assetDividendFx(prices),1320);
+  assert.equal(c.pnlDollarKrw(15,c.assetDividendFx(prices)),19800);
+  for(const value of [null,0,-1,'bad',Infinity])assert.equal(c.assetDividendFx({fx:{close:1800,ma:{'125개월선':value}}}),null);
+  assert.equal(c.assetDividendFx({fx:{close:1800,ma:{'125일선':1700}}}),null);
+  assert.equal(c.assetDividendFx(null),null);
 });
 
 test('옛 대출 계좌를 숨겨도 남은 계좌와 잔액의 원래 위치를 유지한다',()=>{
