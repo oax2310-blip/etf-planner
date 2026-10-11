@@ -35,12 +35,13 @@ test('공유 자산 기록: 입력 없이 열면 기존 분할매수·목표·�
   assert.equal(storage.has(BASE),false);
 });
 
-test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른 페이지의 변경을 보존한다',async()=>{
-  const original={...fake(),savings:{savedAt:'2026-01-01',actual:[],scenarios:[{id:'s',name:'기존 계획'}]}},first=setup(original),second=setup(null,null,first.storage);
-  first.store.start();second.store.start();assert.equal(first.store.doc.installments,undefined);
-  first.store.doc.installments={price:3600000,returnRate:3,methods:{m36:{rewardsEnabled:false}}};first.store.saveSection('installments');second.event();
-  assert.equal(second.store.doc.installments.price,3600000);
-  assert.deepEqual(clone(first.store.doc.savings),original.savings);
+test('제거된 무이자의 옛 기록은 저축·자산 수정과 기기 간 동기화에서 호환을 위해 보존한다',async()=>{
+  const original={...fake(),savings:{savedAt:'2026-01-01',actual:[],scenarios:[{id:'s',name:'기존 계획'}]},installments:{savedAt:'2026-01-01',price:3600000,methods:{m36:{rewardsEnabled:false}}}},first=setup(original),second=setup(null,null,first.storage);
+  first.store.start();second.store.start();assert.deepEqual(JSON.parse(first.storage.get(KEY)),original,'열기만 하면 기존 파일을 바꾸지 않음');
+  first.store.doc.savings.scenarios[0].events=[{start:'2027-01',down:100,monthly:10,months:12}];first.store.saveSection('savings');second.event();
+  const savings=clone(first.store.doc.savings);
+  assert.deepEqual(clone(second.store.doc.savings),savings);
+  assert.deepEqual(clone(first.store.doc.installments),original.installments);
   second.store.doc.allocation.groups[0].items[0].target=20;second.store.saveSection('allocation');first.event();
   assert.equal(first.store.doc.installments.methods.m36.rewardsEnabled,false);assert.equal(first.store.doc.allocation.groups[0].items[0].target,20);
   assert.equal(first.store.recovery().length,0);
@@ -52,7 +53,20 @@ test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른
     return contents(original);
   });
   connect(synced.storage);await synced.store.sync();
-  assert.equal(synced.store.status.state,'done');assert.equal(uploaded.installments.price,3600000);assert.deepEqual(uploaded.savings,original.savings);
+  assert.equal(synced.store.status.state,'done');assert.deepEqual(uploaded.installments,original.installments);assert.deepEqual(uploaded.savings,savings);
+});
+
+test('백업 복원은 저축·자산과 옛 필드를 보존하며 무이자 기록만 있는 파일은 활성 자산 기록으로 보지 않는다',()=>{
+  const original={...fake(),installments:{price:1000}},first=setup(original);
+  assert.equal(first.store.restore({version:1,installments:{price:2000}}),false);
+  assert.deepEqual(JSON.parse(first.storage.get(KEY)),original);
+  assert.equal(first.store.restore({version:1,savings:{actual:[{ym:'2026-12',total:1000}],scenarios:[]}}),true);
+  assert.deepEqual(clone(first.store.doc.installments),original.installments);
+  assert.deepEqual(clone(first.store.doc.allocation),original.allocation);
+  assert.equal(first.store.restore({version:1,savings:{actual:[],scenarios:[]},installments:{price:2000}}),true);
+  assert.equal(first.store.doc.installments.price,2000);
+  const fresh=setup();fresh.store.restore({version:1,savings:{actual:[],scenarios:[]}});
+  assert.equal(Object.hasOwn(fresh.store.doc,'installments'),false,'새 기록에는 옛 필드를 생성하지 않음');
 });
 
 test('플래너와 자산 페이지의 변경을 같은 기록에서 맞추고 다른 구역과 체결 기록을 보존한다',()=>{
