@@ -90,8 +90,11 @@ test('저축 최단 기록: 최신 가정과 더 빠른 기록을 비공개 저�
 test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른 페이지의 변경을 보존한다',async()=>{
   const original={...fake(),savings:{savedAt:'2026-01-01',actual:[],scenarios:[{id:'s',name:'기존 계획'}]}},first=setup(original),second=setup(null,null,first.storage);
   first.store.start();second.store.start();assert.equal(first.store.doc.installments,undefined);
-  first.store.doc.installments={price:3600000,returnRate:3,methods:{m36:{rewardsEnabled:false}}};first.store.saveSection('installments');second.event();
+  first.store.doc.installments={price:3600000,returnRate:3,netAssets:10000000,startYm:'2026-12',methods:{once:{discountRate:10,fixedDiscount:20000,fee:1000},m12:{months:18,rewardCap:5000},m36:{months:48,rewardsEnabled:false,discountEnabled:true,discountRate:1,discountCap:10000}}};first.store.saveSection('installments');second.event();
   assert.equal(second.store.doc.installments.price,3600000);
+  assert.equal(second.store.doc.installments.methods.m12.months,18);assert.equal(second.store.doc.installments.methods.m36.months,48);
+  assert.equal(second.store.doc.installments.startYm,'2026-12');
+  assert.equal(second.store.doc.installments.netAssets,10000000);assert.equal(second.store.doc.installments.methods.m36.discountEnabled,true);
   assert.deepEqual(clone(first.store.doc.savings),original.savings);
   second.store.doc.allocation.groups[0].items[0].target=20;second.store.saveSection('allocation');first.event();
   assert.equal(first.store.doc.installments.methods.m36.rewardsEnabled,false);assert.equal(first.store.doc.allocation.groups[0].items[0].target,20);
@@ -105,6 +108,16 @@ test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른
   });
   connect(synced.storage);await synced.store.sync();
   assert.equal(synced.store.status.state,'done');assert.equal(uploaded.installments.price,3600000);assert.deepEqual(uploaded.savings,original.savings);
+  assert.deepEqual(uploaded.installments,clone(first.store.doc.installments));
+  const reloaded=setup(uploaded);reloaded.store.start();assert.deepEqual(clone(reloaded.store.doc.installments),uploaded.installments);
+  reloaded.store.doc.installments.methods.m12.months=6;reloaded.store.saveSection('installments');
+  assert.equal(reloaded.store.restore(uploaded),true);
+  assert.deepEqual(clone(reloaded.store.doc.installments.methods),uploaded.installments.methods);assert.equal(reloaded.store.doc.installments.startYm,'2026-12');
+  assert.equal(reloaded.store.doc.installments.netAssets,10000000);
+  for(const section of ['savings','allocation']){
+    const {savedAt,...restored}=clone(reloaded.store.doc[section]),{savedAt:backupAt,...backup}=uploaded[section];
+    assert.deepEqual(restored,backup,'복원 시 저장 시각만 갱신하고 다른 구역의 내용은 보존');
+  }
 });
 
 test('저축 시나리오 삭제를 동기화하면서 실제 기록·별도 계산 조건·다른 구역의 입력을 보존한다',async()=>{
