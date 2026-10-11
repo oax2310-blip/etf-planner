@@ -553,6 +553,18 @@ function simulateSavings(sv, sc){
   return {rows, months, last:{ym:ymText(last.n),total:last.total}, endYear, at:a=>rows.find(r=>r.age===a)?.end??null};
 }
 
+// 할부의 순자산 참조는 저축 계획의 마지막 실제 기록(savings.actual의 total, 원)만 읽는다.
+// simulateSavings의 last와 같이 유효한 연월·금액 중 가장 늦은 달을 고르고, 같은 달은 뒤의 기록을 쓴다.
+// 직접 저장한 0원과 기준 연월도 유지한다. 저축 예상액·시나리오·자산 배분·월별 손익은 합산하지 않고 원본을 바꾸지 않는다.
+function installmentAssetReference(doc){
+  let latestMonth=null,amount=null;
+  for(const record of Array.isArray(doc?.savings?.actual)?doc.savings.actual:[]){
+    const month=ymNum(record?.ym),total=finite(record?.total);
+    if(month!==null&&total!==null&&(latestMonth===null||month>=latestMonth)){latestMonth=month;amount=total;}
+  }
+  return {amount,ym:latestMonth===null?null:ymText(latestMonth).padStart(7,"0")};
+}
+
 // ---------- 카드 결제·무이자 할부 ----------
 const INSTALLMENT_TERMS = [{id:"once",name:"일시불",months:1},{id:"m12",name:"12개월 무이자",months:12},{id:"m36",name:"36개월 무이자",months:36}];
 // m12·m36은 기존 비교안의 저장 키다. 개월수만 methods[id].months로 바꾸고, 없는 필드는 저장하지 않은 채 기존 기간을 쓴다.
@@ -565,17 +577,22 @@ function installmentTerms(settings){
   });
 }
 // 같은 구매대금(price, 원)을 처음부터 보유하고, 첫 납부는 firstMonth(0=지금, 1=한 달 뒤)부터 매달 한다.
-// 옛 discountRate·fixedDiscount·discountCap은 저장 원본에만 남기고 검증·계산에서 사용하지 않는다. 구매금액 전액을
-// 개월 수로 나눠 원 미만을 버리고 마지막 납부에 나머지를 더한다. 적립은 구매금액 × 적립률(원 반올림, 한도 적용),
-// rewardsEnabled=false면 0이다. 적립·옛 fee는 첫 납부 때 한 번 반영한다. 비운 적립 한도는 무제한, 0원은 적립 없음.
+// discountEnabled=true일 때만 할인율·할인한도(둘 다 기본 0)를 읽는다. 할인=min(구매금액, 한도, 구매금액×할인율의 원 반올림).
+// 할인 후 원금을 개월 수로 나눠 원 미만을 버리고 마지막 납부에 나머지를 더한다. 할인은 결제 때 원금에서 빼고,
+// 옛 fee는 첫 납부 때 한 번 반영한다. 옛 fixedDiscount·적립·캐시백 필드는 검증·계산에서 제외하되 저장 원본에 보존한다.
 // 직접 입력한 기간은 1~120개월 정수. 선택 startYm은 결제 연월이며 납부 연월=결제 연월+경과 개월(정수 월 연산)이다.
 // 월 수익률=(1+세후 연 수익률/100)^(1/12)-1. 매월 전월 말의 남은 양수 잔액에 수익을 붙인 뒤 납부한다.
 // 부족한 잔액에는 수익·대출이자를 붙이지 않으며 minBalance로 알린다. 할부 종료 후에도 남은 이득만 같은 수익률로 운용한다.
 // benefit=보유잔액-남은 납부원금(채무를 이득으로 세지 않음). 같은 3·5·10년 시점에서 비교하며 납부가 남아도 원금을 제외한다.
-// 총 이득=적립-옛 비용+보유자금 수익. 일시불 대비=해당 방식 총 이득-일시불 총 이득. 입력·기록은 바꾸지 않는다.
-function calculateInstallments(settings){
+// 총 이득=할인-옛 비용+보유자금 수익. 일시불 대비는 같은 월의 benefit 차이이며 각 안의 종료 비교도 그 안의 마지막 납부 월이다.
+// 순자산 N은 직접 입력 settings.netAssets(원 단위 정수)가 우선하고 없으면 읽기 전용 referenceNetAssets다. 구매대금은 N에 이미
+// 포함되어 있으므로 예상 순자산=N-price+benefit. 전체 자산·저축·새 납입에는 수익률을 적용하지 않는다. 입력·기록은 바꾸지 않는다.
+function calculateInstallments(settings, referenceNetAssets=null){
   const price=finite(settings?.price), annualRate=settings?.returnRate===undefined||settings?.returnRate===null||settings?.returnRate===""?0:finite(settings.returnRate);
-  if(!Number.isSafeInteger(price)||price<=0||price>1e12||annualRate===null||annualRate<0||annualRate>100)return null;
+  if(!Number.isSafeInteger(price)||price<=0||price>1e12||annualRate===null||annualRate<-100||annualRate>100)return null;
+  const customNetAssets=settings?.netAssets, hasCustom=customNetAssets!==undefined&&customNetAssets!==null&&customNetAssets!=="";
+  const netAssets=hasCustom?finite(customNetAssets):referenceNetAssets===null||referenceNetAssets===undefined?null:finite(referenceNetAssets);
+  if((hasCustom&&(!Number.isSafeInteger(netAssets)||Math.abs(netAssets)>1e15))||(!hasCustom&&referenceNetAssets!==null&&referenceNetAssets!==undefined&&(netAssets===null||Math.abs(netAssets)>1e15)))return null;
   const years=[3,5,10].includes(settings?.years)?settings.years:3, firstMonth=settings?.firstMonth===0?0:1;
   const terms=installmentTerms(settings), start=settings?.startYm, startMonth=start===undefined||start===null||start===""?null:ymNum(start);
   if(terms.some(t=>!Number.isSafeInteger(t.months)||t.months<1||t.months>INSTALLMENT_MAX_MONTHS)||(start!==undefined&&start!==null&&start!==""&&(startMonth===null||startMonth<12||startMonth>ymNum("9989-12"))))return null;
@@ -583,34 +600,43 @@ function calculateInstallments(settings){
   const value=(v,max=1e12)=>{const n=v===undefined||v===null||v===""?0:finite(v);return n!==null&&n>=0&&n<=max?n:null;};
   const plans=[];
   for(const term of terms){
-    const p=settings?.methods?.[term.id]||{}, rewardRate=value(p.rewardRate,100), fee=value(p.fee);
-    const rewardCap=p.rewardCap===undefined||p.rewardCap===null||p.rewardCap===""?null:value(p.rewardCap);
-    if([rewardRate,fee].some(n=>n===null)||(p.rewardCap!==undefined&&p.rewardCap!==null&&p.rewardCap!==""&&rewardCap===null))return null;
-    const principal=price;
-    const reward=p.rewardsEnabled===false?0:Math.min(Math.round(principal*rewardRate/100),rewardCap===null?Infinity:Math.round(rewardCap));
+    const p=settings?.methods?.[term.id]||{}, fee=value(p.fee);
+    const discountRate=p.discountEnabled===true?value(p.discountRate,100):0, discountCap=p.discountEnabled===true?value(p.discountCap):0;
+    if(fee===null||discountRate===null||!Number.isSafeInteger(discountCap))return null;
+    const discount=Math.min(price,discountCap,Math.round(price*discountRate/100)), principal=price-discount;
     const extraCost=Math.round(fee), monthly=Math.floor(principal/term.months), lastPayment=principal-monthly*(term.months-1), endMonth=firstMonth+term.months-1;
     let balance=price, earned=0, paid=0, minBalance=price;
     const rows=[];
     for(let month=0;month<=120;month++){
-      const interest=month?Math.max(0,balance)*monthlyRate:0;
+      const interest=month&&balance>0?balance*monthlyRate:0;
       balance+=interest;earned+=interest;
       const payment=month>=firstMonth&&month<=endMonth?(month===endMonth?lastPayment:monthly):0;
-      const credit=month===firstMonth?reward:0, cost=month===firstMonth?extraCost:0;
-      paid+=payment;balance+=credit-cost-payment;minBalance=Math.min(minBalance,balance);
+      const cost=month===firstMonth?extraCost:0;
+      paid+=payment;balance-=cost+payment;minBalance=Math.min(minBalance,balance);
       const remaining=Math.max(0,principal-paid);
-      rows.push({month,...(startMonth!==null?{ym:ymText(startMonth+month).padStart(7,"0")}:{}),payment,reward:credit,fee:cost,interest,earned,balance,remaining,benefit:balance-remaining});
+      const benefit=balance-remaining;
+      rows.push({month,...(startMonth!==null?{ym:ymText(startMonth+month).padStart(7,"0")}:{}),payment,discount:month===0?discount:0,fee:cost,interest,earned,balance,remaining,benefit,netAssets:netAssets===null?null:netAssets-price+benefit});
     }
-    plans.push({...term,reward,fee:extraCost,principal,monthly,lastPayment,endMonth,cardBenefit:reward-extraCost,rows,minBalance});
+    plans.push({...term,discount,fee:extraCost,principal,monthly,lastPayment,endMonth,cardBenefit:discount-extraCost,rows,minBalance});
   }
   const baseline=plans[0];
   for(const p of plans){
+    for(const row of p.rows){
+      const once=baseline.rows[row.month];
+      row.advantage=row.benefit-once.benefit;
+      row.assetRate=once.netAssets>0?row.advantage/once.netAssets*100:null;
+      row.purchaseRate=row.advantage/price*100;
+    }
+    const payoff=p.rows[p.endMonth], oncePayoff=baseline.rows[p.endMonth];
+    p.payoff={month:p.endMonth,...(payoff.ym?{ym:payoff.ym}:{}),netAssets:payoff.netAssets,onceNetAssets:oncePayoff.netAssets,advantage:payoff.advantage,assetRate:payoff.assetRate,purchaseRate:payoff.purchaseRate,
+      holdingDifference:payoff.earned-oncePayoff.earned,discountDifference:p.discount-baseline.discount,costDifference:p.fee-baseline.fee};
     const end=p.rows[horizon];p.totalBenefit=end.benefit;p.holdingReturn=end.earned;
     p.advantage=end.benefit-baseline.rows[horizon].benefit;
     p.cardDifference=p.cardBenefit-baseline.cardBenefit;p.holdingDifference=end.earned-baseline.rows[horizon].earned;
   }
   const max=Math.max(...plans.map(p=>p.totalBenefit)), winners=plans.filter(p=>max-p.totalBenefit<.5), best=winners[0];
   const tied=plans.every(p=>Math.abs(p.totalBenefit-plans[0].totalBenefit)<.5);
-  return {price,annualRate,monthlyRate,years,firstMonth,startYm:startMonth===null?null:ymText(startMonth).padStart(7,"0"),horizon,plans,best,winners,tied};
+  return {price,annualRate,monthlyRate,netAssets,years,firstMonth,startYm:startMonth===null?null:ymText(startMonth).padStart(7,"0"),horizon,plans,best,winners,tied};
 }
 
 // ---------- 기록 파일·기기 간 병합 ----------
