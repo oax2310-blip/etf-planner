@@ -22,6 +22,53 @@ test('무이자: 수익·혜택이 없으면 원금 분할만으로 이득이 �
   assert.equal(r.plans[2].monthly,100000);assert.equal(r.plans[2].lastPayment,100001);
 });
 
+test('무이자: 직접 입력한 기간의 원금·마지막 회차·잔여금액과 3·5·10년 현금흐름이 일치한다',()=>{
+  for(const months of [1,6,12,18,24,36,48,120])for(const firstMonth of [0,1])for(const years of [3,5,10]){
+    const price=3600001,annualRate=3,q=Math.pow(1.03,1/12),input={price,returnRate:annualRate,years,firstMonth,methods:{m12:{months},m36:{months}}};
+    const before=JSON.stringify(input),r=calculateInstallments(input);
+    for(const p of r.plans.slice(1)){
+      assert.equal(p.months,months);assert.equal(p.name,`${months}개월 무이자`);
+      assert.equal(p.endMonth,firstMonth+months-1);
+      assert.equal(p.rows.reduce((sum,row)=>sum+row.payment,0),price);
+      assert.equal(p.rows[p.endMonth].remaining,0);
+      let expected=price*q**r.horizon,paid=0;
+      for(let i=0;i<months;i++){
+        const at=firstMonth+i,payment=i===months-1?price-Math.floor(price/months)*(months-1):Math.floor(price/months);
+        if(at<=r.horizon){expected-=payment*q**(r.horizon-at);paid+=payment;}
+        assert.equal(p.rows[at].payment,payment);assert.equal(p.rows[at].remaining,price-(i===months-1?price:Math.floor(price/months)*(i+1)));
+      }
+      expected-=price-paid;
+      near(p.totalBenefit,expected);near(p.totalBenefit,p.holdingReturn);
+      assert.equal(p.rows[r.horizon].remaining,price-paid);
+    }
+    assert.equal(JSON.stringify(input),before);
+  }
+  for(const months of [6,12,18,24,36,48]){
+    const p=calculateInstallments({price:7,methods:{m36:{months}}}).plans[2];
+    assert.equal(p.rows.reduce((sum,row)=>sum+row.payment,0),7);assert.equal(p.rows[p.endMonth].remaining,0);
+  }
+});
+
+test('무이자: 선택 결제 연월의 납부 일정은 연도·윤년을 넘어도 월이 빠지거나 중복되지 않는다',()=>{
+  for(const startYm of ['2026-12','2027-11','2028-02'])for(const months of [6,12,18,24,36,48])for(const firstMonth of [0,1]){
+    const input={price:3600001,startYm,firstMonth,methods:{m36:{months}}},before=JSON.stringify(input),r=calculateInstallments(input),p=r.plans[2];
+    const [y,m]=startYm.split('-').map(Number),dates=p.rows.slice(firstMonth,p.endMonth+1).map(row=>row.ym);
+    assert.equal(dates.length,months);assert.equal(new Set(dates).size,months);
+    for(let i=0;i<months;i++)assert.equal(dates[i],new Date(Date.UTC(y,m-1+firstMonth+i,1)).toISOString().slice(0,7));
+    assert.equal(JSON.stringify(input),before);
+  }
+  assert.equal(calculateInstallments({price:100,startYm:'2026-12'}).plans[2].rows[1].ym,'2027-01');
+  const earliest=calculateInstallments({price:100,startYm:'0001-12'}),latest=calculateInstallments({price:100,startYm:'9989-12',methods:{m36:{months:120}}});
+  assert.equal(earliest.startYm,'0001-12');assert.equal(earliest.plans[2].rows[1].ym,'0002-01');assert.equal(latest.plans[2].rows[120].ym,'9999-12');
+  assert.equal(Object.hasOwn(calculateInstallments({price:100}).plans[2].rows[0],'ym'),false);
+});
+
+test('무이자: 잘못된 직접 입력 기간·연월은 계산하지 않고 기존 기간은 기본값으로 유지한다',()=>{
+  for(const months of [null,'',0,-1,1.5,121,Infinity,'abc'])for(const id of ['m12','m36'])assert.equal(calculateInstallments({price:100,methods:{[id]:{months}}}),null);
+  for(const startYm of ['2026-00','2026-13','2026-1','0000-01','9990-01','abc'])assert.equal(calculateInstallments({price:100,startYm}),null);
+  assert.deepEqual(calculateInstallments({price:100}).plans.map(p=>p.months),[1,12,36]);
+});
+
 test('무이자: 줄어드는 결제 잔액을 계산한 결과가 현금흐름의 독립적인 미래가치 계산과 일치한다',()=>{
   const input=example(),before=JSON.stringify(input),r=calculateInstallments(input),q=Math.pow(1.03,1/12);
   for(const p of r.plans){
@@ -46,19 +93,29 @@ test('무이자: 아직 내지 않은 원금을 이득에 포함하지 않는다
   assert.ok(earning.benefit<earning.balance);
 });
 
-test('무이자: 할인 후 원금·적립, 한도 0과 제외 조건, 추가 비용을 모두 반영한다',()=>{
+test('무이자: 결제금액 기준 적립, 한도 0과 적립 제외 조건, 옛 비용을 반영한다',()=>{
   const r=calculateInstallments({price:1200000,returnRate:0,methods:{
     once:{discountRate:10,fixedDiscount:20000,rewardRate:10,rewardCap:5000,fee:1000},
     m12:{rewardRate:10,rewardCap:0},m36:{rewardRate:10,rewardsEnabled:false,fee:10000}
   }});
   const [once,m12,m36]=r.plans;
-  assert.equal(once.discount,140000);assert.equal(once.principal,1060000);assert.equal(once.reward,5000);
-  assert.equal(once.totalBenefit,144000);assert.equal(m12.reward,0);assert.equal(m36.reward,0);
-  assert.equal(m36.totalBenefit,-10000);assert.equal(m36.advantage,-154000);assert.equal(r.best.id,'once');
+  assert.equal(once.principal,1200000);assert.equal(once.reward,5000);
+  assert.equal(once.totalBenefit,4000);assert.equal(m12.reward,0);assert.equal(m36.reward,0);
+  assert.equal(m36.totalBenefit,-10000);assert.equal(m36.advantage,-14000);assert.equal(r.best.id,'once');
   assert.ok(m36.minBalance<0,'부족한 납부자금은 별도 표시할 수 있다');
   const noCap=calculateInstallments({price:10000,methods:{once:{rewardRate:10}}});assert.equal(noCap.plans[0].reward,1000);
-  const fullDiscount=calculateInstallments({price:10000,methods:{m36:{fixedDiscount:20000,rewardRate:10}}}).plans[2];
-  assert.equal(fullDiscount.principal,0);assert.equal(fullDiscount.discount,10000);assert.equal(fullDiscount.reward,0);
+  const legacy=calculateInstallments({price:10000,methods:{m36:{fixedDiscount:20000,rewardRate:10}}}).plans[2];
+  assert.equal(legacy.principal,10000);assert.equal(legacy.reward,1000);
+});
+
+test('무이자: 옛 할인 조건은 계산·검증에서 제외하되 원본 데이터는 그대로 보존한다',()=>{
+  const settings={price:1200000,returnRate:3,methods:{once:{discountRate:10,fixedDiscount:20000,discountCap:5000,rewardRate:1},m12:{discountRate:'abc',fixedDiscount:-1,discountCap:0,months:18},m36:{discountRate:100,fixedDiscount:1200000,months:48}}};
+  const before=JSON.stringify(settings),r=calculateInstallments(settings),without=JSON.parse(before);
+  for(const method of Object.values(without.methods)){delete method.discountRate;delete method.fixedDiscount;delete method.discountCap;}
+  assert.deepEqual(r,calculateInstallments(without));
+  assert.equal(r.plans[0].reward,12000);assert.equal(r.plans[2].principal,1200000);
+  assert.equal(r.plans.some(p=>Object.hasOwn(p,'discount')),false);
+  assert.equal(JSON.stringify(settings),before);
 });
 
 test('무이자: 첫 납부 시점과 공통 3·5·10년 비교를 일관되게 적용한다',()=>{
@@ -86,7 +143,7 @@ test('무이자: 두 방식이 동률이면 둘 다 가장 유리한 결과로 �
 test('무이자: 잘못된 금액·혜택·수익률에서는 결과를 만들지 않는다',()=>{
   for(const price of [undefined,0,-1,1.5,Infinity,1e13])assert.equal(calculateInstallments({price}),null);
   for(const returnRate of [-1,101,'abc'])assert.equal(calculateInstallments({price:100,returnRate}),null);
-  for(const method of [{discountRate:-1},{discountRate:101},{rewardRate:'abc'},{rewardCap:-1},{fee:-1}])assert.equal(calculateInstallments({price:100,methods:{m12:method}}),null);
+  for(const method of [{rewardRate:-1},{rewardRate:101},{rewardRate:'abc'},{rewardCap:-1},{fee:-1}])assert.equal(calculateInstallments({price:100,methods:{m12:method}}),null);
 });
 
 test('무이자: 별도 구역의 저장·병합에서 기존 저축 기록과 저장 형식을 유지한다',()=>{

@@ -555,26 +555,38 @@ function simulateSavings(sv, sc){
 
 // ---------- 카드 결제·무이자 할부 ----------
 const INSTALLMENT_TERMS = [{id:"once",name:"일시불",months:1},{id:"m12",name:"12개월 무이자",months:12},{id:"m36",name:"36개월 무이자",months:36}];
+// m12·m36은 기존 비교안의 저장 키다. 개월수만 methods[id].months로 바꾸고, 없는 필드는 저장하지 않은 채 기존 기간을 쓴다.
+const INSTALLMENT_MAX_MONTHS = 120;
+function installmentTerms(settings){
+  return INSTALLMENT_TERMS.map(term=>{
+    if(term.id==="once")return term;
+    const saved=settings?.methods?.[term.id]?.months, months=saved===undefined?term.months:finite(saved);
+    return {...term,months,name:Number.isSafeInteger(months)&&months>=1&&months<=INSTALLMENT_MAX_MONTHS?`${months}개월 무이자`:term.name};
+  });
+}
 // 같은 구매대금(price, 원)을 처음부터 보유하고, 첫 납부는 firstMonth(0=지금, 1=한 달 뒤)부터 매달 한다.
-// 할인은 구매금액 × 할인율을 원 단위로 반올림한 뒤 고정 할인액을 더해 구매금액까지만 적용한다. 할인 후 금액을
-// 개월 수로 나눠 원 미만을 버리고 마지막 납부에 나머지를 더한다. 적립은 할인 후 금액 × 적립률(원 반올림, 한도 적용),
-// rewardsEnabled=false면 0이다. 적립·추가 비용은 첫 납부 때 한 번 반영한다. 비운 한도는 무제한, 0원 한도는 적립 없음.
+// 옛 discountRate·fixedDiscount·discountCap은 저장 원본에만 남기고 검증·계산에서 사용하지 않는다. 구매금액 전액을
+// 개월 수로 나눠 원 미만을 버리고 마지막 납부에 나머지를 더한다. 적립은 구매금액 × 적립률(원 반올림, 한도 적용),
+// rewardsEnabled=false면 0이다. 적립·옛 fee는 첫 납부 때 한 번 반영한다. 비운 적립 한도는 무제한, 0원은 적립 없음.
+// 직접 입력한 기간은 1~120개월 정수. 선택 startYm은 결제 연월이며 납부 연월=결제 연월+경과 개월(정수 월 연산)이다.
 // 월 수익률=(1+세후 연 수익률/100)^(1/12)-1. 매월 전월 말의 남은 양수 잔액에 수익을 붙인 뒤 납부한다.
 // 부족한 잔액에는 수익·대출이자를 붙이지 않으며 minBalance로 알린다. 할부 종료 후에도 남은 이득만 같은 수익률로 운용한다.
-// benefit=보유잔액-남은 납부원금(채무를 이득으로 세지 않음). 모든 방식이 끝난 같은 3·5·10년 시점에서 비교한다.
-// 총 이득=할인+적립-추가 비용+보유자금 수익. 일시불 대비=해당 방식 총 이득-일시불 총 이득. 입력·기록은 바꾸지 않는다.
+// benefit=보유잔액-남은 납부원금(채무를 이득으로 세지 않음). 같은 3·5·10년 시점에서 비교하며 납부가 남아도 원금을 제외한다.
+// 총 이득=적립-옛 비용+보유자금 수익. 일시불 대비=해당 방식 총 이득-일시불 총 이득. 입력·기록은 바꾸지 않는다.
 function calculateInstallments(settings){
   const price=finite(settings?.price), annualRate=settings?.returnRate===undefined||settings?.returnRate===null||settings?.returnRate===""?0:finite(settings.returnRate);
   if(!Number.isSafeInteger(price)||price<=0||price>1e12||annualRate===null||annualRate<0||annualRate>100)return null;
   const years=[3,5,10].includes(settings?.years)?settings.years:3, firstMonth=settings?.firstMonth===0?0:1;
+  const terms=installmentTerms(settings), start=settings?.startYm, startMonth=start===undefined||start===null||start===""?null:ymNum(start);
+  if(terms.some(t=>!Number.isSafeInteger(t.months)||t.months<1||t.months>INSTALLMENT_MAX_MONTHS)||(start!==undefined&&start!==null&&start!==""&&(startMonth===null||startMonth<12||startMonth>ymNum("9989-12"))))return null;
   const monthlyRate=Math.expm1(Math.log1p(annualRate/100)/12), horizon=years*12;
   const value=(v,max=1e12)=>{const n=v===undefined||v===null||v===""?0:finite(v);return n!==null&&n>=0&&n<=max?n:null;};
   const plans=[];
-  for(const term of INSTALLMENT_TERMS){
-    const p=settings?.methods?.[term.id]||{}, discountRate=value(p.discountRate,100), fixedDiscount=value(p.fixedDiscount), rewardRate=value(p.rewardRate,100), fee=value(p.fee);
+  for(const term of terms){
+    const p=settings?.methods?.[term.id]||{}, rewardRate=value(p.rewardRate,100), fee=value(p.fee);
     const rewardCap=p.rewardCap===undefined||p.rewardCap===null||p.rewardCap===""?null:value(p.rewardCap);
-    if([discountRate,fixedDiscount,rewardRate,fee].some(n=>n===null)||(p.rewardCap!==undefined&&p.rewardCap!==null&&p.rewardCap!==""&&rewardCap===null))return null;
-    const discount=Math.min(price,Math.round(price*discountRate/100)+Math.round(fixedDiscount)), principal=price-discount;
+    if([rewardRate,fee].some(n=>n===null)||(p.rewardCap!==undefined&&p.rewardCap!==null&&p.rewardCap!==""&&rewardCap===null))return null;
+    const principal=price;
     const reward=p.rewardsEnabled===false?0:Math.min(Math.round(principal*rewardRate/100),rewardCap===null?Infinity:Math.round(rewardCap));
     const extraCost=Math.round(fee), monthly=Math.floor(principal/term.months), lastPayment=principal-monthly*(term.months-1), endMonth=firstMonth+term.months-1;
     let balance=price, earned=0, paid=0, minBalance=price;
@@ -586,9 +598,9 @@ function calculateInstallments(settings){
       const credit=month===firstMonth?reward:0, cost=month===firstMonth?extraCost:0;
       paid+=payment;balance+=credit-cost-payment;minBalance=Math.min(minBalance,balance);
       const remaining=Math.max(0,principal-paid);
-      rows.push({month,payment,reward:credit,fee:cost,interest,earned,balance,remaining,benefit:balance-remaining});
+      rows.push({month,...(startMonth!==null?{ym:ymText(startMonth+month).padStart(7,"0")}:{}),payment,reward:credit,fee:cost,interest,earned,balance,remaining,benefit:balance-remaining});
     }
-    plans.push({...term,discount,reward,fee:extraCost,principal,monthly,lastPayment,endMonth,cardBenefit:discount+reward-extraCost,rows,minBalance});
+    plans.push({...term,reward,fee:extraCost,principal,monthly,lastPayment,endMonth,cardBenefit:reward-extraCost,rows,minBalance});
   }
   const baseline=plans[0];
   for(const p of plans){
@@ -598,7 +610,7 @@ function calculateInstallments(settings){
   }
   const max=Math.max(...plans.map(p=>p.totalBenefit)), winners=plans.filter(p=>max-p.totalBenefit<.5), best=winners[0];
   const tied=plans.every(p=>Math.abs(p.totalBenefit-plans[0].totalBenefit)<.5);
-  return {price,annualRate,monthlyRate,years,firstMonth,horizon,plans,best,winners,tied};
+  return {price,annualRate,monthlyRate,years,firstMonth,startYm:startMonth===null?null:ymText(startMonth).padStart(7,"0"),horizon,plans,best,winners,tied};
 }
 
 // ---------- 기록 파일·기기 간 병합 ----------
