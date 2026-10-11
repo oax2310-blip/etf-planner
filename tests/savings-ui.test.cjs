@@ -50,10 +50,10 @@ const milestoneFixture=()=>{
 test('저축 요약: 현재 5억 달성 월·연도 나이와 과거 최단 기록을 구분하고 시나리오 전환은 기록을 저장하지 않는다',()=>{
   const data=milestoneFixture(),before=JSON.stringify(data),h=setup(data),stored=h.storage.get(key);
   assert.doesNotMatch(h.html(),/40세 말 \(예상\)/);
-  assert.match(h.html(),/5억 달성 예상<\/label><strong[^>]*>2031년 1월 \(37세\)<\/strong>/);
-  assert.match(h.html(),/과거 최단 기록<\/span><b>2032년 1월 \(38세\)<\/b>/);assert.match(h.html(),/id="saveSavingsMilestone"/);
+  assert.match(h.html(),/5억 달성 예상<\/label><strong[^>]*>2031년 1월 <span class="savings-milestone-age">\(37세\)<\/span><\/strong>/);
+  assert.match(h.html(),/과거 최단 기록<\/span><b>2032년 1월 <span class="savings-milestone-age">\(38세\)<\/span><\/b>/);assert.match(h.html(),/id="saveSavingsMilestone"/);
   assert.equal((h.html().match(/class="metric(?: |")/g)||[]).length,3,'기존 세 요약 칸 안에서 표시한다');
-  h.node('scenario-other').onclick();assert.match(h.html(),/2031년 2월 \(37세\)/);assert.match(h.html(),/과거 최단 기록<\/span><b>2032년 1월 \(38세\)<\/b>/);
+  h.node('scenario-other').onclick();assert.match(h.html(),/2031년 2월 <span class="savings-milestone-age">\(37세\)<\/span>/);assert.match(h.html(),/과거 최단 기록<\/span><b>2032년 1월 <span class="savings-milestone-age">\(38세\)<\/span><\/b>/);
   assert.equal(JSON.stringify(data),before);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
 });
 
@@ -61,18 +61,18 @@ test('저축 요약: 저장 버튼은 현재 예상 월을 저장하며 늦어�
   const data=milestoneFixture(),h=setup(data);
   h.node('saveSavingsMilestone').onclick();assert.deepEqual(data.savings.milestoneRecord,{ym:'2031-01',age:37});assert.equal(h.saves(),1);
   assert.doesNotMatch(h.html(),/id="saveSavingsMilestone"/);
-  h.node('scenario-other').onclick();assert.match(h.html(),/5억 달성 예상<\/label><strong[^>]*>2031년 2월 \(37세\)<\/strong>/);
+  h.node('scenario-other').onclick();assert.match(h.html(),/5억 달성 예상<\/label><strong[^>]*>2031년 2월 <span class="savings-milestone-age">\(37세\)<\/span><\/strong>/);
   data.savings.scenarios[1].salary=0;data.savings.startAge=32;h.render();
-  assert.match(h.html(),/예측 기간 내 미달성/);assert.match(h.html(),/과거 최단 기록<\/span><b>2031년 1월 \(37세\)<\/b>/);
+  assert.match(h.html(),/예측 기간 내 미달성/);assert.match(h.html(),/과거 최단 기록<\/span><b>2031년 1월 <span class="savings-milestone-age">\(37세\)<\/span><\/b>/);
   assert.doesNotMatch(h.html(),/id="saveSavingsMilestone"/);assert.equal(h.saves(),1);
-  const reloaded=setup(JSON.parse(h.storage.get(key)));assert.match(reloaded.html(),/과거 최단 기록<\/span><b>2031년 1월 \(37세\)<\/b>/);
+  const reloaded=setup(JSON.parse(h.storage.get(key)));assert.match(reloaded.html(),/과거 최단 기록<\/span><b>2031년 1월 <span class="savings-milestone-age">\(37세\)<\/span><\/b>/);
 });
 
 test('저축 요약: 실제 기록 없음·이미 달성·나이 정보 없는 옛 기록을 구분하고 조회로 초기 기록을 만들지 않는다',()=>{
   const data=milestoneFixture();delete data.savings.milestoneRecord;data.savings.actual=[];
   const h=setup(data),before=JSON.stringify(data);assert.match(h.html(),/계산할 실제 기록 없음/);assert.match(h.html(),/저장된 기록 없음/);
   assert.equal(JSON.stringify(data),before);assert.equal(h.saves(),0);
-  data.savings.actual=[{ym:'2030-12',total:500000000}];h.render();assert.match(h.html(),/2030년 12월 \(36세\)/);assert.match(h.html(),/실제 월말 기록 · 이미 달성/);
+  data.savings.actual=[{ym:'2030-12',total:500000000}];h.render();assert.match(h.html(),/2030년 12월 <span class="savings-milestone-age">\(36세\)<\/span>/);assert.match(h.html(),/실제 월말 기록 · 이미 달성/);
   data.savings.milestoneRecord={ym:'2030-11'};h.render();assert.match(h.html(),/과거 최단 기록<\/span><b>2030년 11월<\/b>/,'기록에 나이가 없으면 추정해서 붙이지 않는다');
 });
 

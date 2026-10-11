@@ -412,9 +412,9 @@ function openYear(y){
 }
 
 // ---------- 저축 계획 ----------
-function savingsMilestoneText(record){
+function savingsMilestoneHtml(record){
   const n=ymNum(record?.ym);if(n===null)return "";
-  const age=finite(record.age);return `${Math.floor(n/12)}년 ${n%12+1}월${age!==null?` (${age}세)`:""}`;
+  const age=finite(record.age);return `${Math.floor(n/12)}년 ${n%12+1}월${age!==null?` <span class="savings-milestone-age">(${age}세)</span>`:""}`;
 }
 const KEY_AGES = [35,40,45,50,60,70,80,90];
 let savingsAllYears = false; // 모든 연도를 표시하는지(화면 상태, 저장 안 함)
@@ -472,8 +472,8 @@ function renderSavings(){
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">저축 계획 · 엑셀 복리 저축 계산 시트(보이는 시트만)</div><h1>저축 계획</h1><p>매달 월급 − 기부 − 사용금액을 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></div><button class="btn" id="copyScenario" type="button">＋ 시나리오 복사</button></div>
     <div class="chip-row">${S.scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
     ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 연도를 펼쳐 실제 저축액을 입력하세요"}</small></div>
-      <div class="metric savings-milestone" aria-live="polite"><label>5억 달성 예상</label><strong class="savings-milestone-date">${milestone?savingsMilestoneText(milestone):sim?"예측 기간 내 미달성":"계산할 실제 기록 없음"}</strong><small>${milestone?.actual?"실제 월말 기록 · 이미 달성":"현재 시나리오 · 월말 자산 기준"}</small>
-        <div class="savings-milestone-record"><span>과거 최단 기록</span><b>${best?savingsMilestoneText(best):"저장된 기록 없음"}</b>${canSave?'<button class="btn mini" id="saveSavingsMilestone" type="button">최단 기록 저장</button>':""}</div></div>
+      <div class="metric savings-milestone" aria-live="polite"><label>5억 달성 예상</label><strong class="savings-milestone-date">${milestone?savingsMilestoneHtml(milestone):sim?"예측 기간 내 미달성":"계산할 실제 기록 없음"}</strong><small>${milestone?.actual?"실제 월말 기록 · 이미 달성":"현재 시나리오 · 월말 자산 기준"}</small>
+        <div class="savings-milestone-record"><span>과거 최단 기록</span><b>${best?savingsMilestoneHtml(best):"저장된 기록 없음"}</b>${canSave?'<button class="btn mini" id="saveSavingsMilestone" type="button">최단 기록 저장</button>':""}</div></div>
       <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?wonA(endRow.end):"—"}</strong><small>${endRow?`${eok(endRow.end)} · ${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
     <section class="card panel"><div class="future-panel-head savings-assumptions-head"><h2><button class="alloc-fold" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}" aria-label="${escA(sc.name)} 가정 ${savingsAssumptionsOpen?"접기":"펼치기"}"><span>${escA(sc.name)} 가정</span><span class="alloc-fold-action"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"접기":"펼치기"}</span></span></button></h2><button class="btn mini danger" type="button" id="deleteScenario"${!savingsAssumptionsOpen||S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
       <div class="alloc-fold-body savings-assumptions-body" id="savingsAssumptionsBody"${savingsAssumptionsOpen?"":" hidden"}>
