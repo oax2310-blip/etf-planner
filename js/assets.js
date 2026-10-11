@@ -547,7 +547,7 @@ function renderInstallments(){
     const selected=result.plans.find(p=>p.id===installmentSchedule)||result.plans[2];
     schedule=`<div class="installment-schedule-controls"><label class="field"><span>납부표 선택</span><select id="installmentSchedule">${result.plans.map(p=>`<option value="${p.id}"${p===selected?" selected":""}>${p.name}</option>`).join("")}</select></label><p class="hint">보유잔액에는 아직 낼 원금이 포함됩니다. 남은 원금을 뺀 금액만 이득입니다.</p></div><div class="table-scroll"><table class="data-table installment-month-table"><thead><tr><th>시점</th><th>납부액</th><th>남은 원금</th><th>보유잔액</th><th>누적 수익</th><th>원금 제외 이득</th></tr></thead><tbody>${selected.rows.slice(0,selected.endMonth+1).map(r=>`<tr><th scope="row">${r.month?`${r.month}개월`:"시작"}</th><td>${installmentNumber(r.payment)}</td><td>${installmentNumber(r.remaining)}</td><td>${installmentNumber(r.balance)}</td><td>${installmentNumber(r.earned)}</td><td>${installmentNumber(r.benefit)}</td></tr>`).join("")}</tbody></table></div>`;
   }
-  view.innerHTML=`<div class="heading installment-heading"><div><div class="eyebrow">카드 결제 혜택 · 장기 이득 비교</div><h1>무이자 계산</h1><p>같은 구매를 일시불·12개월·36개월로 결제할 때, 월 부담과 남겨 둔 결제대금의 이득을 비교합니다.</p></div><button class="btn mini" id="downloadInstallments" type="button"${result?"":" disabled"}>비교표 CSV</button></div>
+  view.innerHTML=`<div class="heading installment-heading"><div><div class="eyebrow">카드 결제 혜택 · 장기 이득 비교</div><h1>할부 계산</h1><p>같은 구매를 일시불·12개월·36개월로 결제할 때, 월 부담과 남겨 둔 결제대금의 이득을 비교합니다.</p></div><button class="btn mini" id="downloadInstallments" type="button"${result?"":" disabled"}>비교표 CSV</button></div>
     <section class="card panel installment-inputs"><div class="installment-input-head"><h2>결제 조건</h2><span>${doc.installments?"조건 변경 시 자동 저장":"예시 · 조건을 바꾸면 자동 저장"}</span></div><div class="installment-input-grid">${field("price","결제금액","원")}${field("returnRate","세후 연 수익률","%","","남겨 둔 대금의 수익률. 운용하지 않으면 0%.")}<label class="field"><span>이득 비교 시점</span><select data-installment="years">${[3,5,10].map(y=>`<option value="${y}"${(settings.years||3)===y?" selected":""}>${y}년 뒤</option>`).join("")}</select></label></div></section>
     ${summary}${comparison}${!result?'<div class="card empty">결제금액과 유효한 혜택 조건을 넣으면 비교 결과가 표시됩니다.</div>':""}
     ${details("benefits",'<strong>카드 혜택 조건</strong><span>할인·적립·추가 비용 수정</span>',`<div class="installment-benefit-grid">${benefitForms}</div><p class="hint installment-detail-note">할인·적립이 해당 무이자 기간에도 적용되는지 카드사 조건에 맞춰 입력하세요. 적립은 할인 후 금액 기준이며, 실제 쓸 수 있는 포인트의 원화 가치를 사용합니다. 비운 칸은 0, 비운 적립 한도는 무제한입니다.</p>`)}
@@ -604,7 +604,7 @@ el("downloadRecovery").onclick=()=>downloadA(assetStore.recovery(),`etf-planner-
 el("exportBtn").onclick=()=>downloadA({...doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
 el("importInput").onchange=async e=>{ const file=e.target.files?.[0]; if(!file) return;
   try{ const incoming=cleanAssets(JSON.parse(await file.text())); if(!incoming||assetsBlank(incoming)) throw Error("자산 현황 백업 형식이 아닙니다.");
-    const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"무이자 계산"}[s]));
+    const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));
     if(!confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.`)) return;
     assetStore.restore(incoming); render(); alert("복원했습니다."); }
   catch(err){ alert(`복원 실패: ${err.message}`); }
