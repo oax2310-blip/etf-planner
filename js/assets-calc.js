@@ -514,6 +514,12 @@ function missingActual(sv){
   const out=[];for(let n=Math.min(...ns);n<=Math.max(...ns);n++)if(!ns.has(n))out.push(ymText(n));
   return out;
 }
+// 5억 달성은 기록이 있는 실제 월 또는 기존 계산을 마친 예상 월의 월말 잔액으로만 판단한다. 빠진 실제 월은 보간하지 않는다.
+const savingsMilestone = sim => sim?.months.find(m=>m.total>=5e8)??null;
+// 최단 기록은 시나리오 공통의 savings.milestoneRecord = {ym, age?}. 연월만 비교하고 기록 당시의 연도 나이는 보존한다.
+function earlierSavingsRecord(...records){
+  return records.filter(r=>ymNum(r?.ym)!==null).reduce((best,r)=>!best||ymNum(r.ym)<ymNum(best.ym)?r:best,null);
+}
 function simulateSavings(sv, sc){
   const actual=(sv?.actual||[]).map(a=>({n:ymNum(a.ym),total:finite(a.total)})).filter(a=>a.n!==null&&a.total!==null).sort((a,b)=>a.n-b.n);
   if(!actual.length||!sc)return null;
@@ -527,6 +533,7 @@ function simulateSavings(sv, sc){
   const actualAt=n=>{let v=null;for(const a of actual){if(a.n>n)break;v=a.total;}return v;}, dec=new Map();
   const decBalance=y=>dec.has(y)?dec.get(y):actualAt(y*12+11);
   const years=new Map(), row=y=>{if(!years.has(y))years.set(y,{year:y,age:age(y),salary:0,giving:0,salaryGiving:0,returnGiving:0,spending:0,returns:0,end:null,actual:false});return years.get(y);};
+  const months=actual.filter(a=>a.n<=endYear*12+11).map(a=>({ym:ymText(a.n),age:age(Math.floor(a.n/12)),total:a.total,actual:true}));
   for(const a of actual){const r=row(Math.floor(a.n/12));r.end=a.total;r.actual=true;r.endYm=ymText(a.n);}
   let bal=last.total;
   for(let n=last.n+1;n<=endYear*12+11;n++){
@@ -535,9 +542,10 @@ function simulateSavings(sv, sc){
     r.salary+=p.salary;r.salaryGiving+=p.salary*giving;r.giving+=p.salary*giving;r.spending+=s;
     if(n%12===11){const base=decBalance(y-1), ret=base>0?base*p.returnRate/100:0, donated=Math.max(0,ret)*giving;bal+=ret-donated;r.returns+=ret-donated;r.returnGiving+=donated;r.giving+=donated;dec.set(y,bal);}
     r.end=bal;r.endYm=ymText(n);r.actual=false;
+    months.push({ym:r.endYm,age:r.age,total:bal,actual:false});
   }
   const rows=[...years.values()].filter(r=>r.year<=endYear).sort((a,b)=>a.year-b.year);
-  return {rows, last:{ym:ymText(last.n),total:last.total}, endYear, at:a=>rows.find(r=>r.age===a)?.end??null};
+  return {rows, months, last:{ym:ymText(last.n),total:last.total}, endYear, at:a=>rows.find(r=>r.age===a)?.end??null};
 }
 
 // ---------- 카드 결제·무이자 할부 ----------
@@ -601,6 +609,7 @@ function cleanAssets(doc){
 }
 const assetsBlank = doc => !doc||ASSET_SECTIONS.every(s=>!doc[s]);
 // 구역마다: 한쪽만 바뀌었으면(지난 동기화 base와 비교) 바뀐 쪽, 둘 다 바뀌었으면 savedAt이 늦은 쪽. 버린 쪽은 lost로 돌려줘 이 기기에 보관한다.
+// 저축 최단 기록만은 양쪽·지난 동기화의 가장 빠른 연월을 보존해, 가정 변경이나 옛 기기의 저장으로 늦어지거나 지워지지 않게 한다.
 function mergeAssets(local, remote, base){
   const same=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null), doc={version:1}, lost=[];
   for(const s of ASSET_SECTIONS){
@@ -608,7 +617,7 @@ function mergeAssets(local, remote, base){
     let pick;
     if(!R)pick=L; else if(!L)pick=R; else if(same(L,R)||same(R,B))pick=L; else if(same(L,B))pick=R;
     else{pick=String(L.savedAt||"")>=String(R.savedAt||"")?L:R;lost.push({section:s,data:pick===L?R:L});}
-    if(pick)doc[s]=pick;
+    if(pick){const record=s==="savings"?earlierSavingsRecord(L?.milestoneRecord,R?.milestoneRecord,B?.milestoneRecord):null;doc[s]=record?{...pick,milestoneRecord:record}:pick;}
   }
   return {doc, lost};
 }

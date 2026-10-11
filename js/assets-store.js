@@ -14,7 +14,17 @@ function saveSection(section){
   // 두 페이지에서 다른 구역을 고쳤으면 localStorage의 최신 구역도 함께 보존한다.
   const latest=cleanAssets(readJson(A_KEY,null));
   for(const s of ASSET_SECTIONS)if(s!==section&&latest?.[s]&&(!doc[s]||String(latest[s].savedAt||"")>String(doc[s].savedAt||"")))doc[s]=latest[s];
+  if(doc.savings){const record=earlierSavingsRecord(doc.savings.milestoneRecord,latest?.savings?.milestoneRecord);if(record)doc.savings.milestoneRecord=record;}
   if(doc[section])doc[section].savedAt=new Date().toISOString();writeLocal();scheduleAssetSync(1500);emit("change");
+}
+// 저장 버튼을 누를 때만 기록을 갱신한다. 다른 탭의 최신 입력·최단 기록을 먼저 합치고, 브라우저 저장 실패 시 기존 상태를 유지한다.
+function saveSavingsMilestone(record){
+  const n=ymNum(record?.ym), latest=cleanAssets(readJson(A_KEY,null)), best=earlierSavingsRecord(doc.savings?.milestoneRecord,latest?.savings?.milestoneRecord);
+  if(n===null||(best&&n>=ymNum(best.ym)))return false;
+  const {doc:merged,lost}=mergeAssets(doc,latest,lastLocal);if(!merged.savings)return false;
+  const age=finite(record.age), next={...merged,savings:{...merged.savings,milestoneRecord:{ym:record.ym,...(age!==null?{age}:{})},savedAt:new Date().toISOString()}};
+  if(!writeJson(A_KEY,next)){setAssetSync("error","최단 기록을 이 기기에 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.");return false;}
+  doc=next;lastLocal=JSON.parse(JSON.stringify(doc));keepLost(lost);scheduleAssetSync(1500);emit("change");return true;
 }
 const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", message:"", at:"", remote:null};
 function assetConfig(){ try { const repo=(localStorage.getItem(A_REPO_KEY)||"").trim(), token=localStorage.getItem(A_TOKEN_KEY)||""; return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null; } catch { return null; } }
@@ -135,7 +145,8 @@ function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync
 function restore(incoming){
   const next=cleanAssets(incoming);if(!next||assetsBlank(next))return false;
   keepLost(ASSET_SECTIONS.filter(s=>next[s]&&doc[s]).map(s=>({section:s,data:doc[s]})));
-  const now=new Date().toISOString();for(const s of ASSET_SECTIONS)if(next[s])doc[s]={...next[s],savedAt:now};
+  const latest=cleanAssets(readJson(A_KEY,null)), now=new Date().toISOString();
+  for(const s of ASSET_SECTIONS)if(next[s]){const record=s==="savings"?earlierSavingsRecord(doc[s]?.milestoneRecord,latest?.[s]?.milestoneRecord,next[s].milestoneRecord):null;doc[s]={...next[s],...(record?{milestoneRecord:record}:{}),savedAt:now};}
   writeLocal();scheduleAssetSync(300);emit("change");return true;
 }
 function refreshConfig(){aSync.checked="";aSync.remote=null;return syncAssets();}
@@ -152,6 +163,6 @@ function start(){
   syncAssets();
 }
 return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
-  config:assetConfig,saveSection,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,
+  config:assetConfig,saveSection,saveSavingsMilestone,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();
