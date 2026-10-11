@@ -507,6 +507,15 @@ function savingsStage(sc, age){
     for(const k of ["salary","growth","returnRate"])if(finite(s[k])!==null)p[k]=Number(s[k]);
   return p;
 }
+// simulateSavings의 월 사용금액 조회를 화면과 공유한다. 기준 연도·증가·단계 재설정의 순서와 소수 금액은 그대로 유지하고 기록에는 쓰지 않는다.
+function savingsSpending(sc, startYear, startAge, lastYear){
+  const age=y=>startAge+y-startYear;
+  const resets=new Map((sc.stages||[]).filter(s=>finite(s.age)!==null&&finite(s.spending)!==null).map(s=>[Number(s.age),Number(s.spending)]));
+  const spendYear0=finite(sc.spendingYear)??lastYear, spend=new Map();
+  return y=>{ if(spend.has(y))return spend.get(y); let s=finite(sc.spending)||0;
+    for(let k=spendYear0;k<=y;k++){ if(k>spendYear0)s*=1+savingsStage(sc,age(k)).growth/100; if(resets.has(age(k)))s=resets.get(age(k)); }
+    spend.set(y,s); return s; };
+}
 // 실제 기록의 첫 달과 마지막 달 사이에 빠진 달(YYYY-MM)
 function missingActual(sv){
   const ns=new Set((sv?.actual||[]).map(a=>finite(a.total)!==null?ymNum(a.ym):null).filter(n=>n!==null));
@@ -525,11 +534,7 @@ function simulateSavings(sv, sc){
   if(!actual.length||!sc)return null;
   const startYear=finite(sv.startYear)??Math.floor(actual[0].n/12), startAge=finite(sv.startAge)??0, age=y=>startAge+y-startYear;
   const endYear=startYear+Math.round((finite(sc.endAge)??startAge)-startAge), giving=(finite(sc.giving)||0)/100, last=actual[actual.length-1];
-  const resets=new Map((sc.stages||[]).filter(s=>finite(s.age)!==null&&finite(s.spending)!==null).map(s=>[Number(s.age),Number(s.spending)]));
-  const spendYear0=finite(sc.spendingYear)??Math.floor(last.n/12), spend=new Map();
-  const spending=y=>{ if(spend.has(y))return spend.get(y); let s=finite(sc.spending)||0;
-    for(let k=spendYear0;k<=y;k++){ if(k>spendYear0)s*=1+savingsStage(sc,age(k)).growth/100; if(resets.has(age(k)))s=resets.get(age(k)); }
-    spend.set(y,s); return s; };
+  const spending=savingsSpending(sc,startYear,startAge,Math.floor(last.n/12));
   const actualAt=n=>{let v=null;for(const a of actual){if(a.n>n)break;v=a.total;}return v;}, dec=new Map();
   const decBalance=y=>dec.has(y)?dec.get(y):actualAt(y*12+11);
   const years=new Map(), row=y=>{if(!years.has(y))years.set(y,{year:y,age:age(y),salary:0,giving:0,salaryGiving:0,returnGiving:0,spending:0,returns:0,end:null,actual:false});return years.get(y);};
