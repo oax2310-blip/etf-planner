@@ -420,15 +420,16 @@ function renderSavings(){
   const S=doc.savings, view=el("savingsView");
   if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
     el("startSavings").onclick=()=>{ const y=new Date().getFullYear(); doc.savings={savedAt:"",startYear:y,startAge:30,actual:[],scenarios:[{id:newId(),name:"기본",salary:0,giving:0,spending:0,spendingYear:y,growth:2,returnRate:5,endAge:60,stages:[]}]}; saveSection("savings"); render(); }; return; }
-  const sc=S.scenarios.find(x=>x.id===ui.scenario)||S.scenarios[0], sim=sc?simulateSavings(S,sc):null;
+  const scenarios=savingsScenarios(S), sc=scenarios.find(x=>x.id===ui.scenario)||scenarios[0], sim=sc?simulateSavings(S,sc):null;
+  if(ui.scenario&&!scenarios.some(x=>x.id===ui.scenario))setUi({scenario:sc?.id??null});
   const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):sc[key]??""}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
   const stageRow=(st,i)=>`<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${st.age??""}"></label><label><span>월급 (원)</span><input data-stage="${i}" data-k="salary" ${moneyAttrs} value="${moneyText(st.salary)}" placeholder="그대로"></label><label><span>사용금액 (원)</span><input data-stage="${i}" data-k="spending" ${moneyAttrs} value="${moneyText(st.spending)}" placeholder="그대로"></label><label><span>증가율 (%)</span><input data-stage="${i}" data-k="growth" type="number" step="any" value="${st.growth??""}" placeholder="그대로"></label><label><span>수익률 (%)</span><input data-stage="${i}" data-k="returnRate" type="number" step="any" value="${st.returnRate??""}" placeholder="그대로"></label><button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
   const lastN=sim?ymNum(sim.last.ym):null;
   const eventNote=ev=>{ const n=ymNum(ev.start); if(n===null||lastN===null||n>lastN) return ""; const left=Math.max(0,n+Math.round(finite(ev.months)||0)-1-lastN);
     return `<p class="event-note">시작 달이 마지막 실제 기록(${sim.last.ym}) 이전이라 선수금${left?`과 그때까지의 할부는 계산에서 빠지고 남은 ${left}개월만`:"·할부 모두 이미 지난 일이라"} 계산${left?"합니다":"하지 않습니다"}.</p>`; };
   const eventRow=(ev,i)=>`<div class="plan-line event"><label class="wide"><span>이름</span><input data-event="${i}" data-k="name" value="${escA(ev.name||"")}" maxlength="40"></label><label><span>시작 달</span><input data-event="${i}" data-k="start" type="month" value="${escA(ev.start||"")}"></label><label><span>선수금 (원)</span><input data-event="${i}" data-k="down" ${moneyAttrs} value="${moneyText(ev.down)}"></label><label><span>월 할부 (원)</span><input data-event="${i}" data-k="monthly" ${moneyAttrs} value="${moneyText(ev.monthly)}"></label><label><span>개월</span><input data-event="${i}" data-k="months" type="number" step="1" min="0" value="${ev.months??""}"></label><button class="remove" type="button" data-event-del="${i}" aria-label="할부 삭제">삭제</button>${eventNote(ev)}</div>`;
-  const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
-  const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?wonA(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
+  const maxAge=Math.max(...scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
+  const compare=scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?wonA(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
   const actual=[...S.actual].filter(a=>ymNum(a.ym)!==null).sort((a,b)=>String(a.ym).localeCompare(String(b.ym))), actualByMonth=new Map(actual.map(a=>[a.ym,a]));
   const actualYears=[...new Set(actual.map(a=>Math.floor(ymNum(a.ym)/12)))], missing=missingActual(S);
   const startYear=finite(S.startYear)??new Date().getFullYear(), startAge=finite(S.startAge)??0;
@@ -454,11 +455,11 @@ function renderSavings(){
   }).join("");
   const endRow=sim?.rows[sim.rows.length-1], at40=sim?.rows.find(r=>r.age===40&&!r.actual);
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">저축 계획 · 엑셀 복리 저축 계산 시트(보이는 시트만)</div><h1>저축 계획</h1><p>매달 월급 − 기부 − 사용금액 − 할부를 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></div><button class="btn" id="copyScenario" type="button">＋ 시나리오 복사</button></div>
-    <div class="chip-row">${S.scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
+    <div class="chip-row">${scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
     ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 연도를 펼쳐 실제 저축액을 입력하세요"}</small></div>
       <div class="metric"><label>40세 말 (예상)</label><strong>${at40?wonA(at40.end):"—"}</strong><small>${at40?`${eok(at40.end)} · ${at40.year}년 12월`:"계산 범위 밖"}</small></div>
       <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?wonA(endRow.end):"—"}</strong><small>${endRow?`${eok(endRow.end)} · ${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
-    <section class="card panel"><div class="future-panel-head savings-assumptions-head"><h2><button class="alloc-fold" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}" aria-label="${escA(sc.name)} 가정 ${savingsAssumptionsOpen?"접기":"펼치기"}"><span>${escA(sc.name)} 가정</span><span class="alloc-fold-action"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"접기":"펼치기"}</span></span></button></h2><button class="btn mini danger" type="button" id="deleteScenario"${!savingsAssumptionsOpen||S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
+    <section class="card panel"><div class="future-panel-head savings-assumptions-head"><h2><button class="alloc-fold" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}" aria-label="${escA(sc.name)} 가정 ${savingsAssumptionsOpen?"접기":"펼치기"}"><span>${escA(sc.name)} 가정</span><span class="alloc-fold-action"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"접기":"펼치기"}</span></span></button></h2><button class="btn mini danger" type="button" id="deleteScenario"${!savingsAssumptionsOpen||scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
       <div class="alloc-fold-body savings-assumptions-body" id="savingsAssumptionsBody"${savingsAssumptionsOpen?"":" hidden"}>
       <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
       <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 빈칸은 그대로 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
@@ -482,7 +483,7 @@ function renderSavings(){
     savingsAssumptionsOpen=!savingsAssumptionsOpen;
     const button=el("toggleSavingsAssumptions"), action=savingsAssumptionsOpen?"접기":"펼치기";
     el("savingsAssumptionsBody").hidden=!savingsAssumptionsOpen;button.setAttribute("aria-expanded",String(savingsAssumptionsOpen));button.setAttribute("aria-label",`${sc.name} 가정 ${action}`);button.querySelector("[data-savings-assumptions-action]").textContent=action;
-    el("deleteScenario").hidden=!savingsAssumptionsOpen||S.scenarios.length<2;
+    el("deleteScenario").hidden=!savingsAssumptionsOpen||scenarios.length<2;
   };
   onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
     const n=numIn(v); if(n===null) return false; sc[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
@@ -492,7 +493,7 @@ function renderSavings(){
   all("[data-event-del]").forEach(b=>b.onclick=()=>{ sc.events.splice(Number(b.dataset.eventDel),1); if(!sc.events.length) delete sc.events; saveSection("savings"); render(); });
   el("addStage").onclick=()=>{ sc.stages=sc.stages||[]; const last=sc.stages[sc.stages.length-1]; sc.stages.push({age:(finite(last?.age)??(finite(S.startAge)||30))+5}); saveSection("savings"); render(); };
   el("addEvent").onclick=()=>{ sc.events=sc.events||[]; const n=new Date(); sc.events.push({name:"할부",start:ymText(n.getFullYear()*12+n.getMonth()+1),months:12}); saveSection("savings"); render(); };
-  el("deleteScenario").onclick=()=>{ if(!confirm(`'${sc.name}' 시나리오를 삭제할까요?`)) return; S.scenarios=S.scenarios.filter(x=>x!==sc); setUi({scenario:S.scenarios[0]?.id||null}); saveSection("savings"); render(); };
+  el("deleteScenario").onclick=()=>{ if(!confirm(`'${sc.name}' 시나리오를 삭제할까요?`)) return; S.scenarios=S.scenarios.filter(x=>x!==sc); setUi({scenario:savingsScenarios(S)[0]?.id||null}); saveSection("savings"); render(); };
 }
 
 // ---------- 동기화 표시(기록·시세·병합은 assets-store.js에서 두 페이지가 공유) ----------
