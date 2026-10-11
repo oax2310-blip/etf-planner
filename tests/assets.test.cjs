@@ -530,6 +530,33 @@ test('저축 계획: 연도별 월 입력은 기존 기록과 필드를 보존�
   assert.equal(c.setSavingsActual(sv,'2020-12',''),true);assert.equal(c.simulateSavings(sv,sc),null,'마지막 기록도 비우면 예상 계산을 멈춤');
 });
 
+test('저축 계획: 무이자 옛 값과 무관하게 월별 실제 입력·연도 경계의 할부·큰 지출을 계산한다',()=>{
+  const sc={id:'s',salary:100,giving:10,spending:20,spendingYear:2026,growth:10,returnRate:10,endAge:32,
+    stages:[{age:32,salary:50,returnRate:20}],events:[{start:'2026-09',down:999,monthly:3,months:6},{start:'2027-02',down:7,months:0}]};
+  const sv={startYear:2025,startAge:30,actual:[{ym:'2025-12',total:1000},{ym:'2026-10',total:2000}],scenarios:[sc]};
+  for(const legacy of [undefined,{price:3600000,returnRate:100,methods:{m36:{fee:1000000}}},{price:'잘못된 옛 값'}]){
+    const doc={version:1,savings:structuredClone(sv),...(legacy?{installments:legacy}:{})},before=JSON.stringify(doc),loaded=c.cleanAssets(doc);
+    const result=c.simulateSavings(loaded.savings,loaded.savings.scenarios[0]);
+    near(result.at(31),2224,'11·12월 저축 140 − 남은 할부 6 + 수익 90. 과거 선수금 제외');
+    near(result.at(32),2887.32,'다음 해 저축 276 − 남은 할부 6 − 일시불 7 + 수익 400.32');
+    near(result.rows.find(r=>r.year===2027).payments,13,'할부 종료 뒤에는 추가 납부가 없음');
+    assert.equal(JSON.stringify(doc),before,'계산·조회로 기존 값이나 선택 필드를 바꾸지 않음');
+    assert.equal(c.setSavingsActual(loaded.savings,'2026-11','2,067'),true);
+    const updated=c.simulateSavings(loaded.savings,sc);
+    assert.equal(updated.last.ym,'2026-11');near(updated.at(31),2224,'11월 실제 입력 후 12월부터 계산');near(updated.at(32),2887.32,'다음 연도 수익·자산 동일');
+  }
+});
+
+test('옛 무이자 기록은 백업·병합만 보존하고 새 기록에 생성하지 않는다',()=>{
+  const old={version:1,installments:{savedAt:'T1',price:1000}},before=JSON.stringify(old);
+  assert.deepEqual(c.cleanAssets(old),old);assert.equal(JSON.stringify(old),before);
+  assert.equal(c.assetsBlank(old),true,'옛 값만 있으면 활성 자산 기록은 비어 있음');
+  assert.equal(Object.hasOwn(c.cleanAssets({version:1}),'installments'),false);
+  const local={...old,savings:{savedAt:'T2',actual:[],scenarios:[]}},remote={version:1,installments:{savedAt:'T3',price:2000}};
+  const merged=c.mergeAssets(local,remote,old);
+  assert.deepEqual(merged.doc.savings,local.savings);assert.deepEqual(merged.doc.installments,remote.installments);assert.deepEqual(merged.lost,[]);
+});
+
 test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저장 우선 + 버린 쪽 보관', () => {
   const base = {version: 1, allocation: {savedAt: 'T1', total: 1}, ledger: {savedAt: 'T1', years: []}};
   const local = {version: 1, allocation: {savedAt: 'T3', total: 2}, ledger: {savedAt: 'T1', years: []}, savings: {savedAt: 'T2', actual: [], scenarios: []}};
