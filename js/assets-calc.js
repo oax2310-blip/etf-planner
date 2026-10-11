@@ -491,6 +491,9 @@ function averageYearReturn(years){
 // 사용금액은 spendingYear의 월 금액에서 해마다 growth%씩 늘고, 단계(stages: 그 나이부터 월급·증가율·수익률을 바꾸고
 // spending이 있으면 그해 월 사용금액을 그 값으로)로 바꾼다. 나이는 해마다 1살(startYear에 startAge). 마지막 실제 기록(actual) 다음 달부터 endAge 해 12월까지 계산.
 // 할부(events): start 달에 down(선수금·일시불), start 달부터 months개월 동안 monthly. 실제 기록 기간의 지출은 기록에 이미 들어 있어 빼지 않는다.
+// 옛 무이자 시나리오·그 복사본은 백업 호환만 보존하며 선택·비교·예상 계산에서 제외한다. 이지·하드 등 다른 가정의 계산·events는 그대로 사용한다.
+const retiredSavingsScenario = sc => /^무이자(?:\s+복사)*$/.test(String(sc?.name??"").trim());
+const savingsScenarios = sv => (sv?.scenarios||[]).filter(sc=>!retiredSavingsScenario(sc));
 const ymNum = ym => { const m=/^(\d{4})-(\d{2})$/.exec(String(ym||"")); return m&&Number(m[2])>=1&&Number(m[2])<=12 ? Number(m[1])*12+Number(m[2])-1 : null; };
 const ymText = n => `${Math.floor(n/12)}-${String(n%12+1).padStart(2,"0")}`;
 // 월별 실제 저축총액 입력만 actual에 저장한다. 빈칸은 그 달 기록 삭제, 0은 유효한 기록. 기존 달의 다른 필드는 보존하며 잘못된 입력은 기록을 바꾸지 않는다.
@@ -518,7 +521,7 @@ function missingActual(sv){
 }
 function simulateSavings(sv, sc){
   const actual=(sv?.actual||[]).map(a=>({n:ymNum(a.ym),total:finite(a.total)})).filter(a=>a.n!==null&&a.total!==null).sort((a,b)=>a.n-b.n);
-  if(!actual.length||!sc)return null;
+  if(!actual.length||!sc||retiredSavingsScenario(sc))return null;
   const startYear=finite(sv.startYear)??Math.floor(actual[0].n/12), startAge=finite(sv.startAge)??0, age=y=>startAge+y-startYear;
   const endYear=startYear+Math.round((finite(sc.endAge)??startAge)-startAge), giving=(finite(sc.giving)||0)/100, last=actual[actual.length-1];
   const resets=new Map((sc.stages||[]).filter(s=>finite(s.age)!==null&&finite(s.spending)!==null).map(s=>[Number(s.age),Number(s.spending)]));
