@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,setSavingsActual,savingsStage,savingsScenarios,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
   for(const line of ['25선','60일선','20주선','25개월선']){
@@ -530,53 +530,22 @@ test('저축 계획: 연도별 월 입력은 기존 기록과 필드를 보존�
   assert.equal(c.setSavingsActual(sv,'2020-12',''),true);assert.equal(c.simulateSavings(sv,sc),null,'마지막 기록도 비우면 예상 계산을 멈춤');
 });
 
-test('저축 계획: 무이자 옛 값과 무관하게 월별 실제 입력·연도 경계의 할부·큰 지출을 계산한다',()=>{
-  const sc={id:'s',salary:100,giving:10,spending:20,spendingYear:2026,growth:10,returnRate:10,endAge:32,
-    stages:[{age:32,salary:50,returnRate:20}],events:[{start:'2026-09',down:999,monthly:3,months:6},{start:'2027-02',down:7,months:0}]};
-  const sv={startYear:2025,startAge:30,actual:[{ym:'2025-12',total:1000},{ym:'2026-10',total:2000}],scenarios:[sc]};
-  for(const legacy of [undefined,{price:3600000,returnRate:100,methods:{m36:{fee:1000000}}},{price:'잘못된 옛 값'}]){
-    const doc={version:1,savings:structuredClone(sv),...(legacy?{installments:legacy}:{})},before=JSON.stringify(doc),loaded=c.cleanAssets(doc);
-    const result=c.simulateSavings(loaded.savings,loaded.savings.scenarios[0]);
-    near(result.at(31),2224,'11·12월 저축 140 − 남은 할부 6 + 수익 90. 과거 선수금 제외');
-    near(result.at(32),2887.32,'다음 해 저축 276 − 남은 할부 6 − 일시불 7 + 수익 400.32');
-    near(result.rows.find(r=>r.year===2027).payments,13,'할부 종료 뒤에는 추가 납부가 없음');
-    assert.equal(JSON.stringify(doc),before,'계산·조회로 기존 값이나 선택 필드를 바꾸지 않음');
-    assert.equal(c.setSavingsActual(loaded.savings,'2026-11','2,067'),true);
-    const updated=c.simulateSavings(loaded.savings,sc);
-    assert.equal(updated.last.ym,'2026-11');near(updated.at(31),2224,'11월 실제 입력 후 12월부터 계산');near(updated.at(32),2887.32,'다음 연도 수익·자산 동일');
-  }
-});
-
-test('저축 시나리오: 무이자와 복사본은 선택·계산에서 제외하고 이지·하드의 지출과 실제 기록을 보존한다',()=>{
+test('저축 계획: 이지·하드의 월별 실제 입력과 연도 경계의 남은 할부·큰 지출을 계산한다',()=>{
   const easy={id:'easy',name:'이지',salary:100,giving:10,spending:20,spendingYear:2026,growth:10,returnRate:10,endAge:32,
     stages:[{age:32,salary:50,returnRate:20}],events:[{start:'2026-09',down:999,monthly:3,months:6},{start:'2027-02',down:7,months:0}]};
   const hard={...structuredClone(easy),id:'hard',name:'하드',salary:40,growth:0,returnRate:0,stages:[]};
-  const free={...structuredClone(easy),id:'retired',name:'무이자',salary:999999,endAge:99};
-  const sv={startYear:2025,startAge:30,actual:[{ym:'2025-12',total:1000},{ym:'2026-10',total:2000}],scenarios:[free,easy,hard,{...free,id:'copy',name:'무이자 복사'},{...free,id:'copy2',name:' 무이자 복사 복사 '}]};
-  const before=JSON.stringify(sv),active=c.savingsScenarios(sv);
-  assert.deepEqual(active,[easy,hard]);
-  assert.equal(c.simulateSavings(sv,free),null,'옛 선택이나 호출에서도 무이자 예상값을 만들지 않음');
-  assert.equal(c.simulateSavings(sv,sv.scenarios[3]),null,'옛 복사본도 계산하지 않음');
-  near(c.simulateSavings(sv,easy).at(31),2224,'이지의 연말 저축·남은 할부');
-  near(c.simulateSavings(sv,easy).at(32),2887.32,'이지의 다음 연도 수익·큰 지출');
-  near(c.simulateSavings(sv,hard).at(31),2026,'하드의 연말 저축·남은 할부');
-  near(c.simulateSavings(sv,hard).at(32),2205,'하드의 다음 연도 큰 지출');
-  assert.equal(JSON.stringify(sv),before,'불러오기·계산으로 실제 기록·다른 시나리오·옛 백업 값을 바꾸지 않음');
-  const restored=c.cleanAssets({version:1,savings:structuredClone(sv)});
-  assert.deepEqual(c.savingsScenarios(restored.savings).map(s=>s.id),['easy','hard'],'옛 백업 복원 후에도 활성 시나리오는 두 개');
-  assert.deepEqual(restored.savings.actual,sv.actual);
-  assert.deepEqual(c.savingsScenarios({scenarios:[free]}),[],'무이자만 남은 기록도 안전하게 빈 선택 목록');
-  assert.deepEqual(c.savingsScenarios(null),[]);
-});
-
-test('옛 무이자 기록은 백업·병합만 보존하고 새 기록에 생성하지 않는다',()=>{
-  const old={version:1,installments:{savedAt:'T1',price:1000}},before=JSON.stringify(old);
-  assert.deepEqual(c.cleanAssets(old),old);assert.equal(JSON.stringify(old),before);
-  assert.equal(c.assetsBlank(old),true,'옛 값만 있으면 활성 자산 기록은 비어 있음');
-  assert.equal(Object.hasOwn(c.cleanAssets({version:1}),'installments'),false);
-  const local={...old,savings:{savedAt:'T2',actual:[],scenarios:[]}},remote={version:1,installments:{savedAt:'T3',price:2000}};
-  const merged=c.mergeAssets(local,remote,old);
-  assert.deepEqual(merged.doc.savings,local.savings);assert.deepEqual(merged.doc.installments,remote.installments);assert.deepEqual(merged.lost,[]);
+  const sv={startYear:2025,startAge:30,actual:[{ym:'2025-12',total:1000},{ym:'2026-10',total:2000}],scenarios:[easy,hard]};
+  const doc={version:1,savings:structuredClone(sv)},before=JSON.stringify(doc),loaded=c.cleanAssets(doc);
+  const result=c.simulateSavings(loaded.savings,loaded.savings.scenarios[0]);
+  near(result.at(31),2224,'이지 11·12월 저축 140 − 남은 할부 6 + 수익 90. 과거 선수금 제외');
+  near(result.at(32),2887.32,'이지 다음 해 저축 276 − 남은 할부 6 − 일시불 7 + 수익 400.32');
+  near(result.rows.find(r=>r.year===2027).payments,13,'할부 종료 뒤에는 추가 납부가 없음');
+  near(c.simulateSavings(loaded.savings,hard).at(31),2026,'하드의 연말 저축·남은 할부');
+  near(c.simulateSavings(loaded.savings,hard).at(32),2205,'하드의 다음 연도 큰 지출');
+  assert.equal(JSON.stringify(doc),before,'계산·조회로 기존 값이나 선택 필드를 바꾸지 않음');
+  assert.equal(c.setSavingsActual(loaded.savings,'2026-11','2,067'),true);
+  const updated=c.simulateSavings(loaded.savings,easy);
+  assert.equal(updated.last.ym,'2026-11');near(updated.at(31),2224,'11월 실제 입력 후 12월부터 계산');near(updated.at(32),2887.32,'다음 연도 수익·자산 동일');
 });
 
 test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저장 우선 + 버린 쪽 보관', () => {
