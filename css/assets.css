@@ -71,6 +71,8 @@
 /* 저축 계획: 가정 칸 · 나이별 변경 줄 · 표 */
 .panel:has(>.savings-assumptions-head .alloc-fold[aria-expanded=false]){padding-block:4px}
 .savings-assumptions-head{margin-bottom:0}.savings-assumptions-head>h2{flex:1;min-width:0;margin:0}.savings-assumptions-head>[hidden]{display:none}.savings-assumptions-body{margin-top:14px}
+#savingsView .savings-milestone-date{font-size:clamp(17px,1.6vw,21px);line-height:1.4;overflow-wrap:normal;word-break:keep-all}
+.savings-milestone-record{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-3)}.savings-milestone-record b{color:var(--text-2);font-size:13px;font-weight:600;word-break:keep-all}.savings-milestone-record .btn{margin-top:4px;min-height:40px}
 .param-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 6px}.unit-input{position:relative;display:block}.unit-input input{padding-right:34px!important}.unit-input em{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-style:normal;font-size:12.5px;color:var(--text-3);pointer-events:none}
 .sub-title{margin:20px 0 8px;font-size:14.5px;font-weight:700}.sub-title small{margin-left:6px;font-size:12px;font-weight:500;color:var(--text-3)}
 .plan-lines{display:grid;gap:8px;margin-bottom:8px}.plan-lines .hint{margin:0}.plan-line{display:grid;grid-template-columns:70px repeat(4,minmax(0,1fr)) auto;gap:8px;align-items:end;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}

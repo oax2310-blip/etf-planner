@@ -24,6 +24,7 @@ function setup(initial,fetcher,shared){
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
+const milestoneDoc=()=>({...fake(),savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000}],scenarios:[{id:'base',name:'가상 계획',salary:100}],milestoneRecord:{ym:'2031-01',age:37}}});
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 const contents=doc=>json({sha:'remote-sha',encoding:'base64',content:Buffer.from(JSON.stringify(doc)).toString('base64')});
 function connect(storage){storage.set('etf-planner-data-repo','example/private-data');storage.set('etf-planner-github-token','fake-test-token');}
@@ -33,6 +34,57 @@ test('공유 자산 기록: 입력 없이 열면 기존 분할매수·목표·�
   assert.deepEqual(JSON.parse(storage.get(KEY)),original);
   assert.equal(store.status.state,'off');
   assert.equal(storage.has(BASE),false);
+});
+
+test('저축 최단 기록: 조회는 생성·초기화하지 않고 더 빠른 기록의 명시적 저장만 허용한다',()=>{
+  const original=milestoneDoc(),first=setup(original);first.store.start();
+  assert.deepEqual(JSON.parse(first.storage.get(KEY)),original);
+  for(const record of [{ym:'2032-01',age:38},{ym:'2031-01',age:99},{ym:'2031-13',age:37},null])assert.equal(first.store.saveSavingsMilestone(record),false);
+  assert.deepEqual(JSON.parse(first.storage.get(KEY)),original);
+  assert.equal(first.store.saveSavingsMilestone({ym:'2030-12',age:36,total:500000000,actual:false}),true);
+  const saved=JSON.parse(first.storage.get(KEY));assert.deepEqual(saved.savings.milestoneRecord,{ym:'2030-12',age:36});
+  assert.deepEqual(saved.savings.actual,original.savings.actual);assert.deepEqual(saved.savings.scenarios,original.savings.scenarios);
+  assert.deepEqual(saved.allocation,original.allocation);assert.deepEqual(saved.ledger,original.ledger);
+  const reloaded=setup(null,null,first.storage);reloaded.store.start();assert.deepEqual(clone(reloaded.store.doc.savings.milestoneRecord),saved.savings.milestoneRecord);
+  const empty=milestoneDoc();delete empty.savings.milestoneRecord;const fresh=setup(empty);fresh.store.start();
+  assert.equal(Object.hasOwn(fresh.store.doc.savings,'milestoneRecord'),false,'불러오기에서 개인 기준 기록을 기본값으로 만들지 않는다');
+  assert.equal(fresh.store.saveSavingsMilestone({ym:'2032-04'}),true);assert.deepEqual(clone(fresh.store.doc.savings.milestoneRecord),{ym:'2032-04'});
+});
+
+test('저축 최단 기록: 다른 탭의 빠른 기록과 최신 입력을 유지하고 옛 백업 복원으로 기록이 늦어지지 않는다',()=>{
+  const original=milestoneDoc(),first=setup(original),second=setup(null,null,first.storage);first.store.start();second.store.start();
+  assert.equal(first.store.saveSavingsMilestone({ym:'2030-12',age:36}),true);
+  second.store.doc.savings.scenarios[0].salary=200;second.store.saveSection('savings');first.event();
+  assert.deepEqual(clone(first.store.doc.savings.milestoneRecord),{ym:'2030-12',age:36});assert.equal(first.store.doc.savings.scenarios[0].salary,200);
+  assert.equal(second.store.saveSavingsMilestone({ym:'2031-01',age:37}),false);
+  assert.equal(first.store.saveSavingsMilestone({ym:'2030-11',age:36}),true);
+  assert.equal(second.store.saveSavingsMilestone({ym:'2030-10',age:36}),true,'이벤트를 아직 못 받은 탭도 최신 저장 데이터를 합친다');
+  assert.equal(second.store.doc.savings.scenarios[0].salary,200);assert.deepEqual(JSON.parse(second.storage.get(KEY)).savings.milestoneRecord,{ym:'2030-10',age:36});
+  assert.equal(second.store.restore(original),true);assert.deepEqual(clone(second.store.doc.savings.milestoneRecord),{ym:'2030-10',age:36});
+  const earlier=clone(original);earlier.savings.milestoneRecord={ym:'2030-09',age:36};second.store.restore(earlier);
+  assert.deepEqual(clone(second.store.doc.savings.milestoneRecord),earlier.savings.milestoneRecord);
+});
+
+test('저축 최단 기록: 브라우저 저장 실패 시 저장 성공으로 표시하거나 기존 기록을 바꾸지 않는다',()=>{
+  const original=milestoneDoc(),{store,storage,context}=setup(original),before=storage.get(KEY);
+  context.localStorage.setItem=()=>{throw Error('quota');};
+  assert.equal(store.saveSavingsMilestone({ym:'2030-12',age:36}),false);
+  assert.deepEqual(clone(store.doc),original);assert.equal(storage.get(KEY),before);assert.equal(store.status.state,'error');assert.match(store.status.message,/최단 기록.*저장하지 못했습니다/);
+});
+
+test('저축 최단 기록: 최신 가정과 더 빠른 기록을 비공개 저장소에 함께 동기화하고 재실행 후 보존한다',async()=>{
+  const original=milestoneDoc(),remote=clone(original);remote.savings.savedAt='2099-01-01';remote.savings.scenarios[0].salary=300;
+  let uploaded;const {store,storage}=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+    if(options.method==='PUT'){uploaded=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new'}});}
+    return contents(remote);
+  });
+  storage.set(BASE,JSON.stringify(original));connect(storage);
+  assert.equal(store.saveSavingsMilestone({ym:'2030-12',age:36}),true);await store.sync();
+  assert.equal(store.status.state,'done');assert.deepEqual(uploaded.savings.milestoneRecord,{ym:'2030-12',age:36});assert.equal(uploaded.savings.scenarios[0].salary,300);
+  assert.deepEqual(uploaded.savings.actual,original.savings.actual);assert.deepEqual(uploaded.allocation,original.allocation);
+  const reloaded=setup(uploaded);reloaded.store.start();assert.deepEqual(clone(reloaded.store.doc.savings.milestoneRecord),uploaded.savings.milestoneRecord);
 });
 
 test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른 페이지의 변경을 보존한다',async()=>{

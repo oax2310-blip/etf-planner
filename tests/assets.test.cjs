@@ -7,7 +7,7 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsMilestone,earlierSavingsRecord,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
 test('매수대기는 예산·회차 합계에서 제외하고 일선·주선·월선·시선마다 하락 도달 알림을 만든다',()=>{
   for(const line of ['25선','60일선','20주선','25개월선']){
@@ -502,6 +502,54 @@ test('저축 계획: 매달 월급 − 기부 − 사용금액, 12월에 전년 
   assert.equal(c.ymText(c.ymNum('2026-12') + 1), '2027-01'); assert.equal(c.ymNum('2026-13'), null);
   assert.deepEqual(c.missingActual({actual: [{ym: '2026-03', total: 1}, {ym: '2025-12', total: 1}, {ym: '2026-02', total: null}]}), ['2026-01', '2026-02'], '첫 달~마지막 달 사이 빈 달');
   assert.deepEqual(c.missingActual({actual: []}), []);
+});
+
+test('5억 달성: 연말보다 앞선 최초 월말을 찾고 경계값·연도 나이·나이별 변경을 적용한다',()=>{
+  const sv={startYear:2030,startAge:36,actual:[{ym:'2030-12',total:499000000}]};
+  const sc={salary:1000000,giving:0,spending:0,growth:0,returnRate:0,endAge:38,stages:[]};
+  const before=JSON.stringify([sv,sc]),sim=c.simulateSavings(sv,sc);
+  assert.deepEqual(c.savingsMilestone(sim),{ym:'2031-01',age:37,total:500000000,actual:false});
+  assert.equal(sim.rows[1].end,511000000);assert.equal(sim.months.find(m=>m.ym==='2032-01').total,512000000);
+  assert.equal(JSON.stringify([sv,sc]),before,'월별 관측·달성 조회는 입력에 필드를 만들지 않는다');
+  assert.equal(c.savingsMilestone(c.simulateSavings(sv,{...sc,salary:500000})).ym,'2031-02');
+  assert.equal(c.savingsMilestone(c.simulateSavings(sv,{...sc,salary:0,stages:[{age:38,salary:1000000}]})).ym,'2032-01');
+  const below=c.simulateSavings({...sv,actual:[{ym:'2030-12',total:499999999.99}]},{...sc,salary:0});
+  assert.equal(c.savingsMilestone(below),null,'표시 반올림으로 5억처럼 보여도 원래 잔액이 미달이면 달성하지 않는다');
+  assert.equal(c.savingsMilestone(null),null);assert.equal(c.simulateSavings({...sv,actual:[]},sc),null);
+});
+
+test('5억 달성: 12월 수익·기부를 모두 반영한 월말을 읽고 이후 손실에도 최초 달성 월을 유지한다',()=>{
+  const sv={startYear:2030,startAge:36,actual:[{ym:'2030-12',total:450000000}]};
+  const sc={salary:1000000,giving:10,spending:100000,spendingYear:2031,growth:10,returnRate:10,endAge:38,stages:[{age:38,salary:2000000,returnRate:-10}]};
+  const sim=c.simulateSavings(sv,sc),first=sim.rows[1],next=sim.rows[2];
+  assert.equal(sim.months.find(m=>m.ym==='2031-11').total,458800000);
+  assert.deepEqual(c.savingsMilestone(sim),{ym:'2031-12',age:37,total:500100000,actual:false});
+  assert.equal(first.returnGiving,4500000);assert.equal(first.returns,40500000);assert.equal(first.end,500100000);
+  assert.equal(sim.months.find(m=>m.ym==='2032-01').total,501790000,'기부 차감 후 연말 잔액을 다음 해에 그대로 이월한다');
+  assert.equal(next.returns,-50010000);assert.equal(next.returnGiving,0);assert.equal(next.end,470370000);
+  assert.equal(c.savingsMilestone(c.simulateSavings(sv,{...sc,returnRate:0,stages:[]})),null);
+});
+
+test('5억 달성: 누락 실제 월을 보간하지 않고 기록된 월말만 사용하며 예측 종료 월을 넘지 않는다',()=>{
+  const sv={startYear:2030,startAge:36,actual:[{ym:'2030-01',total:499000000},{ym:'2030-03',total:500000000},{ym:'2030-13',total:600000000}]};
+  const sc={salary:0,endAge:36},sim=c.simulateSavings(sv,sc);
+  assert.equal(sim.months.some(m=>m.ym==='2030-02'),false);
+  assert.deepEqual(c.savingsMilestone(sim),{ym:'2030-03',age:36,total:500000000,actual:true});
+  assert.equal(c.savingsMilestone(c.simulateSavings({...sv,actual:[{ym:'2030-12',total:499000000}]},{salary:1000000,endAge:36})),null);
+  assert.equal(c.savingsMilestone(c.simulateSavings({...sv,actual:[{ym:'2031-01',total:500000000}]},sc)),null);
+});
+
+test('저축 최단 기록: 새 가정·다른 기기·옛 동기화 기준과 병합해도 가장 빠른 기록만 보존한다',()=>{
+  const savings={savedAt:'T1',actual:[],scenarios:[{id:'base',salary:1}],milestoneRecord:{ym:'2031-01',age:37}};
+  const base={version:1,savings},local={version:1,savings:{...savings,savedAt:'T2',milestoneRecord:{ym:'2030-12',age:36}}};
+  const remote={version:1,savings:{...savings,savedAt:'T3',scenarios:[{id:'base',salary:2}]}};
+  const before=JSON.stringify([base,local,remote]),merged=c.mergeAssets(local,remote,base);
+  assert.deepEqual(merged.doc.savings.scenarios,remote.savings.scenarios,'가정은 기존 구역 병합 규칙대로 선택한다');
+  assert.deepEqual(merged.doc.savings.milestoneRecord,local.savings.milestoneRecord);
+  delete remote.savings.milestoneRecord;
+  assert.deepEqual(c.mergeAssets(base,remote,base).doc.savings.milestoneRecord,savings.milestoneRecord,'옛 기기에서 새 필드가 사라져도 기록 유지');
+  assert.equal(JSON.stringify([base,local,{...remote,savings:{...remote.savings,milestoneRecord:savings.milestoneRecord}}]),before,'병합은 원본을 수정하지 않는다');
+  assert.equal(c.earlierSavingsRecord({ym:'잘못된 날짜'},{ym:'2031-13'}),null);
 });
 
 test('저축 계획: 투자손실·수익률 0은 수익 기부를 만들지 않고 손실은 전액 반영한다',()=>{

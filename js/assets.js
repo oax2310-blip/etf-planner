@@ -412,6 +412,10 @@ function openYear(y){
 }
 
 // ---------- 저축 계획 ----------
+function savingsMilestoneText(record){
+  const n=ymNum(record?.ym);if(n===null)return "";
+  const age=finite(record.age);return `${Math.floor(n/12)}년 ${n%12+1}월${age!==null?` (${age}세)`:""}`;
+}
 const KEY_AGES = [35,40,45,50,60,70,80,90];
 let savingsAllYears = false; // 모든 연도를 표시하는지(화면 상태, 저장 안 함)
 let savingsCurrentYear = new Date().getFullYear();
@@ -463,11 +467,13 @@ function renderSavings(){
         <p class="hint" id="${hintId}">빈칸은 미기록이며, 입력한 값을 비우면 그 달 기록이 삭제됩니다.${predicted&&r.recordCount?" 수익·기부·지출은 마지막 실제 기록 다음 달부터의 예상입니다.":!predicted&&r.actual?" 실제 기록 기간의 수익·기부·지출은 추정하지 않습니다.":""}</p>
         ${gaps.length?`<p class="hint missing-note">기록 사이에 빠진 달: ${gaps.map(ym=>`${Number(ym.slice(5))}월`).join(", ")}</p>`:""}<div class="savings-month-grid">${months}</div></div></section>`;
   }).join("");
-  const endRow=sim?.rows[sim.rows.length-1], at40=sim?.rows.find(r=>r.age===40&&!r.actual);
+  const endRow=sim?.rows[sim.rows.length-1], milestone=savingsMilestone(sim), best=earlierSavingsRecord(S.milestoneRecord);
+  const canSave=milestone&&(!best||ymNum(milestone.ym)<ymNum(best.ym));
   view.innerHTML=`<div class="heading"><div><div class="eyebrow">저축 계획 · 엑셀 복리 저축 계산 시트(보이는 시트만)</div><h1>저축 계획</h1><p>매달 월급 − 기부 − 사용금액을 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></div><button class="btn" id="copyScenario" type="button">＋ 시나리오 복사</button></div>
     <div class="chip-row">${S.scenarios.map(x=>`<button class="chip${x===sc?" active":""}" type="button" data-scenario="${escA(x.id)}">${escA(x.name)}</button>`).join("")}</div>
     ${sc?`<div class="card metrics"><div class="metric"><label>마지막 실제 기록</label><strong>${sim?wonA(sim.last.total):"—"}</strong><small>${sim?`${eok(sim.last.total)} · ${sim.last.ym.replace("-","년 ")}월`:"아래 연도를 펼쳐 실제 저축액을 입력하세요"}</small></div>
-      <div class="metric"><label>40세 말 (예상)</label><strong>${at40?wonA(at40.end):"—"}</strong><small>${at40?`${eok(at40.end)} · ${at40.year}년 12월`:"계산 범위 밖"}</small></div>
+      <div class="metric savings-milestone" aria-live="polite"><label>5억 달성 예상</label><strong class="savings-milestone-date">${milestone?savingsMilestoneText(milestone):sim?"예측 기간 내 미달성":"계산할 실제 기록 없음"}</strong><small>${milestone?.actual?"실제 월말 기록 · 이미 달성":"현재 시나리오 · 월말 자산 기준"}</small>
+        <div class="savings-milestone-record"><span>과거 최단 기록</span><b>${best?savingsMilestoneText(best):"저장된 기록 없음"}</b>${canSave?'<button class="btn mini" id="saveSavingsMilestone" type="button">최단 기록 저장</button>':""}</div></div>
       <div class="metric"><label>${endRow?`${endRow.age}세 말 (예상)`:"종료 나이"}</label><strong>${endRow?wonA(endRow.end):"—"}</strong><small>${endRow?`${eok(endRow.end)} · ${endRow.year}년 12월 · 종료 나이 ${sc.endAge}세`:""}</small></div></div>
     <section class="card panel"><div class="future-panel-head savings-assumptions-head"><h2><button class="alloc-fold" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}" aria-label="${escA(sc.name)} 가정 ${savingsAssumptionsOpen?"접기":"펼치기"}"><span>${escA(sc.name)} 가정</span><span class="alloc-fold-action"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"접기":"펼치기"}</span></span></button></h2><button class="btn mini danger" type="button" id="deleteScenario"${!savingsAssumptionsOpen||S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
       <div class="alloc-fold-body savings-assumptions-body" id="savingsAssumptionsBody"${savingsAssumptionsOpen?"":" hidden"}>
@@ -479,6 +485,10 @@ function renderSavings(){
     <div class="section-heading"><h2>${sc?`${escA(sc.name)} · `:""}연도별</h2><span>연도를 펼쳐 월별 실제 저축액 수정 · 수익과 기부는 마지막 기록 다음 달부터 예상</span></div>
     <section class="card savings-years"><div class="savings-years-head"><span>연도</span><span>저축총액</span><span>투자수익</span><span title="월급 + 투자수익">기부금</span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</section>`;
   all("[data-scenario]").forEach(b=>b.onclick=()=>{ setUi({scenario:b.dataset.scenario}); renderSavings(); });
+  if(el("saveSavingsMilestone"))el("saveSavingsMilestone").onclick=()=>{
+    const savings=doc.savings, scenario=savings.scenarios.find(x=>x.id===ui.scenario)||savings.scenarios[0];
+    const current=savingsMilestone(simulateSavings(savings,scenario));if(current)assetStore.saveSavingsMilestone(current);renderSavings();
+  };
   if(el("toggleYears")) el("toggleYears").onclick=()=>{ savingsAllYears=!savingsAllYears; renderSavings(); };
   all("[data-savings-year]").forEach(b=>b.onclick=()=>{
     const year=Number(b.dataset.savingsYear), open=!savingsOpenYears.has(year);if(open)savingsOpenYears.add(year);else savingsOpenYears.delete(year);
