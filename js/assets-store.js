@@ -13,7 +13,7 @@ function writeLocal(){writeJson(A_KEY,doc);lastLocal=JSON.parse(JSON.stringify(d
 function saveSection(section){
   // 두 페이지에서 다른 구역을 고쳤으면 localStorage의 최신 구역도 함께 보존한다.
   const latest=cleanAssets(readJson(A_KEY,null));
-  for(const s of ASSET_STORED_SECTIONS)if(s!==section&&latest?.[s]&&(!doc[s]||String(latest[s].savedAt||"")>String(doc[s].savedAt||"")))doc[s]=latest[s];
+  for(const s of ASSET_SECTIONS)if(s!==section&&latest?.[s]&&(!doc[s]||String(latest[s].savedAt||"")>String(doc[s].savedAt||"")))doc[s]=latest[s];
   if(doc[section])doc[section].savedAt=new Date().toISOString();writeLocal();scheduleAssetSync(1500);emit("change");
 }
 const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", message:"", at:"", remote:null};
@@ -134,8 +134,8 @@ function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync
 
 function restore(incoming){
   const next=cleanAssets(incoming);if(!next||assetsBlank(next))return false;
-  keepLost(ASSET_STORED_SECTIONS.filter(s=>next[s]&&doc[s]).map(s=>({section:s,data:doc[s]})));
-  const now=new Date().toISOString();for(const s of ASSET_STORED_SECTIONS)if(next[s])doc[s]={...next[s],savedAt:now};
+  keepLost(ASSET_SECTIONS.filter(s=>next[s]&&doc[s]).map(s=>({section:s,data:doc[s]})));
+  const now=new Date().toISOString();for(const s of ASSET_SECTIONS)if(next[s])doc[s]={...next[s],savedAt:now};
   writeLocal();scheduleAssetSync(300);emit("change");return true;
 }
 function refreshConfig(){aSync.checked="";aSync.remote=null;return syncAssets();}
