@@ -46,9 +46,9 @@ test('저축 연도별: 시스템 현재 연도만 기본 펼침이고 화면 �
   assert.deepEqual(openYears(h),[2026]);
   assert.ok(h.state().every(([,open,visible])=>open===visible));
   assert.match(h.html(),/class="savings-year savings-year-current"/);
-  assert.match(h.html(),/2026년<\/b><small class="savings-year-age">32세<\/small><small class="savings-current-label">올해<\/small>/);
+  assert.match(h.html(),/2026년<\/b><small class="savings-year-age">32세<\/small>/);
   const years=h.html().slice(h.html().indexOf('<section class="card savings-years">'));
-  assert.doesNotMatch(years,/펼치기|접기|data-savings-fold-action|실제 마지막 기록 \/ 예상 12월/);
+  assert.doesNotMatch(years,/펼치기|접기|data-savings-fold-action|올해|savings-current-label|실제 마지막 기록 \/ 예상 12월/);
   assert.match(years,/aria-label="2026년 월별 저축 기록"/);
   assert.equal(h.storage.get(key),before);assert.equal(h.saves(),0);
 });
@@ -77,7 +77,7 @@ test('저축 연도별: 연도 변경을 주기적으로 확인하고 새 현재
   const h=setup(),before=h.storage.get(key);h.click(2025);h.click(2027);
   h.setYear(2027);h.tick();
   assert.deepEqual(openYears(h),[2027]);
-  assert.match(h.html(),/2027년<\/b><small class="savings-year-age">33세<\/small><small class="savings-current-label">올해<\/small>/);
+  assert.match(h.html(),/class="savings-year savings-year-current"><button[^>]+data-savings-year="2027"/);
   h.click(2028);h.render();assert.deepEqual(openYears(h),[2027,2028]);
   assert.equal(h.storage.get(key),before);assert.equal(h.saves(),0);
 });

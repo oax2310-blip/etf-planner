@@ -457,7 +457,7 @@ function renderSavings(){
     const balanceNote=predicted?`예상 12월${r.recordCount?` · 실제 ${r.recordCount}개월`:""}`:r.actual?`실제 ${Number(r.endYm.slice(5))}월 · ${r.recordCount}개월`:"기록 없음";
     const gaps=missing.filter(ym=>ym.startsWith(`${r.year}-`));
     return `<section class="savings-year${r.year===currentYear?" savings-year-current":""}"><button class="savings-year-toggle" type="button" data-savings-year="${r.year}" aria-expanded="${open}" aria-controls="savings-year-${r.year}" aria-label="${r.year}년 월별 저축 기록">
-      <span class="savings-year-label"><span class="savings-year-title"><b>${r.year}년</b><small class="savings-year-age">${r.age}세</small>${r.year===currentYear?'<small class="savings-current-label">올해</small>':""}</span></span>
+      <span class="savings-year-label"><span class="savings-year-title"><b>${r.year}년</b><small class="savings-year-age">${r.age}세</small></span></span>
       <span class="savings-year-balance"><b title="${balanceNote}">${r.end!==null?wonA(r.end):"—"}</b></span>${results}</button>
       <div class="savings-year-body" id="savings-year-${r.year}"${open?"":" hidden"}><div class="savings-year-results">${giving}</div>${totals}<div class="savings-record-heading"><h3>월별 실제 저축총액</h3><span>원 단위 · 입력 후 자동 저장</span></div>
         <p class="hint" id="${hintId}">빈칸은 미기록이며, 입력한 값을 비우면 그 달 기록이 삭제됩니다.${predicted&&r.recordCount?" 수익·기부·지출은 마지막 실제 기록 다음 달부터의 예상입니다.":!predicted&&r.actual?" 실제 기록 기간의 수익·기부·지출은 추정하지 않습니다.":""}</p>
