@@ -477,21 +477,20 @@ test('금액 쉼표는 음수·0·소수 입력을 유지하며 기존 숫자 �
   assert.deepEqual(c.cleanAssets(JSON.parse(JSON.stringify(original))),original,'옛 이자와 상세 내역을 불러오기만 할 때 바꾸지 않는다');
 });
 
-test('저축 계획: 매달 월급 − 기부 − 사용금액 − 할부, 12월에 전년 12월 × 수익률(기부 뺌), 나이별 단계', () => {
+test('저축 계획: 매달 월급 − 기부 − 사용금액, 12월에 전년 12월 × 수익률(기부 뺌), 나이별 단계', () => {
   const sv = {startYear: 2020, startAge: 30, actual: [{ym: '2020-12', total: 1000}, {ym: '2021-10', total: 2000}]};
   const sc = {salary: 100, giving: 10, spending: 20, spendingYear: 2021, growth: 10, returnRate: 10, endAge: 33,
-    stages: [{age: 32, salary: 50, returnRate: 20}, {age: 33, spending: 5}],
-    events: [{name: '할부', start: '2021-12', down: 7, monthly: 3, months: 2}]};
+    stages: [{age: 32, salary: 50, returnRate: 20}, {age: 33, spending: 5}]};
   const r = c.simulateSavings(sv, sc);
   assert.deepEqual(r.last, {ym: '2021-10', total: 2000});
-  // 2021: 11월 2000 + 100 − 10 − 20 = 2070, 12월 + 70 − 10(선수금 7 + 할부 3) + 1000 × 10% × 0.9 = 2220
+  // 2021: 11월 2000 + 100 − 10 − 20 = 2070, 12월 + 70 + 1000 × 10% × 0.9 = 2230
   const y21 = r.rows.find(x => x.year === 2021);
-  near(y21.end, 2220, '2021년 말'); near(y21.payments, 10, '2021 할부'); near(y21.returns, 90, '기부 뺀 수익'); assert.equal(y21.actual, false);
+  near(y21.end, 2230, '2021년 말'); near(y21.returns, 90, '기부 뺀 수익'); assert.equal(y21.actual, false);
   near(y21.salaryGiving, 20, '실제 기록 이후 2개월의 월급 기부');near(y21.returnGiving, 10, '연 투자수익 기부');near(y21.giving, 30, '월급 기부 + 투자수익 기부');
-  // 2022(32세): 월급 50, 사용금액 20 × 1.1 = 22, 1월 할부 3, 12월 수익 = 2220 × 20% × 0.9
+  // 2022(32세): 월급 50, 사용금액 20 × 1.1 = 22, 12월 수익 = 2230 × 20% × 0.9
   const y22 = r.rows.find(x => x.year === 2022);
-  near(y22.end, 2220 + 12 * (50 - 5 - 22) - 3 + 2220 * 0.2 * 0.9, '2022년 말');
-  near(y22.returnGiving, 44.4, '나이별 연 수익률 변경을 투자수익 기부에도 적용');near(y22.giving, 60 + 44.4, '매년 월급·투자수익 기부 합산');
+  near(y22.end, 2907.4, '2022년 말');
+  near(y22.returnGiving, 44.6, '나이별 연 수익률 변경을 투자수익 기부에도 적용');near(y22.giving, 60 + 44.6, '매년 월급·투자수익 기부 합산');
   // 2023(33세): 사용금액 5로 재설정
   const y23 = r.rows.find(x => x.year === 2023);
   near(y23.end, y22.end + 12 * (50 - 5 - 5) + y22.end * 0.2 * 0.9, '2023년 말');
@@ -530,22 +529,46 @@ test('저축 계획: 연도별 월 입력은 기존 기록과 필드를 보존�
   assert.equal(c.setSavingsActual(sv,'2020-12',''),true);assert.equal(c.simulateSavings(sv,sc),null,'마지막 기록도 비우면 예상 계산을 멈춤');
 });
 
-test('저축 계획: 이지·하드의 월별 실제 입력과 연도 경계의 남은 할부·큰 지출을 계산한다',()=>{
+test('저축 계획: 이지·하드의 월별 실제 입력과 나이별 가정을 보존한다',()=>{
   const easy={id:'easy',name:'이지',salary:100,giving:10,spending:20,spendingYear:2026,growth:10,returnRate:10,endAge:32,
-    stages:[{age:32,salary:50,returnRate:20}],events:[{start:'2026-09',down:999,monthly:3,months:6},{start:'2027-02',down:7,months:0}]};
+    stages:[{age:32,salary:50,returnRate:20}]};
   const hard={...structuredClone(easy),id:'hard',name:'하드',salary:40,growth:0,returnRate:0,stages:[]};
   const sv={startYear:2025,startAge:30,actual:[{ym:'2025-12',total:1000},{ym:'2026-10',total:2000}],scenarios:[easy,hard]};
   const doc={version:1,savings:structuredClone(sv)},before=JSON.stringify(doc),loaded=c.cleanAssets(doc);
   const result=c.simulateSavings(loaded.savings,loaded.savings.scenarios[0]);
-  near(result.at(31),2224,'이지 11·12월 저축 140 − 남은 할부 6 + 수익 90. 과거 선수금 제외');
-  near(result.at(32),2887.32,'이지 다음 해 저축 276 − 남은 할부 6 − 일시불 7 + 수익 400.32');
-  near(result.rows.find(r=>r.year===2027).payments,13,'할부 종료 뒤에는 추가 납부가 없음');
-  near(c.simulateSavings(loaded.savings,hard).at(31),2026,'하드의 연말 저축·남은 할부');
-  near(c.simulateSavings(loaded.savings,hard).at(32),2205,'하드의 다음 연도 큰 지출');
+  near(result.at(31),2230,'이지 11·12월 저축 140 + 수익 90');
+  near(result.at(32),2907.4,'이지 다음 해 저축 276 + 수익 401.4');
+  near(c.simulateSavings(loaded.savings,hard).at(31),2032,'하드의 연말 저축');
+  near(c.simulateSavings(loaded.savings,hard).at(32),2224,'하드의 다음 연도 저축');
   assert.equal(JSON.stringify(doc),before,'계산·조회로 기존 값이나 선택 필드를 바꾸지 않음');
-  assert.equal(c.setSavingsActual(loaded.savings,'2026-11','2,067'),true);
+  assert.equal(c.setSavingsActual(loaded.savings,'2026-11','2,070'),true);
   const updated=c.simulateSavings(loaded.savings,easy);
-  assert.equal(updated.last.ym,'2026-11');near(updated.at(31),2224,'11월 실제 입력 후 12월부터 계산');near(updated.at(32),2887.32,'다음 연도 수익·자산 동일');
+  assert.equal(updated.last.ym,'2026-11');near(updated.at(31),2230,'11월 실제 입력 후 12월부터 계산');near(updated.at(32),2907.4,'다음 연도 수익·자산 동일');
+  assert.ok(loaded.savings.scenarios.every(sc=>!Object.hasOwn(sc,'events')),'새 가정에는 삭제된 기능의 필드를 만들지 않는다');
+});
+
+test('저축 계획: 옛 할부·큰 지출 기록은 예측에 반영하지 않고 불러오기·병합에도 기존 데이터를 보존한다',()=>{
+  const sc={id:'easy',name:'이지',salary:100,giving:10,spending:20,spendingYear:2026,growth:10,returnRate:10,endAge:32,
+    stages:[{age:32,salary:50,returnRate:20}],note:'가상 설정'};
+  const sv={savedAt:'T2',startYear:2025,startAge:30,actual:[{ym:'2025-12',total:1000,note:'가상 기록'},{ym:'2026-10',total:2000}],scenarios:[sc]};
+  const baseline=c.simulateSavings(sv,sc);
+  for(const events of [[
+    {start:'2026-01',down:100,monthly:5,months:3},
+    {start:'2026-09',down:999,monthly:3,months:6},
+    {start:'2027-02',down:7,months:0},
+    {start:'2027-06',monthly:12,months:2},
+  ],{legacy:true}]){
+    const legacy={...structuredClone(sv),scenarios:[{...structuredClone(sc),events}]};
+    const doc={version:1,savings:legacy},before=JSON.stringify(doc),loaded=c.cleanAssets(doc);
+    const merged=c.mergeAssets({version:1},loaded,{version:1}).doc;
+    assert.deepEqual(loaded,doc,'불러오기에서 실제 입력·가정·선택 필드를 보존한다');
+    assert.deepEqual(merged,doc,'기기 병합에서 삭제된 기능의 옛 기록 때문에 다른 데이터를 지우지 않는다');
+    const result=c.simulateSavings(merged.savings,merged.savings.scenarios[0]);
+    assert.deepEqual(result.rows,baseline.rows,'과거·진행 중·미래의 선수금과 월 납부는 월급·기부·사용금액·수익·연말 자산에 영향 없음');
+    assert.deepEqual(result.last,baseline.last);assert.equal(result.endYear,baseline.endYear);
+    for(const age of [30,31,32,99])assert.equal(result.at(age),baseline.at(age),'나이별 자산 예측도 동일');
+    assert.equal(JSON.stringify(doc),before,'계산·불러오기·병합은 기존 기록을 변경하지 않는다');
+  }
 });
 
 test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저장 우선 + 버린 쪽 보관', () => {
