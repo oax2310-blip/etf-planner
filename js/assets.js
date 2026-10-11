@@ -121,12 +121,22 @@ function renderAlloc(tab="alloc"){
       ${g.note?`<p class="group-note" title="${escA(g.note)}"><span class="alloc-note-label">메모</span>${noteLineA(g.note)}</p>`:""}
       ${plain.map(itemRow).join("")}${names.map(n=>`<div class="asset-section">${sec(n)}${g.items.filter(it=>it.section===n).map(itemRow).join("")}</div>`).join("")}
       ${g.items.length?"":`<p class="group-empty">종목 없음</p>`}<div class="group-foot"><button class="btn mini ghost" type="button" data-add-item="${escA(g.id)}">＋ 종목</button></div></div></section>`; };
-  // 종목별 목록은 저장된 그룹 순서를 그대로 따른다. 연속한 같은 분류만 묶고, 지역·분류별로 다시 정렬하거나 기록을 바꾸지 않는다.
+  // 연속한 같은 분류만 묶는다. 중국 블록만 마지막 인도 블록 바로 뒤로 옮기고, 나머지 순서와 저장 기록은 유지한다.
   const detailBlocks=[];
   for(const g of a.groups){
     const prev=detailBlocks[detailBlocks.length-1];
     if(prev&&prev.classId===g.classId)prev.groups.push(g);
     else detailBlocks.push({classId:g.classId,label:classLabels.get(g.classId)||"분류 없음",groups:[g]});
+  }
+  const overseasClasses=s.regions.find(r=>r.name==="해외")?.classes||[];
+  const chinaIds=new Set(overseasClasses.filter(c=>c.name==="중국").map(c=>c.id));
+  const indiaIds=new Set(overseasClasses.filter(c=>c.name==="인도").map(c=>c.id));
+  const chinaBlocks=detailBlocks.filter(b=>chinaIds.has(b.classId));
+  const otherBlocks=detailBlocks.filter(b=>!chinaIds.has(b.classId));
+  const india=otherBlocks.map(b=>indiaIds.has(b.classId)).lastIndexOf(true);
+  if(india>=0&&chinaBlocks.length){
+    otherBlocks.splice(india+1,0,...chinaBlocks);
+    detailBlocks.splice(0,detailBlocks.length,...otherBlocks);
   }
   const detail=detailBlocks.map(b=>`<div class="alloc-class"><div class="class-label">${escA(b.label)}</div>${b.groups.map(groupCard).join("")}</div>`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
