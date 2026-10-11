@@ -432,6 +432,14 @@ setInterval(refreshSavingsCurrentYear,60000);
 addEventListener("focus",refreshSavingsCurrentYear);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshSavingsCurrentYear();});
 let savingsAssumptionsOpen = false; // 가정창은 기본 접기. 화면을 다시 그려도 접힘을 유지하며 설정·저장 기록은 바꾸지 않는다.
+// 빈 입력칸에만 쓰는 적용값. 계산과 같은 조회 함수를 사용하고, 입력값·저장 필드는 채우지 않는다.
+function savingsStageApplied(sv,sc,st){
+  const stageAge=finite(st.age);if(stageAge===null)return null;
+  const months=(sv.actual||[]).filter(a=>finite(a.total)!==null).map(a=>ymNum(a.ym)).filter(n=>n!==null);
+  const startYear=finite(sv.startYear)??(months.length?Math.floor(Math.min(...months)/12):new Date().getFullYear()), startAge=finite(sv.startAge)??0;
+  const year=Math.ceil(startYear+stageAge-startAge), age=startAge+year-startYear;
+  return {...savingsStage(sc,age),spending:savingsSpending(sc,startYear,startAge,months.length?Math.floor(Math.max(...months)/12):startYear)(year)};
+}
 function renderSavings(){
   const currentYear=syncSavingsCurrentYear();
   const S=doc.savings, view=el("savingsView");
@@ -440,7 +448,15 @@ function renderSavings(){
   const sc=S.scenarios.find(x=>x.id===ui.scenario)||S.scenarios[0], sim=sc?simulateSavings(S,sc):null;
   if(ui.scenario&&!S.scenarios.some(x=>x.id===ui.scenario))setUi({scenario:sc?.id??null});
   const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):sc[key]??""}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
-  const stageRow=(st,i)=>`<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${st.age??""}"></label><label><span>월급 (원)</span><input data-stage="${i}" data-k="salary" ${moneyAttrs} value="${moneyText(st.salary)}" placeholder="그대로"></label><label><span>사용금액 (원)</span><input data-stage="${i}" data-k="spending" ${moneyAttrs} value="${moneyText(st.spending)}" placeholder="그대로"></label><label><span>증가율 (%)</span><input data-stage="${i}" data-k="growth" type="number" step="any" value="${st.growth??""}" placeholder="그대로"></label><label><span>수익률 (%)</span><input data-stage="${i}" data-k="returnRate" type="number" step="any" value="${st.returnRate??""}" placeholder="그대로"></label><button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
+  const stageRow=(st,i)=>{
+    const applied=savingsStageApplied(S,sc,st);
+    const input=(key,label,money=false)=>{
+      const value=applied?.[key], hint=value===null||value===undefined?"—":money?nf0.format(Math.round(value)):assetNumberText(value);
+      const detail=finite(st[key])===null&&applied?` title="적용값: ${escA(assetNumberText(value))}${money?"원":"%"}"`:"";
+      return `<label><span>${label}</span><input data-stage="${i}" data-k="${key}" ${money?moneyAttrs:'type="number" step="any"'} value="${money?moneyText(st[key]):st[key]??""}" placeholder="${escA(hint)}"${detail}></label>`;
+    };
+    return `<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${st.age??""}"></label>${input("salary","월급 (원)",true)}${input("spending","사용금액 (원)",true)}${input("growth","증가율 (%)")}${input("returnRate","수익률 (%)")}<button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
+  };
   const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
   const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>`<td>${r&&a<=(finite(x.endAge)||0)?wonA(r.at(a)):"—"}</td>`).join("")}</tr>`;}).join("");
   const actual=[...S.actual].filter(a=>ymNum(a.ym)!==null).sort((a,b)=>String(a.ym).localeCompare(String(b.ym))), actualByMonth=new Map(actual.map(a=>[a.ym,a]));
@@ -478,7 +494,7 @@ function renderSavings(){
     <section class="card panel"><div class="future-panel-head savings-assumptions-head"><h2><button class="alloc-fold" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}" aria-label="${escA(sc.name)} 가정 ${savingsAssumptionsOpen?"접기":"펼치기"}"><span>${escA(sc.name)} 가정</span><span class="alloc-fold-action"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"접기":"펼치기"}</span></span></button></h2><button class="btn mini danger" type="button" id="deleteScenario"${!savingsAssumptionsOpen||S.scenarios.length<2?" hidden":""}>시나리오 삭제</button></div>
       <div class="alloc-fold-body savings-assumptions-body" id="savingsAssumptionsBody"${savingsAssumptionsOpen?"":" hidden"}>
       <div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${S.startYear??""}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${S.startAge??""}"></label>${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}${field("returnRate","연 수익률","%")}${field("endAge","종료 나이","세",'step="1"')}</div>
-      <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 빈칸은 그대로 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
+      <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 회색은 적용값 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
       <label class="field scenario-note"><span>메모</span><textarea data-param="note" maxlength="2000">${escA(sc.note||"")}</textarea></label></div></section>`:""}
     <div class="section-heading"><h2>시나리오 비교</h2><span>나이별 연말 저축총액</span></div>
     <section class="card table-scroll"><table class="data-table"><thead><tr><th>시나리오</th>${ages.map(a=>`<th>${a}세</th>`).join("")}</tr></thead><tbody>${compare}</tbody></table></section>

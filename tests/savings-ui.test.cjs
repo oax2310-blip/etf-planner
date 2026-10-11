@@ -8,13 +8,13 @@ const root=path.join(__dirname,'..'),key='etf-planner-assets-v1';
 const source=['js/ma-ladder.js','js/assets-calc.js','js/assets.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n;\n');
 const fixture=()=>({version:1,savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000,note:'기존 필드'}],scenarios:[{id:'base',name:'기본',salary:100,giving:10,spending:50,spendingYear:2025,growth:2,returnRate:5,endAge:60,stages:[]},{id:'other',name:'비교',salary:100,giving:10,spending:50,spendingYear:2025,growth:2,returnRate:3,endAge:60,stages:[]}]}});
 function setup(data=fixture(),year=2026,shared){
-  let now=new Date(year,9,11).getTime(),buttons=[],scenarios=[],saves=0;
+  let now=new Date(year,9,11).getTime(),buttons=[],scenarios=[],inputs=[],saves=0;
   const nodes=new Map(),events=new Map(),intervals=[],storage=shared||new Map([[key,JSON.stringify(data)]]);
   class SystemDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
   function node(id){
     if(nodes.has(id))return nodes.get(id);
     let html='';const attrs=new Map();
-    const n={dataset:{},hidden:false,classList:{toggle(){}},getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,String(v))};
+    const n={dataset:{},hidden:false,classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),getAttribute:k=>attrs.get(k),setAttribute:(k,v)=>attrs.set(k,String(v))};
     Object.defineProperty(n,'innerHTML',{get:()=>html,set:value=>{
       html=value;if(id!=='savingsView')return;
       buttons=[...html.matchAll(/<button class="savings-year-toggle"([^>]*)>/g)].map(m=>{
@@ -24,10 +24,15 @@ function setup(data=fixture(),year=2026,shared){
         node(a['aria-controls']).hidden=a['aria-expanded']==='false';return b;
       });
       scenarios=[...html.matchAll(/data-scenario="([^"]*)"/g)].map(m=>{const b=node(`scenario-${m[1]}`);b.dataset.scenario=m[1];return b;});
+      inputs=[...html.matchAll(/<input\s([^>]*)>/g)].map(m=>{
+        const a=Object.fromEntries([...m[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(x=>[x[1],x[2]]));
+        const dataset=Object.fromEntries(Object.entries(a).filter(([k])=>k.startsWith('data-')).map(([k,v])=>[k.slice(5),v]));
+        return {dataset,value:a.value??'',placeholder:a.placeholder,title:a.title,validity:{valid:true}};
+      });
     }});
     nodes.set(id,n);return n;
   }
-  const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-savings-year]'?buttons:sel==='[data-scenario]'?scenarios:[],addEventListener:(name,fn)=>events.set(`document:${name}`,fn)};
+  const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-savings-year]'?buttons:sel==='[data-scenario]'?scenarios:/^\[data-(stage|param|base|actual)\]$/.test(sel)?inputs.filter(x=>sel.slice(6,-1) in x.dataset):[],addEventListener:(name,fn)=>events.set(`document:${name}`,fn)};
   const store={doc:data,prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){saves++;},
     saveSavingsMilestone(record){data.savings.milestoneRecord={ym:record.ym,age:record.age};storage.set(key,JSON.stringify(data));saves++;return true;}};
   const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
@@ -35,12 +40,68 @@ function setup(data=fixture(),year=2026,shared){
     addEventListener:(name,fn)=>events.set(`window:${name}`,fn),setInterval:(fn,ms)=>intervals.push({fn,ms}),setTimeout:fn=>{fn();return 1;},
     location:{hash:'#savings'},history:{replaceState(){}},scrollTo(){}});
   vm.runInContext(source,ctx);
-  return {ctx,document,storage,events,node,html:()=>node('savingsView').innerHTML,saves:()=>saves,
+  return {ctx,document,storage,events,node,inputs:()=>inputs,html:()=>node('savingsView').innerHTML,saves:()=>saves,
     setYear:y=>now=new Date(y,0,1).getTime(),render:()=>ctx.renderSavings(),tick:()=>intervals.find(i=>i.ms===60000).fn(),
     click:y=>buttons.find(b=>Number(b.dataset.savingsYear)===y).onclick(),
     state:()=>buttons.map(b=>[Number(b.dataset.savingsYear),b.getAttribute('aria-expanded')==='true',!node(b.getAttribute('aria-controls')).hidden])};
 }
 const openYears=h=>h.state().filter(x=>x[1]).map(x=>x[0]);
+const stageInput=(h,i,key)=>h.inputs().find(x=>x.dataset.stage===String(i)&&x.dataset.k===key);
+const editInput=(x,value)=>{x.value=value;x.onchange();};
+
+test('나이별 빈칸은 계산에 적용되는 월급·누적 사용금액·비율을 표시하고 조회로 입력·저장·결과를 바꾸지 않는다',()=>{
+  const data=fixture(),sc=data.savings.scenarios[0];
+  Object.assign(sc,{salary:1000000,spending:200000,growth:10,returnRate:3.125,endAge:40,
+    stages:[{age:32},{age:34,salary:0,spending:500000,growth:20,returnRate:-1.234},{age:35}]});
+  const before=JSON.stringify(data),h=setup(data),stored=h.storage.get(key);
+  const simulation=()=>JSON.parse(vm.runInContext('JSON.stringify(simulateSavings(doc.savings,doc.savings.scenarios[0]))',h.ctx));
+  const result=simulation();
+  assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,0,k).placeholder),['1,000,000','220,000','10','3.125']);
+  assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,2,k).placeholder),['0','600,000','20','-1.234']);
+  assert.equal(stageInput(h,1,'salary').value,'0','직접 지정한 0은 빈칸으로 바꾸지 않는다');
+  assert.equal(stageInput(h,1,'spending').value,'500,000');
+  for(const [i,year] of [[0,2026],[2,2029]]){
+    const row=result.rows.find(r=>r.year===year);
+    assert.equal(stageInput(h,i,'salary').placeholder,new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}).format(row.salary/12));
+    assert.equal(stageInput(h,i,'spending').placeholder,new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}).format(row.spending/12));
+    for(const k of ['salary','spending','growth','returnRate'])assert.equal(stageInput(h,i,k).value,'','적용값을 입력값으로 채우지 않는다');
+  }
+  assert.doesNotMatch(h.html(),/placeholder="그대로"/);assert.match(h.html(),/회색은 적용값/);
+  h.node('toggleSavingsAssumptions').onclick();h.render();h.node('scenario-other').onclick();h.node('scenario-base').onclick();
+  assert.deepEqual(simulation(),result);assert.equal(JSON.stringify(data),before);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
+});
+
+test('나이별 적용값은 기존 기본 가정·앞 단계·나이 변경과 값 삭제 흐름을 따라 다시 계산한다',()=>{
+  const data=fixture(),sc=data.savings.scenarios[0];sc.stages=[{age:32},{age:34}];
+  const h=setup(data),param=k=>h.inputs().find(x=>x.dataset.param===k);
+  editInput(param('salary'),'200');editInput(param('spending'),'100');editInput(param('growth'),'10');editInput(param('returnRate'),'4.125');
+  assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['200','133','10','4.125']);
+  assert.equal(stageInput(h,1,'spending').title,'적용값: 133.10000000000005원','원 미만 정밀값도 반올림하지 않은 원래 계산값에서 조회한다');
+  editInput(stageInput(h,0,'salary'),'0');editInput(stageInput(h,0,'spending'),'50');editInput(stageInput(h,0,'growth'),'20');editInput(stageInput(h,0,'returnRate'),'-2.345');
+  assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['0','72','20','-2.345']);
+  editInput(stageInput(h,0,'spending'),'');assert.equal('spending' in sc.stages[0],false);assert.equal(stageInput(h,1,'spending').placeholder,'173');
+  editInput(stageInput(h,0,'salary'),'');assert.equal('salary' in sc.stages[0],false);assert.equal(stageInput(h,1,'salary').placeholder,'200');
+  editInput(stageInput(h,0,'age'),'35');
+  assert.equal(sc.stages[0].age,34);assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,0,k).placeholder),['200','133','10','4.125']);
+  assert.equal(h.saves(),11,'기존 입력 변경에만 저장한다');
+});
+
+test('나이별 적용값은 실제 기록 없는 가정·옛 기준 연도 생략·정렬 전/중복 나이·유효하지 않은 나이를 계산 규칙대로 표시한다',()=>{
+  const data=fixture(),sc=data.savings.scenarios[0];delete sc.spendingYear;
+  Object.assign(sc,{salary:100,spending:20,growth:10,stages:[{age:34},{age:32,salary:0,spending:30,growth:20},{age:32,salary:50,spending:40},{age:null}]});
+  data.savings.actual=[{ym:'2025-12',total:1000},{ym:'2026-03',total:1200},{ym:'2030-12',total:null}];
+  const h=setup(data),before=JSON.stringify(data);
+  assert.equal(stageInput(h,0,'salary').placeholder,'50');assert.equal(stageInput(h,0,'spending').placeholder,'58');
+  assert.equal(stageInput(h,1,'spending').value,'30');assert.equal(stageInput(h,1,'salary').value,'0');
+  for(const k of ['salary','spending','growth','returnRate'])assert.equal(stageInput(h,3,k).placeholder,'—');
+  assert.equal(JSON.stringify(data),before);assert.equal(h.saves(),0);
+  data.savings.actual=[];sc.stages=[{age:32.5},{age:34},{age:30,spending:5}];h.render();
+  assert.equal(stageInput(h,0,'spending').placeholder,'24','소수 나이의 설정이 처음 적용되는 연도를 조회한다');
+  assert.equal(stageInput(h,1,'spending').placeholder,'27');assert.equal(vm.runInContext('simulateSavings(doc.savings,doc.savings.scenarios[0])',h.ctx),null);
+  data.savings.startAge=30;h.render();assert.equal(stageInput(h,1,'spending').placeholder,'7','시작 나이 변경을 적용한다');
+  sc.spendingYear=2030;h.render();assert.equal(stageInput(h,1,'spending').placeholder,'20','기준 연도보다 이른 해도 기존 계산과 같다');
+});
+
 const milestoneFixture=()=>{
   const data=fixture();data.savings.actual=[{ym:'2030-12',total:499000000}];
   data.savings.scenarios.forEach((sc,i)=>Object.assign(sc,{salary:i?500000:1000000,giving:0,spending:0,growth:0,returnRate:0}));
