@@ -41,6 +41,40 @@ function setup(data=fixture(),year=2026,shared){
 }
 const openYears=h=>h.state().filter(x=>x[1]).map(x=>x[0]);
 
+test('저축 연도별: 투자수익은 기부 전으로 표시하고 기부·연말 잔액·저장 기록은 유지한다',()=>{
+  for(const rate of [-10,0,10]){
+    const data=fixture();data.savings.scenarios=[{id:'base',name:'기본',salary:100,giving:10,spending:20,spendingYear:2026,growth:0,returnRate:rate,endAge:34,stages:[]}];
+    const original=JSON.stringify(data),h=setup(data),stored=h.storage.get(key);
+    const simulation=()=>JSON.parse(vm.runInContext('JSON.stringify(simulateSavings(doc.savings,doc.savings.scenarios[0]))',h.ctx));
+    const before=simulation(),first=before.rows.find(r=>r.year===2026),gross=1000*rate/100,donation=rate>0?10:0;
+    assert.equal(first.returns,gross-donation,'계산의 returns는 기부 후 수익이다');
+    assert.equal(first.returnGiving,donation);assert.equal(first.end,1000+12*70+gross-donation);
+    const row=h.html().split(/<section class="savings-year(?: savings-year-current)?">/).find(x=>x.includes('data-savings-year="2026"'));
+    assert.match(row,new RegExp(`class="savings-year-return"><small class="savings-column-label">투자수익</small><b>${gross}원</b>`));
+    assert.match(row,new RegExp(`<span>투자수익 기부</span><b>${donation}원</b>`));
+    const years=h.html().slice(h.html().indexOf('<section class="card savings-years">'));
+    assert.doesNotMatch(years,/기부 후/);assert.match(years,/<span>투자수익<\/span>/);
+    h.click(2025);h.render();h.node('toggleYears').onclick();
+    assert.deepEqual(simulation(),before,'표시·펼침·전체 연도 전환은 모든 연도 계산 결과를 바꾸지 않는다');
+    assert.equal(JSON.stringify(data),original);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
+    if(rate===10){const next=before.rows.find(r=>r.year===2027);assert.equal(next.returnGiving,19.3);assert.equal(next.end,2943.7,'기부 차감 후 1930원을 다음 해 기준으로 사용한다');}
+  }
+});
+
+test('저축 연도별: 시나리오·수익률 변경과 소수 수익도 기부 전 기준으로 한 번만 반올림한다',()=>{
+  const data=fixture();data.savings.actual[0].total=100;
+  data.savings.scenarios=[{id:'base',name:'기본',salary:0,giving:10,spending:0,spendingYear:2026,growth:0,returnRate:4.6,endAge:33,stages:[{age:33,returnRate:10}]},
+    {id:'other',name:'비교',salary:0,giving:10,spending:0,spendingYear:2026,growth:0,returnRate:10,endAge:33,stages:[]}];
+  const h=setup(data),original=JSON.stringify(data),stored=h.storage.get(key);
+  const row=year=>h.html().split(/<section class="savings-year(?: savings-year-current)?">/).find(x=>x.includes(`data-savings-year="${year}"`));
+  assert.match(row(2026),/class="savings-year-return"[^]*?<b>5원<\/b>/,'4.14원 + 0.46원을 더한 4.6원을 표시 시 반올림한다');
+  assert.match(row(2026),/<span>투자수익 기부<\/span><b>0원<\/b>/);
+  assert.match(row(2027),/class="savings-year-return"[^]*?<b>10원<\/b>/);
+  h.node('scenario-other').onclick();
+  assert.match(row(2026),/class="savings-year-return"[^]*?<b>10원<\/b>/);assert.match(row(2026),/<span>투자수익 기부<\/span><b>1원<\/b>/);
+  assert.equal(JSON.stringify(data),original);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
+});
+
 test('저축 연도별: 시스템 현재 연도만 기본 펼침이고 화면 문구 없이 접근성 상태를 제공한다',()=>{
   const h=setup(),before=h.storage.get(key);
   assert.deepEqual(openYears(h),[2026]);

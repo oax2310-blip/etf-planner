@@ -453,7 +453,7 @@ function renderSavings(){
     const months=Array.from({length:12},(_,i)=>{const ym=ymText(r.year*12+i), a=actualByMonth.get(ym);return `<label class="field savings-month"><span>${i+1}월 <small>${finite(a?.total)!==null?"실제":"미기록"}</small></span><input data-actual="${ym}" ${moneyAttrs} value="${moneyText(a?.total)}" placeholder="저축총액 (원)" aria-label="${r.year}년 ${i+1}월 실제 저축총액 (원)" aria-describedby="${hintId}">${finite(a?.total)!==null?`<small class="field-hint">${eok(a.total)}</small>`:""}</label>`;}).join("");
     const totals=predicted?`<div class="savings-year-totals">${[["월급",r.salary],["사용금액",r.spending],["월급 기부",r.salaryGiving],["투자수익 기부",r.returnGiving]].map(([label,value])=>`<div><span>${label}</span><b>${wonA(value)}</b></div>`).join("")}</div>`:"";
     const giving=`<span class="savings-year-giving"><small class="savings-column-label">기부금</small><b>${predicted?wonA(r.giving):"—"}</b></span>`;
-    const results=`<span class="savings-year-return"><small class="savings-column-label">투자수익 · 기부 후</small><b>${predicted?wonA(r.returns):"—"}</b></span>${giving}`;
+    const results=`<span class="savings-year-return"><small class="savings-column-label">투자수익</small><b>${predicted?wonA(r.returns+r.returnGiving):"—"}</b></span>${giving}`;
     const balanceNote=predicted?`예상 12월${r.recordCount?` · 실제 ${r.recordCount}개월`:""}`:r.actual?`실제 ${Number(r.endYm.slice(5))}월 · ${r.recordCount}개월`:"기록 없음";
     const gaps=missing.filter(ym=>ym.startsWith(`${r.year}-`));
     return `<section class="savings-year${r.year===currentYear?" savings-year-current":""}"><button class="savings-year-toggle" type="button" data-savings-year="${r.year}" aria-expanded="${open}" aria-controls="savings-year-${r.year}" aria-label="${r.year}년 월별 저축 기록">
@@ -477,7 +477,7 @@ function renderSavings(){
     <div class="section-heading"><h2>시나리오 비교</h2><span>나이별 연말 저축총액</span></div>
     <section class="card table-scroll"><table class="data-table"><thead><tr><th>시나리오</th>${ages.map(a=>`<th>${a}세</th>`).join("")}</tr></thead><tbody>${compare}</tbody></table></section>
     <div class="section-heading"><h2>${sc?`${escA(sc.name)} · `:""}연도별</h2><span>연도를 펼쳐 월별 실제 저축액 수정 · 수익과 기부는 마지막 기록 다음 달부터 예상</span></div>
-    <section class="card savings-years"><div class="savings-years-head"><span>연도</span><span>저축총액</span><span>투자수익 <small>기부 후</small></span><span title="월급 + 투자수익">기부금</span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</section>`;
+    <section class="card savings-years"><div class="savings-years-head"><span>연도</span><span>저축총액</span><span>투자수익</span><span title="월급 + 투자수익">기부금</span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</section>`;
   all("[data-scenario]").forEach(b=>b.onclick=()=>{ setUi({scenario:b.dataset.scenario}); renderSavings(); });
   if(el("toggleYears")) el("toggleYears").onclick=()=>{ savingsAllYears=!savingsAllYears; renderSavings(); };
   all("[data-savings-year]").forEach(b=>b.onclick=()=>{
