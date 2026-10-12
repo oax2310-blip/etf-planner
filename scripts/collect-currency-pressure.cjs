@@ -36,6 +36,8 @@ function parseEcosRows(rows, spec) {
   const seen=new Set();
   return rows.map(row=>{
     if(row.STAT_CODE !== spec.table || spec.items.some((item,i)=>item && row[`ITEM_CODE${i+1}`] !== item)) throw Error('wrong-series');
+    if(spec.unit && row.UNIT_NAME !== spec.unit) throw Error('wrong-series');
+    if(spec.expectedItemName && String(row.ITEM_NAME1).replace(/\s+/g,'') !== spec.expectedItemName.replace(/\s+/g,'')) throw Error('wrong-series');
     const time=String(row.TIME), pattern=spec.frequency==='M'?/^\d{4}(0[1-9]|1[0-2])$/:/^\d{4}Q[1-4]$/;
     if(!pattern.test(time) || seen.has(time)) throw Error('invalid-period');seen.add(time);
     return {period:spec.frequency==='M'?`${time.slice(0,4)}-${time.slice(4)}`:`${time.slice(0,4)}-${time.slice(4)}`,value:numberOrNull(row.DATA_VALUE)};
@@ -64,7 +66,7 @@ async function collectFred(spec,start,fetcher=fetch,env=process.env) {
 }
 function validateEcosSpec(spec,key) {
   if(!spec || !/^[0-9]{3}Y[0-9]{3}$/.test(spec.table || '') || !Array.isArray(spec.items) || spec.items.length<1 || spec.items.length>4 || !spec.items.every(item=>typeof item==='string' && /^[\w-]+$/.test(item))) throw Error('series-unconfigured');
-  if(key==='krM2' && (spec.definitionId!=='bok-m2-2025-revision' || spec.frequency!=='M' || spec.basis!=='period-average' || spec.seasonalAdjustment!=='SA' || !/^\d{4}-\d{2}-\d{2}$/.test(spec.verifiedAt || ''))) throw Error('revision-unverified');
+  if(key==='krM2' && (spec.table!=='161Y005' || spec.items.length!==1 || spec.items[0]!=='BBHS00' || spec.definitionId!=='bok-m2-2025-revision' || spec.frequency!=='M' || spec.basis!=='period-average' || spec.seasonalAdjustment!=='SA' || !/^\d{4}-\d{2}-\d{2}$/.test(spec.verifiedAt || ''))) throw Error('revision-unverified');
   if(key==='krRate' && (spec.frequency!=='M' || spec.kind!=='rate' || typeof spec.definitionId!=='string' || !spec.definitionId)) throw Error('series-unconfigured');
 }
 async function collectEcos(spec,key,start,fetcher=fetch,env=process.env) {

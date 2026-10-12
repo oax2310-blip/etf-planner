@@ -4,7 +4,7 @@ on:
     branches: [setup/currency-ecos]
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: ecos-connection-check
   cancel-in-progress: false
@@ -14,15 +14,51 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: 연결 설정 확인
+        id: mode
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('data/currency-sources.json','utf8'));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'configured='+Boolean(config.krM2)+'\n');
+          JS
       - name: ECOS 인증과 공개 통계표·항목 확인
+        if: steps.mode.outputs.configured != 'true'
         env:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: node scripts/discover-ecos.cjs "$RUNNER_TEMP/ecos-series.json"
       - uses: actions/upload-artifact@v4
+        if: steps.mode.outputs.configured != 'true'
         with:
           name: ecos-public-series
           path: ${{ runner.temp }}/ecos-series.json
           retention-days: 3
+      - name: 확인한 공식 계열 수집
+        if: steps.mode.outputs.configured == 'true'
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: node scripts/collect-currency-pressure.cjs
+      - name: 수집 자료·계산 회귀 확인
+        if: steps.mode.outputs.configured == 'true'
+        run: |
+          node --test --experimental-test-isolation=none tests/*.cjs
+          node - <<'JS'
+          const data=require('./data/currency-pressure.json');
+          const {buildRows}=require('./js/currency-pressure.js');
+          if(data.series.krM2.status!=='ready' || !buildRows(data).some(row=>row.pressure!==null))process.exit(1);
+          console.log('공식 M2 수집과 공통 분기 계산 확인');
+          JS
+      - name: 검토 브랜치에 공개 경제통계만 기록
+        if: steps.mode.outputs.configured == 'true' && github.ref == 'refs/heads/setup/currency-ecos'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/currency-pressure.json
+          git commit -m 'ECOS 개편 M2와 공식 금리 첫 수집'
+          git push origin HEAD:setup/currency-ecos

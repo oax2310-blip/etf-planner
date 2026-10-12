@@ -54,11 +54,20 @@ test('공식 CSV·ECOS 파서는 날짜·계열을 확인하고 결측을 0으�
   assert.throws(()=>parseEcosRows([{STAT_CODE:spec.table,ITEM_CODE1:'OTHER',TIME:'202601',DATA_VALUE:'100'}],spec));
 });
 test('ECOS M2는 개편·평잔·계절조정·확인일이 명시된 설정만 허용한다',()=>{
-  const spec={table:'101Y003',items:['BBHS00'],frequency:'M',definitionId:'bok-m2-2025-revision',basis:'period-average',seasonalAdjustment:'SA',verifiedAt:'2026-10-12'};
+  const spec={table:'161Y005',items:['BBHS00'],frequency:'M',definitionId:'bok-m2-2025-revision',basis:'period-average',seasonalAdjustment:'SA',verifiedAt:'2026-10-12'};
   assert.doesNotThrow(()=>validateEcosSpec(spec,'krM2'));
   assert.throws(()=>validateEcosSpec({...spec,definitionId:'old-m2'},'krM2'));
+  assert.throws(()=>validateEcosSpec({...spec,table:'101Y003'},'krM2'));
+  assert.throws(()=>validateEcosSpec({...spec,items:['BBHS11']},'krM2'));
   assert.throws(()=>validateEcosSpec({...spec,seasonalAdjustment:'NSA'},'krM2'));
   assert.throws(()=>validateEcosSpec(null,'krM2'));
+});
+test('확인한 M2 항목 이름·단위가 달라지면 자동으로 대체하지 않는다',()=>{
+  const spec={table:'161Y005',items:['BBHS00'],frequency:'M',unit:'십억원',expectedItemName:'M2(평잔,계절조정계열)'};
+  const row={STAT_CODE:spec.table,ITEM_CODE1:'BBHS00',ITEM_NAME1:'M2(평잔, 계절조정계열)',UNIT_NAME:'십억원',TIME:'202607',DATA_VALUE:'4200000'};
+  assert.equal(parseEcosRows([row],spec)[0].value,4200000);
+  assert.throws(()=>parseEcosRows([{...row,ITEM_NAME1:'[참고] 구 M2'}],spec));
+  assert.throws(()=>parseEcosRows([{...row,UNIT_NAME:'전년동월대비%'}],spec));
 });
 test('수집 실패는 마지막 값·조회일을 유지하고, 개정과 최초 관측시점은 구분한다',()=>{
   const spec={code:'X',definitionId:'d',frequency:'M',observations:[{period:'2026-01',value:100}],sourceUpdatedAt:'2026-02-01'};
@@ -75,7 +84,7 @@ test('키 없는 FRED 공개 수집·키 없는 ECOS 대기와 메타데이터 �
   const fetcher=async()=>({ok:true,text:async()=> 'observation_date,GDPC1\n2025-01-01,100\n2026-01-01,102\n'});
   const result=await collectFred({code:'GDPC1',frequency:'Q'},'2025',fetcher,{});
   assert.equal(result.observations.length,2);assert.equal(result.releaseDate,null);assert.equal(result.sourceUpdatedAt,null);
-  const spec={table:'101Y003',items:['BBHS00'],frequency:'M',definitionId:'bok-m2-2025-revision',basis:'period-average',seasonalAdjustment:'SA',verifiedAt:'2026-10-12'};
+  const spec={table:'161Y005',items:['BBHS00'],frequency:'M',definitionId:'bok-m2-2025-revision',basis:'period-average',seasonalAdjustment:'SA',verifiedAt:'2026-10-12'};
   await assert.rejects(collectEcos(spec,'krM2','2025',fetcher,{}),/key-missing/);
 });
 test('공개 초기 자료에는 확인한 FRED 원자료만 있고 한국 M2·검증 수치는 만들어내지 않는다',()=>{
