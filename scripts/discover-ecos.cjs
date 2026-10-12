@@ -34,6 +34,8 @@ async function main() {
   if(!output)throw Error('output-missing');
   await fs.writeFile(output,JSON.stringify(result,null,2)+'\n');
   console.log(`ECOS 인증 확인 · 후보 ${tables.length}개 · 항목 조회 ${Object.keys(items).length}개`);
+  // 키·요청 URL을 제외한 공개 메타데이터만 로그로도 제공해 연결 검토에 사용한다.
+  console.log('ECOS_PUBLIC_METADATA_BEGIN\n'+JSON.stringify(result)+'\nECOS_PUBLIC_METADATA_END');
 }
 function allowedError(error) {
   const value=error?.message;
