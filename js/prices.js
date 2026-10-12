@@ -17,8 +17,11 @@ const BTC_KEY = "BTC-USD";
 // 분할매도에서 '비트코인'도 받되 저장할 때는 수집 스크립트와 같은 BTC-USD로 둔다. BTC는 미국 ETF 심볼이므로 바꾸지 않는다.
 const planTicker = ticker => { const t=String(ticker||"").trim().toUpperCase();return t==="비트코인"?BTC_KEY:t; };
 // 미국 종목 코드(영문 심볼)인지: 재매수 통화(rebuy.js rebuyUsd)와 채울 시세 종류. 데이터 저장소 scripts/kis_prices.py classify와 같은 구분
-//   (국내는 6자리·A/Q+6자리 코드. BTC-USD도 영문이라 true지만 시세 종류가 '코인'이라 재매수에는 채우지 않음).
-const usTicker = ticker => { const t=String(ticker||"").trim().toUpperCase(); return /^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)&&!/^[AQ]\d{6}$/.test(t); };
+//   (국내는 6자리·A/Q+6자리 코드와 코스피200 지수 KS200. BTC-USD도 영문이라 true지만 시세 종류가 '코인'이라 재매수에는 채우지 않음).
+const isKospi200Ticker = ticker => String(ticker||"").trim().toUpperCase()==="KS200";
+const usTicker = ticker => { const t=String(ticker||"").trim().toUpperCase(); return !isKospi200Ticker(t)&&/^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)&&!/^[AQ]\d{6}$/.test(t); };
+// 국내 주식은 원 단위, 미국 종목·코스피200 지수는 소수 둘째 자리까지 채운다.
+const quoteDigits = (ticker, currency) => currency==="USD"||isKospi200Ticker(ticker)?2:0;
 const isBitcoinTicker = ticker => planTicker(ticker)===BTC_KEY;
 const planQuoteKind = (ticker, currency) => currency==="KRW"?"국내":isBitcoinTicker(ticker)?"코인":"해외";
 // BTC-USD: Coinbase 달러·UTC 일봉, 주말 포함 매 수집(kind '코인', kis_prices.py CRYPTO).
@@ -84,7 +87,7 @@ function fillPrices(data, prices){
   const f=data.futures, fe=futuresEntry(prices,f), fx=priceRound(fxEntry(prices)?.close,2);
   for(const p of Array.isArray(data.plans)?data.plans:[]){
     if(!p||typeof p!=="object")continue;
-    const usd=p.currency!=="KRW", e=stockEntry(prices,planTicker(p.ticker)), ok=e?.kind===planQuoteKind(p.ticker,p.currency), ma=label=>ok?priceRound(maValue(e,label),usd?2:0):null;
+    const usd=p.currency!=="KRW", e=stockEntry(prices,planTicker(p.ticker)), ok=e?.kind===planQuoteKind(p.ticker,p.currency), ma=label=>ok?priceRound(maValue(e,label),quoteDigits(p.ticker,usd?"USD":"KRW")):null;
     changed=fillMarked(p,at,[...(p.startAuto===true?[["startPrice",ma(p.startLabel),v=>p.startPrice=v]]:[]),["endPrice",ma(p.endLabel),v=>p.endPrice=v],...(usd?[["fx",fx,v=>p.fx=v]]:[])])||changed;
   }
   if(fe&&Array.isArray(f.levels)){
@@ -105,7 +108,7 @@ function fillPrices(data, prices){
   for(const r of items){
     const re=r&&typeof r==="object"?stockEntry(prices,r.ticker):null;
     if(!re||re.kind!==(usTicker(r.ticker)?"해외":"국내"))continue; // 국내 종목은 원, 미국 종목은 달러(센트까지)
-    const stages=Array.isArray(r.stages)?r.stages:[], digits=re.kind==="해외"?2:0;
+    const stages=Array.isArray(r.stages)?r.stages:[], digits=quoteDigits(r.ticker,quoteCurrency(re));
     changed=fillMarked(r,at,[["currentPrice",priceRound(re.close,digits),v=>r.currentPrice=v],
       ...stages.filter(x=>x&&autoKey(x.name)).map(x=>[autoMark(x.name),priceRound(maValue(re,x.name),digits),v=>x.price=v])])||changed;
   }

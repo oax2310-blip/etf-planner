@@ -8,7 +8,7 @@ if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계
 
 // 화면이 쓰는 기준선 이름 판정(maKey·hourKey·autoKey)은 prices.js 것을 그대로 쓴다
 const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8');
-const {maKey, hourKey, autoKey, usTicker} = vm.runInNewContext(['function maKey\\(', 'function hourKey\\(', 'const autoKey ', 'const usTicker ']
+const {maKey, hourKey, autoKey, usTicker} = vm.runInNewContext(['function maKey\\(', 'function hourKey\\(', 'const autoKey ', 'const isKospi200Ticker ', 'const usTicker ']
   .map(head => pricesSource.match(new RegExp(`^${head}.*$`, 'm'))[0]).join('\n') + '\n({maKey, hourKey, autoKey, usTicker})');
 
 const load = () => { const context = vm.createContext({usTicker}); vm.runInContext(source, context); return context; };

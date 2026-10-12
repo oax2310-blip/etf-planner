@@ -408,7 +408,7 @@ function planLive(fill=[]){
     const price=f[k+"Price"], note=$(k+"Note");
     price.required=k==="start"&&!f.startUnit.value;
     if(k==="start"&&!f.startUnit.value){note.textContent="";continue;}
-    const label=lineOf(f,k), v=q?priceRound(maValue(q,label),currency==="KRW"?0:2):null;
+    const label=lineOf(f,k), v=q?priceRound(maValue(q,label),quoteDigits(f.ticker.value,currency)):null;
     if(fill.includes(k)||price.value===""&&v!=null)price.value=v??dialogBase[k]??"";
     note.textContent=v!=null&&Number(price.value)===v?auto:planTicker(f.ticker.value)&&maKey(label)&&v==null?"다음 시세 수집 때 자동":"";
   }

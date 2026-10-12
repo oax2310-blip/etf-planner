@@ -16,6 +16,22 @@ const prices = () => ({updatedAt: AT, stocks: {
   '900001': {kind: '국내', asOf: '2026-09-30', close: 10234, ma: {'25일선': 10100.4, '60일선': 9900.6, '150일선': 9500, '25개월선': 8000.5}},
 }, futures: {'202612': {kind: '달러선물', asOf: '2026-09-30', close: 1398.2, ma: ma()}}});
 
+test('KS200은 국내 지수로 채우고 지수 소수값을 유지한다', () => {
+  const ctx=load(), q=prices();
+  q.stocks.KS200={kind:'국내',asOf:'2026-09-30',close:321.456,ma:{'25선':315.6789,'60일선':310.1234}};
+  assert.equal(vm.runInContext('usTicker(" ks200 ")',ctx),false);
+  assert.equal(vm.runInContext('usTicker("SPY")',ctx),true);
+  const p={ticker:'KS200',currency:'KRW',startAuto:true,startLabel:'60일선',endLabel:'60일선'};
+  const r={ticker:' ks200 ',stages:[{name:'25선',price:0},{name:'60일선',price:0}]};
+  assert.equal(ctx.fillPrices({plans:[p],rebuy:{items:[r]}},q),true);
+  assert.deepEqual([p.startPrice,p.endPrice,r.currentPrice,...r.stages.map(s=>s.price)],[310.12,310.12,321.46,315.68,310.12]);
+  assert.equal(ctx.fillPrices({plans:[p],rebuy:{items:[r]}},q),false);
+  const wrong={ticker:'KS200',currentPrice:7,stages:[]};
+  q.stocks.KS200.kind='해외';
+  assert.equal(ctx.fillPrices({rebuy:{items:[wrong]}},q),false);
+  assert.equal(wrong.currentPrice,7);
+});
+
 test('기준선 이름을 시세 파일 이동평균 이름으로 바꾼다(데이터 저장소 수집 스크립트와 같은 규칙)', () => {
   const ctx = load();
   assert.deepEqual(['60일선', '25 개월선', '12달선', '20주선', '150일 선', '77.65달러', '25분봉', '일봉', '0일선', ''].map(ctx.maKey),
