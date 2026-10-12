@@ -535,3 +535,10 @@ test('부분 손절·재매수 수량·고정 예정량·완료 상태는 기존
   assert.equal(final.remoteData().rebuy.items[0].cuts[0].shares,10);assert.equal(final.remoteData().rebuy.items[0].stages[0].buys[0].shares,3);
   assert.equal(Object.hasOwn(final.remoteData().rebuy.items[0].stages[0].buys[0],'partial'),false);
 });
+
+test('60회 이후의 손절 설정·부분 체결 기록은 다른 기기로 그대로 복원된다', async()=>{
+  const cuts=Array(100).fill(null);cuts[99]={shares:3,price:2000,plannedShares:10,partial:true};
+  const local={...empty(),rebuy:{items:[{id:'long-rounds',name:'테스트 ETF',lowPrice:10000,shares:1000,stepPct:0.8,sellPct:1,steps:100,cuts,stages:[{name:'25선',price:2100}]}]}};
+  const h=harness({local});await h.restored();assert.deepEqual(h.remoteData().rebuy,local.rebuy);
+  const other=harness({remote:h.remoteData(),hadStoredState:false});await other.restored();assert.equal(other.server.writes,0);assert.deepEqual(JSON.parse(other.items.get('test-state')).rebuy,local.rebuy);
+});

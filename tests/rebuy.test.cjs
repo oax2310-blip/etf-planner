@@ -595,9 +595,9 @@ test('손절 도달 기준: 소량 보유의 누적 반올림을 반영해 비�
   assert.equal(m.sold,9);
 });
 
-test('손절 도달 기준: 최대 회차·0원 가격 제한 안에서 미도달이면 유효한 가격을 만들어내지 않는다', () => {
+test('손절 도달 기준: 0원 이전에 도달하지 못하면 유효한 가격을 만들어내지 않는다', () => {
   const ctx=load(),m=ctx.cutMilestones(plan(ctx));
-  assert.deepEqual(plain(m.points).map(x=>[x.cut,x.maxRounds]),[[null,60],[null,60]]);assert.equal(m.sold,150);
+  assert.deepEqual(plain(m.points).map(x=>[x.cut,x.maxRounds]),[[null,99],[null,99]]);assert.equal(m.sold,150);
   const low=ctx.cutMilestones(plan(ctx,{stepPct:10,sellPct:5,steps:60}));
   assert.deepEqual(plain(low.points).map(x=>[x.cut,x.maxRounds]),[[null,9],[null,9]]);
   assert.equal(ctx.cutMilestones(plan(ctx,{lowPrice:0})).ready,false);
@@ -617,4 +617,46 @@ test('손절 도달 기준 화면은 하락 간격·비중·회차·신저점 �
   handlers['#rSell']('10');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/5회차 · 누적 500주/);
   handlers['#rSteps']('3');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/현재 3회 밖/);
   handlers['#rLow']('20000');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/−10% · 18000원/);assert.match(els.rebuyMain.innerHTML,/−20% · 16000원/);
+});
+
+test('회차 상한 제거: 표시 30회여도 전액 매도 기준은 100회차까지 계산한다', () => {
+  const ctx=load(),r=plan(ctx,{stepPct:0.8,sellPct:1,steps:30}),before=JSON.stringify(r),m=ctx.cutMilestones(r);
+  assert.deepEqual(plain(m.points).map(x=>[x.cut.k,x.cut.drop,Math.round(x.cut.price),x.cut.sold,x.inPlan]),[[50,40,6000,500,false],[100,80,2000,1000,false]]);
+  assert.equal(JSON.stringify(r),before);assert.equal(ctx.cutPlan(r).length,30);
+});
+
+test('회차 상한 제거: 100·200·1000회 계획은 기존 정수 배분으로 전량까지 만들 수 있다', () => {
+  const ctx=load();
+  for(const [steps,stepPct,sellPct] of [[100,0.8,1],[200,0.2,0.5],[1000,0.05,0.1]]){
+    const r=plan(ctx,{steps,stepPct,sellPct}),cuts=ctx.cutPlan(r),m=ctx.cutMilestones(r);
+    assert.equal(cuts.length,steps);assert.ok(cuts.every(x=>x.price>0));assert.equal(cuts.reduce((n,c)=>n+c.qty,0),1000);assert.equal(cuts.at(-1).left,0);
+    assert.equal(m.points[1].cut.k,steps);assert.equal(m.points[1].inPlan,true);
+  }
+});
+
+test('회차 상한 제거: 60회 이후의 부분 손절·수량 수정·완료·표시 축소에도 기록을 유지한다', () => {
+  const r={id:'long-plan',...plan(load(),{stepPct:0.8,sellPct:1,steps:100})},{ctx,handlers}=ui({rebuy:{items:[r]}});
+  handlers['[data-cut-qty]']('3',{dataset:{cutQty:'99'}});let s=ctx.rebuySummary(r);
+  assert.equal(s.sold,3);assert.equal(s.filledCuts,1);assert.equal(r.cuts[99].partial,true);assert.equal(r.cuts[99].plannedShares,10);assert.equal(r.cuts[99].price,2000);
+  handlers['[data-cut-qty]']('10',{dataset:{cutQty:'99'}});assert.equal(ctx.rebuySummary(r).doneCuts,1);assert.equal(r.cuts[99].partial,undefined);
+  const record=JSON.stringify(r.cuts[99]);handlers['#rSteps']('30');
+  assert.equal(ctx.cutPlan(r).length,100);assert.equal(JSON.stringify(r.cuts[99]),record);assert.equal(ctx.rebuySummary(r).sold,10);
+});
+
+test('회차 입력은 60회 상한 없이 저장하고 잘못된 숫자는 기존 기록을 유지한다', () => {
+  const r={id:'long-input',...plan(load(),{stepPct:0.8,sellPct:1})},{ctx,handlers,els}=ui({rebuy:{items:[r]}});
+  for(const value of ['100','200','1000']){handlers['#rSteps'](value);assert.equal(r.steps,Number(value));}
+  const before=JSON.stringify(r);
+  for(const value of ['0','-1','Infinity','NaN','9007199254740992'])assert.equal(handlers['#rSteps'](value),false);
+  assert.equal(JSON.stringify(r),before);ctx.renderRebuy();
+  const input=els.rebuyMain.innerHTML.match(/<input id="rSteps"[^>]+>/)[0];assert.doesNotMatch(input,/\bmax=/);
+});
+
+test('상한 없는 도달 회차 계산은 작은 주수·소수 비중에서도 실제 cutPlan 누적 배분과 일치한다', () => {
+  const ctx=load();
+  for(const shares of [3,10,1234])for(const sellPct of [0.5,3,17])for(const stepPct of [0.2,0.8,5]){
+    const r=plan(ctx,{amount:undefined,shares,sellPct,stepPct,steps:10000}),cuts=ctx.cutPlan(r);let sold=0;
+    const cumulative=cuts.map(c=>({...c,sold:sold+=c.qty})),points=ctx.cutMilestones(r).points;
+    for(const x of points){const first=cumulative.find(c=>c.sold*100>=shares*x.pct);assert.deepEqual(x.cut&&[x.cut.k,x.cut.sold],first?[first.k,first.sold]:null,JSON.stringify({shares,sellPct,stepPct,pct:x.pct}));}
+  }
 });

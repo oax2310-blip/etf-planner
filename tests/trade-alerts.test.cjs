@@ -229,3 +229,10 @@ test('실제 완료 체크 핸들러가 회차 체결 기록을 저장하고 이
   input.checked=false;input.onchange();assert.equal(r.stages[0].buys,undefined);
   rules=ctx.buildTradeAlertRules(ctx.state,null);assert.ok(rules.some(x=>x.label==='재매수 신저점 이탈'));
 });
+
+test('재매수 손절 알림은 60회 이후의 회차도 생성하고 완료 기록만 제외한다',()=>{
+  const ctx=load(),r=rebuy({stepPct:0.8,sellPct:1,steps:100,notify:{cuts:true}}),data={rebuy:{items:[r]}},before=JSON.stringify(data);
+  let rules=plain(ctx.buildTradeAlertRules(data,null));assert.equal(rules.length,100);
+  assert.equal(rules.at(-1).id,'trade:rebuy:demo-rebuy:cut:99');assert.ok(Math.abs(rules.at(-1).targetPrice-2000)<1e-6);assert.equal(JSON.stringify(data),before);
+  r.cuts[99]={shares:10,price:2000};rules=plain(ctx.buildTradeAlertRules(data,null));assert.equal(rules.length,99);assert.equal(rules.some(x=>x.id==='trade:rebuy:demo-rebuy:cut:99'),false);
+});
