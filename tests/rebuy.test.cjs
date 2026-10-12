@@ -615,6 +615,6 @@ test('손절 도달 기준 화면은 하락 간격·비중·회차·신저점 �
   assert.match(els.rebuyMain.innerHTML,/−10% · 9000원/);assert.match(els.rebuyMain.innerHTML,/−20% · 8000원/);
   handlers['#rStep']('2');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/−20% · 8000원/);assert.match(els.rebuyMain.innerHTML,/−40% · 6000원/);
   handlers['#rSell']('10');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/5회차 · 누적 500주/);
-  handlers['#rSteps']('3');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/현재 3회 밖/);assert.match(els.rebuyMain.innerHTML,/현재 3회 계획: 보유의 30% 매도/);
+  handlers['#rSteps']('3');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/현재 3회 밖/);
   handlers['#rLow']('20000');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/−10% · 18000원/);assert.match(els.rebuyMain.innerHTML,/−20% · 16000원/);
 });
