@@ -57,7 +57,8 @@ const rangeText=names=>names.length?`${names[0]}~${names[names.length-1]}`:"";
 const LINE_SETS={all:PURCHASE_LINES,hour:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="선"),day:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="일선"),week:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="주선"),month:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="개월선"),legacy:PURCHASE_LINES.filter(n=>["선","일선"].includes(movingLineUnit(n)))};
 const lineSetOf=(names,extend=false)=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||["hour","day","week","month","legacy","all"].find(k=>{
   const range=purchaseLineRange(LINE_SETS[k],names[0]);
-  return names.length&&names.every((n,i)=>range[i]===n)&&(extend||names.length===range.length);
+  const bounded=extend?purchaseLineRange(LINE_SETS[k],names[0],names[names.length-1]):[];
+  return names.length&&(names.every((n,i)=>range[i]===n)&&(extend||names.length===range.length)||bounded.length===names.length&&names.every((n,i)=>bounded[i]===n));
 })||"custom";
 const startText=name=>movingLineUnit(name)==="선"?name.replace(/선$/,"시선"):name.replace(/개월선$/,"월선");
 // ---------- 분할매수 ----------
@@ -278,29 +279,27 @@ function renderWait(){
 // 이동평균선 돌파 설정: 총 매수 금액 = 목표 비중(비우면 종목 목표) × 기준 총자산 − 지금 평가액 + 이미 체결한 금액(매수한 수량을 자산 배분 보유량에 반영했다고 보고).
 // 새 계획·목표 비중을 고치면 자동으로 채우고, 직접 고친 금액은 그대로 둔다('다시 계산'으로 되돌림). 미리보기 회차는 assets-calc.js purchaseLineRows(지금 이동평균).
 function linesDraft(){
-  const f=form(), own=numIn(f.lineTarget.value),end=numIn(f.lineEnd.value),start=lineStartDraft(),names=draftLineNames(),last=names.indexOf(f.lineEndLine.value);
+  const f=form(), own=numIn(f.lineTarget.value),end=numIn(f.lineEnd.value),start=lineStartDraft(),names=draftLineNames(end===null?lineLastDraft():null);
   const explicit=!!purchaseDraft.lines?.startLine||!purchaseDraft.lines||start!==purchaseLineNames(purchaseDraft.lines)[0];
-  return {names:end===null?names.slice(0,last+1):names,...(explicit&&start?{startLine:start}:{}),...(end!==null?{end}:{}),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
+  return {names,...(explicit&&start?{startLine:start}:{}),...(end!==null?{end}:{}),budget:numIn(f.lineBudget.value),...(own!==null?{target:own}:{})};
 }
 function lineStartDraft(){
   const f=form(),n=numIn(f.lineStartPeriod.value);
   return Number.isInteger(n)?purchaseLineName(`${n}${f.lineStartUnit.value}`):"";
 }
-const draftLineNames=()=>{
-  const old=purchaseLineNames(purchaseDraft.lines),start=lineStartDraft();
-  if(form().lineSet.value==="custom"&&start===old[0])return old;
-  return purchaseLineRange(LINE_SETS[form().lineSet.value]||old,start);
-};
-function renderLineEnd(names,selected=form().lineEndLine.value){
-  const input=form().lineEndLine;
-  input.innerHTML=names.map(n=>`<option value="${escA(n)}">${escA(n)}</option>`).join("");
-  input.value=names.includes(selected)?selected:names[names.length-1]||"";
+function lineLastDraft(){
+  const f=form(),n=numIn(f.lineLastPeriod.value);
+  return Number.isInteger(n)?purchaseLineName(`${n}${f.lineLastUnit.value}`):"";
 }
+const draftLineNames=(last=null)=>{
+  const old=purchaseLineNames(purchaseDraft.lines),start=lineStartDraft();
+  if(form().lineSet.value==="custom"&&start===old[0]&&(last===null||last===old[old.length-1]))return old;
+  return purchaseLineRange(LINE_SETS[form().lineSet.value]||old,start,last);
+};
 function renderLines(){
   const f=form(), picked=pickedItem(), it=picked?.it, q=quoteOf(it), cur=quoteOf(it)?.currency||"KRW", lines=mode()==="lines";
-  if(lineStartDraft())renderLineEnd(draftLineNames());
   f.lineStartPeriod.disabled=f.lineStartUnit.disabled=!lines;
-  el("lineEndLineField").hidden=f.lineEndLine.disabled=!lines||numIn(f.lineEnd.value)!==null;
+  el("lineEndLineField").hidden=f.lineLastPeriod.disabled=f.lineLastUnit.disabled=!lines||numIn(f.lineEnd.value)!==null;
   el("manualCurrencyField").hidden=!picked||!!q;
   all("[data-line-cur]").forEach(x=>x.textContent=cur==="USD"?"$":"원");
   const box=el("lineResult"), list=el("linePreview"), hint=t=>`<p class="hint">${t}</p>`;list.innerHTML="";
@@ -318,13 +317,14 @@ function renderLines(){
   const out=[];
   if(!lineStartDraft())out.push(`<span class="ladder-error">시작선 기간은 1~400의 정수로 넣으세요.</span>`);
   else if(draft.end!==undefined&&!(draft.end>0))out.push(`<span class="ladder-error">목표 가격은 0보다 크게 넣거나 비우세요.</span>`);
-  else if(!draft.names.length)out.push(`<span class="ladder-error">마지막 매수 평균선을 고르세요.</span>`);
+  else if(draft.end===undefined&&!lineLastDraft())out.push(`<span class="ladder-error">마지막 매수 평균선 기간은 1~400의 정수로 넣으세요.</span>`);
+  else if(!draft.names.length)out.push(`<span class="ladder-error">마지막 매수 평균선은 시작선과 같거나 뒤에 있어야 합니다.</span>`);
   else if(!(draft.budget>0))out.push(`<span class="ladder-error">${goal!==null&&goal<=value?"지금 평가액이 목표 이상이라 더 살 금액이 없습니다.":"총 매수 금액을 넣으세요."}</span>`);
   else{
     const rate=cur==="USD"?s.fx:1, now=q&&q.currency===cur?q.close:null;
     const partial=open.filter(r=>r.remainingShares>0).length;
     out.push(`<b>${escA(startText(lineStartDraft()))}</b>부터 매수합니다.`);
-    if(draft.end===undefined)out.push(`<b>${escA(draft.names[draft.names.length-1])}</b>의 도달 회차까지 매수합니다.`);
+    if(draft.end===undefined)out.push(`<b>${escA(startText(draft.names[draft.names.length-1]))}</b>의 도달 회차까지 매수합니다.`);
     out.push(`<b>${open.length}회</b>${partial?` · 부분 체결 ${partial}회`:open.length?` · <b>${perRoundText(open)}</b>${cur==="USD"&&rate&&open.every(r=>r.amount===open[0].amount)?` <small>(약 ${priceText(open[0].amount*1e4/rate,"USD")})</small>`:""}`:""}${spent?` · 체결 ${man(spent)}`:""}`);
     if(open.length&&purchaseLineLevels(draft,entry).filter(r=>!purchaseBuys(purchaseDraft)[r.key]).length>rows.filter(r=>!purchaseBuys(purchaseDraft)[r.key]).length)out.push('<small>예산에 맞춰 회차 간격을 넓혀 고르게 나눴습니다.</small>');
     if(draft.startLine&&!known.includes(draft.startLine))out.push(`<small>시작 이동평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
@@ -369,7 +369,8 @@ function openPurchase(id){
   f.lineSet.value=lineSetOf(purchaseLineNames(lines),!plus(lines?.end));f.lineTarget.value=finite(lines?.target)??"";f.lineEnd.value=finite(lines?.end)??"";f.lineBudget.value=finite(lines?.budget)??"";budgetAuto=!lines;
   const start=purchaseLineName(lines?.startLine)||purchaseLineNames(lines)[0]||PURCHASE_LINES[0];
   f.lineStartPeriod.value=parseInt(start);f.lineStartUnit.value=movingLineUnit(start);
-  renderLineEnd(purchaseLineNames(lines));
+  const names=purchaseLineNames(lines),last=names[names.length-1]||start;
+  f.lineLastPeriod.value=parseInt(last);f.lineLastUnit.value=movingLineUnit(last);
   f.manualCurrency.value=purchaseDraft.currency||"KRW";
   f.note.value=purchaseDraft.note||"";renderDraft();
   el("purchaseDelete").hidden=!found;
@@ -383,7 +384,8 @@ function openPurchase(id){
       if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다.");return;}
       if(!lineStartDraft()){alert("시작선 기간은 1~400의 정수로 넣으세요.");f.lineStartPeriod.focus();return;}
       if(l.end!==undefined&&!(l.end>0)){alert("목표 가격은 0보다 크게 넣거나 비우세요.");f.lineEnd.focus();return;}
-      if(!l.names.length){alert("마지막 매수 평균선을 고르세요.");f.lineEndLine.focus();return;}
+      if(l.end===undefined&&!lineLastDraft()){alert("마지막 매수 평균선 기간은 1~400의 정수로 넣으세요.");f.lineLastPeriod.focus();return;}
+      if(!l.names.length){alert("마지막 매수 평균선은 시작선과 같거나 뒤에 있어야 합니다.");f.lineLastPeriod.focus();return;}
       if(!(l.budget>0)){alert("총 매수 금액을 넣으세요(목표 비중을 넣으면 계산합니다).");f.lineBudget.focus();return;}
       draft.lines=l;delete draft.wait;delete draft.stages;delete draft.ladder;
       if(kind!=="국내")draft.currency="USD";else delete draft.currency;
@@ -425,7 +427,7 @@ function initialize(){
   el("purchaseItemList").onkeydown=e=>{const b=e.target.closest?.("[data-pick]");if(!b||!["ArrowDown","ArrowUp"].includes(e.key))return;e.preventDefault();
     const next=e.key==="ArrowDown"?b.nextElementSibling:b.previousElementSibling;(next||(e.key==="ArrowUp"?search:null))?.focus();};
   f.lineTarget.oninput=()=>{budgetAuto=true;renderLines();};
-  f.lineEnd.oninput=()=>renderLines();f.lineEndLine.onchange=()=>renderLines();
+  f.lineEnd.oninput=f.lineLastPeriod.oninput=()=>renderLines();f.lineLastUnit.onchange=()=>renderLines();
   f.lineSet.onchange=()=>{
     const names=LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines);
     if(!names.some(n=>movingLineUnit(n)===f.lineStartUnit.value))f.lineStartUnit.value=movingLineUnit(names[0]);

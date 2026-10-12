@@ -35,7 +35,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
     const attr=/^\s*\[([\w-]+)\]\s*$/.exec(s);return attr&&Object.hasOwn(node.attrs,attr[1]);
   }));}};
   const purchaseForm=document.getElementById('purchaseForm');
-  for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineEndLine','lineBudget','manualCurrency','note'])purchaseForm[name]=element();
+  for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','note'])purchaseForm[name]=element();
   const dialog=document.getElementById('purchaseDialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
   const store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[]};
   const alerts=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
@@ -50,20 +50,20 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
 test('시작선 150시선: 앞선 시선은 제외하고 선택한 시선부터 3등분·수량·도달 알림을 만든다',()=>{
   const names=['25선','32선','42선','60선','80선','125선','150선','25일선','32일선'];
   const r=setup({names,end:null,budget:100,price:9000,ma:{'25선':8000,'125선':9000,'150선':10000,'25일선':13000,'32일선':16000}});
-  r.edit();r.form.lineSet.value='all';r.form.lineStartPeriod.value='150';r.form.lineStartUnit.value='선';r.form.lineEndLine.value='32일선';r.submit();
+  r.edit();r.form.lineSet.value='all';r.form.lineStartPeriod.value='150';r.form.lineStartUnit.value='선';r.form.lineLastPeriod.value='32';r.form.lineLastUnit.value='일선';r.submit();
   assert.equal(r.item.buyPlan.lines.startLine,'150선');
   assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['150선','25일선','32일선']);
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['150선:0','150선:1','150선:2','25일선:0','25일선:1','25일선:2','32일선:0']);
   assert.match(r.html(),/시작 150시선/);assert.match(r.html(),/150선~32일선까지 매수/);assert.doesNotMatch(r.html(),/매수 0주|25선<span|125선<span/);
   r.item.buyPlan.notify={stages:true};const rules=r.rules();assert.equal(rules[0].targetPrice,10000);assert.equal(rules[1].targetPrice,11000);assert.equal(rules[2].targetPrice,12000);assert.equal(rules.length,7);
-  r.edit();assert.equal(r.form.lineStartPeriod.value,150);assert.equal(r.form.lineStartUnit.value,'선');assert.equal(r.form.lineEndLine.value,'32일선');
+  r.edit();assert.equal(r.form.lineStartPeriod.value,150);assert.equal(r.form.lineStartUnit.value,'선');assert.equal(r.form.lineLastPeriod.value,32);assert.equal(r.form.lineLastUnit.value,'일선');
   const before=JSON.stringify(r.item.buyPlan);r.submit();assert.equal(JSON.stringify(r.item.buyPlan),before);
 });
 
 test('시작선: 시·일·주·월마다 1~400 기간을 선택하고 기본 목록에 없는 기간도 종목에 저장한다',()=>{
   for(const [unit,set] of [['선','hour'],['일선','day'],['주선','week'],['개월선','month']])for(const period of [1,20,150,400]){
     const r=setup({names:[`25${unit}`,`32${unit}`],end:null,budget:100,ma:{[`150${unit}`]:10000,[`${period}${unit}`]:9000}});
-    r.edit();r.form.lineSet.value=set;r.form.lineStartPeriod.value=String(period);r.form.lineStartUnit.value=unit;r.form.lineEndLine.value=`${Math.max(150,period)}${unit}`;r.submit();
+    r.edit();r.form.lineSet.value=set;r.form.lineStartPeriod.value=String(period);r.form.lineStartUnit.value=unit;r.form.lineLastPeriod.value=String(Math.max(150,period));r.form.lineLastUnit.value=unit;r.submit();
     assert.equal(r.alerts.length,0);assert.equal(r.item.buyPlan.lines.names[0],`${period}${unit}`);
     assert.ok(r.item.buyPlan.lines.names.every(n=>parseInt(n)>=period));
     assert.ok(r.inputs('[data-purchase-buy]').length>0);
@@ -77,7 +77,7 @@ test('시작선 변경: 완료·부분 체결 가격과 수량·잔량·자산 �
   r.change('[data-purchase-buy-shares]',7);
   const complete=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key==='32선:0');complete.checked=true;complete.onchange();
   const before=JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other});
-  r.edit();r.form.lineSet.value='hour';r.form.lineStartPeriod.value='150';r.form.lineStartUnit.value='선';r.form.lineEndLine.value='150선';r.submit();
+  r.edit();r.form.lineSet.value='hour';r.form.lineStartPeriod.value='150';r.form.lineStartUnit.value='선';r.form.lineLastPeriod.value='150';r.form.lineLastUnit.value='선';r.submit();
   assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other}),before);
   const keys=r.inputs('[data-purchase-buy]').map(x=>x.dataset.key);assert.deepEqual(keys,['150선:0','25선:0','32선:0']);
   assert.match(r.html(),/부분 체결/);assert.match(r.html(),/진행 중/);assert.match(r.html(),/매수 완료 <b>1회/);
@@ -100,6 +100,66 @@ test('잘못된 시작선 기간은 저장하지 않고 기존 계획·체결을
     const r=setup(),before=JSON.stringify(r.doc);r.edit();r.form.lineStartPeriod.value=value;r.submit();
     assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts[0],/1~400의 정수/);
   }
+});
+
+test('마지막 매수선 직접 입력: 기본 목록에 없는 40일선까지 계획·수량·알림을 만들고 다시 열어 유지한다',()=>{
+  const r=setup({names:['25일선','32일선'],end:null,budget:100,price:9000,ma:{'25일선':10000,'32일선':13000,'40일선':16000,'42일선':19000}});
+  r.edit();r.form.lineLastPeriod.value='40';r.form.lineLastUnit.value='일선';r.submit();
+  assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선','32일선','40일선']);
+  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','25일선:1','25일선:2','32일선:0','32일선:1','32일선:2','40일선:0']);
+  assert.match(r.html(),/25일선~40일선까지 매수/);assert.doesNotMatch(r.html(),/42일선<span|매수 0주/);
+  r.item.buyPlan.notify={stages:true};assert.equal(r.rules().length,7);assert.equal(r.rules().at(-1).targetPrice,16000);
+  r.edit();assert.equal(r.form.lineLastPeriod.value,40);assert.equal(r.form.lineLastUnit.value,'일선');assert.equal(r.form.lineSet.value,'day');
+  const before=JSON.stringify(r.item.buyPlan);r.submit();assert.equal(JSON.stringify(r.item.buyPlan),before);
+  r.edit();r.form.lineLastPeriod.value='60';r.prices.stocks['111111'].ma['60일선']=22000;r.submit();
+  assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선','32일선','42일선','60일선'],'종료선을 늘리면 기존 단계 묶음의 중간선도 포함');
+});
+
+test('마지막 매수선: 시·일·주·월 모두 1~400 직접 입력과 시작·종료 동일 선을 지원한다',()=>{
+  for(const [unit,set] of [['선','hour'],['일선','day'],['주선','week'],['개월선','month']])for(const period of [1,20,150,400]){
+    const r=setup({names:[`1${unit}`],end:null,budget:50,price:9000,ma:{[`1${unit}`]:10000,[`${period}${unit}`]:13000}});
+    r.edit();r.form.lineSet.value=set;r.form.lineLastPeriod.value=String(period);r.form.lineLastUnit.value=unit;r.submit();
+    assert.equal(r.alerts.length,0);assert.equal(r.item.buyPlan.lines.names.at(-1),`${period}${unit}`);
+    assert.ok(r.item.buyPlan.lines.names.every(n=>parseInt(n)<=period));
+    assert.equal(r.inputs('[data-purchase-buy]').at(-1).dataset.key,`${period}${unit}:0`);
+    if(period===1)assert.equal(r.inputs('[data-purchase-buy]').length,1);
+    r.edit();assert.equal(r.form.lineLastPeriod.value,period);assert.equal(r.form.lineLastUnit.value,unit);
+  }
+});
+
+test('마지막 매수선은 단계 묶음 밖의 단위도 종료점으로 포함하고 150시선부터 해당 선까지 계산한다',()=>{
+  const r=setup({names:['25선','150선'],end:null,budget:100,price:9000,ma:{'150선':10000,'20일선':13000,'25일선':16000}});
+  r.edit();r.form.lineSet.value='hour';r.form.lineStartPeriod.value='150';r.form.lineLastPeriod.value='20';r.form.lineLastUnit.value='일선';r.submit();
+  assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['150선','20일선']);
+  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['150선:0','150선:1','150선:2','20일선:0']);
+});
+
+test('종료선 변경: 완료·부분 체결·잔량·자산·다른 종목 기록을 유지하고 종료선 시세가 없으면 기다린다',()=>{
+  const r=setup({names:['25일선','32일선','42일선'],end:null,budget:100,price:9000,ma:{'25일선':10000,'32일선':13000,'42일선':16000}});
+  r.change('[data-purchase-buy-shares]',7);const complete=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key==='32일선:0');complete.checked=true;complete.onchange();
+  const other={id:'b',name:'다른 종목',ticker:'222222',shares:5,buyPlan:{lines:{names:['25개월선','32개월선'],budget:10}}};r.doc.allocation.groups[0].items.push(other);
+  const before=JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other});
+  r.edit();r.form.lineLastPeriod.value='40';r.submit();
+  assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other}),before);
+  assert.match(r.html(),/마지막 매수 평균선 40일선의 시세를 기다리는 중/);assert.match(r.html(),/부분 체결/);
+  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','32일선:0']);
+  r.prices.stocks['111111'].ma['40일선']=15000;r.render();assert.ok(r.inputs('[data-purchase-buy]').some(x=>x.dataset.key==='40일선:0'));
+  r.edit();r.form.lineLastPeriod.value='25';r.submit();
+  assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other}),before);
+  assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선']);
+});
+
+test('잘못된 종료선 기간·시작선보다 앞선 종료선은 저장하지 않으며 목표 가격 방식에서는 종료선 입력을 쓰지 않는다',()=>{
+  for(const value of ['', '0','401','1.5']){
+    const r=setup({names:['25일선','32일선'],end:null}),before=JSON.stringify(r.doc);r.edit();r.form.lineLastPeriod.value=value;r.submit();
+    assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts[0],/마지막 매수 평균선 기간은 1~400/);
+  }
+  for(const [period,unit] of [['20','일선'],['400','선']]){
+    const r=setup({names:['25일선','32일선'],end:null}),before=JSON.stringify(r.doc);r.edit();r.form.lineLastPeriod.value=period;r.form.lineLastUnit.value=unit;r.submit();
+    assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts[0],/시작선과 같거나 뒤/);
+  }
+  const r=setup({names:['25일선','32일선']}),before=JSON.stringify(r.item.buyPlan);r.edit();r.form.lineLastPeriod.value='';r.submit();
+  assert.equal(r.alerts.length,0);assert.equal(JSON.stringify(r.item.buyPlan),before);
 });
 
 test('계획 목록: 선택한 계획만 표시하고 체결은 그 종목에만 반영하며 선택·새로 그리기는 기록을 바꾸지 않는다',()=>{
@@ -168,16 +228,16 @@ test('기존 사용자 지정 단계의 순서와 짧아지는 기간도 시작�
 test('분할매수 설정: 목표 가격을 비우면 필드를 지우고 종료 평균선만 저장하며 기존 부분 체결은 유지한다',()=>{
   const r=setup({budget:50,price:14000,names:['25선','32선'],ma:{'25선':10000,'32선':13000}});
   r.change('[data-purchase-buy-shares]',7);const record=JSON.stringify(r.item.buyPlan.buys);
-  r.edit();r.form.lineEnd.value='';r.form.lineEndLine.value='32선';r.submit();
+  r.edit();r.form.lineEnd.value='';r.form.lineLastPeriod.value='32';r.form.lineLastUnit.value='선';r.submit();
   assert.equal(Object.hasOwn(r.item.buyPlan.lines,'end'),false);assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25선','32선']);
   assert.equal(JSON.stringify(r.item.buyPlan.buys),record);assert.equal(r.item.shares,17);assert.match(r.html(),/남은 매수 3주/);
 });
 
 test('분할매수 설정: 목표 가격 없는 계획을 다시 열어 종료선을 늘리거나 목표 가격을 넣을 수 있다',()=>{
   const r=setup({end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':13000,'42일선':16000}}),before=JSON.stringify(r.item.buyPlan);
-  r.edit();assert.equal(r.form.lineEnd.value,'');assert.equal(r.form.lineEndLine.value,'32일선');assert.equal(r.form.lineSet.value,'day');
+  r.edit();assert.equal(r.form.lineEnd.value,'');assert.equal(r.form.lineLastPeriod.value,32);assert.equal(r.form.lineLastUnit.value,'일선');assert.equal(r.form.lineSet.value,'day');
   assert.equal(JSON.stringify(r.item.buyPlan),before);
-  r.form.lineEndLine.value='42일선';r.submit();assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선','32일선','42일선']);
+  r.form.lineLastPeriod.value='42';r.form.lineLastUnit.value='일선';r.submit();assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선','32일선','42일선']);
   r.edit();r.form.lineEnd.value='18000';r.submit();assert.equal(r.item.buyPlan.lines.end,18000);assert.match(r.html(),/목표가/);
 });
 

@@ -130,11 +130,17 @@ const PURCHASE_LINES = MA_LINES;
 const purchaseLineName = movingLineName;
 const purchaseLineNames = lines => [...new Set((Array.isArray(lines?.names)?lines.names:PURCHASE_LINES).map(purchaseLineName).filter(Boolean))];
 // 시작선부터 단계 묶음의 나머지를 선택한다. 시간 단위 순서는 시·일·주·월이며 같은 단위는 시작 기간 이상만 포함한다.
-// 직접 고른 시작선도 names 첫 항목에 넣어 기존 수집 작업이 같은 선을 받는다. 읽기·계산에서는 저장 필드를 만들지 않는다.
-function purchaseLineRange(names, start){
+// 종료선을 지정하면 그 선까지 자르고 기본 단계에 없는 종료선도 마지막에 넣는다. 종료선이 앞서면 빈 구간, 같은 선이면 한 단계다.
+// 직접 고른 시작·종료선을 names의 첫·마지막 항목에 넣어 기존 수집 작업이 같은 선을 받는다. 읽기·계산에서는 저장 필드를 만들지 않는다.
+function purchaseLineRange(names, start, last=null){
   const line=purchaseLineName(start),unit=movingLineUnit(line),at=MA_UNITS.indexOf(unit);
   if(!line||!names.some(n=>movingLineUnit(n)===unit))return [];
-  return [line,...names.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))>at||movingLineUnit(n)===unit&&parseInt(n)>parseInt(line))];
+  const after=names.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))>at||movingLineUnit(n)===unit&&parseInt(n)>parseInt(line));
+  if(last===null)return [line,...after];
+  const end=purchaseLineName(last),endUnit=movingLineUnit(end),endAt=MA_UNITS.indexOf(endUnit);
+  if(!end||endAt<at||endAt===at&&parseInt(end)<parseInt(line))return [];
+  if(end===line)return [line];
+  return [line,...after.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))<endAt||movingLineUnit(n)===endUnit&&parseInt(n)<parseInt(end)),end];
 }
 const purchaseWaitLine = plan => purchaseLineName(plan?.wait?.line);
 // 대기 기준가는 수집 작업이 계산한 ma만 사용한다. 시세·봉이 없으면 추정하지 않으며 읽기만 할 때 계획을 바꾸지 않는다.

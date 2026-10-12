@@ -41,11 +41,12 @@ test('종목별 시작 이동평균선은 기존 저장 키로 새로고침·백
   item.buyPlan={lines:{names:['25선','32선'],end:13000,budget:50},buys:{'25선:0':{shares:7,plannedShares:10,plannedActual:10,actual:7,price:10000}}};
   original.allocation.trades={'buy:a:25선:0':{qty:7,price:10000,value:7,items:[{id:'a',shares:7}]}};
   original.allocation.groups[0].items.push({id:'b',buyPlan:{lines:{names:['25주선'],budget:20}}});
-  const first=setup(original);first.store.doc.allocation.groups[0].items[0].buyPlan.lines={names:['150선','25일선'],startLine:'150선',end:13000,budget:50};first.store.saveSection('allocation');
+  const first=setup(original);first.store.doc.allocation.groups[0].items[0].buyPlan.lines={names:['150선','20일선'],startLine:'150선',budget:50};first.store.saveSection('allocation');
   const saved=JSON.parse(first.storage.get(KEY)),second=setup(null,null,first.storage);second.store.start();
   assert.deepEqual(clone(second.store.doc),saved,'새로고침 후 전체 기록 유지');
   const plan=second.store.doc.allocation.groups[0].items[0].buyPlan;
   assert.equal(plan.lines.startLine,'150선');assert.deepEqual(clone(plan.buys),original.allocation.groups[0].items[0].buyPlan.buys);
+  assert.equal(plan.lines.names.at(-1),'20일선','직접 입력한 종료선은 기존 names에 저장·복원');
   assert.deepEqual(clone(second.store.doc.allocation.trades),original.allocation.trades);
   assert.deepEqual(clone(second.store.doc.allocation.groups[0].items[1]),original.allocation.groups[0].items[1]);
   const restore=setup(fake());restore.store.restore(saved);assert.deepEqual(clone(restore.store.doc.allocation.groups),saved.allocation.groups);
