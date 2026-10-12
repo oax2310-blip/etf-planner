@@ -98,8 +98,9 @@
   .alloc-heading .title-row>[data-alloc-fold-all]{display:none}
   #allocView>.section-heading{margin-inline:0}
   .alloc-search:has(>#allocSearchClear.hidden){grid-template-columns:minmax(0,1fr)}
-  .alloc-search-meta{position:relative;top:18px}
-  .alloc-search-meta>.alloc-fold-all-mobile{display:inline-flex;flex:none;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}
+  .alloc-search-meta>.alloc-fold-all-mobile{display:inline-flex;flex:none;position:relative;top:18px;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}
+  #allocItems>.alloc-class:not(.hidden)>.class-label{position:relative;top:-18px;width:fit-content;max-width:calc(100% - 96px)}
+  #allocItems>.alloc-class:not(.hidden)~.alloc-class>.class-label{top:0;width:auto;max-width:none}
   .alloc-actions>.btn{min-height:40px}
   .region-card{padding:12px 10px 6px}.class-row{gap:2px 8px;padding:9px 4px}.class-pct{min-width:54px}
   /* 첫 줄에 체크박스·종목명·평가액, 둘째 줄에 메모·현재/목표를 함께 표시한다. */
