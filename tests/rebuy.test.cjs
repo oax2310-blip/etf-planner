@@ -576,3 +576,45 @@ test('옛 통째 기록의 체결가 수정도 자산 반영에는 기준가 대
   handlers['[data-tranche-exec]']('8950',{dataset:{trancheExec:'0:0'}});
   assert.equal(r.stages[0].execPrice,8950);assert.equal(calls[0][1].price,8950);assert.equal(calls[0][1].qty,10);
 });
+
+test('손절 도달 기준: 신저점 대비 하락률·가격·회차를 기존 정수 배분으로 계산한다', () => {
+  const ctx=load(),r=plan(ctx,{sellPct:5,stepPct:1,steps:30}),m=ctx.cutMilestones(r);
+  assert.deepEqual(plain(m.points).map(x=>[x.pct,x.cut.k,x.cut.drop,x.cut.price,x.cut.sold,x.inPlan]),[[50,10,10,9000,500,true],[100,20,20,8000,1000,true]]);
+  assert.equal(m.sold,1000);assert.equal(m.rounds,30);
+});
+
+test('손절 도달 기준: 설정한 회차 밖의 기준은 계획에 포함되지 않는다고 구분한다', () => {
+  const ctx=load(),r=plan(ctx,{sellPct:5,stepPct:2,steps:8}),m=ctx.cutMilestones(r);
+  assert.deepEqual(plain(m.points).map(x=>[x.cut.k,x.cut.drop,x.cut.price,x.inPlan]),[[10,20,8000,false],[20,40,6000,false]]);
+  assert.equal(m.sold,400);assert.equal(m.rounds,8);
+});
+
+test('손절 도달 기준: 소량 보유의 누적 반올림을 반영해 비중만 단순 나누지 않는다', () => {
+  const ctx=load(),m=ctx.cutMilestones(plan(ctx,{amount:undefined,shares:10,sellPct:3,steps:30}));
+  assert.deepEqual(plain(m.points).map(x=>[x.cut.k,x.cut.sold,x.inPlan]),[[15,5,true],[32,10,false]]);
+  assert.equal(m.sold,9);
+});
+
+test('손절 도달 기준: 최대 회차·0원 가격 제한 안에서 미도달이면 유효한 가격을 만들어내지 않는다', () => {
+  const ctx=load(),m=ctx.cutMilestones(plan(ctx));
+  assert.deepEqual(plain(m.points).map(x=>[x.cut,x.maxRounds]),[[null,60],[null,60]]);assert.equal(m.sold,150);
+  const low=ctx.cutMilestones(plan(ctx,{stepPct:10,sellPct:5,steps:60}));
+  assert.deepEqual(plain(low.points).map(x=>[x.cut,x.maxRounds]),[[null,9],[null,9]]);
+  assert.equal(ctx.cutMilestones(plan(ctx,{lowPrice:0})).ready,false);
+  assert.equal(ctx.cutMilestones(plan(ctx,{amount:undefined,shares:0})).ready,false);
+});
+
+test('손절 도달 기준 조회는 실제 손절·재매수 기록과 저장 필드를 바꾸지 않는다', () => {
+  const ctx=load(),r=plan(ctx,{sellPct:5,cuts:[{shares:3,price:9850,plannedShares:50,partial:true}]});
+  r.stages[0].buys=[{shares:1,price:9800,partial:true,plannedShares:2}];const before=JSON.stringify(r);
+  const m=ctx.cutMilestones(r);assert.equal(m.points[0].cut.k,10);assert.equal(m.points[0].cut.sold,500);assert.equal(JSON.stringify(r),before);
+});
+
+test('손절 도달 기준 화면은 하락 간격·비중·회차·신저점 수정에 맞춰 바뀐다', () => {
+  const r={id:'milestone',...plan(load(),{sellPct:5})},{ctx,handlers,els}=ui({rebuy:{items:[r]}});
+  assert.match(els.rebuyMain.innerHTML,/−10% · 9000원/);assert.match(els.rebuyMain.innerHTML,/−20% · 8000원/);
+  handlers['#rStep']('2');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/−20% · 8000원/);assert.match(els.rebuyMain.innerHTML,/−40% · 6000원/);
+  handlers['#rSell']('10');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/5회차 · 누적 500주/);
+  handlers['#rSteps']('3');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/현재 3회 밖/);assert.match(els.rebuyMain.innerHTML,/현재 3회 계획: 보유의 30% 매도/);
+  handlers['#rLow']('20000');ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/−10% · 18000원/);assert.match(els.rebuyMain.innerHTML,/−20% · 16000원/);
+});
