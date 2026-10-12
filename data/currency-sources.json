@@ -1,4 +1,38 @@
 {
-  "krM2": null,
-  "krRate": null
+  "krGdp": {
+    "table": "200Y104",
+    "items": ["1400"],
+    "frequency": "Q",
+    "kind": "gdp",
+    "definitionId": "bok-real-gdp-sa",
+    "seasonalAdjustment": "SA",
+    "verifiedAt": "2026-10-12",
+    "unit": "십억원",
+    "expectedItemName": "국내총생산(시장가격, GDP)"
+  },
+  "krM2": {
+    "table": "161Y005",
+    "items": ["BBHS00"],
+    "frequency": "M",
+    "kind": "money",
+    "definitionId": "bok-m2-2025-revision",
+    "basis": "period-average",
+    "seasonalAdjustment": "SA",
+    "verifiedAt": "2026-10-12",
+    "unit": "십억원",
+    "expectedItemName": "M2(평잔,계절조정계열)",
+    "sourceNote": "2025년 말 개편 기준. 2003년 10월부터 소급 제공. 같은 표의 BBHS11은 참고용 구 M2이므로 사용하지 않음."
+  },
+  "krRate": {
+    "table": "722Y001",
+    "items": ["0101000"],
+    "frequency": "M",
+    "kind": "rate",
+    "definitionId": "bok-policy-rate-monthly",
+    "basis": "official-monthly",
+    "seasonalAdjustment": "NSA",
+    "verifiedAt": "2026-10-12",
+    "unit": "연%",
+    "expectedItemName": "한국은행 기준금리"
+  }
 }

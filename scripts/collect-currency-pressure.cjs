@@ -36,6 +36,8 @@ function parseEcosRows(rows, spec) {
   const seen=new Set();
   return rows.map(row=>{
     if(row.STAT_CODE !== spec.table || spec.items.some((item,i)=>item && row[`ITEM_CODE${i+1}`] !== item)) throw Error('wrong-series');
+    if(spec.unit && row.UNIT_NAME !== spec.unit) throw Error('wrong-series');
+    if(spec.expectedItemName && String(row.ITEM_NAME1).replace(/\s+/g,'') !== spec.expectedItemName.replace(/\s+/g,'')) throw Error('wrong-series');
     const time=String(row.TIME), pattern=spec.frequency==='M'?/^\d{4}(0[1-9]|1[0-2])$/:/^\d{4}Q[1-4]$/;
     if(!pattern.test(time) || seen.has(time)) throw Error('invalid-period');seen.add(time);
     return {period:spec.frequency==='M'?`${time.slice(0,4)}-${time.slice(4)}`:`${time.slice(0,4)}-${time.slice(4)}`,value:numberOrNull(row.DATA_VALUE)};
@@ -64,13 +66,14 @@ async function collectFred(spec,start,fetcher=fetch,env=process.env) {
 }
 function validateEcosSpec(spec,key) {
   if(!spec || !/^[0-9]{3}Y[0-9]{3}$/.test(spec.table || '') || !Array.isArray(spec.items) || spec.items.length<1 || spec.items.length>4 || !spec.items.every(item=>typeof item==='string' && /^[\w-]+$/.test(item))) throw Error('series-unconfigured');
-  if(key==='krM2' && (spec.definitionId!=='bok-m2-2025-revision' || spec.frequency!=='M' || spec.basis!=='period-average' || spec.seasonalAdjustment!=='SA' || !/^\d{4}-\d{2}-\d{2}$/.test(spec.verifiedAt || ''))) throw Error('revision-unverified');
+  if(key==='krM2' && (spec.table!=='161Y005' || spec.items.length!==1 || spec.items[0]!=='BBHS00' || spec.definitionId!=='bok-m2-2025-revision' || spec.frequency!=='M' || spec.basis!=='period-average' || spec.seasonalAdjustment!=='SA' || !/^\d{4}-\d{2}-\d{2}$/.test(spec.verifiedAt || ''))) throw Error('revision-unverified');
   if(key==='krRate' && (spec.frequency!=='M' || spec.kind!=='rate' || typeof spec.definitionId!=='string' || !spec.definitionId)) throw Error('series-unconfigured');
+  if(key==='krGdp' && (spec.table!=='200Y104' || spec.items.length!==1 || spec.items[0]!=='1400' || spec.frequency!=='Q' || spec.kind!=='gdp' || spec.seasonalAdjustment!=='SA')) throw Error('series-unconfigured');
 }
 async function collectEcos(spec,key,start,fetcher=fetch,env=process.env) {
   validateEcosSpec(spec,key);
   if(!env.ECOS_API_KEY) throw Error('key-missing');
-  const end=new Date().getUTCFullYear()+'12', begin=start+'01', observations=[];
+  const end=new Date().getUTCFullYear()+(spec.frequency==='Q'?'Q4':'12'), begin=start+(spec.frequency==='Q'?'Q1':'01'), observations=[];
   for(let first=1;;first+=1000) {
     const url=`https://ecos.bok.or.kr/api/StatisticSearch/${encodeURIComponent(env.ECOS_API_KEY)}/json/kr/${first}/${first+999}/${spec.table}/${spec.frequency}/${begin}/${end}/${spec.items.map(encodeURIComponent).join('/')}/`;
     const payload=JSON.parse(await fetchText(url,fetcher)), result=payload.StatisticSearch;
@@ -111,18 +114,19 @@ async function main() {
   const config=JSON.parse(await fs.readFile(CONFIG,'utf8'));
   let previous={series:{}};try {previous=JSON.parse(await fs.readFile(OUTPUT,'utf8'));}catch(error){if(error.code!=='ENOENT')throw Error('invalid-cache');}
   const fetchedAt=nowIso(),start=String(new Date().getUTCFullYear()-11),series={};
-  const jobs=Object.entries(fredSpecs).map(([key,spec])=>({key,run:()=>collectFred(spec,start)}));
-  for(const key of ['krM2','krRate'])jobs.push({key,run:()=>collectEcos(config[key],key,start)});
+  const ecosKeys=['krM2','krRate',...(config.krGdp?['krGdp']:[])];
+  const jobs=Object.entries(fredSpecs).filter(([key])=>!ecosKeys.includes(key)).map(([key,spec])=>({key,run:()=>collectFred(spec,start)}));
+  for(const key of ecosKeys)jobs.push({key,run:()=>collectEcos(config[key],key,start)});
   const results=await Promise.allSettled(jobs.map(job=>job.run()));
   for(let i=0;i<jobs.length;i++) {
     const {key}=jobs[i],result=results[i];
     // URL·예외 문자열에는 API 키가 포함될 수 있어 알려진 오류 코드만 출력.
     const known=new Set(['series-unconfigured','revision-unverified','key-missing','wrong-series','invalid-response','empty-response','invalid-period','duplicate-period']);
     const error=result.status==='rejected'?(known.has(result.reason?.message)?result.reason.message:'request-failed'):null;
-    const configured=key==='krM2'||key==='krRate'?config[key]:fredSpecs[key];
+    const configured=ecosKeys.includes(key)?config[key]:fredSpecs[key];
     const expectedCode=configured?.table?[configured.table,...configured.items].join('/'):configured?.code;
     const prior=previous.series?.[key];
-    const compatible=!configured || (prior?.definitionId===configured.definitionId && prior?.code===expectedCode);
+    const compatible=!!configured && prior?.definitionId===configured.definitionId && prior?.code===expectedCode;
     series[key]=updateSeries(compatible?prior:null,result.status==='fulfilled'?result.value:null,error,fetchedAt);
     console.log(`${key}: ${series[key].status}`);
   }

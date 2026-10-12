@@ -1,7 +1,12 @@
 name: 공식 통화강도 자료 갱신
 on:
   schedule:
-    - cron: '20 22 * * 1-5'
+    - cron: '20 22 * * 0-4'
+  push:
+    branches: [main]
+    paths:
+      - data/currency-sources.json
+      - scripts/collect-currency-pressure.cjs
   workflow_dispatch:
 permissions:
   contents: write
@@ -26,7 +31,7 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: node scripts/collect-currency-pressure.cjs
       - name: 계산·자료 계약 확인
-        run: node --test tests/currency-pressure.test.cjs
+        run: node --test --experimental-test-isolation=none tests/currency-pressure.test.cjs
       - name: 공개 경제통계만 기록
         run: |
           if ! git diff --quiet -- data/currency-pressure.json; then
