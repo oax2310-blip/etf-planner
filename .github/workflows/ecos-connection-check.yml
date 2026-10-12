@@ -1,0 +1,28 @@
+name: ECOS 공식 계열 연결 확인
+on:
+  push:
+    branches: [setup/currency-ecos]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ecos-connection-check
+  cancel-in-progress: false
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: ECOS 인증과 공개 통계표·항목 확인
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        run: node scripts/discover-ecos.cjs "$RUNNER_TEMP/ecos-series.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ecos-public-series
+          path: ${{ runner.temp }}/ecos-series.json
+          retention-days: 3
