@@ -1,0 +1,43 @@
+name: 공식 통화강도 자료 갱신
+on:
+  schedule:
+    - cron: '20 22 * * 1-5'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: public-currency-statistics
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 공식 통계 수집
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: node scripts/collect-currency-pressure.cjs
+      - name: 계산·자료 계약 확인
+        run: node --test tests/currency-pressure.test.cjs
+      - name: 공개 경제통계만 기록
+        run: |
+          if ! git diff --quiet -- data/currency-pressure.json; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add data/currency-pressure.json
+            git commit -m '공식 통화강도 통계 갱신'
+            git push origin HEAD:main
+          fi
+      # GITHUB_TOKEN push는 Pages 빌드를 시작하지 않으므로 공식 Pages API로 요청.
+      - name: GitHub Pages 자료 반영 요청
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"

@@ -1,0 +1,73 @@
+/* valuation.html의 공통 토큰을 사용한다. 시나리오 영역 밖에는 적용하지 않는다. */
+.cp-heading { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+.cp-heading h2 { margin:0; }
+.cp-heading button { border:1px solid var(--line-strong); background:var(--surface); color:var(--text-2); padding:7px 12px; border-radius:9px; font-size:.8rem; }
+.cp-heading button:disabled { cursor:wait; opacity:.6; }
+.cp-hero { text-align:center; padding:25px 24px 22px; background:var(--surface); border:1px solid var(--line); border-radius:16px; }
+.cp-status { display:inline-block; padding:4px 13px; border-radius:99px; color:var(--text-2); background:var(--surface-3); font-weight:700; font-size:.87rem; }
+.cp-value { margin:10px 0 4px; font-size:clamp(3rem,7vw,4.3rem); font-weight:800; letter-spacing:-.055em; line-height:1.2; font-variant-numeric:tabular-nums; }
+.cp-value small { color:var(--text-3); font-size:1rem; margin-left:7px; letter-spacing:0; }
+[data-direction=strong] .cp-status { color:var(--warm); background:var(--warm-soft); }
+[data-direction=strong] .cp-value { color:var(--warm); }
+[data-direction=weak] .cp-status { color:var(--accent); background:var(--accent-soft); }
+[data-direction=weak] .cp-value { color:var(--accent); }
+.cp-hero p { margin:4px 0; }
+.cp-scale { display:flex; justify-content:center; gap:18px; font-size:.75rem; color:var(--text-3); margin:15px 0 0; }
+.cp-scale span:first-child { color:var(--accent); }
+.cp-scale span:last-child { color:var(--warm); }
+.cp-compare { margin-top:16px; padding:18px 22px; }
+.cp-compare-head { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+.cp-compare-head h3 { margin:0; font-size:.95rem; }
+.cp-countries { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+.cp-country + .cp-country { border-left:1px solid var(--line); padding-left:22px; }
+.cp-country h4 { margin:0 0 8px; font-size:.9rem; }
+.cp-country .row { font-size:.82rem; color:var(--text-2); padding:3px 0; }
+.cp-country strong { color:var(--text); }
+.cp-country .cp-pressure { margin-top:7px; padding-top:9px; border-top:1px solid var(--line); }
+.cp-equation { text-align:center; font-size:.79rem; color:var(--text-3); margin:15px 0 0; font-variant-numeric:tabular-nums; }
+.cp-note { color:var(--warm); font-size:.78rem; margin:10px 0 0; }
+.cp-chart-card { margin-top:16px; padding:18px 22px; }
+.cp-chart-tools { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+.cp-chart-tools .presets { margin:0; flex:none; flex-wrap:nowrap; }
+.cp-chart-tools .presets button { flex:none; padding:5px 13px; font-size:.78rem; white-space:nowrap; }
+.cp-toggle { display:flex; align-items:center; gap:7px; font-size:.81rem; color:var(--text-2); min-height:36px; cursor:pointer; }
+.cp-toggle input { accent-color:var(--accent); width:16px; height:16px; }
+.cp-legend { display:flex; gap:16px; color:var(--text-3); font-size:.73rem; margin-top:12px; }
+.cp-legend span::before { content:''; display:inline-block; width:17px; height:3px; background:var(--accent); vertical-align:middle; margin-right:6px; }
+.cp-legend span:last-child::before { background:var(--warm); }
+.cp-chart { display:block; width:100%; height:auto; touch-action:pan-y; margin-top:6px; }
+.cp-grid { stroke:var(--line); }
+.cp-zero { stroke:var(--line-strong); stroke-dasharray:4 4; }
+.cp-line { stroke:var(--accent); stroke-width:2.7; stroke-linejoin:round; }
+.cp-fx-line { stroke:var(--warm); stroke-width:2.2; stroke-linejoin:round; }
+.cp-axis { fill:var(--text-3); font-size:12px; font-family:var(--font); }
+.cp-fx-axis { fill:var(--warm); font-size:12px; font-family:var(--font); }
+.cp-cursor { stroke:var(--text-3); stroke-width:1; stroke-dasharray:3 4; }
+.cp-point { fill:var(--accent); stroke:var(--surface); stroke-width:2; }
+.cp-empty { font-size:.79rem; color:var(--text-3); margin:2px 0 10px; }
+.cp-selection { display:flex; flex-wrap:wrap; gap:9px; align-items:center; border-top:1px solid var(--line); padding-top:12px; font-size:.78rem; color:var(--text-2); }
+.cp-selection select,.cp-validation select { border:1px solid var(--line-strong); background:var(--field); color:var(--text-2); border-radius:8px; padding:6px 8px; max-width:100%; font-size:.78rem; }
+.cp-selection output { font-variant-numeric:tabular-nums; }
+.cp-rate { font-size:.8rem; color:var(--text-2); margin:12px 0 0; }
+.cp-validation { margin-top:16px; }
+.cp-validation p { font-size:.82rem; }
+.cp-source-table { width:100%; min-width:850px; border-collapse:collapse; font-size:.76rem; }
+.cp-source-table td,.cp-source-table th { text-align:left; padding:10px; border-bottom:1px solid var(--line); }
+.cp-source-table th { background:var(--surface-2); color:var(--text-3); font-weight:600; }
+.cp-source-table th:first-child,.cp-source-table td:first-child { padding-left:15px; }
+.cp-source-table td { color:var(--text-2); }
+.cp-source-table td:not(:last-child) { white-space:nowrap; }
+.cp-method p { font-size:.83rem; color:var(--text-2); margin:12px 0; }
+.cp-load-status { font-size:.78rem; color:var(--warm); margin:6px 0; }
+#currency-pressure button:focus-visible,#currency-pressure select:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+@media (max-width:600px) {
+  .cp-hero { padding:20px 17px; }
+  .cp-compare,.cp-chart-card { padding:16px; }
+  .cp-country + .cp-country { padding-left:15px; }
+  .cp-countries { gap:15px; }
+  .cp-country .row { font-size:.77rem; gap:4px; }
+  .cp-country .row strong { font-size:.8rem; }
+  .cp-legend { gap:10px; font-size:.68rem; }
+  .cp-scale { gap:12px; }
+  .cp-selection output { flex-basis:100%; }
+}
