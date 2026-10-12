@@ -20,7 +20,7 @@
 @media(pointer:coarse){.alloc-heading .title-row>.btn{min-height:44px}}
 .alloc-fold-all-mobile{display:none}
 .alloc-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;order:3;margin-left:auto}.alloc-actions>.btn{white-space:nowrap}.alloc-actions>.btn:disabled{opacity:.45;cursor:default}
-.alloc-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;margin-bottom:16px}.alloc-search .field{min-width:0}.alloc-search input{min-width:0}.alloc-search>.btn{align-self:end;min-height:40px}.alloc-search>.hint{grid-column:1/-1;margin:0}
+.alloc-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;margin-bottom:16px}.alloc-search .field{min-width:0}.alloc-search input{min-width:0}.alloc-search>.btn{align-self:end;min-height:40px}.alloc-search-meta{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}.alloc-search-meta>.hint{margin:0}
 .class-label{margin:18px 4px 8px;font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.01em}.class-label:first-of-type{margin-top:0}
 .alloc-class+.alloc-class .class-label{margin-top:18px}
 .group-card{margin-bottom:12px;overflow:hidden}.group-head{padding:14px 16px 10px}.group-head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.02em;word-break:keep-all;overflow-wrap:anywhere}.group-head .title-row{justify-content:space-between}.group-head p{margin:4px 0 0;font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums}.group-head p b{color:var(--text)}
@@ -96,8 +96,7 @@
 @media(max-width:900px){.param-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
   .alloc-heading .title-row>[data-alloc-fold-all]{display:none}
-  .alloc-items-heading>.alloc-fold-all-mobile{display:inline-flex;order:2;margin-left:auto;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}
-  .alloc-items-heading .alloc-actions{flex-basis:100%;justify-content:flex-end}
+  .alloc-search-meta>.alloc-fold-all-mobile{display:inline-flex;flex:none;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}
   .alloc-actions>.btn{min-height:40px}
   .region-card{padding:12px 10px 6px}.class-row{gap:2px 8px;padding:9px 4px}.class-pct{min-width:54px}
   /* 첫 줄에 체크박스·종목명·평가액, 둘째 줄에 메모·현재/목표를 함께 표시한다. */
