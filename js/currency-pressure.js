@@ -100,7 +100,7 @@
   const el = id => document.getElementById(id);
   const fmt = (value, unit='%', signed=true) => !finite(value) ? '—' : `${signed && value>0 ? '+' : ''}${value.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2})}${unit}`;
   const qLabel = q => q?.replace('-Q','년 ')+'분기';
-  const dateLabel = date => date ? date.slice(0,10) : '확인 안 됨';
+  const dateLabel = date => !date ? '확인 안 됨' : date.includes('T') && Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(date)) : date.slice(0,10);
   let dataset = null, rows = [], years = 10, selectedQuarter = null;
   const svgNode = (tag, attrs={}) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg',tag);
@@ -143,7 +143,7 @@
       if (finite(rows[si].pressure)) svg.append(svgNode('circle',{cx:x(si),cy:y(rows[si].pressure),r:4,class:'cp-point'}));
     }
     el('cpChartEmpty').hidden=values.length>0;
-    el('cpChartEmpty').textContent=el('cpCompareFx').checked && rows.some(r=>finite(r.fx)) ? '통화압력은 한국 M2 연결 후 표시됩니다. 환율은 공식 월평균 자료입니다.' : '한국 M2 연결 후 통화압력 추이가 표시됩니다.';
+    el('cpChartEmpty').textContent=el('cpCompareFx').checked && rows.some(r=>finite(r.fx)) ? '통화압력은 공통 분기 자료 확인 후 표시됩니다. 환율은 공식 월평균 자료입니다.' : '공통 분기 자료 확인 후 통화압력 추이가 표시됩니다.';
   }
   function renderSelected() {
     const row=rows.find(r=>r.quarter===selectedQuarter);
@@ -158,7 +158,7 @@
     el('cpDirection').textContent=direction(latest?.pressure);
     root.dataset.direction=!latest?'pending':latest.pressure>0?'strong':latest.pressure<0?'weak':'neutral';
     el('cpValue').textContent=fmt(latest?.pressure,'',true);
-    el('cpPeriod').textContent=latest ? `최신 공통 비교 · ${qLabel(latest.quarter)}` : '한국 M2 개편 기준 자료 연결 대기';
+    el('cpPeriod').textContent=latest ? `최신 공통 비교 · ${qLabel(latest.quarter)}` : '같은 분기 GDP·M2 자료 대기';
     el('cpSummary').textContent=latest ? latest.pressure===0?'양국의 통화압력이 같습니다.':'한국의 통화압력이 미국보다 '+(latest.pressure>0?'높습니다.':'낮습니다.') : '네 가지 성장률이 같은 분기로 확인되어야 강약을 판단합니다.';
     el('cpComparePeriod').textContent=reference?`${qLabel(reference.quarter)} · 전년 동기 대비`:'동일 분기 비교 대기';
     for (const key of ['krGdp','usGdp','krM2','usM2','krPressure','usPressure']) el('cp'+key[0].toUpperCase()+key.slice(1)).textContent=fmt(reference?.[key],key.endsWith('Pressure')?'%p':'%');
@@ -167,7 +167,7 @@
     const old=latest && latest.quarter!==rows.at(-1)?.quarter;
     const cacheOld=dataset?.generatedAt && Date.now()-Date.parse(dataset.generatedAt)>8*86400000;
     el('cpDataNote').textContent=[missing.length ? `${qLabel(rows.at(-1).quarter)} 대기·결측: ${missing.map(k=>labels[k]).join(', ')}.` : '',old?'마지막으로 계산 가능한 공통 분기를 표시합니다.':'',failures?'일부 수집에 실패하여 마지막 확인 자료를 유지합니다.':'',cacheOld?'공개 자료 갱신이 8일 이상 지연되었습니다.':'',!latest?'빈 값은 0으로 계산하지 않습니다.':''].filter(Boolean).join(' ');
-    el('cpRate').textContent=finite(reference?.rateGap)?`같은 분기 금리차 · 미국 − 한국 ${fmt(reference.rateGap,'%p')}`:'보조 금리차 · 한국 금리 자료 연결 대기';
+    el('cpRate').textContent=finite(reference?.rateGap)?`같은 분기 금리차 · 미국 − 한국 ${fmt(reference.rateGap,'%p')}`:'보조 금리차 · 같은 분기 금리 자료 대기';
     el('cpQuarter').replaceChildren(...rows.map(row=>{const option=document.createElement('option');option.value=row.quarter;option.textContent=qLabel(row.quarter)+(finite(row.pressure)?'':' · 압력 결측');return option;}));
     if (!rows.some(row=>row.quarter===selectedQuarter)) selectedQuarter=reference?.quarter;
     renderSelected(); renderValidation(); renderSources();
@@ -182,7 +182,7 @@
     const body=el('cpSources');body.replaceChildren();
     for (const [key,label] of Object.entries(labels)) {
       const s=dataset?.series?.[key], tr=document.createElement('tr');
-      const link=document.createElement('a'); link.textContent=s?.sourceName || (key.startsWith('kr')?'한국은행 ECOS':'FRED');
+      const link=document.createElement('a'); link.textContent=(s?.sourceName || (key.startsWith('kr')?'한국은행 ECOS':'FRED'))+(s?.code?' · '+s.code:'');
       const source=s?.sourceUrl;
       link.href=source && /^https:\/\/(fred\.stlouisfed\.org|ecos\.bok\.or\.kr)(\/|$)/.test(source)?source:'https://ecos.bok.or.kr/';
       link.target='_blank';link.rel='noopener noreferrer';
@@ -202,6 +202,7 @@
       const valid=data?.schemaVersion===1 && data.series && typeof data.series==='object' && !Array.isArray(data.series) && typeof data.generatedAt==='string' && Number.isFinite(Date.parse(data.generatedAt)) &&
         Object.values(data.series).every(s=>s && typeof s==='object' && (s.observations===undefined || Array.isArray(s.observations) && s.observations.every(point=>point && typeof point.period==='string' && periodQuarter(point.period) && (point.value===null || finite(point.value)))));
       if(!valid)throw Error('자료 형식을 확인할 수 없습니다.');
+      if(!dataset)selectedQuarter=null; // 첫 수집 완료 시에는 최신 공통 분기로 맞춘다.
       dataset=data;render();el('cpLoadStatus').textContent='';
     } catch (_) { el('cpLoadStatus').textContent=dataset?'자료 확인 실패 · 마지막으로 확인한 자료 유지':'자료를 불러오지 못했습니다. 다시 확인해 주세요.'; }
     finally {button.disabled=false;}
