@@ -36,6 +36,24 @@ test('공유 자산 기록: 입력 없이 열면 기존 분할매수·목표·�
   assert.equal(storage.has(BASE),false);
 });
 
+test('종목별 시작 이동평균선은 기존 저장 키로 새로고침·백업·복원·동기화 후 유지하고 옛 체결과 다른 종목을 보존한다',async()=>{
+  const original=fake(),item=original.allocation.groups[0].items[0];
+  item.buyPlan={lines:{names:['25선','32선'],end:13000,budget:50},buys:{'25선:0':{shares:7,plannedShares:10,plannedActual:10,actual:7,price:10000}}};
+  original.allocation.trades={'buy:a:25선:0':{qty:7,price:10000,value:7,items:[{id:'a',shares:7}]}};
+  original.allocation.groups[0].items.push({id:'b',buyPlan:{lines:{names:['25주선'],budget:20}}});
+  const first=setup(original);first.store.doc.allocation.groups[0].items[0].buyPlan.lines={names:['150선','25일선'],startLine:'150선',end:13000,budget:50};first.store.saveSection('allocation');
+  const saved=JSON.parse(first.storage.get(KEY)),second=setup(null,null,first.storage);second.store.start();
+  assert.deepEqual(clone(second.store.doc),saved,'새로고침 후 전체 기록 유지');
+  const plan=second.store.doc.allocation.groups[0].items[0].buyPlan;
+  assert.equal(plan.lines.startLine,'150선');assert.deepEqual(clone(plan.buys),original.allocation.groups[0].items[0].buyPlan.buys);
+  assert.deepEqual(clone(second.store.doc.allocation.trades),original.allocation.trades);
+  assert.deepEqual(clone(second.store.doc.allocation.groups[0].items[1]),original.allocation.groups[0].items[1]);
+  const restore=setup(fake());restore.store.restore(saved);assert.deepEqual(clone(restore.store.doc.allocation.groups),saved.allocation.groups);
+  const remote=setup(null,url=>url.endsWith('/repos/example/private-data')?json({private:true}):contents(saved));connect(remote.storage);await remote.store.sync();
+  assert.equal(remote.store.status.state,'done');
+  assert.deepEqual(clone(remote.store.doc.allocation),saved.allocation);
+});
+
 test('저축 최단 기록: 조회는 생성·초기화하지 않고 더 빠른 기록의 명시적 저장만 허용한다',()=>{
   const original=milestoneDoc(),first=setup(original);first.store.start();
   assert.deepEqual(JSON.parse(first.storage.get(KEY)),original);
