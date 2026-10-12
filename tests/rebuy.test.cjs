@@ -489,3 +489,90 @@ test('화면: 첫 단계 전에는 기한 없이 첫 회차 신호와 회차 계
   assert.match(html, /다음 재매수 <b><span class="tr-name">25선<span class="tr-no">2<\/span><\/span> · 9816\.6+7?원 이상에서 약 2\.6만원<\/b>/, '남은 7.94만원 ÷ 3회 (테스트의 가격 표시는 반올림 없음)');
   assert.match(els.rebuyList.innerHTML, /plan-count">재매수 1\/4</);
 });
+
+const fillFixture = () => ({id:'fill-test',name:'테스트 ETF',lowPrice:10000,shares:100,stepPct:1,sellPct:10,steps:2,cuts:[],stages:[{name:'25선',price:9900,done:false,shares:null,execPrice:null}]});
+
+test('누적 손절: 부분 수량만 계산·자산 반영하고 계획과 다음 회차는 유지, 수량 0은 취소한다', () => {
+  const r=fillFixture(),calls=[],{ctx,handlers}=ui({rebuy:{items:[r]}},{allocLink:{line:()=>'',holding:()=>null,check:o=>{const key=o.commit();calls.push(['check',key,plain(o.trade)]);o.redraw();},rescale:(...a)=>calls.push(['rescale',...plain(a)]),uncheck:key=>calls.push(['uncheck',key])}});
+  handlers['[data-cut-qty]']('3',{dataset:{cutQty:'0'}});
+  let s=ctx.rebuySummary(r);
+  assert.deepEqual([s.sold,s.sellValue,s.held,s.doneCuts,s.filledCuts],[3,29700,97,0,1]);
+  assert.deepEqual([r.cuts[0].partial,r.cuts[0].plannedShares,s.cuts[1].qty],[true,10,10]);
+  assert.deepEqual(calls[0],['check','cut:fill-test:0',{sign:-1,qty:3,price:9900,currency:'KRW'}]);
+  handlers['[data-cut-qty]']('10',{dataset:{cutQty:'0'}});
+  assert.equal(ctx.rebuySummary(r).doneCuts,1);assert.equal(Object.hasOwn(r.cuts[0],'partial'),false);
+  assert.equal(calls.at(-1)[2].qty,10);
+  handlers['[data-cut-qty]']('4',{dataset:{cutQty:'0'}});
+  assert.equal(ctx.rebuySummary(r).doneCuts,0);assert.equal(r.cuts[0].plannedShares,10);
+  handlers['[data-cut-qty]']('0',{dataset:{cutQty:'0'}});
+  assert.deepEqual(r.cuts,[]);assert.deepEqual(calls.at(-1),['uncheck','cut:fill-test:0']);
+});
+
+test('누적 재매수: 부분 잔량은 같은 회차에 남고 첫 체결 계획은 고정, 완료·수량 수정·취소 가능', () => {
+  const r=fillFixture();r.cuts=[{shares:10,price:9900}];
+  const {ctx,handlers,els}=ui({rebuy:{items:[r]}});
+  handlers['[data-tranche-qty]']('4',{dataset:{trancheQty:'0:0'}});
+  let s=ctx.rebuySummary(r),rec=r.stages[0].buys[0];
+  assert.deepEqual([s.rebought,s.buyValue,s.rest,s.held,s.doneTranches],[4,39600,59400,94,0]);
+  assert.deepEqual([s.tranches[0].partial,s.tranches[0].amount,rec.plannedShares],[true,59400,10]);
+  assert.deepEqual(plain(r.planned),[['25선',0]]);
+  assert.match(els.rebuyMain.innerHTML,/부분 재매수 · 남은 6주/);
+  handlers['[data-tranche-qty]']('10',{dataset:{trancheQty:'0:0'}});
+  s=ctx.rebuySummary(r);assert.deepEqual([s.rest,s.doneTranches],[0,1]);assert.equal(Object.hasOwn(r.stages[0].buys[0],'partial'),false);
+  handlers['[data-tranche-qty]']('5',{dataset:{trancheQty:'0:0'}});
+  assert.equal(ctx.rebuySummary(r).doneTranches,0);assert.equal(r.stages[0].buys[0].plannedShares,10);
+  handlers['[data-tranche-qty]']('0',{dataset:{trancheQty:'0:0'}});
+  assert.equal(r.stages[0].buys,undefined);assert.equal(r.planned,undefined);
+});
+
+test('잘못된 수량은 기록·id·계획을 만들지 않으며 보유량을 넘는 손절을 거절한다', () => {
+  const r=fillFixture(),ctx=load(),before=JSON.stringify(r);
+  for(const value of ['', '-1','1.5','NaN','Infinity','9007199254740992','101'])assert.equal(ctx.rebuyCutRecord(r,0,value),false,value);
+  assert.equal(JSON.stringify(r),before);
+  r.cuts=[{shares:10,price:9900}];const sold=JSON.stringify(r);
+  for(const value of ['', '-1','1.5','NaN','Infinity'])assert.equal(ctx.rebuyBuyRecord(r,0,0,value),false,value);
+  assert.equal(JSON.stringify(r),sold);
+});
+
+test('완료 회차 자동 접기·수동 펼치기: 전체 완료 때 다시 접고, 수정 후 부분 회차는 계속 표시한다', () => {
+  const r=fillFixture();r.cuts=[{shares:10,price:9900}];const {ctx,handlers,els}=ui({rebuy:{items:[r]}});
+  assert.match(els.rebuyMain.innerHTML,/id="toggleRebuyCuts"[^>]*aria-expanded="false"/);
+  els.toggleRebuyCuts.onclick();assert.match(els.rebuyMain.innerHTML,/id="toggleRebuyCuts"[^>]*aria-expanded="true"/);
+  handlers['[data-tranche-qty]']('4',{dataset:{trancheQty:'0:0'}});
+  handlers['[data-tranche-qty]']('10',{dataset:{trancheQty:'0:0'}});
+  assert.match(els.rebuyMain.innerHTML,/id="toggleRebuyCuts"[^>]*aria-expanded="false"/);
+  assert.match(els.rebuyMain.innerHTML,/id="rebuyBuyRows" hidden/);
+  els.toggleRebuyBuys.onclick();assert.match(els.rebuyMain.innerHTML,/id="toggleRebuyBuys"[^>]*aria-expanded="true"/);
+  handlers['[data-tranche-qty]']('5',{dataset:{trancheQty:'0:0'}});
+  assert.doesNotMatch(els.rebuyMain.innerHTML,/id="rebuyBuyRows" hidden/);
+  ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/부분 재매수/);
+});
+
+test('옛 완료·단일 종목 기록은 조회·화면 복원 때 바꾸지 않고 새 필드를 생성하지 않는다', () => {
+  const old={...fillFixture(),cuts:[{shares:10,price:9900}],stages:[{name:'25분봉',price:9900,done:true,shares:10,execPrice:9900}]};
+  delete old.id;const state={rebuy:old},before=JSON.stringify(state),{ctx,els}=ui(state);
+  assert.match(els.rebuyMain.innerHTML,/재매수 완료/);els.toggleRebuyBuys.onclick();ctx.renderRebuy();
+  assert.equal(JSON.stringify(state),before);
+  assert.equal(Object.hasOwn(old.cuts[0],'plannedShares'),false);assert.equal(Object.hasOwn(old.stages[0],'partial'),false);
+});
+
+test('부분 재매수 잔량은 다른 미체결 회차의 금액과 분리해 보존한다', () => {
+  const ctx=load(),r=fillFixture();r.cuts=[{shares:10,price:10000}];r.stages=[{name:'25선',price:9000,buys:[{shares:1,price:9000,plannedShares:3,partial:true}]},{name:'32선',price:10000}];r.planned=[['25선',0],['25선',1],['25선',2],['32선',0]];
+  const s=ctx.rebuySummary(r);
+  assert.equal(s.tranches[0].amount,18000);near(s.tranches.slice(1).reduce((n,x)=>n+x.amount,0),73000);
+  assert.equal(s.rest,91000);assert.equal(s.tranches[0].done,false);
+});
+
+test('옛 체결 수량만 수정할 때 비운 체결가·다른 회차 기록을 유지한다', () => {
+  const r=fillFixture();r.cuts=[{shares:10,price:null},{shares:3,price:9800}];r.stages[0]={name:'25선',price:9900,done:true,shares:10,execPrice:null};
+  const {handlers}=ui({rebuy:{items:[r]}}),other=JSON.stringify(r.cuts[1]);
+  handlers['[data-cut-qty]']('6',{dataset:{cutQty:'0'}});assert.equal(r.cuts[0].price,null);assert.equal(JSON.stringify(r.cuts[1]),other);
+  handlers['[data-tranche-qty]']('5',{dataset:{trancheQty:'0:0'}});assert.equal(r.stages[0].execPrice,null);assert.equal(r.stages[0].price,9900);
+});
+
+test('옛 통째 기록의 체결가 수정도 자산 반영에는 기준가 대신 실제 체결가를 전달한다', () => {
+  const r=fillFixture();r.cuts=[{shares:10,price:9900}];r.stages[0]={name:'25선',price:9000,done:true,shares:10,execPrice:8900};const calls=[];
+  const {handlers}=ui({rebuy:{items:[r]}},{allocLink:{line:()=>'',holding:()=>null,rescale:(...a)=>calls.push(plain(a))}});
+  handlers['[data-tranche-exec]']('8950',{dataset:{trancheExec:'0:0'}});
+  assert.equal(r.stages[0].execPrice,8950);assert.equal(calls[0][1].price,8950);assert.equal(calls[0][1].qty,10);
+});

@@ -523,3 +523,15 @@ test('수동 시세 조회가 끝나도 입력 중인 메모를 다시 그려 �
   assert.equal(renders,0);assert.equal(vm.runInContext('sync.redraw',h.context),true);
   h.context.document.activeElement=null;vm.runInContext('redrawIdle()',h.context);assert.equal(renders,1);
 });
+
+test('부분 손절·재매수 수량·고정 예정량·완료 상태는 기존 비공개 저장소로 왕복한다', async () => {
+  const local={...empty(),rebuy:{items:[{id:'round-trip',name:'테스트 ETF',lowPrice:10000,shares:100,cuts:[{shares:3,price:9900,plannedShares:10,partial:true}],planned:[['25선',0]],stages:[{name:'25선',price:9900,buys:[{shares:1,price:9900,plannedShares:3,partial:true}]}]}]}};
+  const h=harness({local});await h.restored();assert.deepEqual(h.remoteData().rebuy,local.rebuy);
+  const other=harness({remote:h.remoteData(),hadStoredState:false});await other.restored();
+  assert.deepEqual(JSON.parse(other.items.get('test-state')).rebuy,local.rebuy);assert.equal(other.server.writes,0);
+  vm.runInContext('state.rebuy.items[0].cuts[0].shares=10;delete state.rebuy.items[0].cuts[0].partial;state.rebuy.items[0].stages[0].buys[0].shares=3;delete state.rebuy.items[0].stages[0].buys[0].partial;save();',other.context);
+  await other.run();const final=harness({remote:other.remoteData(),hadStoredState:false});await final.restored();
+  assert.deepEqual(JSON.parse(final.items.get('test-state')).rebuy,other.remoteData().rebuy);
+  assert.equal(final.remoteData().rebuy.items[0].cuts[0].shares,10);assert.equal(final.remoteData().rebuy.items[0].stages[0].buys[0].shares,3);
+  assert.equal(Object.hasOwn(final.remoteData().rebuy.items[0].stages[0].buys[0],'partial'),false);
+});
