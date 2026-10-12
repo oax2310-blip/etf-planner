@@ -27,6 +27,14 @@ jobs:
           const config=JSON.parse(fs.readFileSync('data/currency-sources.json','utf8'));
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'configured='+Boolean(config.krM2)+'\n');
           JS
+      - name: 한국 실질 GDP 공식 항목 확인
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        run: |
+          node - <<'JS'
+          const {list,allowedError}=require('./scripts/discover-ecos.cjs');
+          list('StatisticItemList','200Y104').then(rows=>console.log('GDP_PUBLIC_METADATA '+JSON.stringify(rows.filter(row=>row.ITEM_CODE==='1400'))))).catch(error=>{console.error('GDP 계열 확인 실패: '+allowedError(error));process.exitCode=1;});
+          JS
       - name: ECOS 인증과 공개 통계표·항목 확인
         if: steps.mode.outputs.configured != 'true'
         env:
