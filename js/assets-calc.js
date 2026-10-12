@@ -117,18 +117,31 @@ function allocationTargets(alloc){
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
 // 종목의 buyPlan은 이동평균선 돌파·매수대기·기존 직접 입력이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 점검완료(it.done)와 매수 완료는 별개.
-// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], end?:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}. 목표 가격을 비우면 names의 마지막 선까지 매수한다.
+// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], startLine?:사용자가 고른 시작선, end?:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}. 목표 가격을 비우면 names의 마지막 선까지 매수한다.
 //    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?}.
 //    부분 체결 회차는 원래 수량·가격과 잔량 예산을 고정한다. plannedShares 없는 옛 체결은 완료로 읽고, 처음 수정할 때만 계획 수량을 저장한다.
 //    수량은 purchaseFill로 회차 예산 안에서 내림하고, 표시한 수량을 그대로 저장·반영한다. 체결 금액만 고쳐도 수량은 바뀌지 않는다. 옛 기록은 읽을 때 새 필드를 채우지 않는다.
 // ② 직접 입력: stages = [{id, price?, shares?, plannedShares?, date?, condition?, amount(만원), done?, partial?, actual?}] — 첫 체결 때 plannedShares를 고정하고 shares는 누적 체결, 잔량이 있으면 partial=true(done 없음).
 // ③ 매수대기: wait = {line:원하는 이동평균선 이름}. 예산·체결 회차 없이 현재가 ≤ 그때의 이동평균선이면 도달하며 보유량을 바꾸지 않는다.
 //    알림은 notify.stages(개별 예외는 notify.keys.wait). 선 값이 바뀌어도 같은 알림 이력을 쓰고, 선택한 선을 바꾸면 이력을 새로 시작한다.
-// 이동평균선 돌파 단계(재매수 기본 단계와 같음): 시선(60분봉) 'N선', 일선 'N일선', 주선 'N주선', 월선 'N개월선'(각 25~150). 시세 파일 ma에 같은 이름으로 들어 있다
+// 이동평균선 돌파 단계(재매수 기본 단계와 같음): 시선(60분봉) 'N선', 일선 'N일선', 주선 'N주선', 월선 'N개월선'(기본 25~150, 시작선은 1~400). 시세 파일 ma에 같은 이름으로 들어 있다
 // (데이터 저장소 kis_prices.py가 lines.names로 이 종목의 일봉·60분봉 이동평균을 계산 — purchase_line_plans).
 const PURCHASE_LINES = MA_LINES;
 const purchaseLineName = movingLineName;
 const purchaseLineNames = lines => [...new Set((Array.isArray(lines?.names)?lines.names:PURCHASE_LINES).map(purchaseLineName).filter(Boolean))];
+// 시작선부터 단계 묶음의 나머지를 선택한다. 시간 단위 순서는 시·일·주·월이며 같은 단위는 시작 기간 이상만 포함한다.
+// 종료선을 지정하면 그 선까지 자르고 기본 단계에 없는 종료선도 마지막에 넣는다. 종료선이 앞서면 빈 구간, 같은 선이면 한 단계다.
+// 직접 고른 시작·종료선을 names의 첫·마지막 항목에 넣어 기존 수집 작업이 같은 선을 받는다. 읽기·계산에서는 저장 필드를 만들지 않는다.
+function purchaseLineRange(names, start, last=null){
+  const line=purchaseLineName(start),unit=movingLineUnit(line),at=MA_UNITS.indexOf(unit);
+  if(!line||!names.some(n=>movingLineUnit(n)===unit))return [];
+  const after=names.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))>at||movingLineUnit(n)===unit&&parseInt(n)>parseInt(line));
+  if(last===null)return [line,...after];
+  const end=purchaseLineName(last),endUnit=movingLineUnit(end),endAt=MA_UNITS.indexOf(endUnit);
+  if(!end||endAt<at||endAt===at&&parseInt(end)<parseInt(line))return [];
+  if(end===line)return [line];
+  return [line,...after.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))<endAt||movingLineUnit(n)===endUnit&&parseInt(n)<parseInt(end)),end];
+}
 const purchaseWaitLine = plan => purchaseLineName(plan?.wait?.line);
 // 대기 기준가는 수집 작업이 계산한 ma만 사용한다. 시세·봉이 없으면 추정하지 않으며 읽기만 할 때 계획을 바꾸지 않는다.
 function purchaseWaitInfo(plan, entry){
@@ -145,10 +158,11 @@ const purchaseStageRemaining = stage => {
 };
 // 회차 가격: 이동평균 값이 있는 단계를 순서대로, 단계마다 다음 단계(값이 있는 단계) 가격까지 3번 — 단계 가격·⅓·⅔ 지점(재매수 trancheLevels와 같음,
 // 다음 단계가 없거나 더 낮으면 1차만). 목표 가격이 있으면 그보다 낮은 회차 + 마지막 '목표가' 회차(목표 가격).
-// 목표 가격이 없으면 선택한 마지막 선의 도달 회차까지 만든다. 마지막 선 시세가 없으면 새 회차를 만들지 않고 기다리며, 그 밖의 값이 없는 단계는 건너뛴다.
+// 목표 가격이 없으면 선택한 마지막 선의 도달 회차까지 만든다. 명시한 시작선 또는 마지막 선 시세가 없으면 새 회차를 만들지 않고 기다리며, 그 밖의 값이 없는 단계는 건너뛴다.
 // 회차 키: '25선:0'(단계 이름:회차 0~2), 목표가는 'end'. 상승 돌파라 현재가 ≥ 회차 가격이면 도달.
 function purchaseLineLevels(lines, entry){
   const end=plus(lines?.end), names=purchaseLineNames(lines);
+  if(lines?.startLine&&(!names.includes(purchaseLineName(lines.startLine))||!plus(entry?.ma?.[purchaseLineName(lines.startLine)])))return [];
   if(lines?.end!==undefined&&lines.end!==null&&lines.end!==""&&!end)return [];
   if(!end&&!plus(entry?.ma?.[names[names.length-1]]))return [];
   const known=names.map(name=>({name,price:plus(entry?.ma?.[name])})).filter(x=>x.price), out=[];
