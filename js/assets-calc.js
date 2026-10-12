@@ -251,10 +251,10 @@ function purchaseAlertOn(plan, row){
   const n=plan?.notify&&typeof plan.notify==="object"?plan.notify:{}, own=row?.key?n.keys?.[row.key]:row?.notify;
   return typeof own==="boolean"?own:n.stages===true;
 }
-// 종목 코드 → 시세 종류(데이터 저장소 kis_prices.py classify와 같은 형식): BTC-USD는 코인, 국내 6자리(A·Q 접두 포함)는 국내, 미국 심볼은 해외, 그 밖은 null
+// 종목 코드 → 시세 종류(데이터 저장소 kis_prices.py classify와 같은 형식): BTC-USD는 코인, 국내 6자리(A·Q 접두 포함)·코스피200 KS200은 국내, 미국 심볼은 해외, 그 밖은 null
 function purchaseQuoteKind(ticker){
   const t=String(ticker||"").trim().toUpperCase();
-  return t==="BTC-USD"?"코인":/^[AQ]\d{6}$|^\d[0-9A-Z]{5}$/.test(t)?"국내":/^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)?"해외":null;
+  return t==="BTC-USD"?"코인":t==="KS200"||/^[AQ]\d{6}$|^\d[0-9A-Z]{5}$/.test(t)?"국내":/^[A-Z][A-Z0-9.\-/]{0,11}$/.test(t)?"해외":null;
 }
 // 분할매수 회차 휴대폰 알림 규칙(js/trade-alerts.js buildTradeAlertRules와 같은 모양): 종목 코드가 있고 가격이 있는 미완료 회차 중 알림을 켠 것.
 // 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다.

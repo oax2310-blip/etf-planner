@@ -10,6 +10,17 @@ const sale=(extra={})=>({id:'demo-sale',ticker:'AAA',currency:'USD',startPrice:1
 const rebuy=(extra={})=>({id:'demo-rebuy',ticker:'TEST',lowPrice:10000,shares:1000,stepPct:1,sellPct:1,steps:3,cuts:[],currentPrice:9500,stages:[{name:'25분봉',price:9600,done:false},{name:'25일선',price:9700,done:false}],...extra});
 const quote=(ma={},extra={})=>({updatedAt:'2026-10-03T01:00:00Z',stocks:{AAA:{kind:'해외',asOf:'2026-10-02',close:105,ma,...extra}},futures:{}});
 
+test('KS200 재매수·분할매도 알림은 국내 지수와 소수 기준가를 사용한다',()=>{
+  const ctx=load(),r=rebuy({ticker:'ks200',notify:{breakdown:true}}),p=sale({ticker:'KS200',currency:'KRW',startAuto:true,startLabel:'60일선',notify:{start:true}});
+  const q={updatedAt:'2026-10-03T01:00:00Z',stocks:{KS200:{kind:'국내',asOf:'2026-10-02',close:321.45,ma:{'60일선':310.1234}}}};
+  const data={plans:[p],rebuy:{items:[r]}},before=JSON.stringify(data);
+  const rules=plain(ctx.buildTradeAlertRules(data,q));
+  assert.deepEqual(rules.map(x=>[x.ticker,x.quoteKind]),[['KS200','국내'],['KS200','국내']]);
+  assert.equal(rules[0].targetPrice,310.12);
+  assert.equal(vm.runInContext('rebuyUsd({ticker:"KS200"})',ctx),false);
+  assert.equal(JSON.stringify(data),before);
+});
+
 test('기존 기록은 알림 화면을 읽어도 변경되지 않고 새 알림은 OFF다',()=>{
   const ctx=load(),data={plans:[sale()],rebuy:{items:[rebuy()]}};
   const before=JSON.stringify(data);

@@ -210,7 +210,7 @@ test('분할매수 휴대폰 알림(직접 입력): 켠 미완료 가격 회차�
   assert.equal(c.purchaseDirection({stages:[{price:10},{},{price:12}]}), 'up', '직접 넣은 가격이 오르면 상승');
   assert.equal(c.purchaseDirection({stages:[{price:12},{price:10}]}), 'down');
   assert.equal(c.purchaseDirection({stages:[{price:12}]}), 'down', '가격 하나뿐이면 하락(그 가격 이하에서 매수)');
-  assert.deepEqual(['069500','A069500','0091C0','SPY','BRK/B','BTC-USD','비트코인',''].map(c.purchaseQuoteKind), ['국내','국내','국내','해외','해외','코인',null,null]);
+  assert.deepEqual(['069500','A069500','0091C0','KS200',' ks200 ','SPY','BRK/B','BTC-USD','비트코인',''].map(c.purchaseQuoteKind), ['국내','국내','국내','국내','국내','해외','해외','코인',null,null]);
   const plan = (extra={}) => ({ladder:{start:30, end:32, count:3}, currency:'USD', notify:{stages:true}, stages:[
     {id:'s1', price:30, shares:1, amount:3, done:true}, {id:'s2', price:31, shares:1, amount:3}, {id:'s3', price:32, shares:1, amount:3, notify:false}, {id:'s4'}], ...extra});
   const assets = {allocation:{groups:[{items:[
