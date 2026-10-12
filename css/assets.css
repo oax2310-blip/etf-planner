@@ -96,6 +96,7 @@
 @media(max-width:900px){.param-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
   .alloc-heading .title-row>[data-alloc-fold-all]{display:none}
+  .alloc-search-meta{position:relative;top:5px}
   .alloc-search-meta>.alloc-fold-all-mobile{display:inline-flex;flex:none;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}
   .alloc-actions>.btn{min-height:40px}
   .region-card{padding:12px 10px 6px}.class-row{gap:2px 8px;padding:9px 4px}.class-pct{min-width:54px}
