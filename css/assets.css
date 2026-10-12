@@ -16,8 +16,11 @@
 .bar{grid-column:1/-1;position:relative;height:5px;border-radius:99px;background:var(--surface-3);margin-top:4px}.bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}.bar em{position:absolute;top:-3px;width:2px;height:11px;margin-left:-1px;border-radius:2px;background:var(--text-2)}
 .gap{grid-column:1/-1;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}.gap.up{color:var(--accent)}.gap.over{color:var(--warn)}.gap.ok{color:var(--good)}.group-head .gap{margin-left:6px}
 /* 종목별: 분류 이름 · 그룹 카드 · 종목 줄 */
+.alloc-heading>div{width:100%;min-width:0}.alloc-heading .title-row{justify-content:space-between}.alloc-heading .title-row>.btn{flex:none;min-height:36px;white-space:nowrap}
+@media(pointer:coarse){.alloc-heading .title-row>.btn{min-height:44px}}
+.alloc-fold-all-mobile{display:none}
 .alloc-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;order:3;margin-left:auto}.alloc-actions>.btn{white-space:nowrap}.alloc-actions>.btn:disabled{opacity:.45;cursor:default}
-.alloc-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;margin-bottom:16px}.alloc-search .field{min-width:0}.alloc-search input{min-width:0}.alloc-search>.btn{align-self:end;min-height:40px}.alloc-search>.hint{grid-column:1/-1;margin:0}
+.alloc-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;margin-bottom:16px}.alloc-search .field{min-width:0}.alloc-search input{min-width:0}.alloc-search>.btn{align-self:end;min-height:40px}.alloc-search-meta{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}.alloc-search-meta>.hint{margin:0}
 .class-label{margin:18px 4px 8px;font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.01em}.class-label:first-of-type{margin-top:0}
 .alloc-class+.alloc-class .class-label{margin-top:18px}
 .group-card{margin-bottom:12px;overflow:hidden}.group-head{padding:14px 16px 10px}.group-head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.02em;word-break:keep-all;overflow-wrap:anywhere}.group-head .title-row{justify-content:space-between}.group-head p{margin:4px 0 0;font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums}.group-head p b{color:var(--text)}
@@ -92,7 +95,16 @@
 .savings-year-results{display:none}.savings-year-body{padding:4px 18px 16px}.savings-year-body[hidden]{display:none}.savings-year-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 0;margin-bottom:14px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}.savings-year-totals>div{display:grid;gap:5px;min-width:0}.savings-year-totals span{font-size:11.5px;color:var(--text-3)}.savings-year-totals b{font-size:13px;font-weight:600;overflow-wrap:anywhere}.savings-record-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin-top:14px}.savings-record-heading h3{margin:0;font-size:14px}.savings-record-heading>span{font-size:11px;color:var(--text-3)}.savings-year-body>.hint{margin:8px 0 14px;line-height:1.6;word-break:keep-all}.savings-month-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 12px}.savings-month{align-content:start;min-width:0}.savings-month>span{display:flex;justify-content:space-between;gap:6px}.savings-month>span>small{font-weight:400;color:var(--text-3)}.savings-month input{min-width:0;min-height:42px;font-variant-numeric:tabular-nums}
 @media(max-width:900px){.param-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
-  .alloc-actions>.btn{min-height:40px}
+  .alloc-heading .title-row>[data-alloc-fold-all]{display:none}
+  #allocView>.section-heading{margin-inline:0}
+  .alloc-search{margin-bottom:-2px}
+  .alloc-search:has(>#allocSearchClear.hidden){grid-template-columns:minmax(0,1fr)}
+  .alloc-search-meta>.alloc-fold-all-mobile{display:inline-flex;flex:none;position:relative;top:9px;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}
+  #allocItems>.alloc-class:not(.hidden)>.class-label{width:fit-content;max-width:calc(100% - 96px)}
+  #allocItems>.alloc-class:not(.hidden)~.alloc-class>.class-label{width:auto;max-width:none}
+  #allocView:not(:has(#allocItems>.alloc-class:not(.hidden))) .alloc-search{margin-bottom:16px}
+  #allocView:not(:has(#allocItems>.alloc-class:not(.hidden))) .alloc-fold-all-mobile{top:5px}
+  .alloc-actions>.btn{min-height:28px;padding:4px 8px;font-size:12px}
   .region-card{padding:12px 10px 6px}.class-row{gap:2px 8px;padding:9px 4px}.class-pct{min-width:54px}
   /* 첫 줄에 체크박스·종목명·평가액, 둘째 줄에 메모·현재/목표를 함께 표시한다. */
   .group-head{padding:12px 12px 8px}.group-note{margin:0 12px 8px}.sub-head{padding:7px 12px 5px}.asset-row{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:9px 12px}.asset-pct{grid-column:3;grid-row:2;align-self:baseline;flex-wrap:nowrap}.asset-val{grid-column:3;grid-row:1;align-self:start}.asset-row>.check{grid-row:1;align-self:start;padding-top:2px}.asset-name{grid-row:1;align-self:start;padding:0}.asset-note{grid-column:1/3;grid-row:2;align-self:baseline}

@@ -71,6 +71,16 @@ function setAllocCardOpen(button,open){
   button.querySelector("[data-alloc-fold-action]").textContent=action;
   button.setAttribute("aria-label",`${button.dataset.foldLabel} ${action}`);
 }
+// 전체 버튼은 실제 상세의 펼침 상태를 따른다. 검색의 임시 펼침도 반영하되 기록·저장은 바꾸지 않는다.
+function updateAllocFoldAll(){
+  const buttons=all("[data-alloc-fold-all]");if(!buttons.length)return;
+  const folds=[...el("allocView").querySelectorAll("[data-alloc-fold]")];
+  const open=folds.length>0&&folds.every(b=>b.getAttribute("aria-expanded")==="true");
+  buttons.forEach(button=>{
+    button.textContent=open?"전체 접기":"전체 펼치기";
+    button.setAttribute("aria-expanded",String(open));
+  });
+}
 const allocSearchText = v => String(v??"").normalize("NFKC").toLowerCase().replace(/\s+/g,"");
 function filterAllocItems(){
   const input=el("allocSearch"), list=el("allocItems"); if(!input||!list)return;
@@ -89,6 +99,7 @@ function filterAllocItems(){
   el("allocSearchStatus").textContent=terms.length?`검색 결과 ${matches.size} / ${count}개 종목`:`전체 ${count}개 종목`;
   el("allocSearchClear").classList.toggle("hidden",!allocQuery);
   el("allocSearchEmpty").classList.toggle("hidden",!terms.length||matches.size>0);
+  updateAllocFoldAll();
 }
 // 투자구성은 지역·큰 분류 합계, 자산 배분은 그룹별 종목·현금. 큰 분류(classes) → 그룹(groups) → 종목(items, 소분류 section은 그룹 안 작은 제목).
 function renderAlloc(tab="alloc"){
@@ -103,6 +114,7 @@ function renderAlloc(tab="alloc"){
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
   const bar=(cur,t)=>{ const top=Math.max(cur,finite(t)||0,.01); return `<span class="bar" aria-hidden="true"><i style="width:${Math.min(100,cur/top*100)}%"></i>${finite(t)!==null?`<em style="left:${Math.min(100,t/top*100)}%"></em>`:""}</span>`; };
   const foldButton=(key,id,label,title)=>{const open=allocOpenCards.has(key);return `<button class="alloc-fold" type="button" data-alloc-fold="${escA(key)}" data-fold-label="${escA(label)}" aria-expanded="${open}" aria-controls="${escA(id)}" aria-label="${escA(label)} ${open?"접기":"펼치기"}">${title}<span class="alloc-fold-action" data-alloc-fold-action>${open?"접기":"펼치기"}</span></button>`;};
+  const foldAllButton=(id,extra="")=>`<button class="btn mini${extra}" type="button" id="${id}" data-alloc-fold-all aria-expanded="false" aria-controls="allocItems allocCashBody allocMemoBody">전체 펼치기</button>`;
   const classLabels=new Map(s.regions.flatMap(r=>r.classes.map(c=>[c.id,`${r.name} · ${c.name}`])));
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
@@ -141,14 +153,14 @@ function renderAlloc(tab="alloc"){
   const detail=detailBlocks.map(b=>`<div class="alloc-class"><div class="class-label">${escA(b.label)}</div>${b.groups.map(groupCard).join("")}</div>`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
   const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(s.grand), totalWidth=v=>`${Math.max(3,v.replace(/[억만원]/g,"00").length)+.6}ch`;
-  view.innerHTML=`<div class="heading"><div><div class="eyebrow">${strategy?"지역과 자산군별 배분":"종목과 현금"}</div><h1>${strategy?"투자구성":"자산 배분"}</h1><p>${strategy?"지역·자산 분류별 현재 비중과 목표를 한눈에 확인합니다. 목표 비중은 종목별에서 수정하면 소분류·그룹·분류에 자동 합산됩니다.":"금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 점검을 끝냈다는 직접 표시입니다."}</p></div></div>
+  view.innerHTML=`<div class="heading${strategy?"":" alloc-heading"}"><div><div class="eyebrow">${strategy?"지역과 자산군별 배분":"종목과 현금"}</div>${strategy?"<h1>투자구성</h1>":`<div class="title-row"><h1>자산 배분</h1>${foldAllButton("toggleAllocAll")}</div>`}<p>${strategy?"지역·자산 분류별 현재 비중과 목표를 한눈에 확인합니다. 목표 비중은 종목별에서 수정하면 소분류·그룹·분류에 자동 합산됩니다.":"금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 점검을 끝냈다는 직접 표시입니다."}</p></div></div>
     <div class="card metrics"><div class="metric"><label for="allocTotal">기준 총자산 (비중 기준)</label><label class="metric-edit"><input id="allocTotal" type="text" enterkeyhint="done" autocomplete="off" spellcheck="false" value="${totalText}" placeholder="${totalPlaceholder}" aria-describedby="allocTotalHint" style="width:${totalWidth(totalText||totalPlaceholder)}">${PEN}</label><small id="allocTotalHint">억·만원으로 입력 · 숫자만 넣으면 만원</small><small>종목 + 현금 합계 ${man(s.grand)}${plus(a.total)?` · 차이 ${s.grand>=a.total?"+":"−"}${man(Math.abs(s.grand-a.total))}`:" · 비우면 합계 기준"}</small></div>
       <div class="metric"><label>투자 평가액</label><strong>${man(s.invest)}</strong><small>시세 반영 ${live} / ${count}개 종목${prices?.updatedAt?` · 시세 파일 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}</small></div>
       <div class="metric"><label>현금</label><strong class="cash-value"><span>${man(s.cash)}</span><span class="cash-pct" title="기준 총자산 대비 비중">(${cashPct})</span></strong><small>${usd?`달러 $${nf2.format(usd)} · `:""}${fxNote}</small></div></div>
     ${strategy?`<div class="section-heading"><h2>배분 개요</h2><span>지역별 합계와 목표 · 목표 합계 ${pc(s.regions.some(r=>r.target!==null)?s.regions.reduce((n,r)=>n+(r.target??0),0):null)}</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
     <p class="footnote">모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
-    <div class="alloc-search"><label class="field"><span>종목 검색</span><input id="allocSearch" type="search" value="${escA(allocQuery)}" placeholder="종목명 · 코드 · 그룹 · 소분류" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="allocItems" aria-describedby="allocSearchStatus"></label><button class="btn hidden" id="allocSearchClear" type="button">초기화</button><p class="hint" id="allocSearchStatus" role="status" aria-live="polite" aria-atomic="true"></p></div>
+    <div class="alloc-search"><label class="field"><span>종목 검색</span><input id="allocSearch" type="search" value="${escA(allocQuery)}" placeholder="종목명 · 코드 · 그룹 · 소분류" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="allocItems" aria-describedby="allocSearchStatus"></label><button class="btn hidden" id="allocSearchClear" type="button">초기화</button><div class="alloc-search-meta"><p class="hint" id="allocSearchStatus" role="status" aria-live="polite" aria-atomic="true"></p>${foldAllButton("toggleAllocAllMobile"," alloc-fold-all-mobile")}</div></div>
     <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
     <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
     <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
@@ -161,8 +173,24 @@ function renderAlloc(tab="alloc"){
       const open=button.getAttribute("aria-expanded")!=="true",key=button.dataset.allocFold;
       if(open)allocOpenCards.add(key);else allocOpenCards.delete(key);
       setAllocCardOpen(button,open);
+      updateAllocFoldAll();
       if(document.activeElement!==button)document.activeElement?.blur();
       [...view.querySelectorAll("[data-alloc-fold]")].find(b=>b.dataset.allocFold===key)?.focus({preventScroll:true});
+    };
+  });
+  view.querySelectorAll("[data-alloc-fold-all]").forEach(toggleAll=>{
+    toggleAll.onpointerdown=e=>{if(e.button===0)e.preventDefault();};
+    toggleAll.onclick=()=>{
+      const folds=[...view.querySelectorAll("[data-alloc-fold]")];
+      const open=!folds.every(b=>b.getAttribute("aria-expanded")==="true");
+      folds.forEach(button=>{
+        const key=button.dataset.allocFold;
+        if(open)allocOpenCards.add(key);else allocOpenCards.delete(key);
+        setAllocCardOpen(button,open);
+      });
+      updateAllocFoldAll();
+      if(document.activeElement!==toggleAll)document.activeElement?.blur();
+      el(toggleAll.id)?.focus({preventScroll:true});
     };
   });
   const totalInput=el("allocTotal");
