@@ -1,4 +1,15 @@
 {
+  "krGdp": {
+    "table": "200Y104",
+    "items": ["1400"],
+    "frequency": "Q",
+    "kind": "gdp",
+    "definitionId": "bok-real-gdp-sa",
+    "seasonalAdjustment": "SA",
+    "verifiedAt": "2026-10-12",
+    "unit": "십억원",
+    "expectedItemName": "국내총생산(시장가격, GDP)"
+  },
   "krM2": {
     "table": "161Y005",
     "items": ["BBHS00"],

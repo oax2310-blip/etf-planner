@@ -87,7 +87,18 @@ test('키 없는 FRED 공개 수집·키 없는 ECOS 대기와 메타데이터 �
   const spec={table:'161Y005',items:['BBHS00'],frequency:'M',definitionId:'bok-m2-2025-revision',basis:'period-average',seasonalAdjustment:'SA',verifiedAt:'2026-10-12'};
   await assert.rejects(collectEcos(spec,'krM2','2025',fetcher,{}),/key-missing/);
 });
-test('공개 초기 자료에는 확인한 FRED 원자료만 있고 한국 M2·검증 수치는 만들어내지 않는다',()=>{
+test('한국 실질 GDP는 ECOS 분기 날짜와 확인한 수준 계열을 사용한다',async()=>{
+  const spec={table:'200Y104',items:['1400'],frequency:'Q',kind:'gdp',seasonalAdjustment:'SA',definitionId:'bok-real-gdp-sa',unit:'십억원',expectedItemName:'국내총생산(시장가격, GDP)'};
+  const fetcher=async url=>{
+    assert.ok(url.includes('/Q/2015Q1/'+new Date().getUTCFullYear()+'Q4/1400/'));
+    return {ok:true,text:async()=>JSON.stringify({StatisticSearch:{list_total_count:1,row:[{STAT_CODE:spec.table,ITEM_CODE1:'1400',ITEM_NAME1:spec.expectedItemName,UNIT_NAME:spec.unit,TIME:'2026Q2',DATA_VALUE:'600474.9'}]}})};
+  };
+  const result=await collectEcos(spec,'krGdp','2015',fetcher,{ECOS_API_KEY:'test-only-key'});
+  assert.deepEqual(result.observations,[{period:'2026-Q2',value:600474.9}]);
+  assert.throws(()=>validateEcosSpec({...spec,table:'200Y103'},'krGdp'));
+  assert.throws(()=>validateEcosSpec({...spec,frequency:'M'},'krGdp'));
+});
+test('공개 캐시는 공식 출처와 유효한 수치만 포함하고 자료 대기 시 지표를 만들지 않는다',()=>{
   const data=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/currency-pressure.json'),'utf8'));
   assert.equal(data.schemaVersion,1);
   for(const s of Object.values(data.series)) {
