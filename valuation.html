@@ -14,9 +14,10 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <script src="js/theme.js?v=130"></script>
-  <title>AI 구독 · 삼성SDI · ETF 가치 시나리오</title>
-  <meta name="description" content="AI 구독사업, 삼성SDI, 한국·중국 배터리 ETF와 HUMN의 가정을 직접 바꾸며 수익성과 장기 가치를 살펴봅니다.">
+  <script src="js/theme.js?v=131"></script>
+  <title>AI 구독 · 삼성SDI · ETF · 환율 시나리오</title>
+  <meta name="description" content="AI 구독사업, 삼성SDI, ETF의 장기 가치와 한미 GDP·M2로 계산한 원·달러 상대 통화압력을 살펴봅니다.">
+  <link rel="stylesheet" href="css/currency-pressure.css?v=131">
   <style>
     /* 색·글꼴 토큰은 css/app.css(메인 플래너)와 같은 값. 밝은 화면 기본, <html data-theme="dark">(js/theme.js)면 아래 값(인쇄는 항상 밝게) */
     :root { color-scheme:light; --bg:#f5f6f8; --surface:#fff; --surface-2:#f3f4f7; --surface-3:#e9ecf1; --field:#fff; --line:#e5e8ee; --line-strong:#d2d7e0; --text:#0f1729; --text-2:#4a5468; --text-3:#6f798c;
@@ -308,7 +309,7 @@
   </div>
 </header>
 <nav class="nav" aria-label="문서 내 이동"><div class="shell">
-  <a href="#sdi">삼성SDI</a><a href="#battery-etfs">배터리 ETF</a><a href="#humn">HUMN 가치</a><a href="#ai-subscription">AI 구독</a>
+  <a href="#sdi">삼성SDI</a><a href="#battery-etfs">배터리 ETF</a><a href="#humn">HUMN 가치</a><a href="#ai-subscription">AI 구독</a><a href="#currency-pressure">원·달러</a>
   <div class="nav-save"><span class="nav-save-state" id="saveState">기본값</span><span data-theme-pick></span><button type="button" id="openSaves" aria-haspopup="dialog">가정 저장</button></div>
 </div></nav>
 <main class="shell">
@@ -674,6 +675,56 @@
       <p>규모 기준은 <a href="https://blog.youtube/news-and-events/youtube-music-premium-125-million-subscribers/" target="_blank" rel="noopener noreferrer">YouTube Music·Premium 1.25억 명 발표 ↗</a>(2025년 3월, 무료 체험 포함)입니다. 이번 환경에서는 원문 재조회가 제한되어 최신 구독자 수로 확인한 값이 아닙니다. 결제계정 환산율 100%는 동일 규모를 비교하기 위한 가정이며, 무료 체험·가족요금제·이탈을 조정하려면 낮춰 입력하세요.</p>
       <p>월 12,000원과 충분한 사무 업무 성능은 사용자 가정입니다. 월 추론비 2천·4천·7천·1만 원과 연 고정비 5조·10조 원은 실제 모델별 원가나 기업 전망이 아닙니다. 시중 API 요금은 공급자의 마진이 포함된 판매가여서 자체 모델 운영 원가와 동일하게 볼 수 없습니다.</p>
       <p>이 계산은 소비자 구독사업만 다룹니다. 기업용·API 매출이나 광고 수익은 넣지 않았습니다. 전체 회사 수익성을 평가하려면 해당 매출과 추가 비용, 무료 이용자 부담, 지속적인 성능 경쟁에 필요한 전체 연구개발·훈련비를 함께 확인해야 합니다. 흑자는 현금흐름을 보장하지 않으며 설비 투자와 운전자본은 별도로 분석해야 합니다.</p>
+    </div></details>
+  </section>
+  <section id="currency-pressure" data-direction="pending" aria-labelledby="cpTitle">
+    <div class="cp-heading"><h2 id="cpTitle">05. 원·달러 상대 통화강도</h2><button type="button" id="cpRefresh">자료 다시 확인</button></div>
+    <p class="section-desc small">경제성장보다 통화량이 얼마나 더 늘었는지, 한국과 미국을 같은 분기로 비교합니다.</p>
+    <p id="cpLoadStatus" class="cp-load-status" role="status"></p>
+    <div class="cp-hero" aria-live="polite">
+      <span class="cp-status" id="cpDirection">자료 대기</span>
+      <div class="cp-value"><span id="cpValue">—</span><small>%p</small></div>
+      <p id="cpPeriod" class="tiny">최신 공통 비교 분기 확인 중</p>
+      <p id="cpSummary" class="small muted">네 가지 성장률이 같은 분기로 확인되어야 강약을 판단합니다.</p>
+      <div class="cp-scale" aria-label="판단 기준"><span>음수 · 달러 약세</span><span>0 · 중립</span><span>양수 · 달러 강세</span></div>
+    </div>
+    <p class="tiny" style="margin:10px 0 0">통화량과 성장의 상대 압력입니다. 실제 환율 방향을 확정적으로 예측하는 공식은 아닙니다. 부호는 반올림 전 값으로 판단하며 중립은 정확히 0입니다.</p>
+    <div class="card cp-compare">
+      <div class="cp-compare-head"><h3>같은 기간, 두 나라 비교</h3><span id="cpComparePeriod" class="tiny">동일 분기 비교 대기</span></div>
+      <div class="cp-countries">
+        <div class="cp-country"><h4>한국 · 원화</h4><div class="row"><span>실질 GDP</span><strong id="cpKrGdp">—</strong></div><div class="row"><span>M2 증가율</span><strong id="cpKrM2">—</strong></div><div class="row cp-pressure"><span>통화압력</span><strong id="cpKrPressure">—</strong></div></div>
+        <div class="cp-country"><h4>미국 · 달러</h4><div class="row"><span>실질 GDP</span><strong id="cpUsGdp">—</strong></div><div class="row"><span>M2 증가율</span><strong id="cpUsM2">—</strong></div><div class="row cp-pressure"><span>통화압력</span><strong id="cpUsPressure">—</strong></div></div>
+      </div>
+      <p class="cp-equation" id="cpEquation">(한국 M2 − 한국 GDP) − (미국 M2 − 미국 GDP)</p>
+      <p class="cp-note" id="cpDataNote"></p>
+    </div>
+    <div class="card cp-chart-card">
+      <div class="cp-compare-head"><h3>중장기 흐름</h3><span class="tiny">분기 기준 · 결측 구간은 비워 둠</span></div>
+      <div class="cp-chart-tools"><div class="presets" role="group" aria-label="추이 조회 기간"><button type="button" data-cp-years="5" aria-pressed="false">5년</button><button type="button" data-cp-years="10" class="active" aria-pressed="true">10년</button></div><label class="cp-toggle"><input type="checkbox" id="cpCompareFx" checked>실제 환율 함께 보기</label></div>
+      <div class="cp-legend"><span>상대 통화압력 · 왼쪽 %p</span><span>원·달러 · 오른쪽 원/$</span></div>
+      <svg id="cpChart" class="cp-chart" viewBox="0 0 720 230" role="img" aria-label="분기별 상대 통화압력과 원·달러 환율 추이. 아래 분기 선택으로 값을 확인할 수 있습니다."></svg>
+      <p id="cpChartEmpty" class="cp-empty">공식 자료 연결 후 추이가 표시됩니다.</p>
+      <div class="cp-selection"><label for="cpQuarter">분기 확인</label><select id="cpQuarter" aria-describedby="cpSelected"></select><output id="cpSelected" for="cpQuarter">비교할 자료 없음</output></div>
+      <p class="tiny" style="margin:9px 0 0">환율은 공식 월평균 3개월의 단순 평균입니다. 두 축의 단위·범위가 달라 선의 높이만으로 설명력을 판단하지 않습니다.</p>
+      <p id="cpRate" class="cp-rate">보조 금리차 · 자료 대기</p><p class="tiny">금리차는 별도로 봅니다. 미국 실효 연방기금금리와 한국 기준금리의 분기 평균 차이로, 두 금리의 성격은 다릅니다. 통화압력에 가중 합산하지 않습니다.</p>
+    </div>
+    <details class="market-folder cp-validation"><summary>과거 환율과의 관계 <span>상관·방향 일치 확인</span></summary><div class="market-folder-body">
+      <label for="cpHorizon" class="small muted">비교 시점 </label><select id="cpHorizon"><option value="0">같은 분기 · 환율 전년 대비</option><option value="1">이후 3개월 · 환율 변화율</option><option value="4">이후 12개월 · 환율 변화율</option></select>
+      <p id="cpValidation" style="margin-top:12px">검증 대기</p><p id="cpValidationNote" class="tiny"></p>
+      <p class="tiny">최소 12개의 유효 분기가 있어야 통계를 표시합니다(신뢰성 보장 기준은 아닙니다). R²는 단일 설명변수와 상수를 포함한 회귀의 표본 내 결정계수이며 인과관계·예측력을 뜻하지 않습니다. 방향 일치는 0인 압력·환율 변화율을 제외합니다. 전년 대비 값과 12개월 변화율은 기간이 겹치므로 표본이 독립적이지 않습니다.</p>
+    </div></details>
+    <details class="market-folder"><summary>공식 자료와 비교 기준 <span id="cpFetched">자료 확인 중</span></summary><div class="market-folder-body">
+      <p class="small muted">대상 기간·발표일·출처 갱신일·조회일을 구분합니다. 공식 발표일을 확인하지 못했으면 조회일로 대신하지 않고 ‘확인 안 됨’으로 표시합니다.</p>
+      <div class="table-wrap"><table class="cp-source-table"><caption class="sr-only">지표별 최신 대상 기간과 공식 발표일, 출처 갱신일 및 조회일</caption><thead><tr><th scope="col">지표</th><th scope="col">최신 대상 기간</th><th scope="col">공식 발표일</th><th scope="col">출처 갱신일</th><th scope="col">조회일</th><th scope="col">출처</th><th scope="col">상태</th></tr></thead><tbody id="cpSources"></tbody></table></div>
+      <p class="tiny" style="margin-top:12px">미국 GDP: BEA/FRED GDPC1(실질·계절조정 연율 수준), 미국 M2: 연준/FRED M2SL(계절조정 월평균). 한국 GDP: IMF/FRED NGDPRSAXDCKRQ(실질·계절조정 수준), 한국 M2: 한국은행 ECOS 개편 기준 평잔 계열. GDP는 같은 분기 1년 전 수준과 비교하므로 미국의 전기 대비 연율 성장률과 혼동하지 않습니다.</p>
+      <p class="tiny">월 M2를 3개월 평균한 뒤 전년의 같은 분기 평균과 비교합니다. 월별 증가율의 평균과는 다릅니다. 두 나라의 GDP·M2와 전년 비교값이 모두 있는 최신 공통 분기만 판단에 쓰며 부분 분기·발표 대기·결측은 추정하지 않습니다.</p>
+      <p class="tiny">공개 자료는 예약 수집 후 갱신되며 페이지를 열 때·탭 복귀 시·1시간마다 다시 확인합니다. 수집 실패 시 마지막 확인값과 실패 상태를 함께 표시합니다. 현재 한국 M2는 인증키와 개편 기준 계열 확인이 필요합니다. <a href="docs/currency-pressure.md">데이터 연결·검증 안내 ↗</a></p>
+    </div></details>
+    <details class="market-folder"><summary>이 지표를 어디까지 믿을 수 있을까 <span>원리·한계·개선</span></summary><div class="market-folder-body cp-method">
+      <p><strong>경제학적 근거는 조건부입니다.</strong> MV = PY에서 통화유통속도 V가 안정적이면 통화증가율 − 실질성장률은 물가상승 압력과 관련됩니다. 양국의 차이가 장기 상대가격과 환율에 영향을 줄 수 있지만, 이 식만으로 환율 변화를 도출할 수는 없습니다. 유통속도·통화수요가 바뀌면 해석도 달라집니다.</p>
+      <p><strong>M2는 같은 이름이어도 같지 않습니다.</strong> 한국은행은 2025년 말 개편 후 2026년부터 수익증권을 제외하는 등 편제 기준을 바꿨습니다. 개편 기준의 과거 소급계열을 확인해야 합니다. 미국 M2는 M1·소액 정기예금·소매 MMF 등을 포함하며 2020년 M1의 저축예금 분류가 바뀌었습니다. 한국의 금융상품 범위·만기 기준과 달라 증가율도 완전히 동등한 비교가 아닙니다. <a href="https://www.bok.or.kr/portal/bbs/B0000168/view.do?menuNo=200058&amp;nttId=10096090" target="_blank" rel="noopener noreferrer">한국은행 개편 설명 ↗</a> <a href="https://fred.stlouisfed.org/series/M2SL" target="_blank" rel="noopener noreferrer">미국 M2 정의 ↗</a></p>
+      <p><strong>환율은 다른 요인에도 크게 움직입니다.</strong> 금리·기대 실질금리, 경상수지·교역조건, 해외투자 자금, 위험회피와 달러 수요를 함께 봐야 합니다. M2는 신용과 예금 수요에 따라 내생적으로 움직이고, 환율 변화가 외화예금의 원화 환산액에 영향을 주는 역인과도 가능합니다. <a href="https://www.bok.or.kr/portal/bbs/B0000347/view.do?menuNo=201106&amp;nttId=10095141" target="_blank" rel="noopener noreferrer">한국은행 유동성·환율 해설 ↗</a></p>
+      <p><strong>다음 검증은 발표 당시 자료로 해야 합니다.</strong> 이번 비교는 최신 수정자료를 사용합니다. 수집 시점과 이전 자료는 Git 이력에 남기되, 과거의 실제 발표 시점 자료를 확보한 실시간 검증과 동일하지 않습니다. ALFRED와 한국은행 발표본을 맞추고, 발표 후 이용 가능 시점을 기준으로 시간순 학습·검증을 나눠야 합니다. 금리차를 추가한 모형이 단순 환율 유지 모형보다 표본 밖에서 나은지도 비교하는 것이 개선 방향입니다.</p>
     </div></details>
   </section>
 </main>
@@ -1368,5 +1419,6 @@
   window.addEventListener("storage",event=>{ if(event.key===null||event.key===SYNC_REPO_KEY||event.key===SYNC_TOKEN_KEY){ scenarioSync.checked=""; syncScenarios(); } });
   const scenarioSyncReady=syncScenarios();
 </script>
+<script src="js/currency-pressure.js?v=131"></script>
 </body>
 </html>

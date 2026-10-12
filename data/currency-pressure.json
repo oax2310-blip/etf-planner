@@ -1,0 +1,1977 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-12",
+  "series": {
+    "usGdp": {
+      "code": "GDPC1",
+      "frequency": "Q",
+      "kind": "gdp",
+      "sourceName": "BEA · FRED",
+      "definitionId": "bea-real-gdp",
+      "unit": "Billions of chained 2017 dollars",
+      "seasonalAdjustment": "SAAR",
+      "sourceUpdatedAt": "2026-09-30",
+      "sourceUrl": "https://fred.stlouisfed.org/series/GDPC1",
+      "fetchedAt": "2026-10-12",
+      "lastAttemptAt": "2026-10-12",
+      "releaseDate": null,
+      "status": "ready",
+      "observations": [
+        {
+          "period": "2015-Q1",
+          "value": 18666.621,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-Q2",
+          "value": 18782.243,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-Q3",
+          "value": 18857.418,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-Q4",
+          "value": 18892.206,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q1",
+          "value": 19001.69,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q2",
+          "value": 19062.709,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q3",
+          "value": 19197.938,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q4",
+          "value": 19304.352,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q1",
+          "value": 19398.343,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q2",
+          "value": 19506.949,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q3",
+          "value": 19660.766,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q4",
+          "value": 19882.352,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q1",
+          "value": 20044.077,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q2",
+          "value": 20150.476,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q3",
+          "value": 20276.154,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q4",
+          "value": 20304.874,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q1",
+          "value": 20431.641,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q2",
+          "value": 20602.275,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q3",
+          "value": 20843.322,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q4",
+          "value": 20985.448,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q1",
+          "value": 20709.212,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q2",
+          "value": 19077.992,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q3",
+          "value": 20558.879,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q4",
+          "value": 20791.917,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q1",
+          "value": 21106.619,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q2",
+          "value": 21474.077,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q3",
+          "value": 21641.672,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q4",
+          "value": 22001.64,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q1",
+          "value": 21945.682,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q2",
+          "value": 21976.292,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q3",
+          "value": 22124.384,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q4",
+          "value": 22272.546,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q1",
+          "value": 22456.938,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q2",
+          "value": 22577.556,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q3",
+          "value": 22828.796,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q4",
+          "value": 23033.25,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q1",
+          "value": 23115.975,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q2",
+          "value": 23320.074,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q3",
+          "value": 23501.76,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q4",
+          "value": 23641.759,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q1",
+          "value": 23650.213,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q2",
+          "value": 23884.563,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q3",
+          "value": 24112.966,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q4",
+          "value": 24125.479,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-Q1",
+          "value": 24274.383,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-Q2",
+          "value": 24408.011,
+          "firstSeenAt": "2026-10-12"
+        }
+      ],
+      "revisedPeriods": [],
+      "lastRevisionAt": null
+    },
+    "krGdp": {
+      "code": "NGDPRSAXDCKRQ",
+      "frequency": "Q",
+      "kind": "gdp",
+      "sourceName": "IMF · FRED",
+      "definitionId": "imf-korea-real-gdp",
+      "unit": "Millions of KRW",
+      "seasonalAdjustment": "SA",
+      "sourceUpdatedAt": "2026-07-27",
+      "sourceUrl": "https://fred.stlouisfed.org/series/NGDPRSAXDCKRQ",
+      "fetchedAt": "2026-10-12",
+      "lastAttemptAt": "2026-10-12",
+      "releaseDate": null,
+      "status": "ready",
+      "observations": [
+        {
+          "period": "2015-Q1",
+          "value": 454302800,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-Q2",
+          "value": 456256600,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-Q3",
+          "value": 463025500,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-Q4",
+          "value": 466604000,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q1",
+          "value": 468400300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q2",
+          "value": 474271500,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q3",
+          "value": 476105600,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-Q4",
+          "value": 479773700,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q1",
+          "value": 485209500,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q2",
+          "value": 488730600,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q3",
+          "value": 495435100,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-Q4",
+          "value": 494356900,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q1",
+          "value": 501490000,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q2",
+          "value": 505448900,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q3",
+          "value": 508214800,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-Q4",
+          "value": 510948600,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q1",
+          "value": 511117500,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q2",
+          "value": 518034200,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q3",
+          "value": 519435700,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-Q4",
+          "value": 524395000,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q1",
+          "value": 517226900,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q2",
+          "value": 503562300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q3",
+          "value": 514942200,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-Q4",
+          "value": 522735100,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q1",
+          "value": 531069700,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q2",
+          "value": 538270800,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q3",
+          "value": 538184300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-Q4",
+          "value": 547618100,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q1",
+          "value": 550176900,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q2",
+          "value": 555670400,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q3",
+          "value": 557103500,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-Q4",
+          "value": 554877300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q1",
+          "value": 556108300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q2",
+          "value": 559921400,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q3",
+          "value": 565273300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-Q4",
+          "value": 569404400,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q1",
+          "value": 575171300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q2",
+          "value": 574301700,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q3",
+          "value": 574618700,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-Q4",
+          "value": 575977000,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q1",
+          "value": 574984300,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q2",
+          "value": 578719200,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q3",
+          "value": 586599900,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-Q4",
+          "value": 585964000,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-Q1",
+          "value": 596692800,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-Q2",
+          "value": 600405700,
+          "firstSeenAt": "2026-10-12"
+        }
+      ],
+      "revisedPeriods": [],
+      "lastRevisionAt": null
+    },
+    "usM2": {
+      "code": "M2SL",
+      "frequency": "M",
+      "kind": "money",
+      "sourceName": "연준 · FRED",
+      "definitionId": "fed-m2",
+      "unit": "Billions of USD",
+      "seasonalAdjustment": "SA",
+      "basis": "period-average",
+      "sourceUpdatedAt": "2026-09-22",
+      "sourceUrl": "https://fred.stlouisfed.org/series/M2SL",
+      "fetchedAt": "2026-10-12",
+      "lastAttemptAt": "2026-10-12",
+      "releaseDate": null,
+      "status": "ready",
+      "observations": [
+        {
+          "period": "2015-01",
+          "value": 11806.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-02",
+          "value": 11920.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-03",
+          "value": 11919.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-04",
+          "value": 11953.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-05",
+          "value": 11981.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-06",
+          "value": 12020.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-07",
+          "value": 12063.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-08",
+          "value": 12110.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-09",
+          "value": 12172.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-10",
+          "value": 12228.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-11",
+          "value": 12322.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-12",
+          "value": 12393.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-01",
+          "value": 12522.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-02",
+          "value": 12604.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-03",
+          "value": 12662.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-04",
+          "value": 12741.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-05",
+          "value": 12800.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-06",
+          "value": 12849.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-07",
+          "value": 12907.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-08",
+          "value": 12986.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-09",
+          "value": 13052.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-10",
+          "value": 13124.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-11",
+          "value": 13214.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-12",
+          "value": 13240.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-01",
+          "value": 13318.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-02",
+          "value": 13395.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-03",
+          "value": 13464.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-04",
+          "value": 13520.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-05",
+          "value": 13567.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-06",
+          "value": 13577,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-07",
+          "value": 13638.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-08",
+          "value": 13695,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-09",
+          "value": 13743,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-10",
+          "value": 13801.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-11",
+          "value": 13849.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-12",
+          "value": 13887.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-01",
+          "value": 13902.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-02",
+          "value": 13949.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-03",
+          "value": 14014.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-04",
+          "value": 14034.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-05",
+          "value": 14091,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-06",
+          "value": 14133.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-07",
+          "value": 14170,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-08",
+          "value": 14221.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-09",
+          "value": 14243.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-10",
+          "value": 14257.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-11",
+          "value": 14288.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-12",
+          "value": 14392,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-01",
+          "value": 14460.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-02",
+          "value": 14506.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-03",
+          "value": 14559.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-04",
+          "value": 14594,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-05",
+          "value": 14703.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-06",
+          "value": 14798.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-07",
+          "value": 14882.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-08",
+          "value": 14974.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-09",
+          "value": 15047.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-10",
+          "value": 15185.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-11",
+          "value": 15301.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-12",
+          "value": 15351.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-01",
+          "value": 15425,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-02",
+          "value": 15492.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-03",
+          "value": 16034.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-04",
+          "value": 17064,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-05",
+          "value": 17931.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-06",
+          "value": 18180,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-07",
+          "value": 18331.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-08",
+          "value": 18413.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-09",
+          "value": 18605,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-10",
+          "value": 18759.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-11",
+          "value": 19002.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-12",
+          "value": 19119.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-01",
+          "value": 19375.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-02",
+          "value": 19641.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-03",
+          "value": 19874.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-04",
+          "value": 20174.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-05",
+          "value": 20457.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-06",
+          "value": 20472.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-07",
+          "value": 20630,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-08",
+          "value": 20844,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-09",
+          "value": 20985.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-10",
+          "value": 21164.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-11",
+          "value": 21340.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-12",
+          "value": 21502.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-01",
+          "value": 21647.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-02",
+          "value": 21725.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-03",
+          "value": 21788.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-04",
+          "value": 21768.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-05",
+          "value": 21718,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-06",
+          "value": 21647,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-07",
+          "value": 21649.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-08",
+          "value": 21641.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-09",
+          "value": 21541.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-10",
+          "value": 21464.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-11",
+          "value": 21409.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-12",
+          "value": 21293.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-01",
+          "value": 21274,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-02",
+          "value": 21240.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-03",
+          "value": 20942.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-04",
+          "value": 20758.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-05",
+          "value": 20829.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-06",
+          "value": 20798.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-07",
+          "value": 20792.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-08",
+          "value": 20782,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-09",
+          "value": 20753.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-10",
+          "value": 20737.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-11",
+          "value": 20749.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-12",
+          "value": 20779.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-01",
+          "value": 20835.5,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-02",
+          "value": 20921.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-03",
+          "value": 20965.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-04",
+          "value": 20955.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-05",
+          "value": 21021.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-06",
+          "value": 21070.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-07",
+          "value": 21098.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-08",
+          "value": 21192,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-09",
+          "value": 21275.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-10",
+          "value": 21336.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-11",
+          "value": 21454.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-12",
+          "value": 21487.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-01",
+          "value": 21539.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-02",
+          "value": 21607.2,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-03",
+          "value": 21684.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-04",
+          "value": 21770.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-05",
+          "value": 21836.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-06",
+          "value": 21942.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-07",
+          "value": 22025.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-08",
+          "value": 22092.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-09",
+          "value": 22176.1,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-10",
+          "value": 22249.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-11",
+          "value": 22279.8,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-12",
+          "value": 22355.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-01",
+          "value": 22413.4,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-02",
+          "value": 22598.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-03",
+          "value": 22640.3,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-04",
+          "value": 22756.6,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-05",
+          "value": 23013.7,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-06",
+          "value": 23114.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-07",
+          "value": 23217.9,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-08",
+          "value": 23342.8,
+          "firstSeenAt": "2026-10-12"
+        }
+      ],
+      "revisedPeriods": [],
+      "lastRevisionAt": null
+    },
+    "fx": {
+      "code": "EXKOUS",
+      "frequency": "M",
+      "kind": "fx",
+      "sourceName": "연준 · FRED",
+      "definitionId": "fed-krw-usd-monthly",
+      "unit": "KRW per USD",
+      "seasonalAdjustment": "NSA",
+      "basis": "monthly-average",
+      "sourceUpdatedAt": null,
+      "sourceUrl": "https://fred.stlouisfed.org/series/EXKOUS",
+      "fetchedAt": "2026-10-12",
+      "lastAttemptAt": "2026-10-12",
+      "releaseDate": null,
+      "status": "ready",
+      "observations": [
+        {
+          "period": "2015-01",
+          "value": 1088.13,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-02",
+          "value": 1101.4605,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-03",
+          "value": 1112.9005,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-04",
+          "value": 1084.6709,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-05",
+          "value": 1092.6365,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-06",
+          "value": 1112.8832,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-07",
+          "value": 1146.5468,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-08",
+          "value": 1178.1438,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-09",
+          "value": 1184.33,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-10",
+          "value": 1143.199,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-11",
+          "value": 1153.4721,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2015-12",
+          "value": 1169.9464,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-01",
+          "value": 1203.3179,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-02",
+          "value": 1216.2285,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-03",
+          "value": 1181.573,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-04",
+          "value": 1145.7967,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-05",
+          "value": 1173.7905,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-06",
+          "value": 1165.2023,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-07",
+          "value": 1140.865,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-08",
+          "value": 1110.0183,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-09",
+          "value": 1108.3638,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-10",
+          "value": 1128.166,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-11",
+          "value": 1162.708,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2016-12",
+          "value": 1183.07,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-01",
+          "value": 1179.1074,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-02",
+          "value": 1140.4874,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-03",
+          "value": 1133.8617,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-04",
+          "value": 1134.1755,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-05",
+          "value": 1125.1359,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-06",
+          "value": 1130.8464,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-07",
+          "value": 1131.746,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-08",
+          "value": 1130.27,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-09",
+          "value": 1131.599,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-10",
+          "value": 1130.8838,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-11",
+          "value": 1099.7945,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2017-12",
+          "value": 1082.902,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-01",
+          "value": 1065.641,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-02",
+          "value": 1078.4747,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-03",
+          "value": 1069.9418,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-04",
+          "value": 1068.0452,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-05",
+          "value": 1076.6595,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-06",
+          "value": 1094.3552,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-07",
+          "value": 1122.2029,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-08",
+          "value": 1120.427,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-09",
+          "value": 1119.82,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-10",
+          "value": 1131.615,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-11",
+          "value": 1125.345,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2018-12",
+          "value": 1122.4244,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-01",
+          "value": 1120.33,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-02",
+          "value": 1121.8333,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-03",
+          "value": 1131.6005,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-04",
+          "value": 1142.165,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-05",
+          "value": 1182.9527,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-06",
+          "value": 1173.7845,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-07",
+          "value": 1177.2345,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-08",
+          "value": 1210.3782,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-09",
+          "value": 1194.1145,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-10",
+          "value": 1183.4473,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-11",
+          "value": 1167.2989,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2019-12",
+          "value": 1174.7052,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-01",
+          "value": 1167.4624,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-02",
+          "value": 1195.3358,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-03",
+          "value": 1218.1945,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-04",
+          "value": 1223.1309,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-05",
+          "value": 1228.134,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-06",
+          "value": 1206.9459,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-07",
+          "value": 1198.6186,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-08",
+          "value": 1186.8562,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-09",
+          "value": 1176.8619,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-10",
+          "value": 1143.7681,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-11",
+          "value": 1116.0978,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2020-12",
+          "value": 1093.7876,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-01",
+          "value": 1098.2367,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-02",
+          "value": 1111.8137,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-03",
+          "value": 1130.2543,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-04",
+          "value": 1117.8555,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-05",
+          "value": 1123.6565,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-06",
+          "value": 1122.6073,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-07",
+          "value": 1146.3948,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-08",
+          "value": 1160.9945,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-09",
+          "value": 1172.819,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-10",
+          "value": 1181.89,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-11",
+          "value": 1184.06,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2021-12",
+          "value": 1183.8871,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-01",
+          "value": 1196.0345,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-02",
+          "value": 1199.1226,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-03",
+          "value": 1220.8409,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-04",
+          "value": 1235.1533,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-05",
+          "value": 1268.8081,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-06",
+          "value": 1277.4057,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-07",
+          "value": 1308.0295,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-08",
+          "value": 1319.4122,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-09",
+          "value": 1396.3729,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-10",
+          "value": 1426.065,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-11",
+          "value": 1361.79,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2022-12",
+          "value": 1293.5629,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-01",
+          "value": 1243.0705,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-02",
+          "value": 1275.4205,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-03",
+          "value": 1306.0161,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-04",
+          "value": 1322.057,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-05",
+          "value": 1327.48,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-06",
+          "value": 1297.2514,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-07",
+          "value": 1282.2835,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-08",
+          "value": 1321.7561,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-09",
+          "value": 1334.237,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-10",
+          "value": 1351.5071,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-11",
+          "value": 1308.154,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2023-12",
+          "value": 1304.3945,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-01",
+          "value": 1325.9119,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-02",
+          "value": 1331.3345,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-03",
+          "value": 1331.6752,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-04",
+          "value": 1367.8555,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-05",
+          "value": 1364.7241,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-06",
+          "value": 1379.0526,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-07",
+          "value": 1382.0473,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-08",
+          "value": 1351.4436,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-09",
+          "value": 1330.6985,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-10",
+          "value": 1362.3691,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-11",
+          "value": 1395.02,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2024-12",
+          "value": 1439.9967,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-01",
+          "value": 1452.1919,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-02",
+          "value": 1444.7932,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-03",
+          "value": 1458.3452,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-04",
+          "value": 1439.7777,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-05",
+          "value": 1391.4376,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-06",
+          "value": 1364.6775,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-07",
+          "value": 1379.2959,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-08",
+          "value": 1388.999,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-09",
+          "value": 1392.9052,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-10",
+          "value": 1423.0795,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-11",
+          "value": 1459.8789,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2025-12",
+          "value": 1465.355,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-01",
+          "value": 1455.496,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-02",
+          "value": 1447.2858,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-03",
+          "value": 1490.5177,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-04",
+          "value": 1483.7977,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-05",
+          "value": 1488.396,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-06",
+          "value": 1529.4619,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-07",
+          "value": 1486.0132,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-08",
+          "value": 1403.2186,
+          "firstSeenAt": "2026-10-12"
+        },
+        {
+          "period": "2026-09",
+          "value": 1359.209,
+          "firstSeenAt": "2026-10-12"
+        }
+      ],
+      "revisedPeriods": [],
+      "lastRevisionAt": null
+    },
+    "krM2": {
+      "sourceName": "한국은행 · ECOS",
+      "sourceUrl": "https://ecos.bok.or.kr/",
+      "frequency": "M",
+      "kind": "money",
+      "definitionId": "bok-m2-2025-revision",
+      "status": "pending",
+      "message": "개편 기준 공식 계열·인증 연결 대기",
+      "observations": []
+    },
+    "krRate": {
+      "sourceName": "한국은행 · ECOS",
+      "sourceUrl": "https://ecos.bok.or.kr/",
+      "frequency": "M",
+      "kind": "rate",
+      "status": "pending",
+      "message": "공식 금리 계열 연결 대기",
+      "observations": []
+    },
+    "usRate": {
+      "sourceName": "연준 · FRED",
+      "sourceUrl": "https://fred.stlouisfed.org/series/FEDFUNDS",
+      "frequency": "M",
+      "kind": "rate",
+      "status": "pending",
+      "message": "공식 금리 계열 연결 대기",
+      "observations": []
+    }
+  }
+}
