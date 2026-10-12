@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-12T06:34:39.103Z",
+  "generatedAt": "2026-10-12T06:39:23.509Z",
   "series": {
     "usGdp": {
       "code": "GDPC1",
@@ -246,257 +246,8 @@
       "sourceUpdatedAt": "2026-09-30",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
-      "revisedPeriods": [],
-      "lastRevisionAt": null
-    },
-    "krGdp": {
-      "code": "NGDPRSAXDCKRQ",
-      "frequency": "Q",
-      "kind": "gdp",
-      "sourceName": "IMF · FRED",
-      "definitionId": "imf-korea-real-gdp",
-      "unit": "Millions of KRW",
-      "seasonalAdjustment": "SA",
-      "sourceUrl": "https://fred.stlouisfed.org/series/NGDPRSAXDCKRQ",
-      "observations": [
-        {
-          "period": "2015-Q1",
-          "value": 454302800,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2015-Q2",
-          "value": 456256600,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2015-Q3",
-          "value": 463025500,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2015-Q4",
-          "value": 466604000,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2016-Q1",
-          "value": 468400300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2016-Q2",
-          "value": 474271500,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2016-Q3",
-          "value": 476105600,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2016-Q4",
-          "value": 479773700,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2017-Q1",
-          "value": 485209500,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2017-Q2",
-          "value": 488730600,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2017-Q3",
-          "value": 495435100,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2017-Q4",
-          "value": 494356900,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2018-Q1",
-          "value": 501490000,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2018-Q2",
-          "value": 505448900,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2018-Q3",
-          "value": 508214800,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2018-Q4",
-          "value": 510948600,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2019-Q1",
-          "value": 511117500,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2019-Q2",
-          "value": 518034200,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2019-Q3",
-          "value": 519435700,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2019-Q4",
-          "value": 524395000,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2020-Q1",
-          "value": 517226900,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2020-Q2",
-          "value": 503562300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2020-Q3",
-          "value": 514942200,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2020-Q4",
-          "value": 522735100,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2021-Q1",
-          "value": 531069700,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2021-Q2",
-          "value": 538270800,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2021-Q3",
-          "value": 538184300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2021-Q4",
-          "value": 547618100,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2022-Q1",
-          "value": 550176900,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2022-Q2",
-          "value": 555670400,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2022-Q3",
-          "value": 557103500,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2022-Q4",
-          "value": 554877300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2023-Q1",
-          "value": 556108300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2023-Q2",
-          "value": 559921400,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2023-Q3",
-          "value": 565273300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2023-Q4",
-          "value": 569404400,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2024-Q1",
-          "value": 575171300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2024-Q2",
-          "value": 574301700,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2024-Q3",
-          "value": 574618700,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2024-Q4",
-          "value": 575977000,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2025-Q1",
-          "value": 574984300,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2025-Q2",
-          "value": 578719200,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2025-Q3",
-          "value": 586599900,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2025-Q4",
-          "value": 585964000,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2026-Q1",
-          "value": 596692800,
-          "firstSeenAt": "2026-10-12"
-        },
-        {
-          "period": "2026-Q2",
-          "value": 600405700,
-          "firstSeenAt": "2026-10-12"
-        }
-      ],
-      "sourceUpdatedAt": "2026-07-27",
-      "releaseDate": null,
-      "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -1215,8 +966,8 @@
       "sourceUpdatedAt": "2026-09-22",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -1940,8 +1691,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -2665,8 +2416,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -3387,8 +3138,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -4118,8 +3869,263 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T06:34:39.103Z",
-      "lastAttemptAt": "2026-10-12T06:34:39.103Z",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
+      "revisedPeriods": [],
+      "lastRevisionAt": null
+    },
+    "krGdp": {
+      "table": "200Y104",
+      "items": [
+        "1400"
+      ],
+      "frequency": "Q",
+      "kind": "gdp",
+      "definitionId": "bok-real-gdp-sa",
+      "seasonalAdjustment": "SA",
+      "verifiedAt": "2026-10-12",
+      "unit": "십억원",
+      "expectedItemName": "국내총생산(시장가격, GDP)",
+      "code": "200Y104/1400",
+      "sourceName": "한국은행 · ECOS",
+      "sourceUrl": "https://ecos.bok.or.kr/",
+      "observations": [
+        {
+          "period": "2015-Q1",
+          "value": 454302.8,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2015-Q2",
+          "value": 456256.6,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2015-Q3",
+          "value": 463025.5,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2015-Q4",
+          "value": 466604,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2016-Q1",
+          "value": 468400.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2016-Q2",
+          "value": 474271.5,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2016-Q3",
+          "value": 476105.6,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2016-Q4",
+          "value": 479773.7,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2017-Q1",
+          "value": 485209.5,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2017-Q2",
+          "value": 488730.6,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2017-Q3",
+          "value": 495435.1,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2017-Q4",
+          "value": 494356.9,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2018-Q1",
+          "value": 501490,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2018-Q2",
+          "value": 505448.9,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2018-Q3",
+          "value": 508214.8,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2018-Q4",
+          "value": 510948.6,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2019-Q1",
+          "value": 511117.5,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2019-Q2",
+          "value": 518034.2,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2019-Q3",
+          "value": 519435.7,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2019-Q4",
+          "value": 524395,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2020-Q1",
+          "value": 517226.9,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2020-Q2",
+          "value": 503562.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2020-Q3",
+          "value": 514942.2,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2020-Q4",
+          "value": 522735.1,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2021-Q1",
+          "value": 531069.7,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2021-Q2",
+          "value": 538270.8,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2021-Q3",
+          "value": 538184.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2021-Q4",
+          "value": 547618.1,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2022-Q1",
+          "value": 550176.9,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2022-Q2",
+          "value": 555670.4,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2022-Q3",
+          "value": 557103.5,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2022-Q4",
+          "value": 554877.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2023-Q1",
+          "value": 556108.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2023-Q2",
+          "value": 559921.4,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2023-Q3",
+          "value": 565273.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2023-Q4",
+          "value": 569404.4,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2024-Q1",
+          "value": 575171.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2024-Q2",
+          "value": 574301.7,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2024-Q3",
+          "value": 574618.7,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2024-Q4",
+          "value": 575977,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2025-Q1",
+          "value": 574984.3,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2025-Q2",
+          "value": 578719.2,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2025-Q3",
+          "value": 586599.9,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2025-Q4",
+          "value": 585964,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2026-Q1",
+          "value": 596692.8,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        },
+        {
+          "period": "2026-Q2",
+          "value": 600474.9,
+          "firstSeenAt": "2026-10-12T06:39:23.509Z"
+        }
+      ],
+      "sourceUpdatedAt": null,
+      "releaseDate": null,
+      "status": "ready",
+      "fetchedAt": "2026-10-12T06:39:23.509Z",
+      "lastAttemptAt": "2026-10-12T06:39:23.509Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     }
