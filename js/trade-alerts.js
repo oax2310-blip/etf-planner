@@ -65,6 +65,11 @@ const tradeStageName = (name,i) => autoKey(name)||`${i+1}단계`;
 // 회차 알림 기준: 단계 기준가(시세로 채운 이평선은 이름, 직접 고친 값만) + 2·3차는 회차와 다음 단계 기준. 이평선만 움직이면 같은 알림 이력.
 function tradeStageBasis(r,x){const mark=Number(r.auto?.[autoMark(x.name)]);return autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];}
 const tradeTrancheBasis = (r,s,x) => x.t?[...tradeStageBasis(r,s.stages[x.i]),x.t,...(s.stages[x.i+1]?tradeStageBasis(r,s.stages[x.i+1]):[])]:tradeStageBasis(r,s.stages[x.i]);
+// ETF 직접 회차 가격·하락 도달 조건은 알림 이력에도 반영한다. 옛 자동 반등 기준의 이력은 유지한다.
+function tradeEtfTrancheBasis(r,s,x){
+  const basis=tradeTrancheBasis(r,s,x),st=s.stages[x.i];
+  return st.buyCondition||x.manual?[...basis,etfRebuyCondition(st),x.manual?x.price:null]:basis;
+}
 // 알림을 보낼 회차: 안 샀고 배분이 있고 가격이 실제 기준가에서 나온 것(추정치 제외).
 const tradeTranchesToSend = s => s.tranches.filter(x=>!x.done&&x.amount>0&&x.price>0&&!x.est);
 // 비공개 수집 작업도 이 함수와 prices.js·rebuy.js를 실행해 화면과 같은 기준가·배분을 사용한다. 원본 기록은 바꾸지 않는다.
@@ -124,7 +129,7 @@ function buildTradeAlertRules(data,priceDoc){
     }
     // 비운 가격은 표시용 추정값이다. 알림 기준으로 사용하지 않는다(tradeTranchesToSend).
     for(const x of tradeTranchesToSend(s))if(tradeRebuyEnabled(r,"buys",x.i)){const name=s.stages[x.i].name;
-      addR(`buy:${encodeURIComponent(name)}:${x.i}${x.t?`:${x.t+1}`:""}`,`재매수 ${tradeStageName(name,x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,"up",tradeTrancheBasis(r,s,x));}
+      addR(`buy:${encodeURIComponent(name)}:${x.i}${x.t?`:${x.t+1}`:""}`,`재매수 ${tradeStageName(name,x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,etfRebuyCondition(s.stages[x.i]),tradeEtfTrancheBasis(r,s,x));}
   }
   return rules;
 }
