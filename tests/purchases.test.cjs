@@ -60,8 +60,8 @@ test('연결 보유 목록은 추종 ETF·실제 코드 보유 계좌 모두를 
 });
 test('연결 보유 목록은 금액 보유를 주수로 오인하지 않고 0주·시세 누락·매수대기에서도 조회만 한다',()=>{
   const r=setup({wait:'25일선'});delete r.item.shares;r.item.amount=7;r.prices.stocks={};
-  r.doc.allocation.groups[0].items.push({id:'b',name:'0주 보유',ticker:'111111',shares:0,amount:99},{id:'c',name:'시세 대기 계좌',ticker:'111111',shares:3});
-  const before=JSON.stringify(r.doc);r.render();assert.match(r.html(),/금액으로 보유 관리/);assert.match(r.html(),/보유 0주/);assert.match(r.html(),/보유 3주 · 시세 대기/);assert.match(r.html(),/평가 대기/);assert.match(r.html(),/전체 계좌 3개 항목 · 현재 7%/);
+  r.doc.allocation.groups[0].items.push({id:'b',name:'0주 보유',ticker:'111111',shares:0,amount:99},{id:'c',name:'시세 대기 계좌',ticker:'111111',shares:3},{id:'d',name:'소수 보유 계좌',ticker:'111111',shares:.125});
+  const before=JSON.stringify(r.doc);r.render();assert.match(r.html(),/금액으로 보유 관리/);assert.match(r.html(),/보유 0주/);assert.match(r.html(),/보유 3주 · 시세 대기/);assert.match(r.html(),/보유 0\.125주 · 시세 대기/);assert.match(r.html(),/평가 대기/);assert.match(r.html(),/전체 계좌 4개 항목 · 현재 7%/);
   assert.doesNotMatch(r.html(),/보유 7주|NaN|undefined|data-purchase-buy=/);assert.equal(JSON.stringify(r.doc),before);
 });
 test('분할매도와 같은 메모 저장은 현재 계획만 수정하고 체결·보유량을 보존하며 비운 필드는 삭제한다',()=>{

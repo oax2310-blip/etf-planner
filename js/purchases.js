@@ -26,11 +26,12 @@ const perRoundText=rows=>{
 };
 const unitOf=it=>linkStep(it);
 const qtyNum=(v,it)=>(unitOf(it)<1?nf8:nf1).format(v), qtyUnit=it=>unitOf(it)<1?" BTC":"주", qtyText=(v,it)=>`${qtyNum(v,it)}${qtyUnit(it)}`;
+const holdingQty=(v,it)=>`${nf8.format(v)}${qtyUnit(it)}`;
 const wonAmount=v=>priceText(v*1e4,"KRW");
 // 추종 ETF 계획은 처음 고른 자산 항목의 id에 붙는다. 코드만으로 다른 계좌를 고르지 않으며 기존 보유량에 체결분을 더한다.
 function targetInfo({g,it},s){
   const path=[g.name,it.section,it.name].filter(Boolean).map(escA).join(" › "), shares=finite(it.shares), byShares=shares!==null||!(finite(it.amount)>0);
-  const holding=byShares?`현재 보유 <b>${qtyText(shares??0,it)}</b> · 체결 주수를 더합니다.`:`현재 평가액 <b>${man(s.items.get(it.id)?.value||0)}</b> · 체결 금액을 더합니다.`;
+  const holding=byShares?`현재 보유 <b>${holdingQty(shares??0,it)}</b> · 체결 주수를 더합니다.`:`현재 평가액 <b>${man(s.items.get(it.id)?.value||0)}</b> · 체결 금액을 더합니다.`;
   return `<b>매수 반영 대상</b> 자산 배분 › ${path}<br>${holding}`;
 }
 function trackingInfo(it){
@@ -67,7 +68,7 @@ function linkedHoldings({g,it},s){
   const rows=holding.rows.map(r=>{
     const shares=finite(r.it.shares),selected=r.it.id===it.id,ticker=assetTradeTicker(r.it),path=[r.g.name,r.it.section,ticker].filter(Boolean).map(escA).join(" · ");
     const q=s.items.get(r.it.id)?.q,missing=shares>0&&!krwPrice(q,s.fx),pending=missing?(q?.currency==="USD"&&!s.fx?"환율 대기":"시세 대기"):"";
-    const quantity=shares!==null?`보유 ${qtyText(shares,r.it)}`:"금액으로 보유 관리",tag=selected?(tracksETF(it)&&!wait?"매수 반영 대상":"계획 종목"):"";
+    const quantity=shares!==null?`보유 ${holdingQty(shares,r.it)}`:"금액으로 보유 관리",tag=selected?(tracksETF(it)&&!wait?"매수 반영 대상":"계획 종목"):"";
     return `<div class="sale-linked-holding purchase-linked-holding${selected?" selected":""}" data-purchase-holding="${escA(r.it.id)}"><div><strong>${escA(r.it.name)}</strong>${tag?`<span class="purchase-holding-tag">${tag}</span>`:""}<small>${path}</small><small>${quantity}${pending?` · ${pending}`:""}</small></div><div class="purchase-holding-value"><strong>${missing&&r.value===0?"평가 대기":man(r.value)}</strong><small>${missing&&r.value===0?"—":pc(s.pct(r.value))}</small></div></div>`;
   }).join("");
   const target=wait?"":tracksETF(it)?`<p class="hint purchase-target">${targetInfo({g,it},s)}</p><p class="hint purchase-tracking">${trackingInfo(it)}</p>`:holding.rows.length>1?'<p class="hint">체결을 기록할 때 반영할 계좌를 선택합니다.</p>':"";
@@ -78,7 +79,7 @@ const memoPanel=it=>`<section class="card panel memo"><div class="memo-head"><h2
 // 카드 이름은 계획에만 저장한다. 분할매도와 같은 이름 창·PC 연필·터치 길게 누르기를 사용하며 빈 이름은 필드를 지운다.
 function openPurchaseName(id){
   const found=findItem(id);if(!found?.it.buyPlan||typeof openNameDialog!=="function")return;
-  openNameDialog(id,{ticker:found.it.ticker||found.it.name,cardName:found.it.buyPlan.cardName,onSave:value=>{
+  openNameDialog(id,{ticker:String(found.it.ticker||"").trim()||found.it.name,cardName:found.it.buyPlan.cardName,onSave:value=>{
     const plan=findItem(id)?.it.buyPlan;if(!plan||String(plan.cardName||"").trim()===value)return;
     setText(plan,"cardName",value);saveSection("allocation");render();
   }});
@@ -173,7 +174,7 @@ function renderPurchases(){
   const list=plans.map(({g,it},i)=>{
     const p=summaries[i],wait=it.buyPlan.wait?purchaseWaitInfo(it.buyPlan,waitEntry(it)):null;
     const progress=wait?wait.gapPct===null?"시세 대기":wait.reached?"도달":"대기":p.count?`${p.done}/${p.count}`:it.buyPlan.lines&&purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s).buyable===0?"목표 도달":it.buyPlan.lines&&!(it.buyPlan.lines.budget>0)?"예산 대기":"시세 대기",reached=!!wait?.reached;
-    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",name=String(it.buyPlan.cardName||it.ticker||it.name).trim();
+    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",name=String(it.buyPlan.cardName||"").trim()||String(it.ticker||"").trim()||it.name;
     return `<div class="plan-cell"><button class="plan-item${it.id===selectedPurchaseId?" active":""}" type="button" data-purchase-select="${escA(it.id)}" aria-pressed="${it.id===selectedPurchaseId}" aria-controls="purchaseMain" title="${escA(`${name} · ${it.name} · ${context} · ${mode} · ${progress}${!wait&&p.count?"회 완료":""}`)}"><span class="plan-row"><strong>${escA(name)}</strong><span class="plan-count${reached?" due":""}">${progress}${!wait&&p.count?'<span class="plan-unit">회</span>':""}</span></span><span class="plan-title">${escA(it.name)}</span>${wait?"":`<span class="plan-bar"><i style="width:${Math.round(p.done/Math.max(p.count,1)*100)}%"></i></span>`}</button><button class="plan-rename" type="button" data-purchase-rename="${escA(it.id)}" aria-label="${escA(name)} 카드 이름 변경" title="카드 이름 변경">${PEN}</button></div>`;
   }).join("");
   const empty=items.length?emptyCard("아직 분할매수 계획이 없습니다","저장된 계획의 ＋ 추가를 눌러 종목과 매수 방식을 고르세요.",""):emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);
@@ -267,7 +268,7 @@ const form=()=>el("purchaseForm"), pickedItem=()=>findItem(form().item.value), m
 const draftCurrency=()=>{const it=pickedItem()?.it;return purchaseDraft?.currency||quoteOf(it)?.currency||form().manualCurrency.value||"KRW";};
 function itemInfo({g,it},s){
   const v=s.items.get(it.id)?.value||0,t=finite(it.target),holding=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
-  return [g.name,it.section,tracksETF(it)?`${it.ticker} → ${assetTradeTicker(it)}`:it.ticker,finite(it.shares)!==null?`보유 ${qtyText(finite(it.shares),it)}`:`평가액 ${man(v)}`,`선택 항목 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`,`전체 계좌 ${pc(holding.pct)}`].filter(Boolean).map(escA).join(" · ");
+  return [g.name,it.section,tracksETF(it)?`${it.ticker} → ${assetTradeTicker(it)}`:it.ticker,finite(it.shares)!==null?`보유 ${holdingQty(finite(it.shares),it)}`:`평가액 ${man(v)}`,`선택 항목 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`,`전체 계좌 ${pc(holding.pct)}`].filter(Boolean).map(escA).join(" · ");
 }
 function renderPicker(){
   const s=allocationSummary(doc.allocation,prices), picked=pickedItem(), box=el("purchasePicked");
