@@ -329,6 +329,24 @@ function allocationSummary(alloc, prices){
   return {fx, invest, cash, grand, base, items, groups, classes, regions, targets, section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||0, pct:v=>base>0?v/base*100:0};
 }
 
+// 매수·매도 보유 목록의 표시 값은 자산현황의 실제 ETF 평가액·현물/입력 환율·전체 자산 분모를 그대로 읽는다.
+// 매도 계획의 환율·가격·내림한 예정 주수로 현재 보유액을 다시 계산하지 않는다. 보유 소수 수량은 유지하고 필요한 시세·환율이 없으면 평가 대기로 구분한다.
+const {allocationHoldingInfo,allocationHoldingTotal}=(()=>{
+  const nf1=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}),nf2=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:2}),nf8=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:8});
+  const valueInfo=(value,pct,valuePending)=>({value,pct,valueText:valuePending?"평가 대기":`${nf1.format(Math.round(value*10)/10)}만원`,pctText:valuePending?"—":`${(Math.abs(pct)<1?nf2:nf1).format(pct)}%`});
+  const info=(it,s)=>{
+    const entry=s.items.get(it.id),value=entry?.value||0,pct=s.pct(value),shares=finite(it.shares),missing=shares>0&&!krwPrice(entry?.q,s.fx);
+    const pending=missing?(entry?.q?.currency==="USD"&&!s.fx?"환율 대기":"시세 대기"):"",valuePending=missing&&value===0;
+    return {...valueInfo(value,pct,valuePending),shares,pending,valuePending,quantityText:shares===null?"금액으로 보유 관리":`보유 ${nf8.format(shares)}${linkStep(it)<1?" BTC":"주"}`};
+  };
+  // 목록 합계도 항목과 같은 반올림·전체 자산 분모를 쓴다. 일부 평가 대기는 개수로, 전부 대기면 합계도 평가 대기로 표시한다.
+  const total=(infos,s)=>{
+    const rows=[...infos],value=rows.reduce((n,r)=>n+r.value,0),pendingCount=rows.filter(r=>r.valuePending).length;
+    return {...valueInfo(value,s.pct(value),pendingCount>0&&pendingCount===rows.length),pendingCount};
+  };
+  return {allocationHoldingInfo:info,allocationHoldingTotal:total};
+})();
+
 // 분할매수의 투자 대상은 저장된 기준 ticker·실제 tradeTicker 연결로 구분한다. 같은 코드의 다른 계좌와 명시적으로 연결된 추종 ETF를 중복 없이 합산한다.
 // 이름·큰 분류·소분류가 비슷하다는 이유로 합치지 않는다. 코드가 없으면 선택한 항목만, 평가액·분모는 자산현황 allocationSummary 그대로 쓴다.
 // 목표는 계획의 명시 목표 → 연결 항목 목표 합 → 연결 항목이 전부 포함된 소분류·그룹 목표 순서. 계좌별 보유량·저장 목표·계획은 읽기만 한다.

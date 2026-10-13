@@ -402,6 +402,28 @@ function groupSale({stages=7,a=53,b=34,native=0,salePct=100}={}){
   return r;
 }
 
+test('매도 보유 목록은 실제 ETF 평가액과 전체 자산 비중을 표시하며 계획 환율·우선순위·체결로 보유 기록을 덮어쓰지 않는다',()=>{
+  const r=groupSale({a:10,b:5,native:2,stages:3});r.pension.tradeTicker='222222';r.alloc.total=100;
+  r.prices.fx.close=1200;r.ctx.priceData.stocks.AAA.close=50;r.prices.stocks.AAA={kind:'해외',close:50,asOf:'2026-10-08'};
+  const before=JSON.stringify([r.p,r.alloc]),view=r.api.planSaleAccountView(r.p);assert.match(view,/<strong>29.5만원<\/strong>/);assert.match(view,/전체 계좌 3개 항목 · 현재 29.5%/);assert.match(view,/<strong>12만원<\/strong><small>12%<\/small>/);assert.match(view,/<strong>7.5만원<\/strong><small>7.5%<\/small>/);assert.equal(JSON.stringify([r.p,r.alloc]),before);
+  r.p.fx=2500;r.api.movePlanSalePriority(r.p,r.native.id,-1,()=>{});r.api.movePlanSalePriority(r.p,r.native.id,-1,()=>{});assert.match(r.api.planSaleAccountView(r.p),/<strong>29.5만원<\/strong>/);
+  r.member(0,r.native.id,1);const saved=JSON.stringify([r.p,r.alloc]);assert.match(r.api.planSaleAccountView(r.p),/현재 23.5%/);assert.equal(JSON.stringify([r.p,r.alloc]),saved,'조회가 고정 회차·보유량을 바꾸지 않음');
+  r.api.recordPlanQuantity(r.p,0,0,()=>{});assert.match(r.api.planSaleAccountView(r.p),/현재 29.5%/);
+  r.alloc.total=200;assert.match(r.api.planSaleAccountView(r.p),/현재 14.8%/);
+});
+
+test('매도 보유 목록은 시세·환율 누락을 평가 대기로 표시하며 금액 보유의 평가액을 예정 주수로 대체하지 않는다',()=>{
+  const r=groupSale({a:10,b:5,native:2});r.alloc.total=100;r.prices.stocks.AAA={kind:'해외',close:50,asOf:'2026-10-08'};delete r.prices.stocks['111111'];r.prices.fx=null;
+  let view=r.api.planSaleAccountView(r.p);assert.match(view,/시세 대기/);assert.match(view,/환율 대기/);assert.match(view,/<strong>평가 대기<\/strong><small>—<\/small>/);
+  delete r.isa.shares;r.isa.amount=7.26;r.prices.stocks['111111']={kind:'국내',close:20000,asOf:'2026-10-08'};r.prices.fx={close:1200};
+  const before=JSON.stringify([r.p,r.alloc]);view=r.api.planSaleAccountView(r.p);assert.match(view,/금액으로 보유 관리/);assert.match(view,/<strong>7.3만원<\/strong><small>7.3%<\/small>/);assert.equal(JSON.stringify([r.p,r.alloc]),before);
+});
+
+test('옛 단일 매도 계좌 선택 화면에도 평가액·전체 자산 비중을 보여 주고 조회로 반영 계좌를 바꾸지 않는다',()=>{
+  const r=accountSale();r.alloc.total=200;const before=JSON.stringify([r.p,r.alloc]),view=r.api.planSaleAccountView(r.p);
+  assert.match(view,/id="saleAccount"/);assert.match(view,/평가액 100만원 · 전체 자산의 50%/);assert.equal(JSON.stringify([r.p,r.alloc]),before);
+});
+
 test('통합 매도: 여러 계좌의 같은 ETF 주수 전체를 균등 배분하고 평가액·선택 계좌로 제한하지 않는다',()=>{
   const r=groupSale(),before=JSON.stringify([r.p,r.alloc]),targets=Array.from({length:7},(_,i)=>r.api.planQuantityProgress(r.p,i).target);
   assert.equal(targets.reduce((n,v)=>n+v,0),87);assert.ok(Math.max(...targets)-Math.min(...targets)<=1);
