@@ -32,7 +32,7 @@ const wonAmount=v=>priceText(v*1e4,"KRW");
 // 계획·회차 키는 처음 고른 항목에 유지하고 새 체결은 우선순위 첫 항목에 반영한다. 추가 체결·취소는 최초 반영 계좌를 따른다.
 function targetInfo({g,it},s){
   const path=[g.name,it.section,it.name].filter(Boolean).map(escA).join(" › "), shares=finite(it.shares), byShares=shares!==null||!(finite(it.amount)>0);
-  const holding=byShares?`현재 보유 <b>${holdingQty(shares??0,it)}</b> · 체결 주수를 더합니다.`:`현재 평가액 <b>${man(s.items.get(it.id)?.value||0)}</b> · 체결 금액을 더합니다.`;
+  const holding=byShares?`현재 보유 <b class="purchase-target-quantity">${holdingQty(shares??0,it)}</b> · 체결 주수를 더합니다.`:`현재 평가액 <b>${man(s.items.get(it.id)?.value||0)}</b> · 체결 금액을 더합니다.`;
   return `<b>매수 반영 대상</b> 자산 배분 › ${path}<br>${holding}`;
 }
 function trackingInfo(it,target=it){
