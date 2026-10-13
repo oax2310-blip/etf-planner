@@ -211,7 +211,7 @@ function purchaseLineRows(plan, entry, trade={}){
     return {key,...at,price:plus(b.price),...(shares!==null?{shares}:{}),done:!remaining,actual:Math.max(0,finite(b.actual)||0),
       ...(planned?{plannedShares:planned,remainingShares:remaining,next:b.next??null,amount:remaining*(plus(b.plannedActual)??plus(b.actual)??0)/(planned||1)}:{})};
   }).filter(Boolean);
-  const budget=Math.max(0,finite(lines?.budget)||0), spent=records.reduce((s,r)=>s+r.actual,0), reserved=records.filter(r=>!r.done).reduce((s,r)=>s+r.amount,0), left=Math.max(0,budget-spent-reserved);
+  const budget=purchaseBudget(plan,trade), spent=records.reduce((s,r)=>s+r.actual,0), reserved=records.filter(r=>!r.done).reduce((s,r)=>s+r.amount,0), left=Math.max(0,budget-spent-reserved);
   const levels=purchaseLineLevels(lines,entry), currency=trade.currency||plan?.currency||(["해외","코인"].includes(entry?.kind)?"USD":"KRW"), step=trade.item?linkStep(trade.item):1;
   let open=left>0?levels.filter(x=>!buys[x.key]):[];
   const amounts=new Map(), costs=new Map(open.map(r=>{
@@ -243,7 +243,7 @@ function purchaseLineRows(plan, entry, trade={}){
 function purchaseSummary(plan, entry=null, trade={}){
   if(plan?.wait)return {count:0,done:0,planned:0,actual:0,remaining:0};
   if(plan?.lines){
-    const rows=purchaseLineRows(plan,entry,trade), actual=rows.reduce((s,r)=>s+(r.actual||0),0), budget=Math.max(0,finite(plan.lines.budget)||0);
+    const rows=purchaseLineRows(plan,entry,trade), actual=rows.reduce((s,r)=>s+(r.actual||0),0), budget=purchaseBudget(plan,trade);
     return {count:rows.length,done:rows.filter(r=>r.done).length,planned:budget,actual,remaining:Math.max(0,budget-actual)};
   }
   const stages=Array.isArray(plan?.stages)?plan.stages:[];
@@ -290,7 +290,7 @@ function purchaseAlertRules(assets, prices){
     }
     if(plan.lines){
       const entry=prices?.stocks?.[ticker];
-      const trade={item:it,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
+      const trade={item:it,allocation:assets?.allocation,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
       for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade))if(!r.done&&r.price&&purchaseAlertOn(plan,r)&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency)?.shares!==0))
         add(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next]);
       continue;
@@ -323,6 +323,50 @@ function allocationSummary(alloc, prices){
     .map(name=>({name,classes:classList.filter(c=>(c.region||"기타")===name)})).filter(r=>r.classes.length)
     .map(r=>({...r,value:r.classes.reduce((s,c)=>s+(classes.get(c.id)||0),0),target:r.classes.some(c=>targets.classes.get(c.id).target!==null)?r.classes.reduce((s,c)=>s+(targets.classes.get(c.id).target??0),0):null}));
   return {fx, invest, cash, grand, base, items, groups, classes, regions, targets, section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||0, pct:v=>base>0?v/base*100:0};
+}
+
+// 분할매수의 투자 대상은 저장된 기준 ticker·실제 tradeTicker 연결로 구분한다. 같은 코드의 다른 계좌와 명시적으로 연결된 추종 ETF를 중복 없이 합산한다.
+// 이름·큰 분류·소분류가 비슷하다는 이유로 합치지 않는다. 코드가 없으면 선택한 항목만, 평가액·분모는 자산현황 allocationSummary 그대로 쓴다.
+// 목표는 계획의 명시 목표 → 연결 항목 목표 합 → 연결 항목이 전부 포함된 소분류·그룹 목표 순서. 계좌별 보유량·저장 목표·계획은 읽기만 한다.
+function purchaseAllocationSummary(alloc, prices, item, plan=item?.buyPlan, summary=allocationSummary(alloc,prices)){
+  const all=(alloc?.groups||[]).flatMap(g=>(g.items||[]).map(it=>({g,it}))), keys=new Set(), ids=new Set();
+  const addKeys=it=>{for(const code of [it?.ticker,it?.tradeTicker]){const key=linkTicker(code);if(key)keys.add(key);}};
+  addKeys(item);
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(const {it} of all){
+      if(ids.has(it.id)||!(it.id===item?.id||[it.ticker,it.tradeTicker].some(code=>keys.has(linkTicker(code)))))continue;
+      ids.add(it.id);addKeys(it);changed=true;
+    }
+  }
+  const rows=all.filter(({it})=>ids.has(it.id)).map(x=>({...x,value:summary.items.get(x.it.id)?.value||0})), value=rows.reduce((n,r)=>n+r.value,0);
+  const own=rows.map(({it})=>finite(it.target)).filter(v=>v!==null), fallback=[];
+  if(!own.length)for(const g of new Set(rows.map(r=>r.g))){
+    if((g.items||[]).every(it=>ids.has(it.id))){fallback.push(summary.targets.groups.get(g.id)?.target??null);continue;}
+    for(const name of new Set(rows.filter(r=>r.g===g).map(r=>r.it.section).filter(Boolean)))
+      if(g.items.filter(it=>it.section===name).every(it=>ids.has(it.id)))fallback.push(summary.targets.section(g.id,name).target);
+  }
+  const targets=own.length?own:fallback.filter(v=>v!==null), declared=finite(plan?.lines?.target);
+  const target=declared??(targets.length?Math.round(targets.reduce((n,v)=>n+v,0)*1e8)/1e8:null), pct=summary.pct(value);
+  const gap=target!==null&&summary.base>0?target/100*summary.base-value:null;
+  return {rows,value,pct,target,gap,gapPct:gap===null?null:target-pct,buyable:gap===null?null:Math.max(0,gap),base:summary.base};
+}
+// 저장한 총 매수 금액은 한도로 유지하고, 아직 시작하지 않은 회차는 전체 계좌의 목표까지 남은 금액 안에서만 배분한다.
+// 목표가 없으면 기존 직접 예산을 그대로 쓴다. 이미 체결한 금액과 부분 체결의 고정 잔량은 보존하며, 계산만으로 저장 예산을 덮어쓰지 않는다.
+// 화면·합계·알림은 allocation과 item을 함께 넘겨 같은 한도를 적용한다. 다른 계좌 보유액·시세·기준 총자산 변경도 다음 계산에 반영된다.
+function purchaseBudget(plan, trade={}){
+  const budget=Math.max(0,finite(plan?.lines?.budget)||0);
+  if(!trade.allocation||!trade.item)return budget;
+  const holding=purchaseAllocationSummary(trade.allocation,trade.prices,trade.item,plan);
+  if(holding.buyable===null)return budget;
+  let spent=0,reserved=0;
+  for(const b of Object.values(purchaseBuys(plan))){
+    spent+=Math.max(0,finite(b?.actual)||0);
+    const planned=plus(b?.plannedShares), remaining=planned?Math.max(0,planned-(finite(b?.shares)||0)):0;
+    if(remaining)reserved+=remaining*(plus(b.plannedActual)??plus(b.actual)??0)/planned;
+  }
+  return Math.max(spent+reserved,Math.min(budget,spent+holding.buyable));
 }
 
 // ---------- 플래너 체결 → 자산 배분 연동 (화면·계좌 고르는 창은 플래너 js/alloc-link.js) ----------
