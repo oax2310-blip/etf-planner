@@ -6,6 +6,10 @@ const MA_LINES = MA_UNITS.flatMap(unit=>MA_PERIODS.map(n=>`${n}${unit}`));
 function tradeStageEditorCard(title,fields,actions,className="",attrs=""){
   return `<div class="purchase-stage${className?` ${className}`:""}"${attrs?` ${attrs}`:""}><b>${title}</b>${fields}${actions}</div>`;
 }
+// 손절·재매수 회차의 공통 가로 카드. 판정·계산·입력 속성은 호출부에 두고 표시 틀만 공유한다.
+function tradeStageRow(check,price,shares,status,rowClass="",statusClass=""){
+  return `<div class="sale-row${rowClass?` ${rowClass}`:""}">${check}<div class="stage-price">${price}</div><div class="shares">${shares}</div><div class="status${statusClass?` ${statusClass}`:""}">${status}</div></div>`;
+}
 function movingLineName(name){
   const m=/^\s*([1-9]\d{0,2})\s*(선|시선|분봉|일선|주선|개월선|월선|달선)\s*$/.exec(String(name??""));
   if(!m||Number(m[1])>400)return "";

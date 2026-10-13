@@ -468,6 +468,43 @@ test('화면은 평균 손절가를 표시하고 그보다 높은 후속 회차�
 
 const fillFixture = () => ({id:'fill-test',name:'테스트 ETF',lowPrice:10000,shares:100,stepPct:1,sellPct:10,steps:2,cuts:[],stages:[{name:'25선',price:9900,done:false,shares:null,execPrice:null}]});
 
+test('손절 카드: 대기 계획 금액과 실제 누적 수량을 구분하고 기존 기록·알림 설정을 유지한다', () => {
+  const r={...fillFixture(),currentPrice:10000,notify:{cuts:true,cutsOverrides:{1:false}}},before=structuredClone(r);
+  const {ctx,els}=ui({rebuy:{items:[r]}});
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js/trade-alerts.js'),'utf8'),ctx);
+  ctx.renderRebuy();
+  const cutHTML=()=>els.rebuyMain.innerHTML.split('id="rebuyCutRows">')[1].split('</section>')[0];
+  let html=cutHTML();
+  assert.match(html,/손절<span class="tr-no">1<\/span>/);
+  assert.match(html,/계획 10주<small class="sub rebuy-stage-amount">약 9.9만원/);
+  assert.match(html,/data-cut-qty="0"[^>]*value=""[^>]*placeholder="0"/,'대기 회차는 예정량을 누적 체결로 보여 주지 않는다');
+  assert.match(html,/data-rebuy-alert="cuts" data-alert-index="0" checked/);
+  assert.doesNotMatch(html,/data-rebuy-alert="cuts" data-alert-index="1" checked/);
+  for(const table of ['rebuyCutTable','rebuyBuyTable'])assert.match(els.rebuyMain.innerHTML,new RegExp(`class="[^"]*rebuy-trade-table[^"]*" id="${table}"`));
+  assert.deepEqual(plain(r),before,'조회로 저장된 설정과 체결을 바꾸지 않는다');
+
+  r.cuts=[{shares:3,price:9850,partial:true,plannedShares:10}];
+  const partialBefore=structuredClone(r);ctx.renderRebuy();html=cutHTML();
+  assert.match(html,/data-cut="0"[^>]*aria-checked="mixed"/);
+  assert.match(html,/계획 10주<small class="sub rebuy-stage-amount">약 9.9만원/);
+  assert.match(html,/data-cut-qty="0"[^>]*value="3"/);
+  assert.match(html,/data-cut-price="0"[^>]*value="9850"/);
+  assert.match(html,/부분 손절 · 남은 7주 · 약 3만원/);
+  assert.deepEqual(plain(r),partialBefore);
+});
+
+test('손절 카드: 미국 달러·옛 완료 기록·재매수 시작 후 손절 중단 표시를 유지한다', () => {
+  const r={...fillFixture(),ticker:'SPY',lowPrice:500,stages:[{name:'25선',price:495,done:false}],cuts:[{shares:10,price:494.5}]};
+  let before=structuredClone(r),view=ui({rebuy:{items:[r]}});
+  assert.match(view.els.rebuyMain.innerHTML,/손절 10주<small class="sub rebuy-stage-amount">약 \$4,945/);
+  assert.match(view.els.rebuyMain.innerHTML,/data-cut-qty="0"[^>]*value="10"/);
+  assert.deepEqual(plain(r),before,'옛 완료 기록에 partial·plannedShares를 생성하지 않는다');
+  r.stages[0]={...r.stages[0],done:true,shares:10,execPrice:494.5};before=structuredClone(r);view=ui({rebuy:{items:[r]}});
+  const cuts=view.els.rebuyMain.innerHTML.split('id="rebuyCutRows">')[1].split('</section>')[0];
+  assert.match(cuts,/재매수를 시작해 남은 손절 회차는 멈췄습니다/);
+  assert.doesNotMatch(cuts,/data-cut="1"/);
+  assert.deepEqual(plain(r),before);
+});
 
 test('누적 손절: 부분 수량만 계산·자산 반영하고 계획과 다음 회차는 유지, 수량 0은 취소한다', () => {
   const r=fillFixture(),calls=[],{ctx,handlers}=ui({rebuy:{items:[r]}},{allocLink:{line:()=>'',holding:()=>null,check:o=>{const key=o.commit();calls.push(['check',key,plain(o.trade)]);o.redraw();},rescale:(...a)=>calls.push(['rescale',...plain(a)]),uncheck:key=>calls.push(['uncheck',key])}});
