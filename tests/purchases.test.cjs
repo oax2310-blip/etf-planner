@@ -117,7 +117,7 @@ test('다른 투자 대상·중복·삭제된 우선순위 id는 제외하고 �
 });
 
 test('매수대기에서도 계획 종목 순서를 바꿔 저장하고 돌파 계획으로 수정해도 그 대상과 기존 보유량을 유지한다',()=>{
-  const r=setup({tracking:true,wait:'25일선',ma:{'25일선':10000}}),{other,move}=linkedAccounts(r);move('b',-1);assert.match(r.html(),/다른 계좌 ETF<\/strong><span class="purchase-holding-tag">계획 종목/);assert.equal(r.inputs('[data-purchase-buy]').length,0);
+  const r=setup({tracking:true,wait:'25일선',ma:{'25일선':10000}}),{other,move}=linkedAccounts(r);move('b',-1);assert.match(r.html(),/다른 계좌 ETF<\/strong><span class="sale-holding-tag">계획 종목/);assert.equal(r.inputs('[data-purchase-buy]').length,0);
   r.edit();r.form.mode.value='lines';r.form.lineStartUnit.value='일선';r.form.lineSet.value='day';r.form.lineBudget.value='10';r.form.lineEnd.value='10000';r.submit();assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c']);assert.match(r.html(),/매수 5주/);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);
 });
 

@@ -7,8 +7,19 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseAllocationSummary,purchaseTargets,purchaseBudget,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsMilestone,earlierSavingsRecord,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,allocationHoldingInfo,allocationHoldingTotal,purchaseAllocationSummary,purchaseTargets,purchaseBudget,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsMilestone,earlierSavingsRecord,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
+test('매수·매도 보유 표시의 평가액·비중·소수 수량은 자산현황 기준이며 시세·환율 대기와 금액·0주 보유를 구분한다',()=>{
+  const item={id:'a',ticker:'AAA',tradeTicker:'111111',shares:.125},dollar={id:'b',ticker:'AAA',shares:2},amount={id:'c',ticker:'111111',amount:10},zero={id:'d',ticker:'111111',shares:0,amount:99};
+  const alloc={total:100,groups:[{id:'g',items:[item,dollar,amount,zero]}]},p={stocks:{'111111':{kind:'국내',close:10000,asOf:'2026-01-02'},AAA:{kind:'해외',close:50,asOf:'2026-01-02'}},fx:{close:1200}},before=JSON.stringify([alloc,p]);
+  let s=c.allocationSummary(alloc,p),info=c.allocationHoldingInfo(item,s);assert.equal(info.value,.125);assert.equal(info.pct,.125);assert.equal(info.quantityText,'보유 0.125주');assert.equal(info.valueText,'0.1만원');assert.equal(info.pctText,'0.13%');
+  assert.equal(c.allocationHoldingInfo(dollar,s).value,12);assert.equal(c.allocationHoldingInfo(amount,s).quantityText,'금액으로 보유 관리');assert.equal(c.allocationHoldingInfo(zero,s).valueText,'0만원');assert.equal(JSON.stringify([alloc,p]),before);
+  assert.equal(c.allocationHoldingTotal([item,dollar,amount,zero].map(it=>c.allocationHoldingInfo(it,s)),s).value,22.125);
+  delete p.stocks['111111'];p.fx=null;s=c.allocationSummary(alloc,p);
+  assert.deepEqual([c.allocationHoldingInfo(item,s).valueText,c.allocationHoldingInfo(item,s).pctText,c.allocationHoldingInfo(item,s).pending],['평가 대기','—','시세 대기']);
+  assert.equal(c.allocationHoldingInfo(dollar,s).pending,'환율 대기');assert.equal(c.allocationHoldingInfo(amount,s).value,10);assert.equal(c.allocationHoldingInfo(zero,s).pending,'');
+  const total=c.allocationHoldingTotal([item,dollar].map(it=>c.allocationHoldingInfo(it,s)),s);assert.deepEqual([total.valueText,total.pctText,total.pendingCount],['평가 대기','—',2]);
+});
 test('매수 우선순위는 연결된 실제 자산 id만 사용하고 조회·정규화·병합은 순서와 기존 회차를 자동 생성·변경하지 않는다',()=>{
   const item={id:'a',ticker:'AAA',tradeTicker:'111111',amount:10,buyPlan:{lines:{names:['25일선'],budget:10},buys:{end:{price:50,shares:2,plannedShares:5,actual:2}}}},other={id:'b',ticker:'AAA',tradeTicker:'222222',shares:0};
   const assets={version:1,allocation:{groups:[{id:'g',items:[other,item,{id:'x',ticker:'BBB',amount:20}]}]}},alloc=assets.allocation,before=JSON.stringify(assets);
