@@ -476,6 +476,7 @@ test('손절 카드: 대기 계획 금액과 실제 누적 수량을 구분하�
   const cutHTML=()=>els.rebuyMain.innerHTML.split('id="rebuyCutRows">')[1].split('</section>')[0];
   let html=cutHTML();
   assert.match(html,/손절<span class="tr-no">1<\/span>/);
+  assert.match(html,/<small class="rebuy-cut-drop">신저점 −1%<\/small><\/span><\/label><div class="stage-price"><span class="price">9900원<\/span><div class="rebuy-stage-tools">/,'하락률은 손절 이름 아래에 두고 가격 아래에는 알림만 남긴다');
   assert.match(html,/계획 10주<small class="sub rebuy-stage-amount">약 9.9만원/);
   assert.match(html,/data-cut-qty="0"[^>]*value=""[^>]*placeholder="0"/,'대기 회차는 예정량을 누적 체결로 보여 주지 않는다');
   assert.match(html,/data-rebuy-alert="cuts" data-alert-index="0" checked/);
