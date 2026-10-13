@@ -118,10 +118,10 @@ function allocationTargets(alloc){
 // ---------- 분할매수(플래너 js/purchases.js) ----------
 // 종목의 buyPlan은 이동평균선 돌파·매수대기·기존 직접 입력이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 점검완료(it.done)와 매수 완료는 별개.
 // ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], startLine?:사용자가 고른 시작선, end?:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}. 목표 가격을 비우면 names의 마지막 선까지 매수한다.
-//    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?}.
+//    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?, tradeTargetId?:첫 반영 자산 id}.
 //    부분 체결 회차는 원래 수량·가격과 잔량 예산을 고정한다. plannedShares 없는 옛 체결은 완료로 읽고, 처음 수정할 때만 계획 수량을 저장한다.
 //    수량은 purchaseFill로 회차 예산 안에서 내림하고, 표시한 수량을 그대로 저장·반영한다. 체결 금액만 고쳐도 수량은 바뀌지 않는다. 옛 기록은 읽을 때 새 필드를 채우지 않는다.
-// ② 직접 입력: stages = [{id, price?, shares?, plannedShares?, date?, condition?, amount(만원), done?, partial?, actual?}] — 첫 체결 때 plannedShares를 고정하고 shares는 누적 체결, 잔량이 있으면 partial=true(done 없음).
+// ② 직접 입력: stages = [{id, price?, shares?, plannedShares?, date?, condition?, amount(만원), done?, partial?, actual?, tradeTargetId?}] — 첫 체결 때 plannedShares·반영 계좌를 고정하고 shares는 누적 체결, 잔량이 있으면 partial=true(done 없음).
 // ③ 매수대기: wait = {line:원하는 이동평균선 이름}. 예산·체결 회차 없이 현재가 ≤ 그때의 이동평균선이면 도달하며 보유량을 바꾸지 않는다.
 //    알림은 notify.stages(개별 예외는 notify.keys.wait). 선 값이 바뀌어도 같은 알림 이력을 쓰고, 선택한 선을 바꾸면 이력을 새로 시작한다.
 // 이동평균선 돌파 단계(재매수 기본 단계와 같음): 시선(60분봉) 'N선', 일선 'N일선', 주선 'N주선', 월선 'N개월선'(기본 25~150, 시작선은 1~400). 시세 파일 ma에 같은 이름으로 들어 있다
@@ -187,21 +187,24 @@ function purchaseFill(row, currency, fx, step=1){
   return {shares, price, actual:Number((shares*price*rate/1e4).toFixed(8))};
 }
 // 추종 ETF: 회차 예산(만원)을 실제 ETF 현재가로 나눠 정수 주수를 내림한다. 예산이 없고 기준 주수만 있으면 기준 주수 × 기준가 × 환율로 예산을 환산한다.
+// target은 매수 우선순위의 첫 자산 항목이다. 기준 코드와 같은 ETF는 회차 기준가, 다른 실제 ETF는 선택한 항목의 현재가·직접 입력 가격을 쓴다.
 // shares·plannedShares는 실제 ETF 주수, price는 기준 가격. tradeTicker·tradePrice·tradeCurrency는 첫 체결 때 고정해 추가 체결·취소도 같은 ETF 단위를 쓴다.
-function purchaseTrackingFill(row, it, prices, fx, currency="USD"){
-  if(!tracksETF(it))return purchaseFill(row,currency,fx,linkStep(it));
-  const q=assetTradeQuote(prices,it);if(!q)return null;
+function purchaseTrackingFill(row, it, prices, fx, currency="USD", target=it){
+  const direct=linkTicker(assetTradeTicker(target))===linkTicker(it?.ticker);
+  if(target===it&&!tracksETF(it))return purchaseFill(row,currency,fx,linkStep(it));
+  const q=direct?{close:plus(row?.price),currency}:assetTradeQuote(prices,target);if(!q?.close)return null;
   let amount=finite(row?.amount);
   if(amount===null){const shares=plus(row?.shares), price=plus(row?.price), rate=currency==="USD"?plus(fx):1;if(!shares||!price||!rate)return null;amount=shares*price*rate/1e4;}
-  const fill=purchaseFill({amount,price:q.close},q.currency,fx);if(!fill)return null;
+  const fill=purchaseFill({amount,price:q.close},q.currency,fx,linkStep(target));if(!fill)return null;
   const raw=plus(row?.price), price=raw?currency==="USD"?Math.round(raw*100)/100:Math.round(raw):null;
-  return {...fill,price,budget:amount,tradeTicker:assetTradeTicker(it),tradePrice:fill.price,tradeCurrency:q.currency};
+  return {...fill,price,budget:amount,tradeTicker:assetTradeTicker(target),tradePrice:fill.price,tradeCurrency:q.currency};
 }
 // 회차 목록(화면·합계·알림 공통): 체결 기록(완료·부분 체결) + 아직 안 산 회차(지금 이동평균 기준).
 // 부분 체결의 잔량 예산을 먼저 남겨 두고, 나머지 예산만 새 회차에 나눈다. 시세·단계·예산이 바뀌어도 부분 체결 잔량은 사라지지 않는다.
 // 각 회차에 최소 1주(실제 추종 ETF도 같은 단위)를 남길 수 있는 최대 회차 수를 고른다. 부족하면 시작~종료 전체 구간에서 회차 간격을 고르게 넓힌다.
 // 체결한 회차도 간격 계산에 포함해 건너뛴 앞 회차를 다시 만들지 않는다. 금액은 최소 매수액을 먼저 확보하고 나머지를 가능한 한 같게 나눈다.
 // trade는 화면·알림이 쓰는 실제 종목·시세·환율·계획 통화. 필요한 시세나 환율이 없으면 기존 균등 예산을 유지하며 수량을 추정하지 않는다.
+// 기준 item으로 전체 계좌 목표·예산을 유지하고 target(없으면 buyPriority 첫 항목)의 실제 가격·단위로 미체결 회차의 수량·최소 매수액을 계산한다.
 function purchaseLineRows(plan, entry, trade={}){
   const lines=plan?.lines, buys=purchaseBuys(plan), names=purchaseLineNames(lines);
   const parse=key=>{if(key==="end")return {line:"목표가",t:0};const m=/^(.+):([0-2])$/.exec(key);return m&&purchaseLineName(m[1])?{line:m[1],t:Number(m[2])}:null;};
@@ -212,10 +215,11 @@ function purchaseLineRows(plan, entry, trade={}){
       ...(planned?{plannedShares:planned,remainingShares:remaining,next:b.next??null,amount:remaining*(plus(b.plannedActual)??plus(b.actual)??0)/(planned||1)}:{})};
   }).filter(Boolean);
   const budget=purchaseBudget(plan,trade), spent=records.reduce((s,r)=>s+r.actual,0), reserved=records.filter(r=>!r.done).reduce((s,r)=>s+r.amount,0), left=Math.max(0,budget-spent-reserved);
-  const levels=purchaseLineLevels(lines,entry), currency=trade.currency||plan?.currency||(["해외","코인"].includes(entry?.kind)?"USD":"KRW"), step=trade.item?linkStep(trade.item):1;
+  const target=trade.target||(trade.item&&trade.allocation?purchaseTargets(trade.allocation,trade.prices,trade.item,plan)[0]?.it:null)||trade.item;
+  const levels=purchaseLineLevels(lines,entry), currency=trade.currency||plan?.currency||(["해외","코인"].includes(entry?.kind)?"USD":"KRW"), step=target?linkStep(target):1;
   let open=left>0?levels.filter(x=>!buys[x.key]):[];
   const amounts=new Map(), costs=new Map(open.map(r=>{
-    const fill=trade.item?purchaseTrackingFill({...r,amount:left},trade.item,trade.prices,trade.fx,currency):purchaseFill({...r,amount:left},currency,trade.fx,step);
+    const fill=trade.item?purchaseTrackingFill({...r,amount:left},trade.item,trade.prices,trade.fx,currency,target):purchaseFill({...r,amount:left},currency,trade.fx,step);
     const price=fill?.tradePrice??fill?.price, rate=(fill?.tradeCurrency||currency)==="USD"?plus(trade.fx):1;
     return [r.key,price&&rate?price*rate*step/1e4:null];
   }));
@@ -290,8 +294,8 @@ function purchaseAlertRules(assets, prices){
     }
     if(plan.lines){
       const entry=prices?.stocks?.[ticker];
-      const trade={item:it,allocation:assets?.allocation,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
-      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade))if(!r.done&&r.price&&purchaseAlertOn(plan,r)&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency)?.shares!==0))
+      const trade={item:it,target:purchaseTargets(assets?.allocation,prices,it,plan)[0]?.it||it,allocation:assets?.allocation,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
+      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade))if(!r.done&&r.price&&purchaseAlertOn(plan,r)&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency,trade.target)?.shares!==0))
         add(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next]);
       continue;
     }
@@ -351,6 +355,13 @@ function purchaseAllocationSummary(alloc, prices, item, plan=item?.buyPlan, summ
   const target=declared??(targets.length?Math.round(targets.reduce((n,v)=>n+v,0)*1e8)/1e8:null), pct=summary.pct(value);
   const gap=target!==null&&summary.base>0?target/100*summary.base-value:null;
   return {rows,value,pct,target,gap,gapPct:gap===null?null:target-pct,buyable:gap===null?null:Math.max(0,gap),base:summary.base};
+}
+// buyPriority는 화살표로 정렬한 자산 항목 id. 같은 투자 대상으로 연결된 항목만 정렬하고 삭제·중복·다른 상품의 id는 읽을 때 무시한다.
+// 미설정·초기화 후에는 계획이 붙은 항목이 첫 순위다. 최상위는 새 회차에만 쓰고 기존 체결 기록은 바꾸지 않는다.
+function purchaseTargets(alloc, prices, item, plan=item?.buyPlan, summary=allocationSummary(alloc,prices)){
+  const rows=purchaseAllocationSummary(alloc,prices,item,plan,summary).rows,priority=Array.isArray(plan?.buyPriority)?plan.buyPriority:[],rank=new Map();
+  for(const id of [...priority,item?.id])if(!rank.has(id))rank.set(id,rank.size);
+  return rows.sort((a,b)=>(rank.get(a.it.id)??Infinity)-(rank.get(b.it.id)??Infinity));
 }
 // 저장한 총 매수 금액은 한도로 유지하고, 아직 시작하지 않은 회차는 전체 계좌의 목표까지 남은 금액 안에서만 배분한다.
 // 목표가 없으면 기존 직접 예산을 그대로 쓴다. 이미 체결한 금액과 부분 체결의 고정 잔량은 보존하며, 계산만으로 저장 예산을 덮어쓰지 않는다.

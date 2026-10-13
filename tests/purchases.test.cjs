@@ -47,6 +47,80 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   return {doc,item,prices,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
 
+function linkedAccounts(r,{ticker=r.item.ticker,tradeTicker='333333',price=20000}={}){
+  const other={id:'b',name:'다른 계좌 ETF',ticker,tradeTicker,shares:5},zero={id:'c',name:'보유량 0인 ETF',ticker:r.item.ticker,tradeTicker:r.item.tradeTicker,shares:0};
+  r.doc.allocation.groups.push({id:'g2',name:'추가 계좌',items:[other,zero]});
+  r.prices.stocks[tradeTicker]={kind:'국내',close:price,asOf:'2026-01-02'};
+  r.render();
+  return {other,zero,move:(id,direction)=>{const b=r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority===id&&Number(x.dataset.purchaseDirection)===direction);assert.ok(b);b.onclick();},ids:()=>Array.from(r.html().matchAll(/data-purchase-holding="([^"]+)"/g),m=>m[1])};
+}
+
+test('매수 화살표는 연결 계좌 순서와 매수 반영 대상·계획 주수를 함께 바꾸고 초기화·다시 그리기는 보유 기록을 보존한다',()=>{
+  const r=setup({tracking:true,budget:12}),{other,zero,move,ids}=linkedAccounts(r),before=JSON.stringify(r.doc),groups=JSON.stringify(r.doc.allocation.groups.map(g=>({id:g.id,items:g.items.map(({buyPlan,...it})=>it)})));
+  assert.deepEqual(ids(),['a','b','c']);assert.match(r.html(),/매수 12주/);
+  move('a',-1);assert.equal(JSON.stringify(r.doc),before,'첫 항목 경계는 저장하지 않음');
+  move('b',-1);assert.deepEqual(ids(),['b','a','c']);assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c']);assert.match(r.html(),/매수 6주/);
+  assert.match(r.html(),/매수 반영 대상<\/b> 자산 배분 › 추가 계좌 › 다른 계좌 ETF/);assert.match(r.html(),/실제 매수 <b>333333<\/b>/);
+  assert.equal(JSON.stringify(r.doc.allocation.groups.map(g=>({id:g.id,items:g.items.map(({buyPlan,...it})=>it)}))),groups);assert.equal(other.buyPlan,undefined);assert.equal(zero.shares,0);assert.equal(r.doc.allocation.trades,undefined);
+  r.edit();assert.match(r.element('linePreview').innerHTML,/6주/);assert.match(r.element('purchaseTargetInfo').innerHTML,/다른 계좌 ETF/);r.submit();assert.deepEqual(ids(),['b','a','c']);
+  const ordered=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),ordered,'조회만으로 순서를 다시 저장하지 않음');
+  r.element('resetPurchasePriority').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'buyPriority'),false);assert.deepEqual(ids(),['a','b','c']);assert.equal(JSON.stringify(r.doc),before);
+});
+
+test('부분·완료 회차는 첫 반영 계좌·가격·수량을 유지하고 우선순위 변경은 미체결 회차에만 반영한다',()=>{
+  const r=setup({tracking:true,budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}}),{other,move}=linkedAccounts(r);
+  move('b',-1);
+  const first=r.inputs('[data-purchase-buy-shares]')[0],key=first.dataset.key,planned=Number(first.attrs.max);first.value='2';first.onchange();
+  const record=JSON.stringify(r.item.buyPlan.buys[key]),trade=JSON.stringify(r.doc.allocation.trades['buy:a:'+key]);assert.equal(other.shares,7);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys[key].tradeTargetId,'b');
+  move('a',-1);assert.equal(JSON.stringify(r.item.buyPlan.buys[key]),record);assert.equal(JSON.stringify(r.doc.allocation.trades['buy:a:'+key]),trade);
+  const fresh=r.inputs('[data-purchase-buy-shares]').find(x=>x.dataset.key!==key),freshKey=fresh.dataset.key;fresh.value='1';fresh.onchange();
+  assert.equal(r.item.shares,11);assert.equal(other.shares,7);assert.equal(r.item.buyPlan.buys[freshKey].tradeTargetId,'a');
+  const partial=r.inputs('[data-purchase-buy-shares]').find(x=>x.dataset.key===key);partial.value=String(planned);partial.onchange();assert.equal(other.shares,5+planned);assert.equal(r.item.shares,11);assert.equal(r.item.buyPlan.buys[key].tradePrice,20000);
+  const done=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key===key);assert.equal(done.checked,true);done.checked=false;done.onchange();assert.equal(other.shares,5);assert.equal(r.item.shares,11);assert.equal(r.doc.allocation.trades['buy:a:'+key],undefined);
+});
+
+test('같은 ETF 코드의 다른 계좌도 화살표로 직접 바꾸며 새로 고른 계좌에만 체결·추가·취소를 반영한다',()=>{
+  const r=setup(),{other,move}=linkedAccounts(r,{tradeTicker:'111111'});delete other.tradeTicker;r.render();
+  move('b',-1);r.change('[data-purchase-buy-shares]',3);assert.equal(other.shares,8);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys.end.tradeTargetId,'b');
+  assert.equal(r.doc.allocation.trades['buy:a:end'].items.length,1);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'b');
+  move('a',-1);r.change('[data-purchase-buy-shares]',8);assert.equal(other.shares,13);assert.equal(r.item.shares,10);
+  r.change('[data-purchase-buy-shares]',0);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
+});
+
+test('수량 입력에서 바로 화살표를 누르면 체결은 기존 계좌에 저장하고 한 번의 클릭으로 다음 대상을 바꾼다',()=>{
+  const r=setup({tracking:true,budget:12}),{other,move}=linkedAccounts(r);move('b',-1);
+  const arrow=r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='a'&&x.dataset.purchaseDirection==='-1'),before=r.html();
+  arrow.onpointerdown({button:0});r.change('[data-purchase-buy-shares]',2);assert.equal(other.shares,7);assert.equal(r.html(),before,'blur 저장 중에는 클릭 대상 버튼을 제거하지 않음');
+  arrow.onclick();assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['a','b','c']);assert.equal(r.item.buyPlan.buys.end.tradeTargetId,'b');assert.equal(other.shares,7);assert.equal(r.item.shares,10);assert.match(r.html(),/부분 체결/);
+});
+
+test('기존 직접 입력 회차도 계좌·ETF를 바꾸고 추가 체결은 고정하며 취소하면 원래 기준 수량과 선택 필드를 복원한다',()=>{
+  const r=setup({tracking:true,manual:true}),{other,move}=linkedAccounts(r),original=JSON.stringify(r.item.buyPlan.stages);
+  move('b',-1);assert.match(r.html(),/매수 4주/);r.change('[data-purchase-shares]',2);assert.equal(other.shares,7);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.stages[0].sourceShares,8);assert.equal(r.item.buyPlan.stages[0].tradeTargetId,'b');
+  move('a',-1);r.change('[data-purchase-shares]',4);assert.equal(other.shares,9);assert.equal(r.item.shares,10);r.change('[data-purchase-done]',false);
+  assert.equal(other.shares,5);assert.equal(JSON.stringify(r.item.buyPlan.stages),original);assert.equal(r.doc.allocation.trades,undefined);
+});
+
+test('선택한 ETF의 시세·환율을 기다리며 입력·알림·미리보기도 같은 수량을 쓰고 다른 계좌 시세로 대체하지 않는다',()=>{
+  const r=setup({tracking:true,budget:10}),{move}=linkedAccounts(r);r.item.buyPlan.notify={stages:true};delete r.prices.stocks['333333'];move('b',-1);
+  assert.equal(r.input('[data-purchase-buy]').disabled,true);assert.match(r.html(),/실제 ETF 가격 대기/);assert.doesNotMatch(r.html(),/매수 10주/);
+  r.prices.stocks['333333']={kind:'해외',close:20,asOf:'2026-01-02'};r.doc.allocation.groups[1].items[0].tradeTicker='BBB';r.prices.stocks.BBB=r.prices.stocks['333333'];r.prices.fx=null;r.render();assert.equal(r.input('[data-purchase-buy]').disabled,true);
+  r.prices.fx={close:1000};r.render();assert.match(r.html(),/매수 5주/);assert.equal(r.rules().length,1);
+  r.prices.stocks.BBB.close=200;r.render();assert.match(r.html(),/매수 0주/);assert.equal(r.input('[data-purchase-buy]').disabled,true);assert.equal(r.rules().length,0);
+});
+
+test('다른 투자 대상·중복·삭제된 우선순위 id는 제외하고 없어진 체결 계좌를 다른 계좌로 바꿔 반영하지 않는다',()=>{
+  const r=setup({tracking:true,budget:12}),{other,move,ids}=linkedAccounts(r);r.doc.allocation.groups[1].items.push({id:'x',name:other.name,ticker:'444444',shares:99});
+  r.item.buyPlan.buyPriority=['x','b','b','missing','a'];const before=JSON.stringify(r.doc);r.render();assert.deepEqual(ids(),['b','a','c']);assert.equal(JSON.stringify(r.doc),before);
+  r.change('[data-purchase-buy-shares]',2);assert.equal(other.shares,7);r.doc.allocation.groups[1].items=r.doc.allocation.groups[1].items.filter(x=>x.id!=='b');r.render();assert.deepEqual(ids(),['a','c']);
+  const saved=JSON.stringify(r.doc);r.change('[data-purchase-buy-shares]',3);assert.equal(JSON.stringify(r.doc),saved);assert.equal(r.item.shares,10);r.change('[data-purchase-buy-shares]',0);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
+});
+
+test('매수대기에서도 계획 종목 순서를 바꿔 저장하고 돌파 계획으로 수정해도 그 대상과 기존 보유량을 유지한다',()=>{
+  const r=setup({tracking:true,wait:'25일선',ma:{'25일선':10000}}),{other,move}=linkedAccounts(r);move('b',-1);assert.match(r.html(),/다른 계좌 ETF<\/strong><span class="purchase-holding-tag">계획 종목/);assert.equal(r.inputs('[data-purchase-buy]').length,0);
+  r.edit();r.form.mode.value='lines';r.form.lineStartUnit.value='일선';r.form.lineSet.value='day';r.form.lineBudget.value='10';r.form.lineEnd.value='10000';r.submit();assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c']);assert.match(r.html(),/매수 5주/);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);
+});
+
 test('연결 보유 목록은 추종 ETF·실제 코드 보유 계좌 모두를 보여 주고 보유량·체결·시세 변경도 그대로 읽는다',()=>{
   const r=setup({tracking:true,budget:10}),other={id:'b',name:'다른 계좌 <보유>',ticker:'111111',tradeTicker:'333333',shares:5},direct={id:'c',name:'직접 보유 계좌',ticker:'A222222',shares:20},unrelated={id:'x',name:r.item.name,ticker:'444444',shares:50};
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,direct,unrelated]});r.prices.stocks['333333']={kind:'국내',close:30000,asOf:'2026-01-02'};r.prices.stocks.A222222={kind:'국내',close:10000,asOf:'2026-01-02'};

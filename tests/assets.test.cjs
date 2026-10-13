@@ -7,8 +7,24 @@ const vm = require('node:vm');
 // js/assets-calc.js를 화면 없이 불러온다(숫자는 모두 테스트용 가짜 값)
 // 같은 realm에서 함수 안에 불러 맨 위 이름이 전역으로 새지 않게 한다(deepEqual이 배열·객체를 그대로 비교하도록)
 const c = vm.runInThisContext(`(function(){${fs.readFileSync(path.join(__dirname, '../js/ma-ladder.js'), 'utf8')}\n;\n${fs.readFileSync(path.join(__dirname, '../js/assets-calc.js'), 'utf8')}
-return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseAllocationSummary,purchaseBudget,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsMilestone,earlierSavingsRecord,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
+return {parseAssetNumber,assetNumberText,assetDividendFx,pnlDollarKrw,pnlDollarFx,pnlEntriesTotal,monthPnl,ledgerAccounts,averageYearReturn,parseAllocationTotal,allocationTotalText,itemValue,fillBases,resetBase,cashValue,allocationTargets,allocationSummary,purchaseAllocationSummary,purchaseTargets,purchaseBudget,purchaseSummary,purchaseLineLevels,purchaseLineRows,purchaseFill,purchaseTrackingFill,assetTradeQuote,purchaseDirection,purchaseAlertRules,purchaseQuoteKind,monthTotals,yearSummary,simulateSavings,savingsMilestone,earlierSavingsRecord,setSavingsActual,savingsStage,cleanAssets,mergeAssets,assetsBlank,ymNum,ymText,missingActual,linkTicker,linkedItems,linkSummary,tradeRows,applyTrade,revertTrade,rescaleTrade};})()`);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
+test('매수 우선순위는 연결된 실제 자산 id만 사용하고 조회·정규화·병합은 순서와 기존 회차를 자동 생성·변경하지 않는다',()=>{
+  const item={id:'a',ticker:'AAA',tradeTicker:'111111',amount:10,buyPlan:{lines:{names:['25일선'],budget:10},buys:{end:{price:50,shares:2,plannedShares:5,actual:2}}}},other={id:'b',ticker:'AAA',tradeTicker:'222222',shares:0};
+  const assets={version:1,allocation:{groups:[{id:'g',items:[other,item,{id:'x',ticker:'BBB',amount:20}]}]}},alloc=assets.allocation,before=JSON.stringify(assets);
+  assert.deepEqual(c.purchaseTargets(alloc,null,item).map(r=>r.it.id),['a','b']);assert.equal(JSON.stringify(assets),before);
+  item.buyPlan.buyPriority=['x','missing','b','b','a'];const selected=JSON.stringify(assets);assert.deepEqual(c.purchaseTargets(alloc,null,item).map(r=>r.it.id),['b','a']);assert.equal(JSON.stringify(assets),selected);
+  const cleaned=c.cleanAssets(assets);assert.deepEqual(cleaned.allocation.groups[0].items[1].buyPlan,item.buyPlan);
+  const merged=c.mergeAssets(assets,JSON.parse(selected),JSON.parse(selected)).doc;assert.deepEqual(merged.allocation.groups[0].items[1].buyPlan,item.buyPlan);
+});
+test('우선순위 ETF의 최소 매수액이 공통 회차·합계·알림 계산에 적용되고 기준 티커와 전체 계좌 비중은 유지된다',()=>{
+  const item={id:'a',ticker:'AAA',tradeTicker:'111111',shares:10,buyPlan:{currency:'USD',lines:{names:['25일선','32일선'],budget:40},notify:{stages:true},buyPriority:['b','a']}},other={id:'b',ticker:'AAA',tradeTicker:'222222',shares:2};
+  const alloc={total:100,groups:[{id:'g',items:[item,other]}]},p={stocks:{AAA:{kind:'해외',asOf:'2026-01-02',close:9,ma:{'25일선':10,'32일선':20}},'111111':{kind:'국내',asOf:'2026-01-02',close:10000},'222222':{kind:'국내',asOf:'2026-01-02',close:200000}},fx:{close:1000}},trade={item,allocation:alloc,prices:p,fx:1000,currency:'USD'},before=JSON.stringify(alloc);
+  const rows=c.purchaseLineRows(item.buyPlan,p.stocks.AAA,trade),summary=c.purchaseSummary(item.buyPlan,p.stocks.AAA,trade),rules=c.purchaseAlertRules({allocation:alloc},p);
+  assert.equal(rows.length,2);assert.equal(summary.count,2);assert.deepEqual(rules.map(r=>r.targetPrice),rows.map(r=>r.price));assert.ok(rules.every(r=>r.ticker==='AAA'));assert.equal(c.purchaseAllocationSummary(alloc,p,item).pct,50);
+  assert.ok(rows.every(r=>c.purchaseTrackingFill(r,item,p,1000,'USD',other).shares===1));assert.equal(JSON.stringify(alloc),before);
+  delete item.buyPlan.buyPriority;assert.equal(c.purchaseLineRows(item.buyPlan,p.stocks.AAA,trade).length,4);
+});
 test('분할매수 보유 비중은 코드가 같은 모든 계좌를 합산하고 이름·분류만 같은 다른 상품은 제외한다',()=>{
   const item={id:'a',name:'같은 이름',ticker:' A111111 ',shares:10,target:15},other={id:'b',ticker:'111111',amount:30,target:20};
   const alloc={total:200,classes:[],cash:[],groups:[{id:'g1',classId:'stock',items:[item]},{id:'g2',classId:'stock',items:[other,{id:'x',name:'같은 이름',ticker:'222222',amount:60}]}]},p={stocks:{' A111111 ':{kind:'국내',asOf:'2026-01-02',close:10000},A111111:{kind:'국내',asOf:'2026-01-02',close:10000}}};
