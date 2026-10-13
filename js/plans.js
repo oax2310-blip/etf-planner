@@ -446,10 +446,10 @@ function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=fo
 $("addPlanBtn").onclick=()=>openPlanDialog();
 $("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
-const nameDialog=$("nameDialog"); let namingId=null; // 카드 이름만 고치는 창(규칙은 renderPlans 위 주석)
-function openNameDialog(pid){const p=state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;const input=$("nameForm").elements.cardName;$("nameTitle").textContent=`${p.ticker} 카드 이름`;input.value=p.cardName??"";input.placeholder=String(p.ticker||"").trim();nameDialog.showModal();input.focus();input.select();}
+const nameDialog=$("nameDialog"); let namingId=null,namingSave=null; // 카드 이름만 고치는 창(규칙은 renderPlans 위 주석). 분할매수는 저장 콜백으로 자기 계획만 수정한다.
+function openNameDialog(pid,options=null){const p=options||state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;namingSave=typeof options?.onSave==="function"?options.onSave:null;const input=$("nameForm").elements.cardName;$("nameTitle").textContent=`${p.ticker} 카드 이름`;input.value=p.cardName??"";input.placeholder=String(p.ticker||"").trim();nameDialog.showModal();input.focus();input.select();}
 nameDialog.querySelector("[data-close-name]").onclick=()=>nameDialog.close();
-$("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.plans.find(x=>x.id===namingId),v=String(e.target.elements.cardName.value).trim();nameDialog.close();if(!p||v===String(p.cardName||"").trim())return;if(v)p.cardName=v;else delete p.cardName;save();renderPlans();});
+$("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.plans.find(x=>x.id===namingId),v=String(e.target.elements.cardName.value).trim(),commit=namingSave;namingSave=null;nameDialog.close();if(commit){commit(v);return;}if(!p||v===String(p.cardName||"").trim())return;if(v)p.cardName=v;else delete p.cardName;save();renderPlans();});
 // 저장: 종목·자동 기준선·통화를 바꿨거나 새 계획이면 auto를 지금 시세 기준으로 다시 표시한다(창에서 채운 값과 같음 — 창에서 직접 고친 기준가는 그 칸 시세가 다음에 바뀔 때까지 둠).
 // 평가액만 넣은 계획은 평가액·종목·통화를 바꿨거나 새 계획일 때만 valueBase를 지금 시세로 다시 둔다(시세가 없으면 delete). 수량을 넣거나 평가액을 비우면 delete.
 // 빈 자동 기준가는 저장하지 않고 다음 시세를 기다린다. 이전 auto 표시도 비워 같은 값의 시세가 다시 들어오면 채울 수 있게 한다.
