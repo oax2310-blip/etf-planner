@@ -46,8 +46,9 @@ test('명시한 회차 가격을 기다리는 동안 단계·배분은 유지하
 
 test('단계 비중은 남은 금액을 회차에 배분하고 완료·부분 체결량과 예약 잔량은 보존한다',()=>{
   const ctx=load(),r=fixture();r.stages[0].weight=70;r.stages.push({name:'125선',price:10500,rounds:1,weight:30});
+  r.cuts[0].price=11000;
   r.range={startLine:'80선',lastLine:'125선',lastRound:1,names:['80선','125선'],targetPct:100};
-  let s=ctx.rebuySummary(r);s.tranches.slice(0,3).forEach(x=>near(x.amount,231000));near(s.tranches[3].amount,297000);
+  let s=ctx.rebuySummary(r);s.tranches.slice(0,3).forEach(x=>near(x.amount,1100000*.7/3));near(s.tranches[3].amount,330000);
   r.stages[0].buys=[{shares:4,price:10100,partial:true,plannedShares:10}];r.planned=plain(s.planKeys);
   const before=JSON.stringify(r.stages[0].buys);s=ctx.rebuySummary(r);
   near(s.tranches[0].amount,60600);near(s.tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0),s.rest);
@@ -86,6 +87,15 @@ function editing(r){
   ctx.draft={source:r,original,base,stages:plain(original),invalid:new Set()};vm.runInContext('rebuyStageDraft=draft',ctx);
   return {ctx,draft:ctx.draft,error:()=>elements.rebuyStagesError?.textContent,saves:()=>saves};
 }
+
+test('매수 시작 뒤 범위를 직접 바꾸면 기존 기록을 유지하고 새 범위의 실제 종료선을 다시 고정한다',()=>{
+  const r=fixture(9000);r.stages.push({name:'125선',price:9500});r.stages[0].buys=[{shares:2,price:9000}];
+  r.range={startLine:'80선',lastLine:'125선',names:['80선','125선'],lastRound:3,targetPct:100};r.plannedEndLine='80선';
+  const before=plain(r),{ctx,draft,saves}=editing(r);draft.range={...r.range,lastRound:2};
+  assert.equal(ctx.saveRebuyStageDraft(),true);assert.equal(saves(),1);assert.equal(r.plannedEndLine,'125선');
+  assert.deepEqual(plain(r.planned).filter(([name])=>name==='125선'),[['125선',0],['125선',1]]);
+  assert.deepEqual(plain(r.stages[0].buys),before.stages[0].buys);assert.deepEqual(r.cuts,before.cuts);
+});
 
 test('추가·수정·삭제·순서 변경은 저장 때만 적용하고 손절·매수·메모·알림 설정을 보존한다',()=>{
   const r=fixture();r.note='가상 메모';r.stages[0].notify=true;r.stages[0].buys=[{shares:2,price:10100}];r.stages.push({name:'125선',price:10500});r.planned=[['80선',0]];

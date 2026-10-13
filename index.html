@@ -14,9 +14,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=156"></script>
-  <link rel="stylesheet" href="css/app.css?v=156" />
-  <link rel="stylesheet" href="css/purchases.css?v=156" />
+  <script src="js/theme.js?v=157"></script>
+  <link rel="stylesheet" href="css/app.css?v=157" />
+  <link rel="stylesheet" href="css/purchases.css?v=157" />
 </head>
 <body>
   <header class="top">
@@ -145,15 +145,15 @@
   <dialog id="rebuyStagesDialog" aria-labelledby="rebuyStagesTitle"><form method="dialog" class="dialog-inner" id="rebuyStagesForm">
     <div class="dialog-head"><h2 id="rebuyStagesTitle">재매수 범위 편집</h2><button class="btn ghost" type="button" data-close-rebuy-stages>닫기</button></div>
     <div class="rebuy-stage-content">
-      <p class="hint">시작·마지막 평균선과 마지막 매수 회차를 정하세요.</p>
+      <p class="hint">시작·마지막 평균선으로 최대 범위와 마지막 매수 회차를 정하세요.</p>
       <section class="purchase-ladder">
         <div class="purchase-line-bounds">
           <label class="field"><span>시작 평균선</span><div class="hold-input"><input name="startPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-label="재매수 시작 평균선 기간" required><select name="startUnit" aria-label="재매수 시작 평균선 시간 단위"><option value="선">시선</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option></select></div></label>
-          <label class="field"><span>마지막 평균선</span><div class="hold-input"><input name="lastPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-label="재매수 마지막 평균선 기간" required><select name="lastUnit" aria-label="재매수 마지막 평균선 시간 단위"><option value="선">시선</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option></select></div></label>
+          <label class="field"><span>마지막 평균선 (상한)</span><div class="hold-input"><input name="lastPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-label="재매수 마지막 평균선 기간" required><select name="lastUnit" aria-label="재매수 마지막 평균선 시간 단위"><option value="선">시선</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option></select></div></label>
         </div>
         <div class="purchase-ladder-grid">
           <label class="field"><span>평균선 단계</span><select name="lineSet"><option value="custom">기존 단계 유지</option><option value="hour">시선 · 60분봉</option><option value="day">일선</option><option value="week">주선</option><option value="month">월선</option><option value="all">시·일·주·월선</option></select></label>
-          <label class="field"><span>마지막 선 매수 회차</span><select name="lastRound"><option value="1">1회차까지</option><option value="2">2회차까지</option><option value="3">3회차까지</option></select></label>
+          <label class="field"><span>실제 마지막 선 매수 회차</span><select name="lastRound"><option value="1">1회차까지</option><option value="2">2회차까지</option><option value="3">3회차까지</option></select></label>
           <label class="field"><span>재매수 비중 (%)</span><input name="targetPct" type="number" min="0.01" max="100" step="any" inputmode="decimal" required><small class="field-hint">손절한 금액 중 재매수할 비중</small></label>
           <label class="field"><span>매수 조건</span><select name="condition"><option value="">기존 조건 유지</option><option value="up">가격 이상 도달</option><option value="down">가격 이하 도달</option></select></label>
         </div>
@@ -168,7 +168,7 @@
         <label class="field"><span>마지막 선 2회차 가격</span><input name="price1" type="number" min="0" step="any" inputmode="decimal" placeholder="자동 계산"></label>
         <label class="field"><span>마지막 선 3회차 가격</span><input name="price2" type="number" min="0" step="any" inputmode="decimal" placeholder="자동 계산"></label>
       </div></details>
-      <p class="hint">평균 손절가보다 높아도 선택 범위 안의 회차는 유지합니다. 범위 변경은 기존 체결·손절 기록과 단계별 설정을 보존합니다.</p>
+      <p class="hint">평균 손절가로 실제 마지막 선을 고릅니다. 그 선의 지정 회차는 손절가보다 높아도 유지하며 기존 체결·손절 기록과 단계별 설정을 보존합니다.</p>
     </div>
     <p class="alert-form-error" id="rebuyStagesError" role="alert"></p>
     <div class="dialog-foot"><button class="btn" type="button" data-close-rebuy-stages>취소</button><button class="btn primary" type="submit">저장</button></div>
@@ -238,22 +238,22 @@
 
   <dialog id="futurePlanDialog" aria-labelledby="futurePlanTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=156"></script>
-  <script src="js/core.js?v=156"></script>
-  <script src="js/price-collection.js?v=156"></script>
-  <script src="js/sync.js?v=156"></script>
-  <script src="js/prices.js?v=156"></script>
-  <script src="js/assets-calc.js?v=156"></script>
-  <script src="js/assets-store.js?v=156"></script>
-  <script src="js/alloc-link.js?v=156"></script>
-  <script src="js/purchases.js?v=156"></script>
-  <script src="js/trade-alerts.js?v=156"></script>
-  <script src="js/plans.js?v=156"></script>
-  <script src="js/futures.js?v=156"></script>
-  <script src="js/rebuy.js?v=156"></script>
-  <script src="js/alerts.js?v=156"></script>
-  <script src="js/alert-target.js?v=156"></script>
-  <script src="js/push.js?v=156"></script>
+  <script src="js/ma-ladder.js?v=157"></script>
+  <script src="js/core.js?v=157"></script>
+  <script src="js/price-collection.js?v=157"></script>
+  <script src="js/sync.js?v=157"></script>
+  <script src="js/prices.js?v=157"></script>
+  <script src="js/assets-calc.js?v=157"></script>
+  <script src="js/assets-store.js?v=157"></script>
+  <script src="js/alloc-link.js?v=157"></script>
+  <script src="js/purchases.js?v=157"></script>
+  <script src="js/trade-alerts.js?v=157"></script>
+  <script src="js/plans.js?v=157"></script>
+  <script src="js/futures.js?v=157"></script>
+  <script src="js/rebuy.js?v=157"></script>
+  <script src="js/alerts.js?v=157"></script>
+  <script src="js/alert-target.js?v=157"></script>
+  <script src="js/push.js?v=157"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializePush();</script>
 </body>
 </html>
