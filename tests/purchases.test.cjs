@@ -15,7 +15,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const prices={fx:{close:fx,asOf:'2026-01-02'},stocks:{[ticker]:{kind:currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
   if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
-  function element(){return {dataset:{},value:'',classList,setAttribute(){},append(){},focus(){},textContent:''};}
+  function element(){return {dataset:{},value:'',classList,setAttribute(){},append(){},focus(){},textContent:'',addEventListener(){},querySelectorAll:selector=>document.querySelectorAll(selector)};}
   const document={body:element(),createElement:element,getElementById(id){
     if(!elements.has(id)){
       const e=element();let html='';Object.defineProperty(e,'innerHTML',{get:()=>html,set(value){
@@ -31,21 +31,42 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
       }});elements.set(id,e);
     }
     return elements.get(id);
-  },querySelectorAll(selector){return [...rendered.values()].flat().filter(node=>selector.split(',').some(s=>{
+  },addEventListener(){},querySelectorAll(selector){return [...rendered.values()].flat().filter(node=>selector.split(',').some(s=>{
     const attr=/^\s*\[([\w-]+)\]\s*$/.exec(s);return attr&&Object.hasOwn(node.attrs,attr[1]);
   }));}};
   const purchaseForm=document.getElementById('purchaseForm');
   for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','note'])purchaseForm[name]=element();
   const dialog=document.getElementById('purchaseDialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
-  const store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[]};
+  const listeners=new Set(),store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[],start(){},subscribe:fn=>listeners.add(fn)};
   const alerts=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
-    tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false})};
+    tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {doc,item,prices,change,alerts,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
+  return {doc,item,prices,change,alerts,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
+
+test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시하고 계좌 변경 알림에도 갱신한다',()=>{
+  const r=setup({budget:50,tracking:true});r.item.target=40;
+  const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
+  r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,{id:'x',name:r.item.name,ticker:'333333',amount:50}]});
+  const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
+  assert.match(r.html(),/전체 계좌 · 현재 25% \/ 목표 40% · 목표까지 15만원/);assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
+  other.amount=20;r.emit();assert.match(r.html(),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/매수 10주/);
+  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40%/);assert.match(r.html(),/목표 도달/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  r.doc.allocation.total=200;r.emit();assert.match(r.html(),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/매수 20주/);assert.equal(r.item.buyPlan.lines.budget,50);
+});
+test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
+  const r=setup({budget:50,tracking:true});r.doc.allocation.groups[0].target=40;
+  const other={id:'b',ticker:'111111',tradeTicker:'222222',amount:15};r.doc.allocation.groups[0].items.push(other);
+  r.initialize();r.edit();assert.equal(r.form.lineTarget.placeholder,'40 (자산 목표)');
+  assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
+  r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,15);assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
+  r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
+  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(r.html(),/현재 40% \/ 목표 40%/);
+  r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(other.amount,15);assert.match(r.html(),/현재 25%/);
+});
 
 test('시작선 150시선: 앞선 시선은 제외하고 선택한 시선부터 3등분·수량·도달 알림을 만든다',()=>{
   const names=['25선','32선','42선','60선','80선','125선','150선','25일선','32일선'];
