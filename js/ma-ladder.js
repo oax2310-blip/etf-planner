@@ -13,6 +13,18 @@ function movingLineName(name){
   return `${Number(m[1])}${unit}`;
 }
 const movingLineUnit = name => movingLineName(name).replace(/^\d+/,"");
+// 분할매수·재매수 공통 범위: 시작·마지막 선을 포함하고 시·일·주·월 순으로 그 사이의 선택 단계만 남긴다.
+// 없는 경계선은 포함하되 앞서는 종료선은 거절한다. 입력 목록의 순서는 유지하고 조회 때 저장하지 않는다.
+function movingLineRange(names,start,last=null){
+  const line=movingLineName(start),unit=movingLineUnit(line),at=MA_UNITS.indexOf(unit);
+  if(!line||!names.some(n=>movingLineUnit(n)===unit))return [];
+  const after=names.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))>at||movingLineUnit(n)===unit&&parseInt(n)>parseInt(line));
+  if(last===null)return [line,...after];
+  const end=movingLineName(last),endUnit=movingLineUnit(end),endAt=MA_UNITS.indexOf(endUnit);
+  if(!end||endAt<at||endAt===at&&parseInt(end)<parseInt(line))return [];
+  if(end===line)return [line];
+  return [line,...after.filter(n=>MA_UNITS.indexOf(movingLineUnit(n))<endAt||movingLineUnit(n)===endUnit&&parseInt(n)<parseInt(end)),end];
+}
 function completeMovingStages(stages){
   const names=new Set(stages.map(x=>movingLineName(x.name)));
   return [...stages,...MA_LINES.filter(name=>!names.has(name)).map(name=>({name,price:0,done:false,execPrice:null,shares:null}))];

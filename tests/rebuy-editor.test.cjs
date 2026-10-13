@@ -46,6 +46,7 @@ test('명시한 회차 가격을 기다리는 동안 단계·배분은 유지하
 
 test('단계 비중은 남은 금액을 회차에 배분하고 완료·부분 체결량과 예약 잔량은 보존한다',()=>{
   const ctx=load(),r=fixture();r.stages[0].weight=70;r.stages.push({name:'125선',price:10500,rounds:1,weight:30});
+  r.range={startLine:'80선',lastLine:'125선',lastRound:1,names:['80선','125선'],targetPct:100};
   let s=ctx.rebuySummary(r);s.tranches.slice(0,3).forEach(x=>near(x.amount,231000));near(s.tranches[3].amount,297000);
   r.stages[0].buys=[{shares:4,price:10100,partial:true,plannedShares:10}];r.planned=plain(s.planKeys);
   const before=JSON.stringify(r.stages[0].buys);s=ctx.rebuySummary(r);
@@ -98,12 +99,13 @@ test('추가·수정·삭제·순서 변경은 저장 때만 적용하고 손절
 });
 
 test('중복·빈 단계·기록 삭제·동시 변경은 저장을 거절하고 기존 데이터와 동기화 변경을 보존한다',()=>{
-  for(const mode of ['duplicate','empty','delete','concurrent']){
+  for(const mode of ['duplicate','empty','delete','concurrent','replace']){
     const r=fixture();r.stages[0].buys=[{shares:2,price:10100}];const {ctx,draft,saves,error}=editing(r);
     if(mode==='duplicate')draft.stages.push(plain(draft.stages[0]));
     if(mode==='empty')draft.stages.push({name:'',price:0});
     if(mode==='delete')draft.stages=[{name:'125선',price:10500}];
     if(mode==='concurrent')r.stages[0].buys[0].shares=3;
+    if(mode==='replace')ctx.state.rebuy.items[0]=plain(r);
     const before=JSON.stringify(r);assert.equal(ctx.saveRebuyStageDraft(),false,mode);assert.equal(JSON.stringify(r),before);assert.equal(saves(),0);assert.ok(error());
   }
 });
