@@ -45,3 +45,28 @@
   .purchase-head{padding:12px}.purchase-progress{gap:6px 8px}.purchase-line-bounds,.purchase-line-preview{grid-template-columns:minmax(0,1fr)}.purchase-line-set,.purchase-line-budget{grid-column:1/-1}.purchase-ladder-foot{flex-direction:column;align-items:stretch}
   .purchase-wait-grid{grid-template-columns:minmax(0,1fr)}.purchase-wait-prices{gap:8px;padding:10px}.purchase-wait-prices strong{font-size:15px}
 }
+
+/* 재매수도 공통 단계 카드·입력·저장/취소를 쓰며 긴 목록은 창 안에서만 스크롤한다. */
+#rebuyStagesDialog .dialog-inner{display:flex;flex-direction:column;max-height:92vh;max-height:92dvh;overflow:hidden}
+#rebuyStagesDialog .dialog-head,#rebuyStagesDialog .dialog-foot,#rebuyStagesError{flex:none}
+.rebuy-stage-content{min-height:0;overflow:auto;overscroll-behavior:contain;margin-top:16px;padding:3px}
+.rebuy-stage-tools{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.rebuy-stage{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+.rebuy-stage>b{grid-column:1/3;align-self:center;overflow-wrap:anywhere}
+.rebuy-stage .stage-editor-actions{grid-column:3;grid-row:1;display:flex;gap:4px;justify-content:flex-end}
+.rebuy-stage input,.rebuy-stage select{min-height:40px}
+.rebuy-stage input[type=number]{appearance:textfield;-moz-appearance:textfield}.rebuy-stage input::-webkit-inner-spin-button,.rebuy-stage input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.rebuy-stage select{width:100%;min-width:0;padding:6px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);font-size:13px}
+.rebuy-stage .hold-input{display:flex}.rebuy-stage .hold-input input{width:62px;flex:none}.rebuy-stage .hold-input select{flex:1}
+.rebuy-stage .rebuy-condition-field{grid-column:2/4}
+.rebuy-stage-preview{grid-column:1/-1;color:var(--text-3);font-size:11.5px;line-height:1.6;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.rebuy-stage [hidden]{display:none}.rebuy-stage-edit{flex:none}.rebuy-stage-content .hint{word-break:keep-all}
+@media(max-width:700px){
+  .rebuy-stage{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rebuy-stage>b{grid-column:1}.rebuy-stage .stage-editor-actions{grid-column:2}
+  .rebuy-stage .rebuy-line-field{grid-column:1/-1}.rebuy-stage .rebuy-condition-field{grid-column:2}
+  .rebuy-stage input,.rebuy-stage select,.rebuy-stage .stage-editor-actions .btn{min-height:44px}
+  .rebuy-stage .stage-editor-actions .btn{min-width:44px;padding:6px 8px}
+  #rebuyStagesDialog .dialog-head h2{font-size:17px}#rebuyStagesDialog .dialog-inner{padding:16px}
+  #rebuyStagesDialog .dialog-foot{margin-top:14px}.rebuy-stage-tools .btn{min-height:44px}
+}

@@ -174,7 +174,7 @@ test('재매수 시작 뒤 손절·이탈은 멈추고 완료 단계·다 채운
   assert.ok(rules.every(x=>!x.label.includes('손절')&&!x.label.includes('이탈')&&x.label!=='재매수 25선'));
   assert.ok(rules.some(x=>x.label==='재매수 25일선'));
   r.stages[1].price=11000;r.stages[0].done=false;
-  assert.ok(!ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).some(x=>x.label==='재매수 25일선'));
+  assert.ok(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).some(x=>x.label==='재매수 25일선'),'평균 손절가보다 높은 기준가도 설정한 매수 알림을 유지한다');
 });
 // 데이터 저장소 scripts/ma_alerts.py의 TRADE_LABEL_RE와 같게 둔다 — 수집 작업은 라벨 하나라도 거부하면 연결 알림 전체를 보내지 않는다
 const STAGE_LABEL='(?:[1-9]\\d{0,2}(?:일선|주선|개월선|분봉|단계|선)(?: [23]차)?)';

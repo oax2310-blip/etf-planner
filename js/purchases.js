@@ -403,14 +403,13 @@ function renderLines(){
 }
 function renderPurchaseDraft(){
   const stages=purchaseDraft.stages||[], it=pickedItem()?.it, cur=draftCurrency(), unit=unitOf(it);
-  el("purchaseStageRows").innerHTML=stages.map((stage,i)=>`<div class="purchase-stage${stage.done?" done":""}"><b>${i+1}차${purchaseStageRecorded(stage)?`<small>${stage.done?"매수 완료":"부분 체결"}</small>`:""}</b>
-    <label>${tracksETF(it)?"기준 티커 가격":"매수 가격"} (${cur==="USD"?"$":"원"})<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="price" data-stage="${i}" value="${finite(stage.price)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
+  el("purchaseStageRows").innerHTML=stages.map((stage,i)=>tradeStageEditorCard(`${i+1}차${purchaseStageRecorded(stage)?`<small>${stage.done?"매수 완료":"부분 체결"}</small>`:""}`,
+    `<label>${tracksETF(it)?"기준 티커 가격":"매수 가격"} (${cur==="USD"?"$":"원"})<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="price" data-stage="${i}" value="${finite(stage.price)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
     <label>${tracksETF(it)?purchaseStageRecorded(stage)?"실제 ETF 계획 수량":"기준 티커 수량":"계획 수량"} (${qtyUnit(it).trim()})<input type="number" min="0" step="${unit<1?"any":"1"}" inputmode="decimal" data-purchase-field="shares" data-stage="${i}" value="${purchasePlannedShares(stage)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
     <label>예정액 (만원)<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="amount" data-stage="${i}" value="${finite(stage.amount)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
-    <button class="btn mini ghost" type="button" data-purchase-remove="${i}" aria-label="${i+1}차 회차 삭제">삭제</button>
     <label class="date-field">매수 예정일<input type="date" data-purchase-field="date" data-stage="${i}" value="${escA(stage.date||"")}"></label>
-    <label class="condition-field">매수 조건<input maxlength="100" placeholder="예: 기준가 도달" data-purchase-field="condition" data-stage="${i}" value="${escA(stage.condition||"")}"></label>
-    </div>`).join("");
+    <label class="condition-field">매수 조건<input maxlength="100" placeholder="예: 기준가 도달" data-purchase-field="condition" data-stage="${i}" value="${escA(stage.condition||"")}"></label>`,
+    `<button class="btn mini ghost" type="button" data-purchase-remove="${i}" aria-label="${i+1}차 회차 삭제">삭제</button>`,stage.done?"done":"")).join("");
   form().manualCurrency.disabled=stages.some(purchaseStageRecorded);
   // 가격·수량을 고치면 예정액 = 가격 × 수량(달러는 × 지금 환율)으로 맞춘다. 예정액만 따로 고쳐도 된다.
   all("[data-purchase-field]").forEach(x=>x.oninput=()=>{const i=Number(x.dataset.stage),stage=stages[i],key=x.dataset.purchaseField;

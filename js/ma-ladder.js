@@ -2,6 +2,10 @@
 const MA_PERIODS = [25,32,42,60,80,125,150];
 const MA_UNITS = ["선","일선","주선","개월선"];
 const MA_LINES = MA_UNITS.flatMap(unit=>MA_PERIODS.map(n=>`${n}${unit}`));
+// 분할매수·재매수의 단계 편집 카드. 필드와 버튼은 호출부가 만들고 같은 배치·반응형 스타일을 쓴다.
+function tradeStageEditorCard(title,fields,actions,className="",attrs=""){
+  return `<div class="purchase-stage${className?` ${className}`:""}"${attrs?` ${attrs}`:""}><b>${title}</b>${fields}${actions}</div>`;
+}
 function movingLineName(name){
   const m=/^\s*([1-9]\d{0,2})\s*(선|시선|분봉|일선|주선|개월선|월선|달선)\s*$/.exec(String(name??""));
   if(!m||Number(m[1])>400)return "";
