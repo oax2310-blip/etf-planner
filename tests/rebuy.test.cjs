@@ -339,7 +339,8 @@ test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일
   let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
   assert.equal(count(html), 30);
   assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150개월선 가격 (원)${tag}</span>`));
-  assert.ok(html.includes(`class="rebuy-base-label">기준${tag}</span>`) && html.includes('aria-label="150일선 기준가">원') && html.includes('aria-label="25선 기준가">원'));
+  assert.ok(html.includes(`<span class="krw">${tag}`) && html.includes('class="rebuy-base-readout" aria-label="150일선 기준가"') && html.includes('class="rebuy-base-readout" aria-label="25선 기준가"'));
+  assert.doesNotMatch(html, /data-stage-price=/);
   // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
   html = view({ticker: '900001'}, {priceData: {stocks: {}}});
   assert.equal(count(html), 30);
@@ -362,7 +363,7 @@ test('미국 종목: 가격·금액은 달러로, 보유 금액은 달러로 나
   assert.equal(count(html), 30);
   assert.match(html, /가격은 미국 시세\(달러\)입니다\./);
   assert.ok(html.includes(`현재가 (달러)${tag}</span>`) && html.includes('신저점 가격 (달러)</span>') && html.includes('>달러</option>'));
-  assert.ok(html.includes('$495') && html.includes(`class="rebuy-base-label">기준${tag}</span>`) && html.includes('aria-label="25선 기준가">달러'));
+  assert.ok(html.includes('$495') && html.includes(`<span class="krw">${tag}`) && html.includes('class="rebuy-base-readout" aria-label="25선 기준가"'));
   assert.doesNotMatch(html, /만원|\(원\)/);
 });
 
@@ -456,7 +457,7 @@ test('화면은 평균 손절가를 표시하고 그보다 높은 후속 회차�
   assert.match(html,/3분할/);assert.match(html,/평균 9900원/);
   assert.doesNotMatch(html,/평균 손절가 위|안 삼|기한/);
   for(const key of ['0:0','0:1','0:2'])assert.match(html,new RegExp(`<input type="checkbox" data-tranche-done="${key}" >`));
-  assert.match(html,/data-rebuy-stage-edit="0"/);assert.match(html,/id="rStages"/);
+  assert.doesNotMatch(html,/data-rebuy-stage-edit=/);assert.match(html,/id="rStages"/);
   assert.doesNotMatch(html,/aria-label="[^\"]*</);
   stages[0].price=9800;stages[1].price=9850;stages[2].price=9950;html=view().rebuyMain.innerHTML;
   assert.match(html,/6분할/);assert.match(html,/data-tranche-done="1:2" >/);
