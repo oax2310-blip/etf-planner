@@ -35,17 +35,52 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
     const attr=/^\s*\[([\w-]+)\]\s*$/.exec(s);return attr&&Object.hasOwn(node.attrs,attr[1]);
   }));}};
   const purchaseForm=document.getElementById('purchaseForm');
-  for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','note'])purchaseForm[name]=element();
+  for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','cardName','note'])purchaseForm[name]=element();
   const dialog=document.getElementById('purchaseDialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
   const listeners=new Set(),store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[],start(){},subscribe:fn=>listeners.add(fn)};
-  const alerts=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
+  const alerts=[],renameDialogs=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {doc,item,prices,change,alerts,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
+  return {doc,item,prices,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
+
+test('연결 보유 목록은 추종 ETF·실제 코드 보유 계좌 모두를 보여 주고 보유량·체결·시세 변경도 그대로 읽는다',()=>{
+  const r=setup({tracking:true,budget:10}),other={id:'b',name:'다른 계좌 <보유>',ticker:'111111',tradeTicker:'333333',shares:5},direct={id:'c',name:'직접 보유 계좌',ticker:'A222222',shares:20},unrelated={id:'x',name:r.item.name,ticker:'444444',shares:50};
+  r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,direct,unrelated]});r.prices.stocks['333333']={kind:'국내',close:30000,asOf:'2026-01-02'};r.prices.stocks.A222222={kind:'국내',close:10000,asOf:'2026-01-02'};
+  const before=JSON.stringify(r.doc);r.render();r.initialize();
+  const ids=()=>Array.from(r.html().matchAll(/data-purchase-holding="([^"]+)"/g),m=>m[1]);assert.deepEqual(ids(),['a','b','c']);
+  assert.match(r.html(),/연결된 전체 보유 종목/);assert.match(r.html(),/다른 계좌 &lt;보유&gt;/);assert.match(r.html(),/전체 계좌 3개 항목 · 현재 45%/);assert.equal(JSON.stringify(r.doc),before);
+  r.change('[data-purchase-buy-shares]',7);assert.match(r.html(),/전체 계좌 3개 항목 · 현재 52%/);assert.match(r.html(),/보유 17주/);assert.equal(other.shares,5);assert.equal(direct.shares,20);
+  r.change('[data-purchase-buy-shares]',0);assert.equal(JSON.stringify(r.doc),before);
+  other.shares=10;r.emit();assert.match(r.html(),/전체 계좌 3개 항목 · 현재 60%/);
+  r.prices.stocks['333333'].close=40000;r.emit();assert.match(r.html(),/전체 계좌 3개 항목 · 현재 70%/);
+});
+test('연결 보유 목록은 금액 보유를 주수로 오인하지 않고 0주·시세 누락·매수대기에서도 조회만 한다',()=>{
+  const r=setup({wait:'25일선'});delete r.item.shares;r.item.amount=7;r.prices.stocks={};
+  r.doc.allocation.groups[0].items.push({id:'b',name:'0주 보유',ticker:'111111',shares:0,amount:99},{id:'c',name:'시세 대기 계좌',ticker:'111111',shares:3});
+  const before=JSON.stringify(r.doc);r.render();assert.match(r.html(),/금액으로 보유 관리/);assert.match(r.html(),/보유 0주/);assert.match(r.html(),/보유 3주 · 시세 대기/);assert.match(r.html(),/평가 대기/);assert.match(r.html(),/전체 계좌 3개 항목 · 현재 7%/);
+  assert.doesNotMatch(r.html(),/보유 7주|NaN|undefined|data-purchase-buy=/);assert.equal(JSON.stringify(r.doc),before);
+});
+test('분할매도와 같은 메모 저장은 현재 계획만 수정하고 체결·보유량을 보존하며 비운 필드는 삭제한다',()=>{
+  const r=setup({tracking:true});r.change('[data-purchase-buy-shares]',3);
+  const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),shares=r.item.shares;
+  const note=r.element('purchaseMemo');note.value='매수 메모 <확인>';note.oninput();assert.equal(r.element('purchaseMemoCount').textContent,'10 / 4,000자');assert.equal(r.item.buyPlan.note,undefined);
+  r.element('savePurchaseNote').onclick();assert.equal(r.item.buyPlan.note,'매수 메모 <확인>');assert.match(r.html(),/매수 메모 &lt;확인&gt;/);
+  r.element('purchaseMemo').value='';r.element('savePurchaseNote').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false);
+  assert.equal(JSON.stringify(r.item.buyPlan.buys),buys);assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.equal(r.item.shares,shares);
+});
+test('카드 이름·계획 수정은 자산 종목 이름과 보유량을 유지하고 PC 연필·터치 길게 누르기로 같은 이름 창을 연다',()=>{
+  const r=setup({tracking:true}),before=JSON.stringify(r.doc),select=r.input('[data-purchase-select]');
+  select.ontouchstart({touches:[{clientX:0,clientY:0}]});select.ontouchmove({touches:[{clientX:20,clientY:0}]});select.oncontextmenu({preventDefault(){}});assert.equal(r.names.length,0,'스크롤은 이름 창을 열지 않음');
+  select.ontouchstart({touches:[{clientX:0,clientY:0}]});select.oncontextmenu({preventDefault(){}});assert.equal(r.names.length,1);assert.equal(JSON.stringify(r.doc),before);
+  r.names[0].onSave('내 매수 계획');assert.equal(r.item.buyPlan.cardName,'내 매수 계획');assert.match(r.html(),/<strong>내 매수 계획<\/strong>/);assert.equal(r.item.name,'테스트 종목');assert.equal(r.item.shares,10);
+  r.input('[data-purchase-rename]').onclick();assert.equal(r.names.at(-1).cardName,'내 매수 계획');r.names.at(-1).onSave('');assert.equal(Object.hasOwn(r.item.buyPlan,'cardName'),false);assert.equal(JSON.stringify(r.doc),before);
+  r.edit();r.form.cardName.value='계획 창 이름';r.submit();assert.equal(r.item.buyPlan.cardName,'계획 창 이름');r.edit();assert.equal(r.form.cardName.value,'계획 창 이름');
+  r.form.cardName.value='';r.submit();assert.equal(Object.hasOwn(r.item.buyPlan,'cardName'),false);assert.equal(r.item.name,'테스트 종목');
+});
 
 test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시하고 계좌 변경 알림에도 갱신한다',()=>{
   const r=setup({budget:50,tracking:true});r.item.target=40;
@@ -271,7 +306,7 @@ test('목표 가격 없는 분할매수: 마지막 평균선까지 표시하고 
   for(let i=0;i<3;i++){
     const input=r.inputs('[data-purchase-buy]').find(x=>!x.checked);assert.ok(input);input.checked=true;input.onchange();
   }
-  assert.match(r.html(),/매수 완료 · 4\/4회/);assert.equal(r.item.shares,45);
+  assert.match(r.html(),/<strong>매수 완료<\/strong><small>4 \/ 4회 완료/);assert.equal(r.item.shares,45);
   assert.equal(r.item.buyPlan.buys['32일선:0'].shares,8,'앞 회차의 내림 잔액도 마지막 선 예산에 배분');
   assert.equal(r.item.buyPlan.lines.end,undefined);
   for(let i=0;i<4;i++){const input=r.inputs('[data-purchase-buy]').find(x=>x.checked);input.checked=false;input.onchange();}
@@ -330,7 +365,7 @@ test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선�
     const r=setup({currency,end:null,budget:150,price:scale*.8,names,ma});r.item.buyPlan.notify={stages:true};r.render();
     const keys=names.map(n=>`${n}:0`),before=JSON.stringify(r.doc);
     assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);
-    assert.equal(r.rules().length,5);assert.match(r.html(),/매수 전 · 0\/5회/);assert.match(r.html(),/남은 매수 5주/);
+    assert.equal(r.rules().length,5);assert.match(r.html(),/<strong>매수 전<\/strong><small>0 \/ 5회 완료/);assert.match(r.html(),/남은 매수 5주/);
     assert.doesNotMatch(r.html(),/· 매수 0주|1주를 살 수 없습니다/);assert.match(r.html(),/회차 간격을 넓혀/);
     r.edit();assert.equal(JSON.stringify(r.doc),before,'미리보기만으로 기록을 바꾸지 않는다');
     assert.equal((r.html().match(/매수 1주/g)||[]).length,5);
@@ -341,7 +376,7 @@ test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선�
       assert.equal(r.item.shares,11+i);assert.equal(r.rules().length,4-i);
       assert.doesNotMatch(r.html(),/· 매수 0주|1주를 살 수 없습니다/);
     }
-    assert.match(r.html(),/매수 완료 · 5\/5회/);
+    assert.match(r.html(),/<strong>매수 완료<\/strong><small>5 \/ 5회 완료/);
     for(let i=0;i<keys.length;i++){const input=r.inputs('[data-purchase-buy]').find(x=>x.checked);input.checked=false;input.onchange();}
     assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);assert.equal(r.doc.allocation.trades,undefined);
     assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);
@@ -403,12 +438,12 @@ test('분할매수: 체크 전 10주 중 7주를 기록하면 7주만 반영하�
     assert.equal(r.item.buyPlan.buys.end.plannedShares,10);assert.equal(r.item.buyPlan.buys.end.shares,7);
     assert.equal(r.item.shares,17);assert.equal(r.doc.allocation.trades['buy:a:end'].qty,7);
     assert.match(r.html(),/부분 체결 · 체결 7주 · 남은 매수 3주/);
-    assert.match(r.html(),/진행 중 · 0\/1회/);
+    assert.match(r.html(),/<strong>진행 중<\/strong><small>0 \/ 1회 완료/);
     assert.equal(r.input('[data-purchase-buy]').checked,false);assert.equal(r.input('[data-purchase-buy]').indeterminate,true);
     r.change('[data-purchase-buy-shares]',9);assert.equal(r.item.shares,19,'추가 2주만 반영');
     assert.match(r.html(),/남은 매수 1주/);
     r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,20,'마지막 1주만 반영');
-    assert.equal(r.input('[data-purchase-buy]').checked,true);assert.match(r.html(),/매수 완료 · 1\/1회/);
+    assert.equal(r.input('[data-purchase-buy]').checked,true);assert.match(r.html(),/<strong>매수 완료<\/strong><small>1 \/ 1회 완료/);
     r.change('[data-purchase-buy-shares]',0);assert.equal(r.item.shares,10);
     assert.equal(r.item.buyPlan.buys,undefined);assert.equal(r.doc.allocation.trades,undefined);
   }
