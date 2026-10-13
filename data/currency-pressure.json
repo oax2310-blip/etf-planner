@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-12T22:37:12.040Z",
+  "generatedAt": "2026-10-13T22:49:57.374Z",
   "series": {
     "usGdp": {
       "code": "GDPC1",
@@ -246,8 +246,8 @@
       "sourceUpdatedAt": "2026-09-30",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -966,8 +966,8 @@
       "sourceUpdatedAt": "2026-09-22",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -1691,8 +1691,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -2416,8 +2416,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -3138,8 +3138,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -3869,8 +3869,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -4124,8 +4124,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-12T22:37:12.040Z",
-      "lastAttemptAt": "2026-10-12T22:37:12.040Z",
+      "fetchedAt": "2026-10-13T22:49:57.374Z",
+      "lastAttemptAt": "2026-10-13T22:49:57.374Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     }
