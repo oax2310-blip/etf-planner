@@ -330,7 +330,7 @@ test('제목: 작은 글씨에 손절 후 재매수·종목 코드, 큰 글씨(h
   assert.doesNotMatch(els.rebuyMain.innerHTML, /id="rName"|id="rTicker"/, '이름·코드는 연필 창에서만 고친다');
 });
 
-test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일선·N선 기준가 이름 옆에 작은 (자동)', () => {
+test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일선·N선 기준가의 가격 단위 옆에 작은 (자동)', () => {
   const tag = '<small class="auto-tag">(자동)</small>', count = html => html.split(tag).length - 1;
   const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
   const view = (item, env) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', stages, ...item}]}}, env).els.rebuyMain.innerHTML;
@@ -339,7 +339,7 @@ test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일
   let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
   assert.equal(count(html), 30);
   assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150개월선 가격 (원)${tag}</span>`));
-  assert.ok(html.includes(`class="rebuy-base-label">기준${tag}</span>`) && html.includes('aria-label="150일선 기준가">원') && html.includes('aria-label="25선 기준가">원'));
+  assert.ok(html.includes(`class="rebuy-price-unit">원${tag}</span>`) && html.includes('aria-label="150일선 기준가"><span class="rebuy-price-unit">원') && html.includes('aria-label="25선 기준가"><span class="rebuy-price-unit">원'));
   // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
   html = view({ticker: '900001'}, {priceData: {stocks: {}}});
   assert.equal(count(html), 30);
@@ -362,7 +362,7 @@ test('미국 종목: 가격·금액은 달러로, 보유 금액은 달러로 나
   assert.equal(count(html), 30);
   assert.match(html, /가격은 미국 시세\(달러\)입니다\./);
   assert.ok(html.includes(`현재가 (달러)${tag}</span>`) && html.includes('신저점 가격 (달러)</span>') && html.includes('>달러</option>'));
-  assert.ok(html.includes('$495') && html.includes(`class="rebuy-base-label">기준${tag}</span>`) && html.includes('aria-label="25선 기준가">달러'));
+  assert.ok(html.includes('$495') && html.includes(`class="rebuy-price-unit">달러${tag}</span>`) && html.includes('aria-label="25선 기준가"><span class="rebuy-price-unit">달러'));
   assert.doesNotMatch(html, /만원|\(원\)/);
 });
 
@@ -500,6 +500,55 @@ test('누적 재매수: 부분 잔량은 같은 회차에 남고 첫 체결 계�
   assert.equal(ctx.rebuySummary(r).doneTranches,0);assert.equal(r.stages[0].buys[0].plannedShares,10);
   handlers['[data-tranche-qty]']('0',{dataset:{trancheQty:'0:0'}});
   assert.equal(r.stages[0].buys,undefined);assert.equal(r.planned,undefined);
+});
+
+// 실제 체결가를 나중에 고칠 때 다음 회차가 쓰는 잔액·정수 주수와 자산 연동을 함께 확인한다. 모두 가상 기록이다.
+const executionFixture = () => ({...fillFixture(),ticker:'900001',shares:200,cuts:[{shares:90,price:10000}],
+  stages:[{name:'25선',price:10000},{name:'32선',price:11500}]});
+for(const [price,left,nextQty] of [[9000,630000,30],[11000,570000,27]])test(`완료 뒤 체결가 ${price}원 입력은 다음 회차의 잔액·주수만 다시 계산하고 자산 주수는 유지한다`,()=>{
+  const r=executionFixture(),calls=[],{ctx,handlers,els}=ui({rebuy:{items:[r]}},{allocLink:{line:()=>'',holding:()=>null,
+    check:o=>{o.commit();o.redraw();},rescale:(key,trade)=>calls.push([key,plain(trade)])}});
+  assert.doesNotMatch(els.rebuyMain.innerHTML,/data-tranche-exec=/,'체결가는 기존처럼 수량 기록 후에 표시');
+  handlers['[data-tranche-qty]']('30',{dataset:{trancheQty:'0:0'}});
+  const keys=plain(r.planned),cuts=JSON.stringify(r.cuts);
+  handlers['[data-tranche-exec]'](String(price),{dataset:{trancheExec:'0:0'}});ctx.renderRebuy();
+  const s=ctx.rebuySummary(r),next=s.tranches.find(x=>!x.done);
+  assert.equal(s.buyValue,30*price);assert.equal(s.rest,left);assert.equal(s.rebought,30);assert.equal(s.held,140);
+  assert.equal(next.amount,left/2);assert.equal(Math.round(next.amount/next.price),nextQty);
+  assert.deepEqual(plain(r.planned),keys);assert.equal(JSON.stringify(r.cuts),cuts);
+  assert.equal(calls.at(-1)[0],'rebuy:fill-test:25선:0');assert.deepEqual(calls.at(-1)[1],{sign:1,qty:30,price,currency:'KRW'});
+  assert.match(els.rebuyMain.innerHTML,new RegExp(`계획 ${nextQty}주`));
+  const restored=JSON.parse(JSON.stringify(r)),before=JSON.stringify(restored);
+  assert.equal(ctx.rebuySummary(restored).rest,left);assert.equal(JSON.stringify(restored),before);
+});
+
+for(const [price,nextAmount] of [[9000,315000],[11000,285000]])test(`부분 체결 뒤 체결가 ${price}원 입력은 고정 잔량을 예약한 뒤 다음 회차에 배분한다`,()=>{
+  const r=executionFixture(),{ctx,handlers}=ui({rebuy:{items:[r]}});
+  handlers['[data-tranche-qty]']('10',{dataset:{trancheQty:'0:0'}});
+  handlers['[data-tranche-exec]'](String(price),{dataset:{trancheExec:'0:0'}});
+  let s=ctx.rebuySummary(r),partial=s.tranches[0];
+  assert.deepEqual([partial.qty,partial.plannedQty,partial.amount,partial.partial],[10,30,20*price,true]);
+  assert.equal(s.buyValue,10*price);assert.equal(s.rest,900000-10*price);
+  assert.ok(s.tranches.slice(1).every(x=>x.amount===nextAmount));
+  assert.equal(s.tranches.reduce((n,x)=>n+x.amount,0),s.rest);
+  const rec=ctx.rebuyBuyRecord(r,0,0,'30',true);ctx.applyRebuyBuy(0,0,rec);s=ctx.rebuySummary(r);
+  assert.equal(s.buyValue,30*price);assert.equal(s.tranches[0].done,true);
+  assert.ok(s.tranches.slice(1).every(x=>x.amount===nextAmount));
+});
+
+test('미국 달러 체결가·옛 통째 완료 기록도 나중에 수정하면 실제 금액으로 다음 회차를 계산한다',()=>{
+  for(const legacy of [false,true]){
+    const r=executionFixture();r.ticker='SPY';r.lowPrice=110;r.currentPrice=90;r.cuts=[{shares:9,price:100}];
+    r.stages=[{name:'25선',price:100,...(legacy?{done:true,shares:3,execPrice:100}:{buys:[{shares:3,price:100}]})},{name:'32선',price:115}];
+    r.planned=[['25선',0],['32선',0]];
+    const {ctx,handlers}=ui({rebuy:{items:[r]}}),before=JSON.stringify(r);
+    for(const value of ['','0','-1','NaN','Infinity'])assert.equal(handlers['[data-tranche-exec]'](value,{dataset:{trancheExec:'0:0'}}),false);
+    assert.equal(JSON.stringify(r),before);
+    handlers['[data-tranche-exec]']('99.25',{dataset:{trancheExec:'0:0'}});
+    const s=ctx.rebuySummary(r);assert.equal(s.buyValue,297.75);assert.equal(s.rest,602.25);assert.equal(s.rebought,3);
+    assert.equal(legacy?r.stages[0].execPrice:r.stages[0].buys[0].price,99.25);
+    assert.ok(Math.abs(s.tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0)-602.25)<1e-8);
+  }
 });
 
 test('잘못된 수량은 기록·id·계획을 만들지 않으며 보유량을 넘는 손절을 거절한다', () => {
