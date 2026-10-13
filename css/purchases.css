@@ -52,6 +52,10 @@
 .rebuy-stage-content{min-height:0;overflow:auto;overscroll-behavior:contain;margin-top:16px;padding:3px}
 #rebuyStagesDialog .purchase-line-bounds{padding-top:14px}
 #rebuyStagesDialog .hold-input{grid-template-columns:80px minmax(0,1fr)}
+/* 1~400 기간 입력: 세 자리와 추천 목록 화살표가 같은 칸에서 겹치지 않게 한다. 목록·숫자 입력 기능은 유지한다. */
+#rebuyStagesDialog .hold-input input{padding-inline:6px;appearance:textfield;-moz-appearance:textfield}
+#rebuyStagesDialog .hold-input input::-webkit-inner-spin-button,#rebuyStagesDialog .hold-input input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#rebuyStagesDialog .hold-input input::-webkit-calendar-picker-indicator{display:none}
 #rebuyStagesDialog .field-hint{font-size:11.5px;color:var(--text-3);line-height:1.5;word-break:keep-all}
 #rebuyStagesDialog .purchase-ladder-grid>[hidden]{display:none}
 #rebuyStagesDialog .purchase-line-preview{max-height:220px;overflow:auto}
@@ -61,8 +65,10 @@
   #rebuyStagesDialog .dialog-head h2{font-size:17px}#rebuyStagesDialog .dialog-inner{padding:16px}
   #rebuyStagesDialog .dialog-foot{margin-top:14px}#rebuyStagesDialog input,#rebuyStagesDialog select{min-height:44px}
   #rebuyStagesDialog .purchase-line-bounds{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  #rebuyStagesDialog .hold-input{grid-template-columns:52px minmax(0,1fr)}
-  #rebuyStagesDialog .hold-input input{padding:8px 6px;appearance:textfield;-moz-appearance:textfield}
-  #rebuyStagesDialog .hold-input input::-webkit-inner-spin-button,#rebuyStagesDialog .hold-input input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  #rebuyStagesDialog .hold-input{grid-template-columns:64px minmax(0,1fr)}
+  #rebuyStagesDialog .hold-input input{padding-block:8px}
   #rebuyStagesDialog .hold-input select{padding:8px 5px;font-size:12px}
+}
+@media(max-width:380px){
+  #rebuyStagesDialog .purchase-line-bounds{grid-template-columns:minmax(0,1fr)}
 }
