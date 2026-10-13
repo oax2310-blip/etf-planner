@@ -645,7 +645,7 @@ test('추종 ETF: 같은 이름·코드의 기존 보유 계좌가 여럿이어�
   const other={id:'b',name:r.item.name,ticker:'AAA',tradeTicker:'222222',shares:20},direct={id:'c',name:'같은 ETF 직접 보유',ticker:'222222',shares:30},source={id:'ref',name:'기준 미국 ETF',ticker:'AAA',shares:5};
   r.doc.allocation.groups.push({id:'other',name:'다른 계좌',items:[other,direct,source]});
   const before=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),before,'대상 표시만으로 기존 보유 기록을 바꾸지 않음');
-  assert.match(r.html(),/매수 반영 대상<\/b> 자산 배분 › 테스트 계좌 › 테스트 종목/);assert.match(r.html(),/현재 보유 <b>10주<\/b> · 체결 주수를 더합니다/);
+  assert.match(r.html(),/매수 반영 대상<\/b> 자산 배분 › 테스트 계좌 › 테스트 종목/);assert.match(r.html(),/현재 보유 <b[^>]*>10주<\/b> · 체결 주수를 더합니다/);
   r.change('[data-purchase-buy-shares]',60);
   assert.equal(r.item.shares,70);assert.deepEqual([other.shares,direct.shares,source.shares],[20,30,5]);
   assert.equal(r.doc.allocation.trades['buy:a:end'].items.length,1);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');
