@@ -200,3 +200,8 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
   .future-position-settings>summary{padding:11px 12px;gap:8px}.future-position-settings>summary span{font-size:11px}.future-position-settings>summary strong{font-size:13px}.future-overview .metric{padding:14px 16px}.future-overview .metric>strong{font-size:23px}.future-position-settings .panel{padding:14px 12px}.future-plan-head,.future-plan-row{grid-template-columns:minmax(72px,1fr) minmax(0,1fr) 64px;padding:9px 10px}.future-plan-add .future-line-add{gap:6px}.future-plan-add .future-line-add select{min-width:0;flex:1}.future-plan-add .future-line-add input{width:64px}
   .future-auto-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.future-auto-start{grid-column:1/-1}.future-auto-start>div>input{width:76px}.future-auto-units>label{padding:9px 8px;font-size:11.5px}.future-auto-preview-row{grid-template-columns:minmax(86px,1fr) minmax(78px,1fr) 48px;gap:6px;padding:9px 10px}.future-auto-preview-head{padding:10px}.future-auto-preview-head>strong{font-size:12px}.future-auto-preview-table{max-height:210px}
 }
+
+/* 알림으로 이동한 종목. 펼침·강조는 화면 상태이며 저장하지 않는다. */
+.push-alert-highlight{animation:push-alert-highlight 3s ease-out;outline-offset:4px}
+@keyframes push-alert-highlight{0%,65%{outline:2px solid var(--accent)}100%{outline:2px solid transparent}}
+@media(prefers-reduced-motion:reduce){.push-alert-highlight{animation-timing-function:step-end}}

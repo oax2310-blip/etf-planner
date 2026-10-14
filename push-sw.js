@@ -21,7 +21,7 @@ self.addEventListener("notificationclick",event=>{
     for(const client of await self.clients.matchAll({type:"window",includeUncontrolled:true})){
       const current=new URL(client.url);
       if(current.origin!==scope.origin||![scope.pathname,scope.pathname+"index.html"].includes(current.pathname)||!("navigate" in client))continue;
-      try{const opened=await client.navigate(url);if(opened)return opened.focus();}catch{}
+      try{const opened=await client.navigate(url);if(opened)return await opened.focus();}catch{}
     }
     return self.clients.openWindow(url);
   })());

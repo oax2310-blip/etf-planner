@@ -37,7 +37,7 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     window:{isSecureContext:true,PushManager:function(){},Notification:notification},
     navigator:{serviceWorker},Notification:notification,
-    document:{baseURI:'https://example.test/etf-planner/'},URL,Uint8Array,atob,
+    addEventListener(){},document:{addEventListener(){},baseURI:'https://example.test/etf-planner/'},URL,Uint8Array,atob,
     assetStore:{subscribe(){}},
     $:name=>nodes[name],id:()=> 'device-test',esc:value=>String(value),
     connected:()=>!!ctx.sync.token,

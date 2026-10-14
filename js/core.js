@@ -33,7 +33,7 @@ function normalize(){
   state.tab = state.tab || "plans";
 }
 normalize();
-function openTab(tab){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); render(); }
+function openTab(tab,redraw=true){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); if(redraw)render(); }
 function openPlannerLocation(){
   if(typeof openPushAlertFromHash==="function"&&openPushAlertFromHash())return;
   if(typeof clearPushAlertTarget==="function")clearPushAlertTarget();
@@ -45,4 +45,4 @@ const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs
 // 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 탭 클릭은 위의 핸들러에서 맨 위로 이동.
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
-function render(){ if(typeof applyPendingPushAlert==="function"&&applyPendingPushAlert())return; if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); }
+function render(){ if(typeof applyPendingPushAlert==="function")applyPendingPushAlert(); if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); if(typeof schedulePendingPushAlert==="function")schedulePendingPushAlert(); }
