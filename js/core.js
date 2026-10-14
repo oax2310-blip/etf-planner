@@ -24,13 +24,13 @@ let state;
 try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || seeded; } catch { state = seeded; }
 // 새 입력 필드(rebuy·alerts·futures.rebuy·rollSpread·lossPrice 등)를 여기서 채우지 않는다.
 // 옛 재매수를 목록으로 바꾸면 기기별 id로 스냅샷이 달라진다(생성·이전은 각 모듈의 edit 함수).
-function normalize(){
-  state.plans = Array.isArray(state.plans) ? state.plans : [];
-  state.plans.forEach(p=>{p.checked=Array.from({length:Number(p.stages)||2},(_,i)=>p.checked?.[i]===true);p.holdings=Array.isArray(p.holdings)?p.holdings:[];p.note=p.note||"";});
-  state.futures = state.futures || defaultFutures(); state.futures.positions = Array.isArray(state.futures.positions) ? state.futures.positions : []; state.actions = state.actions || {};
-  ensureFutureMovingLines(state.futures);
-  if(!state.selectedPlan || !state.plans.some(p=>p.id===state.selectedPlan)) state.selectedPlan=state.plans[0]?.id||null;
-  state.tab = state.tab || "plans";
+function normalize(target=state){
+  target.plans = Array.isArray(target.plans) ? target.plans : [];
+  target.plans.forEach(p=>{const n=Number(p.stages),count=Number.isInteger(n)&&n>=1&&n<=250?n:2;if(p.stages!==undefined)p.stages=count;p.checked=Array.from({length:count},(_,i)=>p.checked?.[i]===true);p.holdings=Array.isArray(p.holdings)?p.holdings:[];p.note=p.note||"";});
+  target.futures = target.futures || defaultFutures(); target.futures.positions = Array.isArray(target.futures.positions) ? target.futures.positions : []; target.actions = target.actions || {};
+  ensureFutureMovingLines(target.futures);
+  if(!target.selectedPlan || !target.plans.some(p=>p.id===target.selectedPlan)) target.selectedPlan=target.plans[0]?.id||null;
+  target.tab = target.tab || "plans";
 }
 normalize();
 function openTab(tab,redraw=true){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); if(redraw)render(); }

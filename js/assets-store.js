@@ -45,7 +45,7 @@ async function readAssetRemote(cfg){
   if(!r.ok) throw Error(`기록 읽기 실패 (${r.status})`);
   const meta=await r.json(); let text=meta.encoding==="base64"&&meta.content?fromB64A(meta.content):null;
   if(text===null){ const raw=await aGh(cfg,path,{headers:{Accept:"application/vnd.github.raw+json"}}); if(!raw.ok) throw Error(`기록 읽기 실패 (${raw.status})`); text=await raw.text(); }
-  let data=null; try { data=cleanAssets(JSON.parse(text)); } catch { data=null; }
+  let data=null; try { data=cleanAssets(externalData.assets(JSON.parse(text))); } catch { data=null; }
   if(!data) throw Error(`저장소의 ${A_FILE} 형식을 확인할 수 없어 자동으로 덮어쓰지 않았습니다.`);
   return (aSync.remote={repo:cfg.repo,sha:meta.sha,doc:data,etag:r.headers.get("ETag")||""});
 }
@@ -143,7 +143,7 @@ async function syncAssets(beforePriceCollection=false){
 function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync.timer); aSync.timer=setTimeout(()=>{ aSync.timer=null; syncAssets(); },delay); if(!aSync.busy) setAssetSync("pending"); }
 
 function restore(incoming){
-  const next=cleanAssets(incoming);if(!next||assetsBlank(next))return false;
+  const next=cleanAssets(externalData.assets(incoming));if(!next||assetsBlank(next))return false;
   keepLost(ASSET_SECTIONS.filter(s=>next[s]&&doc[s]).map(s=>({section:s,data:doc[s]})));
   const latest=cleanAssets(readJson(A_KEY,null)), now=new Date().toISOString();
   for(const s of ASSET_SECTIONS)if(next[s]){const record=s==="savings"?earlierSavingsRecord(doc[s]?.milestoneRecord,latest?.[s]?.milestoneRecord,next[s].milestoneRecord):null;doc[s]={...next[s],...(record?{milestoneRecord:record}:{}),savedAt:now};}
