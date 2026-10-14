@@ -108,7 +108,7 @@ function openPurchaseName(id){
 const purchaseItems = () => (doc.allocation?.groups||[]).flatMap(g=>(g.items||[]).map(it=>({g,it})));
 const purchaseMode = plan => plan?.wait?"wait":plan?.lines?"lines":Array.isArray(plan?.stages)?"manual":"lines";
 // 목록 선택은 화면에만 유지한다. 알림·계획 저장도 같은 종목 id를 선택하며 자산·동기화 기록에는 필드를 추가하지 않는다.
-const selectPurchase=id=>{selectedPurchaseId=id;};
+const selectPurchase=(id,expand=false)=>{selectedPurchaseId=id;if(expand)openCompletedPurchases.add(id);};
 // 분할매도와 같은 제목·시세·자산 배분 순서. 계획 선택·화면 표시로 저장 필드를 만들지 않는다.
 function purchaseHeading({g,it},s,description,entry=quoteOf(it)){
   const {pct,target,gap}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);

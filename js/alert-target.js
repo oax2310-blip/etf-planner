@@ -6,7 +6,7 @@ function pushAlertTarget(data){
   const ruleId=typeof data.ruleId==="string"&&data.ruleId.length<=512?data.ruleId:"";
   return {ticker,line,ruleId};
 }
-// 발송된 ticker·line과 선택용 ruleId를 #alert?에 넣는다. 기존 계획·종목 찾기와 동기화 후 재시도는 push.js가 맡는다.
+// 발송된 ticker·line과 선택용 ruleId를 #alert?에 넣는다. 대상 식별·복원·화면 준비 후 이동은 push.js가 맡는다.
 function pushAlertHash(data){
   const target=pushAlertTarget(data);if(!target)return "";
   const params=new URLSearchParams({ticker:target.ticker});

@@ -3,60 +3,100 @@ const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
 let pushConfig = null, pushSubscription = null, pushBusy = false, pushMessage = "";
-let pendingPushTarget = null;
+let pendingPushTarget = null, pushAlertFrame = 0, pushAlertFontTarget = null;
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
-// 발송된 ticker·line으로 기존 기록을 찾는다. 화면 선택(selectedPlan·selectedRebuy)은 이 기기에만 저장하고 매매 기록은 만들거나 고치지 않는다.
+// ruleId를 우선해 메뉴·항목을 식별한다. ID가 있으면 같은 코드의 다른 계좌로 대체하지 않는다.
+// ID가 없는 옛 알림은 해당 메뉴에서 코드가 유일할 때만 이동한다. 이름·현재 선택은 대상 식별에 쓰지 않는다.
 function pushAlertTab(target){
+  const rule=target.ruleId;
+  if(rule.startsWith("trade:plan:"))return "plans";
+  if(rule.startsWith("trade:buy:"))return "buys";
+  if(rule.startsWith("trade:rebuy:"))return "rebuy";
+  if(rule.startsWith("trade:future:")||rule.startsWith("trade:future-rebuy:"))return "futures";
   return target.line.startsWith("분할매도 ")?"plans":target.line.startsWith("분할매수 ")||target.line.startsWith("매수대기 ")?"buys":target.line.startsWith("달러선물 ")?"futures":target.line.startsWith("재매수 ")?"rebuy":null;
 }
 function pushAlertDestination(target){
   const same=ticker=>linkTicker(ticker)===linkTicker(target.ticker), tab=pushAlertTab(target);
-  const pick=(items,prefix,selected)=>items.find(x=>target.ruleId&&target.ruleId.startsWith(`${prefix}${x.id}:`))||items.find(x=>x.id===selected)||items[0];
-  const plans=(state.plans||[]).filter(p=>same(p.ticker)), rebuys=rebuyItems(state).filter(r=>same(r.ticker));
-  const buys=(assetStore.doc.allocation?.groups||[]).flatMap(g=>g.items||[]).filter(it=>it.buyPlan&&same(it.ticker));
+  const pick=(items,prefix)=>target.ruleId?items.find(x=>target.ruleId.startsWith(`${prefix}${x.key}:`)):items.length===1?items[0]:null;
+  const plans=(state.plans||[]).filter(p=>same(p.ticker)).map(p=>({key:p.id,value:p}));
+  const rebuys=rebuyItems(state).map((r,i)=>({key:r.id||`legacy-${i}`,value:r})).filter(x=>same(x.value.ticker));
+  const buys=(assetStore.doc.allocation?.groups||[]).flatMap(g=>g.items||[]).filter(it=>it.buyPlan&&same(it.ticker)).map(it=>({key:it.id,value:it}));
   const forTab=kind=>{
-    if(kind==="plans"){const p=pick(plans,"trade:plan:",state.selectedPlan);if(p)return {tab:kind,planId:p.id};}
-    if(kind==="buys"){const it=pick(buys,"trade:buy:");if(it)return {tab:kind,itemId:it.id};}
-    if(kind==="rebuy"){const r=pick(rebuys,"trade:rebuy:",state.selectedRebuy);if(r)return {tab:kind,rebuyId:r.id||null};}
-    if(kind==="futures")return {tab:kind,futureRebuy:/손절|재매수/.test(target.line)};
+    if(kind==="plans"){const p=pick(plans,"trade:plan:");if(p)return {tab:kind,planId:p.value.id};}
+    if(kind==="buys"){const it=pick(buys,"trade:buy:");if(it)return {tab:kind,itemId:it.value.id};}
+    if(kind==="rebuy"){const r=pick(rebuys,"trade:rebuy:");if(r)return {tab:kind,rebuyId:r.value.id||null};}
+    if(kind==="futures"){
+      const futureRebuy=target.ruleId?target.ruleId.startsWith("trade:future-rebuy:"):/손절|재매수/.test(target.line),f=state.futures;
+      if(futureRebuy?f?.rebuy:(f?.positions||[]).some(p=>Number(p.contracts)>0)||(f?.levels||[]).some(l=>Number(l.price)>0||Number(l.contracts)>0))return {tab:kind,futureRebuy};
+    }
     return null;
   };
   if(tab)return forTab(tab);
-  for(const kind of [...new Set([state.tab,"plans","buys","rebuy"])].filter(x=>x!=="futures")){const found=forTab(kind);if(found)return found;}
   const rule=alertRules().find(r=>same(r.ticker)&&(target.ruleId?r.id===target.ruleId:!target.line||`${r.period}${r.unit}`===target.line));
+  if(target.ruleId)return rule?{tab:state.tab,ruleId:rule.id}:null;
+  for(const kind of [...new Set([state.tab,"plans","buys","rebuy"])].filter(x=>x!=="futures")){const found=forTab(kind);if(found)return found;}
   return rule?{tab:state.tab,ruleId:rule.id}:null;
 }
-function clearPushAlertTarget(){pendingPushTarget=null;}
-// #alert? 이동 목표를 메모리에 남겨 아직 기록이 없는 기기도 동기화 후 다시 찾을 수 있게 한다.
+function clearPushAlertTarget(){
+  pendingPushTarget=null;pushAlertFontTarget=null;
+  if(pushAlertFrame)cancelAnimationFrame(pushAlertFrame);pushAlertFrame=0;
+}
+// 해시는 이동 완료까지 유지한다. 새 페이지·동기화·백그라운드 복귀 모두 같은 준비/완료 경로를 사용한다.
 function openPushAlertFromHash(){
   const target=pushAlertTargetFromHash(location.hash);if(!target)return false;
-  pendingPushTarget=target;
+  clearPushAlertTarget();pendingPushTarget=target;
   openTab(pushAlertTab(target)||state.tab);return true;
 }
-// 기록이 없으면 목표를 유지해 동기화 뒤 다시 찾는다. 찾은 뒤 해시를 일반 탭으로 돌려 평소 종목 선택을 방해하지 않는다.
+// render 전에는 선택과 접기 상태만 준비한다. 재귀 render나 DOM 유무만으로 이동을 완료하지 않는다.
 function applyPendingPushAlert(){
   if(!pendingPushTarget)return false;
   const found=pushAlertDestination(pendingPushTarget);if(!found)return false;
-  pendingPushTarget=null;
-  if(found.planId)state.selectedPlan=found.planId;
-  if(found.itemId)purchasePlanner.select(found.itemId);
-  if("rebuyId" in found){if(state.selectedRebuy!==found.rebuyId)rebuyUnit=null;state.selectedRebuy=found.rebuyId;}
-  if(found.futureRebuy)futureRebuyExpanded=true;
-  openTab(found.tab);
-  history.replaceState(null,"",`#${state.tab}`);
-  let node;
-  if(found.ruleId){
-    closeAlertEditor();renderPushSetup();
-    node=[...$$("[data-alert-rule]")].find(x=>x.dataset.alertRule===found.ruleId);
-    if(node){node.closest("details").open=true;if(!$("alertsDialog").open)$("alertsDialog").showModal();}
-  }else if(found.itemId)node=[...$$("[data-purchase-item]")].find(x=>x.dataset.purchaseItem===found.itemId);
-  else node=$(found.tab==="plans"?"planMain":found.tab==="rebuy"?"rebuyMain":"futuresView");
-  if(node){
+  if(found.planId){state.selectedPlan=found.planId;openCompletedSales.add(found.planId);}
+  if(found.itemId)purchasePlanner.select(found.itemId,true);
+  if("rebuyId" in found){
+    if(state.selectedRebuy!==found.rebuyId)rebuyUnit=null;state.selectedRebuy=found.rebuyId;
+    const r=rebuyPick(),fold=rebuyFoldState(r,rebuySummary(r));fold.cuts=true;fold.buys=true;
+  }
+  if(found.tab==="futures"){if(found.futureRebuy)futureRebuyExpanded=true;else futureCompletedOpen=true;}
+  openTab(found.tab,false);
+  return true;
+}
+function pushAlertNode(found){
+  if(found.ruleId)return [...$$("[data-alert-rule]")].find(x=>x.dataset.alertRule===found.ruleId);
+  if(found.itemId)return [...$$("[data-purchase-item]")].find(x=>x.dataset.purchaseItem===found.itemId);
+  return $(found.tab==="plans"?"planMain":found.tab==="rebuy"?"rebuyMain":found.futureRebuy?"futureRebuyPanel":"futureBuyCard");
+}
+// 렌더링·페이지 로딩·폰트·화면 복귀를 기다리고 실제 표시되는 요소에서만 완료한다. 시간 기반 재시도는 없다.
+function schedulePendingPushAlert(){
+  if(!pendingPushTarget||document.hidden||document.readyState!=="complete")return;
+  const target=pendingPushTarget;
+  if(document.fonts?.status==="loading"){
+    if(pushAlertFontTarget!==target){pushAlertFontTarget=target;document.fonts.ready.then(()=>{if(pendingPushTarget===target){pushAlertFontTarget=null;render();}});}
+    return;
+  }
+  if(pushAlertFrame)cancelAnimationFrame(pushAlertFrame);
+  pushAlertFrame=requestAnimationFrame(()=>{
+    pushAlertFrame=0;if(pendingPushTarget!==target||document.hidden)return;
+    const found=pushAlertDestination(target);if(!found||state.tab!==found.tab)return;
+    const node=pushAlertNode(found);if(!node?.isConnected)return;
+    if(found.ruleId){
+      closeAlertEditor();renderPushSetup();
+      const details=node.closest("details");if(details)details.open=true;
+      if(!$("alertsDialog").open)$("alertsDialog").showModal();
+    }else if($("alertsDialog").open)$("alertsDialog").close();
+    for(let parent=node.closest("details");parent;parent=parent.parentElement?.closest("details"))parent.open=true;
+    if(!node.getClientRects().length)return;
     node.tabIndex=-1;node.focus({preventScroll:true});
     if(found.ruleId)node.scrollIntoView({block:"start"});
-    else scrollTo({top:Math.max(0,node.getBoundingClientRect().top+scrollY-topBar.getBoundingClientRect().height-12),behavior:"auto"});
-  }
-  return true;
+    else{
+      // 모바일에서는 top의 음수 위치로 헤더가 접힌다. 높이 전체 대신 현재 보이는 하단을 빼야 종목이 가려지지 않는다.
+      scrollTo({top:Math.max(0,node.getBoundingClientRect().top+scrollY-Math.max(0,topBar.getBoundingClientRect().bottom)-12),behavior:"instant"});
+    }
+    $$(".push-alert-highlight").forEach(x=>x.classList.remove("push-alert-highlight"));
+    node.classList.add("push-alert-highlight");
+    node.addEventListener("animationend",()=>node.classList.remove("push-alert-highlight"),{once:true});
+    clearPushAlertTarget();history.replaceState(null,"",`#${state.tab}`);
+  });
 }
 function pushOnPc(){try{return typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches;}catch{return false;}}
 function pushSupported(){return window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;}
@@ -172,6 +212,9 @@ async function disablePhonePush(){
 }
 async function initializePush(){
   assetStore.subscribe(type=>{if(type==="change"&&pendingPushTarget)render();});
+  addEventListener("load",()=>{if(pendingPushTarget)render();});
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&pendingPushTarget)render();});
+  document.addEventListener("click",event=>{if(event.target.closest?.("[data-plan], [data-rebuy], [data-purchase-select]"))clearPushAlertTarget();},true);
   renderPushSetup();
   if(!pushSupported())return;
   try{const registration=await navigator.serviceWorker.getRegistration(new URL("./",document.baseURI).href);pushSubscription=registration?await registration.pushManager.getSubscription():null;if(registration?.update)registration.update().catch(()=>{});}catch{}
