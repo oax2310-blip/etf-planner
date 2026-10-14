@@ -15,7 +15,7 @@ function worker(clients=[]){
     clients:{claim:async()=>calls.claimed++,matchAll:async()=>clients,
       openWindow:async url=>calls.opened.push(url)}};
   const ctx=vm.createContext({self,URL,URLSearchParams});
-  ctx.importScripts=name=>vm.runInContext(source(name.split('?')[0]),ctx);
+  ctx.importScripts=(...names)=>names.forEach(name=>vm.runInContext(source(name.split('?')[0]),ctx));
   vm.runInContext(source('push-sw.js'),ctx);
   const dispatch=async(name,value={})=>{let task;events[name]({...value,waitUntil:promise=>task=promise});await task;};
   const push=async payload=>{await dispatch('push',{data:{json:()=>payload}});return calls.shown.at(-1)[1];};

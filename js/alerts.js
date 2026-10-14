@@ -101,9 +101,10 @@ function openAlertEditor(ruleId=null){
   fields.ticker.focus();
 }
 function closeAlertEditor(){editingAlertId=null;$("alertForm").hidden=true;$("alertFormError").textContent="";}
+function openAlertSettings(){closeAlertEditor();renderAlerts();if(typeof renderPushSetup==="function")renderPushSetup();$("alertsDialog").showModal();}
 function initializeAlerts(){
   if(alertsInitialized)return;alertsInitialized=true;
-  $("alertsBtn").onclick=()=>{closeAlertEditor();renderAlerts();if(typeof renderPushSetup==="function")renderPushSetup();$("alertsDialog").showModal();};
+  $("alertsBtn").onclick=()=>typeof openAlertHistory==="function"?openAlertHistory():openAlertSettings();
   $("closeAlerts").onclick=()=>$("alertsDialog").close();
   $("addAlertBtn").onclick=()=>openAlertEditor();$("cancelAlertEdit").onclick=closeAlertEditor;
   $("alertForm").onsubmit=event=>{

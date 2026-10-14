@@ -14,9 +14,9 @@ const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우�
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
 let priceRefreshBusy=false, priceReadMessage="";
 const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false};
-// 순서는 plans → futures → actions → rebuy → alerts(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
+// 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
-function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions,rebuy:state.rebuy,alerts:state.alerts});}
+function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions,rebuy:state.rebuy,alerts:state.alerts,alertHistory:state.alertHistory});}
 const repoOk = r => /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r);
 const connected = () => !!(sync.token && sync.repo);
 // 빈 기기만 처음 연결 때 자동 수신. rebuy·alerts가 있으면 비어 있지 않다.
@@ -56,7 +56,7 @@ async function readRemote(){
   if(text===null){const raw=await gh(path,{headers:{Accept:"application/vnd.github.raw+json"}});if(!raw.ok)throw Error(`기록 읽기 실패 (${raw.status})`);text=await raw.text();}
   let data;try{data=JSON.parse(text);}catch{throw Error("저장소의 기록 파일을 읽을 수 없습니다. 자동으로 덮어쓰지 않았습니다.");}
   if(!Array.isArray(data.plans)||!data.futures||!data.actions)throw Error("저장소의 기록 파일 형식을 확인할 수 없습니다. 자동으로 덮어쓰지 않았습니다.");
-  return {sha:meta.sha,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions,rebuy:data.rebuy,alerts:data.alerts})};
+  return {sha:meta.sha,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions,rebuy:data.rebuy,alerts:data.alerts,alertHistory:data.alertHistory})};
 }
 // SHA로 다른 기기의 선행 저장(409/422)을 감지해 다시 읽는다.
 async function writeRemote(snapshot,sha){
@@ -137,10 +137,13 @@ async function syncNow(beforePriceCollection=false){
     if(!same())return;
     if(typeof readPushConfig==="function")await readPushConfig();
     if(!same())return;
+    if(typeof readAlertHistory==="function")await readAlertHistory();
+    if(!same())return;
     if(fillPrices(state,priceData)){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));sync.redraw=true;}
     sync.sha=sha;
     // 로컬·원격·base를 같은 시세로 채운 뒤 비교(시세 갱신만으로 충돌 창이 뜨지 않음). settle은 채운 원격 값도 저장.
-    const remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
+    let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
+    if(typeof alignAlertHistorySnapshots==="function")({local,remote,base}=alignAlertHistorySnapshots(local,remote,base));
     const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha);if(!same())return;markSynced(json);}sync.blocked=false;};
     if(remote===local)await settle(local);
     else if(remote===null){
