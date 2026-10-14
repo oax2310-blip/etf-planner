@@ -44,6 +44,7 @@ function clearPushAlertTarget(){
 // 해시는 이동 완료까지 유지한다. 새 페이지·동기화·백그라운드 복귀 모두 같은 준비/완료 경로를 사용한다.
 function openPushAlertFromHash(){
   const target=pushAlertTargetFromHash(location.hash);if(!target)return false;
+  if(typeof noteAlertHistoryRead==="function")noteAlertHistoryRead(target.eventId);
   clearPushAlertTarget();pendingPushTarget=target;
   openTab(pushAlertTab(target)||state.tab);return true;
 }

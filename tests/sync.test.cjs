@@ -16,7 +16,7 @@ const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60}
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
 // 시세 파일(prices)은 있으면 ETag와 함께 돌려주고, 같은 ETag로 물으면 304. priceStatus를 주면 시세 파일 요청만 그 상태로 실패.
-function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0} = {}) {
+function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0, includeHistory = false, historyEvents = []} = {}) {
   const items = new Map(Object.entries(stored));
   if (connect) {
     items.set('etf-planner-data-repo', REPO);
@@ -35,7 +35,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
-    $: element, document: {addEventListener() {}, hidden: false},
+    $: element, $$:()=>[], esc:value=>String(value??""), document: {addEventListener() {}, hidden: false},
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,crypto:require('node:crypto').webcrypto,
     setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval() {},
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
@@ -49,6 +49,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
         return reply(204,'');
       }
       if (path === `/repos/${REPO}`) return reply(200, {private: isPrivate});
+      if (includeHistory && path === `/repos/${REPO}/contents/etf-planner-alert-state.json`) return reply(200, {history:historyEvents});
       if (path === PRICE_FILE) {
         assert.equal(options.method ?? 'GET', 'GET', '시세 파일은 읽기만 한다');
         server.priceAsks.push(options.headers?.['If-None-Match'] ?? null);
@@ -72,6 +73,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
       return reply(200, {sha: server.file.sha, encoding: 'base64', content: b64(server.file.text)});
     }
   });
+  if(includeHistory)for(const name of ['alert-history-store.js','alert-history.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js',name),'utf8'),context);
   vm.runInContext(source, context);
   vm.runInContext(pricesSource, context);
   vm.runInContext('var restored = startSync();', context); // index.html 맨 끝처럼 모든 파일을 불러온 뒤 시작
@@ -79,6 +81,26 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
+
+const historyEvent = (eventId,extra={}) => ({eventId,ticker:'TEST',line:'분할매수 2차',ruleId:'trade:buy:one:round',name:'예제 ETF',price:101,ma:100,currency:'USD',condition:'up',trigger:'reach',occurredAt:'2026-10-14T01:00:00Z',observedAt:'2026-10-14T00:59:59Z',...extra});
+test('새 발송 이력은 기존 비공개 플래너 파일과 JSON 백업·복원으로 왕복한다',async()=>{
+  const local=empty(),h=harness({local,remote:local,base:snap(local),includeHistory:true,historyEvents:[historyEvent('new')]});
+  await h.restored();assert.equal(h.remoteData().alertHistory.items[0].id,'new');assert.equal(h.remoteData().alertHistory.items[0].price,101);
+  const saved=JSON.parse(h.items.get('test-state'));assert.deepEqual(saved.alertHistory,h.remoteData().alertHistory);assert.deepEqual(h.remoteData().plans,[]);
+  h.context.markAlertHistoryRead('new');await h.run();assert.ok(h.remoteData().alertHistory.items[0].readAt);
+  const file={files:[{text:async()=>JSON.stringify(h.remoteData())}],value:'backup.json'};
+  h.context.alert=()=>{};await h.elements.get('importInput').onchange({target:file});assert.equal(file.value,'');assert.equal(h.context.state.alertHistory.items[0].id,'new');
+});
+test('기기별 읽음·삭제·새 알림만 달라도 거래 충돌 없이 병합하고 삭제 이력은 재발송 파일에서 살리지 않는다',async()=>{
+  const local={...empty(),alertHistory:{items:[{...historyEvent('one'),id:'one',readAt:'2026-10-14T02:00:00Z'}],deletedIds:['deleted']}},remote={...empty(),alertHistory:{items:[{...historyEvent('two'),id:'two'},{...historyEvent('deleted'),id:'deleted'}],deletedIds:[]}};
+  const h=harness({local,remote,base:snap(empty()),includeHistory:true,historyEvents:[historyEvent('deleted')]});await h.restored();
+  assert.equal(vm.runInContext("sync.blocked",h.context),false);assert.deepEqual(h.remoteData().alertHistory.items.map(item=>item.id).sort(),['one','two']);assert.ok(h.remoteData().alertHistory.items.find(item=>item.id==='one').readAt);
+  assert.deepEqual(h.remoteData().alertHistory.deletedIds,['deleted']);
+});
+test('알림 클릭이 먼저 도착해도 원격 플래너 파일에서 복원되는 내역을 읽음으로 유지한다',async()=>{
+  const remote={...empty(),alertHistory:{items:[{...historyEvent('remote'),id:'remote'}],deletedIds:[]}},h=harness({remote,includeHistory:true,hadStoredState:false});
+  h.context.noteAlertHistoryRead('remote');await h.restored();assert.ok(h.context.state.alertHistory.items[0].readAt);assert.ok(h.remoteData().alertHistory.items[0].readAt);
+});
 
 test('알림 조건과 휴대폰 구독을 다른 기기에서 손실 없이 가져온다', async () => {
   const local=empty(), remote={...empty(),alerts:{rules:[{id:'rule-1',ticker:'AAA',period:60,unit:'일선',tolerancePct:0.5,enabled:true}],subscriptions:[{id:'device-1',subscription:{endpoint:'https://fcm.googleapis.com/test-only',keys:{p256dh:'fake-public-key',auth:'fake-auth'}}}]}};
