@@ -14,9 +14,9 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=167"></script>
-  <link rel="stylesheet" href="css/app.css?v=167" />
-  <link rel="stylesheet" href="css/purchases.css?v=167" />
+  <script src="js/theme.js?v=168"></script>
+  <link rel="stylesheet" href="css/app.css?v=168" />
+  <link rel="stylesheet" href="css/purchases.css?v=168" />
 </head>
 <body>
   <header class="top">
@@ -28,7 +28,7 @@
       <button class="tab" data-tab="rebuy">재매수</button>
       <a class="tab tab-link" href="assets.html">자산</a>
     </nav>
-    <div class="sync-head"><a class="btn mini scenario-link" href="valuation.html">시나리오</a><button class="btn mini" id="alertsBtn" type="button">알림<span class="alert-unread-badge" id="alertsUnreadBadge" hidden></span></button><span data-theme-pick></span><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini sync-btn off" id="syncBtn" type="button" title="이 기기에 저장 중"><span class="sync-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.3L3 9M3 4v5h5M4 13a8 8 0 0 0 14.3 4.3L21 15M21 20v-5h-5"/></svg></span>동기화</button></div>
+    <div class="sync-head"><a class="btn mini scenario-link" href="valuation.html">시나리오</a><button class="btn mini icon-btn alerts-icon-btn" id="alertsBtn" type="button" aria-label="알림" title="알림내역"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="alert-unread-badge" id="alertsUnreadBadge" hidden></span></button><span data-theme-pick></span><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini sync-btn off" id="syncBtn" type="button" title="이 기기에 저장 중"><span class="sync-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.3L3 9M3 4v5h5M4 13a8 8 0 0 0 14.3 4.3L21 15M21 20v-5h-5"/></svg></span>동기화</button></div>
   </header>
 
   <main>
@@ -247,24 +247,24 @@
 
   <dialog id="futurePlanDialog" aria-labelledby="futurePlanTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=167"></script>
-  <script src="js/core.js?v=167"></script>
-  <script src="js/price-collection.js?v=167"></script>
-  <script src="js/sync.js?v=167"></script>
-  <script src="js/prices.js?v=167"></script>
-  <script src="js/assets-calc.js?v=167"></script>
-  <script src="js/assets-store.js?v=167"></script>
-  <script src="js/alloc-link.js?v=167"></script>
-  <script src="js/purchases.js?v=167"></script>
-  <script src="js/trade-alerts.js?v=167"></script>
-  <script src="js/plans.js?v=167"></script>
-  <script src="js/futures.js?v=167"></script>
-  <script src="js/rebuy.js?v=167"></script>
-  <script src="js/alerts.js?v=167"></script>
-  <script src="js/alert-target.js?v=167"></script>
-  <script src="js/alert-history-store.js?v=167"></script>
-  <script src="js/alert-history.js?v=167"></script>
-  <script src="js/push.js?v=167"></script>
+  <script src="js/ma-ladder.js?v=168"></script>
+  <script src="js/core.js?v=168"></script>
+  <script src="js/price-collection.js?v=168"></script>
+  <script src="js/sync.js?v=168"></script>
+  <script src="js/prices.js?v=168"></script>
+  <script src="js/assets-calc.js?v=168"></script>
+  <script src="js/assets-store.js?v=168"></script>
+  <script src="js/alloc-link.js?v=168"></script>
+  <script src="js/purchases.js?v=168"></script>
+  <script src="js/trade-alerts.js?v=168"></script>
+  <script src="js/plans.js?v=168"></script>
+  <script src="js/futures.js?v=168"></script>
+  <script src="js/rebuy.js?v=168"></script>
+  <script src="js/alerts.js?v=168"></script>
+  <script src="js/alert-target.js?v=168"></script>
+  <script src="js/alert-history-store.js?v=168"></script>
+  <script src="js/alert-history.js?v=168"></script>
+  <script src="js/push.js?v=168"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializeAlertHistory(); initializePush();</script>
 </body>
 </html>
