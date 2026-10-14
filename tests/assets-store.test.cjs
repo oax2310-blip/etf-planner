@@ -8,18 +8,21 @@ const fake=()=>({version:1,allocation:{savedAt:'2026-01-01',classes:[],cash:[],g
 function setup(initial,fetcher,shared){
   const storage=shared||new Map(initial?[[KEY,JSON.stringify(initial)]]:[]),listeners=new Map();
   const collection={id:'',dispatches:[]};
+  storage.set('etf-planner-collection-request-token','fake-issues-token');
+  storage.set('etf-planner-collection-data-repo','example/private-data');
   const context={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
     AbortController,crypto:require('node:crypto').webcrypto,setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);return 1;},clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
     async fetch(url,options){
-      if(url.endsWith('/dispatches')){const body=JSON.parse(options.body);collection.id=body.client_payload.request_id;collection.dispatches.push(body);return new Response(null,{status:204});}
+      if(url.endsWith('/issues/123'))return new Response(JSON.stringify({state:'open'}));
+      if(url.endsWith('/issues')){const body=JSON.parse(options.body);collection.id=JSON.parse(body.body).request_id;collection.dispatches.push(body);return new Response(JSON.stringify({number:123}),{status:201});}
       const r=await (fetcher||(()=>{throw Error('unexpected network call');}))(url,options);
       if(url.endsWith('/contents/etf-planner-prices.json')&&r.ok&&collection.id){
         try{const d=await r.clone().json();return new Response(JSON.stringify({...d,collectionRequests:[{id:collection.id,failed:false}]}),{status:r.status,headers:r.headers});}catch{}
       }
       return r;
     }};
-  const code=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+  const code=['js/repo-security.js','js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY})};
 }
@@ -295,7 +298,7 @@ test('자산 시세 즉시 불러오기는 수집 결과를 반영하고 보유�
   connect(storage);store.acceptPrices(store.config(),quotes(100),'"same-etag"');store.subscribe(type=>events.push(type));
   await store.refreshPrices();
   assert.equal(asks.length,1);assert.ok(asks[0].url.endsWith('/contents/etf-planner-prices.json'));
-  assert.equal(collection.dispatches.length,1);assert.equal(collection.dispatches[0].event_type,'collect-prices-now');
+  assert.equal(collection.dispatches.length,1);assert.equal(collection.dispatches[0].title,'ETF price collection');
   assert.equal(asks[0].options.headers['If-None-Match'],undefined);assert.equal(asks[0].options.method,undefined);
   assert.equal(store.prices.stocks.AAA.close,150);assert.equal(store.prices.fx.close,1400);
   assert.equal(JSON.parse(storage.get('etf-planner-assets-prices')).stocks.AAA.close,150);
@@ -314,7 +317,7 @@ test('새 자산 종목의 저장 대기를 먼저 처리하고 동기화가 실
   });
   connect(h.storage);h.store.doc.allocation.groups[0].items[0].ticker='AAA';h.store.saveSection('allocation');
   const fetch=h.context.fetch;h.context.fetch=async(url,options)=>{
-    if(url.endsWith('/dispatches'))assert.equal(remote.allocation.groups[0].items[0].ticker,'AAA');
+    if(url.endsWith('/issues'))assert.equal(remote.allocation.groups[0].items[0].ticker,'AAA');
     return fetch(url,options);
   };
   await h.store.refreshPrices();assert.equal(h.collection.dispatches.length,1);assert.match(h.store.priceMessage,/시세 불러오기 완료/);

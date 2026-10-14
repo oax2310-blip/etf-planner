@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+const repoSecuritySource = fs.readFileSync(require('node:path').join(__dirname, '../js/repo-security.js'), 'utf8');
 const html = fs.readFileSync(require('node:path').join(__dirname, '../valuation.html'), 'utf8');
 const start = html.indexOf('  // 가정 저장:'), source = html.slice(start, html.indexOf('</script>', start));
 if (!source.includes('function applyAssumptions(')) throw Error('가정 저장 구현을 찾지 못했습니다.');
@@ -117,7 +118,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     fetch: server ? server.fetch : async () => { throw Error('연결하지 않았는데 GitHub에 요청했다'); },
     Date, JSON, Number, String, Object, Array, Set, Map, Error, TextEncoder, TextDecoder, Uint8Array, btoa, atob, URL
   });
-  vm.runInContext(source, context);
+  vm.runInContext(repoSecuritySource+'\n'+source, context);
   const fire = (type, target) => (listeners[type] || []).forEach(fn => fn({target, preventDefault() {}}));
   // 계산기 쪽 입력 처리처럼 프리셋 선택을 풀고 input 이벤트를 보낸다.
   const adjust = (id, value) => {

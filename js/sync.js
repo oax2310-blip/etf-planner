@@ -2,7 +2,7 @@
 // core.js 이름을 새로 사용하면 가짜 core 값으로 불러오는 tests/sync.test.cjs도 맞춘다.
 const initialSnapshot = dataSnapshot();
 const DATA_FILE = "etf-planner-data.json";
-const DEFAULT_DATA_REPO = "oax2310-blip/etf-planner-data";
+const DEFAULT_DATA_REPO = repoSecurity.defaultData;
 // assets-store.js·valuation.html도 같은 키를 읽는다(시나리오는 etf-planner-scenarios.json); 이름 변경은 함께 적용.
 const REPO_KEY = "etf-planner-data-repo";
 const TOKEN_KEY = "etf-planner-github-token"; // 토큰은 기기별 localStorage 전용(Contents 읽기·쓰기).
@@ -33,6 +33,7 @@ function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null
 const toB64 = text => {const bytes=new TextEncoder().encode(text);let bin="";for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(bin);};
 const fromB64 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
 async function gh(path,options={}){
+  repoSecurity.assertDataRepo(sync.repo);
   const response=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${sync.token}`,...options.headers}});
   if(response.status===401)throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 동기화 설정에서 새 토큰을 넣어 주세요.");
   if(response.status===403)throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
@@ -174,6 +175,7 @@ async function syncNow(beforePriceCollection=false){
 }
 function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.checked=false;sync.blocked=false;}
 function refreshTokenField(){$("githubToken").placeholder=localStorage.getItem(TOKEN_KEY)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 값";}
+function refreshCollectionTokenField(){$("collectionToken").placeholder=localStorage.getItem(repoSecurity.tokenKey)?"저장됨 · 바꿀 때만 붙여넣기":"수집 저장소의 Issues 전용 토큰";}
 $("syncBtn").onclick=()=>$("syncDialog").showModal();
 $("closeSync").onclick=()=>$("syncDialog").close();
 $("dataRepo").value=localStorage.getItem(REPO_KEY)||DEFAULT_DATA_REPO;
@@ -183,17 +185,22 @@ $("connectRepo").onclick=()=>{
   if(sync.busy){syncStatus("현재 동기화가 끝나면 다시 눌러 주세요.");return;}
   const repo=$("dataRepo").value.trim(),token=$("githubToken").value.trim()||localStorage.getItem(TOKEN_KEY)||"";
   if(!repoOk(repo)){syncStatus("데이터 저장소를 '아이디/저장소이름' 형식으로 입력해 주세요.");return;}
+  try{repoSecurity.assertDataRepo(repo);}catch(error){syncStatus(error.message);return;}
   if(!token){syncStatus("GitHub 토큰을 붙여넣어 주세요.");return;}
+  const collectionToken=$("collectionToken").value.trim()||(localStorage.getItem(repoSecurity.repoKey)===repo?localStorage.getItem(repoSecurity.tokenKey)||"":"");
+  if(collectionToken&&collectionToken===token){syncStatus("데이터 전용 토큰과 즉시수집 전용 토큰을 각각 발급해 주세요.");return;}
+  if(collectionToken){localStorage.setItem(repoSecurity.tokenKey,collectionToken);localStorage.setItem(repoSecurity.repoKey,repo);}
+  $("collectionToken").value="";refreshCollectionTokenField();
   localStorage.setItem(REPO_KEY,repo);localStorage.setItem(TOKEN_KEY,token);$("githubToken").value="";
   clearTimeout(sync.timer);loadConfig();refreshTokenField();syncNow();
 };
 $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncStatus("먼저 저장소와 토큰으로 연결해 주세요.");};
 $("refreshPricesBtn").onclick=refreshPrices;$("refreshPricesDialogBtn").onclick=refreshPrices;
-$("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);loadConfig();refreshTokenField();syncStatus("이 기기에만 저장 중");};
+$("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");};
 // 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 자동 동기화를 멈춘다.
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
-loadConfig();refreshTokenField();
+loadConfig();refreshTokenField();refreshCollectionTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
 $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=externalData.planner(JSON.parse(await file.text())),next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
 function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // index.html 맨 끝에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)

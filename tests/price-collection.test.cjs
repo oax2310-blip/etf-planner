@@ -1,55 +1,62 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const vm=require('node:vm');
-const source=fs.readFileSync(require('node:path').join(__dirname,'../js/price-collection.js'),'utf8');
-const ID='fake-request-1234',cfg={repo:'example/private-data',token:'fake-test-token'};
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const source=['repo-security.js','price-collection.js'].map(n=>fs.readFileSync(path.join(__dirname,'../js',n),'utf8')).join('\n');
+const ID='fake-request-1234',cfg={repo:'example/private-data',token:'fake-data-token'},collector='oax2310-blip/etf-planner-data';
 const reply=(doc,status=200,etag='')=>new Response(status===204||status===304?null:JSON.stringify(doc),{status,headers:etag?{ETag:etag}:{}});
-function setup(fetcher){
+function setup(fetcher,initial={}){
   const requests=[],messages=[],timers=new Map(),cleared=[];
-  const context=vm.createContext({AbortController,crypto:{randomUUID:()=>ID},setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);else timers.set(ms,fn);return ms;},clearTimeout:ms=>cleared.push(ms),fetch:async(url,options)=>{requests.push({url,options});return fetcher(url,options,requests.length);}});
+  const stored=new Map(Object.entries({'etf-planner-collection-request-token':'fake-issues-token','etf-planner-collection-data-repo':cfg.repo,...initial}));
+  const context=vm.createContext({localStorage:{getItem:k=>stored.get(k)},AbortController,crypto:{randomUUID:()=>ID},setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);else timers.set(ms,fn);return ms;},clearTimeout:ms=>cleared.push(ms),fetch:async(url,options)=>{requests.push({url,options});return fetcher(url,options,requests.length);}});
   vm.runInContext(source,context);
-  return {requests,messages,timers,cleared,run:(same=()=>true)=>context.collectPricesNow(cfg,message=>messages.push(message),same)};
+  return {requests,messages,timers,cleared,stored,run:(same=()=>true,c=cfg)=>context.collectPricesNow(c,message=>messages.push(message),same)};
 }
+const normal=(url,options)=>url.endsWith('/issues')?reply({number:123},201):url.endsWith('/issues/123')?reply({state:'open'}):reply({stocks:{AAA:{close:20}},collectionRequests:[{id:ID,failed:false}]},200,'"new"');
 
-test('실제 수집 요청에 개인 기록 없이 식별자만 보내고 이전·다른 요청의 시세는 완료로 받지 않는다',async()=>{
-  const docs=[reply(null,204),reply({stocks:{AAA:{close:10}},collectionRequests:[{id:'other-request',failed:false}]},200,'"old"'),reply(null,304),reply(null,404),reply({stocks:{AAA:{close:20}},collectionRequests:[{id:ID,failed:false}]},200,'"new"')];
-  const h=setup(()=>docs.shift()),result=await h.run();
-  assert.equal(h.requests.length,5);assert.equal(h.requests[0].options.method,'POST');assert.ok(h.requests[0].url.endsWith('/dispatches'));
-  assert.deepEqual(JSON.parse(h.requests[0].options.body),{event_type:'collect-prices-now',client_payload:{request_id:ID}});
-  assert.equal(h.requests[1].options.headers['If-None-Match'],undefined);assert.equal(h.requests[2].options.headers['If-None-Match'],'"old"');
-  assert.ok(h.requests.every(r=>r.options.cache==='no-store'&&r.options.headers.Authorization===`Bearer ${cfg.token}`));
-  assert.equal(result.doc.stocks.AAA.close,20);assert.equal(result.etag,'"new"');assert.equal(result.message,'');
-  assert.match(h.messages.at(-1),/수집 중/);
+test('Issues 토큰은 요청·상태에만, 데이터 토큰은 데이터 조회에만 쓰며 투자정보는 요청에 포함하지 않는다',async()=>{
+  const h=setup(normal),result=await h.run();
+  assert.equal(h.requests.length,3);
+  const [create,status,read]=h.requests;
+  assert.equal(create.url,`https://api.github.com/repos/${collector}/issues`);
+  assert.deepEqual(JSON.parse(create.options.body),{title:'ETF price collection',body:JSON.stringify({version:1,request_id:ID})});
+  assert.equal(create.options.headers.Authorization,'Bearer fake-issues-token');
+  assert.equal(status.options.headers.Authorization,'Bearer fake-issues-token');
+  assert.equal(read.options.headers.Authorization,'Bearer fake-data-token');
+  assert.ok(read.url.startsWith('https://api.github.com/repos/'+cfg.repo+'/contents/'));
+  assert.ok(h.requests.every(r=>r.options.redirect==='error'&&r.options.cache==='no-store'));
+  assert.equal(result.doc.stocks.AAA.close,20);assert.equal(result.etag,'"new"');
 });
-
-test('권한·수집 요청 실패에는 파일 조회나 새 요청을 반복하지 않는다',async()=>{
-  for(const [status,message] of [[401,/토큰/],[403,/Contents/],[404,/요청 실패/],[422,/요청 실패/]]){
-    const h=setup(()=>reply(null,status));await assert.rejects(h.run(),message);assert.equal(h.requests.length,1);
+test('실패·토큰 누락·같은 토큰·옛 수집 저장소에 dispatch나 추가 권한으로 우회하지 않는다',async()=>{
+  for(const status of [401,403,404,422]){const h=setup(()=>reply(null,status));await assert.rejects(h.run());assert.equal(h.requests.length,1);}
+  for(const initial of [{'etf-planner-collection-request-token':''},{'etf-planner-collection-request-token':cfg.token},{'etf-planner-collection-data-repo':'different/data'}]){
+    const h=setup(normal,initial);await assert.rejects(h.run());assert.equal(h.requests.length,0);
+  }
+  for(const repo of [collector,collector.toUpperCase(),collector+'.git']){const h=setup(normal);await assert.rejects(h.run(()=>true,{...cfg,repo}));assert.equal(h.requests.length,0);}
+});
+test('다른 요청·이전 시세·304·404는 완료로 받지 않고 내 요청 영수증을 기다린다',async()=>{
+  const docs=[reply({stocks:{},collectionRequests:[{id:'other-request'}]},200,'"old"'),reply(null,304),reply(null,404),normal('data',{})];
+  const h=setup((u,o)=>u.includes('/issues')?normal(u,o):docs.shift());await h.run();
+  const reads=h.requests.filter(r=>r.url.includes('/contents/'));assert.equal(reads.length,4);
+  assert.equal(reads[1].options.headers['If-None-Match'],'"old"');
+});
+test('작업 거부·실패는 마지막 시세를 유지하고 반복 요청하지 않는다',async()=>{
+  for(const status of ['failed','rate-limited','duplicate-request']){
+    const h=setup((u,o)=>u.endsWith('/123')?reply({state:'closed',body:JSON.stringify({request_id:ID,status})}):normal(u,o));
+    await assert.rejects(h.run());assert.equal(h.requests.length,2);
   }
 });
-
-test('새 수집 결과에서 일부 조회가 실패했으면 적용할 시세와 경고를 함께 반환한다',async()=>{
-  const h=setup((url)=>url.endsWith('/dispatches')?reply(null,204):reply({stocks:{AAA:{close:10,stale:true}},collectionRequests:[{id:ID,failed:true}]}));
-  const result=await h.run();assert.equal(result.doc.stocks.AAA.close,10);assert.match(result.message,/일부 조회 실패/);
+test('일부 조회 실패는 완료 결과에 경고로 전달한다',async()=>{
+  const h=setup((u,o)=>u.includes('/issues')?normal(u,o):reply({stocks:{},collectionRequests:[{id:ID,failed:true}]}));
+  assert.match((await h.run()).message,/일부 조회 실패/);
 });
-
-test('수집 결과를 끝내 받지 못하면 완료로 표시하지 않고 한 번의 요청으로 대기를 끝낸다',async()=>{
-  const h=setup(url=>url.endsWith('/dispatches')?reply(null,204):reply({stocks:{},collectionRequests:[{id:'other-request'}]}));
-  await assert.rejects(h.run(),/완료를 아직 확인하지 못했습니다/);assert.equal(h.requests.length,61);
-  assert.equal(h.requests.filter(r=>r.options.method==='POST').length,1);
+test('요청 응답의 잘못된 issue 번호와 본문은 경로·코드로 실행하지 않는다',async()=>{
+  for(const number of ['../actions/workflows',-1,1.5,null]){const h=setup(()=>reply({number},201));await assert.rejects(h.run());assert.equal(h.requests.length,1);}
 });
-
-test('API 응답이 멈춰도 전체 대기 제한으로 요청을 취소하고 타이머를 해제한다',async()=>{
-  const h=setup((url,options)=>new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true})));
-  const work=h.run();h.timers.get(300000)();
-  await assert.rejects(work,/완료를 아직 확인하지 못했습니다/);assert.equal(h.requests.length,1);assert.deepEqual(h.cleared,[300000]);
+test('요청이 멈추면 전체 제한으로 취소하고 타이머를 정리한다',async()=>{
+  const h=setup((u,o)=>new Promise((resolve,reject)=>o.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true})));
+  const task=h.run();h.timers.get(300000)();await assert.rejects(task,/완료를 아직/);assert.deepEqual(h.cleared,[300000]);
 });
-
-test('수집 대기 중 연결이 바뀌면 이전 연결로 후속 요청하거나 시세를 반환하지 않는다',async()=>{
-  let same=true;
-  const h=setup(()=>{same=false;return reply(null,204);});
-  await assert.rejects(h.run(()=>same),/연결 설정이 바뀌었습니다/);assert.equal(h.requests.length,1);
-  const afterRead=setup(url=>url.endsWith('/dispatches')?reply(null,204):{status:200,ok:true,headers:{get:()=>''},async text(){same=false;return JSON.stringify({stocks:{},collectionRequests:[{id:ID}]});}});
-  same=true;await assert.rejects(afterRead.run(()=>same),/연결 설정이 바뀌었습니다/);assert.equal(afterRead.requests.length,2);
+test('데이터 또는 요청 토큰 변경 후에는 이전 인증으로 후속 요청하지 않는다',async()=>{
+  let same=true;const h=setup(()=>{same=false;return reply({number:123},201);});await assert.rejects(h.run(()=>same),/연결 설정/);assert.equal(h.requests.length,1);
+  const h2=setup(()=>{h2.stored.set('etf-planner-collection-request-token','different-token');return reply({number:123},201);});await assert.rejects(h2.run(),/연결 설정/);assert.equal(h2.requests.length,1);
 });
