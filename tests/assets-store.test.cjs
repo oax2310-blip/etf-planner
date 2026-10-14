@@ -19,7 +19,7 @@ function setup(initial,fetcher,shared){
       }
       return r;
     }};
-  const code=['js/ma-ladder.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+  const code=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY})};
 }
@@ -28,6 +28,19 @@ const milestoneDoc=()=>({...fake(),savings:{savedAt:'2026-01-01',startYear:2025,
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 const contents=doc=>json({sha:'remote-sha',encoding:'base64',content:Buffer.from(JSON.stringify(doc)).toString('base64')});
 function connect(storage){storage.set('etf-planner-data-repo','example/private-data');storage.set('etf-planner-github-token','fake-test-token');}
+
+test('잘못된 자산 백업은 현재 종목·체결·복구본을 바꾸기 전에 거부한다',()=>{
+  const original=fake(),h=setup(original),before=[...h.storage];
+  const incoming=fake();incoming.allocation.groups[0].items[0].target='"><img src=x onerror="synthetic()">';
+  assert.throws(()=>h.store.restore(incoming),/기록 형식/);assert.deepEqual(clone(h.store.doc),original);assert.deepEqual([...h.storage],before);
+});
+
+test('악성 자산 동기화 JSON은 기존 구역과 원격 데이터를 덮어쓰지 않는다',async()=>{
+  const original=fake(),incoming=fake();incoming.allocation.groups[0].items='not-a-list';let writes=0;
+  const h=setup(original,(url,options)=>{if(options?.method==='PUT')writes++;return url.endsWith('/repos/example/private-data')?json({private:true}):contents(incoming);});
+  connect(h.storage);await h.store.sync();assert.equal(writes,0);assert.equal(h.store.status.state,'error');
+  assert.deepEqual(clone(h.store.doc),original);assert.deepEqual(JSON.parse(h.storage.get(KEY)),original);
+});
 
 test('공유 자산 기록: 입력 없이 열면 기존 분할매수·목표·동기화 스냅샷을 바꾸지 않는다',()=>{
   const original=fake(),{store,storage}=setup(original);store.start();

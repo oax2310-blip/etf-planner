@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = ['price-collection.js','sync.js'].map(f=>fs.readFileSync(require('node:path').join(__dirname, '../js',f), 'utf8')).join('\n');
+const source = ['data-validation.js','price-collection.js','sync.js'].map(f=>fs.readFileSync(require('node:path').join(__dirname, '../js',f), 'utf8')).join('\n');
 const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
 if (!source.includes('async function syncNow(')) throw Error('동기화 구현을 찾지 못했습니다.');
 
@@ -81,6 +81,54 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
+
+test('악성·잘못된 백업은 현재 기록·복구본·원격 저장을 변경하기 전에 거부한다',async()=>{
+  const local={...empty(),plans:[{id:'original',stages:2,note:'보존할 가상 메모'}]};
+  for(const bad of [
+    {...empty(),plans:[{stages:'<img src=x onerror="synthetic()">'}]},
+    {...empty(),plans:[{stages:2,holdings:'not-a-list'}]},
+    {...empty(),futures:{positions:[null]}},
+    JSON.parse('{"plans":[],"futures":{},"__proto__":{"polluted":true}}')
+  ]){
+    const h=harness({local,connect:false,stored:{'test-state':JSON.stringify(local),'etf-planner-sync-recovery':'existing recovery'}});
+    const alerts=[];h.context.alert=message=>alerts.push(message);const before=[...h.items];
+    const file={files:[{text:async()=>JSON.stringify(bad)}],value:'synthetic.json'};
+    await h.elements.get('importInput').onchange({target:file});
+    assert.deepEqual(h.context.state,local);assert.deepEqual([...h.items],before);assert.equal(h.server.writes,0);
+    assert.match(alerts[0],/복원 실패/);assert.equal(file.value,'');
+  }
+});
+
+test('정상 옛 백업을 가져오고 저장·동기화·내려받기·재복원해도 선택 필드와 체결을 보존한다',async()=>{
+  const incoming={...empty(),plans:[{id:'legacy',stages:'2',checked:[true,false],holdings:[{name:'예시',shares:4}],note:'문자 < > & 메모',fills:{0:{plannedQty:2,qty:2,price:100}}}],rebuy:{items:[{id:'r',stages:[{name:'25분봉',price:100}],cuts:[null]}]}};
+  const h=harness({connect:false});h.context.alert=()=>{};
+  const restore=async value=>h.elements.get('importInput').onchange({target:{files:[{text:async()=>JSON.stringify(value)}],value:'backup.json'}});
+  await restore(incoming);assert.deepEqual(JSON.parse(h.items.get('test-state')),incoming);
+  let downloaded;h.context.downloadJson=value=>{downloaded=JSON.parse(JSON.stringify(value));};h.elements.get('exportBtn').onclick();
+  delete downloaded.exportedAt;assert.deepEqual(downloaded,incoming);
+  h.items.set('etf-planner-data-repo',REPO);h.items.set('etf-planner-github-token','test-token');h.context.loadConfig();await h.run();
+  assert.deepEqual(h.remoteData(),incoming);await restore(downloaded);assert.deepEqual(JSON.parse(h.items.get('test-state')),incoming);
+});
+
+test('잘못된 원격 JSON은 이 기기의 기록·동기화 기준·원격 기록을 보존하고 오류를 표시한다',async()=>{
+  const local={...empty(),plans:[{id:'local',stages:2}]};
+  const remote={...empty(),plans:[{id:'malicious',stages:'<img src=x onerror="synthetic()">'}]};
+  const h=harness({local,remote,base:snap(local),stored:{'test-state':JSON.stringify(local)}});await h.restored();
+  assert.equal(h.server.writes,0);assert.deepEqual(h.context.state,local);assert.equal(h.items.get('test-state'),JSON.stringify(local));
+  assert.equal(h.items.get('etf-planner-sync-base:'+REPO),snap(local));assert.deepEqual(h.remoteData(),remote);
+  assert.match(h.status(),/기록 형식/);
+  assert.throws(()=>h.context.applyRemote(JSON.stringify(remote)),/기록 형식/);assert.deepEqual(h.context.state,local);
+});
+
+test('백업 복원·원격 적용 중 브라우저 저장이 실패하면 메모리의 기존 기록도 유지한다',async()=>{
+  const local={...empty(),plans:[{id:'original',stages:2}]},incoming={...empty(),plans:[{id:'new',stages:2}]};
+  const h=harness({local,connect:false,stored:{'test-state':JSON.stringify(local)}}),before=[...h.items];
+  h.context.localStorage.setItem=()=>{throw Error('synthetic storage full');};h.context.alert=()=>{};
+  await h.elements.get('importInput').onchange({target:{files:[{text:async()=>JSON.stringify(incoming)}],value:'backup.json'}});
+  assert.deepEqual(h.context.state,local);assert.deepEqual([...h.items],before);
+  assert.throws(()=>h.context.applyRemote(JSON.stringify(incoming)),/synthetic storage full/);
+  assert.deepEqual(h.context.state,local);assert.deepEqual([...h.items],before);
+});
 
 const historyEvent = (eventId,extra={}) => ({eventId,ticker:'TEST',line:'분할매수 2차',ruleId:'trade:buy:one:round',name:'예제 ETF',price:101,ma:100,currency:'USD',condition:'up',trigger:'reach',occurredAt:'2026-10-14T01:00:00Z',observedAt:'2026-10-14T00:59:59Z',...extra});
 test('새 발송 이력은 기존 비공개 플래너 파일과 JSON 백업·복원으로 왕복한다',async()=>{
