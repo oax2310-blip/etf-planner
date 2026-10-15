@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-14T22:49:20.070Z",
+  "generatedAt": "2026-10-15T22:48:51.833Z",
   "series": {
     "usGdp": {
       "code": "GDPC1",
@@ -246,8 +246,8 @@
       "sourceUpdatedAt": "2026-09-30",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -966,8 +966,8 @@
       "sourceUpdatedAt": "2026-09-22",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -1691,8 +1691,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -2416,8 +2416,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -3131,17 +3131,24 @@
         },
         {
           "period": "2026-07",
-          "value": 4225608.6,
+          "value": 4227637.3,
           "firstSeenAt": "2026-10-12T06:28:34.324Z"
+        },
+        {
+          "period": "2026-08",
+          "value": 4266777.2,
+          "firstSeenAt": "2026-10-15T22:48:51.833Z"
         }
       ],
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
-      "revisedPeriods": [],
-      "lastRevisionAt": null
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "revisedPeriods": [
+        "2026-07"
+      ],
+      "lastRevisionAt": "2026-10-15T22:48:51.833Z"
     },
     "krRate": {
       "table": "722Y001",
@@ -3869,8 +3876,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -4124,8 +4131,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-14T22:49:20.070Z",
-      "lastAttemptAt": "2026-10-14T22:49:20.070Z",
+      "fetchedAt": "2026-10-15T22:48:51.833Z",
+      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     }
