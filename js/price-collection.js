@@ -1,28 +1,35 @@
-// 두 화면의 즉시 수집: Contents 읽기·쓰기 권한으로 데이터 저장소에 요청하고, 그 요청의 결과만 받는다.
-// 데이터 저장소 kis-prices.yml(repository_dispatch: collect-prices-now)·kis_prices.py(collectionRequests)와 같은 계약.
+// 즉시수집: 수집 저장소의 Issues 전용 토큰으로 요청 ID만 보내고 데이터 토큰으로 결과만 읽는다.
+// 두 토큰은 교환하지 않는다. 실패 시 Contents/Actions 권한 요청이나 dispatch로의 우회가 없다.
 async function collectPricesNow(cfg, progress=()=>{}, same=()=>true){
-  const requestId=crypto.randomUUID(), path=`/repos/${cfg.repo}`;
+  const trigger=repoSecurity.requestConfig(cfg),requestId=crypto.randomUUID(), path=`/repos/${cfg.repo}`;
   const waitingMessage="시세 수집 완료를 아직 확인하지 못했습니다. 잠시 후 다시 불러오거나 데이터 저장소의 수집 작업 상태를 확인해 주세요.";
   const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),300000);
-  const check=()=>{if(!same())throw Error("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");if(controller.signal.aborted)throw Error(waitingMessage);};
-  async function request(suffix,options={}){
+  const check=()=>{if(!same()||repoSecurity.requestConfig(cfg).token!==trigger.token)throw Error("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");if(controller.signal.aborted)throw Error(waitingMessage);};
+  async function request(suffix,options={},issue=false){
     check();
     let r;
-    try{r=await fetch(`https://api.github.com${path}${suffix}`,{cache:"no-store",signal:controller.signal,...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${cfg.token}`,...options.headers}});}
+    try{r=await fetch(`https://api.github.com${issue?`/repos/${trigger.repo}`:path}${suffix}`,{cache:"no-store",redirect:"error",signal:controller.signal,...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${issue?trigger.token:cfg.token}`,...options.headers}});}
     catch(error){check();if(error?.name==="TypeError")throw Error("네트워크 연결을 확인해 주세요.");throw error;}
     check();
     if(r.status===401)throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 동기화 설정에서 새 토큰을 넣어 주세요.");
-    if(r.status===403)throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 데이터 저장소의 Contents 읽기·쓰기 권한을 확인해 주세요.");
+    if(r.status===403)throw Error(issue?"즉시수집 토큰의 Issues 쓰기 권한 또는 요청 한도를 확인해 주세요. Contents·Actions 권한은 부여하지 마세요.":"데이터 토큰의 Contents 읽기·쓰기 권한 또는 요청 한도를 확인해 주세요.");
     return r;
   }
   try{
     progress("시세 수집 요청 중…");
-    const sent=await request("/dispatches",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_type:"collect-prices-now",client_payload:{request_id:requestId}})});
+    const sent=await request("/issues",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"ETF price collection",body:JSON.stringify({version:1,request_id:requestId})})},true);
     if(!sent.ok)throw Error(`시세 수집 요청 실패 (${sent.status}) · 데이터 저장소와 토큰 권한을 확인해 주세요.`);
+    const issue=await sent.json();if(!Number.isSafeInteger(issue?.number)||issue.number<1)throw Error("수집 요청 응답 형식을 확인할 수 없습니다.");
     progress("시세 수집 중… · 완료되면 자동으로 불러옵니다.");
     let etag="";
     for(let attempt=0;attempt<60;attempt++){
       await new Promise(resolve=>setTimeout(resolve,5000));check();
+      // Fixed status values only; issue text never becomes HTML, code, a ref, or a command.
+      const status=await request(`/issues/${issue.number}`,{},true);
+      if(status.ok){const state=await status.json();if(state.state==="closed"){
+        let result;try{result=JSON.parse(state.body);}catch{}
+        if(result?.request_id===requestId&&["failed","rate-limited","duplicate-request"].includes(result.status))throw Error(result.status==="rate-limited"?"즉시수집 요청이 많습니다. 1분 후 다시 시도해 주세요.":"수집 작업이 완료되지 않았습니다. 마지막 시세를 유지합니다. 수집 저장소의 작업 상태를 확인해 주세요.");
+      }}
       const r=await request("/contents/etf-planner-prices.json",{headers:{Accept:"application/vnd.github.raw+json",...(etag?{"If-None-Match":etag}:{})}});
       if(r.status===304||r.status===404)continue; // 첫 수집은 아직 파일이 없을 수 있다.
       if(!r.ok)throw Error(`시세 읽기 실패 (${r.status})`);

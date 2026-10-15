@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = ['data-validation.js','price-collection.js','sync.js'].map(f=>fs.readFileSync(require('node:path').join(__dirname, '../js',f), 'utf8')).join('\n');
+const source = ['repo-security.js','data-validation.js','price-collection.js','sync.js'].map(f=>fs.readFileSync(require('node:path').join(__dirname, '../js',f), 'utf8')).join('\n');
 const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
 if (!source.includes('async function syncNow(')) throw Error('동기화 구현을 찾지 못했습니다.');
 
@@ -21,6 +21,8 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   if (connect) {
     items.set('etf-planner-data-repo', REPO);
     items.set('etf-planner-github-token', 'test-token');
+    items.set('etf-planner-collection-request-token','fake-issues-token');
+    items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
   const elements = new Map();
@@ -44,10 +46,11 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
       assert.equal(options.cache, 'no-store', '캐시된 응답을 쓰면 다른 기기 변경을 놓친다');
       if (failStatus) return reply(failStatus, {message: 'fail'});
       const path = new URL(url).pathname;
-      if(path===`/repos/${REPO}/dispatches`){
-        assert.equal(options.method,'POST');const body=JSON.parse(options.body);server.dispatches.push(body);server.requestId=body.client_payload.request_id;
-        return reply(204,'');
+      if(path==='/repos/oax2310-blip/etf-planner-data/issues'){
+        assert.equal(options.method,'POST');const body=JSON.parse(options.body);server.dispatches.push(body);server.requestId=JSON.parse(body.body).request_id;
+        return reply(201,{number:123});
       }
+      if(path==='/repos/oax2310-blip/etf-planner-data/issues/123')return reply(200,{state:'open'});
       if (path === `/repos/${REPO}`) return reply(200, {private: isPrivate});
       if (includeHistory && path === `/repos/${REPO}/contents/etf-planner-alert-state.json`) return reply(200, {history:historyEvents});
       if (path === PRICE_FILE) {
@@ -497,8 +500,8 @@ test('시세 즉시 불러오기는 수집을 요청한 뒤 새 결과로 기준
   const accepted=[];h.context.assetStore={acceptPrices:(...args)=>accepted.push(args)};
   const requests=h.server.requests,writes=h.server.writes;
   await h.elements.get('refreshPricesBtn').onclick();
-  assert.equal(h.server.requests,requests+2,'실제 수집을 요청하고 그 결과를 읽는다');
-  assert.equal(h.server.dispatches.length,1);assert.equal(h.server.dispatches[0].event_type,'collect-prices-now');
+  assert.equal(h.server.requests,requests+3,'실제 수집을 요청하고 그 결과를 읽는다');
+  assert.equal(h.server.dispatches.length,1);assert.equal(h.server.dispatches[0].title,'ETF price collection');
   assert.equal(h.server.priceAsks.at(-1),null);
   assert.equal(statePlan(h).endPrice,95);
   assert.equal(JSON.parse(h.items.get('test-state')).plans[0].endPrice,95);
@@ -513,7 +516,7 @@ test('새로 추가한 플래너 종목은 저장 대기 타이머보다 먼저 
   const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});await h.restored();
   h.context.state.plans.push({...plan(),id:'new-plan',ticker:'BBB'});vm.runInContext('save()',h.context);
   const fetch=h.context.fetch;h.context.fetch=async(url,options)=>{
-    if(url.endsWith('/dispatches'))assert.ok(h.remoteData().plans.some(p=>p.ticker==='BBB'),'수집 작업이 새 종목을 볼 수 있게 먼저 저장한다');
+    if(url.endsWith('/issues'))assert.ok(h.remoteData().plans.some(p=>p.ticker==='BBB'),'수집 작업이 새 종목을 볼 수 있게 먼저 저장한다');
     return fetch(url,options);
   };
   await h.elements.get('refreshPricesBtn').onclick();assert.equal(h.server.dispatches.length,1);
@@ -558,7 +561,7 @@ test('시세 즉시 불러오기 중 중복 클릭과 자동 동기화는 조회
   await h.elements.get('refreshPricesDialogBtn').onclick();await h.run();
   assert.equal(h.server.requests,requests);
   release();await work;
-  assert.equal(h.server.requests,requests+2);
+  assert.equal(h.server.requests,requests+3);
   assert.equal(h.elements.get('refreshPricesBtn').disabled,false);
   assert.equal(vm.runInContext('sync.again',h.context),true,'자동 동기화는 다음 순서로 대기한다');
 });
