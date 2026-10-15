@@ -267,6 +267,15 @@ test('평균선을 버리던 옛 캐시는 ETag 없이 다시 받고 새 캐시�
 
 const quotes=close=>({updatedAt:'2026-01-02T07:00:00Z',stocks:{AAA:{kind:'해외',close,asOf:'2026-01-02'}},fx:{USDKRW:{close:1400,asOf:'2026-01-02'}}});
 const priceReply=close=>new Response(JSON.stringify(quotes(close)),{headers:{ETag:'"same-etag"'}});
+// 가짜 시세 요청에 도달하면 풀리는 대기. 앞선 요청 단계 수와 무관하며, 도달하지 못하면 제한 시간 뒤 실패한다.
+function priceGate(){
+  let arrive,release;const arrived=new Promise(resolve=>arrive=resolve);
+  return {
+    hold:()=>new Promise(resolve=>{release=resolve;arrive();}),
+    reached:(ms=2000)=>{let timer;return Promise.race([arrived,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('가짜 시세 요청에 도달하지 못했습니다.')),ms))]).finally(()=>clearTimeout(timer));},
+    release:()=>release(),
+  };
+}
 test('실제 ETF 시세가 없으면 파일을 읽어도 완료로 표시하지 않고 중복 계좌는 한 종목으로 안내한다',async()=>{
   const original=fake();original.allocation.groups[0].items=[
     {id:'a',ticker:'AAA',tradeTicker:'900002',shares:12,amount:0},
@@ -346,11 +355,11 @@ test('자산 시세 수집은 연결 전 요청하지 않고 수집 결과가 �
 });
 
 test('자산 시세 수동 조회 중 중복 클릭과 자동 동기화는 요청을 겹치지 않는다',async()=>{
-  let release,requests=0;const {store,storage}=setup(fake(),async()=>{requests++;await new Promise(resolve=>release=resolve);return priceReply(150);});connect(storage);
+  let requests=0;const price=priceGate(),{store,storage}=setup(fake(),async()=>{requests++;await price.hold();return priceReply(150);});connect(storage);
   const work=store.refreshPrices();assert.equal(store.priceRefreshing,true);assert.match(store.priceMessage,/수집/);
-  for(let i=0;i<20&&!release;i++)await Promise.resolve();
+  await price.reached();
   await store.refreshPrices();await store.sync();assert.equal(requests,1);assert.equal(store.status.again,true);
-  release();await work;assert.equal(store.priceRefreshing,false);assert.equal(store.status.state,'pending');
+  price.release();await work;assert.equal(store.priceRefreshing,false);assert.equal(store.status.state,'pending');
   let finish;const syncing=setup(fake(),async()=>{await new Promise(resolve=>finish=resolve);return json({private:false});});connect(syncing.storage);
   const syncWork=syncing.store.sync();assert.equal(syncing.store.status.busy,true);
   await syncing.store.refreshPrices();assert.equal(syncing.store.priceRefreshing,false,'기록 동기화 중에는 시세 단독 조회를 시작하지 않는다');finish();await syncWork;
@@ -358,10 +367,10 @@ test('자산 시세 수동 조회 중 중복 클릭과 자동 동기화는 요�
 
 test('자산 수동 시세 조회 중 연결을 바꾸면 이전 시세·404·오류 응답은 적용하지 않는다',async()=>{
   for(const reply of [()=>priceReply(150),()=>new Response('',{status:404}),()=>new Response('',{status:500})]){
-    let release;const {store,storage}=setup(fake(),async()=>{await new Promise(resolve=>release=resolve);return reply();});connect(storage);
+    const price=priceGate(),{store,storage}=setup(fake(),async()=>{await price.hold();return reply();});connect(storage);
     store.acceptPrices(store.config(),quotes(100),'"cached"');const cached=storage.get('etf-planner-assets-prices'),work=store.refreshPrices();
-    for(let i=0;i<20&&!release;i++)await Promise.resolve();
-    storage.set('etf-planner-github-token','different-fake-token');release();await work;
+    await price.reached();
+    storage.set('etf-planner-github-token','different-fake-token');price.release();await work;
     assert.equal(storage.get('etf-planner-assets-prices'),cached);assert.equal(store.prices.stocks.AAA.close,100);
     assert.match(store.priceMessage,/연결 설정이 바뀌었습니다/);assert.equal(store.priceRefreshing,false);
   }
