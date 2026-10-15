@@ -13,9 +13,51 @@
 - 날짜별 변경 기록은 git log/PR에만. 자료 조회일·출처는 유지.
 
 ## 파일 지도
-- 뼈대: index.html; 상태·입력: js/core.js; 동기화: js/sync.js; 시세: js/prices.js.
+- 뼈대: index.html; 상태·입력: js/core.js; 동기화: js/sync.js; 시세: js/prices.js; 즉시수집: js/price-collection.js.
+- 보안 경계: 저장소·토큰 역할 js/repo-security.js; 백업·동기화 JSON 검증 js/data-validation.js.
 - 매매: js/plans.js·futures.js·rebuy.js·purchases.js; 공통 회차: js/ma-ladder.js.
 - 체결 연동 UI: js/alloc-link.js; 자산·매수 계산: js/assets-calc.js; 공유 저장: js/assets-store.js.
 - 자산 화면: assets.html·js/assets.js; 시나리오: valuation.html의 필요한 구간.
 - 알림: js/trade-alerts.js·alerts.js·push.js·alert-target.js·push-sw.js. 서버 공유 계약은 계산 함수 주석 확인.
 - 디자인: css/app.css·assets.css·purchases.css; 화면 모드: js/theme.js.
+
+# 보안 구조 유지 지침
+
+작업 전 최신 원격 `main`, 관련 코드와 [README의 동기화 안내](README.md)를 확인한다. 저장소·권한 분리의 구현 근거는 공개 PR #186과 수집 저장소 PR #31이다. 기존 로컬 변경을 덮어쓰지 않는다.
+
+## 저장소와 데이터 정본
+
+- `etf-planner`: 공개 GitHub Pages 앱. 기존 사이트 주소와 정적 운영 방식을 유지한다. 개인 투자 JSON, 토큰 원문, 구독 정보를 공개 파일·테스트·PR·로그에 넣지 않는다.
+- `etf-planner-records`: 비공개 투자 데이터 저장소. Actions는 비활성화하고 Secrets·실행 코드·워크플로를 두지 않는다.
+- `etf-planner-data`: 비공개 KIS 수집기·워크플로·Secrets 실행 저장소. 최신 투자 입력의 정본은 `records`다. 수집 저장소에 남은 옛 입력 사본으로 `records`를 덮어쓰지 않는다.
+- 서버는 생성 결과만 게시한다. 투자계획·자산·시나리오 입력을 수집 결과로 덮어쓰지 않는다. 기존 저장 키·백업 호환성·투자 기록을 보존한다.
+
+## 토큰 권한과 즉시수집
+
+- 브라우저 데이터 PAT: `records` 한 저장소의 Contents 읽기·쓰기와 기본 Metadata 읽기만.
+- 브라우저 즉시수집 PAT: 수집 저장소 한 곳의 Issues 읽기·쓰기와 기본 Metadata 읽기만. Contents·Actions·Workflows·Secrets·Administration 권한을 추가하지 않는다.
+- 서버 `DATA_REPO_TOKEN`: `records`에 필요한 Contents 읽기·쓰기만 부여하고 수집기 Actions Secret에 둔다. 브라우저에 넣지 않는다.
+- `js/repo-security.js`의 데이터 저장소/수집 저장소 분리와 토큰 역할 검증을 유지한다. 두 브라우저 토큰을 합치거나 고권한 토큰을 대체 경로로 사용하지 않는다.
+- 즉시수집은 고정된 수집 저장소에 엄격한 형식의 요청 ID만 담은 Issues 요청을 보내고, 같은 ID의 완료 상태·시세 영수증을 확인한다. 요청에서 실행 ref·명령·외부 코드 URL을 받지 않는다. 기존 dispatch 방식으로 되돌리지 않는다.
+- Contents 권한은 JSON 파일 경로별로 제한할 수 없다. 데이터 저장소에 임의 파일이 추가돼도 실행되지 않는 구조를 유지한다. 데이터 변조와 Issues 요청 남용 위험도 별도로 고려한다.
+
+## 외부 JSON과 안전한 렌더링
+
+- 백업·동기화 JSON은 신뢰하지 않는다. `js/data-validation.js`와 각 저장/불러오기 경로의 타입·범위·구조 검증을 유지한다. `plans[].stages` 등의 값을 검증 없이 렌더링·계산에 전달하지 않는다.
+- 사용자 문자열은 `textContent`나 문맥에 맞는 이스케이프를 거쳐 표시한다. JSON을 코드·셸·HTML로 실행하지 않는다.
+- 수집기는 데이터 저장소를 checkout/import/실행하지 않고 허용된 JSON만 읽어 검증한다. JSON 내용으로 실행 파일·워크플로·명령을 선택하게 하지 않는다.
+
+## 수집 코드 고정과 공유 계산
+
+- 공개 `main`의 변경 가능한 JavaScript를 바로 실행하지 않는다. 검토한 전체 Git SHA와 실행 파일별 SHA-256 검증을 실행 전에 적용한다.
+- 초기 검토 기준 SHA는 `50271006e4f6ce82372ab422810ebd064119a209`다. 현재 승인 기준은 수집 저장소의 잠금 파일과 SHA 갱신 절차를 확인한다.
+- 공개 앱의 공유 매매·알림 계산을 바꾸면 수집기의 고정 버전과 호환성·결과 차이를 검토한다. SHA 갱신은 변경 검토·관련 테스트·파일 해시 갱신을 함께 검증한 뒤 승인 범위에서 수동 적용한다. 공개 PR 병합만으로 고정 SHA를 자동 갱신하지 않는다.
+- KIS 호출은 기존 시세 조회 경로를 유지한다. 실제 계좌 주문·거래를 실행하지 않는다.
+
+## 운영 확인과 변경 범위
+
+- KIS Secrets, 기존 VAPID 키와 암호화 봉투, 푸시 구독을 보존한다. KIS 앱시크릿 변경은 VAPID 복호화와 기존 구독에 미치는 영향을 먼저 분석한다.
+- 토큰·Secrets 값을 대화로 요구하거나 출력하지 않는다. 수집·실제 푸시·Secrets/권한 변경·토큰 폐기·데이터 덮어쓰기는 사용자가 승인한 범위에서만 수행한다.
+- 비공개 설정에 접근할 수 없으면 미검증으로 보고한다. GET의 403·404나 설정 화면만으로 모든 쓰기 권한 차단을 단정하지 않는다.
+- 예약 실행, 실제 푸시 수신, 기기 전환, 기존 고권한 PAT 폐기 여부는 최신 실행 기록과 사용자 확인으로 판단한다. 코드 병합·초록색 단계·푸시 발송 0건만으로 전체 운영 또는 권한 분리가 검증됐다고 보고하지 않는다.
+- 장애 시 최신 `records`와 기기 기록을 보존하고 원인을 확인한다. 정상 워크플로를 검증 없이 중단하거나 취약한 옛 인증·실행 경로를 통째로 복구하지 않는다. 데이터 손실이나 권한 확장을 수반하는 복구는 사전 승인을 받는다.
