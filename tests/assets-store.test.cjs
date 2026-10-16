@@ -360,7 +360,7 @@ test('자산 수동 시세 조회 중 연결을 바꾸면 이전 시세·404·�
   for(const reply of [()=>priceReply(150),()=>new Response('',{status:404}),()=>new Response('',{status:500})]){
     let release;const {store,storage}=setup(fake(),async()=>{await new Promise(resolve=>release=resolve);return reply();});connect(storage);
     store.acceptPrices(store.config(),quotes(100),'"cached"');const cached=storage.get('etf-planner-assets-prices'),work=store.refreshPrices();
-    for(let i=0;i<20&&!release;i++)await Promise.resolve();
+    for(let i=0;i<1000&&!release;i++)await Promise.resolve(); // 즉시수집은 Issues 요청·상태 확인 뒤 시세 파일을 읽으므로 응답 대기 함수가 생길 때까지 기다린다(생기면 바로 멈춤).
     storage.set('etf-planner-github-token','different-fake-token');release();await work;
     assert.equal(storage.get('etf-planner-assets-prices'),cached);assert.equal(store.prices.stocks.AAA.close,100);
     assert.match(store.priceMessage,/연결 설정이 바뀌었습니다/);assert.equal(store.priceRefreshing,false);
