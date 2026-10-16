@@ -108,3 +108,10 @@ test('불러오기·동기화 검증은 하락률과 이전 전액매도 입력 
   for(const ok of [{},{endPct:20},{endPct:'12.5'},{fullSell:{price:80,condition:'up'}}])assert.doesNotThrow(()=>ctx.externalData.planner(data(ok)));
   for(const bad of [{endPct:'abc'},{endPct:-1},{endPct:101},{fullSell:{price:'abc'}}])assert.throws(()=>ctx.externalData.planner(data(bad)),/기록 형식/);
 });
+
+test('회차당 가격 하락폭은 시작 기준가 대비 %로 보이고 금액은 설명에만 둔다',()=>{
+  assert.match(draw([pctPlan()],quote(520)).main,/회차당 가격 하락폭<\/div><strong title="\$25">−5%<\/strong>/);
+  assert.match(draw([maPlan({stages:30,startPrice:100,endPrice:80})],quote(120)).main,/회차당 가격 하락폭<\/div><strong title="\$0\.6896551724137931">−0\.69%<\/strong>/);
+  assert.match(draw([maPlan({startPrice:80,endPrice:100})],quote(120)).main,/<strong title="\$5">\+6\.25%<\/strong>/);
+  assert.match(draw([maPlan({startPrice:0})],quote(120)).main,/회차당 가격 하락폭<\/div><strong>—<\/strong>/);
+});
