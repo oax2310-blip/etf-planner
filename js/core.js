@@ -46,4 +46,25 @@ const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs
 // 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 탭 클릭은 위의 핸들러에서 맨 위로 이동.
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
+// PC 왼쪽 목록 칸(.side)의 높이 기준(--side-top, css/app.css): 붙은 위치(top) 또는 페이지 맨 위처럼 아직 아래에 있는 지금 위치.
+// 칸 아래가 화면 밖에 가려지지 않게 스크롤·창 크기·다시 그리기 때 보이는 칸에만 맞춘다. 모바일(1000px 이하)은 계산하지 않는다.
+let wideLayout=null, sideFrame=0;
+function fitSide(){
+  const side=(wideLayout??=matchMedia("(min-width:1001px)")).matches&&[...$$(".layout>.side")].find(x=>x.getClientRects().length); if(!side)return;
+  const top=Math.round(Math.max(parseFloat(getComputedStyle(side).top)||0,side.getBoundingClientRect().top))+"px";
+  if(side.style.getPropertyValue("--side-top")!==top)side.style.setProperty("--side-top",top);
+}
+const fitSideSoon=()=>{ if(!sideFrame)sideFrame=requestAnimationFrame(()=>{sideFrame=0;fitSide();}); };
+addEventListener("scroll",fitSideSoon,{passive:true}); addEventListener("resize",fitSideSoon);
+// 왼쪽 목록(.plan-list)이 PC에서 따로 스크롤할 때: 다시 그려도(분할매수는 목록을 새로 만든다) 보던 위치를 지키고,
+// 고른 카드가 바뀐 때(처음 열기·카드 선택·알림·자산 배분에서 이동)만 그 카드가 보이게 목록만 움직인다. 페이지 스크롤은 건드리지 않는다.
+const planListSpots={};
+function keepPlanListView(list,picked){
+  fitSide(); if(!list?.getClientRects().length)return;
+  const spot=planListSpots[list.id]??={top:0}; list.scrollTop=spot.top; list.onscroll=()=>{spot.top=list.scrollTop;};
+  if(spot.picked===picked)return; spot.picked=picked;
+  const item=list.querySelector(".plan-item.active"), pad=parseFloat(getComputedStyle(list).paddingTop)||0; if(!item||list.scrollHeight<=list.clientHeight)return;
+  const box=list.getBoundingClientRect(), r=item.getBoundingClientRect();
+  if(r.top<box.top+pad)list.scrollTop-=box.top+pad-r.top; else if(r.bottom>box.bottom-pad)list.scrollTop+=r.bottom-box.bottom+pad;
+}
 function render(){ if(typeof applyPendingPushAlert==="function")applyPendingPushAlert(); if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); if(typeof renderAlertHistory==="function")renderAlertHistory(); if(typeof schedulePendingPushAlert==="function")schedulePendingPushAlert(); if(typeof memberGo==="object")memberGo.schedule(); }
