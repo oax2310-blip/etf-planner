@@ -64,10 +64,10 @@ const externalData = (()=>{
       if(p.stages!==undefined&&(p.stages===null||p.stages===""))fail(`${path}.stages`);
       numbers(p,["stages"],path,1,250,true);
       numbers(p,["startPrice","endPrice","valueKrw","valueBase","basisPrice","fx"],path);
-      numbers(p,["salePct"],path,1,100,true);flags(p,["startAuto"],path);
+      numbers(p,["salePct"],path,1,100,true);numbers(p,["endPct"],path,0,100);flags(p,["startAuto"],path);
       list(p.checked,`${path}.checked`,(v,k)=>{if(v!==null&&typeof v!=="boolean")fail(k);});
       records(p.holdings,`${path}.holdings`,(h,k)=>{strings(h,["name"],k);numbers(h,["shares"],k);});
-      recordMap(p.fills,`${path}.fills`,trade);child(p,"auto",path);child(p,"notify",path);child(p,"fullSell",path,(v,k)=>{numbers(v,["price"],k,0);strings(v,["condition"],k);});
+      recordMap(p.fills,`${path}.fills`,trade);child(p,"auto",path);child(p,"notify",path);child(p,"fullSell",path,(v,k)=>{numbers(v,["price"],k,0);strings(v,["condition"],k);}); // 이전 전액매도 기준가 입력(현재 화면에서 쓰지 않음) 기록 호환
       list(p.sellPriority,`${path}.sellPriority`,(v,k)=>{if(typeof v!=="string")fail(k);});
     });
     const f=data.futures;
