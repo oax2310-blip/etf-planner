@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const root=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const c=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
-return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,sp500YtdAt,sp500YearReturn,sp500Comparison,yearSummary,averageYearReturn};})()`);
+return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,sp500YtdAt,sp500YearReturn,sp500Comparison,yearSummary,averageYearReturn};})()`);
 const near=(a,b,msg)=>assert.ok(Math.abs(a-b)<1e-9,`${msg}: ${a} ≠ ${b}`);
 // 월 수익률 r%를 기록한 가상 연도(총자산 1,000,000원, 월 손익 = r% × 총자산). 연 수익률 = 월 수익률 합(+선물·옵션 ÷ 마지막 총자산).
 const yearOf=(year,rates,extra={})=>({year,accounts:[{name:'가상 계좌'}],months:rates.map((r,i)=>({m:i+1,pnl:r*10000,balances:[1000000]})),...extra});
@@ -76,6 +76,27 @@ test('내 연 수익률이 없는 완료 연도는 S&P 500 쪽에서도 빼고, 
   assert.equal(c.sp500Comparison([{...yearOf(2021,[1]),year:'2021'}],new Date(2026,9,16)).years,1,'문자 연도도 같은 해로 읽는다');
 });
 
+// 공개 수집 자료(data/sp500-tr.json) 형식의 가짜 종가: 2025 말 11788 → 10월 말 +14%, 12월 말 +15%.
+const collected=()=>({schemaVersion:1,symbol:'^SP500TR',currency:'USD',yearEnd:[{year:2025,date:'2025-12-31',close:11788},{year:2026,date:'2026-12-31',close:11788*1.15}],
+  monthEnd:[{ym:'2026-09',date:'2026-09-30',close:11788*1.1}, {ym:'2026-10',date:'2026-10-30',close:11788*1.14}]});
+
+test('수집 자료는 형식·지수·통화를 확인해 종가만 남기고, 공표치가 없는 달·해를 채운다(공표치 우선)',()=>{
+  const data=c.cleanSp500Data(collected());
+  assert.deepEqual(Object.keys(data.yearEnd),['2025','2026']);assert.deepEqual(Object.keys(data.monthEnd),['2026-09','2026-10']);
+  assert.equal(c.sp500YtdAt(2026,9,data),12.75,'9월은 공표치 우선');near(c.sp500YtdAt(2026,10,data),14,'10월은 수집 종가');
+  assert.equal(c.sp500YtdAt(2026,11,data),null);
+  near(c.sp500YearReturn(2026,data),15,'연간 공표치를 넣기 전에는 수집한 연말 종가로');assert.equal(c.sp500YearReturn(2025,data),17.88);
+  const october=c.sp500Comparison([yearOf(2026,Array(10).fill(1))],new Date(2026,10,3),data).current;
+  assert.deepEqual([october.month,Math.round(october.sp*1e9)/1e9,Math.round(october.diff*1e9)/1e9],[10,14,-4]);
+  const next=c.sp500Comparison(fixture(),new Date(2027,0,5),data);
+  assert.deepEqual([next.from,next.to,next.years,next.pending],[2021,2026,6,[]],'해가 바뀌면 수집한 2026년 연말 종가로 2026년까지 비교');near(next.rows.at(-1).sp,15,'2026년 S&P 500');
+  assert.equal(c.sp500Comparison(fixture(),new Date(2027,0,5)).pending.length,1,'수집 자료가 없으면 2026년은 반영 전');
+  for(const bad of [null,[],{...collected(),schemaVersion:2},{...collected(),symbol:'^GSPC'},{...collected(),currency:'KRW'}])assert.equal(c.cleanSp500Data(bad),null);
+  const odd=collected();odd.yearEnd.push({year:2024,date:'2024-11-29',close:1},{year:'2023',date:'2023-12-29',close:1},{year:2022,date:'2022-12-30',close:-1});
+  odd.monthEnd.push({ym:'2026-13',date:'2026-13-01',close:1},{ym:'2026-08',date:'2026-07-31',close:1},{ym:'2026-07',date:'2026-07-31',close:'1'},{ym:'__proto__',date:'x',close:1});
+  const cleaned=c.cleanSp500Data(odd);assert.deepEqual(Object.keys(cleaned.yearEnd),['2025','2026']);assert.deepEqual(Object.keys(cleaned.monthEnd),['2026-09','2026-10']);
+});
+
 // 연도별 요약 화면: assets.js를 가상 DOM으로 불러 월별 손익 탭만 그린다.
 function ledgerHtml(data,now){
   class SystemDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
@@ -103,7 +124,7 @@ test('연도별 요약 아래에 내 연평균·S&P 500 연평균·차이(%p)와
   assert.match(block,/Total Return 지수\(배당 재투자\) 달러 수익률.*원·달러 환율 변동.*원화 실현손익 기준이라 평가손익/);
   assert.equal(JSON.stringify(data),before);
   const pending=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture()}},new Date(2027,0,5).getTime());
-  assert.match(pending,/2021~2025년 완료 5개 연도 · 연 수익률 산술평균 · 2026년 S&amp;P 500 확정치 반영 전/);
+  assert.match(pending,/2021~2025년 완료 5개 연도 · 연 수익률 산술평균 · 2026년 S&amp;P 500 값 반영 전/);
   assert.doesNotMatch(pending,/올해 2027년/);
   const october=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture().map(y=>y.year===2026?yearOf(2026,Array(10).fill(1)):y)}},new Date(2026,10,3).getTime());
   assert.match(october,/올해 2026년 1~10월 누적<small>S&amp;P 500 10월 말 값 반영 전/);assert.match(october,/<small>S&amp;P 500 누적<\/small><b class="">—<\/b>/);

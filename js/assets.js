@@ -398,10 +398,17 @@ function renderLedger(){
 // 세 값은 S&P 500 공표치와 같은 소수 둘째 자리로 고정해 차이(%p)가 표시된 두 평균의 차와 맞게 한다.
 const nfFixed2 = new Intl.NumberFormat("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct2 = (v, unit="%") => v===null||v===undefined||!Number.isFinite(Number(v)) ? "—" : `${unit==="%p"&&v>0?"+":""}${nfFixed2.format(Number(v))}${unit}`;
+// S&P 500 연말·월말 종가(공개 data/sp500-tr.json, 매월 자동 수집: scripts/collect-sp500.cjs). 페이지마다 한 번 읽고, 못 읽으면 공표치만으로 비교한다.
+let sp500Data=null, sp500Requested=false;
+function loadSp500(){
+  if(sp500Requested||typeof fetch!=="function")return;sp500Requested=true;
+  fetch("data/sp500-tr.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(raw=>{sp500Data=cleanSp500Data(raw);if(sp500Data&&ui.tab==="ledger")redrawIdle();}).catch(()=>{});
+}
 function sp500Block(years){
-  const c=sp500Comparison(years), now=c.current, notes=[];
+  loadSp500();
+  const c=sp500Comparison(years,new Date(),sp500Data), now=c.current, notes=[];
   if(c.missing.length)notes.push(`${c.missing.join("·")}년은 내 연 수익률이 없어 제외`);
-  if(c.pending.length)notes.push(`${c.pending.join("·")}년 S&amp;P 500 확정치 반영 전`);
+  if(c.pending.length)notes.push(`${c.pending.join("·")}년 S&amp;P 500 값 반영 전`);
   const cell=(label,value,cls,hint)=>`<div><span>${label}</span><strong class="${cls?"neg":""}">${value}</strong><small>${hint}</small></div>`;
   return `<div class="benchmark"><div class="benchmark-head"><b>S&amp;P 500 비교</b><small>${c.years?`${c.from}~${c.to}년 완료 ${c.years}개 연도 · `:""}연 수익률 산술평균${notes.length?` · ${notes.join(" · ")}`:""}</small></div>
     ${c.years?`<div class="benchmark-grid">${cell("내 연평균",pct2(c.mine),c.mine<0,"원화 · 실현손익")}${cell("S&amp;P 500 연평균",pct2(c.sp),c.sp<0,"달러 · 배당 재투자")}${cell("차이",pct2(c.diff,"%p"),c.diff<0,"내 연평균 − S&amp;P 500")}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
