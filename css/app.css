@@ -32,6 +32,8 @@ main{max-width:1320px;margin:auto;padding:28px clamp(16px,4vw,48px) 80px}.layout
 @media(hover:hover) and (pointer:fine) and (min-width:701px){.plan-rename{display:grid}.plan-title{min-height:18px;padding-right:22px}}
 /* 제목·버튼 */
 .heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:20px}.eyebrow{color:var(--text-3);letter-spacing:.02em;font-size:12px;font-weight:600}.heading h1{font-size:clamp(25px,2.5vw,32px);font-weight:700;line-height:1.2;margin:4px 0 6px;letter-spacing:-.035em}.heading p{margin:0;color:var(--text-2);font-size:14px;max-width:72ch}.heading>.btn{flex:none;white-space:nowrap}
+/* 손절 후 재매수: 저장 버튼은 이름 묶음 오른쪽에 두고, 현재가·자산 배분 줄은 아래에서 전체 너비 사용 */
+.rebuy-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 14px}.rebuy-heading>.btn{align-self:start}.rebuy-heading>p{grid-column:1/-1;margin-top:6px}
 .title-row{display:flex;align-items:center;gap:8px}.title-row h1{min-width:0}.btn.icon-btn{flex:none;display:grid;place-items:center;width:32px;height:32px;padding:0}.title-row .icon-btn{border-color:transparent;background:transparent;color:var(--text-3)}.title-row .icon-btn:hover{background:var(--surface-3);color:var(--text)}.icon-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.heading h1,.heading p{word-break:keep-all;overflow-wrap:anywhere}
 /* 공통 시세 줄(ma-ladder.js tradeQuoteLine — 분할매도·분할매수·재매수): 현재가 크게 → 상태 칩 → 회차 → 방향 % 칩(오름 빨강·내림 파랑, 부호 유지). 항목 사이에서만 줄바꿈 */
 .heading .quote-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:2px 0 0;max-width:none;font-size:14px;color:var(--text-2)}.quote-line>*{white-space:nowrap}.quote-line+p{margin-top:6px}
