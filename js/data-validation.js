@@ -49,10 +49,10 @@ const externalData = (()=>{
     records(x.buys,`${p}.buys`,trade,true);
   });}
   function rebuy(v,path){
-    record(v,path);strings(v,["id","name","ticker","note","currency","endLine","plannedEndLine"],path);
+    record(v,path);strings(v,["id","name","ticker","note","currency","endLine","plannedEndLine","resumeEndLine"],path);
     numbers(v,["lowPrice","floorPrice","currentPrice","finalPrice","amount","shares","contracts","stepPct","sellPct","targetPct"],path);
     numbers(v,["steps"],path,1,10000,true);
-    records(v.cuts,`${path}.cuts`,trade,true);stages(v.stages,`${path}.stages`);
+    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine"],p);},true);stages(v.stages,`${path}.stages`);
     child(v,"notify",path);child(v,"auto",path);
   }
   function planner(data){
