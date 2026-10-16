@@ -1,4 +1,4 @@
-// 가상 월별 손익 기록으로 S&P 500 연평균 비교만 검증한다. 실제 자산·손익 기록은 사용하지 않는다.
+// 가상 월별 손익 기록으로 S&P 500 연평균·올해 누적 비교만 검증한다. 실제 자산·손익 기록은 사용하지 않는다.
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const root=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const c=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
-return {SP500_TR_RETURNS,SP500_COMPARE_FROM,sp500Comparison,yearSummary,averageYearReturn};})()`);
+return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,sp500YtdAt,sp500YearReturn,sp500Comparison,yearSummary,averageYearReturn};})()`);
 const near=(a,b,msg)=>assert.ok(Math.abs(a-b)<1e-9,`${msg}: ${a} ≠ ${b}`);
 // 월 수익률 r%를 기록한 가상 연도(총자산 1,000,000원, 월 손익 = r% × 총자산). 연 수익률 = 월 수익률 합(+선물·옵션 ÷ 마지막 총자산).
 const yearOf=(year,rates,extra={})=>({year,accounts:[{name:'가상 계좌'}],months:rates.map((r,i)=>({m:i+1,pnl:r*10000,balances:[1000000]})),...extra});
@@ -24,6 +24,15 @@ test('S&P 500 자료는 2021년부터 연속된 Total Return 확정치만 담고
   assert.ok(Object.isFrozen(c.SP500_TR_RETURNS));
 });
 
+test('월말 누적 수익률은 연-월 키의 같은 지수 값이며 S&P DJI 대시보드의 월간 수익률과 이어진다',()=>{
+  for(const [k,v] of Object.entries(c.SP500_TR_YTD)){assert.match(k,/^\d{4}-(0[1-9]|1[0-2])$/);assert.ok(Number.isFinite(v)&&Math.abs(v)<100,`${k} 값`);}
+  assert.ok(Object.isFrozen(c.SP500_TR_YTD));
+  assert.deepEqual([c.SP500_TR_YTD['2026-08'],c.SP500_TR_YTD['2026-09']],[13.14,12.75]);
+  near(Math.round(((1+13.14/100)*(1-0.35/100)-1)*1e4)/1e2,12.74,'8월 말 누적 × 9월 1개월(−0.35%) ≈ 9월 말 누적(12.75%, 반올림 차 0.01)');
+  assert.equal(c.sp500YtdAt(2026,9),12.75);assert.equal(c.sp500YtdAt(2026,10),null);
+  assert.equal(c.sp500YearReturn(2025),17.88);assert.equal(c.sp500YearReturn(2026),null,'12월 말 값이 없으면 연간 수익률도 없다');
+});
+
 test('완료 연도(2021~지난해)의 내 연 수익률과 S&P 500을 같은 연 수익률 산술평균으로 비교하고 올해는 누적만 따로 둔다',()=>{
   const years=fixture(),before=JSON.stringify(years),r=c.sp500Comparison(years,new Date(2026,9,16));
   // 2021 24%, 2022 −12%, 2023 18%+선물 5%, 2024 30%, 2025 12% → 77 ÷ 5
@@ -36,7 +45,7 @@ test('완료 연도(2021~지난해)의 내 연 수익률과 S&P 500을 같은 �
   const cagr=(SP.reduce((p,v)=>p*(1+v/100),1)**(1/5)-1)*100;
   assert.ok(Math.abs(r.sp-cagr)>1,`연복리(${cagr.toFixed(2)}%)와 산술평균을 섞지 않는다`);
   for(const x of r.rows)near(x.mine,c.yearSummary(years.find(y=>y.year===x.year)).rate,`${x.year}년은 연도별 요약 수익률 그대로`);
-  assert.deepEqual(r.current,{year:2026,rate:r.current.rate,months:9});near(r.current.rate,9,'올해 누적');
+  assert.deepEqual({...r.current,rate:null,diff:null},{year:2026,rate:null,months:9,month:9,sp:12.75,diff:null});near(r.current.rate,9,'올해 누적');near(r.current.diff,9-12.75,'올해 차이는 같은 9월 말까지');
   near(c.averageYearReturn(years).rate,86/6,'기존 연평균(올해 포함) 계산은 그대로');
   assert.deepEqual([r.missing,r.pending],[[],[]]);
   assert.equal(JSON.stringify(years),before,'조회만으로 기록을 바꾸지 않는다');
@@ -56,10 +65,13 @@ test('내 연 수익률이 없는 완료 연도는 S&P 500 쪽에서도 빼고, 
   years.splice(3,1);// 2024년 기록 없음
   const r=c.sp500Comparison(years,new Date(2026,9,16));
   assert.deepEqual(r.missing,[2022,2024]);assert.deepEqual(r.rows.map(x=>x.year),[2021,2023,2025]);
-  near(r.mine,(24+23+12)/3,'내 평균');near(r.sp,(28.71+26.29+17.88)/3,'같은 연도의 S&P 500 평균');
+  near(r.mine,(24+23+12)/3,'내 평균');
+  near(c.sp500Comparison(fixture().map(y=>y.year===2026?yearOf(2026,Array(8).fill(1)):y),new Date(2026,9,16)).current.sp,13.14,'8월까지 기록했으면 8월 말 S&P 500과 비교');near(r.sp,(28.71+26.29+17.88)/3,'같은 연도의 S&P 500 평균');
   const none=c.sp500Comparison([yearOf(2026,[1])],new Date(2026,9,16));
   assert.deepEqual([none.years,none.mine,none.sp,none.diff,none.from,none.to],[0,null,null,null,null,null]);
-  assert.equal(none.current.months,1);
+  assert.deepEqual([none.current.months,none.current.month,none.current.sp,none.current.diff],[1,1,null,null],'1월 말 값이 없으면 S&P 500 누적은 비운다');
+  const october=c.sp500Comparison([yearOf(2026,Array(10).fill(1))],new Date(2026,9,16)).current;assert.deepEqual([october.month,october.sp,october.diff],[10,null,null],'기록한 달의 월말 값이 없으면 앞달로 대신하지 않는다');
+  const gap=yearOf(2026,Array(9).fill(1));gap.months.push({m:10,balances:[1000000]});assert.equal(c.sp500Comparison([gap],new Date(2026,9,16)).current.month,9,'잔액만 있는 달은 손익 기록 달로 세지 않는다');
   assert.equal(c.sp500Comparison(null,new Date(2026,9,16)).years,0);
   assert.equal(c.sp500Comparison([{...yearOf(2021,[1]),year:'2021'}],new Date(2026,9,16)).years,1,'문자 연도도 같은 해로 읽는다');
 });
@@ -86,12 +98,15 @@ test('연도별 요약 아래에 내 연평균·S&P 500 연평균·차이(%p)와
   assert.match(block,/<span>내 연평균<\/span><strong class="">15.40%<\/strong><small>원화 · 실현손익<\/small>/);
   assert.match(block,/<span>S&amp;P 500 연평균<\/span><strong class="">15.96%<\/strong><small>달러 · 배당 재투자<\/small>/);
   assert.match(block,/<span>차이<\/span><strong class="neg">-0.56%p<\/strong>/);
-  assert.match(block,/올해 2026년 9개월 누적 <b class="">9%<\/b> · 연간 확정 후 비교에 포함/);
+  assert.match(block,/올해 2026년 1~9월 누적<small>S&amp;P 500은 9월 말 기준 · 연간 확정 후 평균에 포함<\/small>/);
+  assert.match(block,/<span><small>내 누적<\/small><b class="">9.00%<\/b><\/span><span><small>S&amp;P 500 누적<\/small><b class="">12.75%<\/b><\/span><span><small>차이<\/small><b class="neg">-3.75%p<\/b><\/span>/);
   assert.match(block,/Total Return 지수\(배당 재투자\) 달러 수익률.*원·달러 환율 변동.*원화 실현손익 기준이라 평가손익/);
   assert.equal(JSON.stringify(data),before);
   const pending=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture()}},new Date(2027,0,5).getTime());
   assert.match(pending,/2021~2025년 완료 5개 연도 · 연 수익률 산술평균 · 2026년 S&amp;P 500 확정치 반영 전/);
   assert.doesNotMatch(pending,/올해 2027년/);
+  const october=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture().map(y=>y.year===2026?yearOf(2026,Array(10).fill(1)):y)}},new Date(2026,10,3).getTime());
+  assert.match(october,/올해 2026년 1~10월 누적<small>S&amp;P 500 10월 말 값 반영 전/);assert.match(october,/<small>S&amp;P 500 누적<\/small><b class="">—<\/b>/);
   const empty=ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,[1])]}},new Date(2026,9,16).getTime());
-  assert.match(empty,/비교할 완료 연도가 아직 없습니다/);assert.doesNotMatch(empty,/benchmark-grid/);
+  assert.match(empty,/비교할 완료 연도가 아직 없습니다/);assert.doesNotMatch(empty,/benchmark-grid/);assert.match(empty,/올해 2026년 1월 누적/);
 });

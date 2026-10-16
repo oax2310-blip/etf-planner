@@ -404,9 +404,15 @@ function sp500Block(years){
   if(c.pending.length)notes.push(`${c.pending.join("·")}년 S&amp;P 500 확정치 반영 전`);
   const cell=(label,value,cls,hint)=>`<div><span>${label}</span><strong class="${cls?"neg":""}">${value}</strong><small>${hint}</small></div>`;
   return `<div class="benchmark"><div class="benchmark-head"><b>S&amp;P 500 비교</b><small>${c.years?`${c.from}~${c.to}년 완료 ${c.years}개 연도 · `:""}연 수익률 산술평균${notes.length?` · ${notes.join(" · ")}`:""}</small></div>
-    ${c.years?`<div class="benchmark-grid">${cell("내 연평균",pct2(c.mine),c.mine<0,"원화 · 실현손익")}${cell("S&amp;P 500 연평균",pct2(c.sp),c.sp<0,"달러 · 배당 재투자")}${cell("차이",pct2(c.diff,"%p"),c.diff<0,"내 연평균 − S&amp;P 500")}</div>`:'<p class="benchmark-ytd">비교할 완료 연도가 아직 없습니다.</p>'}
-    ${now&&now.rate!==null?`<p class="benchmark-ytd">올해 ${now.year}년 ${now.months}개월 누적 <b class="${now.rate<0?"neg":""}">${pc(now.rate)}</b> · 연간 확정 후 비교에 포함</p>`:""}
+    ${c.years?`<div class="benchmark-grid">${cell("내 연평균",pct2(c.mine),c.mine<0,"원화 · 실현손익")}${cell("S&amp;P 500 연평균",pct2(c.sp),c.sp<0,"달러 · 배당 재투자")}${cell("차이",pct2(c.diff,"%p"),c.diff<0,"내 연평균 − S&amp;P 500")}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
+    ${now&&now.rate!==null&&now.month?sp500YtdRow(now):""}
     <p class="benchmark-note">S&amp;P 500은 S&amp;P Dow Jones Indices의 Total Return 지수(배당 재투자) 달러 수익률이라 원·달러 환율 변동이 빠져 있고, 내 수익률은 원화 실현손익 기준이라 평가손익이 빠져 있습니다.</p></div>`;
+}
+// 올해는 기록한 마지막 달 말까지 월 단위로 같은 기간을 비교한다. 위 세 칸과 같은 열에 맞춘다.
+function sp500YtdRow(now){
+  const span=now.month>1?`1~${now.month}월`:"1월", item=(label,value,neg)=>`<span><small>${label}</small><b class="${neg?"neg":""}">${value}</b></span>`;
+  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${now.sp!==null?`S&amp;P 500은 ${now.month}월 말 기준`:`S&amp;P 500 ${now.month}월 말 값 반영 전`} · 연간 확정 후 평균에 포함</small></div>
+    <div class="benchmark-ytd-cells">${item("내 누적",pct2(now.rate),now.rate<0)}${item("S&amp;P 500 누적",pct2(now.sp),now.sp<0)}${item("차이",pct2(now.diff,"%p"),now.diff<0)}</div></div>`;
 }
 // 자주 적는 손익 항목은 빈 전용 칸으로 보여 준다. 실제 금액을 넣은 항목만 pnlEntries에 저장하고, 열기만 해서는 기록을 만들지 않는다.
 let updateLedgerDividendFx=null;
