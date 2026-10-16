@@ -9,7 +9,7 @@ function load(){
   const nodes=new Map(),node=name=>{
     if(!nodes.has(name))nodes.set(name,{value:'',dataset:{},readOnly:false,textContent:'',events:{},validityMessage:'',
       addEventListener(kind,handler){this.events[kind]=handler;},setCustomValidity(message){this.validityMessage=message;},
-      querySelectorAll:()=>[],querySelector:()=>node('close'),classList:{toggle(){}},close(){},showModal(){}});
+      querySelectorAll:()=>[],querySelector:()=>node('close'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}});
     return nodes.get(name);
   };
   const fields=Object.fromEntries(Object.entries({ticker:'비트코인',title:'테스트 계획',cardName:'',currency:'USD',shares:'0.01234567',
@@ -17,12 +17,12 @@ function load(){
     .map(([key,value])=>[key,Object.assign(node('field:'+key),{value})]));
   const form=node('planForm');form.elements=fields;form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage&&(!f.required||f.disabled||f.readOnly||String(f.value??'')!==''));
   form.reset=()=>{for(const [key,value] of Object.entries({ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1354.91',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''}))fields[key].value=value;};
-  const ctx=vm.createContext({$:node,$$:()=>[],addEventListener(){},state:{plans:[],futures:{positions:[]}},save(){},render(){},
+  const ctx=vm.createContext({$:node,$$:()=>[],addEventListener(){},document:{createElement(){const e={value:'',dataset:{},setAttribute(){},append(){},focus(){}};let id='';Object.defineProperty(e,'id',{get:()=>id,set(v){id=v;nodes.set(v,e);}});return e;}},state:{plans:[],futures:{positions:[]}},save(){},render(){},
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
     priceData:{updatedAt:'2026-10-02T12:00:00Z',stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-02',close:60000,ma:{'25개월선':50000}},
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
     id:()=> 'test-plan',priceText:v=>String(v),fxText:v=>String(v),esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
-  for(const file of ['ma-ladder.js','prices.js','assets-calc.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
+  for(const file of ['ma-ladder.js','prices.js','assets-calc.js','item-search.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
   const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stagePrice,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,movePlanSalePriority,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
   return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
 }
@@ -93,29 +93,50 @@ function linkedPlanDialog(){
   return {...r,allocation};
 }
 
-test('분할매도 추가 창은 코드 입력 전부터 연결 종목을 보여 주고 같은 기준 코드를 한 번만 표시한다',()=>{
+// 검색 칸(item-search.js)의 목록 행·'변경' 누르기: 가짜 요소의 onclick에 closest가 그 속성을 찾는 대상을 넘긴다.
+const clickIn=(el,attr,dataset={})=>el.onclick({target:{closest:sel=>sel.split(',').includes(`[${attr}]`)?{dataset}:null}});
+const optionCount=html=>(html.match(/data-pick=/g)||[]).length;
+
+test('분할매도 추가 창은 코드 입력 전부터 연결 종목을 검색 목록으로 보여 주고 같은 기준 코드를 한 번만 표시한다',()=>{
   const r=linkedPlanDialog(),before=JSON.stringify([r.ctx.state,r.allocation]);r.api.openPlanDialog();
   assert.equal(r.fields.ticker.value,'');assert.equal(r.node('planAllocHold').hidden,true);
   const options=r.api.planAllocOptions();assert.deepEqual(Array.from(options,o=>o.ticker),['123456','AAA','BTC-USD']);
   assert.equal(options[0].accounts.size,2);assert.equal(options[1].accounts.size,2);
-  assert.equal(r.node('planAllocTicker').disabled,false);assert.match(r.node('planAllocTicker').innerHTML,/2개 계좌/);
+  assert.equal(r.node('planSearchBox').hidden,false);assert.equal(r.node('planPicked').hidden,true);
+  const list=r.node('planItemList').innerHTML;assert.equal(optionCount(list),3);assert.match(list,/2개 계좌/);assert.match(list,/가상 계좌 A, 가상 계좌 B/);
+  assert.equal(r.fields.ticker.readOnly,false,'고르기 전에는 종목 코드를 직접 입력할 수 있다');
   assert.equal(JSON.stringify([r.ctx.state,r.allocation]),before,'창을 열어도 원본 기록은 바꾸지 않는다');
 });
 
-test('연결 종목 선택은 국내 코드·통화·여러 계좌 수량·기준가를 채우며 저장 전에는 자산과 계획을 바꾸지 않는다',()=>{
+test('검색해서 고르면 국내 코드·통화·여러 계좌 수량·기준가를 채우고 코드 칸을 잠그며 저장 전에는 자산과 계획을 바꾸지 않는다',()=>{
   const r=linkedPlanDialog();r.api.openPlanDialog();const before=JSON.stringify([r.ctx.state,r.allocation]),assetsBefore=JSON.stringify(r.allocation);
-  const picker=r.node('planAllocTicker');picker.value='123456';r.node('planForm').events.input({target:picker});
-  assert.equal(picker.value,'123456','select의 input 이벤트가 뒤따르는 change 선택을 지우지 않는다');
-  picker.onchange({target:picker});
+  const search=r.node('planSearch');search.value='가상 국내';r.node('planForm').events.input({target:search});search.oninput();
+  assert.equal(r.fields.ticker.value,'','검색어 입력은 계획 칸을 다시 계산하지 않는다');
+  assert.equal(optionCount(r.node('planItemList').innerHTML),1,'띄어 쓴 낱말이 모두 들어간 종목만');
+  search.onkeydown({key:'Enter',preventDefault(){}});
   assert.equal(r.fields.ticker.value,'123456');assert.equal(r.fields.title.value,'가상 국내 ETF');
   assert.equal(r.fields.currency.value,'KRW');assert.equal(r.fields.currency.disabled,false);
   assert.equal(Number(r.fields.shares.value),15);assert.equal(Number(r.fields.valueKrw.value),15);
   assert.equal(Number(r.fields.fx.value),1500);assert.equal(Number(r.fields.endPrice.value),8000);
   assert.equal(r.fields.startPrice.value,'','직접 시작 기준가는 새로 만들지 않는다');
+  assert.equal(r.node('planPicked').hidden,false);assert.equal(r.node('planSearchBox').hidden,true);
+  assert.match(r.node('planPicked').innerHTML,/가상 국내 ETF/);assert.match(r.node('planPicked').innerHTML,/data-repick/);
+  assert.equal(r.fields.ticker.readOnly,true,'고른 동안 종목 코드는 잠근다');
+  clickIn(r.node('planPicked'),'data-repick');
+  assert.equal(r.node('planSearchBox').hidden,false);assert.equal(r.fields.ticker.readOnly,false);assert.equal(r.fields.ticker.value,'123456','변경은 입력한 값을 지우지 않는다');
+  clickIn(r.node('planItemList'),'data-pick',{pick:'123456'});assert.equal(r.node('planPicked').hidden,false);
   assert.equal(JSON.stringify([r.ctx.state,r.allocation]),before);
   r.fields.startPrice.value='11000';r.submit();assert.equal(r.ctx.state.plans.length,1);
   const p=r.ctx.state.plans[0];assert.equal(p.ticker,'123456');assert.equal(p.currency,'KRW');assert.equal(p.holdings[0].shares,15);
   assert.equal(p.valueKrw,null);assert.equal(JSON.stringify(r.allocation),assetsBefore,'계획 저장은 자산 보유량을 바꾸지 않는다');
+});
+
+test('수정 창은 목록에 있는 종목을 고른 상태로 열고 이미 계획이 있는 종목을 표시한다',()=>{
+  const r=linkedPlanDialog(),p={id:'old',ticker:'AAA',title:'기존 계획',currency:'USD',holdings:[{shares:3}],startLabel:'직접',endLabel:'25개월선',startPrice:110,endPrice:80,stages:2,valueKrw:null,fx:1200,checked:[false,false]};
+  r.ctx.state.plans=[p];r.api.openPlanDialog(p);
+  assert.equal(r.node('planPicked').hidden,false);assert.match(r.node('planPicked').innerHTML,/가상 추종 ETF/);assert.equal(r.fields.ticker.readOnly,true);
+  clickIn(r.node('planPicked'),'data-repick');assert.doesNotMatch(r.node('planItemList').innerHTML,/계획 있음/,'수정 중인 계획은 제외');
+  r.api.openPlanDialog();assert.match(r.node('planItemList').innerHTML,/data-pick="AAA"[^>]*>.*?<em>계획 있음<\/em>/);
 });
 
 test('추종 ETF와 직접 보유를 함께 불러올 때 기준 종목과 달러 통화를 쓰고 거래 단위가 다른 주수를 합치지 않는다',()=>{
@@ -133,20 +154,25 @@ test('연결 비트코인은 소수 수량과 USD 고정을 유지하고 다른 
   r.api.fillPlanAllocTicker('123456');assert.equal(r.fields.currency.value,'KRW');assert.equal(r.fields.currency.disabled,false);assert.equal(r.fields.shares.step,'1');
 });
 
-test('연결 종목이 없으면 수동 입력을 유지하며 목록 이름은 HTML로 해석하지 않는다',()=>{
+test('연결 종목이 없으면 수동 입력을 유지하고 맞는 종목이 없을 때 검색어를 종목 코드로 넘기며 목록 글자는 HTML로 해석하지 않는다',()=>{
   const r=linkedPlanDialog();r.allocation.groups=[];r.api.openPlanDialog();
-  assert.equal(r.node('planAllocTicker').disabled,true);assert.match(r.node('planAllocPickerHint').textContent,/자산 배분에 종목과 코드/);
+  assert.match(r.node('planItemList').innerHTML,/자산 배분에 불러올 종목이 없습니다/);assert.match(r.node('planAllocPickerHint').textContent,/자산 배분에 종목과 코드/);
   r.fields.ticker.value='MANUAL';r.api.fillPlanAllocTicker('AAA');assert.equal(r.fields.ticker.value,'MANUAL');
-  r.allocation.groups=[{id:'a',items:[{id:'x',ticker:'AAA',name:'<img onerror="bad">',shares:2}]}];r.api.planLive();
-  assert.match(r.node('planAllocTicker').innerHTML,/&lt;img/);assert.doesNotMatch(r.node('planAllocTicker').innerHTML,/<img/);
-  assert.match(r.node('planAllocTicker').innerHTML,/직접 입력/);
+  r.fields.ticker.value='';const search=r.node('planSearch');search.value='spyy';search.oninput();
+  assert.match(r.node('planItemList').innerHTML,/‘spyy’ 종목 코드로 직접 입력/);
+  search.onkeydown({key:'Enter',preventDefault(){}});assert.equal(r.fields.ticker.value,'spyy');assert.equal(search.value,'');assert.equal(r.fields.ticker.readOnly,false);
+  r.allocation.groups=[{id:'a',name:'<b>계좌',items:[{id:'x',ticker:'AAA',name:'<img onerror="bad">',shares:2}]}];r.api.planLive();
+  assert.match(r.node('planItemList').innerHTML,/&lt;img/);assert.doesNotMatch(r.node('planItemList').innerHTML,/<img|<b>/);
+  search.value='<i>';search.oninput();assert.match(r.node('planItemList').innerHTML,/‘&lt;i&gt;’/);assert.doesNotMatch(r.node('planItemList').innerHTML,/<i>/);
 });
 
-test('매도 완료 체크와 부분 체결 기록이 있으면 연결 종목 선택으로 계획 보유량을 바꿀 수 없다',()=>{
-  for(const recorded of [{checked:[true,false]},{checked:[false,false],fills:{0:{plannedQty:5,qty:2,price:10000}}}]){
-    const r=linkedPlanDialog(),p={id:'locked',ticker:'123456',title:'기존 계획',currency:'KRW',holdings:[{shares:10}],startLabel:'직접',endLabel:'25개월선',startPrice:11000,endPrice:8000,stages:2,valueKrw:null,fx:1200,...recorded};
+test('매도 완료 체크와 부분 체결 기록이 있으면 종목을 고른 상태로 고정하고 연결 종목 선택으로 계획 보유량을 바꿀 수 없다',()=>{
+  for(const [ticker,recorded] of [['123456',{checked:[true,false]}],['123456',{checked:[false,false],fills:{0:{plannedQty:5,qty:2,price:10000}}}],['MANUAL',{checked:[true,false]}]]){
+    const r=linkedPlanDialog(),p={id:'locked',ticker,title:'기존 계획',currency:'KRW',holdings:[{shares:10}],startLabel:'직접',endLabel:'25개월선',startPrice:11000,endPrice:8000,stages:2,valueKrw:null,fx:1200,...recorded};
     r.ctx.state.plans=[p];r.api.openPlanDialog(p);const before=JSON.stringify([r.fields.ticker.value,r.fields.shares.value,r.fields.title.value,p,r.allocation]);
-    assert.equal(r.node('planAllocTicker').disabled,true);r.api.fillPlanAllocTicker('AAA');
+    assert.equal(r.node('planSearchBox').hidden,true);assert.equal(r.node('planPicked').hidden,false);assert.doesNotMatch(r.node('planPicked').innerHTML,/data-repick/);
+    assert.match(r.node('planPicked').innerHTML,ticker==='MANUAL'?/MANUAL · 직접 입력/:/가상 국내 ETF/);
+    r.api.fillPlanAllocTicker('AAA');
     assert.equal(JSON.stringify([r.fields.ticker.value,r.fields.shares.value,r.fields.title.value,p,r.allocation]),before);
   }
 });

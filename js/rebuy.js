@@ -457,30 +457,37 @@ function rebuyHoldFromAlloc(allocHold, usd){
 }
 // 종목 추가·이름/코드 수정 창(rebuyDialog). 이 파일은 테스트가 DOM 없이 불러오므로 창 처리는 이 함수 안에서 연결한다.
 // 새 종목은 기본 규칙·단계로 만든다. 종목 코드를 바꾸면 auto를 지워 다음 동기화 때 새 종목 시세로 채운다.
-// '보유 종목에서 선택'(f.holding, 보유 종목이 있을 때만 보임): 고르면 이름·코드를 채우고, 저장할 때 손절·재매수 기록이 없으면 자산 배분 보유량을 이탈 전 보유로 채운다.
-// 처음 열 때 이미 선택돼 있던 값을 그대로 저장하면 보유를 다시 쓰지 않는다. 보유 종목이 없으면 이 칸을 숨기고 직접 입력한다.
+// '재매수할 보유 종목' 검색(item-search.js, 분할매수 창과 공통 — f.holding에 고른 자산 항목 id): 고르면 이름·코드를 채우고 코드 칸은 '변경' 전까지 잠근다.
+// 저장할 때 손절·재매수 기록이 없으면 자산 배분 보유량을 이탈 전 보유로 채운다. 처음 열 때 이미 선택돼 있던 값을 그대로 저장하면 보유를 다시 쓰지 않는다.
+// 목록에 없는 종목은 이름·코드를 직접 입력하며, 맞는 종목이 없을 때 검색어를 종목 이름으로 넘길 수 있다.
 // 종목 삭제는 실제 체결인 자산 배분을 그대로 둔다(초기화의 forget와 다름).
+let rebuyPickerUi=null, rebuyChoices=[], editRebuyTarget=null;
+const rebuyChoiceInfo=({g,it})=>[g.name,it.section,assetTradeTicker(it),finite(it.shares)!==null?`보유 ${won.format(it.shares)}주`:""].filter(Boolean).join(" · ");
+function rebuyPicker(){
+  if(rebuyPickerUi)return rebuyPickerUi;
+  const f=$("rebuyForm").elements, chosen=()=>rebuyChoices.find(c=>c.it.id===f.holding.value)||null;
+  // 고른 종목의 보유량 안내(저장 때 채울 값과 같은 계산).
+  const holdHint=c=>{const h=c?rebuyHoldFromAlloc(typeof allocLink==="object"?allocLink.holding(assetTradeTicker(c.it)):null,usTicker(assetTradeTicker(c.it))):null;
+    return !c?"":h?`자산 배분 보유 ${h.unit==="shares"?`${won.format(h.value)}주`:usTicker(assetTradeTicker(c.it))?`$${won.format(h.value)}`:`${decimal.format(h.value)}만원`}를 이탈 전 보유로 채웁니다(손절·재매수 기록이 없을 때).`:"가져올 보유량이 없어 이름·코드만 채웁니다.";};
+  const setHint=text=>{const hint=$("rebuyHoldingHint");hint.textContent=text;hint.hidden=!text;};
+  return rebuyPickerUi=itemSearch.create($("rebuyItemSearch"),{id:"rebuy",label:"rebuyItemLabel",empty:"자산 배분에 보유 종목이 없습니다. 아래에 직접 입력하세요.",
+    rows:()=>{if(!rebuyChoices.length)return [];const listed=new Set((state.rebuy?.items||[]).filter(r=>r!==editRebuyTarget).map(r=>linkTicker(r.ticker)).filter(Boolean));
+      return rebuyChoices.map(c=>({id:c.it.id,name:c.it.name,info:rebuyChoiceInfo(c),badge:listed.has(linkTicker(assetTradeTicker(c.it)))?"등록됨":"",words:[c.it.name,c.g.name,c.it.section,c.it.ticker,c.it.tradeTicker]}));},
+    current:()=>{const c=chosen();return c?{name:c.it.name,info:rebuyChoiceInfo(c)}:null;},
+    pick:itemId=>{const c=rebuyChoices.find(x=>x.it.id===itemId);if(!c)return;f.holding.value=itemId;f.name.value=c.it.name.slice(0,40);f.ticker.value=assetTradeTicker(c.it);f.ticker.readOnly=true;setHint(holdHint(c));},
+    repick:()=>{f.holding.value="";f.ticker.readOnly=false;setHint("");},
+    manual:{label:q=>`‘${q}’ 종목 이름으로 직접 입력`,fill:q=>{f.name.value=q.slice(0,40);f.ticker.focus();}}});
+}
 function openRebuyDialog(edit){
   const dialog=$("rebuyDialog"), form=$("rebuyForm"), f=form.elements;
   form.reset();$("rebuyTitle").textContent=edit?`${String(edit.name||"").trim()||"종목"} 수정`:"새 재매수 종목";$("deleteRebuyBtn").classList.toggle("hidden",!edit);
   if(edit){f.name.value=edit.name||"";f.ticker.value=edit.ticker||"";}
-  const choices=f.holding&&typeof assetStore==="object"?rebuyHoldingChoices(assetStore.doc?.allocation):[], pick=f.holding, field=$("rebuyHoldingField"), hint=$("rebuyHoldingHint");
-  let initial="";
-  if(pick){
-    const same=edit?.ticker?choices.filter(c=>linkTicker(assetTradeTicker(c.it))===linkTicker(edit.ticker)):[];
-    initial=same.length===1?same[0].it.id:"";
-    pick.innerHTML='<option value="">직접 입력</option>'+choices.map(({g,it})=>`<option value="${esc(it.id)}">${esc(g.name)} › ${esc(it.name)} · ${esc(assetTradeTicker(it))}${finite(it.shares)!==null?` · ${won.format(it.shares)}주 보유`:""}</option>`).join("");
-    pick.value=initial;field.hidden=!choices.length;
-    pick.onchange=()=>{
-      const c=choices.find(x=>x.it.id===pick.value);hint.textContent="";if(!c)return;
-      f.name.value=c.it.name.slice(0,40);f.ticker.value=assetTradeTicker(c.it);
-      const h=rebuyHoldFromAlloc(typeof allocLink==="object"?allocLink.holding(assetTradeTicker(c.it)):null,usTicker(assetTradeTicker(c.it)));
-      hint.textContent=h?`자산 배분 보유 ${h.unit==="shares"?`${won.format(h.value)}주`:usTicker(assetTradeTicker(c.it))?`$${won.format(h.value)}`:`${decimal.format(h.value)}만원`}를 이탈 전 보유로 채웁니다(손절·재매수 기록이 없을 때).`:"가져올 보유량이 없어 이름·코드만 채웁니다.";
-    };
-    if(hint)hint.textContent="";
-  }
+  editRebuyTarget=edit||null;rebuyChoices=typeof assetStore==="object"?rebuyHoldingChoices(assetStore.doc?.allocation):[];
+  const same=edit?.ticker?rebuyChoices.filter(c=>linkTicker(assetTradeTicker(c.it))===linkTicker(edit.ticker)):[];
+  const initial=same.length===1?same[0].it.id:"", picker=rebuyPicker();
+  f.holding.value=initial;f.ticker.readOnly=!!initial;$("rebuyHoldingHint").textContent="";$("rebuyHoldingHint").hidden=true;picker.clear();picker.render();
   form.onsubmit=e=>{e.preventDefault();const name=f.name.value.trim().slice(0,40), ticker=f.ticker.value.trim().toUpperCase().slice(0,80);if(!name)return;
-    const picked=pick?.value&&pick.value!==initial?choices.find(c=>c.it.id===pick.value):null;
+    const picked=f.holding.value&&f.holding.value!==initial?rebuyChoices.find(c=>c.it.id===f.holding.value):null;
     let r;if(edit)r=editRebuy();else{r={id:id(),...defaultRebuy()};editRebuyList().push(r);state.selectedRebuy=r.id;rebuyUnit=null;}
     r.name=name;if(ticker!==(r.ticker||"")){if(ticker)r.ticker=ticker;else delete r.ticker;delete r.auto;}
     if(picked&&linkTicker(ticker)===linkTicker(assetTradeTicker(picked.it))&&typeof allocLink==="object"){
@@ -491,7 +498,8 @@ function openRebuyDialog(edit){
   $("deleteRebuyBtn").onclick=()=>{const r=rebuyPick();if(!r||!confirm(`${String(r.name||"").trim()||"이 종목"} 재매수 기록을 삭제할까요?\n손절·재매수 체크와 메모도 함께 지워집니다.`))return;
     const gone=editRebuy();state.rebuy.items=state.rebuy.items.filter(x=>x!==gone);state.selectedRebuy=state.rebuy.items[0]?.id||null;rebuyUnit=null;save();dialog.close();renderRebuy();};
   dialog.querySelectorAll("[data-close-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
-  dialog.showModal();f.name.focus();
+  dialog.showModal();
+  if(edit)f.name.focus();else if(typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches)picker.focus(); // 새 종목은 분할매수 창처럼 PC에서만 검색 칸에
 }
 // 분할매수와 같은 시작선·마지막선 범위 편집. 열기·취소는 사본만 다루고 저장 때 범위를 적용한다.
 // 범위 밖 평균선·체결·손절·개별 비중/조건은 삭제하지 않고 다음 평균선은 회차 가격 계산에만 사용한다.

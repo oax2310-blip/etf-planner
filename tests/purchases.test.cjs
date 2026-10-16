@@ -16,20 +16,23 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
   function element(){return {dataset:{},value:'',classList,setAttribute(){},append(){},focus(){},textContent:'',addEventListener(){},querySelectorAll:selector=>document.querySelectorAll(selector)};}
-  const document={body:element(),createElement:element,getElementById(id){
-    if(!elements.has(id)){
-      const e=element();let html='';Object.defineProperty(e,'innerHTML',{get:()=>html,set(value){
-        html=value;
-        rendered.set(id,[...value.matchAll(/<(input|button)\b([^>]*)>/g)].map(([,tag,attrs])=>{
-          const node=element();node.checked=/(?:^|\s)checked(?:\s|$)/.test(attrs);node.disabled=/(?:^|\s)disabled(?:\s|$)/.test(attrs);
-          node.attrs=Object.fromEntries([...attrs.matchAll(/([\w-]+)="([^"]*)"/g)].map(([,key,val])=>[key,val]));
-          node.value=node.attrs.value||'';
-          for(const [key,val] of Object.entries(node.attrs))if(key.startsWith('data-'))node.dataset[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())]=val;
-          if(node.attrs.id)elements.set(node.attrs.id,node);
-          return node;
-        }));
-      }});elements.set(id,e);
-    }
+  // innerHTML로 그린 input·button을 기억해 querySelectorAll로 찾는다. 검색 칸(item-search.js)이 만든 요소도 id로 찾는다.
+  function capturing(e){
+    let html='';Object.defineProperty(e,'innerHTML',{get:()=>html,set(value){
+      html=value;
+      rendered.set(e,[...value.matchAll(/<(input|button)\b([^>]*)>/g)].map(([,tag,attrs])=>{
+        const node=element();node.checked=/(?:^|\s)checked(?:\s|$)/.test(attrs);node.disabled=/(?:^|\s)disabled(?:\s|$)/.test(attrs);
+        node.attrs=Object.fromEntries([...attrs.matchAll(/([\w-]+)="([^"]*)"/g)].map(([,key,val])=>[key,val]));
+        node.value=node.attrs.value||'';
+        for(const [key,val] of Object.entries(node.attrs))if(key.startsWith('data-'))node.dataset[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())]=val;
+        if(node.attrs.id)elements.set(node.attrs.id,node);
+        return node;
+      }));
+    }});
+    return e;
+  }
+  const document={body:element(),createElement(){const e=capturing(element());let id='';Object.defineProperty(e,'id',{get:()=>id,set(v){id=v;elements.set(v,e);}});return e;},getElementById(id){
+    if(!elements.has(id))elements.set(id,capturing(element()));
     return elements.get(id);
   },addEventListener(){},querySelectorAll(selector){return [...rendered.values()].flat().filter(node=>selector.split(',').some(s=>{
     const attr=/^\s*\[([\w-]+)\]\s*$/.exec(s);return attr&&Object.hasOwn(node.attrs,attr[1]);
@@ -40,7 +43,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const listeners=new Set(),store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[],start(){},subscribe:fn=>listeners.add(fn)};
   const alerts=[],renameDialogs=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
-  const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+  const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}

@@ -30,6 +30,18 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
   assert.deepEqual([...valuation.matchAll(/src="js\/theme\.js\?v=(\d+)"/g)].map(r => r[1]), [refs[0][2]], 'valuation.html도 같은 버전의 theme.js를 한 번 불러야 한다');
 });
 
+test('분할매수·분할매도·재매수 계획 창은 같은 종목 검색(item-search.js)을 쓴다', () => {
+  for (const f of ['js/purchases.js', 'js/plans.js', 'js/rebuy.js']) {
+    assert.ok(scripts.indexOf('js/item-search.js') >= 0 && scripts.indexOf('js/item-search.js') < scripts.indexOf(f), `item-search.js를 ${f}보다 먼저 불러야 한다`);
+    assert.match(fs.readFileSync(path.join(root, f), 'utf8'), /itemSearch\.create\(/, `${f}는 공통 검색 칸을 만든다`);
+  }
+  for (const [dialog, host] of [['purchaseDialog', 'purchaseItemSearch'], ['planDialog', 'planItemSearch'], ['rebuyDialog', 'rebuyItemSearch']]) {
+    const body = html.slice(html.indexOf(`<dialog id="${dialog}"`), html.indexOf('</dialog>', html.indexOf(`<dialog id="${dialog}"`)));
+    assert.match(body, new RegExp(`<div class="item-search" id="${host}"></div>`), `${dialog}에 검색 칸 자리가 있다`);
+  }
+  assert.doesNotMatch(html, /type="search"|class="purchase-pick"|id="planAllocTicker"|<select name="holding"/, '검색 입력·목록은 index.html에 따로 두지 않는다');
+});
+
 test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름이 없다', () => {
   // 일반 <script>는 맨 위 이름을 함께 쓰므로, 이어 붙여 한 번에 해석하면 겹치는 const·let이 오류로 드러난다.
   for (const list of [scripts, assetScripts, valuationScripts])

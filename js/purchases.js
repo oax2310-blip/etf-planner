@@ -292,24 +292,18 @@ function renderPurchases(){
 let purchaseDraft=null,editing=null,budgetAuto=true,originalMode="lines";
 const form=()=>el("purchaseForm"), pickedItem=()=>findItem(form().item.value), mode=()=>form().mode.value;
 const draftCurrency=()=>{const it=pickedItem()?.it;return purchaseDraft?.currency||quoteOf(it)?.currency||form().manualCurrency.value||"KRW";};
+// 검색 목록·고른 종목 한 줄의 설명(이스케이프는 item-search.js).
 function itemInfo({g,it},s){
   const v=s.items.get(it.id)?.value||0,t=finite(it.target),holding=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
-  return [g.name,it.section,tracksETF(it)?`${it.ticker} → ${assetTradeTicker(it)}`:it.ticker,finite(it.shares)!==null?`보유 ${holdingQty(finite(it.shares),it)}`:`평가액 ${man(v)}`,`선택 항목 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`,`전체 계좌 ${pc(holding.pct)}`].filter(Boolean).map(escA).join(" · ");
+  return [g.name,it.section,tracksETF(it)?`${it.ticker} → ${assetTradeTicker(it)}`:it.ticker,finite(it.shares)!==null?`보유 ${holdingQty(finite(it.shares),it)}`:`평가액 ${man(v)}`,`선택 항목 ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)}`:""}`,`전체 계좌 ${pc(holding.pct)}`].filter(Boolean).join(" · ");
 }
-function renderPicker(){
-  const s=allocationSummary(doc.allocation,prices), picked=pickedItem(), box=el("purchasePicked");
-  box.hidden=!picked;el("purchaseSearchBox").hidden=!!picked;
-  if(picked){
-    box.innerHTML=`<div><strong>${escA(picked.it.name)}</strong><small>${itemInfo(picked,s)}</small></div>${editing?"":`<button class="btn mini" type="button" id="purchaseRepick">변경</button>`}`;
-    if(!editing)el("purchaseRepick").onclick=()=>{form().item.value="";renderDraft();el("purchaseSearch").focus();};
-    return;
-  }
-  const query=el("purchaseSearch").value.trim(), terms=query.toLowerCase().split(/\s+/).filter(Boolean);
-  const rows=purchaseItems().filter(({g,it})=>{const hay=[it.name,g.name,it.section,it.ticker,it.tradeTicker].filter(Boolean).join(" ").toLowerCase();return terms.every(w=>hay.includes(w));});
-  el("purchaseItemList").innerHTML=rows.length?rows.map(r=>`<button type="button" role="option" aria-selected="false" class="purchase-opt" data-pick="${escA(r.it.id)}"><span><strong>${escA(r.it.name)}</strong><small>${itemInfo(r,s)}</small></span>${r.it.buyPlan?`<em>계획 있음</em>`:""}</button>`).join("")
-    :`<p class="purchase-none">${query?`‘${escA(query)}’에 맞는 종목이 없습니다.`:"자산 배분에 종목이 없습니다."}</p>`;
-  all("[data-pick]").forEach(b=>b.onclick=()=>pickPurchaseItem(b.dataset.pick));
-}
+// 검색 칸(item-search.js, 분할매도·재매수 창과 공통)은 처음 그릴 때 만든다.
+let pickerUi=null;
+const picker=()=>pickerUi||=itemSearch.create(el("purchaseItemSearch"),{id:"purchase",label:"purchaseItemLabel",empty:"자산 배분에 종목이 없습니다.",
+  rows:()=>{const s=allocationSummary(doc.allocation,prices);return purchaseItems().map(r=>({id:r.it.id,name:r.it.name,info:itemInfo(r,s),badge:r.it.buyPlan?"계획 있음":"",words:[r.it.name,r.g.name,r.it.section,r.it.ticker,r.it.tradeTicker]}));},
+  current:()=>{const p=pickedItem();return p?{name:p.it.name,info:itemInfo(p,allocationSummary(doc.allocation,prices))}:null;},
+  locked:()=>!!editing,pick:id=>pickPurchaseItem(id),repick:()=>{form().item.value="";renderDraft();}});
+const renderPicker=()=>picker().render();
 function pickPurchaseItem(itemId){
   const found=findItem(itemId);if(!found)return;
   if(found.it.buyPlan){openPurchase(itemId);return;}
@@ -425,7 +419,7 @@ function openPurchase(id){
   if(!found&&purchaseItems().every(({it})=>it.buyPlan)){alert("모든 종목에 분할매수 계획이 있습니다. 종목 이름 옆 연필로 기존 계획을 수정하세요.");return;}
   editing=found;
   el("purchaseTitle").textContent=found?"분할매수 계획 수정":"새 분할매수 계획";
-  f.item.value=found?.it.id||"";el("purchaseSearch").value="";
+  f.item.value=found?.it.id||"";picker().clear();
   purchaseDraft=found?.it.buyPlan?JSON.parse(JSON.stringify(found.it.buyPlan)):{};
   const lines=purchaseDraft.lines;
   originalMode=purchaseMode(purchaseDraft);f.mode.value=originalMode;
@@ -441,7 +435,7 @@ function openPurchase(id){
   el("purchaseDelete").hidden=!found;
   // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않는다.
   el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;saveSection("allocation");d.close();render();};
-  f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");el("purchaseSearch").focus();return;}
+  f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");picker().focus();return;}
     const draft=purchaseDraft;
     if(mode()!==originalMode&&(Object.keys(purchaseBuys(draft)).length||(draft.stages||[]).some(purchaseStageRecorded))){alert("체결 기록이 있어 방식을 바꿀 수 없습니다.");return;}
     if(mode()==="lines"){
@@ -467,7 +461,7 @@ function openPurchase(id){
     }
     setText(draft,"cardName",f.cardName.value);setText(draft,"note",f.note.value);item.buyPlan=draft;selectPurchase(item.id);saveSection("allocation");d.close();render();};
   if(!d.open)d.showModal();
-  if(!found&&matchMedia("(hover:hover) and (pointer:fine)").matches)el("purchaseSearch").focus();
+  if(!found&&matchMedia("(hover:hover) and (pointer:fine)").matches)picker().focus();
 }
 
 
@@ -485,12 +479,7 @@ function initialize(){
   if(initialized)return;initialized=true;
   el("purchaseDialog").querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>dlg("purchaseDialog").close());
   el("purchaseDialog").addEventListener("close",()=>{if(redrawLater)redrawIdle();});
-  const search=el("purchaseSearch"),f=form();
-  search.oninput=()=>renderPicker();
-  search.onkeydown=e=>{const first=el("purchaseItemList").querySelector("[data-pick]");
-    if(e.key==="Enter"){e.preventDefault();if(first)pickPurchaseItem(first.dataset.pick);}else if(e.key==="ArrowDown"&&first){e.preventDefault();first.focus();}};
-  el("purchaseItemList").onkeydown=e=>{const b=e.target.closest?.("[data-pick]");if(!b||!["ArrowDown","ArrowUp"].includes(e.key))return;e.preventDefault();
-    const next=e.key==="ArrowDown"?b.nextElementSibling:b.previousElementSibling;(next||(e.key==="ArrowUp"?search:null))?.focus();};
+  const f=form();picker();
   f.lineTarget.oninput=()=>{budgetAuto=true;renderLines();};
   f.lineEnd.oninput=f.lineLastPeriod.oninput=()=>renderLines();f.lineLastUnit.onchange=()=>renderLines();
   f.lineSet.onchange=()=>{
