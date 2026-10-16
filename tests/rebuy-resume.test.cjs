@@ -38,12 +38,15 @@ test('재이탈: 25·32·42선까지 산 뒤 다시 손절하면 남은 손절�
   s=ctx.rebuySummary(r);
   assert.deepEqual([r.plannedEndLine,s.cycle,ctx.rebuyStatus(r,s)[0]],['42선',null,'재매수 완료']);
   assert.deepEqual(labels(ctx,r),cutLabels(6,10),'재매수를 마쳐도 남은 손절 알림은 유지하고 신저점 이탈은 알리지 않는다');
+  assert.deepEqual(plain(s.cutBase),{base:s.held,left:s.held,cont:false},'다음 손절은 재매수를 반영한 지금 보유 기준');
+  assert.equal(s.cuts[5].qty,Math.round(s.held*2*6/100)-Math.round(s.held*2*5/100));
 
   const planned=plain(r.planned);
   cut(ctx,5);
   assert.equal(r.cuts[5].afterLine,'42선','재매수 뒤 새 손절에 마지막으로 산 선을 남긴다');
   s=ctx.rebuySummary(r);
-  assert.deepEqual(plain(s.cycle),{after:'42선',at:2,from:3,bought:false});
+  assert.deepEqual(plain(s.cycle),{after:'42선',at:2,round:0,from:3,start:5,bought:false});
+  assert.equal(Object.hasOwn(r.cuts[5],'afterRound'),false,'42선을 다 샀으면 다음 선부터');
   assert.deepEqual(plain(s.planKeys),[['60선',0],['60선',1],['60선',2]],'60선이 평균 손절가 위여도 최소 한 선은 배분한다');
   assert.deepEqual(open(s),[['60선',0],['60선',1],['60선',2]],'25·32·42선은 가격이 다시 와도 새로 사지 않는다');
   assert.ok(s.rest>180000&&Math.abs(s.tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0)-s.rest)<1e-6,'재이탈 손절 금액을 60선 회차에 모두 배분');
@@ -58,30 +61,64 @@ test('재이탈: 25·32·42선까지 산 뒤 다시 손절하면 남은 손절�
   assert.deepEqual([s.cycle.bought,s.fixPlan],[true,false]);
   assert.deepEqual(open(s),[['60선',1],['60선',2]]);
 
-  cut(ctx,6);
-  assert.equal(r.cuts[6].afterLine,'60선','두 번째 재이탈은 60선 다음부터');
+  buyOpen(ctx);cut(ctx,6);
+  assert.deepEqual([r.cuts[6].afterLine,Object.hasOwn(r.cuts[6],'afterRound')],['60선',false],'60선을 다 산 뒤 두 번째 재이탈은 다음 선부터');
   s=ctx.rebuySummary(r);
   assert.deepEqual(open(s),[['80선',0],['80선',1],['80선',2]]);
-  assert.deepEqual(plain(s.skipped.filter(x=>x.passed).map(x=>[s.stages[x.i].name,x.t])),[['60선',1],['60선',2]],'건너뛴 앞 선의 남은 회차는 재이탈로 표시');
-  assert.ok(!s.skipped.some(x=>s.stages[x.i].name==='42선'),'앞 재매수의 마지막 선은 지정 회차를 유지한다');
+  assert.ok(!s.skipped.some(x=>['42선','60선'].includes(s.stages[x.i].name)),'앞 재매수들의 마지막 선은 지정 회차를 유지한다');
 
   ctx.applyRebuyCut(6,null);
   s=ctx.rebuySummary(r);
   assert.equal(r.cuts.length,6);
-  assert.deepEqual([s.cycle.after,open(s)],['42선',[['60선',1],['60선',2]]],'재이탈 손절을 지우면 이전 재이탈 범위로 돌아간다');
+  assert.deepEqual([s.cycle.after,s.cycle.bought,open(s)],['42선',true,[]],'재이탈 손절을 지우면 이전 재이탈(60선, 다 삼)로 돌아간다');
 });
 
-test('재이탈: 한 선을 일부만 산 뒤 다시 손절하면 그 선의 남은 회차는 건너뛰고 다음 선부터 산다',()=>{
+test('재이탈: 한 선을 일부만 산 뒤 다시 손절하면 그 선의 다음 회차부터 다시 산다',()=>{
   const ctx=load(),r=use(ctx,fixture());
   for(let i=0;i<5;i++)cut(ctx,i);
   buyOpen(ctx,(name,t)=>name==='25선'||name==='32선'&&t===0);
   cut(ctx,5);
+  let s=ctx.rebuySummary(r);
+  assert.deepEqual([r.cuts[5].afterLine,r.cuts[5].afterRound],['32선',1],'32선 1회차까지 산 뒤 재이탈');
+  assert.deepEqual(plain(s.cycle),{after:'32선',at:1,round:1,from:1,start:5,bought:false});
+  assert.deepEqual(open(s),[['32선',1],['32선',2],['42선',0],['42선',1],['42선',2]],'32선 2회차부터 평균 손절가 9,650원 이하인 42선까지');
+  assert.deepEqual(plain(s.skipped.filter(x=>x.passed)),[]);
+  assert.deepEqual(labels(ctx,r,'buy'),['재매수 32선 2차','재매수 32선 3차','재매수 42선','재매수 42선 2차','재매수 42선 3차']);
+  buy(ctx,1,1);
+  assert.equal(r.resumeEndLine,'42선');
+  cut(ctx,6);
+  assert.deepEqual([r.cuts[6].afterLine,r.cuts[6].afterRound],['32선',2],'32선 2회차를 산 뒤 다시 재이탈하면 3회차부터');
+  s=ctx.rebuySummary(r);
+  assert.deepEqual(open(s)[0],['32선',2]);
+});
+
+test('재이탈: 앞 선에서 사지 않은 회차는 재이탈로 건너뛰고, 같은 선만 남아도 다음 회차는 지정 회차와 관계없이 남긴다',()=>{
+  const ctx=load(),r=use(ctx,fixture({range:{startLine:'25선',lastLine:'125선',names:LINES,lastRound:1,targetPct:100}}));
+  r.stages[2].price=9660; // 재이탈 뒤 평균 손절가 9,650원 위 → 이번 재매수는 32선 하나
+  for(let i=0;i<5;i++)cut(ctx,i);
+  buyOpen(ctx,(name,t)=>t===0&&name!=='42선');
+  cut(ctx,5);
   const s=ctx.rebuySummary(r);
-  assert.equal(r.cuts[5].afterLine,'32선');
-  assert.deepEqual(open(s),[['42선',0],['42선',1],['42선',2]]);
-  assert.deepEqual(plain(s.skipped.filter(x=>x.passed).map(x=>[s.stages[x.i].name,x.t])),[['32선',1],['32선',2]]);
-  assert.deepEqual(labels(ctx,r,'buy'),['재매수 42선','재매수 42선 2차','재매수 42선 3차']);
-  assert.equal(ctx.rebuyBuyRecord(r,1,1,'5',true),false,'건너뛴 회차는 새로 기록하지 않는다');
+  assert.deepEqual(plain(s.skipped.filter(x=>x.passed).map(x=>[s.stages[x.i].name,x.t])),[['25선',1],['25선',2]]);
+  assert.deepEqual(open(s),[['32선',1]],'마지막 1회차 설정이어도 32선 2회차는 남긴다');
+});
+
+test('재이탈 손절 수량은 재매수를 반영한 그때 보유로 나누고 손절 합계 한도도 재매수만큼 늘어난다',()=>{
+  const ctx=load(),r=use(ctx,fixture({sellPct:10,steps:6}));
+  // 2회 손절(200주) 뒤 25선에서 300주 재매수(가상 수치) → 지금 보유 1,100주
+  r.cuts=[{shares:100,price:9900},{shares:100,price:9800}];r.stages[0].buys=[{shares:300,price:9300}];
+  let s=ctx.rebuySummary(r);
+  assert.deepEqual([s.held,plain(s.cutBase)],[1100,{base:1100,left:1100,cont:false}]);
+  assert.deepEqual(plain(s.cuts.slice(2).map(c=>c.qty)),[110,110,110,110],'이탈 전 1,000주가 아니라 지금 보유 1,100주의 10%');
+  assert.deepEqual(plain(ctx.cutMilestones(r).points.map(x=>x.cut.sold)),[500,1000],'손절 도달 기준은 이탈 전 보유 계획 그대로');
+  cut(ctx,2,110);
+  s=ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.cutBase),{base:1100,left:990,cont:true},'재이탈 손절 뒤 그 재매수 전에는 재이탈 직전 보유를 유지');
+  assert.deepEqual(plain(s.cuts.slice(3).map(c=>c.qty)),[110,110,110]);
+  assert.equal(ctx.rebuyCutRecord(r,3,'991',true),false,'손절 합계는 이탈 전 보유 + 재매수(1,300주)까지');
+  assert.notEqual(ctx.rebuyCutRecord(r,3,'990',true),false);
+  const before=ctx.rebuySummary({...r,stages:r.stages.map(st=>({...st,buys:undefined}))});
+  assert.equal(before.cutBase,null,'재매수 전에는 이탈 전 보유 기준 그대로');
 });
 
 test('재이탈: 범위 상한까지 다 샀으면 범위 밖 다음 평균선 하나에 배분한다',()=>{
