@@ -494,7 +494,7 @@ test('손절 카드: 대기 계획 금액과 실제 누적 수량을 구분하�
   assert.deepEqual(plain(r),partialBefore);
 });
 
-test('손절 카드: 미국 달러·옛 완료 기록·재매수 시작 후 손절 중단 표시를 유지한다', () => {
+test('손절 카드: 미국 달러·옛 완료 기록을 유지하고 재매수 시작 후에도 남은 손절 회차를 보인다', () => {
   const r={...fillFixture(),ticker:'SPY',lowPrice:500,stages:[{name:'25선',price:495,done:false}],cuts:[{shares:10,price:494.5}]};
   let before=structuredClone(r),view=ui({rebuy:{items:[r]}});
   assert.match(view.els.rebuyMain.innerHTML,/손절 10주<small class="sub rebuy-stage-amount">약 \$4,945/);
@@ -502,8 +502,8 @@ test('손절 카드: 미국 달러·옛 완료 기록·재매수 시작 후 손�
   assert.deepEqual(plain(r),before,'옛 완료 기록에 partial·plannedShares를 생성하지 않는다');
   r.stages[0]={...r.stages[0],done:true,shares:10,execPrice:494.5};before=structuredClone(r);view=ui({rebuy:{items:[r]}});
   const cuts=view.els.rebuyMain.innerHTML.split('id="rebuyCutRows">')[1].split('</section>')[0];
-  assert.match(cuts,/재매수를 시작해 남은 손절 회차는 멈췄습니다/);
-  assert.doesNotMatch(cuts,/data-cut="1"/);
+  assert.match(cuts,/재매수 중에도 남은 손절 회차는 이어집니다\. 다시 내려가면 지금 보유 100주의 10%씩 손절하고, 재매수는 25선까지 산 선을 건너뛰고 다음 선부터 합니다/);
+  assert.match(cuts,/data-cut="1" (?![^>]*disabled)[^>]*aria-label="2회 손절 완료"/,'재이탈 손절 회차는 체크할 수 있다');
   assert.deepEqual(plain(r),before);
 });
 
@@ -674,4 +674,27 @@ test('상한 없는 도달 회차 계산은 작은 주수·소수 비중에서�
     const cumulative=cuts.map(c=>({...c,sold:sold+=c.qty})),points=ctx.cutMilestones(r).points;
     for(const x of points){const first=cumulative.find(c=>c.sold*100>=shares*x.pct);assert.deepEqual(x.cut&&[x.cut.k,x.cut.sold],first?[first.k,first.sold]:null,JSON.stringify({shares,sellPct,stepPct,pct:x.pct}));}
   }
+});
+
+test('재이탈 화면: 재매수 중에도 남은 손절을 보이고, 다시 손절하면 이미 산 회차를 건너뛰고 다음 회차부터 재매수를 안내한다', () => {
+  const names=['25선','32선','42선','60선','80선'];
+  const r={id:'resume-ui',name:'테스트 ETF',lowPrice:10000,shares:1000,stepPct:1,sellPct:2,steps:8,currentPrice:9450,cuts:[],
+    stages:names.map((name,i)=>({name,price:[9300,9400,9500,9800,9900][i]})),range:{startLine:'25선',lastLine:'80선',names,lastRound:3,targetPct:100}};
+  const {ctx,handlers,els}=ui({rebuy:{items:[r]}});
+  const pending=(i,t)=>{const tr=ctx.rebuySummary(r).tranches.find(x=>x.i===i&&x.t===t);return String(vm.runInContext(`rebuyPendingShares(${tr.amount},${tr.price})`,ctx));};
+  for(let i=0;i<5;i++)handlers['[data-cut-qty]']('20',{dataset:{cutQty:String(i)}});
+  for(const [i,t] of [[0,0],[0,1],[0,2],[1,0]])handlers['[data-tranche-qty]'](pending(i,t),{dataset:{trancheQty:`${i}:${t}`}});
+  let html=els.rebuyMain.innerHTML;
+  const held=ctx.rebuySummary(r).held;
+  assert.match(html,new RegExp(`<div class="stop-note">재매수 중에도 남은 손절 회차는 이어집니다\\. 다시 내려가면 지금 보유 ${held.toLocaleString('ko-KR')}주의 2%씩 손절하고, 재매수는 32선 1회차까지 건너뛰고 32선 2회차부터 합니다\\.<\\/div>`));
+  assert.match(html,/다음 재매수 <b>.*? · 다시 [\d.]+원 이하면 손절 6회<\/div>/);
+  assert.match(html,/재매수 뒤 다시 내려가면 그때 보유\(재매수 포함\)의 2%씩 이어서 손절하고, 그다음 재매수는 이미 산 회차의 다음부터 합니다/);
+  assert.match(html,/data-cut="5" (?![^>]*disabled)[^>]*aria-label="6회 손절 완료"/,'재매수 중에도 남은 손절을 체크할 수 있다');
+  handlers['[data-cut-qty]']('20',{dataset:{cutQty:'5'}});
+  assert.deepEqual([r.cuts[5].afterLine,r.cuts[5].afterRound],['32선',1]);
+  html=els.rebuyMain.innerHTML;
+  assert.match(html,new RegExp(`<div class="stop-note">재이탈 손절을 기록해 재매수는 32선 1회차까지 건너뛰고 32선 2회차부터 다시 합니다\\. 남은 손절은 재이탈 직전 보유 ${held.toLocaleString('ko-KR')}주의 2%씩입니다\\.<\\/div>`));
+  assert.match(html,/재이탈 · 32선 1회차까지 건너뜀 · 다음 재매수 <b><span class="tr-name">32선<span class="tr-no">2<\/span>/);
+  assert.doesNotMatch(html,/재이탈로 건너뜀/,'32선의 남은 2·3회차는 다시 산다');
+  assert.match(html,/data-cut="6" (?![^>]*disabled)[^>]*aria-label="7회 손절 완료"/);
 });

@@ -163,15 +163,16 @@ test('재매수의 이탈·회차 손절·단계 회차를 기존 배분에 연�
   const s=ctx.rebuySummary(r);for(const x of rules.filter(x=>x.id.includes(':buy:')))assert.ok(s.plan[Number(x.id.split(':')[5])]>0);
   r.stages[0].buys=[{shares:5,price:9600}];r.splits=2;
   const after=plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.label);
-  assert.deepEqual(after,['재매수 25선 2차','재매수 25선 3차','재매수 25일선'],'산 회차와 재매수 시작 뒤의 손절·이탈은 제외');
+  assert.deepEqual(after,['재매수 손절 2회','재매수 손절 3회','재매수 25선 2차','재매수 25선 3차','재매수 25일선'],'산 회차와 재매수 시작 뒤의 신저점 이탈은 제외하고 남은 손절(재이탈)은 유지');
 });
-test('재매수 시작 뒤 손절·이탈은 멈추고 완료 단계·다 채운 기한·배분 없는 단계는 제외한다',()=>{
+test('재매수 시작 뒤 이탈은 멈추고 남은 손절은 유지하며 완료 단계·다 채운 기한·배분 없는 단계는 제외한다',()=>{
   const ctx=load(),r=rebuy({notify:{breakdown:true,cuts:true,buys:true,deadlines:true},cuts:[{shares:10,price:9900}]});
   r.stages[0]={name:'25분봉',price:9600,done:true,shares:11,execPrice:9600};
-  assert.equal(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).length,0);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.label),['재매수 손절 2회','재매수 손절 3회'],'재이탈에 대비해 남은 손절만 알린다');
   r.stages[0].shares=2;
   const rules=plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null));
-  assert.ok(rules.every(x=>!x.label.includes('손절')&&!x.label.includes('이탈')&&x.label!=='재매수 25선'));
+  assert.ok(rules.every(x=>!x.label.includes('이탈')&&x.label!=='재매수 손절 1회'&&x.label!=='재매수 25선'));
+  assert.ok(rules.some(x=>x.label==='재매수 손절 2회'));
   assert.ok(rules.some(x=>x.label==='재매수 25일선'));
   r.stages[1].price=11000;r.stages[0].done=false;
   assert.ok(!ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).some(x=>x.label==='재매수 25일선'),'기본 범위 밖의 다음 평균선은 알리지 않는다');
@@ -224,14 +225,14 @@ test('종류별 전체 ON/OFF는 개별 예외를 초기화하며 알림에 수�
   assert.ok(!out.includes('private-memo'));assert.ok(!out.includes('shares'));assert.ok(!out.includes('amount'));
   ctx.setTradeRebuyAll(r,'buys',false);assert.equal(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).length,0);
 });
-test('실제 완료 체크 핸들러가 회차 체결 기록을 저장하고 이탈·남은 손절 알림을 멈춘다',()=>{
+test('실제 완료 체크 핸들러가 회차 체결 기록을 저장하고 이탈 알림만 멈추며 남은 손절 알림은 유지한다',()=>{
   const ctx=load(),r=rebuy({notify:{breakdown:true,cuts:true,buys:true,deadlines:true},cuts:[{shares:10,price:9900}]}),input={dataset:{trancheDone:'0:0'},checked:true};
   ctx.state={rebuy:{items:[r]},selectedRebuy:r.id};ctx.$$=()=>[input];ctx.cents=v=>Math.round(v);let saved=0,redrawn=0;
   ctx.save=()=>saved++;ctx.renderRebuy=()=>redrawn++;ctx.alert=msg=>{throw Error(msg);};
   const source=fs.readFileSync(path.join(__dirname,'../js/rebuy.js'),'utf8'),start=source.indexOf('  $$("[data-tranche-done]").forEach('),end=source.indexOf('  onEdit("[data-stage-price]"',start);
   assert.ok(start>=0&&end>start);vm.runInContext(source.slice(start,end),ctx);
   input.onchange();assert.equal(r.stages[0].buys[0].price,9600);assert.ok(r.stages[0].buys[0].shares>0);assert.equal(saved,1);assert.equal(redrawn,1);
-  let rules=ctx.buildTradeAlertRules(ctx.state,null);assert.ok(rules.every(x=>!x.label.includes('손절')&&!x.label.includes('이탈')&&x.label!=='재매수 25선'));
+  let rules=ctx.buildTradeAlertRules(ctx.state,null);assert.ok(rules.every(x=>!x.label.includes('이탈')&&x.label!=='재매수 25선'));assert.ok(rules.some(x=>x.label==='재매수 손절 2회'));
   input.checked=false;input.onchange();assert.equal(r.stages[0].buys,undefined);
   rules=ctx.buildTradeAlertRules(ctx.state,null);assert.ok(rules.some(x=>x.label==='재매수 신저점 이탈'));
 });
