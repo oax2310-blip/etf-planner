@@ -9,6 +9,12 @@ const hasPlanShares = (ticker, shares) => shares>0&&(isBitcoinTicker(ticker)?Num
 // 매도 비중(plans[].salePct, 1~99 정수 %): 보유 수량(또는 평가액만 넣은 계획은 평가액)의 이 비중만 회차에 나눠 팔고 나머지는 남긴다.
 // 없으면 100%(전량) — 100이면 저장하지 않고 delete. 매도 수량은 최소 단위(1주·0.00000001 BTC)로 내림해 정한 비중보다 더 팔지 않는다.
 const planSalePct = p => { const v=Number(p?.salePct); return Number.isInteger(v)&&v>=1&&v<100?v:100; };
+// 종료 기준선 없는 전액매도(plans[].endPct, 0<값<100): 종료 기준가 = 시작 기준가 × (1 − endPct/100)이고 매도 비중은 100%(salePct 없음), 시작 기준가는 직접 입력.
+// endLabel은 '시작가 −N%'로 두어 시세 채우기(fillPrices — 이동평균 이름이 아니면 건너뜀)가 종료 기준가를 덮어쓰지 않게 한다.
+// 종료 기준가는 시작 기준가·하락률을 입력할 때만 다시 계산해 저장하고, 회차·알림은 기존처럼 저장된 startPrice·endPrice로 계산한다.
+const planEndPct = p => { const v=Number(p?.endPct); return Number.isFinite(v)&&v>0&&v<100?v:null; };
+const pctEndPrice = (start, pct, ticker, currency) => priceRound(Number(start)*(1-pct/100), quoteDigits(ticker,currency));
+const pctEndLabel = pct => `시작가 −${Math.round(pct*100)/100}%`;
 const saleShares = (shares, p) => { const scale=10**planShareDigits(p); return Math.floor(Math.round(Number(shares)*scale)*planSalePct(p)/100)/scale; };
 // 자동 기준가가 비어 있으면 보간하지 않는다. 두 기준가가 모두 준비된 뒤 회차 가격을 계산한다.
 const stagePrice = (plan, stage) => plan.startPrice>0&&plan.endPrice>0?plan.startPrice - (plan.startPrice - plan.endPrice) * stage / Math.max(plan.stages - 1, 1):null;
@@ -244,28 +250,15 @@ function planSaleAccountView(p){
   const valuation=found?allocationHoldingInfo(found.it,summary):null;
   return `<section class="card panel sale-account"><h2>실제 매도 계좌 · ETF</h2><div class="sale-account-fields"><label class="field"><span>매도할 계좌·그룹</span><select id="saleAccount"><option value="">${esc(p.ticker)} 직접 매도</option>${groups.map(g=>`<option value="${esc(g.id)}"${g.id===gid?" selected":""}>${esc(g.name)}</option>`).join("")}</select></label>${gid?`<label class="field"><span>계좌에 보유한 ETF</span><select id="saleHolding"><option value="">보유 ETF 선택</option>${choices.map(({it})=>`<option value="${esc(it.id)}"${it.id===p.sellTargetId?" selected":""}>${esc(it.name)} · ${esc(assetTradeTicker(it))}${finite(it.shares)!==null?` · ${won.format(it.shares)}주 보유`:""}</option>`).join("")}</select></label>`:""}</div><p class="hint">${esc(info)}</p>${valuation?`<p class="hint sale-account-valuation">평가액 ${valuation.valueText} · 전체 자산의 ${valuation.pctText}${valuation.pending?` · ${valuation.pending}`:""}</p>`:""}<p class="hint">${esc(p.ticker)} 현재가 × 기준 주수${p.currency==="USD"?" × 환율":""} ÷ 실제 ETF 현재가로 정수 주수를 내림합니다. 기준 현재가가 없으면 회차 기준가를 사용합니다. 체결한 회차는 당시 계좌·ETF·수량을 유지합니다.${!groups.length?' <a href="assets.html#alloc">자산 배분에서 보유 계좌와 종목 코드를 등록하세요.</a>':""}</p></section>`;
 }
-// 전액매도 시점(plans[].fullSell — 규칙은 trade-alerts.js tradeFullSellOf): 직접 입력한 기준가에 현재가가 닿았는지만 보여 주고,
-// 전액매도 계획·수량·비율은 만들지 않는다. 시세가 없거나 지난 시세·조회 실패이면 판단하지 않고, 전 회차를 마친 계획도 시점으로 보지 않는다.
-// 보유 종목은 분할매도와 같은 자산 배분 기록(planLinkedSaleItems)에서 읽기만 하며 어떤 값도 저장하지 않는다.
+// 전액매도 시점 카드: 종료 기준선 없이 하락률로 만든 계획(planEndPct)에만 보인다. 시작 기준가에 닿으면 재매수 시점과 같은 강조 행으로 알린다.
+// 판단은 현재가(통화가 맞는 계획 종목 시세)만 쓰며 시세가 없거나 지난 시세·조회 실패이면 판단하지 않는다. 휴대폰 알림은 1회(첫 매도) 알림과 같은 설정이다.
+// 보유 종목은 분할매도와 같은 자산 배분 기록(planLinkedSaleItems)에서 읽기만 하며, 화면을 그려도 어떤 값도 저장하지 않는다.
 function planFullSellState(p){
-  if(typeof tradeFullSellOf!=="function")return null;
-  const full=tradeFullSellOf(p),px=planQuote(p.ticker,p.currency),cur=Number(px?.close)>0?Number(px.close):null,old=!!px&&(px.stale||priceOld(px));
-  const finished=tradePlanFinished(p),ok=full.price!==null&&cur!==null&&!old&&!finished;
-  const due=ok&&(full.condition==="up"?cur>=full.price:cur<=full.price);
-  return {...full,cur,old,finished,due,gap:full.price!==null&&cur!==null?(cur/full.price-1)*100:null,label:full.price===null?"입력 필요":finished?"분할매도 완료":cur===null?"시세 대기":old?"지난 시세":due?"전액매도 시점":"대기"};
-}
-// 입력 때만 저장: 기준가를 비우면 fullSell을 지우고(알림 설정 notify.fullSell은 둠), "이상"만 condition으로 기록한다.
-function setPlanFullSell(p,key,text){
-  const t=String(text).trim(),cur=p.fullSell&&typeof p.fullSell==="object"&&!Array.isArray(p.fullSell)?p.fullSell:{};
-  if(key==="price"){
-    const v=t===""?0:Number(t);if(!Number.isFinite(v)||v<0)return false;
-    if(v>0)p.fullSell={...cur,price:v};else delete p.fullSell;
-    return;
-  }
-  if(key==="condition"){
-    if(!["up","down"].includes(t)||!(Number(cur.price)>0))return false;
-    const next={...cur};if(t==="up")next.condition="up";else delete next.condition;p.fullSell=next;
-  }
+  const pct=planEndPct(p);if(pct===null)return null;
+  const start=Number(p.startPrice)>0?Number(p.startPrice):null,end=Number(p.endPrice)>0?Number(p.endPrice):null,px=planQuote(p.ticker,p.currency),cur=Number(px?.close)>0?Number(px.close):null,old=!!px&&(px.stale||priceOld(px));
+  const finished=p.checked.length>0&&p.checked.every(Boolean),ok=start!==null&&end!==null&&cur!==null&&!old&&!finished,bottom=ok&&cur<=end,due=ok&&cur<=start;
+  return {pct,start,end,cur,old,finished,due,gap:start!==null&&cur!==null?(cur/start-1)*100:null,
+    label:start===null||end===null?"기준가 대기":finished?"전액매도 완료":cur===null?"시세 대기":old?"지난 시세":bottom?"하락 끝 도달":due?"전액매도 시점":"대기"};
 }
 function planFullSellHoldings(p){
   const summary=typeof assetStore==="object"?allocationSummary(planSaleAssets(),assetStore.prices):null,items=summary?planLinkedSaleItems(p):[];
@@ -278,14 +271,13 @@ function planFullSellHoldings(p){
 }
 function planFullSellView(p){
   const f=planFullSellState(p);if(!f)return "";
-  const unit=p.currency==="USD"?"달러":"원",gap=f.gap===null?"":` · 기준가 대비 ${f.gap>0?"+":""}${decimal.format(f.gap)}%`;
-  const alert=typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeFullSellEnabled(p)||tradeNotify(p).fullSell===true,'data-full-sell-alert',"전액매도 시점",f.finished):"";
-  const status=f.due?"due":"",row=tradeStageRow('<span class="check full-sell-name"><span class="tr-name">전액매도</span></span>',
-    `<label class="exec-fields full-sell-input" title="전액매도 기준가"><span>기준가</span><input id="fullSellPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="직접 입력" value="${f.price===null?"":esc(f.price)}" aria-label="전액매도 기준가 (${unit})">${unit}</label>
-      <label class="exec-fields full-sell-input"><select id="fullSellCondition" aria-label="전액매도 조건"${f.price===null?" disabled":""}><option value="down"${f.condition==="down"?" selected":""}>현재가 이하</option><option value="up"${f.condition==="up"?" selected":""}>현재가 이상</option></select></label><div class="rebuy-stage-tools">${alert}</div>`,
-    `<div class="rebuy-stage-summary"><strong class="rebuy-stage-plan">${f.cur===null?"현재가 —":`현재 ${priceText(f.cur,p.currency)}`}<small class="sub rebuy-stage-amount">${f.price===null?"기준가를 직접 입력하세요":`${f.condition==="up"?"이상":"이하"} ${priceText(f.price,p.currency)}${gap}`}</small>${f.due?'<small class="full-sell-due">전액매도 시점</small>':""}</strong></div>`,
-    f.label,status?"due":"",status);
-  return `<div class="section-heading"><h2>전액매도 시점</h2><span>${f.due?"기준가에 도달했습니다 · ":""}시점만 알립니다. 수량·비율은 직접 정하세요</span></div><section class="card table-card sale-table rebuy-trade-table full-sell-card" id="fullSellCard"><div class="table-head"><span>기준</span><span>전액매도 기준가 · 알림</span><span>현재가</span><span>상태</span></div>${row}<div class="full-sell-holdings-head"><b>보유 종목</b><small>자산 배분 기록 · 읽기 전용</small></div>${planFullSellHoldings(p)}</section>`;
+  const P=v=>v===null?"—":priceText(v,p.currency),done=p.checked.filter(Boolean).length;
+  const alert=typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"전액매도 시작(1회 매도)",p.checked[0]):"";
+  const row=tradeStageRow('<span class="check full-sell-name"><span class="tr-name">전액매도</span></span>',
+    `<span class="price">${P(f.start)}</span><span class="krw full-sell-range">→ ${P(f.end)} · −${decimal.format(f.pct)}%</span><div class="rebuy-stage-tools">${alert}</div>`,
+    `<div class="rebuy-stage-summary"><strong class="rebuy-stage-plan">${f.cur===null?"현재가 —":`현재 ${P(f.cur)}`}<small class="sub rebuy-stage-amount">${f.gap===null?"시작 기준가 대비 —":`시작 기준가 대비 ${f.gap>0?"+":""}${decimal.format(f.gap)}%`} · ${done} / ${esc(p.stages)}회 매도</small>${f.due?`<small class="full-sell-due">${esc(f.label)}</small>`:""}</strong></div>`,
+    f.label,f.due?"due":"",f.due?"due":"");
+  return `<div class="section-heading"><h2>전액매도 시점</h2><span>시작 기준가부터 ${decimal.format(f.pct)}% 하락까지 보유 전량을 ${esc(p.stages)}회로 나눠 팝니다</span></div><section class="card table-card sale-table full-sell-card" id="fullSellCard"><div class="table-head"><span>기준</span><span>시작 → 종료 기준가 · 알림</span><span>현재가</span><span>상태</span></div>${row}<div class="full-sell-holdings-head"><b>보유 종목</b><small>자산 배분 기록 · 읽기 전용</small></div>${planFullSellHoldings(p)}</section>`;
 }
 // sellPriority는 사용자가 순서를 바꿀 때만 저장한다. 계좌 이름·종목 코드가 같아도 자산 id로 구분하며 조회·체결에는 순서 필드를 만들지 않는다.
 function movePlanSalePriority(p,targetId,direction,redraw=renderPlans){
@@ -367,7 +359,7 @@ function renderPlans(){
   const fxe=fxEntry(priceData), fxAuto=fxe&&p.auto?.fx===p.fx&&p.fx===priceRound(fxe.close,2)?`현물 USD/KRW(시세 ${fxe.asOf}${fxe.stale?" · 마지막 조회 실패":""}${priceOld(fxe)?" · 지난 시세":""})로 자동 · `:""; // 달러 계획 환율(prices.js)
   const left=sharesLeft(p), worth=shares?planWorth(left,px?.close,p.currency,p.fx):null; // 평가액: 남은 수량 × 현재가(× 환율), 수량 없이 평가액만 넣은 계획은 그 값
   const value = linkedSchedule?`${linkedSchedule.rows.filter(r=>r.held||r.sold).length}개 보유 항목 · ${linkedSchedule.rows.some(r=>r.held===null)?"보유량 확인 필요":`현재 ${won.format(linkedHeld)}주 보유`}`:shares ? `${started?`매도 ${planQuantity(Number((shares-left).toFixed(8)),p)} · 남은 ${planQuantity(left,p)}`:`${planQuantity(shares,p)} 보유`}${worth!=null?` · 평가액 ₩${won.format(worth)}만원`:""}` : p.valueKrw!=null?`평가액 ₩${won.format(p.valueKrw)}만원`:"보유 수량 미입력";
-  main.innerHTML=`<div class="heading plan-heading"><div><div class="eyebrow">${esc(p.ticker)}${px?` · ${priceStamp(px)}`:""}</div><div class="title-row"><h1>${esc(p.title)}</h1><button class="btn icon-btn" id="editPlan" type="button" aria-label="계획 수정" title="계획 수정">${pencil}</button></div><p>${esc(p.startLabel)} 이탈 후 ${esc(p.endLabel)}까지 ${pct<100?`보유의 ${pct}%를 `:""}${esc(p.stages)}회 분할매도${px&&Number(px.close)>0?` · <span class="nowrap">현재 ${priceText(Number(px.close),p.currency)}</span>`:""}</p>${planLink("line",planTicker(p.ticker))}</div></div>${px?priceWarning(px,esc(p.ticker)):""}
+  main.innerHTML=`<div class="heading plan-heading"><div><div class="eyebrow">${esc(p.ticker)}${px?` · ${priceStamp(px)}`:""}</div><div class="title-row"><h1>${esc(p.title)}</h1><button class="btn icon-btn" id="editPlan" type="button" aria-label="계획 수정" title="계획 수정">${pencil}</button></div><p>${planEndPct(p)?`시작 기준가부터 ${decimal.format(planEndPct(p))}% 하락까지 보유 전량 `:`${esc(p.startLabel)} 이탈 후 ${esc(p.endLabel)}까지 ${pct<100?`보유의 ${pct}%를 `:""}`}${esc(p.stages)}회 분할매도${px&&Number(px.close)>0?` · <span class="nowrap">현재 ${priceText(Number(px.close),p.currency)}</span>`:""}</p>${planLink("line",planTicker(p.ticker))}</div></div>${px?priceWarning(px,esc(p.ticker)):""}
     ${planSaleAccountView(p)}
     <div class="metrics card"><div class="metric"><label>${linkedSchedule?"전체 계좌 계획 상태":p.sellTargetId?"기준 ETF 계획 상태":"현재 계획 상태"}</label><strong>${esc(status)}</strong><small${worth!=null&&!linkedSchedule?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:""}>${done} / ${esc(p.stages)}회 완료 · ${!linkedSchedule&&p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}</small></div><div class="metric"><div class="trade-price-heading"><label for="startPrice">첫 매도 기준가</label>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"첫 매도",p.checked[0]):""}</div><label class="metric-edit" title="눌러서 수정">${p.currency==="USD"&&p.startPrice>0?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="대기" value="${esc(startText)}">${p.currency==="USD"||!(p.startPrice>0)?"":"원"}${pencil}</label><small>${p.currency==="USD"?`${p.startPrice>0?fxText(p.startPrice*p.fx):"시세 대기"} · <label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="number" min="0" step="any" inputmode="decimal" aria-label="달러/원 환율" value="${esc(String(p.fx))}">${pencil}</label>`:""}</small></div><div class="metric"><label>마지막 매도 기준가</label><strong>${p.endPrice>0?priceText(p.endPrice,p.currency):"—"}</strong><small>${p.currency==="USD"?p.endPrice>0?fxText(p.endPrice*p.fx):"시세 대기":""}</small></div></div>
     <div class="control-grid"><section class="card panel"><h2>계산 요약</h2><p>${esc(splitNote)}</p><div class="inline-fields"><div><div class="sub">회차당 가격 하락폭</div><strong>${ready?priceText(gap,p.currency):"—"}</strong></div><div><div class="sub">예상 1회 주문 비중</div><strong>${p.stages?decimal.format(pct/p.stages):"—"}%</strong></div></div></section><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
@@ -383,7 +375,7 @@ function renderPlans(){
   bindSalePriority(p);
   const inlineEdit=(id,text,key)=>{const el=$(id);if(!el)return;const fit=()=>el.style.width=`${Math.max(3,el.value.length-(el.value.split(".").length-1)*.6)+.4}ch`; fit(); el.oninput=fit;
     el.onkeydown=e=>{if(e.key==="Enter")el.blur();if(e.key==="Escape"){el.value=text;fit();el.blur();}};
-    onEdit("#"+id,v=>{v=Number(v);if(!(v>0)||v===p[key])return false;p[key]=v;},renderPlans);};
+    onEdit("#"+id,v=>{v=Number(v);if(!(v>0)||v===p[key])return false;p[key]=v;if(key==="startPrice"&&planEndPct(p))p.endPrice=pctEndPrice(v,planEndPct(p),p.ticker,p.currency);},renderPlans);};
   inlineEdit("startPrice",startText,"startPrice"); inlineEdit("planFx",String(p.fx),"fx");
   const note=$("planNote"); note.oninput=()=>$("memoCount").textContent=memoCount(note.value); $("saveNote").onclick=()=>{p.note=note.value;save();renderPlans();};
   // 체크는 잔량까지 전량 체결, 입력칸은 누적 실제 체결. 부분 체결은 중간 체크 상태로 표시하며 완료 수에는 넣지 않는다.
@@ -401,8 +393,6 @@ function renderPlans(){
   $$("#planMain [data-sale-partial]").forEach(el=>{el.indeterminate=true;});
   $("editPlan").onclick=()=>openPlanDialog(p);
   if(typeof bindTradePlanAlerts==="function")bindTradePlanAlerts(p);
-  onEdit("#fullSellPrice",v=>setPlanFullSell(p,"price",v),renderPlans);
-  onEdit("#fullSellCondition",v=>setPlanFullSell(p,"condition",v),renderPlans);
   fitNames();
 }
 const planDialog=$("planDialog"); let editingId=null, dialogBase={};
@@ -456,8 +446,17 @@ function planLive(fill=[]){
   if(btc)f.currency.value="USD";f.currency.disabled=btc;
   if(changedCurrency)fill=["start","end"];
   const currency=f.currency.value, q=planQuote(f.ticker.value,currency), auto=q?`시세 ${Number(q.asOf.slice(5,7))}/${Number(q.asOf.slice(8))} 자동`:"";
+  // 종료 '% 하락'(기준선 없음): 시작 기준가는 직접, 종료 기준가는 시작 기준가 × (1 − 하락률)로 자동(읽기 전용), 매도 비중은 100% 고정.
+  const pctMode=f.endUnit.value==="pct", endPct=Number(f.endN.value);
+  if(pctMode&&f.startUnit.value){f.startUnit.value="";startMode(f,true);}
+  f.startUnit.disabled=pctMode;f.endPrice.readOnly=pctMode;
+  Object.assign(f.endN,pctMode?{min:"0.1",max:"99.9",step:"any",inputMode:"decimal"}:{min:"1",max:"400",step:"1",inputMode:"numeric"});
+  f.endN.setCustomValidity(pctMode&&!(endPct>0&&endPct<100)?"하락률은 0보다 크고 100보다 작게 입력해 주세요.":"");
+  $("endLineName").textContent=pctMode?"종료 하락률 (%) · 기준선 없음":"종료 기준선";
+  if(pctMode)f.salePct.value="100";
   for(const k of ["start","end"]){
     const price=f[k+"Price"], note=$(k+"Note");
+    if(k==="end"&&pctMode){const v=Number(f.startPrice.value)>0&&endPct>0&&endPct<100?pctEndPrice(f.startPrice.value,endPct,f.ticker.value,currency):null;price.value=v??"";note.textContent=v!=null?`시작 기준가 −${decimal.format(endPct)}% 자동`:"";continue;}
     price.required=k==="start"&&!f.startUnit.value;
     if(k==="start"&&!f.startUnit.value){note.textContent="";continue;}
     const label=lineOf(f,k), v=q?priceRound(maValue(q,label),quoteDigits(f.ticker.value,currency)):null;
@@ -481,7 +480,7 @@ function planLive(fill=[]){
   // 자산 배분 보유량 가져오기(alloc-link.js holding): 같은 종목 코드 계좌가 모두 수량이면 보유 수량 합, 아니면 평가액 합(만원). 매도 체크가 있으면 계획 기준 보유량이라 바꾸지 않는다.
   const hold=planLink("holding",planTicker(f.ticker.value)), box=$("planAllocHold"), locked=planAllocLocked();
   renderPlanAllocPicker(locked);
-  for(const name of ["ticker","shares","stages","salePct"])f[name].readOnly=locked;
+  for(const name of ["ticker","shares","stages","salePct"])f[name].readOnly=locked||name==="salePct"&&pctMode;
   box.hidden=!hold;if(!hold)return;
   box.innerHTML=`자산 배분 ${esc(hold.text)} · ${locked?"체결 기록이 있어 계획 보유량은 그대로 둡니다":`<button class="text-link" type="button" id="planAllocFill">보유량 가져오기</button>`}`;
   if(!locked)$("planAllocFill").onclick=()=>{fillPlanAllocHolding(hold);planLive();};
@@ -491,7 +490,7 @@ $("planForm").addEventListener("input",e=>{if(e.target===$("planAllocTicker"))re
 function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=form.elements;form.reset();$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
   f.valueKrw.readOnly=false;f.valueKrw.dataset.typed="";
   if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,cardName:p.cardName??"",currency:p.currency,startLabel:p.startLabel,startPrice:p.startPrice??"",endPrice:p.endPrice??"",stages:p.stages,valueKrw:p.valueKrw??"",fx:p.fx})){if(f[k])f[k].value=v;}f.shares.value=p.holdings[0]?.shares||"";f.salePct.value=planSalePct(p);
-    const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"개월선";
+    const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"개월선";if(planEndPct(p)){f.endN.value=planEndPct(p);f.endUnit.value="pct";}
     const s=p.startAuto&&/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.startLabel));if(s){f.startN.value=s[1];f.startUnit.value=s[2];}}
   else{const fx=priceRound(fxEntry(priceData)?.close,2);if(fx)f.fx.value=fx;} // 새 달러 계획 환율은 현물 USD/KRW로
   startMode(f);dialogBase={start:f.startPrice.value,end:f.endPrice.value};planLive();planDialog.showModal();}
@@ -508,13 +507,13 @@ $("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.pla
 $("planForm").addEventListener("submit",e=>{
   e.preventDefault();planLive();if(!e.target.reportValidity())return;
   const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim(), ticker=planTicker(val("ticker")), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;
-  const shares=Number(val("shares")), held=hasPlanShares(ticker,shares), endLabel=lineOf(e.target.elements,"end"), startAuto=!!val("startUnit"), startLabel=startAuto?lineOf(e.target.elements,"start"):val("startLabel"), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency||!!old.startAuto!==startAuto||startAuto&&old.startLabel!==startLabel);
+  const endPct=val("endUnit")==="pct"?Number(val("endN")):null, shares=Number(val("shares")), held=hasPlanShares(ticker,shares), endLabel=endPct?pctEndLabel(endPct):lineOf(e.target.elements,"end"), startAuto=!endPct&&!!val("startUnit"), startLabel=startAuto?lineOf(e.target.elements,"start"):val("startLabel"), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency||!!old.startAuto!==startAuto||startAuto&&old.startLabel!==startLabel);
   const valueKrw=held||val("valueKrw")===""?null:Number(val("valueKrw")), locked=old&&(old.checked.some(Boolean)||Object.keys(old.fills||{}).length>0);
   if(locked&&(ticker!==old.ticker||currency!==old.currency||stages!==old.stages||shares!==Number(old.holdings[0]?.shares||0)||planSalePct({salePct:Number(val("salePct"))})!==planSalePct(old)||valueKrw!==(old.valueKrw??null))){
     alert("체결 기록이 있어 종목·통화·보유량·분할 횟수·매도 비중은 유지합니다. 체결 수량은 계획 화면에서 수정하세요.");return;
   }
   const rebase=valueKrw!=null&&(!old||old.valueKrw!==valueKrw||old.ticker!==ticker||old.currency!==currency), p=old||defaultPlan(ticker,val("title"),{});
-  Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw,fx:Number(val("fx"))||1354.91,holdings:locked?old.holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;const salePct=planSalePct({salePct:Number(val("salePct"))});if(salePct<100)p.salePct=salePct;else delete p.salePct;if(startAuto)p.startAuto=true;else delete p.startAuto;
+  Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:Number(val("startPrice")),endPrice:endPct?pctEndPrice(val("startPrice"),endPct,ticker,currency):Number(val("endPrice")),stages,valueKrw,fx:Number(val("fx"))||1354.91,holdings:locked?old.holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;const salePct=planSalePct({salePct:Number(val("salePct"))});if(salePct<100)p.salePct=salePct;else delete p.salePct;if(startAuto)p.startAuto=true;else delete p.startAuto;if(endPct)p.endPct=endPct;else delete p.endPct;
   for(const key of ["startPrice","endPrice"])if(val(key)===""){delete p[key];if(p.auto)delete p.auto[key];}
   if(rebase||valueKrw==null){const base=valueKrw==null?null:priceRound(planQuote(ticker,currency)?.close,currency==="KRW"?0:2);if(base)p.valueBase=base;else delete p.valueBase;} // 평가액 기준 가격(규칙은 stageWorth 위 주석)
   if(moved||!old){delete p.auto;const mark=JSON.parse(JSON.stringify(p));if(fillPrices({plans:[mark],futures:state.futures},priceData))p.auto=mark.auto;}
