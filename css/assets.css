@@ -40,9 +40,9 @@
 @media(min-width:701px){
   .asset-row:has(.asset-note){grid-template-areas:"check name value pct" ". note value pct";row-gap:2px}
   .asset-row:has(.asset-note)>.check{grid-area:check}.asset-row:has(.asset-note)>.asset-name{grid-area:name}
-  .asset-row:has(.asset-note)>.asset-val{grid-area:value}.asset-row:has(.asset-note)>.asset-pct{grid-area:pct}.asset-row:has(.asset-note)>.asset-note{grid-area:note}
+  .asset-row:has(.asset-note) .asset-val{grid-area:value}.asset-row:has(.asset-note) .asset-pct{grid-area:pct}.asset-row:has(.asset-note)>.asset-note{grid-area:note}
 }
-.asset-val{display:grid;justify-items:end;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}.asset-pct{display:flex;justify-content:flex-end;justify-self:end;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:11px;font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;text-align:right}.asset-pct>span,.asset-pct small{white-space:nowrap}.asset-pct small,.how{font-size:11px;font-weight:500;color:var(--text-3)}.how.live{color:var(--accent)}
+.asset-figures{display:contents}.asset-val{display:grid;justify-items:end;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}.asset-pct{display:flex;justify-content:flex-end;justify-self:end;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:11px;font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;text-align:right}.asset-pct>span,.asset-pct small{white-space:nowrap}.asset-pct small,.how{font-size:11px;font-weight:500;color:var(--text-3)}.how.live{color:var(--accent)}
 .how.holding{color:var(--text-2)}.holding-price{font-size:10.5px;font-weight:400}.holding-price .quote-label,.holding-price .quote-source{font-size:9px;color:var(--text-3)}.quote-source{margin-left:5px;color:var(--text-3)}
 .quote-status{display:inline-flex;align-items:center;gap:3px;margin-left:5px;padding:1px 5px;border:1px solid var(--warn-line);border-radius:5px;background:var(--warn-soft);color:var(--warn);font-size:10px;font-weight:600;line-height:1.4;white-space:nowrap;vertical-align:middle}.quote-status>span{font-weight:800}.asset-val .quote-status{display:flex;width:max-content;margin:3px 0 0 auto}
 .group-empty{margin:0;padding:12px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--text-3)}.group-foot{padding:6px 10px;border-top:1px solid var(--line)}
@@ -107,7 +107,7 @@
   .alloc-actions>.btn{min-height:28px;padding:4px 8px;font-size:12px}
   .region-card{padding:12px 10px 6px}.class-row{gap:2px 8px;padding:9px 4px}.class-pct{min-width:54px}
   /* 첫 줄에 체크박스·종목명·평가액, 둘째 줄에 메모·현재/목표를 함께 표시한다. */
-  .group-head{padding:12px 12px 8px}.group-note{margin:0 12px 8px}.sub-head{padding:7px 12px 5px}.asset-row{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:9px 12px}.asset-pct{grid-column:3;grid-row:2;align-self:baseline;flex-wrap:nowrap}.asset-val{grid-column:3;grid-row:1;align-self:start}.asset-row>.check{grid-row:1;align-self:start;padding-top:2px}.asset-name{grid-row:1;align-self:start;padding:0}.asset-note{grid-column:1/3;grid-row:2;align-self:baseline}
+  .group-head{padding:12px 12px 8px}.group-note{margin:0 12px 8px}.sub-head{padding:7px 12px 5px}.asset-row{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:9px 12px}.asset-figures{display:grid;grid-column:3;grid-row:1/3;align-self:start;justify-items:end;row-gap:1px}.asset-pct{flex-wrap:nowrap}.asset-row>.check{grid-row:1;align-self:start;padding-top:2px}.asset-name{grid-row:1;align-self:start;padding:0}.asset-note{grid-column:1/3;grid-row:2;align-self:baseline}
   .cash-row{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 12px}.cash-place{grid-column:1/-1}.cash-amt{grid-column:1;grid-row:3}.cash-row b{grid-column:2;grid-row:2/4;align-self:center}
   .ledger-row{grid-template-columns:40px minmax(0,1.25fr) minmax(0,.7fr) minmax(0,1.4fr);gap:6px;padding:9px 12px;font-size:12px}.hide-m{display:none}
   #editFutures>:first-child{font-size:11px;word-break:keep-all;overflow-wrap:normal}.year-average{padding:12px}.pnl-broker-grid{grid-template-columns:1fr}.pnl-broker{padding:12px}.pnl-entry{padding:10px}.pnl-entry-grid{gap:8px}
@@ -147,21 +147,22 @@
 }
 
 /* 플래너 편입 표시: 분할매수·분할매도·재매수 칩. 편입은 채움+✓, 미편입은 점선+흐리게, 이름으로 맞춘 추정은 주황 점선. */
-.alloc-links{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;padding-top:4px}
-.alloc-chip{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:3px 10px;border:1px solid var(--line-strong);border-radius:99px;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent}
+.alloc-links{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px;margin-top:-3px}
+.alloc-chip{position:relative;display:inline-flex;align-items:center;gap:2px;min-height:18px;padding:0 7px;border:1px solid var(--line-strong);border-radius:99px;font-size:10px;font-weight:600;line-height:1.2;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent}
 .alloc-chip.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
 .alloc-chip.on.guess{border-style:dashed;border-color:var(--warn-line)}
 .alloc-chip.off{border-style:dashed;background:transparent;color:var(--text-3);font-weight:500;opacity:.75}
-.chip-count{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:var(--on-accent);font-size:10.5px;font-weight:700}
-.chip-guess{padding:0 5px;border-radius:5px;background:var(--warn-soft);color:var(--warn);font-size:10px;font-style:normal;font-weight:700}
+.chip-count{display:inline-grid;place-items:center;min-width:12px;height:12px;padding:0 3px;border-radius:6px;background:var(--accent);color:var(--on-accent);font-size:9px;font-weight:700}
+.chip-guess{padding:0 3px;border-radius:3px;background:var(--warn-soft);color:var(--warn);font-size:8.5px;font-style:normal;font-weight:700}
 a.alloc-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(hover:hover) and (pointer:fine){a.alloc-chip.on:hover{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}a.alloc-chip.on:hover .chip-count{background:var(--on-accent);color:var(--accent)}}
 a.alloc-chip.on:active{background:var(--accent-line)}
-@media(pointer:coarse){.alloc-links{gap:8px;padding-top:6px}.alloc-chip{min-height:40px;padding:6px 14px;font-size:13px}}
+@media(pointer:coarse){a.alloc-chip::after{content:"";position:absolute;inset:-6px -2px}}
+@media(max-width:700px){.asset-row:not(:has(.asset-note))>.alloc-links{grid-column:2/3;grid-row:2;align-self:center;margin-top:0}}
 .alloc-members{margin:0 0 12px;padding:0}
 .alloc-members>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;min-height:44px;padding:11px 16px;cursor:pointer;list-style:none}.alloc-members>summary::-webkit-details-marker{display:none}
-.alloc-members>summary b{font-size:14px}.alloc-members>summary span{font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.alloc-members>summary b{font-size:13px}.alloc-members>summary span{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
 .alloc-members>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:var(--radius)}
-.alloc-members-body{display:grid;gap:8px;padding:2px 16px 14px;border-top:1px solid var(--line);font-size:12.5px}
-.alloc-members-body p{margin:8px 0 0;line-height:1.6}.alloc-members-body p b{display:block;font-size:12.5px}.alloc-members-body p span{color:var(--text-2);overflow-wrap:anywhere}
+.alloc-members-body{display:grid;gap:8px;padding:2px 16px 14px;border-top:1px solid var(--line);font-size:12px}
+.alloc-members-body p{margin:8px 0 0;line-height:1.6}.alloc-members-body p b{display:block;font-size:12px}.alloc-members-body p span{color:var(--text-2);overflow-wrap:anywhere}
 .alloc-members-body small{color:var(--text-3);line-height:1.5}
