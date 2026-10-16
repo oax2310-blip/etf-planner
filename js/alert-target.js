@@ -4,7 +4,8 @@ function pushAlertTarget(data){
   if(!/^[A-Z0-9][A-Z0-9.\-/]{0,11}$/.test(ticker))return null;
   const line=typeof data.line==="string"&&data.line.length<=100?data.line:"";
   const ruleId=typeof data.ruleId==="string"&&data.ruleId.length<=512?data.ruleId:"";
-  const eventId=typeof data.eventId==="string"&&data.eventId.length<=128?data.eventId:"";
+  // 재알림은 최초 알림 항목(alertKey)을 읽음 처리한다. 이동 대상은 ruleId 그대로다.
+  const eventId=typeof data.alertKey==="string"&&/^[0-9a-f]{64}$/.test(data.alertKey)?data.alertKey:typeof data.eventId==="string"&&data.eventId.length<=128?data.eventId:"";
   return {ticker,line,ruleId,...(eventId?{eventId}:{})};
 }
 // 발송된 ticker·line과 선택용 ruleId를 #alert?에 넣는다. 대상 식별·복원·화면 준비 후 이동은 push.js가 맡는다.
