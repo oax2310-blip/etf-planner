@@ -62,6 +62,16 @@ function quoteText(q,current=false){
 // ---------- 자산 배분 ----------
 // 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 화면 목록만 거른다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하며 기록·합계는 바꾸지 않는다.
 let allocQuery = "";
+// 플래너 편입 점검 패널의 펼침(현재 화면 메모리에만 둠). 편입 계산은 실패해도 자산 배분 화면을 막지 않는다.
+let memberPanelOpen = false;
+let memberRaw = null;
+const plannerRaw = () => { try{ return localStorage.getItem(memberLink.PLANNER_KEY)||""; }catch{ return ""; } };
+function memberInfo(a){ memberRaw=plannerRaw(); try{ return memberLink.collect(a,prices); }catch{ return null; } }
+// 플래너에서 분할매도·재매수를 추가·삭제하면(다른 탭의 저장·동기화, 뒤로 가기·화면 복귀 포함) 마지막으로 그린 뒤 바뀐 경우에만 편입 표시를 다시 그린다.
+function memberRefresh(){ if(ui.tab==="alloc"&&memberRaw!==null&&plannerRaw()!==memberRaw)redrawIdle(); }
+addEventListener("storage",e=>{ if(e.key===memberLink.PLANNER_KEY||e.key===null)memberRefresh(); });
+addEventListener("pageshow",memberRefresh);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden)memberRefresh(); });
 // 그룹·현금·메모는 기본 접기. 펼침은 현재 화면 메모리에만 두며 다시 그려도 유지하고, 새로 열면 접는다.
 const allocOpenCards = new Set();
 function setAllocCardOpen(button,open){
@@ -118,12 +128,39 @@ function renderAlloc(tab="alloc"){
   const classLabels=new Map(s.regions.flatMap(r=>r.classes.map(c=>[c.id,`${r.name} · ${c.name}`])));
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
     ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
+  // 분할매수·분할매도·재매수 편입 표시(읽기 전용, member-link.js). 계산이 실패해도 자산 배분 화면은 그대로 그린다.
+  const members=strategy?null:memberInfo(a);
+  const memberChips=it=>{
+    const m=members?.items.get(it.id);if(!m)return "";
+    return `<span class="alloc-links" role="group" aria-label="${escA(it.name)} 플래너 편입 상태">${memberLink.TABS.map(({key,name})=>{
+      const list=m[key];
+      if(!list.length)return `<span class="alloc-chip off" role="img" aria-label="${name} 미편입"><span aria-hidden="true">–</span>${name}</span>`;
+      const guess=list.some(x=>x.how==="name"||x.how==="fuzzy"), many=list.length>1;
+      const tip=`${name} 탭 · ${list.map(x=>x.label).join(" · ")}${many?" (눌러서 첫 번째로 이동)":" (눌러서 이동)"}${guess?" · 이름이 비슷해 같은 종목으로 추정했습니다. 확인하세요.":""}`;
+      return `<a class="alloc-chip on${guess?" guess":""}" href="${escA(memberLink.href(key,list[0].id))}" title="${escA(tip)}" aria-label="${escA(`${name} 편입됨${many?` ${list.length}개`:""}${guess?" 추정":""}, 누르면 ${name} 탭으로 이동`)}"><span aria-hidden="true">✓</span>${name}${many?`<b class="chip-count">${list.length}</b>`:""}${guess?'<i class="chip-guess">추정</i>':""}</a>`;
+    }).join("")}</span>`;
+  };
+  const memberPanel=()=>{
+    if(!members)return "";
+    const rows=a.groups.flatMap(g=>g.items.map(it=>({g,it}))), nameOf=(x,dup)=>escA(dup.get(x.it.name)>1?`${x.it.name} (${x.g.name})`:x.it.name);
+    const tabs=memberLink.TABS.map(({key,name})=>{
+      const miss=rows.filter(x=>!members.items.get(x.it.id)[key].length), dup=new Map();
+      for(const x of miss)dup.set(x.it.name,(dup.get(x.it.name)||0)+1);
+      return {key,name,have:rows.length-miss.length,miss:miss.map(x=>nameOf(x,dup))};
+    });
+    const tabName=key=>memberLink.TABS.find(t=>t.key===key).name;
+    return `<details class="card alloc-members" id="allocMembers"${memberPanelOpen?" open":""}><summary><b>플래너 편입 점검</b><span>${tabs.map(t=>`${t.name} ${t.have}/${rows.length}`).join(" · ")}${members.guesses.length?` · 추정 ${members.guesses.length}건`:""}</span></summary><div class="alloc-members-body">
+      ${tabs.map(t=>`<p><b>${t.name} 미편입 ${t.miss.length}개</b>${t.miss.length?`<span>${t.miss.join(" · ")}</span>`:""}</p>`).join("")}
+      <p><b>이름으로 추정해 연결한 ${members.guesses.length}건</b>${members.guesses.length?`<span>${members.guesses.map(g=>`${escA(g.item.name)} ↔ ${tabName(g.tab)} ‘${escA(g.label)}’ (${memberLink.HOW_TEXT[g.how]})`).join(" · ")}</span>`:"<span>없음 — 모두 종목 코드로 연결됐습니다.</span>"}</p>
+      ${members.unlinked.length?`<p><b>자산 배분과 연결되지 않은 플래너 항목 ${members.unlinked.length}건</b><span>${members.unlinked.map(u=>`${tabName(u.tab)} ‘${escA(u.label)}’`).join(" · ")}</span></p>`:""}
+      <small>종목 코드가 같으면(기준·실제 매수 코드, 대소문자·국내 A 접두 무시) 같은 종목으로 봅니다. 코드로 못 찾은 항목만 이름으로 맞추고, 그 경우 ‘추정’으로 표시합니다.</small></div></details>`;
+  };
   const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)];
     const how=r.how==="shares"?`<small class="how holding">${nfShares.format(it.shares)}주${r.q?` × <span class="holding-price">${quoteText(r.q,true)}</span>`:""}</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?stock?.error?'<small class="how quote-status"><span aria-hidden="true">!</span> 시세 조회 실패</small>':'<small class="how">시세 대기</small>':"";
     return `<div class="asset-row${it.done?" done":""}" data-alloc-item="${escA(it.id)}"><label class="check" title="점검완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 점검완료 (직접 표시)"></label>
       <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",r.how!=="shares"?quoteText(r.q):"",r.how!=="shares"&&finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:""].filter(Boolean).join(" · ")}</small></button>
       <span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>`:""}</span>
-      ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}</div>`; };
+      ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}${memberChips(it)}</div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
     const key=`group:${g.id}`,bodyId=`allocGroup-${encodeURIComponent(g.id)}`;
@@ -160,6 +197,7 @@ function renderAlloc(tab="alloc"){
     ${strategy?`<div class="section-heading"><h2>배분 개요</h2><span>지역별 합계와 목표 · 목표 합계 ${pc(s.regions.some(r=>r.target!==null)?s.regions.reduce((n,r)=>n+(r.target??0),0):null)}</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
     <p class="footnote">모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
+    ${memberPanel()}
     <div class="alloc-search"><label class="field"><span>종목 검색</span><input id="allocSearch" type="search" value="${escA(allocQuery)}" placeholder="종목명 · 코드 · 그룹 · 소분류" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="allocItems" aria-describedby="allocSearchStatus"></label><button class="btn hidden" id="allocSearchClear" type="button">초기화</button><div class="alloc-search-meta"><p class="hint" id="allocSearchStatus" role="status" aria-live="polite" aria-atomic="true"></p>${foldAllButton("toggleAllocAllMobile"," alloc-fold-all-mobile")}</div></div>
     <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
     <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
@@ -214,6 +252,7 @@ function renderAlloc(tab="alloc"){
   all("[data-class]").forEach(b=>b.onclick=()=>openClass(b.dataset.class));
   all("[data-cash]").forEach(b=>b.onclick=()=>openCash(b.dataset.cash));
   if(el("addGroup"))el("addGroup").onclick=()=>openGroup(null); if(el("addClass"))el("addClass").onclick=()=>openClass(null); if(el("addCash"))el("addCash").onclick=()=>openCash(null);
+  const panel=el("allocMembers");if(panel)panel.ontoggle=()=>{memberPanelOpen=panel.open;};
   const search=el("allocSearch");
   if(search){
     const clear=()=>{search.value="";filterAllocItems();search.focus();};

@@ -37,6 +37,7 @@ function openTab(tab,redraw=true){ state.tab=["plans","buys","futures","rebuy"].
 function openPlannerLocation(){
   if(typeof openPushAlertFromHash==="function"&&openPushAlertFromHash())return;
   if(typeof clearPushAlertTarget==="function")clearPushAlertTarget();
+  if(typeof memberGo==="object"&&memberGo.open())return; // 자산 배분의 편입 표시에서 온 이동(#go?…)
   openTab(location.hash.slice(1)||state.tab);
 }
 $$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ if(typeof clearPushAlertTarget==="function")clearPushAlertTarget(); openTab(b.dataset.tab); history.replaceState(null,"",`#${state.tab}`); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
@@ -45,4 +46,4 @@ const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs
 // 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 탭 클릭은 위의 핸들러에서 맨 위로 이동.
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
-function render(){ if(typeof applyPendingPushAlert==="function")applyPendingPushAlert(); if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); if(typeof renderAlertHistory==="function")renderAlertHistory(); if(typeof schedulePendingPushAlert==="function")schedulePendingPushAlert(); }
+function render(){ if(typeof applyPendingPushAlert==="function")applyPendingPushAlert(); if(state.tab==="buys") purchasePlanner.render(); if(state.tab==="plans") renderPlans(); if(state.tab==="futures") renderFutures(); if(state.tab==="rebuy") renderRebuy(); if(typeof renderAlerts==="function")renderAlerts(); if(typeof renderAlertHistory==="function")renderAlertHistory(); if(typeof schedulePendingPushAlert==="function")schedulePendingPushAlert(); if(typeof memberGo==="object")memberGo.schedule(); }
