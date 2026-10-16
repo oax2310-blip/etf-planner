@@ -14,6 +14,16 @@ function editTradeNotify(obj){if(obj.notify!==tradeNotify(obj))obj.notify={};ret
 // plans[].notify: 첫 매도 start, 나머지 전체 sales, 회차별 saleOverrides. 전체 설정은 개별 예외를 지운다.
 function setTradePlanAlert(p,i,on){const n=editTradeNotify(p);if(i===0)n.start=on;else(n.saleOverrides??={})[i]=on;}
 function setTradePlanAll(p,on){Object.assign(editTradeNotify(p),{start:on,sales:on});delete p.notify.saleOverrides;}
+// plans[].fullSell={price,condition?}: 사용자가 직접 정한 전액매도 기준가. 평균선을 모두 이탈해 종료 기준선을 쓸 수 없을 때 쓰며 시점만 알린다.
+// 전액매도 계획·수량·비율은 만들지 않는다. condition은 "up"(이상)일 때만 저장하고 기본은 "down"(이하). 알림은 plans[].notify.fullSell.
+// 읽을 때 필드를 만들지 않고, 분할매도 회차 알림(start·sales·saleOverrides)·전체 ON/OFF와 별개다. 전 회차 완료 계획은 알리지 않는다.
+function tradeFullSellOf(p){
+  const f=p?.fullSell&&typeof p.fullSell==="object"&&!Array.isArray(p.fullSell)?p.fullSell:{},price=Number(f.price);
+  return {price:Number.isFinite(price)&&price>0?price:null,condition:f.condition==="up"?"up":"down"};
+}
+const tradePlanFinished = p => {const n=Number(p?.stages);return n>0&&Array.from({length:n},(_,i)=>p.checked?.[i]===true).every(Boolean);};
+const tradeFullSellEnabled = p => tradeNotify(p).fullSell===true&&tradeFullSellOf(p).price!==null&&!tradePlanFinished(p);
+function setTradeFullSellAlert(p,on){editTradeNotify(p).fullSell=on;}
 // futures.notify.levels는 전체, levels[].notify는 기준선, tranches[].notify는 회차별 선택(우선 적용).
 // 전체 설정은 기준선·회차별 예외를 지운다. 입력하기 전에는 필드를 만들지 않는다.
 function setTradeFutureTrancheAlert(l,i,on){const t=l?.tranches?.[i];if(t)t.notify=on;}
@@ -36,6 +46,7 @@ function tradeAlertAllButtons(attrs){return `<span class="trade-alert-actions"><
 function bindTradePlanAlerts(p){
   onEdit("[data-sale-alert]",(v,el)=>setTradePlanAlert(p,Number(el.dataset.saleAlert),el.checked),renderPlans);
   $$("[data-sale-alert-all]").forEach(b=>b.onclick=()=>{setTradePlanAll(p,b.dataset.saleAlertAll==="on");save();renderPlans();});
+  onEdit("[data-full-sell-alert]",(v,el)=>setTradeFullSellAlert(p,el.checked),renderPlans);
 }
 function bindTradeFuturesAlerts(f){
   onEdit("[data-tranche-alert]",(v,el)=>{const [li,ti]=el.dataset.trancheAlert.split(":").map(Number);setTradeFutureTrancheAlert(f.levels[li],ti,el.checked);},renderFutures);
@@ -92,6 +103,9 @@ function buildTradeAlertRules(data,priceDoc){
       const price=Number(p.fills?.[i]?.price)>0?Number(p.fills[i].price):Number(p.startPrice)>0&&Number(p.endPrice)>0?Number(p.startPrice)-(Number(p.startPrice)-Number(p.endPrice))*i/Math.max(count-1,1):null;
       add(`trade:plan:${p.id}:${i}`,ticker,i===0?"분할매도 첫 매도":"분할매도 "+(i+1)+"회",price,Number(p.endPrice)>Number(p.startPrice)?"up":"down",basis,"stocks",kind);
     }
+    // 직접 정한 전액매도 기준가 도달: 라벨 '분할매도 전액매도'는 수집 저장소 ma_alerts.py TRADE_LABEL_RE에 추가하고 고정 SHA를 갱신해야 발송된다.
+    const full=tradeFullSellOf(p);
+    if(tradeFullSellEnabled(p))add(`trade:plan:${p.id}:full`,ticker,"분할매도 전액매도",full.price,full.condition,["full",full.price,full.condition],"stocks",kind);
   }
   const f=d.futures,month=priceMonth(f);
   if(f&&month)for(const [i,l] of (Array.isArray(f.levels)?f.levels:[]).entries()){
@@ -136,7 +150,7 @@ function buildTradeAlertRules(data,priceDoc){
 function renderTradeAlertSummary(){
   const target=$("tradeAlertsSummary");if(!target)return;
   const plans=state.plans||[],f=state.futures,items=rebuyItems(state);
-  const saleCount=plans.reduce((n,p)=>n+Array.from({length:Number(p.stages)||0},(_,i)=>p.checked?.[i]!==true&&tradePlanEnabled(p,i)?1:0).reduce((a,b)=>a+b,0),0);
+  const saleCount=plans.reduce((n,p)=>n+Array.from({length:Number(p.stages)||0},(_,i)=>p.checked?.[i]!==true&&tradePlanEnabled(p,i)?1:0).reduce((a,b)=>a+b,0)+(tradeFullSellEnabled(p)?1:0),0);
   const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+tradeTranchesToSend(fs).filter(x=>futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`)).length:0;
   const levelCount=buildTradeAlertRules({futures:{...f,rebuy:undefined}},priceData).length+futureCount;
   const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+(!s.started?s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length:0)+tradeTranchesToSend(s).filter(x=>tradeRebuyEnabled(r,"buys",x.i)).length;},0);
