@@ -21,7 +21,7 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
   for (const [, f] of [...refs, ...assetRefs, ...valuationRefs]) assert.ok(fs.existsSync(path.join(root, f)), `${f} 파일이 없다`);
   const onDisk = ['css', 'js'].flatMap(d => fs.readdirSync(path.join(root, d)).map(f => `${d}/${f}`));
   assert.deepEqual([...new Set([...refs, ...assetRefs, ...valuationRefs].map(r => r[1]))].sort(), onDisk.sort(), '세 HTML에서 불러오지 않는 파일이 있다');
-  assert.deepEqual(assetScripts, ['js/theme.js', 'js/repo-security.js', 'js/ma-ladder.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/price-collection.js', 'js/assets-store.js', 'js/assets.js'], 'assets.html은 공유 수집 함수를 assets-store보다 먼저 불러온다');
+  assert.deepEqual(assetScripts, ['js/theme.js', 'js/repo-security.js', 'js/ma-ladder.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/price-collection.js', 'js/assets-store.js', 'js/member-link.js', 'js/assets.js'], 'assets.html은 공유 수집 함수를 assets-store보다 먼저 불러온다');
   assert.ok(assetRefs.some(r => r[1] === 'css/app.css'), 'assets.html도 공통 토큰(css/app.css)을 불러야 한다');
   assert.equal(scripts[0], 'js/theme.js', '화면 모드(theme.js)는 head에서 가장 먼저 불러야 첫 화면 색이 맞는다');
   assert.deepEqual(scripts.slice(2, 7), ['js/ma-ladder.js', 'js/data-validation.js', 'js/core.js', 'js/price-collection.js', 'js/sync.js'], '공유 수집 함수를 sync보다 먼저 불러와야 한다');
