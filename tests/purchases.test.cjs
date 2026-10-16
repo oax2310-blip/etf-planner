@@ -156,6 +156,13 @@ test('카드 이름·계획 수정은 자산 종목 이름과 보유량을 유�
   r.form.cardName.value='';r.submit();assert.equal(Object.hasOwn(r.item.buyPlan,'cardName'),false);assert.equal(r.item.name,'테스트 종목');
 });
 
+test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
+  const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
+  assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.2},names:['42일선','60일선'],end:null,budget:5000})),
+    '<p class="quote-line"><strong class="quote-now">$57.61</strong><span class="quote-state">이동평균선 돌파</span><span class="quote-round">2회 분할매수</span><span class="quote-gap up">다음 42일선 1차까지 <b>+0.17%</b></span></p>');
+  assert.equal(line(setup({manual:true,price:10500})),'<p class="quote-line"><strong class="quote-now">₩10500</strong><span class="quote-state">직접 입력</span><span class="quote-round">1회 분할매수</span></p>');
+  assert.equal(line(setup({wait:'25선',ma:{'25선':9800}})),'<p class="quote-line"><strong class="quote-now">₩10000</strong><span class="quote-state">매수대기</span><span class="quote-round">25선까지 기다립니다.</span></p>');
+});
 test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시하고 계좌 변경 알림에도 갱신한다',()=>{
   const r=setup({budget:50,tracking:true});r.item.target=40;
   const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
