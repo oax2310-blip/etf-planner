@@ -119,14 +119,14 @@ test('고른 뒤 변경을 누르고 코드를 직접 바꾸면 보유를 채우
   assert.deepEqual([items()[0].ticker, items()[0].shares, items()[0].amount], ['900099', undefined, 0], '보유는 기본값 그대로');
 });
 
-test('수정 창: 이미 연결된 종목을 그대로 저장하면 직접 넣은 보유를 덮어쓰지 않고, 손절 기록이 있으면 다른 종목을 골라도 보유를 바꾸지 않는다', () => {
+test('수정 창: 기록 전이면 저장할 때 이탈 전 보유를 자산 배분 보유로 맞추고, 손절 기록이 있으면 다른 종목을 골라도 보유를 바꾸지 않는다', () => {
   const state = {rebuy: {items: [{id: 'a', name: '가상국내ETF', ticker: '900001', lowPrice: 10000, shares: 80}]}};
   const {els, form, items} = ui(state), f = form.elements;
   els.rEdit.onclick();
   assert.equal(f.holding.value, '', '같은 코드가 두 계좌에 있어 자동으로 하나를 고르지 않는다');
   assert.equal(els.rebuySearchBox.hidden, false); assert.doesNotMatch(els.rebuyItemList.innerHTML, /등록됨/, '수정 중인 종목은 등록 표시에서 제외');
   f.name.value = '이름만 수정'; form.onsubmit({preventDefault() {}});
-  assert.deepEqual([items()[0].name, items()[0].shares], ['이름만 수정', 80], '선택을 바꾸지 않으면 보유는 그대로');
+  assert.deepEqual([items()[0].name, items()[0].shares], ['이름만 수정', 150], '두 계좌 합계로 맞춘다');
 
   const locked = {rebuy: {items: [{id: 'b', name: '손절 중', ticker: '900009', lowPrice: 10000, shares: 80, cuts: [{shares: 5, price: 9900}]}]}};
   const t = ui(locked); t.els.rEdit.onclick();
@@ -134,21 +134,59 @@ test('수정 창: 이미 연결된 종목을 그대로 저장하면 직접 넣�
   assert.deepEqual([t.items()[0].ticker, t.items()[0].shares, t.items()[0].cuts.length], ['900001', 80, 1], '이름·코드만 바뀌고 이탈 전 보유는 그대로');
 });
 
-test('수정 창: 코드가 한 항목에만 있으면 그 보유 종목을 고른 상태로 보여 주고 그대로 저장하면 보유를 다시 쓰지 않는다', () => {
+test('수정 창: 코드가 한 항목에만 있으면 그 보유 종목을 고른 상태로 보여 주고 저장하면 그 보유로 맞춘다', () => {
   const alloc = allocation(); alloc.groups[1].items = [];
   const {els, form, items} = ui({rebuy: {items: [{id: 'a', name: 'x', ticker: '900001', shares: 80}]}}, {alloc});
   els.rEdit.onclick();
   assert.equal(form.elements.holding.value, 'i1'); assert.equal(form.elements.ticker.readOnly, true);
   assert.equal(els.rebuyPicked.hidden, false); assert.match(els.rebuyPicked.innerHTML, /가상국내ETF/);
   form.onsubmit({preventDefault() {}});
-  assert.equal(items()[0].shares, 80);
+  assert.equal(items()[0].shares, 120);
 });
 
-test('자산 쪽 보유가 바뀌면 재매수 화면을 다시 그려 자산 배분 줄·가져오기에 바로 반영한다 (입력 중에는 건너뜀)', () => {
+test('수정 창: 기록 전에 다른 종목 코드로 바꾸면 이전 종목의 보유를 지우고 새 코드의 자산 배분 보유를 쓴다', () => {
+  const t = ui({rebuy: {items: [{id: 'a', name: 'x', ticker: '900001', shares: 150}]}});
+  t.els.rEdit.onclick(); t.form.elements.ticker.value = '900099'; t.form.onsubmit({preventDefault() {}});
+  assert.deepEqual([t.items()[0].ticker, t.items()[0].shares, t.items()[0].amount], ['900099', undefined, undefined], '자산 배분에 없는 코드');
+  t.els.rEdit.onclick(); t.form.elements.ticker.value = '900003'; t.form.onsubmit({preventDefault() {}});
+  assert.deepEqual([t.items()[0].shares, t.items()[0].amount], [undefined, 300], '금액만 있는 종목은 금액');
+});
+
+test('기준 입력: 이탈 전 보유는 읽기 전용으로 자산 배분 보유를 따르고, 저장은 입력 때만, 첫 손절 기록부터 고정한다', () => {
+  const state = {tab: 'rebuy', rebuy: {items: [{id: 'a', name: '가상국내ETF', ticker: '900001', lowPrice: 10000, shares: 80, stepPct: 1, sellPct: 1}]}};
+  const {ctx, els, listeners, assetStore, items} = ui(state);
+  const hold = () => vm.runInContext('holdShares(rebuyPick())', ctx);
+  assert.match(els.rebuyMain.innerHTML, /이탈 전 보유<small class="auto-tag">\(자산 배분\)<\/small><\/span><input id="rHold" type="text" value="150주"[^>]*readonly/);
+  assert.match(els.rebuyMain.innerHTML, /자산 배분 보유\(2개 계좌 150주\)를 불러옵니다/);
+  assert.equal(hold(), 150, '계산도 자산 배분 보유');
+  assert.equal(items()[0].shares, 80, '그리기만 해서는 저장하지 않는다');
+  vm.runInContext('editRebuy()', ctx);
+  assert.equal(items()[0].shares, 150, '입력 때 저장값을 맞춘다(수집 작업 알림용)');
+  items()[0].cuts = [{shares: 2, price: 9900}];
+  assetStore.doc.allocation.groups[1].items[0].shares = 28; // 손절이 자산 배분에 반영된 뒤
+  listeners[0]('change');
+  assert.equal(hold(), 150, '기록 뒤에는 저장한 값으로 고정');
+  assert.match(els.rebuyMain.innerHTML, /이탈 전 보유<small class="auto-tag">\(고정\)<\/small><\/span><input id="rHold" type="text" value="150주"/);
+  vm.runInContext('editRebuy()', ctx);
+  assert.equal(items()[0].shares, 150, '기록이 있으면 입력 때도 바꾸지 않는다');
+  items()[0].cuts = [];
+  assert.equal(hold(), 148, '기록을 모두 지우면 다시 자산 배분 보유를 따른다');
+});
+
+test('기준 입력: 자산 배분에 없는 종목은 저장된 보유로 계산하고 등록을 안내한다', () => {
+  const {els} = ui({rebuy: {items: [{id: 'a', name: '없는 종목', ticker: '900099', lowPrice: 10000, amount: 1000}]}});
+  assert.match(els.rebuyMain.innerHTML, /<input id="rHold" type="text" value="1,000만원 ≈ 1,000주"/);
+  assert.match(els.rebuyMain.innerHTML, /자산 배분에 이 종목 코드의 보유가 없어 저장된 보유로 계산합니다/);
+  const none = ui({rebuy: {items: [{id: 'a', name: '없는 종목', ticker: '900099', lowPrice: 10000}]}}).els.rebuyMain.innerHTML;
+  assert.match(none, /<input id="rHold" type="text" value="" placeholder="자산 배분 보유 없음"/);
+  assert.match(none, /손절 수량을 계산할 수 없습니다/);
+});
+
+test('자산 쪽 보유가 바뀌면 재매수 화면을 다시 그려 자산 배분 줄·이탈 전 보유에 바로 반영한다 (입력 중에는 건너뜀)', () => {
   const state = {tab: 'rebuy', rebuy: {items: [{id: 'a', name: '가상국내ETF', ticker: '900001', lowPrice: 10000, shares: 80}]}};
   const {ctx, els, listeners, assetStore} = ui(state);
   assert.equal(listeners.length, 1);
-  assert.match(els.rebuyMain.innerHTML, /150주/, '두 계좌 합계 150주를 가져오기로 안내');
+  assert.match(els.rebuyMain.innerHTML, /150주/, '두 계좌 합계 150주를 이탈 전 보유로');
   assetStore.doc.allocation.groups[1].items[0].shares = 50;
   listeners[0]('change');
   assert.match(els.rebuyMain.innerHTML, /170주/, '자산 변경이 바로 반영');
@@ -156,14 +194,18 @@ test('자산 쪽 보유가 바뀌면 재매수 화면을 다시 그려 자산 �
   ctx.document.activeElement = {tagName: 'INPUT', type: 'number'};
   listeners[0]('change');
   assert.match(els.rebuyMain.innerHTML, /170주/, '입력 중에는 다시 그리지 않는다');
+  ctx.document.activeElement = {tagName: 'INPUT', type: 'number', readOnly: true};
+  listeners[0]('change');
+  assert.match(els.rebuyMain.innerHTML, /130주/, '읽기 전용 칸을 눌러 둔 것은 입력 중이 아니다');
+  assetStore.doc.allocation.groups[1].items[0].shares = 50;
   ctx.document.activeElement = null; ctx.state.tab = 'plans';
   listeners[0]('change');
-  assert.match(els.rebuyMain.innerHTML, /170주/, '다른 탭이 열려 있으면 그리지 않는다');
+  assert.match(els.rebuyMain.innerHTML, /130주/, '다른 탭이 열려 있으면 그리지 않는다');
   ctx.state.tab = 'rebuy';
   listeners[0]('sync');
-  assert.match(els.rebuyMain.innerHTML, /170주/, '무관한 알림에는 다시 그리지 않는다');
+  assert.match(els.rebuyMain.innerHTML, /130주/, '무관한 알림에는 다시 그리지 않는다');
   listeners[0]('change');
-  assert.match(els.rebuyMain.innerHTML, /130주/);
+  assert.match(els.rebuyMain.innerHTML, /value="170주"/);
 });
 
 test('가져오기 변환: 수량 합이 없으면 평가액(미국은 환율로 달러 환산), 값이 없으면 null', () => {

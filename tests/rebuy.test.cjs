@@ -269,15 +269,13 @@ test('보유량: 수량(shares, 주)으로 넣으면 그 주 수를 쓰고, 옛 
   assert.equal(hold(ctx, {...legacy, amount: 1000}), 1000, '금액이 있으면 금액 기준');
 });
 
-test('보유 입력: 금액(만원)·수량(주) 중 넣은 쪽만 남기고, 0·빈칸이면 둘 다 지운다', () => {
+test('보유 저장: 금액(만원)·수량(주) 중 받은 쪽만 남기고, 0·빈칸이면 둘 다 지운다', () => {
   const ctx = load();
   const r = plan(ctx);
-  const unit = () => { ctx.target = r; return vm.runInContext('holdUnit(target)', ctx); };
-  assert.equal(unit(), 'amount');
   ctx.setHold(r, 'shares', '800.7');
-  assert.deepEqual([r.amount, r.shares, hold(ctx, r), unit()], [undefined, 800, 800, 'shares'], '수량은 정수 주, 금액은 지움');
+  assert.deepEqual([r.amount, r.shares, hold(ctx, r)], [undefined, 800, 800], '수량은 정수 주, 금액은 지움');
   ctx.setHold(r, 'amount', '500');
-  assert.deepEqual([r.amount, r.shares, hold(ctx, r), unit()], [500, undefined, 500, 'amount']);
+  assert.deepEqual([r.amount, r.shares, hold(ctx, r)], [500, undefined, 500]);
   assert.equal(ctx.setHold(r, 'shares', 'abc'), false);
   assert.equal(ctx.setHold(r, 'shares', '-1'), false);
   assert.equal(r.amount, 500, '잘못된 값이면 바꾸지 않는다');
@@ -312,23 +310,17 @@ test('재매수 제목 아래 시세 줄: 분할매도·분할매수와 같은 �
   assert.equal(line({}), '<p class="quote-line"><span class="quote-state">손절 대기</span></p>', '현재가가 없으면 상태만');
 });
 
-test('기준 입력: 현재가·신저점·보유 칸이 저장에 연결되고, 단위를 주로 바꾸면 수량으로 저장한다', () => {
-  const {ctx, handlers, els} = ui({rebuy: {items: [{id: 'a', name: '테스트 ETF'}]}});
-  for (const sel of ['#rCurrent', '#rLow', '#rHold']) assert.equal(typeof handlers[sel], 'function', `${sel} 저장 처리가 없다`);
-  handlers['#rCurrent']('9500');
+test('기준 입력: 신저점만 입력하고 현재가(시세)·이탈 전 보유(자산 배분)는 읽기 전용이며 마지막 단계 가격 칸은 없다', () => {
+  const {ctx, handlers, els} = ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', currentPrice: 9500, shares: 800}]}});
+  assert.deepEqual(Object.keys(handlers).filter(k => /^#r(Current|Low|Hold|Final)$/.test(k)), ['#rLow'], '현재가·보유·마지막 단계 가격은 저장 처리가 없다');
   handlers['#rLow']('10000');
-  handlers['#rHold']('1000');
-  const r = () => ctx.state.rebuy.items[0];
-  assert.deepEqual([r().currentPrice, r().lowPrice, r().amount, r().shares], [9500, 10000, 1000, undefined]);
+  assert.equal(ctx.state.rebuy.items[0].lowPrice, 10000);
   ctx.renderRebuy();
-  els.rHoldUnit.onchange({target: {value: 'shares'}});
-  assert.match(els.rebuyMain.innerHTML, /<option value="shares" selected>/);
-  assert.match(els.rebuyMain.innerHTML, /id="rHold"[^>]*value=""[^>]*placeholder="≈1,000주"/, '단위만 바꾸면 값은 그대로, 환산 주 수를 흐리게');
-  handlers['#rHold']('800');
-  assert.deepEqual([r().amount, r().shares], [undefined, 800]);
-  ctx.renderRebuy();
-  assert.match(els.rebuyMain.innerHTML, /id="rHold"[^>]*value="800"/);
-  assert.match(els.rebuyMain.innerHTML, /보유 수량 800주로 계산합니다/);
+  const html = els.rebuyMain.innerHTML;
+  assert.match(html, /<input id="rCurrent" type="number" value="9500" placeholder="종목 코드 필요" readonly tabindex="-1">/);
+  assert.match(html, /<input id="rHold" type="text" value="800주" placeholder="자산 배분 보유 없음" readonly tabindex="-1">/);
+  assert.doesNotMatch(html, /id="rFinal"|id="rHoldUnit"|id="rHoldLink"|빈 단계 추정용|가져오기/);
+  assert.match(html, /종목 이름 옆 연필에서 자산 배분의 보유 종목을 고르면 보유를 불러옵니다/);
 });
 
 test('제목: 작은 글씨에 손절 후 재매수·종목 코드, 큰 글씨(h1)에 종목 이름', () => {
@@ -343,14 +335,14 @@ test('시세로 채우는 칸: 국내 종목 코드가 있으면 현재가·N일
   const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
   const view = (item, env) => ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', stages, ...item}]}}, env).els.rebuyMain.innerHTML;
   const domestic = () => ({kind: '국내', asOf: '2026-10-01', ma: {}}), foreign = () => ({kind: '해외', asOf: '2026-10-01', ma: {}});
-  // 기본 단계 14개(N선 7개·N일선 7개) + 현재가 + 마지막 단계(150일선) 가격 칸
+  // 기본 단계 28개(시선·일선·주선·월선 7개씩) + 현재가. 마지막 단계 가격 칸은 없다
   let html = view({ticker: '900001'}, {priceData: {stocks: {}}, stockEntry: domestic});
-  assert.equal(count(html), 30);
-  assert.ok(html.includes(`현재가 (원)${tag}</span>`) && html.includes(`150개월선 가격 (원)${tag}</span>`));
+  assert.equal(count(html), 29);
+  assert.ok(html.includes(`현재가 (원)${tag}</span>`) && !html.includes('150개월선 가격 (원)'));
   assert.ok(html.includes(`class="rebuy-base-label">${tag}</span>`) && html.includes('aria-label="150일선 기준가"') && html.includes('aria-label="25선 기준가"') && html.includes('class="rebuy-price-unit" aria-hidden="true">원'));
   // 시세 파일에 아직 없는 코드도 다음 수집 때 채우므로 표시하고, 안내는 짧게
   html = view({ticker: '900001'}, {priceData: {stocks: {}}});
-  assert.equal(count(html), 30);
+  assert.equal(count(html), 29);
   assert.match(html, /시세 수집 후 \(장중 30분마다\) 현재가·시선·일선·주선·월선 기준가를 채웁니다\./);
   assert.doesNotMatch(html, /시세 파일에 아직 없는/);
   // 채우지 않는 경우: 국내 코드인데 해외 시세(종류가 다름), 종목 코드 없음, 시세 파일을 못 읽음
@@ -367,9 +359,9 @@ test('미국 종목: 가격·금액은 달러로, 보유 금액은 달러로 나
   const stages = plain(vm.runInContext('defaultRebuy().stages', load()));
   const item = {id: 'a', name: '테스트 미국 ETF', ticker: 'spy', lowPrice: 500, amount: 10000, currentPrice: 480.25, cuts: [{shares: 2, price: 495}], stages};
   const html = ui({rebuy: {items: [item]}}, {priceData: {stocks: {}}, stockEntry: () => ({kind: '해외', asOf: '2026-10-01', ma: {}})}).els.rebuyMain.innerHTML;
-  assert.equal(count(html), 30);
+  assert.equal(count(html), 29);
   assert.match(html, /가격은 미국 시세\(달러\)입니다\./);
-  assert.ok(html.includes(`현재가 (달러)${tag}</span>`) && html.includes('신저점 가격 (달러)</span>') && html.includes('>달러</option>'));
+  assert.ok(html.includes(`현재가 (달러)${tag}</span>`) && html.includes('신저점 가격 (달러)</span>') && html.includes('<input id="rHold" type="text" value="$10,000 ≈ 20주"'));
   assert.ok(html.includes('$495') && html.includes(`class="rebuy-base-label">${tag}</span>`) && html.includes('aria-label="25선 기준가"') && html.includes('class="rebuy-price-unit" aria-hidden="true">달러'));
   assert.doesNotMatch(html, /만원|\(원\)/);
 });
