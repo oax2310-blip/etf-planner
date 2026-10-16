@@ -1,0 +1,74 @@
+name: S&P 500 Total Return 월말 자료 갱신
+# 월별 손익의 S&P 500 비교용 연말·월말 종가만 공개 자료로 기록한다(scripts/collect-sp500.cjs). Secrets·개인 기록을 쓰지 않는다.
+on:
+  schedule:
+    # 매월 1~7일 UTC 22:40(뉴욕 장 마감 뒤, 한국시간 다음날 07:40). 지난달 말 종가가 처음 잡힐 때만 커밋하고 나머지 날은 그대로 둔다.
+    - cron: '40 22 1-7 * *'
+  push:
+    branches: [main]
+    paths:
+      - scripts/collect-sp500.cjs
+      - js/ledger-benchmark.js
+      - .github/workflows/sp500-tr.yml
+  # PR에서는 실제 수집과 공표치 확인만 하고 기록하지 않는다(읽기 권한).
+  pull_request:
+    paths:
+      - scripts/collect-sp500.cjs
+      - js/ledger-benchmark.js
+      - .github/workflows/sp500-tr.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: public-sp500-tr-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 수집 시험(기록 없음)
+        run: node scripts/collect-sp500.cjs --dry-run
+      - name: 계산·자료 계약 확인
+        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/sp500-collect.test.cjs
+  collect:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: S&P 500 Total Return 수집
+        run: node scripts/collect-sp500.cjs
+      - name: 계산·자료 계약 확인
+        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/sp500-collect.test.cjs
+      - name: 공개 지수 자료만 기록
+        id: commit
+        run: |
+          if [ -n "$(git status --porcelain -- data/sp500-tr.json)" ]; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add data/sp500-tr.json
+            git commit -m 'S&P 500 Total Return 월말 종가 갱신'
+            git pull --rebase origin main
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # GITHUB_TOKEN push는 Pages 빌드를 시작하지 않으므로 공식 Pages API로 요청.
+      - name: GitHub Pages 자료 반영 요청
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"
