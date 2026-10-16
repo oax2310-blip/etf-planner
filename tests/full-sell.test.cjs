@@ -33,8 +33,8 @@ function load({prices=null,allocation=null}={}){
 }
 const pctPlan=(extra={})=>({id:'p1',ticker:'AAA',title:'가상 ETF',currency:'USD',startLabel:'직접',endLabel:'시작가 −20%',endPct:20,startPrice:500,endPrice:400,stages:5,checked:[false,false,false,false,false],holdings:[{name:'가상 ETF',shares:10}],note:'',fx:1300,...extra});
 const maPlan=(extra={})=>({id:'p2',ticker:'AAA',title:'가상 ETF',currency:'USD',startLabel:'직접',endLabel:'25개월선',startPrice:500,endPrice:400,stages:5,checked:[false,false,false,false,false],holdings:[{name:'가상 ETF',shares:10}],note:'',fx:1300,...extra});
-function draw(plans,prices,allocation){
-  const t=load({prices,allocation});t.ctx.state.plans=plans;t.ctx.state.selectedPlan=plans[0].id;
+function draw(plans,prices){
+  const t=load({prices});t.ctx.state.plans=plans;t.ctx.state.selectedPlan=plans[0].id;
   const before=JSON.stringify(t.ctx.state);t.ctx.renderPlans();
   assert.equal(JSON.stringify(t.ctx.state),before,'화면을 그려도 기록은 바뀌지 않는다');
   return {...t,main:t.els.planMain.innerHTML,list:t.els.planList.innerHTML};
@@ -68,28 +68,29 @@ test('하락률 계획은 시작을 직접 입력으로 고정하고 잘못된 �
   submit();assert.equal('endPct' in p,false);assert.equal(p.endLabel,'25개월선');assert.equal(p.endPrice,300);
 });
 
-test('전액매도 시점 카드는 종료 기준선 없는 계획에만 보이고 기존 기준선 계획 화면은 그대로다',()=>{
+test('전액 매도 표식은 종료 기준선 없는 계획에만 손절 도달 기준과 같은 한 줄로 보이고 기존 기준선 계획 화면은 그대로다',()=>{
   const ma=draw([maPlan()],quote(450));
-  assert.doesNotMatch(ma.main,/fullSellCard|전액매도 시점/);assert.doesNotMatch(ma.list,/plan-count due/);
+  assert.doesNotMatch(ma.main,/fullSellMark|전액 매도|전액매도 시점/);assert.doesNotMatch(ma.list,/plan-count due/);
   assert.match(ma.main,/직접 이탈 후 25개월선까지 5회 분할매도/);
   const pct=draw([pctPlan()],quote(520));
-  assert.match(pct.main,/id="fullSellCard"/);assert.match(pct.main,/시작 기준가부터 20% 하락까지 보유 전량 5회 분할매도/);
-  assert.match(pct.main,/\$500<\/span><span class="krw full-sell-range">→ \$400 · −20%/);assert.match(pct.main,/class="status">대기</);
+  assert.match(pct.main,/시작 기준가부터 20% 하락까지 보유 전량 5회 분할매도/);
+  assert.match(pct.main,/<div class="cut-milestones full-sell-mark" id="fullSellMark"><dl><div><dt>전액 매도<small>100%<\/small><\/dt><dd><strong>−20% · \$400<\/strong><small>시작 \$500 · 5회 분할 · <span class="full-sell-state">대기<\/span><\/small><\/dd><\/div><\/dl><\/div><\/section>/);
+  assert.doesNotMatch(pct.main,/fullSellCard|sale-row due/,'큰 카드·강조 행은 만들지 않는다');
   // 기준선 계획과 하락률 계획의 회차 목록은 같은 가격·수량이면 같은 HTML이다.
   const rows=html=>html.slice(html.indexOf('<div class="section-heading"><h2>분할매도 체크'));
   assert.equal(rows(draw([pctPlan()],quote(450)).main),rows(draw([maPlan({id:'p1'})],quote(450)).main));
 });
 
-test('현재가가 시작 기준가 이하이면 재매수와 같은 시점 행·상태로, 종료가 이하이면 하락 끝 도달로 보인다',()=>{
+test('현재가가 시작 기준가 이하이면 표식에 전액매도 시점, 종료가 이하이면 하락 끝 도달로 보인다',()=>{
   const due=draw([pctPlan(),maPlan()],quote(480));
-  assert.match(due.main,/class="sale-row due"/);assert.match(due.main,/class="status due">전액매도 시점</);assert.match(due.main,/full-sell-due/);
+  assert.match(due.main,/<div class="due"><dt>전액 매도/);assert.match(due.main,/<span class="full-sell-state due">전액매도 시점<\/span>/);
   assert.match(due.list,/plan-count due/);assert.equal((due.list.match(/plan-count due/g)||[]).length,1,'기준선 계획 카드는 표시하지 않는다');
-  assert.match(draw([pctPlan()],quote(500)).main,/class="status due">전액매도 시점</);
-  assert.match(draw([pctPlan()],quote(390)).main,/class="status due">하락 끝 도달</);
-  assert.match(draw([pctPlan()],null).main,/class="status">시세 대기</);
-  assert.match(draw([pctPlan()],quote(450,{stale:true})).main,/class="status">지난 시세</);
-  assert.match(draw([pctPlan()],quote(450,{asOf:'2020-01-01'})).main,/class="status">지난 시세</);
-  const done=draw([pctPlan({checked:[true,true,true,true,true]})],quote(450));assert.match(done.main,/class="status">전액매도 완료</);assert.doesNotMatch(done.list,/plan-count due/);
+  assert.match(draw([pctPlan()],quote(500)).main,/full-sell-state due">전액매도 시점</);
+  assert.match(draw([pctPlan()],quote(390)).main,/full-sell-state due">하락 끝 도달</);
+  assert.match(draw([pctPlan()],null).main,/full-sell-state">시세 대기</);
+  assert.match(draw([pctPlan()],quote(450,{stale:true})).main,/full-sell-state">지난 시세</);
+  assert.match(draw([pctPlan()],quote(450,{asOf:'2020-01-01'})).main,/full-sell-state">지난 시세</);
+  const done=draw([pctPlan({checked:[true,true,true,true,true]})],quote(450));assert.match(done.main,/full-sell-state">전액매도 완료</);assert.doesNotMatch(done.list,/plan-count due/);
 });
 
 test('카드의 시작 기준가 수정은 종료가를 다시 계산하고 알림은 기존 첫 매도·회차 라벨을 쓴다',()=>{
@@ -99,15 +100,6 @@ test('카드의 시작 기준가 수정은 종료가를 다시 계산하고 알�
   const rules=plain(t.ctx.buildTradeAlertRules({plans:[pctPlan({notify:{start:true,sales:true}})]},quote(520)));
   assert.deepEqual(rules.map(r=>[r.label,r.targetPrice,r.condition]),[['분할매도 첫 매도',500,'down'],['분할매도 2회',475,'down'],['분할매도 3회',450,'down'],['분할매도 4회',425,'down'],['분할매도 5회',400,'down']]);
   assert.match(t.main,/data-sale-alert="0"/);
-});
-
-test('보유 종목은 분할매도와 같은 자산 배분 기록에서 읽기만 한다',()=>{
-  const allocation={groups:[{id:'g1',name:'가상 계좌',items:[{id:'i1',name:'가상 ETF A',ticker:'AAA',shares:10},{id:'i2',name:'가상 ETF B',ticker:'AAA',shares:4},{id:'i3',name:'다른 종목',ticker:'ZZZ',shares:3},{id:'i4',name:'빈 종목',ticker:'AAA',shares:0}]}]};
-  const before=JSON.stringify(allocation),t=draw([pctPlan()],quote(480),allocation);
-  const card=t.main.slice(t.main.indexOf('id="fullSellCard"'),t.main.indexOf('분할매도 체크'));
-  assert.match(card,/가상 ETF A/);assert.match(card,/가상 ETF B/);assert.match(card,/가상 계좌/);assert.doesNotMatch(card,/다른 종목|빈 종목/);
-  assert.equal(JSON.stringify(allocation),before);
-  assert.match(draw([pctPlan()],quote(480)).main,/계획에 입력한 보유 10주/);
 });
 
 test('불러오기·동기화 검증은 하락률과 이전 전액매도 입력 기록을 받고 잘못된 값은 거절한다',()=>{
