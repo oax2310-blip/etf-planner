@@ -55,15 +55,17 @@ function alertHistoryCondition(item){
   return item.body||`${item.line||"기준선"} 알림 · 상세 조건을 발송 내용에서 확인할 수 없습니다.`;
 }
 function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});}
+// 같은 매매 회차의 재알림은 최초 알림 카드 하나에 횟수·마지막 발송 시각만 보인다. 당시 조건·가격은 최초 알림 그대로다.
 function alertHistoryCard(item){
-  const read=!!item.readAt;
+  const read=!!item.readAt,count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0;
   return `<article class="alert-history-card${read?" is-read":""}">
-    <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(item.name)} ${esc(item.line)} 알림 ${read?"읽음":"읽지 않음"}, 종목으로 이동">
-      <span class="alert-history-meta"><span class="alert-history-type">${esc(item.type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
+    <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(item.name)} ${esc(item.line)} 알림${count?` 재알림 ${count}회`:""} ${read?"읽음":"읽지 않음"}, 종목으로 이동">
+      <span class="alert-history-meta"><span class="alert-history-type">${esc(item.type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
       <span class="alert-history-name">${esc(item.name)}${item.name!==item.ticker?`<small>${esc(item.ticker)}</small>`:""}<span aria-hidden="true">↗</span></span>
       <span class="alert-history-condition">${esc(alertHistoryCondition(item))}</span>
       <span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item.currency))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item.currency))}</strong></span></span>
       ${item.krOpenReminder&&item.observedAt?`<span class="alert-history-note">미국 신호 ${esc(alertHistoryTime(item.observedAt))}${item.asOf?` · 시세 기준일 ${esc(item.asOf)}`:""}</span>`:""}
+      ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}
     </button><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(item.name)} 알림 삭제">삭제</button></div>
   </article>`;
 }

@@ -1,5 +1,7 @@
 // 알림 당시의 푸시 내용만 보관한다. 페이지·서비스 워커 공용이며 DOM·토큰·매매 계산을 사용하지 않는다.
 // 이벤트 ID는 발송 재시도·여러 기기의 중복을 구분한다. 읽음·삭제는 기존 플래너 JSON에만 저장한다.
+// 같은 매매 회차의 재알림·재도달 알림은 alertKey(최초 알림 ID)와 reminderCount를 싣고 온다(수집 저장소 trade_reminders.py).
+// 그 알림들은 최초 알림 항목 하나에 재알림 횟수(reminderCount)·마지막 발송 시각(lastSentAt)만 더한다.
 const alertHistoryStore = (()=>{
   const clean=(value,max)=>typeof value==="string"?value.slice(0,max):"";
   const stamp=value=>typeof value==="string"&&/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value)&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():"";
@@ -17,21 +19,42 @@ const alertHistoryStore = (()=>{
     for(const field of ["observedAt","receivedAt","readAt"]){const value=stamp(field==="receivedAt"?receivedAt||data[field]:data[field]);if(value)item[field]=value;}
     if(data.krOpenReminder===true)item.krOpenReminder=true;
     if(/^\d{4}-\d\d-\d\d$/.test(data.asOf||""))item.asOf=data.asOf;
+    const count=Number.isInteger(data.reminderCount)&&data.reminderCount>0&&data.reminderCount<=100000?data.reminderCount:0,lastSentAt=stamp(data.lastSentAt);
+    if(count)item.reminderCount=count;
+    if(lastSentAt)item.lastSentAt=lastSentAt;
+    if(count&&typeof data.alertKey==="string"&&/^[0-9a-f]{64}$/.test(data.alertKey)&&data.alertKey!==eventId){
+      item.alertKey=data.alertKey;const first=stamp(data.firstOccurredAt);if(first)item.firstOccurredAt=first;
+    }
     return item;
   }
+  const follow=(item,count,at)=>{
+    if(count&&count>(item.reminderCount||0))item.reminderCount=count;
+    if(at&&(!item.lastSentAt||at>item.lastSentAt))item.lastSentAt=at;
+  };
+  const latest=item=>item.lastSentAt||item.occurredAt;
   // 삭제 ID는 수신함·발송 이력을 다시 읽어도 복구하지 않는다. 읽음은 어느 기기에서 읽었든 유지한다.
   function merge(...histories){
-    const deleted=new Set(),items=new Map();
+    const deleted=new Set(),items=new Map(),later=[];
+    const readAt=(item,value)=>{if(value&&(!item.readAt||value>item.readAt))item.readAt=value;};
     for(const history of histories){
       if(!history||typeof history!=="object")continue;
       for(const key of Array.isArray(history.deletedIds)?history.deletedIds:[])if(typeof key==="string"&&key.length<=128)deleted.add(key);
-      for(const raw of Array.isArray(history.items)?history.items:[]){const item=record(raw);if(!item)continue;const old=items.get(item.id);if(!old)items.set(item.id,item);else{
+      for(const raw of Array.isArray(history.items)?history.items:[]){const item=record(raw);if(!item)continue;if(item.alertKey){later.push(item);continue;}const old=items.get(item.id);if(!old)items.set(item.id,item);else{
         // 먼저 기록한 당시 정보는 유지하고 더 정확한 발송 스냅샷의 빈 필드만 보충한다.
         for(const [key,value] of Object.entries(item))if(old[key]===undefined||old[key]===""||(key==="name"&&old.name===old.ticker))old[key]=value;
-        if(item.readAt&&(!old.readAt||item.readAt>old.readAt))old.readAt=item.readAt;
+        readAt(old,item.readAt);follow(old,item.reminderCount,item.lastSentAt);
       }}
     }
-    return {items:[...items.values()].filter(item=>!deleted.has(item.id)).sort((a,b)=>b.occurredAt.localeCompare(a.occurredAt)||a.id.localeCompare(b.id)),deletedIds:[...deleted].sort()};
+    // 후속 알림은 최초 알림 항목의 읽음·스냅샷을 그대로 두고 횟수·마지막 발송 시각만 갱신한다(가장 큰 값, 순서·중복 무관).
+    for(const item of later){
+      const {alertKey:key,reminderCount:count,firstOccurredAt:first,...rest}=item;
+      const stray=items.get(item.id);
+      if(stray){items.delete(item.id);deleted.add(item.id);} // 옛 수신함이 이 후속 알림을 따로 저장한 항목은 합치고 다시 만들지 않는다.
+      let base=items.get(key);
+      if(!base){base={...rest,id:key,occurredAt:first||item.occurredAt};delete base.readAt;items.set(key,base);} // 최초 알림을 받지 못한 기기
+      readAt(base,stray?.readAt);follow(base,count,item.occurredAt);
+    }
+    return {items:[...items.values()].filter(item=>!deleted.has(item.id)).sort((a,b)=>latest(b).localeCompare(latest(a))||a.id.localeCompare(b.id)),deletedIds:[...deleted].sort()};
   }
   let connection;
   function database(){

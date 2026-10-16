@@ -76,3 +76,57 @@ test('알림내역만 병합하면 거래 차이는 그대로 남고 서로 다�
 test('앱이 닫혔을 때 누른 알림은 뒤늦게 복원된 내역도 읽음으로 표시한다',()=>{
   const h=load();h.ctx.noteAlertHistoryRead('later');h.ctx.acceptAlertHistory([event('later')]);assert.ok(h.ctx.state.alertHistory.items[0].readAt);
 });
+// 미완료 매매 재알림(수집 저장소 trade_reminders.py): 같은 회차의 후속 알림은 alertKey=최초 알림 ID로 한 항목에 합친다.
+const FIRST='a'.repeat(64),OTHER='b'.repeat(64);
+const followUp=(id,count,occurredAt,extra={})=>event(id,{alertKey:FIRST,reminderCount:count,firstOccurredAt:'2026-10-14T01:02:10Z',occurredAt,price:99,tradeReminder:true,...extra});
+test('같은 매매 회차 알림이 세 번 와도 항목 하나에 재알림 횟수·마지막 발송 시각만 더하고 읽음·당시 가격을 유지한다',()=>{
+  const h=load();h.ctx.acceptAlertHistory([event(FIRST)]);h.ctx.markAlertHistoryRead(FIRST);
+  const readAt=h.ctx.state.alertHistory.items[0].readAt;
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z')]);
+  h.ctx.acceptAlertHistory([followUp('s'.repeat(64),2,'2026-10-16T00:45:00Z'),followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z')]);
+  const items=plain(h.ctx.state.alertHistory.items);assert.equal(items.length,1);
+  assert.deepEqual([items[0].id,items[0].reminderCount,items[0].lastSentAt,items[0].readAt,items[0].price],[FIRST,2,'2026-10-16T00:45:00.000Z',readAt,101.2345]);
+  assert.equal(items[0].occurredAt,'2026-10-14T01:02:10.000Z');
+  for(const field of ['alertKey','tradeReminder','firstOccurredAt'])assert.equal(items[0][field],undefined);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.deletedIds),[]);
+  const card=h.ctx.alertHistoryCard(items[0]);
+  assert.match(card,/재알림 2회/);assert.match(card,/마지막 발송/);assert.match(card,/data-open-history="a{64}"/);
+  const reopened=load(JSON.parse(h.storage.get('test-state')));assert.deepEqual(plain(reopened.ctx.state.alertHistory),plain(h.ctx.state.alertHistory));
+});
+test('여러 기기·수신함·발송 이력의 재알림은 순서와 중복에 관계없이 같은 한 항목이 된다',()=>{
+  const first=event(FIRST),one=followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z'),two=followUp('s'.repeat(64),2,'2026-10-16T05:10:00Z');
+  const h=load(),results=[[{items:[first,one]},{items:[two]}],[{items:[two]},{items:[one,first]}],[{items:[two,two,first,one,one]}]].map(groups=>plain(h.ctx.store.merge(...groups)));
+  assert.deepEqual(results[0],results[1]);assert.deepEqual(results[0],results[2]);
+  assert.deepEqual(results[0].items.map(item=>[item.id,item.reminderCount]),[[FIRST,2]]);
+  const again=plain(h.ctx.store.merge(results[0],{items:[one]}));assert.deepEqual(again,results[0]);
+  const deleted=plain(h.ctx.store.merge(results[0],{deletedIds:[FIRST]},{items:[followUp('t'.repeat(64),3,'2026-10-17T00:45:00Z')]}));
+  assert.deepEqual(deleted.items,[]);assert.deepEqual(deleted.deletedIds,[FIRST]);
+});
+test('최초 알림이 없는 기기는 재알림으로 한 항목을 만들고 서로 다른 회차·매수매도는 따로 둔다',()=>{
+  const h=load();
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z'),event(OTHER,{ruleId:'trade:buy:one:round:2',line:'분할매수 25선 3차'}),
+    event('c'.repeat(64),{ruleId:'trade:plan:demo:0',line:'분할매도 첫 매도',condition:'down'}),
+    followUp('u'.repeat(64),1,'2026-10-15T01:00:00Z',{alertKey:OTHER,ruleId:'trade:buy:one:round:2',line:'분할매수 25선 3차'})]);
+  const items=plain(h.ctx.state.alertHistory.items);
+  assert.deepEqual(items.map(item=>[item.id,item.reminderCount||0]).sort(),[[FIRST,1],[OTHER,1],['c'.repeat(64),0]]);
+  const placeholder=items.find(item=>item.id===FIRST);assert.equal(placeholder.occurredAt,'2026-10-14T01:02:10.000Z');assert.equal(placeholder.readAt,undefined);
+  h.ctx.acceptAlertHistory([event(FIRST)]);assert.equal(h.ctx.state.alertHistory.items.filter(item=>item.id===FIRST).length,1);
+});
+test('예전 수신함이 alertKey 없이 저장한 재알림은 합치고 다시 나타나지 않는다',()=>{
+  const h=load(),reminder='r'.repeat(64);
+  h.ctx.acceptAlertHistory([event(FIRST),event(reminder,{occurredAt:'2026-10-15T00:45:00Z'})]);h.ctx.markAlertHistoryRead(reminder);
+  assert.equal(h.ctx.state.alertHistory.items.length,2);
+  h.ctx.acceptAlertHistory([followUp(reminder,1,'2026-10-15T00:45:00Z')]);
+  const items=plain(h.ctx.state.alertHistory.items);assert.deepEqual(items.map(item=>item.id),[FIRST]);assert.ok(items[0].readAt);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.deletedIds),[reminder]);
+  h.ctx.acceptAlertHistory([event(reminder,{occurredAt:'2026-10-15T00:45:00Z'})]);assert.equal(h.ctx.state.alertHistory.items.length,1);
+});
+test('잘못된 재알림 필드는 합치지 않고 일반 알림으로만 저장하며 최근 발송 순으로 정렬한다',()=>{
+  const h=load();
+  for(const extra of [{alertKey:'../x'},{alertKey:FIRST,reminderCount:0},{alertKey:FIRST,reminderCount:1.5},{alertKey:FIRST,reminderCount:true}]){
+    const item=h.ctx.store.record(event('x'.repeat(64),extra));assert.equal(item.alertKey,undefined);
+  }
+  assert.equal(h.ctx.store.record(event(FIRST,{alertKey:FIRST,reminderCount:1})).alertKey,undefined);
+  h.ctx.acceptAlertHistory([event(FIRST),event('newer',{occurredAt:'2026-10-15T00:00:00Z'}),followUp('r'.repeat(64),1,'2026-10-16T00:45:00Z')]);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(item=>item.id)),[FIRST,'newer']);
+});

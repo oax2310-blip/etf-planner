@@ -1,5 +1,5 @@
 // 수신 알림의 당시 내용을 로컬 수신함에 저장한다. 토큰·매매 기록을 캐시하거나 네트워크로 보내지 않는다.
-importScripts("js/alert-target.js?v=167","js/alert-history-store.js?v=167");
+importScripts("js/alert-target.js?v=189","js/alert-history-store.js?v=189");
 self.addEventListener("install",event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener("activate",event=>event.waitUntil(self.clients.claim()));
 self.addEventListener("push",event=>{

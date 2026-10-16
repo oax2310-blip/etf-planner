@@ -244,3 +244,13 @@ test('포커스 실패로 닫힌 클라이언트는 새 플래너로 연다',asy
   const notice=await push({ticker:'TEST',line:'분할매도 첫 매도'});await click(notice.data);
   assert.deepEqual(calls.opened,[notice.data.url]);
 });
+
+test('재알림을 누르면 같은 매매 단계(ruleId)로 이동하고 최초 알림 항목을 읽음 처리할 ID를 쓴다',async()=>{
+  const first='a'.repeat(64),{push}=worker();
+  const notice=await push({ticker:'069500',line:'분할매도 2회',eventId:'r'.repeat(64),alertKey:first,reminderCount:2,tradeReminder:true,ruleId:'trade:plan:origin:1',title:'매매 기준 재알림'});
+  const params=new URLSearchParams(new URL(notice.data.url).hash.slice(7));
+  assert.equal(params.get('rule'),'trade:plan:origin:1');assert.equal(params.get('event'),first);
+  assert.equal(notice.tag,'r'.repeat(64));
+  const plainNotice=await push({ticker:'069500',line:'분할매도 2회',eventId:'r'.repeat(64),alertKey:'not-hex',ruleId:'trade:plan:origin:1'});
+  assert.equal(new URLSearchParams(new URL(plainNotice.data.url).hash.slice(7)).get('event'),'r'.repeat(64));
+});
