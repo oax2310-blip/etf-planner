@@ -204,7 +204,7 @@ function renderPurchases(){
   const empty=items.length?emptyCard("아직 분할매수 계획이 없습니다","저장된 계획의 ＋ 추가를 눌러 종목과 매수 방식을 고르세요.",""):emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);
   view.innerHTML=`<div class="layout"><aside class="side card" aria-label="저장된 분할매수 계획"><div class="side-head"><h2>저장된 계획</h2><button class="btn primary mini" id="addPurchase" type="button" aria-label="새 분할매수 계획 추가">＋ 추가</button></div><div id="purchaseList" class="plan-list">${list||"<div class='empty'>계획 없음</div>"}</div><p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p></aside>
     <section id="purchaseMain">${selected?card(selected):empty}</section></div>`;
-  updateStatus();
+  updateStatus();if(typeof keepPlanListView==="function")keepPlanListView(el("purchaseList"),selectedPurchaseId); // 새로 만든 목록도 보던 위치 유지(core.js)
   el("addPurchase").onclick=()=>{if(items.length)openPurchase(null);else location.href="assets.html#alloc";};
   if(!items.length)el("purchaseGoAlloc").onclick=()=>{location.href="assets.html#alloc";};
   all("[data-purchase-select]").forEach(b=>{

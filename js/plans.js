@@ -330,6 +330,7 @@ function renderPlans(){
     b.oncontextmenu=e=>{if(timer){e.preventDefault();open();}else if(opened)e.preventDefault();};
   });
   list.querySelectorAll("[data-rename]").forEach(b=>b.onclick=()=>openNameDialog(b.dataset.rename));
+  if(typeof keepPlanListView==="function")keepPlanListView(list,state.selectedPlan); // PC 목록 스크롤 위치 유지(core.js)
   const p=selected(); const main=$("planMain");
   if(!p){main.innerHTML="<div class='card empty'><h2>분할매도 계획을 추가하세요</h2></div>";return;}
   // 회차당 가격 하락폭은 시작 기준가 대비 %로 보이고 금액은 글씨 위 설명(title)에만 둔다. 표시 전용이며 회차 가격 계산은 그대로다.

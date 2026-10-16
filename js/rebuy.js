@@ -702,6 +702,7 @@ function renderRebuy(){
   $("rebuyList").innerHTML=items.length?items.map((x,i)=>{const s=rebuySummary(x), [,short]=rebuyStatus(x,s), name=String(x.name||"").trim()||"이름 없음", code=String(x.ticker||"").trim(), done=s.sellValue?Math.min(100,Math.round(s.buyValue/s.sellValue*100)):0;
     return `<button class="plan-item ${x===r?"active":""}" type="button" data-rebuy="${i}" title="${esc(name)}${code?` (${esc(code)})`:""} · ${esc(short)}"><span class="plan-row"><strong>${esc(name)}</strong><span class="plan-count">${esc(short)}</span></span><span class="plan-title">${esc(code)}</span><span class="plan-bar"><i style="width:${done}%"></i></span></button>`;}).join(""):"<div class='empty'>종목 없음</div>";
   $$("#rebuyList [data-rebuy]").forEach(b=>b.onclick=()=>{const x=rebuyItems(state)[Number(b.dataset.rebuy)];if(!x||x===rebuyPick())return;state.selectedRebuy=x.id||null;save();renderRebuy();});
+  if(typeof keepPlanListView==="function")keepPlanListView($("rebuyList"),r?.id||null); // PC 목록 스크롤 위치 유지(core.js)
   $("addRebuyBtn").onclick=()=>openRebuyDialog();
   if(!r){$("rebuyMain").innerHTML="<div class='card empty'><h2>재매수 종목을 추가하세요</h2></div>";return;}
   const s=rebuySummary(r), low=Number(r.lowPrice)||0, cur=Number(r.currentPrice)||0, shares=holdShares(r), amount=holdOf(r).amount, live=rebuyLiveHold(r);
