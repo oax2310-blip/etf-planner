@@ -44,30 +44,47 @@ function cutPlan(r,run=rebuyCutRun(r)){
   });
 }
 const rebuyBought = r => stagesOf(r).reduce((n,x)=>n+stageFills(x,"shares").reduce((m,f)=>m+f.qty,0),0);
-// 재매수 뒤 남은 손절(재이탈)의 기준 보유 {base, left, cont}: 다음 손절은 그때 보유(이탈 전 보유 − 손절 + 재매수)의 sellPct%씩, 그 보유가 한도.
+// 재매수 뒤 남은 손절(재이탈)의 기준 보유 {base, left, cont, start}: 다음 손절은 그때 보유(이탈 전 보유 − 손절 + 재매수)의 sellPct%씩, 그 보유가 한도.
 // 재이탈 손절을 기록한 뒤 그 재이탈의 재매수가 아직 없으면 같은 재이탈로 보고 재이탈 직전 보유를 유지한다(cont: true, 한도는 그 뒤 손절을 뺀 값).
+// start: 이 기준으로 파는 첫 손절 회차의 위치(cuts 인덱스, 이어지는 재이탈은 그 첫 손절, 아니면 마지막 기록 다음).
 // 재매수 전이거나 손절 기록이 없으면 null(이탈 전 보유 기준 그대로). 조회만 하며 기록을 바꾸지 않는다.
 function rebuyCutRun(r,hold=holdShares(r)){
   const cuts=Array.isArray(r?.cuts)?r.cuts:[],bought=rebuyBought(r);
   if(!bought||!cuts.some(Boolean))return null;
   const shares=list=>list.reduce((n,c)=>n+wholeShares(c?.shares),0),cycle=etfRebuyResume(r,stagesOf(r));
-  if(cycle&&!cycle.bought){const base=Math.max(0,hold-shares(cuts.slice(0,cycle.start))+bought);return {base,left:Math.max(0,base-shares(cuts.slice(cycle.start))),cont:true};}
-  const base=Math.max(0,hold-shares(cuts)+bought);return {base,left:base,cont:false};
+  if(cycle&&!cycle.bought){const base=Math.max(0,hold-shares(cuts.slice(0,cycle.start))+bought);return {base,left:Math.max(0,base-shares(cuts.slice(cycle.start))),cont:true,start:cycle.start};}
+  const base=Math.max(0,hold-shares(cuts)+bought);return {base,left:base,cont:false,start:cuts.reduce((m,c,i)=>c?i+1:m,0)};
 }
-// 손절 규칙 미리보기: 실제 체결을 제외한 cutPlan의 정수 배분에서 원래 보유의 50%·100% 이상을 처음 파는 회차.
+// 손절 규칙 미리보기: 재매수 전에는 실제 체결을 제외한 cutPlan의 정수 배분에서 원래 보유의 50%·100% 이상을 처음 파는 회차(계획 기준, base: null).
 // 회차 상한 없이 round(보유×회당 비중×k/100)이 목표 주수 이상인 첫 k를 직접 찾고, 반올림 경계의 오차를 보정한다.
+// 재매수를 시작한 뒤에는 rebuyCutRun의 기준 보유(base)의 50%·100%를 이 기준으로 이미 판 손절과 화면의 남은 회차 수량으로 처음 넘기는 회차다.
+// 이미 넘었으면 넘긴 기록 회차를 reached로 표시한다. sold는 이 기준으로 판(팔) 누적 수량.
 // 손절가가 0원 이하인 기준은 미도달로 표시한다. 표시 회차 밖 기준은 실행 계획에 포함되지 않는다고 표시한다.
 // 조회만 하며 기존 기준·체결 기록·계산을 바꾸지 않는다.
 function cutMilestones(r){
   const hold=holdShares(r),ready=Number.isFinite(Number(r.lowPrice))&&Number(r.lowPrice)>0&&Number.isFinite(hold)&&hold>0;
   if(!ready)return {ready:false,points:[]};
-  const planned=cutPlan({...r,cuts:[]}),step=Number(r.stepPct)>0?Number(r.stepPct):1,pct=Math.min(Math.max(Number(r.sellPct)||0,0),100),low=Number(r.lowPrice);
-  const goal=k=>Math.min(hold,Math.round(hold*pct*k/100)),maxRounds=Math.max(0,Math.ceil(100/step)-1);
-  return {ready:true,rounds:planned.length,sold:planned.reduce((n,c)=>n+c.qty,0),hold,
+  const step=Number(r.stepPct)>0?Number(r.stepPct):1,pct=Math.min(Math.max(Number(r.sellPct)||0,0),100),low=Number(r.lowPrice),maxRounds=Math.max(0,Math.ceil(100/step)-1);
+  const run=rebuyCutRun(r,hold),point=(targetPct,k,sold)=>{const drop=k*step,price=low*(1-drop/100);return {pct:targetPct,drop,price,sold,ok:Number.isSafeInteger(k)&&price>0};};
+  if(run&&run.base>0){
+    const base=run.base,rows=cutPlan(r,run),cuts=Array.isArray(r.cuts)?r.cuts:[],lastDone=cuts.reduce((m,c,i)=>c?i+1:m,0),already=base-run.left;
+    const g=k=>Math.round(base*pct*k/100),from=g(lastDone),sold=k=>already+Math.min(run.left,g(k)-from);
+    return {ready:true,rounds:rows.length,sold:rows.slice(run.start).reduce((n,c)=>n+c.qty,0),hold,base:{hold:base,cont:run.cont},
+      points:[50,100].map(targetPct=>{
+        const target=Math.ceil(base*targetPct/100);let k,reached=false,total;
+        if(already>=target){total=0;k=run.start;while(k<lastDone&&total<target)total+=wholeShares(cuts[k++]?.shares);reached=true;}
+        else{const need=target-already+from;k=pct>0?Math.max(lastDone+1,Math.ceil((need-0.5)*100/(base*pct))):Infinity;
+          if(Number.isSafeInteger(k)){if(k>lastDone+1&&g(k-1)>=need)k--;if(g(k)<need)k++;}total=Number.isSafeInteger(k)?sold(k):0;}
+        const p=point(targetPct,k,total);
+        return {pct:targetPct,cut:p.ok?{k,drop:p.drop,price:p.price,sold:total,...(reached?{reached:true}:{})}:null,inPlan:p.ok&&k<=rows.length,maxRounds};
+      })};
+  }
+  const planned=cutPlan({...r,cuts:[]}),goal=k=>Math.min(hold,Math.round(hold*pct*k/100));
+  return {ready:true,rounds:planned.length,sold:planned.reduce((n,c)=>n+c.qty,0),hold,base:null,
     points:[50,100].map(targetPct=>{
       const target=Math.ceil(hold*targetPct/100);let k=pct>0?Math.max(1,Math.ceil((target-0.5)*100/(hold*pct))):Infinity;
       if(Number.isSafeInteger(k)){if(k>1&&goal(k-1)>=target)k--;if(goal(k)<target)k++;}
-      const drop=k*step,price=low*(1-drop/100),cut=Number.isSafeInteger(k)&&price>0?{k,drop,price,sold:goal(k)}:null;
+      const p=point(targetPct,k,goal(k)),cut=p.ok?{k,drop:p.drop,price:p.price,sold:goal(k)}:null;
       return {pct:targetPct,cut,inPlan:!!cut&&k<=planned.length,maxRounds};
     })};
 }
@@ -702,7 +719,7 @@ function renderRebuy(){
   // 통화: 미국 종목은 가격 $123.45·금액 $1,235·보유 금액 달러, 그 밖은 가격 원·금액 만원
   const usdMode=rebuyUsd(r), unitWord=usdMode?"달러":"원", P=v=>priceText(v,usdMode?"USD":"KRW"), cents=v=>usdMode?Math.round(v*100)/100:Math.round(v);
   const manwon=v=>usdMode?`$${won.format(Math.round(v))}`:`${decimal.format(v)}만원`;
-  const milestones=cutMilestones(r),milestoneHtml=`<div class="cut-milestones" id="rCutMilestones"><div class="cut-milestones-head"><b>손절 도달 기준</b><span>신저점 대비 · 계획 기준</span></div>${milestones.ready?`<dl>${milestones.points.map(x=>`<div data-cut-milestone="${x.pct}"><dt>${x.pct===50?"절반 매도":"전액 매도"}<small>${x.pct===50?"50% 이상":"100%"}</small></dt><dd>${x.cut?`<strong>−${shown(x.cut.drop)}% · ${P(x.cut.price)}</strong><small>${x.cut.k}회차 · 누적 ${won.format(x.cut.sold)}주${x.inPlan?"":` · 현재 ${milestones.rounds}회 밖`}</small>`:`<strong>0원 이전에 미도달</strong><small>하락 간격·회당 손절 확인</small>`}</dd></div>`).join("")}</dl>`:'<p class="hint">신저점 가격과 이탈 전 보유가 있으면 계산됩니다.</p>'}</div>`;
+  const milestones=cutMilestones(r),milestoneHtml=`<div class="cut-milestones" id="rCutMilestones"><div class="cut-milestones-head"><b>손절 도달 기준</b><span>신저점 대비 · ${milestones.base?`${milestones.base.cont?"재이탈 직전":"지금"} 보유 ${won.format(milestones.base.hold)}주 기준`:"계획 기준"}</span></div>${milestones.ready?`<dl>${milestones.points.map(x=>`<div data-cut-milestone="${x.pct}"><dt>${x.pct===50?"절반 매도":"전액 매도"}<small>${x.pct===50?"50% 이상":"100%"}</small></dt><dd>${x.cut?`<strong>−${shown(x.cut.drop)}% · ${P(x.cut.price)}</strong><small>${x.cut.k}회차 · 누적 ${won.format(x.cut.sold)}주${x.cut.reached?" · 도달":x.inPlan?"":` · 현재 ${milestones.rounds}회 밖`}</small>`:`<strong>0원 이전에 미도달</strong><small>하락 간격·회당 손절 확인</small>`}</dd></div>`).join("")}</dl>`:'<p class="hint">신저점 가격과 이탈 전 보유가 있으면 계산됩니다.</p>'}</div>`;
   const wonShort=v=>usdMode?`$${won.format(Math.round(v))}`:v>=10000?manwon(Math.round(v/1000)/10):money(v), amt=(qty,price)=>price>0&&qty>0?`약 ${wonShort(qty*price)}`:"", approx=(qty,price)=>amt(qty,price)&&` · ${amt(qty,price)}`;
   // 이탈 전 보유(읽기 전용): 기록 전에는 자산 배분 보유, 기록 뒤에는 고정한 저장값. 금액이면 신저점으로 나눈 주 수를 같이 보인다.
   const fixed=!live&&(s.filledCuts>0||s.started), holdText=amount?`${manwon(amount)}${low>0?` ≈ ${won.format(shares)}주`:""}`:shares?`${won.format(shares)}주`:"";

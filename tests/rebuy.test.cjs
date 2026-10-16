@@ -622,7 +622,9 @@ test('손절 도달 기준: 0원 이전에 도달하지 못하면 유효한 가�
 test('손절 도달 기준 조회는 실제 손절·재매수 기록과 저장 필드를 바꾸지 않는다', () => {
   const ctx=load(),r=plan(ctx,{sellPct:5,cuts:[{shares:3,price:9850,plannedShares:50,partial:true}]});
   r.stages[0].buys=[{shares:1,price:9800,partial:true,plannedShares:2}];const before=JSON.stringify(r);
-  const m=ctx.cutMilestones(r);assert.equal(m.points[0].cut.k,10);assert.equal(m.points[0].cut.sold,500);assert.equal(JSON.stringify(r),before);
+  // 재매수 뒤라 지금 보유(1,000 − 3 + 1 = 998주)를 2회차부터 5%씩 파는 기준
+  const m=ctx.cutMilestones(r);assert.deepEqual(plain(m.base),{hold:998,cont:false});assert.equal(m.points[0].cut.k,11);assert.equal(m.points[0].cut.sold,499);assert.equal(JSON.stringify(r),before);
+  const fresh=ctx.cutMilestones({...r,stages:r.stages.map(st=>({...st,buys:undefined}))});assert.equal(fresh.base,null);assert.equal(fresh.points[0].cut.k,10);assert.equal(fresh.points[0].cut.sold,500);
 });
 
 test('손절 도달 기준 화면은 하락 간격·비중·회차·신저점 수정에 맞춰 바뀐다', () => {

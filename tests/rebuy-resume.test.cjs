@@ -38,7 +38,7 @@ test('재이탈: 25·32·42선까지 산 뒤 다시 손절하면 남은 손절�
   s=ctx.rebuySummary(r);
   assert.deepEqual([r.plannedEndLine,s.cycle,ctx.rebuyStatus(r,s)[0]],['42선',null,'재매수 완료']);
   assert.deepEqual(labels(ctx,r),cutLabels(6,10),'재매수를 마쳐도 남은 손절 알림은 유지하고 신저점 이탈은 알리지 않는다');
-  assert.deepEqual(plain(s.cutBase),{base:s.held,left:s.held,cont:false},'다음 손절은 재매수를 반영한 지금 보유 기준');
+  assert.deepEqual(plain(s.cutBase),{base:s.held,left:s.held,cont:false,start:5},'다음 손절은 재매수를 반영한 지금 보유 기준');
   assert.equal(s.cuts[5].qty,Math.round(s.held*2*6/100)-Math.round(s.held*2*5/100));
 
   const planned=plain(r.planned);
@@ -108,17 +108,24 @@ test('재이탈 손절 수량은 재매수를 반영한 그때 보유로 나누�
   // 2회 손절(200주) 뒤 25선에서 300주 재매수(가상 수치) → 지금 보유 1,100주
   r.cuts=[{shares:100,price:9900},{shares:100,price:9800}];r.stages[0].buys=[{shares:300,price:9300}];
   let s=ctx.rebuySummary(r);
-  assert.deepEqual([s.held,plain(s.cutBase)],[1100,{base:1100,left:1100,cont:false}]);
+  assert.deepEqual([s.held,plain(s.cutBase)],[1100,{base:1100,left:1100,cont:false,start:2}]);
   assert.deepEqual(plain(s.cuts.slice(2).map(c=>c.qty)),[110,110,110,110],'이탈 전 1,000주가 아니라 지금 보유 1,100주의 10%');
-  assert.deepEqual(plain(ctx.cutMilestones(r).points.map(x=>x.cut.sold)),[500,1000],'손절 도달 기준은 이탈 전 보유 계획 그대로');
+  const points=m=>plain(m.points.map(x=>[x.cut.k,x.cut.drop,x.cut.sold,!!x.cut.reached,x.inPlan]));
+  let m=ctx.cutMilestones(r);
+  assert.deepEqual([plain(m.base),points(m)],[{hold:1100,cont:false},[[7,7,550,false,false],[12,12,1100,false,false]]],'손절 도달 기준도 지금 보유 1,100주를 3회차부터 110주씩 파는 기준(표시 6회 밖)');
   cut(ctx,2,110);
   s=ctx.rebuySummary(r);
-  assert.deepEqual(plain(s.cutBase),{base:1100,left:990,cont:true},'재이탈 손절 뒤 그 재매수 전에는 재이탈 직전 보유를 유지');
+  assert.deepEqual(plain(s.cutBase),{base:1100,left:990,cont:true,start:2},'재이탈 손절 뒤 그 재매수 전에는 재이탈 직전 보유를 유지');
   assert.deepEqual(plain(s.cuts.slice(3).map(c=>c.qty)),[110,110,110]);
+  m=ctx.cutMilestones(r);
+  assert.deepEqual([plain(m.base),points(m)],[{hold:1100,cont:true},[[7,7,550,false,false],[12,12,1100,false,false]]],'이미 판 110주를 포함해 같은 회차');
   assert.equal(ctx.rebuyCutRecord(r,3,'991',true),false,'손절 합계는 이탈 전 보유 + 재매수(1,300주)까지');
   assert.notEqual(ctx.rebuyCutRecord(r,3,'990',true),false);
   const before=ctx.rebuySummary({...r,stages:r.stages.map(st=>({...st,buys:undefined}))});
   assert.equal(before.cutBase,null,'재매수 전에는 이탈 전 보유 기준 그대로');
+  r.steps=10;for(let i=3;i<7;i++)cut(ctx,i,110);
+  m=ctx.cutMilestones(r);
+  assert.deepEqual(points(m)[0],[7,7,550,true,true],'절반을 이미 팔았으면 넘긴 회차를 도달로 표시');
 });
 
 test('재이탈: 범위 상한까지 다 샀으면 범위 밖 다음 평균선 하나에 배분한다',()=>{
