@@ -110,17 +110,17 @@ const purchaseMode = plan => plan?.wait?"wait":plan?.lines?"lines":Array.isArray
 // 목록 선택은 화면에만 유지한다. 알림·계획 저장도 같은 종목 id를 선택하며 자산·동기화 기록에는 필드를 추가하지 않는다.
 const selectPurchase=(id,expand=false)=>{selectedPurchaseId=id;if(expand)openCompletedPurchases.add(id);};
 // 분할매도와 같은 제목·시세·자산 배분 순서. 계획 선택·화면 표시로 저장 필드를 만들지 않는다.
-function purchaseHeading({g,it},s,description,entry=quoteOf(it)){
+function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,target,gap}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
   const targetText=target!==null?` / 목표 ${pc(target)}${gap>0?` · 목표까지 ${man(gap)}`:gap<-.5?` · 목표 초과 ${man(-gap)}`:""}`:" · 목표 미입력";
-  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(it.name)}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div><p>${description}</p><p class="alloc-link"><b>자산 배분</b> <span>전체 계좌 · 현재 ${pc(pct)}${targetText}</span></p></div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}`;
+  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(it.name)}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}<p class="alloc-link"><b>자산 배분</b> <span>전체 계좌 · 현재 ${pc(pct)}${targetText}</span></p></div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}`;
 }
 function waitCard({g,it},s){
   const plan=it.buyPlan, entry=waitEntry(it), info=purchaseWaitInfo(plan,entry), cur=planCurrency(plan,it), pt=v=>v?priceText(v,cur):"—", id=escA(it.id);
   const gap=info.gapPct===null?"—":`${info.gapPct>0?"+":""}${nf2.format(info.gapPct)}%`, relation=info.gapPct===null?"기준선 시세 대기":info.reached?"기준선 이하":"기준선 위";
   const status=info.gapPct===null?"시세 대기":info.reached?"기준선 도달":"매수대기";
   const alertable=lineMarket(it)&&(purchaseQuoteKind(it.ticker)==="국내"?"KRW":"USD")===cur;
-  return `<div data-purchase-item="${id}">${purchaseHeading({g,it},s,`매수대기 · ${escA(info.line||"기준선 미입력")}까지 기다립니다.`,entry)}${linkedHoldings({g,it},s)}
+  return `<div data-purchase-item="${id}">${purchaseHeading({g,it},s,tradeQuoteLine({now:info.current?pt(info.current):"",state:"매수대기",round:`${escA(info.line||"기준선 미입력")}까지 기다립니다.`}),entry)}${linkedHoldings({g,it},s)}
     <div class="metrics card purchase-metrics"><div class="metric"><label>현재 계획 상태</label><strong class="${info.reached?"purchase-wait-reached":""}">${status}</strong><small>현재가 ${pt(info.current)}</small></div><div class="metric"><div class="trade-price-heading"><label>${escA(info.line||"매수대기 기준선")}</label>${alertable?tradeAlertToggle(purchaseAlertOn(plan,{key:"wait"}),`data-purchase-alert="${id}" data-key="wait"`,`${it.name} 매수대기 ${info.line}`):""}</div><strong>${pt(info.price)}</strong><small>매수대기 기준가</small></div><div class="metric"><label>기준선과 간격</label><strong>${gap}</strong><small>${relation}</small></div></div>
     <div class="control-grid"><section class="card panel purchase-summary"><h2>계산 요약</h2><p>현재가가 ${escA(info.line||"선택한 이동평균선")} 이하가 되면 알림을 받고 매수를 결정합니다. 같은 조건에 머무는 동안에는 알림을 반복하지 않습니다.</p>${!info.price?'<p class="hint">선택한 이동평균선의 시세를 기다리는 중입니다. 다음 수집 후 표시하며, 봉이 부족하면 계산될 때까지 기다립니다.</p>':""}${!alertable?'<p class="hint">자산 배분에서 국내·미국 시세 종목 코드를 확인하세요.</p>':""}</section>${memoPanel(it)}</div></div>`;
 }
@@ -156,7 +156,7 @@ function renderPurchases(){
     const next=now!==null?rows.filter(r=>!r.done&&r.plannedShares>0&&r.price>0&&!due(r)).sort((a,b)=>Math.abs(a.price-now)-Math.abs(b.price-now))[0]:null, open=rows.filter(r=>!r.done);
     const sharesKnown=rows.length>0&&rows.every(r=>r.plannedShares!==null&&(!r.recorded||r.shares!==null)),filledShares=rows.reduce((n,r)=>n+(r.shares||0),0),remainingShares=open.reduce((n,r)=>n+Math.max(0,(r.plannedShares||0)-(r.shares||0)),0);
     const gap=next?(next.price/now-1)*100:0;
-    const nowText=now!==null?`현재 ${pt(now)}${next?` · 다음 ${escA(next.label)}까지 ${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`:""}`:"";
+    const nextGap=now!==null&&next?{label:`다음 ${escA(next.label)}까지`,text:`${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`,dir:gap>0?"up":gap<0?"down":""}:null;
     const names=lines?purchaseLineNames(lines):[],known=lines?lineKnown(lines,entry):[],missing=names.filter(n=>!known.includes(n)),lastLine=names[names.length-1],waitingLast=!!lines&&!plus(lines.end)&&!known.includes(lastLine);
     const partialCount=rows.filter(r=>r.recorded&&!r.done).length;
     const done=rows.filter(r=>r.done).length, completedOpen=openCompletedPurchases.has(it.id);
@@ -182,14 +182,14 @@ function renderPurchases(){
         <div class="purchase-condition"><strong>${escA(main)}</strong>${tracking}${r.plannedShares!==null||r.recorded&&!r.stage?.partial?`<label class="exec-fields purchase-exec">누적 체결 <input type="number" min="0" ${r.plannedShares!==null?`max="${r.plannedShares}"`:""} step="${unitOf(actualItem)}" inputmode="${unitOf(actualItem)<1?"decimal":"numeric"}" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${escA(r.shares??"")}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 체결 수량 (${qtyUnit(actualItem).trim()})"> ${qtyUnit(actualItem).trim()}</label>`:""}${sub?`<small class="${partial?"purchase-fill-summary":""}">${escA(sub)}</small>`:""}</div>
         <div class="status${r.done?" done":partial?" partial":reached?" due":""}">${r.done?"매수 완료":partial?"부분 체결":reached?"도달":"대기"}</div></div>`;
     };
-    const description=`${lines?"이동평균선 돌파":"직접 입력"}${p.count?` · ${p.count}회 분할매수`:""}${nowText?` · ${nowText}`:""}`;
+    const quote=tradeQuoteLine({now:now!==null?pt(now):"",state:lines?"이동평균선 돌파":"직접 입력",round:p.count?`${p.count}회 분할매수`:"",gap:nextGap});
     const bounds=lines?purchaseLineLevels(lines,entry):rows,first=rows.find(r=>r.recorded)||bounds[0],last=waitingLast?null:bounds.at(-1);
     const priceNote=r=>r?.price>0?`${escA(r.label||purchaseLineLabel(r))}${cur==="USD"&&s.fx?` · ${priceText(r.price*s.fx,"KRW")}`:""}`:"시세 대기";
     const mixedTickers=new Set(rows.map(r=>linkTicker(r.tradeTicker||assetTradeTicker(r.tradeItem)))).size>1;
     const summaryItem=rows[0]?.tradeItem||trade.target;
     const progressText=`${p.done} / ${p.count}회 완료${rows.length?` · ${sharesKnown&&!mixedTickers?`체결 ${qtyText(Number(filledShares.toFixed(8)),summaryItem)} · 남은 매수 ${qtyText(Number(remainingShares.toFixed(8)),summaryItem)}`:`부분 체결 ${partialCount}회 · 미완료 ${open.length}회`}`:""}`;
     const summary=head||`<p>총 ${man(p.planned)}${open.length?` · 남은 ${open.length}회 · ${perRoundText(open)}`:""}</p>`;
-    return `<div data-purchase-item="${id}">${purchaseHeading({g,it},s,description,q)}${linkedHoldings({g,it},s)}
+    return `<div data-purchase-item="${id}">${purchaseHeading({g,it},s,quote,q)}${linkedHoldings({g,it},s)}
       <div class="metrics card purchase-metrics"><div class="metric"><label>현재 계획 상태</label><strong>${status}</strong><small>${progressText}</small></div><div class="metric"><label>첫 매수 기준가</label><strong>${first?.price>0?pt(first.price):"—"}</strong><small>${priceNote(first)}</small></div><div class="metric"><label>마지막 매수 기준가</label><strong>${last?.price>0?pt(last.price):"—"}</strong><small>${priceNote(last)}</small></div></div>
       <div class="control-grid"><section class="card panel purchase-summary"><h2>계산 요약</h2>${summary}<div class="inline-fields"><div><div class="sub">남은 매수 금액</div><strong>${man(p.remaining)}</strong></div><div><div class="sub">회차별 매수 금액</div><strong>${open.length?perRoundText(open):"—"}</strong></div></div></section>${memoPanel(it)}</div>
       <div class="section-heading"><h2>분할매수 체크</h2>${alertLine}<span>${p.count?`${p.done} / ${p.count}회 완료`:budgetMissing?"예산 입력 대기":"회차 시세 대기"}</span></div><section class="card table-card purchase-table${completedOpen?"":" hide-completed"}" id="purchaseTable"><div class="m-head"><span>회차 · 기준가</span><span>계획 · 체결</span></div><div class="purchase-table-head${lines?" line":""}"><span>회차</span><span>기준가</span><span>매수 계획 · 체결</span><span>상태</span></div>${done?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"><span>매수 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${targetReached?"전체 계좌 보유액이 목표 이상이라 추가 매수할 금액이 없습니다.":budgetMissing?"계획에 매수 금액을 입력하면 회차가 표시됩니다.":"기준가가 준비되면 매수 회차가 표시됩니다."}</div>`}</div>${rows.length&&done===rows.length?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>

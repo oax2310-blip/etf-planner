@@ -304,6 +304,13 @@ function ui(state = {}, env = {}) {
   return {ctx, handlers, els, add: (name, ticker) => submit(() => els.addRebuyBtn.onclick(), name, ticker), rename: (name, ticker) => submit(() => els.rEdit.onclick(), name, ticker)};
 }
 
+test('재매수 제목 아래 시세 줄: 분할매도·분할매수와 같은 순서로 현재가·상태·신저점 대비 %(부호·방향)를 보인다', () => {
+  const line = item => (ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', lowPrice: 10000, amount: 1000, ...item}]}}).els.rebuyMain.innerHTML.match(/<p class="quote-line">.*?<\/p>/) || [''])[0];
+  assert.equal(line({currentPrice: 9500}), '<p class="quote-line"><strong class="quote-now">9500원</strong><span class="quote-state">신저점 이탈</span><span class="quote-gap down">신저점 대비 <b>-5.0%</b></span></p>');
+  assert.equal(line({currentPrice: 10300}), '<p class="quote-line"><strong class="quote-now">10300원</strong><span class="quote-state">신저점 위</span><span class="quote-gap up">신저점 대비 <b>+3.0%</b></span></p>');
+  assert.equal(line({}), '<p class="quote-line"><span class="quote-state">손절 대기</span></p>', '현재가가 없으면 상태만');
+});
+
 test('기준 입력: 현재가·신저점·보유 칸이 저장에 연결되고, 단위를 주로 바꾸면 수량으로 저장한다', () => {
   const {ctx, handlers, els} = ui({rebuy: {items: [{id: 'a', name: '테스트 ETF'}]}});
   for (const sel of ['#rCurrent', '#rLow', '#rHold']) assert.equal(typeof handlers[sel], 'function', `${sel} 저장 처리가 없다`);

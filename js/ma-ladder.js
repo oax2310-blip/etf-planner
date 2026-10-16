@@ -10,6 +10,13 @@ function tradeStageEditorCard(title,fields,actions,className="",attrs=""){
 function tradeStageRow(check,price,shares,status,rowClass="",statusClass=""){
   return `<div class="sale-row${rowClass?` ${rowClass}`:""}">${check}<div class="stage-price">${price}</div><div class="shares">${shares}</div><div class="status${statusClass?` ${statusClass}`:""}">${status}</div></div>`;
 }
+// 분할매도·분할매수·재매수 제목 아래의 공통 시세 줄: 현재가(크게) → 상태 → 회차 → 방향 있는 %(gap = {label, text, dir:"up"|"down"|""}).
+// 값과 문구는 호출부가 이스케이프해 만들고, 여기서는 순서와 모양만 맞춘다. 빈 값은 건너뛴다.
+function tradeQuoteLine({now="",state="",round="",gap=null}={}){
+  const parts=[now&&`<strong class="quote-now">${now}</strong>`,state&&`<span class="quote-state">${state}</span>`,round&&`<span class="quote-round">${round}</span>`,
+    gap&&`<span class="quote-gap${gap.dir?` ${gap.dir}`:""}">${gap.label} <b>${gap.text}</b></span>`].filter(Boolean);
+  return parts.length?`<p class="quote-line">${parts.join("")}</p>`:"";
+}
 function movingLineName(name){
   const m=/^\s*([1-9]\d{0,2})\s*(선|시선|분봉|일선|주선|개월선|월선|달선)\s*$/.exec(String(name??""));
   if(!m||Number(m[1])>400)return "";
