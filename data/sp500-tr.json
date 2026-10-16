@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "index": "S&P 500 Total Return",
+  "symbol": "^SP500TR",
+  "currency": "USD",
+  "sourceName": "S&P Dow Jones Indices · Yahoo Finance",
+  "sourceUrl": "https://finance.yahoo.com/quote/%5ESP500TR/history/",
+  "fetchedAt": "2026-10-16T14:42:46.929Z",
+  "verified": [
+    {
+      "period": "2025",
+      "returnPct": 17.88,
+      "official": 17.88
+    },
+    {
+      "period": "2026-08",
+      "returnPct": 13.1369,
+      "official": 13.14
+    },
+    {
+      "period": "2026-09",
+      "returnPct": 12.7457,
+      "official": 12.75
+    }
+  ],
+  "yearEnd": [
+    {
+      "year": 2024,
+      "date": "2024-12-31",
+      "close": 12911.82
+    },
+    {
+      "year": 2025,
+      "date": "2025-12-31",
+      "close": 15220.45
+    }
+  ],
+  "monthEnd": [
+    {
+      "ym": "2026-01",
+      "date": "2026-01-30",
+      "close": 15441.15
+    },
+    {
+      "ym": "2026-02",
+      "date": "2026-02-27",
+      "close": 15323.8
+    },
+    {
+      "ym": "2026-03",
+      "date": "2026-03-31",
+      "close": 14560.75
+    },
+    {
+      "ym": "2026-04",
+      "date": "2026-04-30",
+      "close": 16088.56
+    },
+    {
+      "ym": "2026-05",
+      "date": "2026-05-29",
+      "close": 16935.35
+    },
+    {
+      "ym": "2026-06",
+      "date": "2026-06-30",
+      "close": 16774.07
+    },
+    {
+      "ym": "2026-07",
+      "date": "2026-07-31",
+      "close": 16763.42
+    },
+    {
+      "ym": "2026-08",
+      "date": "2026-08-31",
+      "close": 17219.94
+    },
+    {
+      "ym": "2026-09",
+      "date": "2026-09-30",
+      "close": 17160.41
+    }
+  ]
+}
