@@ -147,17 +147,18 @@
 }
 
 /* 플래너 편입 표시: 분할매수·분할매도·재매수 칩. 편입은 채움+✓, 미편입은 점선+흐리게, 이름으로 맞춘 추정은 주황 점선. */
-.alloc-links{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px;padding-top:2px}
-.alloc-chip{position:relative;display:inline-flex;align-items:center;gap:3px;min-height:22px;padding:1px 8px;border:1px solid var(--line-strong);border-radius:99px;font-size:11px;font-weight:600;line-height:1.2;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent}
+.alloc-links{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px;margin-top:-3px}
+.alloc-chip{position:relative;display:inline-flex;align-items:center;gap:2px;min-height:18px;padding:0 7px;border:1px solid var(--line-strong);border-radius:99px;font-size:10px;font-weight:600;line-height:1.2;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent}
 .alloc-chip.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
 .alloc-chip.on.guess{border-style:dashed;border-color:var(--warn-line)}
 .alloc-chip.off{border-style:dashed;background:transparent;color:var(--text-3);font-weight:500;opacity:.75}
-.chip-count{display:inline-grid;place-items:center;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--accent);color:var(--on-accent);font-size:9.5px;font-weight:700}
-.chip-guess{padding:0 4px;border-radius:4px;background:var(--warn-soft);color:var(--warn);font-size:9px;font-style:normal;font-weight:700}
+.chip-count{display:inline-grid;place-items:center;min-width:12px;height:12px;padding:0 3px;border-radius:6px;background:var(--accent);color:var(--on-accent);font-size:9px;font-weight:700}
+.chip-guess{padding:0 3px;border-radius:3px;background:var(--warn-soft);color:var(--warn);font-size:8.5px;font-style:normal;font-weight:700}
 a.alloc-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(hover:hover) and (pointer:fine){a.alloc-chip.on:hover{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}a.alloc-chip.on:hover .chip-count{background:var(--on-accent);color:var(--accent)}}
 a.alloc-chip.on:active{background:var(--accent-line)}
-@media(pointer:coarse){.alloc-links{gap:6px;padding-top:4px}a.alloc-chip::after{content:"";position:absolute;inset:-9px -2px}}
+@media(pointer:coarse){a.alloc-chip::after{content:"";position:absolute;inset:-6px -2px}}
+@media(max-width:700px){.asset-row:not(:has(.asset-note))>.alloc-links{grid-column:2/3;grid-row:2;align-self:center;margin-top:0}}
 .alloc-members{margin:0 0 12px;padding:0}
 .alloc-members>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;min-height:44px;padding:11px 16px;cursor:pointer;list-style:none}.alloc-members>summary::-webkit-details-marker{display:none}
 .alloc-members>summary b{font-size:13px}.alloc-members>summary span{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
