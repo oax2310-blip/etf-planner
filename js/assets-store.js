@@ -15,6 +15,8 @@ function saveSection(section){
   const latest=cleanAssets(readJson(A_KEY,null));
   for(const s of ASSET_SECTIONS)if(s!==section&&latest?.[s]&&(!doc[s]||String(latest[s].savedAt||"")>String(doc[s].savedAt||"")))doc[s]=latest[s];
   if(doc.savings){const record=earlierSavingsRecord(doc.savings.milestoneRecord,latest?.savings?.milestoneRecord);if(record)doc.savings.milestoneRecord=record;}
+  // 자산 배분 목표가 바뀐 분할매수 계획은 같은 저장에서 옛 계획 목표·총 매수 금액을 맞춘다(assets-calc.js syncPurchaseTargets). 동기화·복원으로 받은 기록은 다시 계산하지 않는다.
+  if(section==="allocation"&&doc.allocation)syncPurchaseTargets(lastLocal.allocation,doc.allocation,prices);
   if(doc[section])doc[section].savedAt=new Date().toISOString();writeLocal();scheduleAssetSync(1500);emit("change");
 }
 // 저장 버튼을 누를 때만 기록을 갱신한다. 다른 탭의 최신 입력·최단 기록을 먼저 합치고, 브라우저 저장 실패 시 기존 상태를 유지한다.
