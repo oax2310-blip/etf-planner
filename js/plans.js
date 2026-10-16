@@ -244,6 +244,49 @@ function planSaleAccountView(p){
   const valuation=found?allocationHoldingInfo(found.it,summary):null;
   return `<section class="card panel sale-account"><h2>실제 매도 계좌 · ETF</h2><div class="sale-account-fields"><label class="field"><span>매도할 계좌·그룹</span><select id="saleAccount"><option value="">${esc(p.ticker)} 직접 매도</option>${groups.map(g=>`<option value="${esc(g.id)}"${g.id===gid?" selected":""}>${esc(g.name)}</option>`).join("")}</select></label>${gid?`<label class="field"><span>계좌에 보유한 ETF</span><select id="saleHolding"><option value="">보유 ETF 선택</option>${choices.map(({it})=>`<option value="${esc(it.id)}"${it.id===p.sellTargetId?" selected":""}>${esc(it.name)} · ${esc(assetTradeTicker(it))}${finite(it.shares)!==null?` · ${won.format(it.shares)}주 보유`:""}</option>`).join("")}</select></label>`:""}</div><p class="hint">${esc(info)}</p>${valuation?`<p class="hint sale-account-valuation">평가액 ${valuation.valueText} · 전체 자산의 ${valuation.pctText}${valuation.pending?` · ${valuation.pending}`:""}</p>`:""}<p class="hint">${esc(p.ticker)} 현재가 × 기준 주수${p.currency==="USD"?" × 환율":""} ÷ 실제 ETF 현재가로 정수 주수를 내림합니다. 기준 현재가가 없으면 회차 기준가를 사용합니다. 체결한 회차는 당시 계좌·ETF·수량을 유지합니다.${!groups.length?' <a href="assets.html#alloc">자산 배분에서 보유 계좌와 종목 코드를 등록하세요.</a>':""}</p></section>`;
 }
+// 전액매도 시점(plans[].fullSell — 규칙은 trade-alerts.js tradeFullSellOf): 직접 입력한 기준가에 현재가가 닿았는지만 보여 주고,
+// 전액매도 계획·수량·비율은 만들지 않는다. 시세가 없거나 지난 시세·조회 실패이면 판단하지 않고, 전 회차를 마친 계획도 시점으로 보지 않는다.
+// 보유 종목은 분할매도와 같은 자산 배분 기록(planLinkedSaleItems)에서 읽기만 하며 어떤 값도 저장하지 않는다.
+function planFullSellState(p){
+  if(typeof tradeFullSellOf!=="function")return null;
+  const full=tradeFullSellOf(p),px=planQuote(p.ticker,p.currency),cur=Number(px?.close)>0?Number(px.close):null,old=!!px&&(px.stale||priceOld(px));
+  const finished=tradePlanFinished(p),ok=full.price!==null&&cur!==null&&!old&&!finished;
+  const due=ok&&(full.condition==="up"?cur>=full.price:cur<=full.price);
+  return {...full,cur,old,finished,due,gap:full.price!==null&&cur!==null?(cur/full.price-1)*100:null,label:full.price===null?"입력 필요":finished?"분할매도 완료":cur===null?"시세 대기":old?"지난 시세":due?"전액매도 시점":"대기"};
+}
+// 입력 때만 저장: 기준가를 비우면 fullSell을 지우고(알림 설정 notify.fullSell은 둠), "이상"만 condition으로 기록한다.
+function setPlanFullSell(p,key,text){
+  const t=String(text).trim(),cur=p.fullSell&&typeof p.fullSell==="object"&&!Array.isArray(p.fullSell)?p.fullSell:{};
+  if(key==="price"){
+    const v=t===""?0:Number(t);if(!Number.isFinite(v)||v<0)return false;
+    if(v>0)p.fullSell={...cur,price:v};else delete p.fullSell;
+    return;
+  }
+  if(key==="condition"){
+    if(!["up","down"].includes(t)||!(Number(cur.price)>0))return false;
+    const next={...cur};if(t==="up")next.condition="up";else delete next.condition;p.fullSell=next;
+  }
+}
+function planFullSellHoldings(p){
+  const summary=typeof assetStore==="object"?allocationSummary(planSaleAssets(),assetStore.prices):null,items=summary?planLinkedSaleItems(p):[];
+  const rows=items.map(({g,it})=>({g,it,info:allocationHoldingInfo(it,summary)})).filter(({it})=>finite(it.shares)!==null?finite(it.shares)>0:finite(it.amount)>0);
+  if(!rows.length){
+    const own=p.holdings.reduce((n,h)=>n+Number(h.shares||0),0);
+    return `<p class="hint full-sell-empty">${own>0?`계획에 입력한 보유 ${planQuantity(own,p)}`:"연결된 보유 종목이 없습니다"} · 자산 배분에 같은 종목 코드를 등록하면 계좌별 보유가 표시됩니다.</p>`;
+  }
+  return `<div class="full-sell-holdings" aria-label="보유 종목">${rows.map(({g,it,info})=>`<div class="full-sell-holding"><div><strong>${esc(it.name)}</strong><small>${[g.name,it.section,assetTradeTicker(it)].filter(Boolean).map(esc).join(" · ")}</small></div><div><small>${info.quantityText}${info.pending?` · ${esc(info.pending)}`:""}</small><span><strong>${info.valueText}</strong><small>${info.pctText}</small></span></div></div>`).join("")}</div>`;
+}
+function planFullSellView(p){
+  const f=planFullSellState(p);if(!f)return "";
+  const unit=p.currency==="USD"?"달러":"원",gap=f.gap===null?"":` · 기준가 대비 ${f.gap>0?"+":""}${decimal.format(f.gap)}%`;
+  const alert=typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeFullSellEnabled(p)||tradeNotify(p).fullSell===true,'data-full-sell-alert',"전액매도 시점",f.finished):"";
+  const status=f.due?"due":"",row=tradeStageRow('<span class="check full-sell-name"><span class="tr-name">전액매도</span></span>',
+    `<label class="exec-fields full-sell-input" title="전액매도 기준가"><span>기준가</span><input id="fullSellPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="직접 입력" value="${f.price===null?"":esc(f.price)}" aria-label="전액매도 기준가 (${unit})">${unit}</label>
+      <label class="exec-fields full-sell-input"><select id="fullSellCondition" aria-label="전액매도 조건"${f.price===null?" disabled":""}><option value="down"${f.condition==="down"?" selected":""}>현재가 이하</option><option value="up"${f.condition==="up"?" selected":""}>현재가 이상</option></select></label><div class="rebuy-stage-tools">${alert}</div>`,
+    `<div class="rebuy-stage-summary"><strong class="rebuy-stage-plan">${f.cur===null?"현재가 —":`현재 ${priceText(f.cur,p.currency)}`}<small class="sub rebuy-stage-amount">${f.price===null?"기준가를 직접 입력하세요":`${f.condition==="up"?"이상":"이하"} ${priceText(f.price,p.currency)}${gap}`}</small>${f.due?'<small class="full-sell-due">전액매도 시점</small>':""}</strong></div>`,
+    f.label,status?"due":"",status);
+  return `<div class="section-heading"><h2>전액매도 시점</h2><span>${f.due?"기준가에 도달했습니다 · ":""}시점만 알립니다. 수량·비율은 직접 정하세요</span></div><section class="card table-card sale-table rebuy-trade-table full-sell-card" id="fullSellCard"><div class="table-head"><span>기준</span><span>전액매도 기준가 · 알림</span><span>현재가</span><span>상태</span></div>${row}<div class="full-sell-holdings-head"><b>보유 종목</b><small>자산 배분 기록 · 읽기 전용</small></div>${planFullSellHoldings(p)}</section>`;
+}
 // sellPriority는 사용자가 순서를 바꿀 때만 저장한다. 계좌 이름·종목 코드가 같아도 자산 id로 구분하며 조회·체결에는 순서 필드를 만들지 않는다.
 function movePlanSalePriority(p,targetId,direction,redraw=renderPlans){
   if(![-1,1].includes(direction))return;
@@ -296,8 +339,8 @@ addEventListener("resize",fitNames);
 const openCompletedSales=new Set();
 function renderPlans(){
   const list=$("planList"), pencil=PENCIL;
-  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()];
-    return `<div class="plan-cell"><button class="plan-item ${p.id===state.selectedPlan?"active":""}" type="button" data-plan="${esc(p.id)}" aria-pressed="${p.id===state.selectedPlan}" aria-controls="planMain" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${esc(p.stages)}회 완료"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count">${n}/${esc(p.stages)}<span class="plan-unit">회</span></span></span><span class="plan-title">${sub&&sub!==main?esc(sub):""}</span><span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button><button class="plan-rename" type="button" data-rename="${esc(p.id)}" aria-label="${esc(main)} 카드 이름 변경" title="카드 이름 변경">${pencil}</button></div>`;}).join(""):"<div class='empty'>계획 없음</div>";
+  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, ticker=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), [main,sub]=card?[card,ticker]:[ticker,String(p.title||"").trim()], fullDue=planFullSellState(p)?.due===true;
+    return `<div class="plan-cell"><button class="plan-item ${p.id===state.selectedPlan?"active":""}" type="button" data-plan="${esc(p.id)}" aria-pressed="${p.id===state.selectedPlan}" aria-controls="planMain" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${esc(p.stages)}회 완료${fullDue?" · 전액매도 시점":""}"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count${fullDue?" due":""}">${n}/${esc(p.stages)}<span class="plan-unit">회</span></span></span><span class="plan-title">${sub&&sub!==main?esc(sub):""}</span><span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button><button class="plan-rename" type="button" data-rename="${esc(p.id)}" aria-label="${esc(main)} 카드 이름 변경" title="카드 이름 변경">${pencil}</button></div>`;}).join(""):"<div class='empty'>계획 없음</div>";
   list.querySelectorAll("[data-plan]").forEach(b=>{b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();[...list.querySelectorAll("[data-plan]")].find(x=>x.dataset.plan===state.selectedPlan)?.focus();};
     // 길게 누르기(터치만): 0.5초 또는 안드로이드 길게 누르기 메뉴(contextmenu) 중 먼저 오는 때에 이름 창을 연다. 10px 넘게 움직이면(스크롤) 취소.
     // 창을 연 뒤 손을 뗄 때의 클릭·움직임은 막는다(창 바깥을 누른 것으로 처리되거나 화면이 밀리지 않게).
@@ -328,6 +371,7 @@ function renderPlans(){
     ${planSaleAccountView(p)}
     <div class="metrics card"><div class="metric"><label>${linkedSchedule?"전체 계좌 계획 상태":p.sellTargetId?"기준 ETF 계획 상태":"현재 계획 상태"}</label><strong>${esc(status)}</strong><small${worth!=null&&!linkedSchedule?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:""}>${done} / ${esc(p.stages)}회 완료 · ${!linkedSchedule&&p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}</small></div><div class="metric"><div class="trade-price-heading"><label for="startPrice">첫 매도 기준가</label>${typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"첫 매도",p.checked[0]):""}</div><label class="metric-edit" title="눌러서 수정">${p.currency==="USD"&&p.startPrice>0?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="대기" value="${esc(startText)}">${p.currency==="USD"||!(p.startPrice>0)?"":"원"}${pencil}</label><small>${p.currency==="USD"?`${p.startPrice>0?fxText(p.startPrice*p.fx):"시세 대기"} · <label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="number" min="0" step="any" inputmode="decimal" aria-label="달러/원 환율" value="${esc(String(p.fx))}">${pencil}</label>`:""}</small></div><div class="metric"><label>마지막 매도 기준가</label><strong>${p.endPrice>0?priceText(p.endPrice,p.currency):"—"}</strong><small>${p.currency==="USD"?p.endPrice>0?fxText(p.endPrice*p.fx):"시세 대기":""}</small></div></div>
     <div class="control-grid"><section class="card panel"><h2>계산 요약</h2><p>${esc(splitNote)}</p><div class="inline-fields"><div><div class="sub">회차당 가격 하락폭</div><strong>${ready?priceText(gap,p.currency):"—"}</strong></div><div><div class="sub">예상 1회 주문 비중</div><strong>${p.stages?decimal.format(pct/p.stages):"—"}%</strong></div></div></section><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
+    ${planFullSellView(p)}
     <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card sale-table${completedOpen?"":" hide-completed"}" id="saleTable"><div class="m-head"><span>회차 · 기준가</span><span>${oneName?`<b>${oneName}</b>`:""}<span>계획 · 체결</span></span></div><div class="table-head"><span>회차</span><span>기준가</span><span>매도 계획 · 체결</span><span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${Array.from({length:p.stages},(_,i)=>planSaleRow(p,i,oneName)).join("")}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
   const completedToggle=$("toggleCompletedSales");
   if(completedToggle)completedToggle.onclick=()=>{
@@ -357,6 +401,8 @@ function renderPlans(){
   $$("#planMain [data-sale-partial]").forEach(el=>{el.indeterminate=true;});
   $("editPlan").onclick=()=>openPlanDialog(p);
   if(typeof bindTradePlanAlerts==="function")bindTradePlanAlerts(p);
+  onEdit("#fullSellPrice",v=>setPlanFullSell(p,"price",v),renderPlans);
+  onEdit("#fullSellCondition",v=>setPlanFullSell(p,"condition",v),renderPlans);
   fitNames();
 }
 const planDialog=$("planDialog"); let editingId=null, dialogBase={};

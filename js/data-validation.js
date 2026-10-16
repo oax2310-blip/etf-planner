@@ -67,7 +67,7 @@ const externalData = (()=>{
       numbers(p,["salePct"],path,1,100,true);flags(p,["startAuto"],path);
       list(p.checked,`${path}.checked`,(v,k)=>{if(v!==null&&typeof v!=="boolean")fail(k);});
       records(p.holdings,`${path}.holdings`,(h,k)=>{strings(h,["name"],k);numbers(h,["shares"],k);});
-      recordMap(p.fills,`${path}.fills`,trade);child(p,"auto",path);child(p,"notify",path);
+      recordMap(p.fills,`${path}.fills`,trade);child(p,"auto",path);child(p,"notify",path);child(p,"fullSell",path,(v,k)=>{numbers(v,["price"],k,0);strings(v,["condition"],k);});
       list(p.sellPriority,`${path}.sellPriority`,(v,k)=>{if(typeof v!=="string")fail(k);});
     });
     const f=data.futures;
