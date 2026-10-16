@@ -444,16 +444,49 @@ function rebuyStatus(r,s){
   if(s.filledCuts)return [`손절 ${s.doneCuts}회 진행${s.filledCuts>s.doneCuts?" · 부분 체결":""}`,`손절 ${s.doneCuts}회${s.filledCuts>s.doneCuts?" · 부분":""}`];
   return fromLow!=null&&fromLow<0?["신저점 이탈","신저점 이탈"]:fromLow!=null?["신저점 위","대기"]:["손절 대기","대기"];
 }
+// 보유 종목 목록 = 분할매도와 같은 출처(자산 배분 항목, assetStore.doc.allocation)에서 읽기만 한다 — 재매수 쪽에 따로 저장하지 않는다.
+// 재매수가 시세로 다루는 국내·미국 거래 코드이고 보유(수량 또는 금액)가 있는 항목만. 호출할 때마다 읽으므로 자산 쪽 변경이 바로 보인다.
+function rebuyHoldingChoices(alloc){
+  return (alloc?.groups||[]).flatMap(g=>(g.items||[]).filter(it=>["국내","해외"].includes(purchaseQuoteKind(assetTradeTicker(it)))&&(finite(it.shares)!==null?finite(it.shares)>0:finite(it.amount)>0)).map(it=>({g,it})));
+}
+// 자산 배분 보유량(alloc-link.js holding) → '이탈 전 보유' 입력 {unit, value}. 수량 합이 있으면 주, 없으면 평가액(국내 만원 / 미국 달러로 환산). 가져올 값이 없으면 null.
+function rebuyHoldFromAlloc(allocHold, usd){
+  if(!allocHold)return null;
+  const unit=allocHold.shares>0?"shares":"amount", value=unit==="shares"?allocHold.shares:usd?(allocHold.fx?Math.round(allocHold.value*1e4/allocHold.fx):0):allocHold.value;
+  return value>0?{unit,value}:null;
+}
 // 종목 추가·이름/코드 수정 창(rebuyDialog). 이 파일은 테스트가 DOM 없이 불러오므로 창 처리는 이 함수 안에서 연결한다.
 // 새 종목은 기본 규칙·단계로 만든다. 종목 코드를 바꾸면 auto를 지워 다음 동기화 때 새 종목 시세로 채운다.
+// '보유 종목에서 선택'(f.holding, 보유 종목이 있을 때만 보임): 고르면 이름·코드를 채우고, 저장할 때 손절·재매수 기록이 없으면 자산 배분 보유량을 이탈 전 보유로 채운다.
+// 처음 열 때 이미 선택돼 있던 값을 그대로 저장하면 보유를 다시 쓰지 않는다. 보유 종목이 없으면 이 칸을 숨기고 직접 입력한다.
 // 종목 삭제는 실제 체결인 자산 배분을 그대로 둔다(초기화의 forget와 다름).
 function openRebuyDialog(edit){
   const dialog=$("rebuyDialog"), form=$("rebuyForm"), f=form.elements;
   form.reset();$("rebuyTitle").textContent=edit?`${String(edit.name||"").trim()||"종목"} 수정`:"새 재매수 종목";$("deleteRebuyBtn").classList.toggle("hidden",!edit);
   if(edit){f.name.value=edit.name||"";f.ticker.value=edit.ticker||"";}
+  const choices=f.holding&&typeof assetStore==="object"?rebuyHoldingChoices(assetStore.doc?.allocation):[], pick=f.holding, field=$("rebuyHoldingField"), hint=$("rebuyHoldingHint");
+  let initial="";
+  if(pick){
+    const same=edit?.ticker?choices.filter(c=>linkTicker(assetTradeTicker(c.it))===linkTicker(edit.ticker)):[];
+    initial=same.length===1?same[0].it.id:"";
+    pick.innerHTML='<option value="">직접 입력</option>'+choices.map(({g,it})=>`<option value="${esc(it.id)}">${esc(g.name)} › ${esc(it.name)} · ${esc(assetTradeTicker(it))}${finite(it.shares)!==null?` · ${won.format(it.shares)}주 보유`:""}</option>`).join("");
+    pick.value=initial;field.hidden=!choices.length;
+    pick.onchange=()=>{
+      const c=choices.find(x=>x.it.id===pick.value);hint.textContent="";if(!c)return;
+      f.name.value=c.it.name.slice(0,40);f.ticker.value=assetTradeTicker(c.it);
+      const h=rebuyHoldFromAlloc(typeof allocLink==="object"?allocLink.holding(assetTradeTicker(c.it)):null,usTicker(assetTradeTicker(c.it)));
+      hint.textContent=h?`자산 배분 보유 ${h.unit==="shares"?`${won.format(h.value)}주`:usTicker(assetTradeTicker(c.it))?`$${won.format(h.value)}`:`${decimal.format(h.value)}만원`}를 이탈 전 보유로 채웁니다(손절·재매수 기록이 없을 때).`:"가져올 보유량이 없어 이름·코드만 채웁니다.";
+    };
+    if(hint)hint.textContent="";
+  }
   form.onsubmit=e=>{e.preventDefault();const name=f.name.value.trim().slice(0,40), ticker=f.ticker.value.trim().toUpperCase().slice(0,80);if(!name)return;
+    const picked=pick?.value&&pick.value!==initial?choices.find(c=>c.it.id===pick.value):null;
     let r;if(edit)r=editRebuy();else{r={id:id(),...defaultRebuy()};editRebuyList().push(r);state.selectedRebuy=r.id;rebuyUnit=null;}
     r.name=name;if(ticker!==(r.ticker||"")){if(ticker)r.ticker=ticker;else delete r.ticker;delete r.auto;}
+    if(picked&&linkTicker(ticker)===linkTicker(assetTradeTicker(picked.it))&&typeof allocLink==="object"){
+      const view=rebuySummary(r),h=view.filledCuts||view.started?null:rebuyHoldFromAlloc(allocLink.holding(r.ticker),rebuyUsd(r));
+      if(h&&setHold(r,h.unit,String(h.value))!==false)rebuyUnit=h.unit;
+    }
     save();dialog.close();renderRebuy();};
   $("deleteRebuyBtn").onclick=()=>{const r=rebuyPick();if(!r||!confirm(`${String(r.name||"").trim()||"이 종목"} 재매수 기록을 삭제할까요?\n손절·재매수 체크와 메모도 함께 지워집니다.`))return;
     const gone=editRebuy();state.rebuy.items=state.rebuy.items.filter(x=>x!==gone);state.selectedRebuy=state.rebuy.items[0]?.id||null;rebuyUnit=null;save();dialog.close();renderRebuy();};
@@ -646,8 +679,8 @@ function renderRebuy(){
   setField("rCurrent","currentPrice",nonNeg);setField("rLow","lowPrice",nonNeg);
   onEdit("#rHold",v=>{if(setHold(editRebuy(),unit,v.trim())===false)return false;rebuyUnit=unit;},renderRebuy);
   $("rHoldUnit").onchange=e=>{rebuyUnit=e.target.value==="shares"?"shares":"amount";renderRebuy();$("rHold").focus();}; // 단위만 바꿈(값은 새로 넣을 때 바뀜)
-  if(allocHold)$("rHoldLink").onclick=()=>{const unit=allocHold.shares>0?"shares":"amount", v=unit==="shares"?allocHold.shares:usdMode?(allocHold.fx?Math.round(allocHold.value*1e4/allocHold.fx):0):allocHold.value;
-    if(!(v>0)||setHold(editRebuy(),unit,String(v))===false)return;rebuyUnit=unit;save();renderRebuy();};
+  if(allocHold)$("rHoldLink").onclick=()=>{const h=rebuyHoldFromAlloc(allocHold,usdMode);
+    if(!h||setHold(editRebuy(),h.unit,String(h.value))===false)return;rebuyUnit=h.unit;save();renderRebuy();};
   onEdit("#rFinal",v=>{v=nonNeg(v.trim());if(v===undefined)return false;const st=editRebuy().stages;if(!st.length)return false;st[st.length-1].price=v;},renderRebuy);
   setField("rStep","stepPct",v=>Number(v)>0&&Number(v)<=50?Number(v):undefined);setField("rSell","sellPct",v=>Number(v)>0&&Number(v)<=100?Number(v):undefined);setField("rSteps","steps",v=>Number(v)>=1&&Number.isSafeInteger(Math.floor(Number(v)))?Math.floor(Number(v)):undefined);
   // 손절·재매수 체크·체결 수정은 자산 배분 보유량과 연동(rebuyLink — 규칙은 rebuyFill 위 주석)
@@ -681,3 +714,9 @@ function renderRebuy(){
   onEdit("#rNote",v=>{editRebuy().note=v;});
   $("rSave").onclick=()=>{if(note.value!==(r.note||""))editRebuy().note=note.value;save();renderRebuy();};
 }
+// 자산 페이지에서 보유 종목·수량·시세가 바뀌면 재매수 탭의 '자산 배분' 줄·보유 가져오기에도 바로 반영한다. 입력 중에는 다시 그리지 않는다.
+if(typeof assetStore==="object"&&typeof assetStore.subscribe==="function")assetStore.subscribe(type=>{
+  if(!["change","prices"].includes(type)||state.tab!=="rebuy")return;
+  const active=document.activeElement;if(active&&/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)&&active.type!=="checkbox")return;
+  renderRebuy();
+});
