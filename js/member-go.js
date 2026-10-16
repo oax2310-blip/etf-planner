@@ -8,7 +8,7 @@ function select(t){
   if(t.tab==="plans"){const i=indexOf(state.plans,t.id);if(i<0)return false;state.selectedPlan=state.plans[i].id;return true;}
   if(t.tab==="rebuy"){
     const list=rebuyItems(state), i=indexOf(list,t.id);if(i<0)return false;
-    const next=list[i].id||null;if(state.selectedRebuy!==next)rebuyUnit=null;state.selectedRebuy=next;return true;
+    state.selectedRebuy=list[i].id||null;return true;
   }
   const it=(assetStore.doc.allocation?.groups||[]).flatMap(g=>g.items||[]).find(x=>x.id===t.id&&x.buyPlan);
   if(!it)return false;purchasePlanner.select(it.id);return true;

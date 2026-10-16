@@ -126,9 +126,9 @@ test('국내 코드 접두사·대소문자·비트코인 별칭을 같은 종�
 
 test('재매수 종목을 바꾸고 옛 단일 종목 기록도 이전 없이 연다',()=>{
   const p=page({rebuy:{items:[{id:'other',ticker:'OTHER'},{id:'target',ticker:'TEST'}]},selectedRebuy:'other'}),before=p.records();
-  vm.runInContext('rebuyUnit="shares"',p.ctx);p.open({ticker:'TEST',line:'재매수 신저점 이탈'});
+  p.open({ticker:'TEST',line:'재매수 신저점 이탈'});
   assert.equal(p.state().selectedRebuy,'target');assert.equal(p.state().tab,'rebuy');
-  assert.equal(vm.runInContext('rebuyUnit',p.ctx),null);assert.equal(p.records(),before);
+  assert.equal(p.records(),before);
   assert.deepEqual(plain(vm.runInContext('rebuyFolds.get("target")',p.ctx)),{cuts:true,buys:true,complete:false});
   const old=page({rebuy:{ticker:'TEST',name:'예제'}}),oldRecords=old.records();old.open({ticker:'TEST',line:'재매수 25선'});
   assert.equal(old.state().tab,'rebuy');assert.equal(old.records(),oldRecords);

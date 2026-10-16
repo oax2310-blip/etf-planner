@@ -55,7 +55,7 @@ function applyPendingPushAlert(){
   if(found.planId){state.selectedPlan=found.planId;openCompletedSales.add(found.planId);}
   if(found.itemId)purchasePlanner.select(found.itemId,true);
   if("rebuyId" in found){
-    if(state.selectedRebuy!==found.rebuyId)rebuyUnit=null;state.selectedRebuy=found.rebuyId;
+    state.selectedRebuy=found.rebuyId;
     const r=rebuyPick(),fold=rebuyFoldState(r,rebuySummary(r));fold.cuts=true;fold.buys=true;
   }
   if(found.tab==="futures"){if(found.futureRebuy)futureRebuyExpanded=true;else futureCompletedOpen=true;}
