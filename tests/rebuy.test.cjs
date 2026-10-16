@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/rebuy.js'), 'utf8');
+const source = ['ma-ladder.js', 'item-search.js', 'rebuy.js'].map(f => fs.readFileSync(require('node:path').join(__dirname, '../js', f), 'utf8')).join('\n;\n');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
 
 // 화면이 쓰는 기준선 이름 판정(maKey·hourKey·autoKey)은 prices.js 것을 그대로 쓴다
@@ -289,10 +289,11 @@ test('보유 입력: 금액(만원)·수량(주) 중 넣은 쪽만 남기고, 0�
 function ui(state = {}, env = {}) {
   const handlers = {}, els = {};
   const el = id => els[id] ||= {id, value: '', textContent: '', focus() {}, reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
-    classList: {toggle(name, on) { el(id)[name] = on; }}, querySelectorAll: () => [], elements: {name: {value: '', focus() {}}, ticker: {value: ''}}};
+    classList: {toggle(name, on) { el(id)[name] = on; }}, querySelectorAll: () => [], append() {}, elements: {name: {value: '', focus() {}}, ticker: {value: ''}, holding: {value: ''}}};
   let n = 0;
   const ctx = vm.createContext({
     state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
+    document: {createElement: () => ({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     esc: v => String(v ?? ''), money: v => `${v}원`, priceText: (v, currency) => currency === 'USD' ? `$${v}` : `${v}원`,
     usd: new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}), won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
     shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '', maKey, hourKey, autoKey, usTicker, ...env,

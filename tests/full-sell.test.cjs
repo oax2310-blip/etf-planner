@@ -12,21 +12,21 @@ const quote=(close,extra={})=>({updatedAt:new Date().toISOString(),stocks:{AAA:{
 function load({prices=null,allocation=null}={}){
   const els={},handlers={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',readOnly:false,disabled:false,events:{},validityMessage:'',
-    addEventListener(kind,handler){this.events[kind]=handler;},setCustomValidity(m){this.validityMessage=m;},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){}};
+    addEventListener(kind,handler){this.events[kind]=handler;},setCustomValidity(m){this.validityMessage=m;},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
   const defaults={ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1300',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''};
   const fields=Object.fromEntries(Object.entries(defaults).map(([k,v])=>[k,Object.assign(el('field:'+k),{name:k,value:v})]));
   const form=el('planForm');form.elements=fields;
   form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage&&(!f.required||f.disabled||f.readOnly||String(f.value??'')!==''));
   form.reset=()=>{for(const [k,v] of Object.entries(defaults))fields[k].value=v;};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit:(sel,set)=>{handlers[sel]=set;},alert(){},
-    document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})})},
+    document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[],futures:{positions:[]},selectedPlan:null},PENCIL:'',memoCount:()=>'',id:()=>'p1',
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),usd:new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
     priceText:(v,c)=>c==='USD'?`$${v}`:`${v}원`,fxText:v=>String(v),
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     FormData:class{constructor(f){this.fields=f.elements;}get(k){return this.fields[k]?.disabled?null:this.fields[k]?.value;}},
     priceData:prices,...(allocation?{assetStore:{doc:{allocation},prices,subscribe(){}}}:{})});
-  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
+  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const submit=()=>{ctx.planLive();form.events.submit({target:form,preventDefault(){}});};
   const input=name=>form.events.input({target:Object.assign(fields[name],{form})});
   return {ctx,els,handlers,fields,submit,input};

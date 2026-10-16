@@ -388,17 +388,32 @@ function planAllocOptions(){
   const options=new Map();
   for(const g of planSaleAssets()?.groups||[])for(const it of g.items||[]){
     const ticker=linkTicker(it.ticker||assetTradeTicker(it));if(!purchaseQuoteKind(ticker))continue;
-    if(!options.has(ticker))options.set(ticker,{ticker,name:it.name||ticker,accounts:new Set()});
-    options.get(ticker).accounts.add(g.id);
+    if(!options.has(ticker))options.set(ticker,{ticker,name:it.name||ticker,accounts:new Set(),groups:[],words:[ticker]});
+    const o=options.get(ticker);o.accounts.add(g.id);if(g.name&&!o.groups.includes(g.name))o.groups.push(g.name);o.words.push(it.name,g.name,it.section,it.ticker,it.tradeTicker);
   }
   return [...options.values()];
 }
 function planAllocLocked(){const p=state.plans.find(x=>x.id===editingId);return !!p&&(p.checked.some(Boolean)||Object.keys(p.fills||{}).length>0);}
+// 종목 검색(item-search.js, 분할매수 창과 공통). planPick = 고른 자산 배분 기준 코드(창에서만 사용). 고른 동안 종목 코드 칸은 잠그고 '변경'으로 다시 검색한다.
+// 계획을 열 때 종목 코드가 목록에 있으면 고른 상태로 보여 준다. 목록에 없는 종목은 아래 칸에 직접 입력하며, 맞는 종목이 없을 때 검색어를 종목 코드로 넘길 수 있다.
+let planPick=null, planPickerUi=null;
+function planOptionInfo(o){
+  const hold=planLink("holding",o.ticker), amount=!hold?"":hold.shares>0?`보유 ${planReferenceQuantity(hold.shares,o)}`:`평가액 ${decimal.format(hold.value)}만원`;
+  return [o.ticker,o.groups.join(", "),o.accounts.size>1?`${o.accounts.size}개 계좌`:"",amount].filter(Boolean).join(" · ");
+}
+const planPicker=()=>planPickerUi||=itemSearch.create($("planItemSearch"),{id:"plan",label:"planItemLabel",empty:"자산 배분에 불러올 종목이 없습니다. 아래에 직접 입력하세요.",
+  rows:()=>{const planned=new Set(state.plans.filter(p=>p.id!==editingId).map(p=>linkTicker(p.ticker)));return planAllocOptions().map(o=>({id:o.ticker,name:o.name,info:planOptionInfo(o),badge:planned.has(o.ticker)?"계획 있음":"",words:o.words}));},
+  current:()=>{
+    const o=planPick&&planAllocOptions().find(x=>x.ticker===planPick);if(o)return {name:o.name,info:planOptionInfo(o)};
+    const f=$("planForm").elements;return planAllocLocked()?{name:f.title.value||f.ticker.value,info:`${f.ticker.value} · 직접 입력`}:null;
+  },
+  locked:planAllocLocked,pick:ticker=>fillPlanAllocTicker(ticker),repick:()=>{planPick=null;planLive();},
+  manual:{label:q=>`‘${q}’ 종목 코드로 직접 입력`,fill:q=>{const f=$("planForm").elements;f.ticker.value=q;planLive(["start","end"]);f.title.focus();}}});
 function renderPlanAllocPicker(locked){
-  const options=planAllocOptions(),picker=$("planAllocTicker"),ticker=linkTicker($("planForm").elements.ticker.value);
-  picker.innerHTML=`<option value="">${options.length?"직접 입력":"등록된 종목이 없습니다"}</option>`+options.map(o=>`<option value="${esc(o.ticker)}">${esc(o.name)} · ${esc(o.ticker)}${o.accounts.size>1?` · ${o.accounts.size}개 계좌`:""}</option>`).join("");
-  picker.value=options.some(o=>o.ticker===ticker)?ticker:"";picker.disabled=locked||!options.length;
-  $("planAllocPickerHint").textContent=locked?"체결 기록이 있어 종목과 계획 보유량은 유지합니다.":options.length?"코드·이름·통화와 연결된 모든 계좌의 보유량을 가져옵니다.":"자산 배분에 종목과 코드를 등록하면 여기에서 불러올 수 있습니다.";
+  const options=planAllocOptions();
+  if(planPick&&!options.some(o=>o.ticker===planPick))planPick=null;
+  planPicker().render();
+  $("planAllocPickerHint").textContent=locked?"체결 기록이 있어 종목과 계획 보유량은 유지합니다.":options.length?"자산 배분 종목을 고르면 코드·이름·통화와 연결된 모든 계좌의 보유량을 가져옵니다. 목록에 없는 종목은 아래에 직접 입력하세요.":"자산 배분에 종목과 코드를 등록하면 여기에서 불러올 수 있습니다.";
 }
 function fillPlanAllocHolding(hold){
   const f=$("planForm").elements;
@@ -408,13 +423,12 @@ function fillPlanAllocHolding(hold){
 function fillPlanAllocTicker(ticker){
   if(planAllocLocked())return;
   const option=planAllocOptions().find(o=>o.ticker===ticker),hold=option&&planLink("holding",ticker);if(!hold)return;
-  const f=$("planForm").elements;
+  const f=$("planForm").elements;planPick=ticker;
   f.ticker.value=ticker;f.title.value=option.name;f.currency.value=purchaseQuoteKind(ticker)==="국내"?"KRW":"USD";
   const fx=priceRound(fxEntry(priceData)?.close||hold.fx,2);if(fx)f.fx.value=fx;
   f.valueKrw.readOnly=false;f.valueKrw.value="";f.valueKrw.dataset.typed="";
   fillPlanAllocHolding(hold);planLive(["start","end"]);
 }
-$("planAllocTicker").onchange=e=>fillPlanAllocTicker(e.target.value);
 // 수정 창 실시간 채우기: 종목 코드·통화·기준선을 바꾸면 그 기준선 이동평균(maValue)으로 기준가를 바로 바꾼다(시세에 없으면 창을 열 때 값).
 // 기준선은 숫자 + 일선·주선·개월선(endN·endUnit → "25개월선", 데이터 저장소 수집 스크립트 LABEL_RE와 같은 이름). 기준가는 직접 고칠 수 있다(시세 우선 규칙 그대로).
 // 시작 기준선은 '직접'(기본)이 더 있다: 이름만 적고 시작 기준가는 사용자가 정함(시세로 안 채움). 일·주·개월선을 고르면 plans[].startAuto=true(직접이면 delete)로
@@ -456,7 +470,7 @@ function planLive(fill=[]){
   f.shares.setCustomValidity(f.shares.value!==""&&shares!==0&&!held?btc?"비트코인 수량은 소수점 8자리까지 입력해 주세요.":"보유 수량은 정수로 입력해 주세요.":"");
   if(held!==el.readOnly){if(held)el.dataset.typed=el.value;else el.value=el.dataset.typed||"";el.readOnly=held;}
   if(held)el.value=worth!=null?Math.round(worth*10)/10:"";
-  el.placeholder=held?"시세가 들어오면 자동":"보유 수량 없이 평가액만 있을 때";
+  el.placeholder=held?"시세 대기":"수량 없을 때";
   $("worthNote").textContent=worth!=null?"보유 수량 × 현재가 자동":"";
   // 매도 비중: 비우면 100%(전량). 100% 아래면 매도·남길 수량(평가액만 넣은 계획은 매도 금액)을 칸 이름 옆에 보여 준다.
   const pctText=String(f.salePct.value).trim(), pct=pctText===""?100:Number(pctText), pctOk=Number.isInteger(pct)&&pct>=1&&pct<=100, plan={ticker:f.ticker.value,salePct:pct};
@@ -466,20 +480,21 @@ function planLive(fill=[]){
   // 자산 배분 보유량 가져오기(alloc-link.js holding): 같은 종목 코드 계좌가 모두 수량이면 보유 수량 합, 아니면 평가액 합(만원). 매도 체크가 있으면 계획 기준 보유량이라 바꾸지 않는다.
   const hold=planLink("holding",planTicker(f.ticker.value)), box=$("planAllocHold"), locked=planAllocLocked();
   renderPlanAllocPicker(locked);
-  for(const name of ["ticker","shares","stages","salePct"])f[name].readOnly=locked||name==="salePct"&&pctMode;
+  for(const name of ["ticker","shares","stages","salePct"])f[name].readOnly=locked||name==="salePct"&&pctMode||name==="ticker"&&!!planPick;
   box.hidden=!hold;if(!hold)return;
   box.innerHTML=`자산 배분 ${esc(hold.text)} · ${locked?"체결 기록이 있어 계획 보유량은 그대로 둡니다":`<button class="text-link" type="button" id="planAllocFill">보유량 가져오기</button>`}`;
   if(!locked)$("planAllocFill").onclick=()=>{fillPlanAllocHolding(hold);planLive();};
 }
-$("planForm").addEventListener("input",e=>{if(e.target===$("planAllocTicker"))return;const n=e.target.name;if(n==="startUnit")startMode(e.target.form.elements,true);
+$("planForm").addEventListener("input",e=>{if(e.target===planPicker().input)return;const n=e.target.name;if(n==="startUnit")startMode(e.target.form.elements,true);
   planLive(n==="ticker"||n==="currency"?["start","end"]:n==="startN"||n==="startUnit"?["start"]:n==="endN"||n==="endUnit"?["end"]:[]);});
-function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=form.elements;form.reset();$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
+function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=form.elements;form.reset();planPicker().clear();planPick=p&&planAllocOptions().some(o=>o.ticker===linkTicker(p.ticker))?linkTicker(p.ticker):null;$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
   f.valueKrw.readOnly=false;f.valueKrw.dataset.typed="";
   if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,cardName:p.cardName??"",currency:p.currency,startLabel:p.startLabel,startPrice:p.startPrice??"",endPrice:p.endPrice??"",stages:p.stages,valueKrw:p.valueKrw??"",fx:p.fx})){if(f[k])f[k].value=v;}f.shares.value=p.holdings[0]?.shares||"";f.salePct.value=planSalePct(p);
     const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"개월선";if(planEndPct(p)){f.endN.value=planEndPct(p);f.endUnit.value="pct";}
     const s=p.startAuto&&/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.startLabel));if(s){f.startN.value=s[1];f.startUnit.value=s[2];}}
   else{const fx=priceRound(fxEntry(priceData)?.close,2);if(fx)f.fx.value=fx;} // 새 달러 계획 환율은 현물 USD/KRW로
-  startMode(f);dialogBase={start:f.startPrice.value,end:f.endPrice.value};planLive();planDialog.showModal();}
+  startMode(f);dialogBase={start:f.startPrice.value,end:f.endPrice.value};planLive();planDialog.showModal();
+  if(!p&&typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches)planPicker().focus();} // 새 계획은 분할매수 창처럼 PC에서만 검색 칸에
 $("addPlanBtn").onclick=()=>openPlanDialog();
 $("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
