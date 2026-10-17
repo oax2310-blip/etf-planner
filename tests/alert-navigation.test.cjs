@@ -96,7 +96,7 @@ function page(initial={},assets={}){
     history:{replaceState:(_,__,hash)=>ctx.location.hash=hash},save:()=>calls.saves++,
     assetStore:{doc:assets,subscribe:fn=>assetListeners.push(fn)},
     renderPlans:()=>calls.tabs.push('plans'),renderRebuy:()=>calls.tabs.push('rebuy'),renderFutures:()=>calls.tabs.push('futures'),
-    purchasePlanner:{select:id=>calls.selectedBuys.push(id),render:()=>calls.tabs.push('buys')},futureRebuyExpanded:false,priceData:null});
+    purchasePlanner:{select:(id,...extra)=>calls.selectedBuys.push(extra.length?[id,...extra]:id),render:()=>calls.tabs.push('buys')},futureRebuyExpanded:false,priceData:null});
   for(const file of ['js/ma-ladder.js','js/core.js','js/assets-calc.js','js/rebuy.js','js/alerts.js','js/alert-target.js','js/push.js'])vm.runInContext(source(file),ctx);
   ctx.renderRebuy=()=>calls.tabs.push('rebuy');
   const state=()=>plain(vm.runInContext('state',ctx));
@@ -106,12 +106,12 @@ function page(initial={},assets={}){
   return {ctx,calls,nodes,tabs,node,cards,rules,assetListeners,events,state,records,open,flush};
 }
 
-test('처음 열린 페이지에서 알림 종목의 분할매도 계획을 선택하고 매매 기록은 보존한다',()=>{
+test('처음 열린 페이지에서 알림 종목의 분할매도 계획을 선택하고 매매 기록·완료 회차 접기는 보존한다',()=>{
   const p=page({plans:[{id:'other',ticker:'OTHER'},{id:'target',ticker:'TEST'}],selectedPlan:'other'}),before=p.records();
-  p.open({ticker:'TEST',line:'분할매도 첫 매도'});
+  p.ctx.openCompletedSales.add('other');p.open({ticker:'TEST',line:'분할매도 첫 매도'});
   assert.equal(p.state().selectedPlan,'target');assert.equal(p.state().tab,'plans');
   assert.equal(p.ctx.location.hash,'#plans');assert.equal(p.records(),before);
-  assert.equal(p.ctx.openCompletedSales.has('target'),true);
+  assert.deepEqual([...p.ctx.openCompletedSales],['other']);
   assert.deepEqual(p.calls.focused,['planMain']);
   p.ctx.location.hash=p.ctx.pushAlertHash({ticker:'OTHER',line:'분할매도 2회'});p.events.hashchange();p.flush();
   assert.equal(p.state().selectedPlan,'other');
@@ -126,10 +126,11 @@ test('국내 코드 접두사·대소문자·비트코인 별칭을 같은 종�
 
 test('재매수 종목을 바꾸고 옛 단일 종목 기록도 이전 없이 연다',()=>{
   const p=page({rebuy:{items:[{id:'other',ticker:'OTHER'},{id:'target',ticker:'TEST'}]},selectedRebuy:'other'}),before=p.records();
+  vm.runInContext('rebuyFolds.set("target",{cuts:false,buys:false,complete:false});rebuyFolds.set("other",{cuts:true,buys:false,complete:false})',p.ctx);
   p.open({ticker:'TEST',line:'재매수 신저점 이탈'});
   assert.equal(p.state().selectedRebuy,'target');assert.equal(p.state().tab,'rebuy');
   assert.equal(p.records(),before);
-  assert.deepEqual(plain(vm.runInContext('rebuyFolds.get("target")',p.ctx)),{cuts:true,buys:true,complete:false});
+  assert.deepEqual(plain(vm.runInContext('[...rebuyFolds]',p.ctx)),[['target',{cuts:false,buys:false,complete:false}],['other',{cuts:true,buys:false,complete:false}]]);
   const old=page({rebuy:{ticker:'TEST',name:'예제'}}),oldRecords=old.records();old.open({ticker:'TEST',line:'재매수 25선'});
   assert.equal(old.state().tab,'rebuy');assert.equal(old.records(),oldRecords);
 });
@@ -163,9 +164,12 @@ test('매수대기 알림은 같은 종목의 매도 계획 대신 해당 계좌
   assert.deepEqual(p.calls.selectedBuys,['two']);
 });
 
-test('달러선물 손절·재매수 알림은 해당 화면을 펼치며 기록을 바꾸지 않는다',()=>{
+test('달러선물 손절·재매수 알림은 접힌 손절 영역만 펼치며 기록을 바꾸지 않는다',()=>{
   const p=page({futures:{positions:[],levels:[],rebuy:{}}}),before=p.records();p.open({ticker:'202612',line:'달러선물 신저점 손절 시작'});
-  assert.equal(p.state().tab,'futures');assert.equal(p.ctx.futureRebuyExpanded,true);assert.equal(p.records(),before);
+  assert.equal(p.state().tab,'futures');assert.equal(p.ctx.futureRebuyExpanded,true);assert.equal(p.ctx.futureCompletedOpen,false);assert.equal(p.records(),before);
+  const b=page({futures:{positions:[{month:'202612',contracts:1}],levels:[]}});b.open({ticker:'202612',line:'달러선물 분할매수 3회'});
+  assert.equal(b.state().tab,'futures');assert.deepEqual(b.calls.focused,['futureBuyCard']);
+  assert.equal(b.ctx.futureCompletedOpen,false,'완료 회차 접기는 그대로');assert.equal(b.ctx.futureRebuyExpanded,false);
 });
 
 test('기록이 아직 없으면 기다리고 수동 탭 전환 뒤에는 알림으로 다시 이동하지 않는다',()=>{
