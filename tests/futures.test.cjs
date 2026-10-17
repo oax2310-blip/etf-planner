@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/futures.js'), 'utf8');
+const source = ['ma-ladder.js', 'futures.js', 'futures-plan.js', 'futures-rebuy.js'].map(f => fs.readFileSync(require('node:path').join(__dirname, '../js', f), 'utf8')).join('\n;\n');
 if (!source.includes('function resizeTranches(')) throw Error('계획 계약 수 조정 구현을 찾지 못했습니다.');
 
 const load = () => { const context = vm.createContext({contractSize: 10000}); vm.runInContext(source, context); return context; };

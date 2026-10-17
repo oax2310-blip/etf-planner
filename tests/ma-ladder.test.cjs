@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const files=['ma-ladder.js','prices.js','assets-calc.js','rebuy.js','trade-alerts.js','futures.js'];
+const files=['ma-ladder.js','prices.js','assets-calc.js','rebuy.js','trade-alerts.js','futures.js','futures-plan.js','futures-rebuy.js'];
 const source=files.map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const plain=v=>JSON.parse(JSON.stringify(v));
