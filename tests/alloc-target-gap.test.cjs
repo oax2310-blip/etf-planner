@@ -68,10 +68,10 @@ test('자산 배분 종목·그룹은 금액 대신 %p 차이를 표시하고 �
   for (const id of ['edge', 'edgedown', 'near']) assert.equal(gapOf(id)[0], '', `${id}: ±1.0%p 이내`);
   assert.equal(gapOf('near')[1], '0.0%');
   assert.match(row('over'), /<span>현재 23%<\/span><small>목표 20%<\/small><b class="target-gap over" title="목표 대비 \+3\.0%p \(현재 비중 − 목표 비중\) · 목표 초과">/);
-  // 진행 중인 분할매수·분할매도: 차이가 커도 기본 색, 상태 꼬리표는 매수·매도 색이 따로.
-  assert.deepEqual(gapOf('buy'), ['', '-2.0%']);assert.match(row('buy'), /<span class="trade-state buy" title="분할매수 진행 중 · BUY">매수중<\/span>/);assert.doesNotMatch(row('buy'), /trade-state sell/);
+  // 진행 중인 분할매수·분할매도: 차이가 커도 기본 색, 상태 꼬리표는 매수·매도 색이 따로. 꼬리표 설명은 플래너 카드처럼 종목·계획 이름.
+  assert.deepEqual(gapOf('buy'), ['', '-2.0%']);assert.match(row('buy'), /<span class="trade-state buy" title="분할매수 진행 중 · 종목 buy">매수중<\/span>/);assert.doesNotMatch(row('buy'), /trade-state sell/);
   assert.match(row('buy'), /title="[^"]*매수중·매도중 종목이라 경고 색을 쓰지 않습니다"/);
-  assert.deepEqual(gapOf('sell'), ['', '+5.0%']);assert.match(row('sell'), /<span class="trade-state sell" title="분할매도 진행 중 · SELL">매도중<\/span>/);assert.doesNotMatch(row('sell'), /trade-state buy/);
+  assert.deepEqual(gapOf('sell'), ['', '+5.0%']);assert.match(row('sell'), /<span class="trade-state sell" title="분할매도 진행 중 · SELL 매도">매도중<\/span>/);assert.doesNotMatch(row('sell'), /trade-state buy/);
   assert.deepEqual(gapOf('both'), ['', '-6.0%']);assert.match(row('both'), /종목 both<span class="trade-state buy"[^>]*>매수중<\/span><span class="trade-state sell"[^>]*>매도중<\/span><\/strong>/, '매수대기와 분할매도가 함께 있으면 둘 다');
   // 끝난 계획은 매수중·매도중이 아니므로 경고 색을 쓴다. 편입 칩은 그대로 둔다.
   assert.deepEqual(gapOf('bought'), [' under', '-5.0%']);assert.doesNotMatch(row('bought'), /trade-state/);assert.match(row('bought'), /alloc-chip on[^>]*>.*분할매수/);

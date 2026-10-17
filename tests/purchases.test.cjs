@@ -43,7 +43,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const listeners=new Set(),store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[],start(){},subscribe:fn=>listeners.add(fn)};
   const alerts=[],renameDialogs=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
-  const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+  const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
@@ -159,6 +159,18 @@ test('카드 이름·계획 수정은 자산 종목 이름과 보유량을 유�
   r.form.cardName.value='';r.submit();assert.equal(Object.hasOwn(r.item.buyPlan,'cardName'),false);assert.equal(r.item.name,'테스트 종목');
 });
 
+test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코드를 아래 줄에, 같은 이름의 다른 코드는 모바일에도 코드 줄을 보이고 카드 이름은 그대로 둔다',()=>{
+  const r=setup(),card=id=>new RegExp(`<button class="([^"]*)" type="button" data-purchase-select="${id}"[^>]*>(.*?)</button>`).exec(r.html())?.slice(1).join(' | ')||'';
+  assert.match(card('a'),/<strong>테스트 종목<\/strong><span class="plan-count[^"]*">.*<span class="plan-title">111111<\/span>/);
+  assert.doesNotMatch(card('a'),/show-code/);
+  r.input('[data-purchase-rename]').onclick();assert.equal(r.names.at(-1).name,'테스트 종목','이름 창도 비웠을 때 보일 종목명');
+  r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[{id:'b',name:'테스트 종목',ticker:'222222',amount:5,buyPlan:{lines:{names:['25선'],budget:5}}},{id:'c',name:'',ticker:'333333',amount:5,buyPlan:{lines:{names:['25선'],budget:5}}}]});
+  r.render();assert.match(card('a'),/^plan-item active show-code \| <span class="plan-row"><strong>테스트 종목<\/strong>.*<span class="plan-title">111111<\/span>/);assert.match(card('b'),/^plan-item show-code \|.*<span class="plan-title">222222<\/span>/);
+  assert.match(card('c'),/^plan-item \| <span class="plan-row"><strong>333333<\/strong><span class="plan-count/,'종목 이름이 없으면 코드');
+  r.item.buyPlan.cardName='내 매수 카드';const before=JSON.stringify(r.doc);r.render();
+  assert.match(card('a'),/<strong>내 매수 카드<\/strong><span class="plan-count[^"]*">.*<span class="plan-title">테스트 종목<\/span>/,'카드 이름이 있으면 기존처럼 아래 줄에 종목 이름');
+  assert.equal(JSON.stringify(r.doc),before,'목록을 그려도 기록은 그대로');
+});
 test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
   const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
   assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.2},names:['42일선','60일선'],end:null,budget:5000})),

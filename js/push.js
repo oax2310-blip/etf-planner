@@ -212,7 +212,9 @@ async function disablePhonePush(){
   finally{pushBusy=false;renderPushSetup();}
 }
 async function initializePush(){
-  assetStore.subscribe(type=>{if(type==="change"&&pendingPushTarget)render();});
+  // 알림 글자의 종목 이름표(stock-names.js)는 기록·자산이 바뀔 때 이 기기에만 다시 저장한다.
+  if(typeof stockNames==="object")stockNames.remember();
+  assetStore.subscribe(type=>{if(typeof stockNames==="object")stockNames.remember();if(type==="change"&&pendingPushTarget)render();});
   addEventListener("load",()=>{if(pendingPushTarget)render();});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&pendingPushTarget)render();});
   document.addEventListener("click",event=>{if(event.target.closest?.("[data-plan], [data-rebuy], [data-purchase-select]"))clearPushAlertTarget();},true);

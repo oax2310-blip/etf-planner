@@ -14,10 +14,10 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=192"></script>
-  <script src="js/repo-security.js?v=192"></script>
-  <link rel="stylesheet" href="css/app.css?v=192" />
-  <link rel="stylesheet" href="css/purchases.css?v=192" />
+  <script src="js/theme.js?v=193"></script>
+  <script src="js/repo-security.js?v=193"></script>
+  <link rel="stylesheet" href="css/app.css?v=193" />
+  <link rel="stylesheet" href="css/purchases.css?v=193" />
 </head>
 <body>
   <header class="top">
@@ -67,7 +67,7 @@
       <small class="field-hint">이미 보유한 ETF라면 해당 계좌·그룹의 기존 종목을 고르세요. 추종 ETF는 고른 종목의 보유량에 체결분을 더합니다. 이름·목표 비중·ETF 코드는 자산 배분에서 수정하세요.</small></div>
     <p id="purchaseTargetInfo" class="purchase-target-info" hidden></p>
     <p id="purchaseTrackingInfo" class="purchase-tracking-info" hidden></p>
-    <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" autocomplete="off" placeholder="비우면 종목 코드" /></label>
+    <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" autocomplete="off" placeholder="비우면 종목명" /></label>
     <div class="purchase-mode" role="radiogroup" aria-label="매수 방식"><label><input type="radio" name="mode" value="lines" checked /> 이동평균선 돌파</label><label><input type="radio" name="mode" value="wait" /> 매수대기</label><input type="radio" name="mode" value="manual" hidden aria-label="기존 회차 계획" /></div>
     <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-line-bounds">
@@ -115,7 +115,7 @@
       <label class="field"><span>통화</span><select name="currency"><option value="USD">달러(USD)</option><option value="KRW">원화(KRW)</option></select></label>
       <label class="field"><span>달러/원 환율</span><input name="fx" type="number" step="any" inputmode="decimal" value="1354.91" required /></label>
     </div>
-    <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" autocomplete="off" placeholder="저장된 계획 목록에 표시, 비우면 종목 코드" /></label>
+    <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" autocomplete="off" placeholder="저장된 계획 목록에 표시, 비우면 종목명" /></label>
     <section class="purchase-ladder plan-ladder">
       <div class="purchase-line-bounds">
         <div class="field"><span id="startLineName">시작 기준선</span><div class="hold-input"><input name="startLabel" required value="60일선" placeholder="기준 이름 (예: 60일선)" aria-labelledby="startLineName" /><input name="startN" type="number" min="1" max="400" step="1" inputmode="numeric" value="60" aria-labelledby="startLineName" hidden /><select name="startUnit" aria-label="시작 기준선 방식"><option value="" selected>직접</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">개월선</option></select></div></div>
@@ -262,28 +262,29 @@
 
   <dialog id="futurePlanDialog" aria-labelledby="futurePlanTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=192"></script>
-  <script src="js/data-validation.js?v=192"></script>
-  <script src="js/core.js?v=192"></script>
-  <script src="js/price-collection.js?v=192"></script>
-  <script src="js/sync.js?v=192"></script>
-  <script src="js/prices.js?v=192"></script>
-  <script src="js/assets-calc.js?v=192"></script>
-  <script src="js/assets-store.js?v=192"></script>
-  <script src="js/alloc-link.js?v=192"></script>
-  <script src="js/item-search.js?v=192"></script>
-  <script src="js/purchases.js?v=192"></script>
-  <script src="js/trade-alerts.js?v=192"></script>
-  <script src="js/plans.js?v=192"></script>
-  <script src="js/futures.js?v=192"></script>
-  <script src="js/rebuy.js?v=192"></script>
-  <script src="js/alerts.js?v=192"></script>
-  <script src="js/alert-target.js?v=192"></script>
-  <script src="js/alert-history-store.js?v=192"></script>
-  <script src="js/alert-history.js?v=192"></script>
-  <script src="js/push.js?v=192"></script>
-  <script src="js/member-link.js?v=192"></script>
-  <script src="js/member-go.js?v=192"></script>
+  <script src="js/ma-ladder.js?v=193"></script>
+  <script src="js/data-validation.js?v=193"></script>
+  <script src="js/core.js?v=193"></script>
+  <script src="js/price-collection.js?v=193"></script>
+  <script src="js/sync.js?v=193"></script>
+  <script src="js/prices.js?v=193"></script>
+  <script src="js/assets-calc.js?v=193"></script>
+  <script src="js/assets-store.js?v=193"></script>
+  <script src="js/alloc-link.js?v=193"></script>
+  <script src="js/stock-names.js?v=193"></script>
+  <script src="js/item-search.js?v=193"></script>
+  <script src="js/purchases.js?v=193"></script>
+  <script src="js/trade-alerts.js?v=193"></script>
+  <script src="js/plans.js?v=193"></script>
+  <script src="js/futures.js?v=193"></script>
+  <script src="js/rebuy.js?v=193"></script>
+  <script src="js/alerts.js?v=193"></script>
+  <script src="js/alert-target.js?v=193"></script>
+  <script src="js/alert-history-store.js?v=193"></script>
+  <script src="js/alert-history.js?v=193"></script>
+  <script src="js/push.js?v=193"></script>
+  <script src="js/member-link.js?v=193"></script>
+  <script src="js/member-go.js?v=193"></script>
   <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializeAlertHistory(); initializePush();</script>
 </body>
 </html>
