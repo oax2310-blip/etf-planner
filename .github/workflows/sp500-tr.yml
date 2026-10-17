@@ -28,8 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (태그 이동에 영향받지 않게 커밋 고정)
+        with:
+          persist-credentials: false # PR 시험은 기록하지 않으므로 토큰을 남기지 않는다
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
       - name: 수집 시험(기록 없음)
@@ -44,10 +46,10 @@ jobs:
       contents: write
       pages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (태그 이동에 영향받지 않게 커밋 고정)
         with:
           ref: main
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
       - name: S&P 500 Total Return 수집

@@ -326,6 +326,20 @@ test('연결하지 않은 기기는 아무 요청도 하지 않는다', async ()
   assert.equal(h.server.requests, 0);
 });
 
+test('연결할 때 fine-grained 토큰(github_pat_)만 저장하고 classic 토큰은 거부한다', async () => {
+  const fine = 'github_pat_' + 'A1'.repeat(20), issues = 'github_pat_' + 'B2'.repeat(20);
+  for (const [data, request, saved] of [['ghp_' + 'x'.repeat(36), '', false], [fine, 'ghp_' + 'y'.repeat(36), false], [fine, fine, false], [fine, issues, true]]) {
+    const h = harness({connect: false});
+    await h.restored();
+    const el = name => h.context.$(name);
+    el('dataRepo').value = REPO; el('githubToken').value = data; el('collectionToken').value = request;
+    el('connectRepo').onclick();
+    assert.equal(h.items.get('etf-planner-github-token') === data, saved, h.status());
+    assert.equal(h.items.has('etf-planner-collection-request-token'), saved);
+    if (!saved) { assert.match(h.status(), /github_pat_|각각 발급/); assert.equal(h.server.requests, 0, '거부한 토큰으로 요청하지 않는다'); }
+  }
+});
+
 test('연결 해제하면 이 기기에서 토큰을 지운다', async () => {
   const h = harness({remote: empty(), base: snap(empty())});
   await h.restored();

@@ -47,3 +47,25 @@ test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름�
   for (const list of [scripts, assetScripts, valuationScripts])
     assert.doesNotThrow(() => new vm.Script(list.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
 });
+
+test('토큰을 쓰는 세 페이지는 같은 보안 정책(CSP)을 맨 앞에 두고 초기화 script만 해시로 허용한다', () => {
+  const crypto = require('node:crypto');
+  const policies = [];
+  for (const name of ['index.html', 'assets.html', 'valuation.html']) {
+    const text = fs.readFileSync(path.join(root, name), 'utf8');
+    const metas = [...text.matchAll(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/g)];
+    assert.equal(metas.length, 1, `${name}에 CSP meta가 하나 있어야 한다`);
+    const head = text.slice(text.indexOf('<head>'), metas[0].index);
+    assert.doesNotMatch(head, /<script|<link|<style/, `${name}의 CSP는 script·link·style보다 먼저 와야 적용된다`);
+    const policy = Object.fromEntries(metas[0][1].split(';').map(s => s.trim().split(/\s+/)).map(([k, ...v]) => [k, v]));
+    const hashes = [...text.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => `'sha256-${crypto.createHash('sha256').update(m[1], 'utf8').digest('base64')}'`);
+    assert.deepEqual(policy['script-src'], ["'self'", ...hashes], `${name}: 초기화 script를 고치면 CSP 해시도 바꾼다(그 밖의 인라인·외부 script 금지)`);
+    assert.deepEqual(policy['default-src'], ["'none'"]);
+    assert.deepEqual(policy['connect-src'], ["'self'", 'https://api.github.com'], '토큰은 이 사이트와 GitHub API로만 보낸다');
+    assert.deepEqual(policy['img-src'], ["'self'", 'data:'], 'CSS·주입 이미지로 외부 주소에 값을 보내지 못하게 한다');
+    for (const k of ['base-uri', 'object-src']) assert.ok(policy[k], `${name}: ${k} 필요`);
+    assert.doesNotMatch(text, /\son[a-z]+="/, `${name}: 인라인 이벤트 속성은 CSP에 막힌다`);
+    policies.push(JSON.stringify({...policy, 'script-src': policy['script-src'].slice(0, 1)}));
+  }
+  assert.equal(new Set(policies).size, 1, '세 페이지의 정책은 초기화 script 해시만 다르다');
+});
