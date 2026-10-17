@@ -45,6 +45,14 @@ const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs
 // 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 탭 클릭은 위의 핸들러에서 맨 위로 이동.
 function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
+// 알림(push.js)·자산 배분 편입 표시(member-go.js)로 이동한 카드. 모바일에서는 top의 음수 위치로 헤더가 접히므로
+// 높이 전체 대신 현재 보이는 하단을 빼야 카드가 가려지지 않는다. 강조는 화면 상태이며 저장하지 않는다.
+function scrollBelowTop(node){ scrollTo({top:Math.max(0,node.getBoundingClientRect().top+scrollY-Math.max(0,topBar.getBoundingClientRect().bottom)-12),behavior:"instant"}); }
+function flashTarget(node){
+  $$(".push-alert-highlight").forEach(x=>x.classList.remove("push-alert-highlight"));
+  node.classList.add("push-alert-highlight");
+  node.addEventListener("animationend",()=>node.classList.remove("push-alert-highlight"),{once:true});
+}
 // PC 왼쪽 목록 칸(.side)의 높이 기준(--side-top, css/app.css): 붙은 위치(top) 또는 페이지 맨 위처럼 아직 아래에 있는 지금 위치.
 // 칸 아래가 화면 밖에 가려지지 않게 스크롤·창 크기·다시 그리기 때 보이는 칸에만 맞춘다. 모바일(1000px 이하)은 계산하지 않는다.
 let wideLayout=null, sideFrame=0;

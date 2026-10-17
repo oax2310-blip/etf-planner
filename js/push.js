@@ -86,14 +86,8 @@ function schedulePendingPushAlert(){
     for(let parent=node.closest("details");parent;parent=parent.parentElement?.closest("details"))parent.open=true;
     if(!node.getClientRects().length)return;
     node.tabIndex=-1;node.focus({preventScroll:true});
-    if(found.ruleId)node.scrollIntoView({block:"start"});
-    else{
-      // 모바일에서는 top의 음수 위치로 헤더가 접힌다. 높이 전체 대신 현재 보이는 하단을 빼야 종목이 가려지지 않는다.
-      scrollTo({top:Math.max(0,node.getBoundingClientRect().top+scrollY-Math.max(0,topBar.getBoundingClientRect().bottom)-12),behavior:"instant"});
-    }
-    $$(".push-alert-highlight").forEach(x=>x.classList.remove("push-alert-highlight"));
-    node.classList.add("push-alert-highlight");
-    node.addEventListener("animationend",()=>node.classList.remove("push-alert-highlight"),{once:true});
+    if(found.ruleId)node.scrollIntoView({block:"start"});else scrollBelowTop(node);
+    flashTarget(node);
     clearPushAlertTarget();history.replaceState(null,"",`#${state.tab}`);
   });
 }
