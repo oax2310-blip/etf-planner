@@ -25,7 +25,7 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
   assert.ok(assetRefs.some(r => r[1] === 'css/app.css'), 'assets.html도 공통 토큰(css/app.css)을 불러야 한다');
   assert.equal(scripts[0], 'js/theme.js', '화면 모드(theme.js)는 head에서 가장 먼저 불러야 첫 화면 색이 맞는다');
   assert.deepEqual(scripts.slice(2, 7), ['js/ma-ladder.js', 'js/data-validation.js', 'js/core.js', 'js/price-collection.js', 'js/sync.js'], '공유 수집 함수를 sync보다 먼저 불러와야 한다');
-  assert.deepEqual(valuationScripts, ['js/theme.js', 'js/repo-security.js', 'js/currency-pressure.js'], '통화강도는 시나리오에만 불러온다');
+  assert.deepEqual(valuationScripts, ['js/theme.js', 'js/repo-security.js', 'js/valuation.js', 'js/currency-pressure.js'], '시나리오 계산·통화강도는 시나리오에만 불러온다');
   const valuation = fs.readFileSync(path.join(root, 'valuation.html'), 'utf8');
   assert.deepEqual([...valuation.matchAll(/src="js\/theme\.js\?v=(\d+)"/g)].map(r => r[1]), [refs[0][2]], 'valuation.html도 같은 버전의 theme.js를 한 번 불러야 한다');
 });

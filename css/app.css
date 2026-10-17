@@ -1,5 +1,5 @@
 /* HANDOFF: 공통은 AGENTS.md. 디자인 토큰은 여기, 모바일·창·체크박스 규칙은 해당 선택자 옆. */
-/* 색·그림자는 아래 변수만 사용한다(:root 밝게, data-theme=dark 어둡게). valuation.html의 공유 토큰도 함께 수정.
+/* 색·그림자는 아래 변수만 사용한다(:root 밝게, data-theme=dark 어둡게). css/valuation.css의 공유 토큰도 함께 수정.
    --accent 버튼·선택·알림 ON, --good 완료, --warn 도달·지난 시세, --danger 삭제·손실.
    화면 모드·기기별 선택은 js/theme.js, 글꼴은 index.html의 Pretendard(실패 시 시스템 글꼴). */
 :root{color-scheme:light;--bg:#f5f6f8;--surface:#fff;--surface-2:#f3f4f7;--surface-3:#e9ecf1;--field:#fff;--tab-on:#fff;--line:#e5e8ee;--line-strong:#d2d7e0;--text:#0f1729;--text-2:#4a5468;--text-3:#6f798c;

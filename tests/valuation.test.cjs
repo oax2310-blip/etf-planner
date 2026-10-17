@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const repoSecuritySource = fs.readFileSync(require('node:path').join(__dirname, '../js/repo-security.js'), 'utf8');
-const html = fs.readFileSync(require('node:path').join(__dirname, '../valuation.html'), 'utf8');
-const start = html.indexOf('  // 가정 저장:'), source = html.slice(start, html.indexOf('</script>', start));
+const script = fs.readFileSync(require('node:path').join(__dirname, '../js/valuation.js'), 'utf8');
+const start = script.indexOf('// 가정 저장:'), source = script.slice(start);
 if (!source.includes('function applyAssumptions(')) throw Error('가정 저장 구현을 찾지 못했습니다.');
 
 const CURRENT = 'etf-planner-valuation-current-v1';

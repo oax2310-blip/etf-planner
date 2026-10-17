@@ -1,4 +1,4 @@
-// index.html·valuation.html·assets.html의 화면 모드. 색 토큰은 app.css·valuation.html, 버튼 자리는 [data-theme-pick]과 연결된다.
+// index.html·valuation.html·assets.html의 화면 모드. 색 토큰은 app.css·valuation.css, 버튼 자리는 [data-theme-pick]과 연결된다.
 const THEME_KEY = "etf-planner-theme";
 // PC(hover:hover·pointer:fine)는 윗줄 버튼으로 고른 auto·light·dark를 적용한다. 휴대폰·태블릿(터치)은 고른 값과 상관없이 기기 설정을 따른다.
 // choice: 고른 값, desktop: 마우스 기기, systemDark: 기기가 어두운 모드 → "light" 또는 "dark"
