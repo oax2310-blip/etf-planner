@@ -17,8 +17,8 @@ function page(data, planner, hash = '#alloc') {
     location: {hash}, history: {replaceState() {}}, scrollTo() {}});
   vm.runInContext(['js/ma-ladder.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/member-link.js', 'js/ledger-benchmark.js', 'js/assets.js'].map(read).join('\n;\n'), ctx);
   const html = node(hash.slice(1) + 'View').innerHTML;
-  // 종목 줄 하나: data-alloc-item부터 다음 종목 줄 전까지.
-  const row = id => { const start = html.indexOf(`data-alloc-item="${id}"`); assert.ok(start >= 0, id); const end = html.indexOf('class="asset-row', start); return html.slice(start, end < 0 ? undefined : end); };
+  // 종목 줄 하나: data-alloc-item부터 다음 종목 줄 또는 그룹 끝(＋ 종목 줄) 전까지.
+  const row = id => { const start = html.indexOf(`data-alloc-item="${id}"`); assert.ok(start >= 0, id); const ends = ['class="asset-row', 'class="group-foot"'].map(k => html.indexOf(k, start)).filter(i => i >= 0); return html.slice(start, ends.length ? Math.min(...ends) : undefined); };
   return {html, row, gap: ctx.allocTargetGap};
 }
 const item = (id, amount, target, extra = {}) => ({id, name: `종목 ${id}`, ticker: id.toUpperCase(), amount, ...(target === null ? {} : {target}), ...extra});
@@ -32,7 +32,12 @@ function fixture() {
     item('sell', 150, 10), item('sold', 150, 10), item('both', 40, 10, {buyPlan: {wait: {line: '25일선'}}}), item('notarget', 30, null),
     item('xss', 10, 1, {name: '<b>이름</b>'})
   ];
-  return {version: 1, allocation: {savedAt: '', total: 1000, cashFx: 1400, memo: '', classes: [{id: 'c1', region: '미국', name: '주식'}], groups: [{id: 'g', name: '그룹', classId: 'c1', items}], cash: []}};
+  // 연결 계좌: 목표는 기준 종목에만 있고 같은 기준 코드의 추종 ETF 계좌(목표 없음)를 함께 덮는다.
+  const track = (id, ticker, amount, tradeTicker = '900001') => item(id, amount, null, {ticker, tradeTicker});
+  const bond = [item('bnd', 70, 20, {ticker: 'BND', buyPlan: stages([false, false])}), track('bnd2', 'BND', 50), track('bnd3', 'BND', 50)];
+  const lnk = [item('lnk', 40, 10, {ticker: 'LNK'}), track('lnk2', 'LNK', 40, '900002')];
+  return {version: 1, allocation: {savedAt: '', total: 1000, cashFx: 1400, memo: '', classes: [{id: 'c1', region: '미국', name: '주식'}],
+    groups: [{id: 'g', name: '그룹', classId: 'c1', items}, {id: 'gb', name: '채권', classId: 'c1', items: bond}, {id: 'gl', name: '연결', classId: 'c1', items: lnk}], cash: []}};
 }
 const planner = {plans: [sell('p1', 'SELL', [true, false]), sell('p2', 'SOLD', [true, true]), sell('p3', 'BOTH', [false, false]), sell('p4', 'XSS', [false], {cardName: '<img src=x onerror=1>'})], rebuy: {items: [{id: 'r', ticker: 'OVER', name: '재매수'}]}};
 
@@ -60,7 +65,7 @@ test('자산 배분 종목·그룹은 금액 대신 %p 차이를 표시하고 �
   assert.match(row('over'), /<span>현재 23%<\/span><small>목표 20%<\/small><b class="target-gap over" title="목표 대비 \+3\.0%p \(현재 비중 − 목표 비중\) · 목표 초과">/);
   // 진행 중인 분할매수·분할매도: 차이가 커도 기본 색, 상태 꼬리표는 매수·매도 색이 따로.
   assert.deepEqual(gapOf('buy'), ['', '-2.0%']);assert.match(row('buy'), /<span class="trade-state buy" title="분할매수 진행 중 · BUY">매수중<\/span>/);assert.doesNotMatch(row('buy'), /trade-state sell/);
-  assert.match(row('buy'), /title="[^"]*매수중·매도중 종목은 경고 색을 쓰지 않습니다"/);
+  assert.match(row('buy'), /title="[^"]*매수중·매도중 종목이라 경고 색을 쓰지 않습니다"/);
   assert.deepEqual(gapOf('sell'), ['', '+5.0%']);assert.match(row('sell'), /<span class="trade-state sell" title="분할매도 진행 중 · SELL">매도중<\/span>/);assert.doesNotMatch(row('sell'), /trade-state buy/);
   assert.deepEqual(gapOf('both'), ['', '-6.0%']);assert.match(row('both'), /종목 both<span class="trade-state buy"[^>]*>매수중<\/span><span class="trade-state sell"[^>]*>매도중<\/span><\/strong>/, '매수대기와 분할매도가 함께 있으면 둘 다');
   // 끝난 계획은 매수중·매도중이 아니므로 경고 색을 쓴다. 편입 칩은 그대로 둔다.
@@ -78,4 +83,19 @@ test('투자구성 탭의 분류 줄은 기존 목표까지·목표 초과 금�
   const {html} = page(fixture(), planner, '#strategy');
   assert.match(html, /<span class="gap (?:up|over|ok)">(?:목표까지 \+|목표 초과 |목표 도달)/);
   assert.doesNotMatch(html, /target-gap|trade-state/);
+});
+
+test('모든 종목이 매수중·매도중인 그룹은 기본 색이고, 연결 계좌까지 덮는 종목 목표는 연결 계좌 합계와 비교한다', () => {
+  const data = fixture(), before = JSON.stringify(data), {html, row} = page(data, planner);
+  const head = name => { const i = html.indexOf(`<span>${name}</span>`); return html.slice(i, html.indexOf('</p>', i)); };
+  // 채권: 기준 종목 7% + 추종 계좌 5%·5% = 17% / 목표 20%. 세 계좌 모두 같은 분할매수에 편입돼 매수중.
+  for (const id of ['bnd', 'bnd2', 'bnd3']) assert.match(row(id), /trade-state buy[^>]*>매수중/, id);
+  assert.match(head('채권'), /목표 대비 <b class="target-gap" title="목표 대비 -3\.0%p \(현재 비중 − 목표 비중\) · 모든 종목이 매수중·매도중이라 경고 색을 쓰지 않습니다">-3\.0%<\/b>/);
+  assert.match(row('bnd'), /<span>현재 7%<\/span><small>목표 20%<\/small><span class="gap-line"><small>합계 17%<\/small><b class="target-gap" title="목표 대비 -3\.0%p \(연결 계좌 3개 합계 17% − 목표 20%\) · 매수중·매도중 종목이라 경고 색을 쓰지 않습니다">-3\.0%<\/b><\/span>/, '혼자 비교한 -13.0%가 아니다');
+  for (const id of ['bnd2', 'bnd3']) assert.doesNotMatch(row(id), /target-gap/, '목표 없는 추종 계좌는 차이를 표시하지 않는다');
+  // 연결: 매매가 없으면 연결 합계 8% / 목표 10% → 미달 파랑. 그룹도 일부만(또는 전혀) 매매 중이면 경고 색.
+  assert.match(row('lnk'), /<span class="gap-line"><small>합계 8%<\/small><b class="target-gap under" title="목표 대비 -2\.0%p \(연결 계좌 2개 합계 8% − 목표 10%\) · 목표 미달">-2\.0%<\/b><\/span>/);
+  assert.match(head('연결'), /목표 대비 <b class="target-gap under"[^>]*>-2\.0%<\/b>/);
+  assert.match(head('그룹'), /목표 대비 <b class="target-gap over"[^>]*>\+3\.0%<\/b>/, '매매 중인 종목이 일부뿐인 그룹');
+  assert.equal(JSON.stringify(data), before);
 });
