@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const root=path.join(__dirname,'..'),key='etf-planner-assets-v1';
-const source=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/assets.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n;\n');
+const source=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n;\n');
 const fixture=()=>({version:1,savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000,note:'기존 필드'}],scenarios:[{id:'base',name:'기본',salary:100,giving:10,spending:50,spendingYear:2025,growth:2,returnRate:5,endAge:60,stages:[]},{id:'other',name:'비교',salary:100,giving:10,spending:50,spendingYear:2025,growth:2,returnRate:3,endAge:60,stages:[]}]}});
 function setup(data=fixture(),year=2026,shared){
   let now=new Date(year,9,11).getTime(),buttons=[],scenarios=[],inputs=[],saves=0;

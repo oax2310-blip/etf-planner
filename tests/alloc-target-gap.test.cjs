@@ -15,7 +15,7 @@ function page(data, planner, hash = '#alloc') {
   const ctx = vm.createContext({document, assetStore: store, URLSearchParams, crypto: require('node:crypto').webcrypto,
     localStorage: {getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v))}, addEventListener() {}, setInterval() {}, setTimeout: fn => { fn(); return 1; },
     location: {hash}, history: {replaceState() {}}, scrollTo() {}});
-  vm.runInContext(['js/ma-ladder.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/member-link.js', 'js/ledger-benchmark.js', 'js/assets.js'].map(read).join('\n;\n'), ctx);
+  vm.runInContext(['js/ma-ladder.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/member-link.js', 'js/ledger-benchmark.js', 'js/assets.js', 'js/assets-ledger.js', 'js/assets-savings.js', 'js/assets-installments.js', 'js/assets-start.js'].map(read).join('\n;\n'), ctx);
   const html = node(hash.slice(1) + 'View').innerHTML;
   // 종목 줄 하나: data-alloc-item부터 다음 종목 줄 또는 그룹 끝(＋ 종목 줄) 전까지.
   const row = id => { const start = html.indexOf(`data-alloc-item="${id}"`); assert.ok(start >= 0, id); const ends = ['class="asset-row', 'class="group-foot"'].map(k => html.indexOf(k, start)).filter(i => i >= 0); return html.slice(start, ends.length ? Math.min(...ends) : undefined); };
