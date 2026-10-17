@@ -231,12 +231,13 @@ function futureQuoteTime(fe, updatedAt, now=new Date()){
   return {text:`${md(kst)} ${kst.slice(11)} 수집 · ${ago}${delayed?" · 지연":""}`,old,delayed};
 }
 // 제목 아래 현재가: 보유 근월물(nearestMonth = prices.js futuresEntry 월물)의 달러선물 시세. 현물 환율(fx.USDKRW)은 쓰지 않는다.
+// 월물 이름은 보유·계산 기준 줄에 있으므로 가격 줄에는 붙이지 않고 시각 툴팁에만 둔다.
 function futureQuote(f,fe){
   const near=nearestMonth(f);
-  if(!near)return tradeQuoteLine({round:"보유 월물을 입력하면 근월물 현재가를 표시합니다."});
-  if(!fe||!(Number(fe.close)>0))return tradeQuoteLine({state:`${esc(near)} 근월물`,round:"시세 없음 · 시세를 불러오면 표시합니다."});
+  if(!near)return tradeQuoteLine({round:"보유 월물을 입력하면 현재가를 표시합니다."});
+  if(!fe||!(Number(fe.close)>0))return tradeQuoteLine({round:"시세 없음 · 시세를 불러오면 표시합니다."});
   const q=futureQuoteTime(fe,priceData?.updatedAt);
-  return tradeQuoteLine({now:`${fmtPrice(fe.close)}원`,state:`${esc(near)} 근월물`,round:`<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(near)} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다.">${q.text}</span>`});
+  return tradeQuoteLine({now:`${fmtPrice(fe.close)}원`,round:`<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(near)} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다.">${q.text}</span>`});
 }
 
 function futureBuyTable(f){

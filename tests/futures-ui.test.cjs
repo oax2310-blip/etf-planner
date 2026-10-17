@@ -102,7 +102,7 @@ test('제목 아래 현재가는 보유 근월물 선물 시세와 수집 시각
   ctx.priceData={updatedAt:at,stocks:{},fx:{USDKRW:{kind:'현물환율',asOf:'2026-10-16',close:1370,ma:{}}},futures:{'202611':fe}};
   const f={positions:[{month:'202612',contracts:0,settlementPrice:1},{month:'202611',contracts:2,settlementPrice:1380}]};
   const html=ctx.futureQuote(f,ctx.priceData.futures[ctx.priceMonth(f)]);
-  assert.match(html,/quote-now">1,385\.2원<.*202611 근월물.*10\/16 10:40 수집/);assert.doesNotMatch(html,/1,370/);
+  assert.match(html,/quote-now">1,385\.2원<.*10\/16 10:40 수집/);assert.doesNotMatch(html,/근월물/);assert.match(html,/title="[^"]*202611/);assert.doesNotMatch(html,/1,370/);
   assert.match(ctx.futureQuote({positions:[]},null),/보유 월물을 입력하면/);
-  assert.match(ctx.futureQuote(f,null),/202611 근월물.*시세 없음/);
+  assert.match(ctx.futureQuote(f,null),/시세 없음/);
 });
