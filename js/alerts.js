@@ -64,14 +64,15 @@ function alertQuoteInfo(rule, prices){
   const gapPct=close&&ma?(close/ma-1)*100:null;
   return {quote,current:close,line:ma,gapPct,near:gapPct!==null&&Math.abs(gapPct)<=Number(rule.tolerancePct)+1e-10};
 }
+// 카드 제목은 종목명(stock-names.js lookup: 자산 배분·재매수·분할매도에서 같은 코드의 이름), 못 찾으면 코드. 규칙에는 코드만 저장한다.
 function alertRuleCard(rule){
-  const info=alertQuoteInfo(rule,priceData), currency=quoteCurrency(info.quote), lineName=`${rule.period}${rule.unit}`;
+  const info=alertQuoteInfo(rule,priceData), currency=quoteCurrency(info.quote), lineName=`${rule.period}${rule.unit}`, name=typeof stockNames==="object"?stockNames.lookup(rule.ticker):"", label=name?`${name} ${rule.ticker}`:rule.ticker;
   const price=value=>value===null?"—":priceText(value,currency);
   const gap=info.gapPct===null?"—":`${info.gapPct>0?"+":""}${info.gapPct.toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2})}%`;
   const relation=info.gapPct===null?"시세 대기":info.near?"선 근처":info.gapPct>0?"선 위":"선 아래";
   const missing=!info.quote?"다음 시세 수집 후 현재가와 기준선을 표시합니다.":info.line===null?"이동평균을 계산할 봉이 부족할 수 있습니다. 다음 시세 수집 후 확인하세요.":"";
   return `<article class="alert-rule${rule.enabled===false?" paused":""}" data-alert-rule="${esc(rule.id)}">
-    <div class="alert-rule-head"><div><strong>${esc(rule.ticker)}</strong><span>${esc(lineName)} · 허용 ±${esc(rule.tolerancePct)}%</span></div><label class="alert-switch"><input type="checkbox" data-alert-enabled="${esc(rule.id)}" ${rule.enabled!==false?"checked":""} aria-label="${esc(rule.ticker)} ${esc(lineName)} 알림 사용" />사용</label></div>
+    <div class="alert-rule-head"><div><strong>${esc(name||rule.ticker)}</strong><span>${name?`${esc(rule.ticker)} · `:""}${esc(lineName)} · 허용 ±${esc(rule.tolerancePct)}%</span></div><label class="alert-switch"><input type="checkbox" data-alert-enabled="${esc(rule.id)}" ${rule.enabled!==false?"checked":""} aria-label="${esc(label)} ${esc(lineName)} 알림 사용" />사용</label></div>
     <div class="alert-prices"><div><small>최근 현재가</small><b>${price(info.current)}</b></div><div><small>${esc(lineName)}</small><b>${price(info.line)}</b></div><div><small>기준선과 간격</small><b class="${info.near?"near":""}">${gap}<span>${relation}</span></b></div></div>
     ${info.quote?`<div class="alert-stamp">${priceStamp(info.quote)}</div>`:""}${missing?`<p class="hint">${missing}</p>`:""}
     <div class="alert-rule-foot"><small>${rule.enabled===false?"일시 중지":"근처 진입 · 위/아래 통과 감지"}</small><div><button class="btn mini" type="button" data-edit-alert="${esc(rule.id)}">수정</button><button class="btn mini ghost" type="button" data-remove-alert="${esc(rule.id)}">삭제</button></div></div>

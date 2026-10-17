@@ -26,7 +26,7 @@ function load({prices=null,allocation=null}={}){
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     FormData:class{constructor(f){this.fields=f.elements;}get(k){return this.fields[k]?.disabled?null:this.fields[k]?.value;}},
     priceData:prices,...(allocation?{assetStore:{doc:{allocation},prices,subscribe(){}}}:{})});
-  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
+  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const submit=()=>{ctx.planLive();form.events.submit({target:form,preventDefault(){}});};
   const input=name=>form.events.input({target:Object.assign(fields[name],{form})});
   return {ctx,els,handlers,fields,submit,input};
