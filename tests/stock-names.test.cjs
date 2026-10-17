@@ -181,11 +181,20 @@ test('알림내역 카드는 코드뿐인 이름을 계획 이름으로 보이�
   assert.deepEqual(plain(ctx.state.alertHistory.items.map(x=>[x.name,x.type])),[['<b>재매수</b>','손절'],['SPY','분할매도'],['ZZZ','기준선']]);
 });
 
+test('제목 꼬리표: 이름 끝 괄호만 나누고 환헤지·합성 표기·중첩·빈 이름은 그대로 둔다',()=>{
+  const {names}=page(),parts=name=>plain(names.titleParts(name));
+  assert.deepEqual(parts('ACE미국30년국채액티브(연저펀)'),{main:'ACE미국30년국채액티브',tag:'연저펀'});
+  assert.deepEqual(parts(' TIGER 미국S&P500(H) (ISA) '),{main:'TIGER 미국S&P500(H)',tag:'ISA'},'앞 괄호는 이름에 남김');
+  assert.deepEqual(parts('가상 ETF（ IRP ）'),{main:'가상 ETF',tag:'IRP'},'전각 괄호·안쪽 공백');
+  for(const name of ['KODEX 미국채(H)','가상 ETF(합성)','가상 ETF(합성 H)','(연저펀)','가상 ETF()','가상 ETF( )','가상 ETF(1234567890123)','가상 ETF(a(b))','가상 (연저펀) ETF'])
+    assert.deepEqual(parts(name),{main:name.trim(),tag:''},name);
+  assert.deepEqual(parts(null),{main:'',tag:''});
+});
 test('분할매도 목록은 카드 이름이 없으면 종목명을 굵게·코드를 아래 줄에 보이고 카드 이름은 바꾸지 않는다',()=>{
   const els={},el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',events:{},addEventListener(kind,handler){this.events[kind]=handler;},
     querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){this.open=true;},focus(){},select(){},append(){},elements:{}};
   el('nameForm').elements.cardName=el('field:cardName');
-  const list=[...plans(),{id:'twin',ticker:'TWIN',title:'가상 S&P 계획',stages:2,checked:[false,false],holdings:[]},{id:'x',ticker:'XSS',title:'<img src=x>',stages:2,checked:[false,false],holdings:[]}];
+  const list=[...plans(),{id:'twin',ticker:'TWIN',title:'가상 S&P 계획',stages:2,checked:[false,false],holdings:[]},{id:'x',ticker:'XSS',title:'<img src=x>',stages:2,checked:[false,false],holdings:[]},{id:'tag',ticker:'TLT',title:'가상 국채 ETF(<b>연저펀)',stages:2,checked:[false,false],holdings:[]}];
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit(){},document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:list,futures:{positions:[]},selectedPlan:'auto'},assetStore:{doc:{allocation:{groups:groups()}},subscribe(){}},PENCIL:'',memoCount:()=>'',id:()=>'n',esc,
     won:new Intl.NumberFormat('ko-KR'),decimal:new Intl.NumberFormat('ko-KR'),usd:new Intl.NumberFormat('en-US'),priceText:v=>String(v),fxText:v=>String(v),priceData:null,FormData:class{}});
@@ -200,6 +209,10 @@ test('분할매도 목록은 카드 이름이 없으면 종목명을 굵게·코
   assert.match(card('carded'),/<strong>내 카드<\/strong><span class="plan-count">.*<span class="plan-title">069500<\/span>/,'카드 이름은 그대로');
   assert.match(card('x'),/<strong>&lt;img src=x&gt;<\/strong>/);assert.doesNotMatch(html,/<img/);
   assert.match(els.planMain.innerHTML,/<h1>가상 미국500 ETF<\/h1>/,'제목도 같은 이름');
+  ctx.state.selectedPlan='tag';ctx.renderPlans();
+  assert.match(els.planMain.innerHTML,/<h1>가상 국채 ETF <span class="title-tag">&lt;b&gt;연저펀<\/span><\/h1>/,'이름 끝 괄호는 이스케이프한 꼬리표로');
+  assert.match(card('tag'),/<strong>가상 국채 ETF\(&lt;b&gt;연저펀\)<\/strong>/,'목록 카드는 전체 이름');
+  ctx.state.selectedPlan='auto';
   ctx.openNameDialog('auto');assert.equal(els.nameTitle.textContent,'가상 미국500 ETF 카드 이름');assert.equal(els['field:cardName'].placeholder,'가상 미국500 ETF');
   assert.equal(JSON.stringify(ctx.state),before);
 });

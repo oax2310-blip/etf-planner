@@ -171,6 +171,12 @@ test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코�
   assert.match(card('a'),/<strong>내 매수 카드<\/strong><span class="plan-count[^"]*">.*<span class="plan-title">테스트 종목<\/span>/,'카드 이름이 있으면 기존처럼 아래 줄에 종목 이름');
   assert.equal(JSON.stringify(r.doc),before,'목록을 그려도 기록은 그대로');
 });
+test('분할매수 제목: 이름 끝 괄호는 꼬리표로 보이고 목록·자산 종목 이름은 그대로 둔다',()=>{
+  const r=setup();r.item.name='테스트 종목(연저펀)';const before=JSON.stringify(r.doc);r.render();
+  assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">연저펀<\/span><\/h1>/);
+  assert.match(r.html(),/<strong>테스트 종목\(연저펀\)<\/strong>/,'목록 카드는 전체 이름');
+  assert.equal(JSON.stringify(r.doc),before,'화면 표시만 바꾸고 기록은 그대로');
+});
 test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
   const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
   assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.2},names:['42일선','60일선'],end:null,budget:5000})),

@@ -21,6 +21,10 @@ function lookup(ticker){
 }
 // 분할매도 카드 이름이 없을 때 보일 이름: 계획 이름(자산 배분에서 고르면 종목 이름) → 같은 코드의 종목 이름 → 종목 코드.
 const planName = p => text(p?.title)||lookup(p?.ticker)||text(p?.ticker);
+// 분할매도·분할매수 화면 제목: 이름 끝 괄호(예: '(연저펀)')를 {main,tag}로 나눠 꼬리표로 보인다. 화면 글자만 바꾸고 저장한 이름은 그대로 둔다.
+// 괄호 안 1~12자·중첩 없음·앞 이름이 있을 때만 나눈다. 환헤지·합성 표기 (H)·(합성)·(합성 H)는 종목 이름이므로 나누지 않는다.
+const TITLE_TAG = /^(.*\S)\s*[(（]([^()（）]{1,12})[)）]$/, NAME_MARK = /^(합성\s*)?H$|^합성$/i;
+function titleParts(name){ const s=text(name),m=TITLE_TAG.exec(s),tag=m?m[2].trim():""; return tag&&!NAME_MARK.test(tag)?{main:m[1],tag}:{main:s,tag:""}; }
 // 목록 카드: rows=[{name,code}] 중 같은 이름이 다른 코드에도 있으면 true를 돌려주는 판정(모바일은 코드 줄을 숨기므로 이름 옆에 코드를 붙인다).
 function clashes(rows){
   const seen=new Map();
@@ -115,5 +119,5 @@ function remember(){
     use("readwrite",store=>store.put(map,KEY)).catch(()=>{lastSaved="";});
   },400);
 }
-return {code,lookup,planName,clashes,alertMap,ambiguous,alertKind,alertName,alertSubject,notice,recall,remember};
+return {code,lookup,planName,titleParts,clashes,alertMap,ambiguous,alertKind,alertName,alertSubject,notice,recall,remember};
 })();

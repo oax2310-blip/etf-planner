@@ -113,8 +113,9 @@ const selectPurchase=id=>{selectedPurchaseId=id;};
 const TARGET_SCOPE={group:" (그룹)",section:" (소분류)",plan:" (계획 목표)"};
 function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,target,gap,scope}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
+  const head=stockNames.titleParts(it.name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   const targetText=target!==null?` / 목표 ${pc(target)}${TARGET_SCOPE[scope]||""}${gap>0?` · 목표까지 ${man(gap)}`:gap<-.5?` · 목표 초과 ${man(-gap)}`:""}`:" · 목표 미입력";
-  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(it.name)}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}<p class="alloc-link"><b>자산 배분</b> <span>전체 계좌 · 현재 ${pc(pct)}${targetText}</span></p></div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}`;
+  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(head.main)}${head.tag?` <span class="title-tag">${escA(head.tag)}</span>`:""}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}<p class="alloc-link"><b>자산 배분</b> <span>전체 계좌 · 현재 ${pc(pct)}${targetText}</span></p></div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}`;
 }
 function waitCard({g,it},s){
   const plan=it.buyPlan, entry=waitEntry(it), info=purchaseWaitInfo(plan,entry), cur=planCurrency(plan,it), pt=v=>v?priceText(v,cur):"—", id=escA(it.id);
