@@ -303,6 +303,18 @@ function ui(state = {}, env = {}) {
   return {ctx, handlers, els, add: (name, ticker) => submit(() => els.addRebuyBtn.onclick(), name, ticker), rename: (name, ticker) => submit(() => els.rEdit.onclick(), name, ticker)};
 }
 
+test('제목: 이름 끝 괄호는 꼬리표로 보이고 저장 버튼은 제목 옆이 아니라 메모 제목 옆에 둔다', () => {
+  const stockNames = vm.runInNewContext(`${fs.readFileSync(require('node:path').join(__dirname, '../js/stock-names.js'), 'utf8')}\n;stockNames`, {});
+  const state = {rebuy: {items: [{id: 'a', name: '테스트 ETF(연저펀)', ticker: '900001', note: '옛 메모'}]}};
+  const {els} = ui(state, {stockNames}), html = els.rebuyMain.innerHTML;
+  assert.match(html, /<h1>테스트 ETF <span class="title-tag">연저펀<\/span><\/h1>/);
+  assert.doesNotMatch(html, /변경 저장/);
+  assert.match(html, /<div class="memo-head"><h2>메모<\/h2><span id="rNoteCount" class="memo-count"><\/span><button class="btn mini" id="rSave" type="button">저장<\/button><\/div>/);
+  assert.equal(state.rebuy.items[0].name, '테스트 ETF(연저펀)', '저장한 이름은 그대로');
+  els.rNote.value = '새 메모'; els.rSave.onclick();
+  assert.equal(state.rebuy.items[0].note, '새 메모');
+  assert.match(ui({rebuy: {items: [{id: 'a', name: '테스트 ETF(연저펀)'}]}}).els.rebuyMain.innerHTML, /<h1>테스트 ETF\(연저펀\)<\/h1>/, 'stock-names.js가 없으면(서버) 그대로');
+});
 test('재매수 제목 아래 시세 줄: 분할매도·분할매수와 같은 순서로 현재가·상태·신저점 대비 %(부호·방향)를 보인다', () => {
   const line = item => (ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', lowPrice: 10000, amount: 1000, ...item}]}}).els.rebuyMain.innerHTML.match(/<p class="quote-line">.*?<\/p>/) || [''])[0];
   assert.equal(line({currentPrice: 9500}), '<p class="quote-line"><strong class="quote-now">9500원</strong><span class="quote-state">신저점 이탈</span><span class="quote-gap down">신저점 대비 <b>-5.0%</b></span></p>');
