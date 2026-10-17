@@ -16,7 +16,7 @@
 - 뼈대: index.html; 상태·입력: js/core.js; 동기화: js/sync.js; 시세: js/prices.js.
 - 매매: js/plans.js·futures.js·rebuy.js·purchases.js; 공통 회차: js/ma-ladder.js.
 - 계획 창 종목 검색(분할매수·분할매도·재매수 공통): js/item-search.js; 체결 연동 UI: js/alloc-link.js; 자산·매수 계산: js/assets-calc.js; 공유 저장: js/assets-store.js.
-- 자산 배분 종목의 분할매수·분할매도·재매수 편입 표시: js/member-link.js(읽기 전용 계산·이동 주소), 플래너 도착 이동: js/member-go.js.
+- 자산 배분 종목의 분할매수·분할매도·재매수 편입·매수중/매도중 표시: js/member-link.js(읽기 전용 계산·이동 주소), 플래너 도착 이동: js/member-go.js.
 - 자산 화면: assets.html·js/assets.js; 월별 손익 S&P 500 비교: js/ledger-benchmark.js(월말 자료 수집 scripts/collect-sp500.cjs → data/sp500-tr.json); 시나리오: valuation.html의 필요한 구간.
 - 알림: js/trade-alerts.js·alerts.js·push.js·alert-target.js·push-sw.js. 서버 공유 계약은 계산 함수 주석 확인.
 - 디자인: css/app.css·assets.css·purchases.css; 화면 모드: js/theme.js.
