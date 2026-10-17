@@ -34,12 +34,7 @@ function schedule(){
   frame=requestAnimationFrame(()=>{
     frame=0;const t=pending;if(!t||document.hidden||state.tab!==t.tab)return;
     const node=nodeOf(t);pending=null;history.replaceState(null,"",`#${state.tab}`);if(!node?.isConnected)return;
-    // 모바일에서는 top의 음수 위치로 헤더가 접힌다. 높이 전체 대신 현재 보이는 하단을 빼야 카드가 가려지지 않는다.
-    scrollTo({top:Math.max(0,node.getBoundingClientRect().top+scrollY-Math.max(0,topBar.getBoundingClientRect().bottom)-12),behavior:"instant"});
-    node.focus({preventScroll:true});
-    $$(".push-alert-highlight").forEach(x=>x.classList.remove("push-alert-highlight"));
-    node.classList.add("push-alert-highlight");
-    node.addEventListener("animationend",()=>node.classList.remove("push-alert-highlight"),{once:true});
+    scrollBelowTop(node);node.focus({preventScroll:true});flashTarget(node);
   });
 }
 return {open,schedule};

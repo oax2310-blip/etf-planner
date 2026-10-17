@@ -1,0 +1,2 @@
+# ripgrep 기반 검색(Claude Code·Codex)에서 제외할 자동 생성 대용량 자료. 파일은 그대로 게시·사용되며 직접 열어 볼 수 있다.
+data/currency-pressure.json

@@ -3,7 +3,7 @@
 const initialSnapshot = dataSnapshot();
 const DATA_FILE = "etf-planner-data.json";
 const DEFAULT_DATA_REPO = repoSecurity.defaultData;
-// assets-store.js·valuation.html도 같은 키를 읽는다(시나리오는 etf-planner-scenarios.json); 이름 변경은 함께 적용.
+// assets-store.js·valuation.js도 같은 키를 읽는다(시나리오는 etf-planner-scenarios.json); 이름 변경은 함께 적용.
 const REPO_KEY = "etf-planner-data-repo";
 const TOKEN_KEY = "etf-planner-github-token"; // 토큰은 기기별 localStorage 전용(Contents 읽기·쓰기).
 const SYNC_BASE_KEY = "etf-planner-sync-base:";

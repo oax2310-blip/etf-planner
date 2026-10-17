@@ -97,7 +97,7 @@ test('수집 자료는 형식·지수·통화를 확인해 종가만 남기고, 
   const cleaned=c.cleanSp500Data(odd);assert.deepEqual(Object.keys(cleaned.yearEnd),['2025','2026']);assert.deepEqual(Object.keys(cleaned.monthEnd),['2026-09','2026-10']);
 });
 
-// 연도별 요약 화면: assets.js를 가상 DOM으로 불러 월별 손익 탭만 그린다.
+// 연도별 요약 화면: 자산 현황 스크립트(assets.js·assets-ledger.js 등)를 가상 DOM으로 불러 월별 손익 탭만 그린다.
 function ledgerHtml(data,now){
   class SystemDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
   const nodes=new Map(),storage=new Map();
@@ -107,7 +107,7 @@ function ledgerHtml(data,now){
   const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
-  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js'].map(read).join('\n;\n'),ctx);
+  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
   return node('ledgerView').innerHTML;
 }
 

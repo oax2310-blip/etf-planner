@@ -1,4 +1,4 @@
-/* valuation.html의 공통 토큰을 사용한다. 시나리오 영역 밖에는 적용하지 않는다. */
+/* css/valuation.css의 공통 토큰을 사용한다. 시나리오 영역 밖에는 적용하지 않는다. */
 .cp-heading { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
 .cp-heading h2 { margin:0; }
 .cp-heading button { border:1px solid var(--line-strong); background:var(--surface); color:var(--text-2); padding:7px 12px; border-radius:9px; font-size:.8rem; }

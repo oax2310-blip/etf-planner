@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(require('node:path').join(__dirname, '../valuation.html'), 'utf8');
-const start = html.indexOf('  // AI 구독사업 계산:'), end = html.indexOf('  // AI 구독사업 계산 함수 끝.', start);
+const page = fs.readFileSync(require('node:path').join(__dirname, '../js/valuation.js'), 'utf8');
+const start = page.indexOf('// AI 구독사업 계산:'), end = page.indexOf('// AI 구독사업 계산 함수 끝.', start);
 assert.ok(start >= 0 && end > start, 'AI 계산 함수를 찾을 수 있어야 한다');
 const context = vm.createContext({});
-vm.runInContext(html.slice(start, end), context);
+vm.runInContext(page.slice(start, end), context);
 const calculate = vm.runInContext('calculateAiSubscription', context);
 const base = {...vm.runInContext('aiBaseInputs', context), aiYear: 2030, aiMultiple: 20, aiRequired: 12};
 const near = (actual, expected, tolerance = .02) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
