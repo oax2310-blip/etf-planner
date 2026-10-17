@@ -176,7 +176,7 @@ async function syncNow(beforePriceCollection=false){
 }
 function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.checked=false;sync.blocked=false;}
 function refreshTokenField(){$("githubToken").placeholder=localStorage.getItem(TOKEN_KEY)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 값";}
-function refreshCollectionTokenField(){$("collectionToken").placeholder=localStorage.getItem(repoSecurity.tokenKey)?"저장됨 · 바꿀 때만 붙여넣기":"수집 저장소의 Issues 전용 토큰";}
+function refreshCollectionTokenField(){$("collectionToken").placeholder=localStorage.getItem(repoSecurity.tokenKey)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 Issues 전용 토큰";}
 $("syncBtn").onclick=()=>$("syncDialog").showModal();
 $("closeSync").onclick=()=>$("syncDialog").close();
 $("dataRepo").value=localStorage.getItem(REPO_KEY)||DEFAULT_DATA_REPO;
@@ -189,7 +189,7 @@ $("connectRepo").onclick=()=>{
   try{repoSecurity.assertDataRepo(repo);}catch(error){syncStatus(error.message);return;}
   if(!token){syncStatus("GitHub 토큰을 붙여넣어 주세요.");return;}
   const collectionToken=$("collectionToken").value.trim()||(localStorage.getItem(repoSecurity.repoKey)===repo?localStorage.getItem(repoSecurity.tokenKey)||"":"");
-  if(collectionToken&&collectionToken===token){syncStatus("데이터 전용 토큰과 즉시수집 전용 토큰을 각각 발급해 주세요.");return;}
+  try{repoSecurity.assertTokens(token,collectionToken);}catch(error){syncStatus(error.message);return;}
   if(collectionToken){localStorage.setItem(repoSecurity.tokenKey,collectionToken);localStorage.setItem(repoSecurity.repoKey,repo);}
   $("collectionToken").value="";refreshCollectionTokenField();
   localStorage.setItem(REPO_KEY,repo);localStorage.setItem(TOKEN_KEY,token);$("githubToken").value="";

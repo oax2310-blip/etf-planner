@@ -6,6 +6,8 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
+  <!-- 토큰을 쓰는 페이지: 스크립트는 이 사이트 파일(+아래 해시의 초기화 script)만, 통신은 이 사이트·GitHub API만. 초기화 script를 고치면 해시도 함께(tests/files.test.cjs). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:; connect-src 'self' https://api.github.com; worker-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
@@ -13,12 +15,12 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <script src="js/theme.js?v=197"></script>
-  <script src="js/repo-security.js?v=197"></script>
+  <script src="js/theme.js?v=198"></script>
+  <script src="js/repo-security.js?v=198"></script>
   <title>AI 구독 · 삼성SDI · ETF · 환율 시나리오</title>
   <meta name="description" content="AI 구독사업, 삼성SDI, ETF의 장기 가치와 한미 GDP·M2로 계산한 원·달러 상대 통화압력을 살펴봅니다.">
-  <link rel="stylesheet" href="css/currency-pressure.css?v=197">
-  <link rel="stylesheet" href="css/valuation.css?v=197">
+  <link rel="stylesheet" href="css/currency-pressure.css?v=198">
+  <link rel="stylesheet" href="css/valuation.css?v=198">
 </head>
 <body>
 <header class="top">
@@ -469,7 +471,7 @@
     <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다.</p>
   </div>
 </dialog>
-<script src="js/valuation.js?v=197"></script>
-<script src="js/currency-pressure.js?v=197"></script>
+<script src="js/valuation.js?v=198"></script>
+<script src="js/currency-pressure.js?v=198"></script>
 </body>
 </html>
