@@ -37,7 +37,12 @@ function fixture() {
   const bond = [item('bnd', 70, 20, {ticker: 'BND', buyPlan: stages([false, false])}), track('bnd2', 'BND', 50), track('bnd3', 'BND', 50)];
   const lnk = [item('lnk', 40, 10, {ticker: 'LNK'}), track('lnk2', 'LNK', 40, '900002')];
   return {version: 1, allocation: {savedAt: '', total: 1000, cashFx: 1400, memo: '', classes: [{id: 'c1', region: '미국', name: '주식'}],
-    groups: [{id: 'g', name: '그룹', classId: 'c1', items}, {id: 'gb', name: '채권', classId: 'c1', items: bond}, {id: 'gl', name: '연결', classId: 'c1', items: lnk}], cash: []}};
+    groups: [{id: 'g', name: '그룹', classId: 'c1', items}, {id: 'gb', name: '채권', classId: 'c1', items: bond}, {id: 'gl', name: '연결', classId: 'c1', items: lnk},
+      // 회색 판정: 매수중 +4.0% + 1.0%p 이내 종목들(+0.9·+0.8·+0.7) → 그룹 +6.4%여도 종목이 모두 회색.
+      {id: 'gm', name: '모두회색', classId: 'c1', items: [item('m1', 140, 10, {buyPlan: stages([false])}), item('m2', 109, 10), item('m3', 108, 10), item('m4', 107, 10)]},
+      // 목표 없는 보유(3%)는 어느 목표에도 들지 않아 그룹 차이로 남는다. 비중 0인 목표 없는 종목은 막지 않는다.
+      {id: 'gn', name: '목표밖보유', classId: 'c1', items: [item('n1', 100, 10), item('n2', 30, null)]},
+      {id: 'gz', name: '빈종목', classId: 'c1', items: [item('z1', 150, 10, {buyPlan: stages([false])}), item('z2', 0, null)]}], cash: []}};
 }
 const planner = {plans: [sell('p1', 'SELL', [true, false]), sell('p2', 'SOLD', [true, true]), sell('p3', 'BOTH', [false, false]), sell('p4', 'XSS', [false], {cardName: '<img src=x onerror=1>'})], rebuy: {items: [{id: 'r', ticker: 'OVER', name: '재매수'}]}};
 
@@ -90,12 +95,25 @@ test('모든 종목이 매수중·매도중인 그룹은 기본 색이고, 연�
   const head = name => { const i = html.indexOf(`<span>${name}</span>`); return html.slice(i, html.indexOf('</p>', i)); };
   // 채권: 기준 종목 7% + 추종 계좌 5%·5% = 17% / 목표 20%. 세 계좌 모두 같은 분할매수에 편입돼 매수중.
   for (const id of ['bnd', 'bnd2', 'bnd3']) assert.match(row(id), /trade-state buy[^>]*>매수중/, id);
-  assert.match(head('채권'), /목표 대비 <b class="target-gap" title="목표 대비 -3\.0%p \(현재 비중 − 목표 비중\) · 모든 종목이 매수중·매도중이라 경고 색을 쓰지 않습니다">-3\.0%<\/b>/);
+  assert.match(head('채권'), /목표 대비 <b class="target-gap" title="목표 대비 -3\.0%p \(현재 비중 − 목표 비중\) · 종목마다 1\.0%p 이내이거나 매수중·매도중이라 경고 색을 쓰지 않습니다">-3\.0%<\/b>/);
   assert.match(row('bnd'), /<span>현재 7%<\/span><small>목표 20%<\/small><span class="gap-line"><small>합계 17%<\/small><b class="target-gap" title="목표 대비 -3\.0%p \(연결 계좌 3개 합계 17% − 목표 20%\) · 매수중·매도중 종목이라 경고 색을 쓰지 않습니다">-3\.0%<\/b><\/span>/, '혼자 비교한 -13.0%가 아니다');
   for (const id of ['bnd2', 'bnd3']) assert.doesNotMatch(row(id), /target-gap/, '목표 없는 추종 계좌는 차이를 표시하지 않는다');
   // 연결: 매매가 없으면 연결 합계 8% / 목표 10% → 미달 파랑. 그룹도 일부만(또는 전혀) 매매 중이면 경고 색.
   assert.match(row('lnk'), /<span class="gap-line"><small>합계 8%<\/small><b class="target-gap under" title="목표 대비 -2\.0%p \(연결 계좌 2개 합계 8% − 목표 10%\) · 목표 미달">-2\.0%<\/b><\/span>/);
   assert.match(head('연결'), /목표 대비 <b class="target-gap under"[^>]*>-2\.0%<\/b>/);
   assert.match(head('그룹'), /목표 대비 <b class="target-gap over"[^>]*>\+3\.0%<\/b>/, '매매 중인 종목이 일부뿐인 그룹');
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('그룹 차이가 1.0%p를 넘어도 종목이 모두 회색(1.0%p 이내 또는 매수중·매도중)이면 그룹도 회색이다', () => {
+  const data = fixture(), before = JSON.stringify(data), {html, row} = page(data, planner);
+  const head = name => { const i = html.indexOf(`<span>${name}</span>`); return html.slice(i, html.indexOf('</p>', i)); };
+  const gapOf = id => /<b class="target-gap([^"]*)"[^>]*>([^<]+)<\/b>/.exec(row(id))?.slice(1, 3);
+  assert.deepEqual(['m1', 'm2', 'm3', 'm4'].map(gapOf), [['', '+4.0%'], ['', '+0.9%'], ['', '+0.8%'], ['', '+0.7%']]);
+  assert.match(head('모두회색'), /목표 대비 <b class="target-gap" title="[^"]*종목마다 1\.0%p 이내이거나 매수중·매도중이라 경고 색을 쓰지 않습니다">\+6\.4%<\/b>/, '작은 차이가 쌓인 그룹');
+  assert.match(head('목표밖보유'), /<b class="target-gap over"[^>]*>\+3\.0%<\/b>/, '목표 없는 3% 보유는 회색으로 보지 않는다');
+  assert.equal(gapOf('n1')[0], '');assert.doesNotMatch(row('n2'), /target-gap/);
+  assert.match(head('빈종목'), /<b class="target-gap"[^>]*>\+5\.0%<\/b>/, '비중 0%인 목표 없는 종목은 그룹 회색을 막지 않는다');
+  assert.match(head('그룹'), /<b class="target-gap over"[^>]*>\+3\.0%<\/b>/, '빨강·파랑 종목이 하나라도 있으면 그룹도 경고 색');
   assert.equal(JSON.stringify(data), before);
 });
