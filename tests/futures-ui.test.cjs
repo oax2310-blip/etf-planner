@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const source=['ma-ladder.js','futures.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
+const source=['ma-ladder.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const clone=value=>JSON.parse(JSON.stringify(value));
 const level=(days,price,contracts=3)=>({days,unit:'일선',price,confirmed:true,contracts,tranches:Array.from({length:contracts},(_,slot)=>({price,completed:false,executionPrice:null,slot}))});
@@ -91,7 +91,7 @@ test('기준선 전체 알림을 직접 선택하면 같은 기본값도 회차 
 
 test('제목 아래 현재가는 보유 근월물 선물 시세와 수집 시각·지연·조회 실패를 구분한다',()=>{
   const ctx=vm.createContext({contractSize:10000,esc:v=>String(v)});
-  vm.runInContext(['prices.js','ma-ladder.js','futures.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n'),ctx);
+  vm.runInContext(['prices.js','ma-ladder.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n'),ctx);
   const at='2026-10-16T01:40:00Z',now=new Date('2026-10-16T02:05:00Z'),fe={kind:'선물',asOf:'2026-10-16',close:1385.2,ma:{}};
   assert.deepEqual({...ctx.futureQuoteTime(fe,at,now)},{text:'10/16 10:40 수집 · 25분 전',old:false,delayed:false});
   assert.equal(ctx.futureQuoteTime(fe,at,new Date('2026-10-16T04:00:00Z')).text,'10/16 10:40 수집 · 2시간 전 · 지연');

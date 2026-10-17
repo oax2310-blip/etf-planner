@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const source=['ma-ladder.js','prices.js','assets-calc.js','rebuy.js','trade-alerts.js','futures.js'].map(file=>fs.readFileSync(path.join(__dirname,'../js',file),'utf8')).join('\n;\n');
+const source=['ma-ladder.js','prices.js','assets-calc.js','rebuy.js','trade-alerts.js','futures.js','futures-plan.js','futures-rebuy.js'].map(file=>fs.readFileSync(path.join(__dirname,'../js',file),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const plain=value=>JSON.parse(JSON.stringify(value));
 const level=(days,unit,price)=>({days,unit,price,contracts:0,tranches:[]});
