@@ -48,17 +48,15 @@ function openPushAlertFromHash(){
   clearPushAlertTarget();pendingPushTarget=target;
   openTab(pushAlertTab(target)||state.tab);return true;
 }
-// render 전에는 선택과 접기 상태만 준비한다. 재귀 render나 DOM 유무만으로 이동을 완료하지 않는다.
+// render 전에는 대상 선택만 준비한다. 재귀 render나 DOM 유무만으로 이동을 완료하지 않는다.
+// 알림은 미완료 회차에만 오므로 완료 회차 접기는 사용자가 둔 상태 그대로 둔다. 달러선물 손절만 접힌 한 줄에 회차가 없어 펼친다.
 function applyPendingPushAlert(){
   if(!pendingPushTarget)return false;
   const found=pushAlertDestination(pendingPushTarget);if(!found)return false;
-  if(found.planId){state.selectedPlan=found.planId;openCompletedSales.add(found.planId);}
-  if(found.itemId)purchasePlanner.select(found.itemId,true);
-  if("rebuyId" in found){
-    state.selectedRebuy=found.rebuyId;
-    const r=rebuyPick(),fold=rebuyFoldState(r,rebuySummary(r));fold.cuts=true;fold.buys=true;
-  }
-  if(found.tab==="futures"){if(found.futureRebuy)futureRebuyExpanded=true;else futureCompletedOpen=true;}
+  if(found.planId)state.selectedPlan=found.planId;
+  if(found.itemId)purchasePlanner.select(found.itemId);
+  if("rebuyId" in found)state.selectedRebuy=found.rebuyId;
+  if(found.futureRebuy)futureRebuyExpanded=true;
   openTab(found.tab,false);
   return true;
 }
