@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/futures.js'), 'utf8');
 if (!source.includes('function resizeTranches(')) throw Error('계획 계약 수 조정 구현을 찾지 못했습니다.');
 
-const load = () => { const context = vm.createContext({futuresDays: [25, 32, 42, 60, 80, 125, 150], contractSize: 10000}); vm.runInContext(source, context); return context; };
+const load = () => { const context = vm.createContext({contractSize: 10000}); vm.runInContext(source, context); return context; };
 const tranche = (completed = false) => ({price: 1400, completed, executionPrice: completed ? 1400 : null});
 const level = (days, contracts) => ({days, price: 1400, confirmed: true, contracts, tranches: Array.from({length: contracts}, () => tranche())});
 

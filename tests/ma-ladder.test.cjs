@@ -5,7 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const files=['ma-ladder.js','prices.js','assets-calc.js','rebuy.js','trade-alerts.js','futures.js'];
 const source=files.map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
-const load=()=>{const ctx=vm.createContext({contractSize:10000,futuresDays:[25,32,42,60,80,125,150]});vm.runInContext(source,ctx);return ctx;};
+const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const plain=v=>JSON.parse(JSON.stringify(v));
 const level=(days,unit,price,contracts=3)=>({days,unit,price,contracts,tranches:Array.from({length:contracts},()=>({price,completed:false,executionPrice:null}))});
 const plan=unit=>({targetPrice:1500,baselinePnl:0,positions:[{month:'202612',contracts:1,settlementPrice:1300}],notify:{levels:true},levels:[level(32,unit,1350),level(42,unit,1380,1)]});

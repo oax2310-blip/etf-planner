@@ -1,6 +1,5 @@
 // 공통 상수·입력 도우미·state·탭. 저장은 sync.js, 이동평균 단계는 ma-ladder.js, 기능 화면은 각 모듈.
 const STORAGE_KEY = "etf-exit-planner-standalone-v1";
-const futuresDays = [25,32,42,60,80,125,150];
 const contractSize = 10000;
 const won = new Intl.NumberFormat("ko-KR", {maximumFractionDigits:0});
 const decimal = new Intl.NumberFormat("ko-KR", {maximumFractionDigits:1});
