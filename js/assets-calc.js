@@ -117,7 +117,7 @@ function allocationTargets(alloc){
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
 // 종목의 buyPlan은 이동평균선 돌파·매수대기·기존 직접 입력이며 옛 ladder는 읽지 않는다. 체결 반영·취소는 alloc-link.js, 종목의 점검완료(it.done)와 매수 완료는 별개.
-// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], startLine?:사용자가 고른 시작선, end?:목표 가격, budget:총 매수 금액(만원), target?:종목 목표와 다르게 넣은 목표 비중}. 목표 가격을 비우면 names의 마지막 선까지 매수한다.
+// ① 이동평균선 돌파(lines가 있음): lines = {names:[단계 이름…], startLine?:사용자가 고른 시작선, end?:목표 가격, budget:총 매수 금액(만원), target?:옛 계획 목표 — 새로 저장하지 않으며 자산 배분 목표가 없을 때만 읽는다(purchaseAllocationSummary·syncPurchaseTargets)}. 목표 가격을 비우면 names의 마지막 선까지 매수한다.
 //    회차 가격은 시세 파일의 이동평균을 따라 움직이고(purchaseLineLevels), 체결은 buys[회차 키] = {plannedShares:원래 계획 수량, plannedActual:그 수량의 예정액, shares:누적 체결 수량, actual:체결 금액(만원), price:첫 체결 때 표시 가격, next?, tradeTargetId?:첫 반영 자산 id}.
 //    부분 체결 회차는 원래 수량·가격과 잔량 예산을 고정한다. plannedShares 없는 옛 체결은 완료로 읽고, 처음 수정할 때만 계획 수량을 저장한다.
 //    수량은 purchaseFill로 회차 예산 안에서 내림하고, 표시한 수량을 그대로 저장·반영한다. 체결 금액만 고쳐도 수량은 바뀌지 않는다. 옛 기록은 읽을 때 새 필드를 채우지 않는다.
@@ -338,9 +338,24 @@ const {allocationHoldingInfo,allocationHoldingTotal}=(()=>{
   return {allocationHoldingInfo:info,allocationHoldingTotal:total};
 })();
 
+// 연결 항목 [{g, it}]의 자산 배분 목표 — 분할매수·분할매도·재매수가 같은 규칙으로 읽는 단일 기준(자산 배분 목표만 쓰고 계획에 따로 저장하지 않는다).
+// 항목 목표가 하나라도 있으면 그 합(scope item). 없으면 연결 항목이 전부 포함된 그룹의 목표, 일부만 포함된 그룹에서는 전부 포함된 소분류의 목표를 더한다(scope group·section).
+// 목표가 없으면 {target:null, scope:null}. 저장된 목표는 읽기만 한다.
+function linkedAllocationTarget(rows, summary){
+  const ids=new Set(rows.map(r=>r.it.id)), own=rows.map(({it})=>finite(it.target)).filter(v=>v!==null), sum=list=>Math.round(list.reduce((n,v)=>n+v,0)*1e8)/1e8;
+  if(own.length)return {target:sum(own),scope:"item"};
+  const groups=[], sections=[];
+  for(const g of new Set(rows.map(r=>r.g))){
+    if((g.items||[]).every(it=>ids.has(it.id))){const t=summary.targets.groups.get(g.id)?.target;if(t!=null)groups.push(t);continue;}
+    for(const name of new Set(rows.filter(r=>r.g===g).map(r=>r.it.section).filter(Boolean)))
+      if(g.items.filter(it=>it.section===name).every(it=>ids.has(it.id))){const t=summary.targets.section(g.id,name).target;if(t!==null)sections.push(t);}
+  }
+  return groups.length||sections.length?{target:sum([...groups,...sections]),scope:groups.length?"group":"section"}:{target:null,scope:null};
+}
 // 분할매수의 투자 대상은 저장된 기준 ticker·실제 tradeTicker 연결로 구분한다. 같은 코드의 다른 계좌와 명시적으로 연결된 추종 ETF를 중복 없이 합산한다.
 // 이름·큰 분류·소분류가 비슷하다는 이유로 합치지 않는다. 코드가 없으면 선택한 항목만, 평가액·분모는 자산현황 allocationSummary 그대로 쓴다.
-// 목표는 계획의 명시 목표 → 연결 항목 목표 합 → 연결 항목이 전부 포함된 소분류·그룹 목표 순서. 계좌별 보유량·저장 목표·계획은 읽기만 한다.
+// 목표는 자산 배분 목표(linkedAllocationTarget — assetTarget)가 우선이고, 자산 배분에 목표가 없을 때만 옛 계획 목표(lines.target)를 쓴다(scope plan).
+// 계좌별 보유량·저장 목표·계획은 읽기만 한다.
 function purchaseAllocationSummary(alloc, prices, item, plan=item?.buyPlan, summary=allocationSummary(alloc,prices)){
   const all=(alloc?.groups||[]).flatMap(g=>(g.items||[]).map(it=>({g,it}))), keys=new Set(), ids=new Set();
   const addKeys=it=>{for(const code of [it?.ticker,it?.tradeTicker]){const key=linkTicker(code);if(key)keys.add(key);}};
@@ -354,16 +369,10 @@ function purchaseAllocationSummary(alloc, prices, item, plan=item?.buyPlan, summ
     }
   }
   const rows=all.filter(({it})=>ids.has(it.id)).map(x=>({...x,value:summary.items.get(x.it.id)?.value||0})), value=rows.reduce((n,r)=>n+r.value,0);
-  const own=rows.map(({it})=>finite(it.target)).filter(v=>v!==null), fallback=[];
-  if(!own.length)for(const g of new Set(rows.map(r=>r.g))){
-    if((g.items||[]).every(it=>ids.has(it.id))){fallback.push(summary.targets.groups.get(g.id)?.target??null);continue;}
-    for(const name of new Set(rows.filter(r=>r.g===g).map(r=>r.it.section).filter(Boolean)))
-      if(g.items.filter(it=>it.section===name).every(it=>ids.has(it.id)))fallback.push(summary.targets.section(g.id,name).target);
-  }
-  const targets=own.length?own:fallback.filter(v=>v!==null), declared=finite(plan?.lines?.target);
-  const target=declared??(targets.length?Math.round(targets.reduce((n,v)=>n+v,0)*1e8)/1e8:null), pct=summary.pct(value);
+  const asset=linkedAllocationTarget(rows,summary), legacy=finite(plan?.lines?.target);
+  const target=asset.target??legacy, scope=asset.target!==null?asset.scope:legacy!==null?"plan":null, pct=summary.pct(value);
   const gap=target!==null&&summary.base>0?target/100*summary.base-value:null;
-  return {rows,value,pct,target,gap,gapPct:gap===null?null:target-pct,buyable:gap===null?null:Math.max(0,gap),base:summary.base};
+  return {rows,value,pct,target,assetTarget:asset.target,scope,gap,gapPct:gap===null?null:target-pct,buyable:gap===null?null:Math.max(0,gap),base:summary.base};
 }
 // buyPriority는 화살표로 정렬한 자산 항목 id. 같은 투자 대상으로 연결된 항목만 정렬하고 삭제·중복·다른 상품의 id는 읽을 때 무시한다.
 // 미설정·초기화 후에는 계획이 붙은 항목이 첫 순위다. 최상위는 새 회차에만 쓰고 기존 체결 기록은 바꾸지 않는다.
@@ -388,6 +397,32 @@ function purchaseBudget(plan, trade={}){
   }
   return Math.max(spent+reserved,Math.min(budget,spent+holding.buyable));
 }
+// 총 매수 금액 자동 계산(계획 창의 자동 금액·'다시 계산'과 같은 식): 목표 비중 × 기준 총자산 − 연결 계좌 평가액(0 아래는 0) + 이미 체결한 금액, 0.1만원 단위.
+// holding은 purchaseAllocationSummary 결과, target이 없으면 null.
+function purchaseAutoBudget(plan, holding, target=holding?.target){
+  if(!holding||target===null||target===undefined)return null;
+  const spent=Object.values(purchaseBuys(plan)).reduce((n,b)=>n+Math.max(0,finite(b?.actual)||0),0);
+  return Math.round((Math.max(0,target/100*holding.base-holding.value)+spent)*10)/10;
+}
+// 자산 배분을 저장할 때(assetStore.saveSection) 저장 전(before)·후(after) allocation으로 부른다. 이동평균선 돌파 계획마다 자산 배분 목표(assetTarget)를 비교해
+// 바뀐 계획만 고친다: 옛 계획 목표(lines.target)를 지우고, 새 목표가 있고 쓰던 목표와 다르면 총 매수 금액(lines.budget)을 purchaseAutoBudget으로 다시 계산한다
+// (계획 창에서 목표를 바꿀 때처럼 직접 고친 금액도 새 목표의 자동 금액으로 바뀐다). 목표를 지우면 저장 예산은 그대로 둔다.
+// 체결·부분 체결(buys)·단계·시작선·목표 가격·우선순위·알림·반영 기록(allocation.trades)은 바꾸지 않고, 새로 만든 계획·목표가 그대로인 계획은 건너뛴다.
+// 저장 예산을 그대로 쓰는 수집 작업(purchaseBudget)도 같은 금액을 읽는다. 고친 계획의 자산 종목 id 목록을 돌려준다.
+function syncPurchaseTargets(before, after, prices){
+  const plans=(after?.groups||[]).flatMap(g=>(g.items||[]).filter(it=>it.buyPlan?.lines&&typeof it.buyPlan.lines==="object"));
+  if(!before||!plans.length)return [];
+  const old=allocationSummary(before,prices), now=allocationSummary(after,prices), changed=[];
+  for(const it of plans){
+    const prev=allocItemById(before,it.id);if(!prev?.buyPlan?.lines)continue;
+    const was=purchaseAllocationSummary(before,prices,prev,prev.buyPlan,old), holding=purchaseAllocationSummary(after,prices,it,it.buyPlan,now), target=holding.assetTarget;
+    if(target===was.assetTarget)continue;
+    delete it.buyPlan.lines.target;
+    if(target!==null&&target!==was.target&&holding.base>0)it.buyPlan.lines.budget=purchaseAutoBudget(it.buyPlan,holding,target);
+    changed.push(it.id);
+  }
+  return changed;
+}
 
 // ---------- 플래너 체결 → 자산 배분 연동 (화면·계좌 고르는 창은 플래너 js/alloc-link.js) ----------
 // 분할매도 회차·재매수 손절·재매수 회차·분할매수 회차를 체크하면 종목 코드가 같은 자산 배분 종목(계좌)의 보유량을 줄이거나 늘리고, 체크를 풀면 되돌린다.
@@ -410,14 +445,12 @@ function linkedItems(alloc, ticker, ownId=null){
   for(const g of alloc?.groups||[])for(const it of g.items||[])if(it.id===ownId||key&&(linkTicker(it.ticker)===key||linkTicker(assetTradeTicker(it))===key))out.push({g,it});
   return out;
 }
-// 계획 화면의 '자산 배분' 줄과 보유량 가져오기: 연결 종목 합계 평가액·비중, 목표(연결 종목 목표의 합 — 없으면 연결 종목이 한 그룹의 전부일 때 그 그룹 목표),
+// 계획 화면의 '자산 배분' 줄과 보유량 가져오기: 연결 종목 합계 평가액·비중, 목표(linkedAllocationTarget — 분할매수와 같은 자산 배분 목표 규칙, scope item·group·section),
 // 목표와의 차이(gap > 0 목표까지 더 살 금액, < 0 목표 초과), 보유 수량 합(모든 연결 종목에 수량이 있고 실제 거래 티커가 기준 티커와 같을 때만).
 function linkSummary(alloc, prices, ticker, ownId=null){
   const list=linkedItems(alloc,ticker,ownId);if(!list.length)return null;
   const s=allocationSummary(alloc,prices), rows=list.map(x=>({...x,value:s.items.get(x.it.id)?.value||0})), value=rows.reduce((n,r)=>n+r.value,0);
-  const own=list.map(x=>finite(x.it.target)).filter(v=>v!==null), groups=[...new Set(list.map(x=>x.g))];
-  let target=own.length?Math.round(own.reduce((a,b)=>a+b,0)*1e8)/1e8:null, scope=own.length?"item":null;
-  if(target===null&&groups.length===1&&groups[0].items.every(it=>list.some(x=>x.it===it))){const t=s.targets.groups.get(groups[0].id)?.target;if(t!=null){target=t;scope="group";}}
+  const {target,scope}=linkedAllocationTarget(list,s);
   const allShares=list.every(x=>finite(x.it.shares)!==null&&linkTicker(assetTradeTicker(x.it))===linkTicker(ticker)), step=linkStep(list[0].it);
   return {rows, value, pct:s.pct(value), target, scope, gap:target!==null?target/100*s.base-value:null, shares:allShares?linkRound(list.reduce((n,x)=>n+finite(x.it.shares),0),step):null, base:s.base, fx:s.fx};
 }
