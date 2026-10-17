@@ -15,6 +15,11 @@
 .class-val{font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}.class-pct{display:grid;justify-items:end;font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;min-width:62px}.class-pct small{font-size:11px;font-weight:500;color:var(--text-3)}
 .bar{grid-column:1/-1;position:relative;height:5px;border-radius:99px;background:var(--surface-3);margin-top:4px}.bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}.bar em{position:absolute;top:-3px;width:2px;height:11px;margin-left:-1px;border-radius:2px;background:var(--text-2)}
 .gap{grid-column:1/-1;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}.gap.up{color:var(--accent)}.gap.over{color:var(--warn)}.gap.ok{color:var(--good)}.group-head .gap{margin-left:6px}
+/* 자산 배분 목표 대비(%p, js/assets.js allocTargetGap): ±1.0%p 이내는 둘레 글자색, 초과는 빨강·미달은 파랑(가격 등락 표시와 같은 방향 색).
+   매수중·매도중(trade-state)은 초록·주황 꼬리표로 따로 표시해 경고 색과 섞지 않는다. */
+.target-gap{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:inherit}.target-gap.over{color:var(--danger)}.target-gap.under{color:var(--accent)}.group-gap{white-space:nowrap}.asset-pct .target-gap{min-width:4.6ch;text-align:right}
+.trade-state{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:10.5px;font-weight:700;line-height:1.45;letter-spacing:0;white-space:nowrap;vertical-align:1px}
+.trade-state.buy{background:var(--good-soft);color:var(--good)}.trade-state.sell{background:var(--warn-soft);color:var(--warn)}
 /* 종목별: 분류 이름 · 그룹 카드 · 종목 줄 */
 .alloc-heading>div{width:100%;min-width:0}.alloc-heading .title-row{justify-content:space-between}.alloc-heading .title-row>.btn{flex:none;min-height:36px;white-space:nowrap}
 @media(pointer:coarse){.alloc-heading .title-row>.btn{min-height:44px}}
@@ -165,7 +170,9 @@ a.alloc-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(hover:hover) and (pointer:fine){a.alloc-chip.on:hover{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}a.alloc-chip.on:hover .chip-count{background:var(--on-accent);color:var(--accent)}}
 a.alloc-chip.on:active{background:var(--accent-line)}
 @media(pointer:coarse){a.alloc-chip::after{content:"";position:absolute;inset:-6px -2px}}
-@media(max-width:700px){.asset-row:not(:has(.asset-note))>.alloc-links{grid-column:2/3;grid-row:2;align-self:center;margin-top:0}}
+@media(max-width:700px){.asset-row:not(:has(.asset-note))>.alloc-links{grid-column:2/3;grid-row:2;align-self:center;margin-top:0}
+  /* 폰에서는 목표 대비를 현재·목표 아래 줄 오른쪽에 둬 종목명·편입 칩 칸을 줄이지 않는다. */
+  .asset-pct:has(>.target-gap){display:grid;grid-template-columns:auto auto;column-gap:6px;justify-items:end}.asset-pct>.target-gap{grid-column:1/-1;min-width:0}}
 .alloc-members{margin:0 0 12px;padding:0}
 .alloc-members>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;min-height:44px;padding:11px 16px;cursor:pointer;list-style:none}.alloc-members>summary::-webkit-details-marker{display:none}
 .alloc-members>summary b{font-size:13px}.alloc-members>summary span{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}

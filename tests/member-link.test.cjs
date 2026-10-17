@@ -99,3 +99,64 @@ test('collect는 자산 기록과 플래너 입력을 바꾸지 않고, 추가·
   assert.equal(m.collect(a, null, {...planner, plans: []}).items.get('a').plans.length, 0);
   assert.equal(m.collect(a, null, {...planner, plans: [...planner.plans, {kind: 'plans', id: 'p2', code: 'spy', names: [], label: '둘째'}]}).items.get('a').plans.length, 2);
 });
+
+test('매수중·매도중은 끝나지 않은 분할매수·분할매도 연결만 세고, 끝난 계획은 done으로 표시하며 기록을 바꾸지 않는다', () => {
+  assert.equal(m.PRICE_KEY, /PRICE_KEY = "([^"]+)"/.exec(read('js/sync.js'))[1], '플래너 시세 캐시 키는 sync.js와 같다');
+  store[m.PRICE_KEY] = null;
+  const stage = (id, done) => ({id, amount: 5, price: 100, ...(done ? {done: true} : {})});
+  const items = [
+    {id: 'a', name: '매수 진행', ticker: 'AAA', amount: 10, buyPlan: {stages: [stage('s1', true), stage('s2', false)]}},
+    {id: 'b', name: '같은 코드 다른 계좌', ticker: 'AAA', amount: 5},
+    {id: 'c', name: '매수 끝', ticker: 'CCC', amount: 5, buyPlan: {stages: [stage('t1', true), stage('t2', true)]}},
+    {id: 'd', name: '매수대기', ticker: 'DDD', amount: 5, buyPlan: {wait: {line: '25일선'}}},
+    {id: 'e', name: '회차 없는 직접 입력', ticker: 'EEE', amount: 5, buyPlan: {stages: []}},
+    {id: 'f', name: '매도 진행', ticker: 'FFF', amount: 5},
+    {id: 'g', name: '매도 끝', ticker: 'GGG', amount: 5},
+    {id: 'h', name: '회차 수가 깨진 매도', ticker: 'HHH', amount: 5}
+  ];
+  const state = {plans: [
+    plan('pf', 'FFF', {checked: [true, false, false]}),
+    plan('pg', 'GGG', {checked: [true, true, true]}),
+    plan('ph', 'HHH', {stages: 'x', checked: [true, true]}),
+    plan('pa', 'AAA', {stages: 2, checked: [true, true]})
+  ], rebuy: {items: [{id: 'r', ticker: 'FFF', name: '재매수'}]}};
+  const a = alloc(items), raw = JSON.stringify(state), before = JSON.stringify(a);
+  store[m.PLANNER_KEY] = raw;
+  const r = m.collect(a, null), t = id => m.trading(r.items.get(id)), ids2 = l => l.map(x => x.id);
+  assert.deepEqual(r.items.get('a').buys, [{id: 'a', label: 'AAA', how: 'id'}]);
+  assert.deepEqual(r.items.get('c').buys, [{id: 'c', label: 'CCC', how: 'id', done: true}]);
+  assert.deepEqual(r.items.get('g').plans, [{id: 'pg', label: 'GGG', how: 'code', done: true}]);
+  assert.deepEqual([ids2(t('a').buy), ids2(t('b').buy)], [['a'], ['a']], '같은 코드의 다른 계좌도 진행 중인 분할매수');
+  assert.deepEqual(ids2(t('a').sell), [], '모든 회차를 판 분할매도는 매도중이 아니다');
+  assert.deepEqual(t('c'), {buy: [], sell: []}, '모든 회차를 산 분할매수는 매수중이 아니다');
+  assert.deepEqual(ids2(t('d').buy), ['d'], '매수대기는 회차가 없어 끝나지 않는다');
+  assert.deepEqual(ids2(t('e').buy), ['e'], '회차가 없는 계획은 끝난 것으로 보지 않는다');
+  assert.deepEqual(t('f'), {buy: [], sell: [{id: 'pf', label: 'FFF', how: 'code'}]}, '재매수는 세지 않는다');
+  assert.deepEqual(t('g'), {buy: [], sell: []});
+  assert.deepEqual(ids2(t('h').sell), [], '깨진 회차 수는 core.js처럼 2회로 읽는다');
+  assert.deepEqual(m.trading(undefined), {buy: [], sell: []});
+  assert.equal(JSON.stringify(a), before);assert.equal(store[m.PLANNER_KEY], raw);
+});
+
+test('이동평균선 돌파 분할매수의 완료는 플래너 시세 캐시의 이동평균 회차와 남은 예산으로 플래너와 같게 판단한다', () => {
+  const ma = {'25일선': 10000, '32일선': 12000}, buy = (price, actual) => ({price, shares: Math.round(actual * 1e4 / price), actual});
+  const lineItem = buys => ({id: 'a', name: '돌파', ticker: '111111', amount: 10, buyPlan: {lines: {names: ['25일선', '32일선'], budget: 20}, buys}});
+  const run = (buys, cache = {stocks: {111111: {kind: '국내', asOf: '2026-10-16', close: 9000, ma}}}) => {
+    store[m.PRICE_KEY] = typeof cache === 'string' || cache === null ? cache : JSON.stringify(cache);
+    const a = alloc([lineItem(buys)]), before = JSON.stringify(a), entry = m.collect(a, null, {plans: [], rebuy: []}).items.get('a').buys[0];
+    assert.equal(JSON.stringify(a), before);
+    return !!entry.done;
+  };
+  assert.equal(run({}), false, '회차를 아직 사지 않음');
+  const two = {'25일선:0': buy(10000, 5), '25일선:1': buy(10667, 5)};
+  assert.equal(run(two), false, '산 회차는 끝났어도 남은 예산으로 살 이동평균 회차가 있으면 매수중');
+  assert.equal(run({'25일선:0': buy(10000, 10), '25일선:1': buy(10667, 10)}), true, '예산을 모두 쓰면 매수 완료');
+  assert.equal(run({...two, '25일선:2': buy(11333, 5), '32일선:0': buy(12000, 5)}), true, '모든 이동평균 회차를 사면 매수 완료');
+  assert.equal(run({'25일선:0': {price: 10000, plannedShares: 10, shares: 4, actual: 4, plannedActual: 10}, '25일선:1': buy(10667, 10)}), false, '부분 체결 잔량이 있으면 매수중');
+  // 이동평균 시세가 없거나(캐시 없음·깨짐·다른 시장) 쓸 수 없으면 남은 회차를 모르므로 총 매수 금액이 남아 있는 동안 매수중으로 둔다.
+  for (const cache of [null, '{깨진 json', {stocks: {111111: {kind: '해외', asOf: '2026-10-16', close: 9000, ma}}}, {stocks: {111111: {kind: '국내', asOf: '10/16', close: 9000, ma}}}]) {
+    assert.equal(run(two, cache), false, `남은 예산: ${JSON.stringify(cache)}`);
+    assert.equal(run({'25일선:0': buy(10000, 10), '25일선:1': buy(10667, 10)}, cache), true, `예산 소진: ${JSON.stringify(cache)}`);
+  }
+  store[m.PRICE_KEY] = null;
+});

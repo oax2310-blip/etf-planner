@@ -4,6 +4,7 @@ const A_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 ‘갱신 
 const el = id => document.getElementById(id), all = sel => document.querySelectorAll(sel);
 const escA = v => String(v ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
 const noteLineA = v => escA(String(v ?? "").replace(/\s+/g," ").trim());
+const nfFixed1 = new Intl.NumberFormat("ko-KR",{minimumFractionDigits:1,maximumFractionDigits:1});
 const nf0 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:0}), nf1 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}), nf2 = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:2}), nfShares = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:8});
 const man = v => `${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`;
 const wonA = v => `${nf0.format(Math.round(Number(v)||0))}원`;
@@ -111,6 +112,15 @@ function filterAllocItems(){
   el("allocSearchEmpty").classList.toggle("hidden",!terms.length||matches.size>0);
   updateAllocFoldAll();
 }
+// 자산 배분 목표 대비(그룹·종목): 현재 비중 − 목표 비중(%p)을 소수 첫째 자리로 반올림해 '+3.0%'·'-2.0%'처럼 표시한다(음수 반올림도 0에서 먼 쪽).
+// 표시한 값이 ±1.0%p 이내면 기본 색, 넘으면 초과(over)·미달(under) 색. 진행 중인 분할매수·분할매도 종목(trading)은 차이가 커도 경고 색 없이 muted로 둔다.
+// 투자구성 분류 줄은 기존 목표까지·목표 초과 금액(gap)을 유지한다. 계산·저장 값은 바꾸지 않는다.
+const ALLOC_GAP_LIMIT = 1;
+function allocTargetGap(cur, target, trading=false){
+  if(finite(target)===null||!Number.isFinite(cur))return null;
+  const raw=cur-target, d=Math.sign(raw)*Math.round(Math.abs(raw)*10+1e-9)/10||0, off=Math.abs(d)>ALLOC_GAP_LIMIT;
+  return {d, text:`${d>0?"+":""}${nfFixed1.format(d)}%`, state:off&&!trading?d>0?"over":"under":"", muted:off&&trading};
+}
 // 투자구성은 지역·큰 분류 합계, 자산 배분은 그룹별 종목·현금. 큰 분류(classes) → 그룹(groups) → 종목(items, 소분류 section은 그룹 안 작은 제목).
 function renderAlloc(tab="alloc"){
   const a=doc.allocation, view=el(tab+"View"), strategy=tab==="strategy";
@@ -122,6 +132,9 @@ function renderAlloc(tab="alloc"){
   const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
   const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
+  const targetGap=(cur,t,trading=false)=>{ const g=allocTargetGap(cur,t,trading); if(!g)return "";
+    const tip=`목표 대비 ${g.text}p (현재 비중 − 목표 비중)${g.state==="over"?" · 목표 초과":g.state==="under"?" · 목표 미달":g.muted?" · 매수중·매도중 종목은 경고 색을 쓰지 않습니다":" · 1.0%p 이내"}`;
+    return `<b class="target-gap${g.state?` ${g.state}`:""}" title="${escA(tip)}">${g.text}</b>`; };
   const bar=(cur,t)=>{ const top=Math.max(cur,finite(t)||0,.01); return `<span class="bar" aria-hidden="true"><i style="width:${Math.min(100,cur/top*100)}%"></i>${finite(t)!==null?`<em style="left:${Math.min(100,t/top*100)}%"></em>`:""}</span>`; };
   const foldButton=(key,id,label,title)=>{const open=allocOpenCards.has(key);return `<button class="alloc-fold" type="button" data-alloc-fold="${escA(key)}" data-fold-label="${escA(label)}" aria-expanded="${open}" aria-controls="${escA(id)}" aria-label="${escA(label)} ${open?"접기":"펼치기"}">${title}<span class="alloc-fold-action" data-alloc-fold-action>${open?"접기":"펼치기"}</span></button>`;};
   const foldAllButton=(id,extra="")=>`<button class="btn mini${extra}" type="button" id="${id}" data-alloc-fold-all aria-expanded="false" aria-controls="allocItems allocCashBody allocMemoBody">전체 펼치기</button>`;
@@ -155,17 +168,19 @@ function renderAlloc(tab="alloc"){
       ${members.unlinked.length?`<p><b>자산 배분과 연결되지 않은 플래너 항목 ${members.unlinked.length}건</b><span>${members.unlinked.map(u=>`${tabName(u.tab)} ‘${escA(u.label)}’`).join(" · ")}</span></p>`:""}
       <small>종목 코드가 같으면(기준·실제 매수 코드, 대소문자·국내 A 접두 무시) 같은 종목으로 봅니다. 코드로 못 찾은 항목만 이름으로 맞추고, 그 경우 ‘추정’으로 표시합니다.</small></div></details>`;
   };
-  const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)];
+  // 매수중·매도중: 끝나지 않은 분할매수·분할매도에 편입된 종목(member-link.js trading). 색은 목표 대비 경고 색과 따로 정한다.
+  const tradeBadge=(list,kind,text,tab)=>list.length?`<span class="trade-state ${kind}" title="${escA(`${tab} 진행 중 · ${list.map(x=>x.label).join(" · ")}${list.every(x=>x.how==="name"||x.how==="fuzzy")?" · 이름이 비슷해 같은 종목으로 추정했습니다":""}`)}">${text}</span>`:"";
+  const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)], trade=memberLink.trading(members?.items.get(it.id));
     const how=r.how==="shares"?`<small class="how holding">${nfShares.format(it.shares)}주${r.q?` × <span class="holding-price">${quoteText(r.q,true)}</span>`:""}</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?stock?.error?'<small class="how quote-status"><span aria-hidden="true">!</span> 시세 조회 실패</small>':'<small class="how">시세 대기</small>':"";
     return `<div class="asset-row${it.done?" done":""}" data-alloc-item="${escA(it.id)}"><label class="check" title="점검완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 점검완료 (직접 표시)"></label>
-      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",r.how!=="shares"?quoteText(r.q):"",r.how!=="shares"&&finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:""].filter(Boolean).join(" · ")}</small></button>
-      <span class="asset-figures"><span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>`:""}</span></span>
+      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}${tradeBadge(trade.buy,"buy","매수중","분할매수")}${tradeBadge(trade.sell,"sell","매도중","분할매도")}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",r.how!=="shares"?quoteText(r.q):"",r.how!=="shares"&&finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:""].filter(Boolean).join(" · ")}</small></button>
+      <span class="asset-figures"><span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>${targetGap(cur,t,trade.buy.length>0||trade.sell.length>0)}`:""}</span></span>
       ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}${memberChips(it)}</div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
     const key=`group:${g.id}`,bodyId=`allocGroup-${encodeURIComponent(g.id)}`;
     return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${foldButton(key,bodyId,`${g.name} 상세`,`<span>${escA(g.name)}</span>`)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
-      <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} (${man(t/100*s.base)})${target.linked?" · 하위 합산":""}`:""} ${gap(t,v)}</p></div>
+      <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} (${man(t/100*s.base)})${target.linked?" · 하위 합산":""} · <span class="group-gap">목표 대비 ${targetGap(s.pct(v),t)}</span>`:""}</p></div>
       <div class="alloc-fold-body" id="${escA(bodyId)}"${allocOpenCards.has(key)?"":" hidden"}>
       ${g.note?`<p class="group-note" title="${escA(g.note)}"><span class="alloc-note-label">메모</span>${noteLineA(g.note)}</p>`:""}
       ${plain.map(itemRow).join("")}${names.map(n=>`<div class="asset-section">${sec(n)}${g.items.filter(it=>it.section===n).map(itemRow).join("")}</div>`).join("")}
