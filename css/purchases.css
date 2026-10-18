@@ -1,5 +1,7 @@
 /* 분할매수: 저장된 계획 목록과 선택한 종목의 회차, 창은 저장 전 복사본을 편집한다 */
 #purchaseMain{min-width:0}#purchaseList .plan-count{white-space:nowrap}.side .purchase-save-status{margin-bottom:4px}
+/* 연결 보유 목록은 분할매도와 같은 구조에 위아래 간격만 줄인다 */
+.sale-linked.purchase-linked .sale-linked-summary,.sale-linked.purchase-linked .sale-linked-policy{margin:2px 0}.purchase-linked .sale-linked-holdings{margin:6px 0 0}.purchase-linked .sale-linked-holding{padding:5px 0}.purchase-linked .sale-linked-holding .sale-holding-meta{margin-top:1px}.purchase-linked .sale-linked-holding .sale-holding-stats{margin-top:1px}
 .purchase-metrics .metric small{overflow-wrap:anywhere}.purchase-metrics .purchase-wait-reached{color:var(--warn)}.purchase-summary p{word-break:keep-all;overflow-wrap:anywhere}.purchase-summary .purchase-note{padding:0;border:0;margin-top:8px}.purchase-summary .purchase-wait{font-size:12px;color:var(--text-3)}.purchase-summary .inline-fields strong{font-size:15px;overflow-wrap:anywhere}.purchase-summary .inline-fields>div{min-width:0}
 .purchase-progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}.purchase-status{padding:3px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}.purchase-status.done{background:var(--done-row);color:var(--good)}
 .purchase-row.done{background:var(--done-row)}.purchase-row.done .price,.purchase-row.done .purchase-condition{color:var(--text-3)}
