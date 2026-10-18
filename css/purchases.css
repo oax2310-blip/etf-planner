@@ -19,7 +19,12 @@
 .buy-track-legend{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}
 .buy-track-legend span{display:inline-flex;align-items:center;gap:5px}.buy-track-legend span::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--warn)}.buy-track-legend .next::before{background:var(--accent)}.buy-track-legend b{color:var(--text);font-weight:700}
 .buy-track-legend em{margin-left:2px;padding:0 6px;border-radius:99px;background:var(--surface-2);color:var(--text);font-size:11px;font-style:normal;font-weight:700;line-height:18px}.buy-track-legend em.up{background:var(--danger-soft);color:var(--danger)}.buy-track-legend em.down{background:var(--accent-soft);color:var(--accent)}
-.purchase-metrics .metric small{overflow-wrap:anywhere}.purchase-metrics .purchase-wait-reached{color:var(--warn)}.purchase-summary p{word-break:keep-all;overflow-wrap:anywhere}
+/* 매수대기 진행 카드(purchases.js waitCard): 위 진행 카드의 띠·양 끝·가운데를 쓰고, 띠는 현재가→선 한 칸, 가운데 %는 도달 주황·시세 대기 회색, 맨 아래 줄에 알림 스위치 */
+.buy-wait .buy-track-cells{height:10px;margin:4px 0 0}.buy-wait .buy-track-cells i{position:relative;border-radius:99px}
+.buy-wait .buy-track-cells i:not(.wait)::before,.buy-wait .buy-track-cells i:not(.wait)::after{content:"";position:absolute;top:50%;width:10px;height:10px;margin-top:-7px;border:2px solid var(--surface);border-radius:50%;box-shadow:0 0 0 1.5px currentColor}
+.buy-wait .buy-track-cells i::before{left:-2px;background:var(--text);color:var(--text)}.buy-wait .buy-track-cells i::after{right:-2px;background:var(--surface);color:var(--accent)}.buy-wait .buy-track-cells i.due::after{color:var(--warn)}
+.buy-wait .buy-track-count.due b{color:var(--warn)}.buy-wait .buy-track-count.wait b{color:var(--text-3)}
+.buy-wait-alert{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}.buy-wait-alert .trade-alert-toggle{margin:-4px 0}
 .purchase-progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}.purchase-status{padding:3px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}.purchase-status.done{background:var(--done-row);color:var(--good)}
 .purchase-row.done{background:var(--done-row)}.purchase-row.done .price,.purchase-row.done .purchase-qty{color:var(--text-3)}.purchase-row .stage-price .price{font-weight:600}
 .purchase-table-head.line,.purchase-row.line{--round-column:112px}.purchase-table.hide-completed .purchase-row.done{display:none}.purchase-table .empty{font-size:13px}
