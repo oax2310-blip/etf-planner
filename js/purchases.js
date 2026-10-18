@@ -20,6 +20,9 @@ const emptyCard=(title,text,button)=>`<div class="card empty purchase-empty"><h2
 const quoteOf=it=>assetQuote(prices,it?.ticker);
 const planCurrency=(plan,it)=>plan?.currency||quoteOf(it)?.currency||(tracksETF(it)&&purchaseQuoteKind(it?.ticker)==="해외"?"USD":"KRW");
 const targetsOf=(it,plan=it.buyPlan,s)=>purchaseTargets(doc.allocation,prices,it,plan,s);
+// 화면 제목·목록 카드에 보일 종목 이름: 매수 우선순위 첫 항목(매수 반영 대상·매수대기의 계획 종목). 순서를 바꾸지 않았으면 계획을 둔 종목, 이름이 없으면 종목 코드. 계획·자산 이름은 바꾸지 않는다.
+const itemName=it=>String(it?.name||"").trim()||String(it?.ticker||"").trim();
+const leadName=(it,s)=>itemName(targetsOf(it,it.buyPlan,s)[0]?.it||it);
 const lineOptions=(it,plan=it.buyPlan)=>({item:it,target:targetsOf(it,plan)[0]?.it||it,allocation:doc.allocation,prices,fx:assetFx(prices,doc.allocation),currency:planCurrency(plan,it)});
 const perRoundText=rows=>{
   const amounts=rows.map(r=>finite(r.line?.amount??r.amount)).filter(v=>v!==null), min=Math.min(...amounts),max=Math.max(...amounts);
@@ -97,7 +100,7 @@ const memoPanel=it=>`<section class="card panel memo"><div class="memo-head"><h2
 // 카드 이름은 계획에만 저장한다. 분할매도와 같은 이름 창·PC 연필·터치 길게 누르기를 사용하며 빈 이름은 필드를 지운다.
 function openPurchaseName(id){
   const found=findItem(id);if(!found?.it.buyPlan||typeof openNameDialog!=="function")return;
-  openNameDialog(id,{name:String(found.it.name||"").trim()||String(found.it.ticker||"").trim(),cardName:found.it.buyPlan.cardName,onSave:value=>{
+  openNameDialog(id,{name:leadName(found.it),cardName:found.it.buyPlan.cardName,onSave:value=>{
     const plan=findItem(id)?.it.buyPlan;if(!plan||String(plan.cardName||"").trim()===value)return;
     setText(plan,"cardName",value);saveSection("allocation");render();
   }});
@@ -113,9 +116,9 @@ const selectPurchase=id=>{selectedPurchaseId=id;};
 const TARGET_SCOPE={group:" (그룹)",section:" (소분류)",plan:" (계획 목표)"};
 function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,target,gap,scope}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
-  const head=stockNames.titleParts(it.name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
+  const name=leadName(it,s),head=stockNames.titleParts(name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   const targetText=target!==null?` / 목표 ${pc(target)}${TARGET_SCOPE[scope]||""}${gap>0?` · 목표까지 ${man(gap)}`:gap<-.5?` · 목표 초과 ${man(-gap)}`:""}`:" · 목표 미입력";
-  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(head.main)}${head.tag?` <span class="title-tag">${escA(head.tag)}</span>`:""}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(it.name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}<p class="alloc-link"><b>자산 배분</b> <span>전체 계좌 · 현재 ${pc(pct)}${targetText}</span></p></div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}`;
+  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(head.main)}${head.tag?` <span class="title-tag">${escA(head.tag)}</span>`:""}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}<p class="alloc-link"><b>자산 배분</b> <span>전체 계좌 · 현재 ${pc(pct)}${targetText}</span></p></div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}`;
 }
 function waitCard({g,it},s){
   const plan=it.buyPlan, entry=waitEntry(it), info=purchaseWaitInfo(plan,entry), cur=planCurrency(plan,it), pt=v=>v?priceText(v,cur):"—", id=escA(it.id);
@@ -197,12 +200,12 @@ function renderPurchases(){
       <div class="section-heading"><h2>분할매수 체크</h2>${alertLine}<span>${p.count?`${p.done} / ${p.count}회 완료`:budgetMissing?"예산 입력 대기":"회차 시세 대기"}</span></div><section class="card table-card purchase-table${completedOpen?"":" hide-completed"}" id="purchaseTable"><div class="m-head"><span>회차 · 기준가</span><span>계획 · 체결</span></div><div class="purchase-table-head${lines?" line":""}"><span>회차</span><span>기준가</span><span>매수 계획 · 체결</span><span>상태</span></div>${done?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"><span>매수 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${targetReached?"전체 계좌 보유액이 목표 이상이라 추가 매수할 금액이 없습니다.":budgetMissing?"계획에 매수 금액을 입력하면 회차가 표시됩니다.":"기준가가 준비되면 매수 회차가 표시됩니다."}</div>`}</div>${rows.length&&done===rows.length?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 수량을 입력하면 실제 산 만큼만 자산에 더하고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매수한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>
       </div>`;
   };
-  // 카드 이름이 없으면 자산 배분 종목 이름을 굵게, PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 이름이 다른 코드에도 있을 때만 코드 줄을 보인다(.show-code).
-  const autoName=it=>String(it.name||"").trim()||String(it.ticker||"").trim(),clash=stockNames.clashes(plans.filter(({it})=>!String(it.buyPlan.cardName||"").trim()).map(({it})=>({name:autoName(it),code:it.ticker})));
+  // 카드 이름이 없으면 제목과 같은 종목 이름(leadName)을 굵게, PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 이름이 다른 코드에도 있을 때만 코드 줄을 보인다(.show-code).
+  const leads=new Map(plans.map(({it})=>[it.id,leadName(it,s)])),autoName=it=>leads.get(it.id),clash=stockNames.clashes(plans.filter(({it})=>!String(it.buyPlan.cardName||"").trim()).map(({it})=>({name:autoName(it),code:it.ticker})));
   const list=plans.map(({g,it},i)=>{
     const p=summaries[i],wait=it.buyPlan.wait?purchaseWaitInfo(it.buyPlan,waitEntry(it)):null;
     const progress=wait?wait.gapPct===null?"시세 대기":wait.reached?"도달":"대기":p.count?`${p.done}/${p.count}`:it.buyPlan.lines&&purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s).buyable===0?"목표 도달":it.buyPlan.lines&&!(it.buyPlan.lines.budget>0)?"예산 대기":"시세 대기",reached=!!wait?.reached;
-    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?String(it.name||"").trim():code,showCode=!card&&code&&code!==name&&clash(name);
+    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?autoName(it):code,showCode=!card&&code&&code!==name&&clash(name);
     return `<div class="plan-cell"><button class="plan-item${it.id===selectedPurchaseId?" active":""}${showCode?" show-code":""}" type="button" data-purchase-select="${escA(it.id)}" aria-pressed="${it.id===selectedPurchaseId}" aria-controls="purchaseMain" title="${escA(`${name}${card&&sub?` · ${sub}`:""} · ${context} · ${mode} · ${progress}${!wait&&p.count?"회 완료":""}`)}"><span class="plan-row"><strong>${escA(name)}</strong><span class="plan-count${reached?" due":""}">${progress}${!wait&&p.count?'<span class="plan-unit">회</span>':""}</span></span><span class="plan-title">${sub&&sub!==name?escA(sub):""}</span>${wait?"":`<span class="plan-bar"><i style="width:${Math.round(p.done/Math.max(p.count,1)*100)}%"></i></span>`}</button><button class="plan-rename" type="button" data-purchase-rename="${escA(it.id)}" aria-label="${escA(name)} 카드 이름 변경" title="카드 이름 변경">${PEN}</button></div>`;
   }).join("");
   const empty=items.length?emptyCard("아직 분할매수 계획이 없습니다","저장된 계획의 ＋ 추가를 눌러 종목과 매수 방식을 고르세요.",""):emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);
