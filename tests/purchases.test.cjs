@@ -47,7 +47,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {doc,item,prices,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
+  return {ctx,doc,item,prices,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
 
 // 회차표 부분 체결 줄: 회차 칸 아래 남은 수량과 같은 줄의 누적 체결 입력값
@@ -97,6 +97,14 @@ test('회차표: 새 체결이 들어갈 회차의 계좌·ETF가 같으면 표 
   const {move}=linkedAccounts(r);move('b',-1);const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='1';first.onchange();move('a',-1);
   assert.equal(target(),1,'다른 계좌로 체결한 부분 체결이 있어도 새 체결 회차 기준으로 올림');assert.match(r.html(),/<b>테스트 종목<\/b><small>테스트 계좌 · 222222[ <]/);
   assert.match(r.html(),/purchase-sub">추가 계좌 · 다른 계좌 ETF · 333333 · 남은 예상 /);assert.doesNotMatch(r.html(),/purchase-sub">[^<]*테스트 계좌/,'새 체결 회차는 계좌를 반복하지 않음');
+});
+
+test('회차표 기준가: 원화는 원 단위를 숫자 뒤 작은 글자로 붙이고 여섯 자리부터 글자를 줄이며 달러는 그대로 둔다',()=>{
+  const real=(v,cur)=>cur==='USD'?`$${v}`:`${Math.round(v).toLocaleString('ko-KR')}원`,html=options=>{const r=setup(options);r.ctx.priceText=real;r.render();return r.html();};
+  const krw=html({budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
+  assert.match(krw,/<span class="price">10,000<small class="price-unit">원<\/small><\/span>/);assert.match(krw,/<span class="price">13,333<small class="price-unit">원<\/small><\/span>/);
+  assert.match(html({budget:600,end:null,names:['25일선','32일선'],ma:{'25일선':100000,'32일선':200000}}),/<span class="price long">100,000<small class="price-unit">원<\/small><\/span>/);
+  const usd=html({currency:'USD',price:57.61});assert.match(usd,/<span class="price">\$57\.61<\/span>/);assert.doesNotMatch(usd,/price-unit/);
 });
 
 test('회차표: 실제 ETF 코드를 넣기 전에 같은 계좌로 완료한 회차가 있어도 매수 종목을 표 위 한 줄로 올리고 어느 회차에도 계좌를 반복하지 않는다',()=>{

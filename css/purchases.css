@@ -21,7 +21,7 @@
 .buy-track-legend em{margin-left:2px;padding:0 6px;border-radius:99px;background:var(--surface-2);color:var(--text);font-size:11px;font-style:normal;font-weight:700;line-height:18px}.buy-track-legend em.up{background:var(--danger-soft);color:var(--danger)}.buy-track-legend em.down{background:var(--accent-soft);color:var(--accent)}
 .purchase-metrics .metric small{overflow-wrap:anywhere}.purchase-metrics .purchase-wait-reached{color:var(--warn)}.purchase-summary p{word-break:keep-all;overflow-wrap:anywhere}
 .purchase-progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}.purchase-status{padding:3px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}.purchase-status.done{background:var(--done-row);color:var(--good)}
-.purchase-row.done{background:var(--done-row)}.purchase-row.done .price,.purchase-row.done .purchase-qty{color:var(--text-3)}
+.purchase-row.done{background:var(--done-row)}.purchase-row.done .price,.purchase-row.done .purchase-qty{color:var(--text-3)}.purchase-row .price-unit{font-size:.8em;font-weight:400;margin-left:1px}
 .purchase-table-head.line,.purchase-row.line{--round-column:112px}.purchase-table.hide-completed .purchase-row.done{display:none}.purchase-table .empty{font-size:13px}
 .purchase-row>.check input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;display:inline-grid;place-content:center;width:18px;height:18px;margin:0;border:1.5px solid var(--line-strong);border-radius:5px;background:var(--field);cursor:pointer}.purchase-row>.check input[type=checkbox]::before{content:"";width:10px;height:10px;background:var(--on-good);clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0%,43% 62%);transform:scale(0);transition:transform .12s}.purchase-row>.check input[type=checkbox]:checked{background:var(--good);border-color:var(--good)}.purchase-row>.check input[type=checkbox]:checked::before{transform:scale(1)}
 /* 회차표(purchases.js row): 회차(아래 도달·남은 수량) · 기준가 · 매수 · 체결 · 알림 · 상태(PC만). 알림을 켤 수 없는 종목은 알림 칸을 뺀다(.no-alert).
@@ -83,8 +83,8 @@
   .purchase-head{padding:12px}.purchase-progress{gap:6px 8px}.purchase-line-bounds,.purchase-line-preview{grid-template-columns:minmax(0,1fr)}.purchase-line-set,.purchase-line-budget{grid-column:1/-1}.purchase-ladder-foot{flex-direction:column;align-items:stretch}
   .purchase-wait-grid{grid-template-columns:minmax(0,1fr)}
 }
-@media(max-width:380px){
-  /* 360px대 폰: 기준가 칸이 좁아 큰 원화 가격이 글자 단위로 깨지지 않게 다른 칸·간격을 줄인다 */
+@media(max-width:390px){
+  /* 360·384px 폰: 기준가 칸이 좁아 원화 가격의 '원'이나 숫자가 아랫줄로 밀리지 않게 다른 칸·간격을 줄인다 */
   .purchase-table-head,.purchase-row{--round-column:56px;grid-template-columns:var(--round-column) minmax(0,1fr) 40px 50px 34px;gap:6px}.purchase-table-head.line,.purchase-row.line{--round-column:84px}
   .purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 40px 50px}
   .purchase-table-head,.purchase-row{padding-right:10px;padding-left:10px}.purchase-row .check{gap:6px;font-size:13px}.purchase-row .stage-price .price{font-size:14px}.purchase-qty{font-size:13px}.purchase-fill input{padding:4px 6px;font-size:13.5px}
