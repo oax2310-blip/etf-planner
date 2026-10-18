@@ -68,6 +68,9 @@ select{-webkit-appearance:none;appearance:none;background-image:var(--chev)!impo
 .check input[type=checkbox]:hover{border-color:var(--good)}.check input[type=checkbox]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* 메모 */
 .memo{display:flex;flex-direction:column}.memo .memo-count{margin-left:auto}.memo textarea{flex:1;margin-top:12px;width:100%;min-height:76px;resize:vertical;border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6}.memo-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.memo-head h2{margin:0;font-size:16px}.memo-head span{font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
+/* 플래너 메모(분할매수·분할매도·달러선물·재매수)는 자주 쓰지 않아 3줄 높이·작은 글씨·좁은 여백으로 둔다(늘리면 끌어서 조절). 자산 화면 배분 메모는 그대로.
+   재매수 칸의 인라인 min-height(rebuy.js는 수집기 고정 파일이라 그대로 둠)를 덮으려 min-height에만 !important를 쓴다. */
+.panel.memo:not(.assets-memo){padding:12px 14px}.memo:not(.assets-memo) .memo-head{gap:8px}.memo:not(.assets-memo) .memo-head h2{font-size:14px}.memo:not(.assets-memo) .memo-head span{font-size:11px}.memo:not(.assets-memo) .memo-head .btn.mini{padding:3px 9px;font-size:12px;border-radius:7px}.memo:not(.assets-memo) textarea{margin-top:8px;height:calc(4.5em + 14px);min-height:calc(4.5em + 14px)!important;padding:6px 10px;font-size:13px;line-height:1.5}
 /* 구역 제목: 제목 · 짧은 설명 ……… 알림 버튼·편집 버튼 */
 .section-heading{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:28px 2px 12px}.section-heading>h2{margin:0;font-size:18px;font-weight:700;letter-spacing:-.025em}.section-heading>span:not(.trade-alert-actions){order:1;font-size:12.5px;color:var(--text-3)}.section-heading>.trade-alert-actions{order:2;margin-left:auto}.section-heading>.btn{order:3}
 /* 회차 표 */
