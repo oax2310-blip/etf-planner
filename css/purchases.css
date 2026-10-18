@@ -28,7 +28,7 @@
    회차마다 따로 그리는 줄이라 열 폭을 고정해 세로로 맞추고, 긴 안내·계좌가 다른 회차의 계좌·예상액은 아래 작은 줄(.purchase-sub). 모든 회차가 같은 계좌·ETF면 표 위 한 줄(.purchase-buy-target). */
 .purchase-table-head,.purchase-row{grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 88px 96px 56px 100px}.purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 88px 96px 100px}
 .purchase-table-head>:nth-child(3),.purchase-table-head>:nth-child(4){text-align:right}.purchase-table-head>:nth-child(n+5){text-align:center}
-.purchase-round{display:grid;line-height:1.3}.purchase-round small{font-size:11px;font-weight:700;color:var(--warn);white-space:normal;word-break:keep-all}
+.purchase-round{display:grid;line-height:1.3}.purchase-round>b{font-weight:600}.purchase-round small{font-size:11px;font-weight:700;color:var(--warn);white-space:normal;word-break:keep-all}
 .purchase-qty{min-width:0;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .purchase-fill{display:flex;justify-content:flex-end;min-width:0}.purchase-fill input{width:100%;min-width:0;min-height:34px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);font-weight:600;text-align:right;-moz-appearance:textfield;appearance:textfield}
 .purchase-fill input::-webkit-inner-spin-button,.purchase-fill input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.purchase-row.partial .purchase-fill input{border-color:var(--warn-line);color:var(--warn)}.purchase-row.done .purchase-fill input{color:var(--good)}
