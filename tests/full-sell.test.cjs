@@ -74,7 +74,8 @@ test('전액 매도 표식은 종료 기준선 없는 계획에만 손절 도달
   assert.match(ma.main,/<p class="quote-line"><strong class="quote-now">\$450<\/strong><span class="quote-state">직접 이탈 후 25월선까지<\/span><span class="quote-round">5회 분할매도<\/span><\/p>/,'현재가가 공통 시세 줄 맨 앞');
   const pct=draw([pctPlan()],quote(520));
   assert.match(pct.main,/<p class="quote-line"><strong class="quote-now">\$520<\/strong><span class="quote-state">시작 기준가부터 20% 하락까지<\/span><span class="quote-round">보유 전량 5회 분할매도<\/span><\/p>/);
-  assert.match(pct.main,/<div class="cut-milestones full-sell-mark" id="fullSellMark"><dl><div><dt>전액 매도<small>100%<\/small><\/dt><dd><strong>−20% · \$400<\/strong><small>시작 \$500 · 5회 분할 · <span class="full-sell-state">대기<\/span><\/small><\/dd><\/div><\/dl><\/div><\/section>/);
+  assert.match(pct.main,/<div class="cut-milestones full-sell-mark" id="fullSellMark"><dl><div><dt>전액 매도<small>100%<\/small><\/dt><dd><strong>−20% · \$400<\/strong><small>시작 \$500 · 5회 분할 · <span class="full-sell-state">대기<\/span><\/small><\/dd><\/div><\/dl><\/div><div class="buy-wait-alert sale-track-foot">/,'표식은 계획 진행 카드의 다음 회차 줄 아래, 맨 아래 줄 앞');
+  assert.match(pct.main,/<section class="card buy-track sale-track"(?:(?!<\/section>)[\s\S])*id="fullSellMark"/,'계획 진행 카드 안에 둔다');
   assert.doesNotMatch(pct.main,/fullSellCard|sale-row due/,'큰 카드·강조 행은 만들지 않는다');
   // 기준선 계획과 하락률 계획의 회차 목록은 같은 가격·수량이면 같은 HTML이다.
   const rows=html=>html.slice(html.indexOf('<div class="section-heading"><h2>분할매도 체크'));
@@ -109,9 +110,11 @@ test('불러오기·동기화 검증은 하락률과 이전 전액매도 입력 
   for(const bad of [{endPct:'abc'},{endPct:-1},{endPct:101},{fullSell:{price:'abc'}}])assert.throws(()=>ctx.externalData.planner(data(bad)),/기록 형식/);
 });
 
-test('회차당 가격 하락폭은 시작 기준가 대비 %로 보이고 금액은 설명에만 둔다',()=>{
-  assert.match(draw([pctPlan()],quote(520)).main,/회차당 가격 하락폭<\/div><strong title="\$25">−5%<\/strong>/);
-  assert.match(draw([maPlan({stages:30,startPrice:100,endPrice:80})],quote(120)).main,/회차당 가격 하락폭<\/div><strong title="\$0\.6896551724137931">−0\.69%<\/strong>/);
-  assert.match(draw([maPlan({startPrice:80,endPrice:100})],quote(120)).main,/<strong title="\$5">\+6\.25%<\/strong>/);
-  assert.match(draw([maPlan({startPrice:0})],quote(120)).main,/회차당 가격 하락폭<\/div><strong>—<\/strong>/);
+test('분할매도 화면은 계산 요약 카드 없이 메모만 한 줄 전체로 둔다',()=>{
+  for(const t of [draw([pctPlan()],quote(520)),draw([maPlan({startPrice:0})],quote(120))]){
+    assert.doesNotMatch(t.main,/계산 요약|회차당 가격 하락폭|1회 주문 비중|inline-fields/);
+    assert.match(t.main,/<div class="control-grid"><section class="card panel memo">/);
+  }
+  const css=fs.readFileSync(path.join(__dirname,'../css/app.css'),'utf8');
+  assert.match(css,/\.control-grid>\.memo:only-child\{grid-column:1\/-1\}/,'메모만 있으면 두 칸을 모두 쓴다');
 });
