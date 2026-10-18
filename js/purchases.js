@@ -170,16 +170,16 @@ function renderPurchases(){
         :missing.length?`아직 시세가 없는 단계 ${escA(movingLineText(missing.join("·")))}는 건너뜁니다(60분봉 긴 선은 수집이 과거 봉을 받는 동안 며칠 걸릴 수 있음).`:""].filter(Boolean):[];
     const alertLine=alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
       :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
-    // 회차별 반영 계좌·실제 ETF·예상액. 모든 회차의 계좌·ETF가 같으면 회차표 위 '매수 종목' 한 줄로 올리고, 미체결 회차의 예상액·잔액까지 같으면 함께 올린다.
-    // 다르면(옛 체결 계좌가 남았거나 회차마다 금액이 다름) 해당 회차 아래 작은 줄에 그대로 둔다. 부분 체결의 남은 예상액은 회차마다 다르므로 항상 회차 아래에 둔다.
+    // 회차별 반영 계좌·실제 ETF·예상액. 새 체결이 들어갈 회차(미체결 → 없으면 부분 체결 → 모두 완료면 전체)의 계좌·ETF가 모두 같으면 회차표 위 '매수 종목' 한 줄로 올리고,
+    // 미체결 회차의 예상액·잔액까지 같으면 함께 올린다. 다른 계좌·ETF로 체결한 완료·부분 체결 회차만 회차 아래 작은 줄에 계좌를 둔다(실제 ETF 코드를 넣기 전에 같은 계좌로 체결한 옛 기록은 같은 계좌로 본다). 부분 체결의 남은 예상액은 회차마다 다르므로 회차 아래에 둔다.
     const remainingOf=r=>r.plannedShares!==null?Number(Math.max(0,r.plannedShares-(r.shares||0)).toFixed(8)):null;
     const detailOf=r=>{
       const partial=r.recorded&&!r.done,remaining=remainingOf(r),expected=r.recorded?r.done?r.actual:r.shares>0?r.actual*remaining/r.shares:null:r.fill?.actual, remainder=r.fill?.tradeTicker?Math.max(0,r.fill.budget-r.fill.actual):null;
       const amount=r.tradeTicker?`${expected!==null&&expected!==undefined?`${r.done?"체결":partial?"남은 예상":"예상"} ${wonAmount(expected)}`:"가격 확인 필요"}${remainder!==null?` · 잔액 ${wonAmount(remainder)}`:""}`:"";
       return {group:r.found?r.found.g.name:"",name:r.found?r.found.it.name:"",ticker:r.tradeTicker||"",amount};
     };
-    const details=new Map(rows.map(r=>[r,detailOf(r)])),lead=rows.length?details.get(rows[0]):null;
-    const shared=lead&&(lead.name||lead.ticker)&&rows.every(r=>{const d=details.get(r);return d.group===lead.group&&d.name===lead.name&&d.ticker===lead.ticker;})?lead:null;
+    const details=new Map(rows.map(r=>[r,detailOf(r)])),base=[rows.filter(r=>!r.recorded),open,rows].find(x=>x.length)||[],lead=base.length?details.get(base[0]):null;
+    const sameTarget=(d,l)=>d.group===l.group&&d.name===l.name&&d.ticker===l.ticker,shared=lead&&(lead.name||lead.ticker)&&base.every(r=>sameTarget(details.get(r),lead))?lead:null;
     const openAmounts=new Set(rows.filter(r=>!r.recorded).map(r=>details.get(r).amount)),sharedAmount=shared&&openAmounts.size===1?[...openAmounts][0]:"";
     const buyTarget=shared?`<div class="purchase-buy-target"><span>매수 종목</span><div><b>${escA(shared.name||shared.ticker)}</b>${(t=>t?`<small>${t}</small>`:"")([shared.group,shared.name?shared.ticker:"",sharedAmount.startsWith("예상")?`회차 ${sharedAmount}`:sharedAmount].filter(Boolean).map(escA).join(" · "))}</div></div>`:"";
     const row=r=>{
@@ -187,7 +187,7 @@ function renderPurchases(){
       const shown=r.done?r.shares:r.plannedShares, fallback=shown!==null?"":r.done?"체결 수량 미입력":r.stage?.condition||"수량 계산 불가";
       const krw=cur==="USD"?`<span class="krw">${r.price>0?s.fx?`≈ ₩${nf1.format(Math.round(r.price*s.fx))}`:"환율 대기":"시세 대기"}</span>`:"";
       const note=missingTarget?"반영 계좌가 없어졌습니다. 0을 입력하면 이 회차의 체결을 취소합니다.":partial?remaining===null?"계획에 매수 가격·수량을 입력하세요.":"":blocked?missingFx?"자산 배분에 원/달러 환율을 입력하거나 현물 시세를 불러오세요.":r.plannedShares===0?`${r.line?"남은 총예산":"회차 예산"}으로 ${qtyText(unitOf(actualItem),actualItem)}를 살 수 없습니다.`:tracksETF(it)||actualItem.id!==it.id?"실제 매수 ETF의 현재가와 필요한 환율을 확인하세요.":"계획에 매수 가격·수량을 입력하세요.":r.line?"":r.price!==null?[r.stage.condition,r.stage.date].filter(Boolean).join(" · "):r.stage.date||"날짜 미정", name=movingLineText(`${it.name} ${r.label}`);
-      const d=details.get(r),track=shared?(partial||!r.recorded&&!sharedAmount)?d.amount:"":[d.group&&d.name?`${d.group} · ${d.name}`:"",d.ticker,d.amount].filter(Boolean).join(" · ");
+      const d=details.get(r),track=shared&&(sameTarget(d,shared)||r.recorded&&!d.ticker&&d.group===shared.group&&d.name===shared.name)?(partial||!r.recorded&&!sharedAmount)?d.amount:"":[d.group&&d.name?`${d.group} · ${d.name}`:"",d.ticker,d.amount].filter(Boolean).join(" · ");
       const sub=[fallback,track,note].filter(Boolean).map(escA).join(" · "), flag=partial?remaining!==null?`남은 ${qtyText(remaining,actualItem)}`:"부분 체결":reached?"도달":"";
       // 이동평균선 돌파 회차는 재매수처럼 단계 이름 + 회차 번호 칩(25선 [2]), 한 줄로 촘촘하게
       const tag=r.line?(r.line.key==="end"?"목표가":`${escA(movingLineText(r.line.line))}<span class="tr-no">${r.line.t+1}</span>`):escA(r.label);
