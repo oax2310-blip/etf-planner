@@ -19,7 +19,16 @@
 .buy-track-legend{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}
 .buy-track-legend span{display:inline-flex;align-items:center;gap:5px}.buy-track-legend span::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--warn)}.buy-track-legend .next::before{background:var(--accent)}.buy-track-legend b{color:var(--text);font-weight:700}
 .buy-track-legend em{margin-left:2px;padding:0 6px;border-radius:99px;background:var(--surface-2);color:var(--text);font-size:11px;font-style:normal;font-weight:700;line-height:18px}.buy-track-legend em.up{background:var(--danger-soft);color:var(--danger)}.buy-track-legend em.down{background:var(--accent-soft);color:var(--accent)}
-.purchase-metrics .metric small{overflow-wrap:anywhere}.purchase-metrics .purchase-wait-reached{color:var(--warn)}.purchase-summary p{word-break:keep-all;overflow-wrap:anywhere}
+/* 매수대기 진행 카드(purchases.js waitCard): 위 진행 카드의 양 끝·가운데를 쓰고, 띠는 왼쪽이 낮은 가격인 가격 축. 대기는 왼쪽 선(○)·오른쪽 현재가(●)와 선 쪽(하락)을 가리키는 ‹ 무늬,
+   도달(.crossed)은 현재가가 선 왼쪽으로 넘어가고 무늬 없이 주황 띠. 가운데 %는 대기 파랑(하락)·도달 주황, 맨 아래 줄에 알림 스위치 */
+.buy-wait-track{position:relative;height:10px;margin-top:4px}
+.buy-wait-track i{position:absolute;inset:0;overflow:hidden;border-radius:99px;background:var(--surface-3)}.buy-wait-track.next i{background:var(--accent)}.buy-wait-track.due i{background:var(--warn)}
+.buy-wait-track.next i::before{content:"";position:absolute;inset:0 16px;opacity:.5;background:linear-gradient(135deg,transparent calc(50% - 1px),var(--surface) calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)) 0 0/24px 5px repeat-x,linear-gradient(45deg,transparent calc(50% - 1px),var(--surface) calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)) 0 5px/24px 5px repeat-x}
+.buy-wait-track:not(.wait)::before,.buy-wait-track:not(.wait)::after{content:"";position:absolute;z-index:1;top:50%;width:10px;height:10px;margin-top:-7px;border:2px solid var(--surface);border-radius:50%}.buy-wait-track::before{left:-2px}.buy-wait-track::after{right:-2px}
+.buy-wait-track.next::before{background:var(--surface);box-shadow:0 0 0 2px var(--accent)}.buy-wait-track.crossed::after{background:var(--surface);box-shadow:0 0 0 2px var(--warn)}
+.buy-wait-track.next::after,.buy-wait-track.crossed::before{background:var(--text);box-shadow:0 0 0 1.5px var(--text)}
+.buy-wait .buy-track-count.next b{color:var(--accent)}.buy-wait .buy-track-count.due b{color:var(--warn)}
+.buy-wait-alert{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}.buy-wait-alert .trade-alert-toggle{margin:-4px 0}
 .purchase-progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}.purchase-status{padding:3px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:600}.purchase-status.done{background:var(--done-row);color:var(--good)}
 .purchase-row.done{background:var(--done-row)}.purchase-row.done .price,.purchase-row.done .purchase-qty{color:var(--text-3)}.purchase-row .stage-price .price{font-weight:600}
 .purchase-table-head.line,.purchase-row.line{--round-column:112px}.purchase-table.hide-completed .purchase-row.done{display:none}.purchase-table .empty{font-size:13px}

@@ -52,6 +52,8 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
 
 // 회차표 부분 체결 줄: 회차 칸 아래 남은 수량과 같은 줄의 누적 체결 입력값
 const partialRow=(filled,left)=>new RegExp(`<small>남은 ${left}주</small>[\\s\\S]*?value="${filled}"`);
+// 매수대기 진행 카드(purchases.js waitCard) 부분
+const waitCard=r=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track buy-wait"'),html.indexOf('<div class="control-grid">'));};
 // 계획 진행 카드(purchases.js statusCard)의 상태 칩과 완료/전체 회차
 const trackStatus=(status,done,count)=>new RegExp(`buy-track-chip[^"]*">${status}</span>.*?<div class="buy-track-count"><b>${done}</b><span>/ ${count}회</span>`);
 function linkedAccounts(r,{ticker=r.item.ticker,tradeTicker='333333',price=20000}={}){
@@ -547,22 +549,32 @@ test('분할매수 시세 대기에도 전체 알림을 켜 두면 시세 도착
 
 test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도달하며 보유량·체결 회차는 바꾸지 않는다',()=>{
   const r=setup({currency:'USD',wait:'25개월선',price:110,ma:{'25개월선':100}}),before=JSON.stringify(r.doc);
-  assert.match(r.html(),/매수대기/);assert.match(r.html(),/기준선 위/);assert.doesNotMatch(r.html(),/기준선 도달/);
+  // 매수대기 진행 카드(purchases.js waitCard): 왼쪽이 낮은 가격인 띠(왼쪽 선·오른쪽 현재가), 가운데 상태 칩·선까지 남은 하락 %, 맨 아래 알림 스위치. 계산 요약 카드는 두지 않는다.
+  assert.match(waitCard(r),/<div class="buy-wait-track next"[^>]*><i><\/i><\/div><div class="buy-track-row"><div class="buy-track-end"><b>\$100<\/b><small>25월선<\/small><\/div>/,'대기 중엔 낮은 가격인 선이 왼쪽');
+  assert.match(waitCard(r),/<span class="buy-track-chip">매수대기<\/span><\/div><div class="buy-track-count next"><b>-9\.1%<\/b><\/div><small>25월선까지 하락<\/small>/,'선 ÷ 현재가 − 1');
+  assert.match(waitCard(r),/<div class="buy-track-end r"><b>\$110<\/b><small>현재가<\/small><\/div>/);
+  assert.match(waitCard(r),/<div class="buy-wait-alert"><span>25월선 이하 도달 알림<\/span><label><input type="checkbox" data-purchase-alert="a" data-key="wait" checked><\/label><\/div><\/section>/);
+  assert.doesNotMatch(r.html(),/기준선 도달|계산 요약|purchase-summary|purchase-metrics|기준선과 간격/);assert.doesNotMatch(waitCard(r),/buy-track-note/);
   assert.equal(r.input('[data-purchase-buy]'),undefined);assert.equal(r.input('[data-purchase-shares]'),undefined);
   assert.equal(r.rules()[0].label,'매수대기 25개월선');
   assert.match(r.html(),/25월선까지 기다립니다/);assert.doesNotMatch(r.html(),/25개월선/,'화면 글자는 N월선, 규칙 이름·기록은 N개월선');assert.equal(r.item.buyPlan.wait.line,'25개월선');assert.equal(r.rules()[0].condition,'down');assert.equal(r.rules()[0].targetPrice,100);
-  for(const close of [100,90]){r.prices.stocks.AAA.close=close;r.render();assert.match(r.html(),/기준선 도달/);}
+  for(const [close,gap,caption] of [[100,'0%','도달'],[90,'-10%','아래']]){r.prices.stocks.AAA.close=close;r.render();
+    assert.match(waitCard(r),new RegExp(`<div class="buy-wait-track due crossed"[^>]*><i></i></div><div class="buy-track-row"><div class="buy-track-end"><b>\\$${close}</b><small>현재가</small></div>`),'도달하면 현재가가 선 왼쪽으로 넘어간다');
+    assert.match(waitCard(r),new RegExp(`<span class="buy-track-chip warn">기준선 도달</span></div><div class="buy-track-count due"><b>${gap}</b></div><small>25월선 ${caption}</small></div><div class="buy-track-end r"><b>\\$100</b><small>25월선</small>`),'도달 뒤에는 현재가 ÷ 선 − 1');}
   assert.equal(JSON.stringify(r.doc),before);assert.equal(r.item.shares,10);
   r.change('[data-purchase-alert]',false);assert.equal(r.rules().length,0);assert.equal(r.item.buyPlan.notify.keys.wait,false);
   r.change('[data-purchase-alert]',true);assert.equal(r.rules().length,1);
 });
 
 test('매수대기: 이동평균 시세가 없으면 도달·알림을 만들지 않으며 새 선 값은 같은 알림을 갱신한다',()=>{
-  const r=setup({wait:'25개월선'});assert.match(r.html(),/시세 대기/);assert.equal(r.rules().length,0);
+  const r=setup({wait:'25개월선'});assert.equal(r.rules().length,0);
+  assert.match(waitCard(r),/<div class="buy-wait-track wait"[^>]*><i><\/i><\/div><div class="buy-track-row"><div class="buy-track-end"><b>—<\/b><small>25월선<\/small><\/div><div class="buy-track-main"><div class="buy-track-chips"><span class="buy-track-chip muted">시세 대기<\/span><\/div><\/div><div class="buy-track-end r"><b>₩10000<\/b><small>현재가<\/small>/,'시세 대기에는 가운데 %·안내 글자를 비운다');
+  assert.match(waitCard(r),/<p class="buy-track-note muted">선택한 이동평균선의 시세를 기다리는 중입니다\./);assert.doesNotMatch(waitCard(r),/buy-track-count/);
   r.prices.stocks['111111'].ma={'25개월선':9000};r.render();const first=r.rules()[0];
   r.prices.stocks['111111'].ma['25개월선']=9500;r.render();assert.equal(r.rules()[0].targetPrice,9500);assert.equal(r.rules()[0].revision,first.revision);
   r.item.buyPlan.wait.line='60일선';r.prices.stocks['111111'].ma['60일선']=9500;r.render();assert.notEqual(r.rules()[0].revision,first.revision);
   r.prices.stocks['111111'].kind='해외';r.render();assert.equal(r.rules().length,0);assert.doesNotMatch(r.html(),/기준선 도달/);
+  r.item.ticker='';r.render();assert.match(waitCard(r),/<p class="buy-track-note muted">자산 배분에서 국내·미국 시세 종목 코드를 확인하세요\.<\/p><\/section>/);assert.doesNotMatch(waitCard(r),/buy-wait-alert|data-purchase-alert/,'알림을 켤 수 없으면 스위치 줄을 뺀다');
 });
 
 test('분할매수 설정: 기존 목표 가격 계획의 사용자 지정 단계는 다시 저장해도 늘리지 않는다',()=>{
