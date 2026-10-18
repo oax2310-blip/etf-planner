@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-15T22:48:51.833Z",
+  "generatedAt": "2026-10-18T22:45:17.548Z",
   "series": {
     "usGdp": {
       "code": "GDPC1",
@@ -246,8 +246,8 @@
       "sourceUpdatedAt": "2026-09-30",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -966,8 +966,8 @@
       "sourceUpdatedAt": "2026-09-22",
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -1691,8 +1691,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -2416,8 +2416,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -3143,11 +3143,9 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
-      "revisedPeriods": [
-        "2026-07"
-      ],
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
+      "revisedPeriods": [],
       "lastRevisionAt": "2026-10-15T22:48:51.833Z"
     },
     "krRate": {
@@ -3876,8 +3874,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -4131,8 +4129,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-15T22:48:51.833Z",
-      "lastAttemptAt": "2026-10-15T22:48:51.833Z",
+      "fetchedAt": "2026-10-18T22:45:17.548Z",
+      "lastAttemptAt": "2026-10-18T22:45:17.548Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     }
