@@ -74,7 +74,7 @@ const lineSetOf=(names,extend=false)=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k
   return names.length&&(names.every((n,i)=>range[i]===n)&&(extend||names.length===range.length)||bounded.length===names.length&&names.every((n,i)=>bounded[i]===n));
 })||"custom";
 const startText=name=>movingLineUnit(name)==="선"?name.replace(/선$/,"시선"):movingLineText(name);
-// 분할매도와 같은 보유 목록·상태·메모 순서(매수대기만 메모 앞에 계산 요약). 조회는 계산에 쓰는 연결 항목 그대로 읽으며 보유 수량·자산 이름·계획 기록을 바꾸지 않는다.
+// 분할매도와 같은 보유 목록·상태·메모 순서(계산 요약 카드 없음). 조회는 계산에 쓰는 연결 항목 그대로 읽으며 보유 수량·자산 이름·계획 기록을 바꾸지 않는다.
 function linkedHoldings({g,it},s){
   const wait=!!it.buyPlan.wait,ordered=targetsOf(it,it.buyPlan,s),infos=new Map(ordered.map(r=>[r.it.id,allocationHoldingInfo(r.it,s)])),total=allocationHoldingTotal(infos.values(),s);
   const rows=ordered.map((r,j)=>{
