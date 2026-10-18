@@ -206,9 +206,9 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
   const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,{id:'x',name:r.item.name,ticker:'333333',amount:50}]});
   const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
-  assert.match(r.html(),/전체 계좌 · 현재 25% \/ 목표 40% · 목표까지 15만원/);assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
+  assert.match(r.html(),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
   other.amount=20;r.emit();assert.match(r.html(),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/매수 10주/);
-  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40%/);assert.match(r.html(),/목표 도달/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40% · 목표 도달<\/span>/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
   r.doc.allocation.total=200;r.emit();assert.match(r.html(),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/매수 20주/);assert.equal(r.item.buyPlan.lines.budget,50);
 });
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
@@ -225,7 +225,7 @@ test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 �
 test('자산 배분 목표 21%→21.5%: 분할매수 제목·총 매수 금액·회차·알림·계획 창이 함께 바뀌고 체결 기록은 그대로 둔다',()=>{
   const r=setup({budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
   r.doc.allocation.total=1000;r.item.target=21;r.item.buyPlan.lines.target=21;r.item.buyPlan.notify={stages:true};r.initialize();r.render();
-  assert.match(r.html(),/전체 계좌 · 현재 1% \/ 목표 21% · 목표까지 200만원/);assert.match(r.html(),/총 200만원/);
+  assert.match(r.html(),/현재 1% \/ 목표 21% · 목표까지 200만원/);assert.match(r.html(),/총 200만원/);
   const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='10';first.onchange();assert.equal(r.item.shares,20);
   const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),rules=r.rules().length,before=JSON.parse(JSON.stringify(r.doc.allocation));
   const open=()=>r.inputs('[data-purchase-buy-shares]').filter(x=>!x.attrs.value||x.attrs.value==='0').map(x=>Number(x.attrs.max)).reduce((n,v)=>n+v,0),planned=open();
