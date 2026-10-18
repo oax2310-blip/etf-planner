@@ -204,4 +204,4 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected
 loadConfig();refreshTokenField();refreshCollectionTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
 $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=externalData.planner(JSON.parse(await file.text())),next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
-function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // index.html 맨 끝에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)
+function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // js/start.js에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)
