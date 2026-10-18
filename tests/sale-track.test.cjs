@@ -64,6 +64,25 @@ test('판 회차는 빈 칸, 부분 체결은 남은 비율만큼 채우고 도�
   assert.match(due.card,/<span>첫 매도 완료<\/span>/,'첫 매도 회차가 끝나면 알림 스위치는 완료 표시');
 });
 
+test('회차표는 진행 카드와 같은 기준으로 도달 회차를 강조하고 회차 번호 아래·상태 칸에 도달로 표시한다',()=>{
+  const rows=html=>html.match(/<div class="sale-row[^"]*">/g).map(x=>x.slice(20,-2).trim());
+  const due=draw(plan(),quote(460));
+  assert.match(due.card,/<span class="buy-track-chip warn">도달 2회<\/span>/);
+  assert.deepEqual(rows(due.html),['due','due','','','']);
+  assert.match(due.html,/aria-label="1회 매도 완료"><span class="sale-round">1회<small>도달<\/small><\/span><\/label>/);
+  assert.equal((due.html.match(/<div class="status due">도달<\/div>/g)||[]).length,2);
+  assert.match(due.html,/aria-label="3회 매도 완료">3회<\/label>/,'닿지 않은 회차는 그대로');
+  // 완료·부분 체결 회차는 도달보다 체결 상태를 먼저 보인다.
+  const fills={0:{price:500,plannedQty:2,qty:2},1:{price:475,plannedQty:2,qty:1}};
+  const mixed=draw(plan({fills,checked:[true,false,false,false,false]}),quote(440));
+  assert.deepEqual(rows(mixed.html),['done','partial','due','','']);
+  assert.match(mixed.html,/aria-label="3회 매도 완료"><span class="sale-round">3회<small>도달<\/small>/);
+  assert.equal((mixed.html.match(/<small>도달<\/small>/g)||[]).length,1);
+  // 오르며 파는 계획은 현재가 이상, 시세가 없으면 도달로 보지 않는다.
+  assert.deepEqual(rows(draw(plan({startPrice:80,endPrice:100}),quote(85)).html),['due','due','','','']);
+  assert.deepEqual(rows(draw(plan(),null).html),['','','','','']);
+});
+
 test('오르며 파는 계획은 현재가 이상을 도달로 보고 모두 팔면 이름표가 띠 끝으로 간다',()=>{
   const up=draw(plan({startPrice:80,endPrice:100}),quote(85));
   assert.deepEqual(up.cells,['due','due','now','next','hold','hold']);

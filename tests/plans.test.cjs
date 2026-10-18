@@ -604,6 +604,20 @@ test('분할매도: 수량 없는 옛 금액 체결도 이미 차감한 주수�
   fillQuantity(0);assert.equal(it.shares,20);
 });
 
+test('통합 매도 회차표는 진행 카드와 같은 기준으로 도달 회차를 표시하고 부분 체결 회차는 부분 체결로 둔다',()=>{
+  const r=groupSale(),quote=r.ctx.priceData.stocks.AAA={kind:'해외',close:96,asOf:'2026-10-08',ma:{}}; // 회차 기준가 100 · 98.33 · 96.67 · 95 …(하락 매도)
+  const rows=()=>Array.from({length:7},(_,i)=>r.api.planSaleRow(r.p,i,'')),state=html=>html.map(h=>h.match(/^<div class="sale-row tracking sale-group-row ([^"]*)"/)[1]);
+  const before=JSON.stringify([r.p,r.alloc]);let html=rows();
+  assert.deepEqual(state(html),['due','due','due','','','','']);
+  assert.match(html[0],/aria-label="1회 전체 계좌 매도 완료"><span class="sale-round">1회<small>도달<\/small><\/span><\/label>/);
+  assert.match(html[0],/<div class="status due">도달<\/div><\/div>$/);
+  assert.match(html[3],/aria-label="4회 전체 계좌 매도 완료">4회<\/label>/);assert.match(html[3],/<div class="status ">대기<\/div><\/div>$/);
+  assert.equal(JSON.stringify([r.p,r.alloc]),before,'회차표를 그려도 기록은 그대로');
+  const row=r.api.planSaleExecution(r.p,0).rows.find(x=>x.plannedQty>1);r.member(0,row.targetId,1);html=rows();
+  assert.deepEqual(state(html),['partial','due','due','','','','']);assert.doesNotMatch(html[0],/도달/);
+  quote.close=101;assert.deepEqual(state(rows()),['partial','','','','','','']);
+});
+
 test('통합 매도 진행 카드는 여러 계좌의 회차 체결을 합쳐 부분 체결 칸과 안내로 보이고 기록을 바꾸지 않는다',()=>{
   const r=groupSale();r.ctx.PENCIL='';
   const row=r.api.planSaleExecution(r.p,0).rows.find(x=>x.plannedQty>1);r.member(0,row.targetId,1);
