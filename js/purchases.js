@@ -191,9 +191,9 @@ function renderPurchases(){
       const sub=[fallback,track,note].filter(Boolean).map(escA).join(" · "), flag=partial?remaining!==null?`남은 ${qtyText(remaining,actualItem)}`:"부분 체결":reached?"도달":"";
       // 이동평균선 돌파 회차는 재매수처럼 단계 이름 + 회차 번호 칩(25선 [2]), 한 줄로 촘촘하게
       const tag=r.line?(r.line.key==="end"?"목표가":`${escA(movingLineText(r.line.line))}<span class="tr-no">${r.line.t+1}</span>`):escA(r.label);
-      // 표 열: 회차(아래 도달·남은 수량) · 기준가(달러면 원화 환산) · 매수 수량 · 누적 체결 입력 · 알림 · 상태(PC). 입력·알림의 저장 키는 그대로 쓴다.
+      // 표 열: 회차(아래 도달·남은 수량) · 기준가(매수 수량과 같은 중간 굵기, 달러면 원화 환산) · 매수 수량 · 누적 체결 입력 · 알림 · 상태(PC). 입력·알림의 저장 키는 그대로 쓴다.
       return `<div class="purchase-row${r.line?" line":""}${r.done?" done":partial?" partial":reached?" due":""}"><label class="check" title="잔량까지 매수 완료"><input type="checkbox" ${r.line?"data-purchase-buy":"data-purchase-done"}="${id}" ${r.attr}${r.done?" checked":""}${partial?' data-purchase-partial="true" aria-checked="mixed"':""}${blocked||missingTarget&&!r.done?" disabled":""} aria-label="${escA(name)} 매수 완료"><span class="purchase-round"><b>${tag}</b>${flag?`<small>${escA(flag)}</small>`:""}</span></label>
-        <div class="stage-price">${(t=>`<span class="price${t.length>10?" xlong":t.length>8?" long":""}">${escA(t)}</span>`)(r.price>0?pt(r.price):"—")}${krw}</div>
+        <div class="stage-price">${(t=>`<span class="price${t.length>9?" xlong":t.length>7?" long":""}">${escA(t)}</span>`)(r.price>0?pt(r.price):"—")}${krw}</div>
         <div class="purchase-qty">${shown!==null?escA(qtyText(shown,actualItem)):"—"}</div>
         <div class="purchase-fill">${r.plannedShares!==null||r.recorded&&!r.stage?.partial?`<input type="number" min="0" ${r.plannedShares!==null?`max="${r.plannedShares}"`:""} step="${unitOf(actualItem)}" inputmode="${unitOf(actualItem)<1?"decimal":"numeric"}" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${escA(r.shares??"")}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 누적 체결 수량 (${qtyUnit(actualItem).trim()})">`:""}</div>
         ${alertable?`<div class="purchase-alert">${(r.done||!blocked)&&r.price>0?tradeAlertToggle(purchaseAlertOn(plan,r.line||r.stage),`data-purchase-alert="${id}" ${r.attr}`,name,r.done):""}</div>`:""}
