@@ -24,6 +24,9 @@ function movingLineName(name){
   return `${Number(m[1])}${unit}`;
 }
 const movingLineUnit = name => movingLineName(name).replace(/^\d+/,"");
+// 화면 글자 전용: 기록·시세·알림 규칙 이름의 'N개월선'을 'N월선'으로 보인다(문장 안 여러 개도). 저장·계산·규칙 이름은 그대로 'N개월선'.
+// 입력의 '월선'·'달선'은 movingLineName이 'N개월선'으로 저장한다. 알림 서비스 워커는 stock-names.js에 같은 규칙을 둔다.
+const movingLineText = text => String(text??"").replace(/(\d)\s*개월선/g,"$1월선");
 // 분할매수·재매수 공통 범위: 시작·마지막 선을 포함하고 시·일·주·월 순으로 그 사이의 선택 단계만 남긴다.
 // 없는 경계선은 포함하되 앞서는 종료선은 거절한다. 입력 목록의 순서는 유지하고 조회 때 저장하지 않는다.
 function movingLineRange(names,start,last=null){

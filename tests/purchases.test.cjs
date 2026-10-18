@@ -429,7 +429,8 @@ test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도
   const r=setup({currency:'USD',wait:'25개월선',price:110,ma:{'25개월선':100}}),before=JSON.stringify(r.doc);
   assert.match(r.html(),/매수대기/);assert.match(r.html(),/기준선 위/);assert.doesNotMatch(r.html(),/기준선 도달/);
   assert.equal(r.input('[data-purchase-buy]'),undefined);assert.equal(r.input('[data-purchase-shares]'),undefined);
-  assert.equal(r.rules()[0].label,'매수대기 25개월선');assert.equal(r.rules()[0].condition,'down');assert.equal(r.rules()[0].targetPrice,100);
+  assert.equal(r.rules()[0].label,'매수대기 25개월선');
+  assert.match(r.html(),/25월선까지 기다립니다/);assert.doesNotMatch(r.html(),/25개월선/,'화면 글자는 N월선, 규칙 이름·기록은 N개월선');assert.equal(r.item.buyPlan.wait.line,'25개월선');assert.equal(r.rules()[0].condition,'down');assert.equal(r.rules()[0].targetPrice,100);
   for(const close of [100,90]){r.prices.stocks.AAA.close=close;r.render();assert.match(r.html(),/기준선 도달/);}
   assert.equal(JSON.stringify(r.doc),before);assert.equal(r.item.shares,10);
   r.change('[data-purchase-alert]',false);assert.equal(r.rules().length,0);assert.equal(r.item.buyPlan.notify.keys.wait,false);

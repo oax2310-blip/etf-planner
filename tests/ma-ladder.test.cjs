@@ -115,3 +115,13 @@ test('ETF와 달러선물 재매수도 도달 가격을 이전 구간에 넣지 
     assert.deepEqual(plain(ctx.futureRebuySummary(f).tranches).map(x=>[x.price,x.amount]),[[1350,1],[1360,1],[1370,1],[1380,1]]);
   }
 });
+
+test('이동평균선 표시 글자: 기록 이름 N개월선은 화면에서만 N월선으로 보이고 입력 별칭 월선은 N개월선으로 저장한다',()=>{
+  const ctx=load(),text=vm.runInContext('movingLineText',ctx);
+  assert.equal(text('25개월선'),'25월선');
+  assert.equal(text('분할매수 32개월선 1차 · 25주선→125개월선 1/3'),'분할매수 32월선 1차 · 25주선→125월선 1/3');
+  assert.equal(text('60일선 · 25주선 · 25선'),'60일선 · 25주선 · 25선');
+  assert.equal(text('125개월 평균 환율'),'125개월 평균 환율','개월선이 아닌 글자는 그대로');
+  assert.equal(text(null),'');
+  assert.equal(ctx.movingLineName('25월선'),'25개월선');assert.equal(ctx.movingLineName(text('32개월선')),'32개월선','보인 이름을 다시 넣어도 같은 기록 이름');
+});

@@ -7,6 +7,8 @@ const text = v => typeof v==="string"||typeof v==="number" ? String(v).trim() : 
 const code = t => { const s=text(t).toUpperCase(); return s==="비트코인"?"BTC-USD":s.replace(/^A(\d[0-9A-Z]{5})$/,"$1"); };
 const nameKey = name => text(name).normalize("NFKC").toLowerCase().replace(/\s+/g," ");
 const obj = v => !!v&&typeof v==="object"&&!Array.isArray(v);
+// 이동평균선 이름 글자: ma-ladder.js movingLineText와 같은 규칙(서비스 워커는 ma-ladder.js를 불러오지 않는다). 받은 알림·기록의 'N개월선'은 그대로 두고 보일 때만 'N월선'.
+const lineText = v => String(v??"").replace(/(\d)\s*개월선/g,"$1월선");
 const allocItems = () => { const groups=typeof assetStore==="object"?assetStore.doc?.allocation?.groups:null;
   return (Array.isArray(groups)?groups:[]).flatMap(g=>obj(g)&&Array.isArray(g.items)?g.items.filter(obj):[]); };
 const planList = () => typeof state==="object"&&Array.isArray(state?.plans)?state.plans.filter(obj):[];
@@ -83,10 +85,10 @@ const NOTICE_WORDS = {"":"알림","매매 기준 알림":"알림","이동평균�
 function notice(data,map){
   const clip=(v,max)=>typeof v==="string"?v.slice(0,max):"";
   const title=clip(data?.title,100),body=clip(data?.body,400),raw=typeof data?.ticker==="string"?data.ticker:"";
-  const plain={title:title||"매매 플래너 알림",body:body||"설정한 기준선 알림을 확인해 주세요."};
+  const plain={title:lineText(title)||"매매 플래너 알림",body:lineText(body)||"설정한 기준선 알림을 확인해 주세요."};
   if(!text(raw)||!Object.hasOwn(NOTICE_WORDS,title))return plain;
   const rest=raw&&body.startsWith(`${raw} `)?body.slice(raw.length+1):body;
-  return {title:`${alertKind(data).menu} ${NOTICE_WORDS[title]} · ${alertSubject(data,map)}`.slice(0,100),body:rest||plain.body};
+  return {title:`${alertKind(data).menu} ${NOTICE_WORDS[title]} · ${alertSubject(data,map)}`.slice(0,100),body:lineText(rest)||plain.body};
 }
 // 이름표 저장소: 알림 수신함과 따로 둔다(수신함 DB 버전을 올리지 않는다). 실패하면 이름표 없이 발송 글자로 보인다.
 const DB_NAME="etf-planner-stock-names",STORE="names",KEY="alerts";
@@ -119,5 +121,5 @@ function remember(){
     use("readwrite",store=>store.put(map,KEY)).catch(()=>{lastSaved="";});
   },400);
 }
-return {code,lookup,planName,titleParts,clashes,alertMap,ambiguous,alertKind,alertName,alertSubject,notice,recall,remember};
+return {code,lineText,lookup,planName,titleParts,clashes,alertMap,ambiguous,alertKind,alertName,alertSubject,notice,recall,remember};
 })();

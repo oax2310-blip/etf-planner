@@ -25,7 +25,7 @@ function alertRuleInput(input){
   const ticker=String(input.ticker||"").trim().toUpperCase(), period=Number(input.period), tolerancePct=Number(input.tolerancePct);
   if(!alertTickerValid(ticker))return {error:"국내 종목 코드·미국 종목 심볼(비트코인은 BTC-USD)을 확인해 주세요."};
   if(!String(input.period??"").trim()||!Number.isInteger(period)||period<1||period>400)return {error:"기준선 숫자는 1~400의 정수로 넣어 주세요."};
-  if(!["일선","주선","개월선"].includes(input.unit))return {error:"일선·주선·개월선 중 하나를 골라 주세요."};
+  if(!["일선","주선","개월선"].includes(input.unit))return {error:"일선·주선·월선 중 하나를 골라 주세요."};
   if(!String(input.tolerancePct??"").trim()||!Number.isFinite(tolerancePct)||tolerancePct<0||tolerancePct>10)return {error:"허용 범위는 0~10%로 넣어 주세요."};
   return {value:{ticker,period,unit:input.unit,tolerancePct,enabled:input.enabled!==false}};
 }
@@ -66,7 +66,7 @@ function alertQuoteInfo(rule, prices){
 }
 // 카드 제목은 종목명(stock-names.js lookup: 자산 배분·재매수·분할매도에서 같은 코드의 이름), 못 찾으면 코드. 규칙에는 코드만 저장한다.
 function alertRuleCard(rule){
-  const info=alertQuoteInfo(rule,priceData), currency=quoteCurrency(info.quote), lineName=`${rule.period}${rule.unit}`, name=typeof stockNames==="object"?stockNames.lookup(rule.ticker):"", label=name?`${name} ${rule.ticker}`:rule.ticker;
+  const info=alertQuoteInfo(rule,priceData), currency=quoteCurrency(info.quote), lineName=typeof stockNames==="object"?stockNames.lineText(`${rule.period}${rule.unit}`):`${rule.period}${rule.unit}`, name=typeof stockNames==="object"?stockNames.lookup(rule.ticker):"", label=name?`${name} ${rule.ticker}`:rule.ticker;
   const price=value=>value===null?"—":priceText(value,currency);
   const gap=info.gapPct===null?"—":`${info.gapPct>0?"+":""}${info.gapPct.toLocaleString("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2})}%`;
   const relation=info.gapPct===null?"시세 대기":info.near?"선 근처":info.gapPct>0?"선 위":"선 아래";

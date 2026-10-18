@@ -56,15 +56,17 @@ function alertHistoryCondition(item){
 }
 function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});}
 // 표시 이름·종류는 화면에서만 정한다(stock-names.js). 저장된 name·type은 받은 그대로 두고, 이름이 코드뿐이면 이 기기의 계획·자산 이름을 보인다.
+// 기준선 글자는 화면에서만 'N개월선'→'N월선'(stock-names.js lineText). 저장된 line·body는 받은 그대로 둔다.
+const alertHistoryText=v=>typeof stockNames==="object"?stockNames.lineText(v):String(v??"");
 const alertHistoryView=(item,names)=>typeof stockNames==="object"?{name:stockNames.alertName(item,names),type:stockNames.alertKind(item).text}:{name:item.name,type:item.type};
 // 같은 매매 회차의 재알림은 최초 알림 카드 하나에 횟수·마지막 발송 시각만 보인다. 당시 조건·가격은 최초 알림 그대로다.
 function alertHistoryCard(item,names=null){
   const read=!!item.readAt,count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0,{name,type}=alertHistoryView(item,names);
   return `<article class="alert-history-card${read?" is-read":""}">
-    <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(type)} ${esc(name)} ${esc(item.line)} 알림${count?` 재알림 ${count}회`:""} ${read?"읽음":"읽지 않음"}, 종목으로 이동">
+    <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(type)} ${esc(name)} ${esc(alertHistoryText(item.line))} 알림${count?` 재알림 ${count}회`:""} ${read?"읽음":"읽지 않음"}, 종목으로 이동">
       <span class="alert-history-meta"><span class="alert-history-type">${esc(type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
       <span class="alert-history-name">${esc(name)}${name!==item.ticker?`<small>${esc(item.ticker)}</small>`:""}<span aria-hidden="true">↗</span></span>
-      <span class="alert-history-condition">${esc(alertHistoryCondition(item))}</span>
+      <span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span>
       <span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item.currency))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item.currency))}</strong></span></span>
       ${item.krOpenReminder&&item.observedAt?`<span class="alert-history-note">미국 신호 ${esc(alertHistoryTime(item.observedAt))}${item.asOf?` · 시세 기준일 ${esc(item.asOf)}`:""}</span>`:""}
       ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}

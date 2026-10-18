@@ -60,7 +60,7 @@ function openDialog(o, rows){
   const d=dialog(), first=preferred(rows,o), buy=o.trade.sign>0, t=o.trade, rate=t.currency==="USD"?(summary(o.ticker,o.ownId)?.fx||0):1;
   const value=finite(t.value)??(finite(t.qty)&&finite(t.price)&&rate?t.qty*t.price*rate/1e4:null);
   pending={o,rows};
-  $("linkWhat").textContent=[o.label,finite(t.qty)?qty(t.qty,rows[0].it):"",value?`약 ${man(value)}`:""].filter(Boolean).join(" · ");
+  $("linkWhat").textContent=[typeof movingLineText==="function"?movingLineText(o.label):o.label,finite(t.qty)?qty(t.qty,rows[0].it):"",value?`약 ${man(value)}`:""].filter(Boolean).join(" · ");
   $("linkHint").textContent=`어느 계좌에서 ${buy?"샀":"팔았"}나요? 계좌 이름을 누르면 그 계좌로 모두 반영합니다. 여러 계좌로 나눴으면 칸을 고치세요(주식은 주, 금액 종목은 지금 평가액 기준 만원).`;
   $("linkRows").innerHTML=rows.map((r,i)=>{const it=r.it, own=finite(it.shares)!==null?qty(finite(it.shares),it):"", n=r===first&&r.n!==null?r.n:"";
     return `<div class="link-row${n!==""?" picked":""}"><button type="button" class="link-pick" data-link-pick="${i}"><strong>${esc(it.name)}</strong><small>${[r.g.name,man(r.value),own].filter(Boolean).map(esc).join(" · ")}</small></button>
