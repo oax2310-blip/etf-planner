@@ -1,13 +1,13 @@
 <!doctype html>
 <!--
   HANDOFF: 공통 규칙·파일 지도는 AGENTS.md.
-  이 파일은 플래너 화면 뼈대·창·파일 로딩을 담당한다. 초기화는 맨 끝 script.
+  이 파일은 플래너 화면 뼈대·창·파일 로딩을 담당한다. 초기화는 맨 끝 js/start.js.
   매매·저장·시세·알림 규칙은 담당 JS의 함수 주석, 디자인은 css/app.css의 해당 구간.
 --><html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <!-- 토큰을 쓰는 페이지: 스크립트는 이 사이트 파일(+아래 해시의 초기화 script)만, 통신은 이 사이트·GitHub API만. 초기화 script를 고치면 해시도 함께(tests/files.test.cjs). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-K5S7ew+NIRXaBknc1av3wjrlnZsKiDwMW7jJoAFsUoc='; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:; connect-src 'self' https://api.github.com; worker-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'" />
+  <!-- 토큰을 쓰는 페이지: 스크립트는 이 사이트 파일만(인라인 script 금지), 통신은 이 사이트·GitHub API만. 이 meta가 브라우저의 미리 받기를 꺼서 본문 script는 defer로 한꺼번에 받는다(tests/files.test.cjs). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:; connect-src 'self' https://api.github.com; worker-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
@@ -16,10 +16,10 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=200"></script>
-  <script src="js/repo-security.js?v=200"></script>
-  <link rel="stylesheet" href="css/app.css?v=200" />
-  <link rel="stylesheet" href="css/purchases.css?v=200" />
+  <script src="js/theme.js?v=201"></script>
+  <script src="js/repo-security.js?v=201"></script>
+  <link rel="stylesheet" href="css/app.css?v=201" />
+  <link rel="stylesheet" href="css/purchases.css?v=201" />
 </head>
 <body>
   <header class="top">
@@ -264,31 +264,31 @@
 
   <dialog id="futurePlanDialog" aria-labelledby="futurePlanTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=200"></script>
-  <script src="js/data-validation.js?v=200"></script>
-  <script src="js/core.js?v=200"></script>
-  <script src="js/price-collection.js?v=200"></script>
-  <script src="js/sync.js?v=200"></script>
-  <script src="js/prices.js?v=200"></script>
-  <script src="js/assets-calc.js?v=200"></script>
-  <script src="js/assets-store.js?v=200"></script>
-  <script src="js/alloc-link.js?v=200"></script>
-  <script src="js/stock-names.js?v=200"></script>
-  <script src="js/item-search.js?v=200"></script>
-  <script src="js/purchases.js?v=200"></script>
-  <script src="js/trade-alerts.js?v=200"></script>
-  <script src="js/plans.js?v=200"></script>
-  <script src="js/futures.js?v=200"></script>
-  <script src="js/futures-plan.js?v=200"></script>
-  <script src="js/futures-rebuy.js?v=200"></script>
-  <script src="js/rebuy.js?v=200"></script>
-  <script src="js/alerts.js?v=200"></script>
-  <script src="js/alert-target.js?v=200"></script>
-  <script src="js/alert-history-store.js?v=200"></script>
-  <script src="js/alert-history.js?v=200"></script>
-  <script src="js/push.js?v=200"></script>
-  <script src="js/member-link.js?v=200"></script>
-  <script src="js/member-go.js?v=200"></script>
-  <script>allocLink.initialize(); purchasePlanner.initialize(); startSync(); openPlannerLocation(); save(); initializeAlerts(); initializeAlertHistory(); initializePush();</script>
+  <script src="js/ma-ladder.js?v=201" defer></script>
+  <script src="js/data-validation.js?v=201" defer></script>
+  <script src="js/core.js?v=201" defer></script>
+  <script src="js/price-collection.js?v=201" defer></script>
+  <script src="js/sync.js?v=201" defer></script>
+  <script src="js/prices.js?v=201" defer></script>
+  <script src="js/assets-calc.js?v=201" defer></script>
+  <script src="js/assets-store.js?v=201" defer></script>
+  <script src="js/alloc-link.js?v=201" defer></script>
+  <script src="js/stock-names.js?v=201" defer></script>
+  <script src="js/item-search.js?v=201" defer></script>
+  <script src="js/purchases.js?v=201" defer></script>
+  <script src="js/trade-alerts.js?v=201" defer></script>
+  <script src="js/plans.js?v=201" defer></script>
+  <script src="js/futures.js?v=201" defer></script>
+  <script src="js/futures-plan.js?v=201" defer></script>
+  <script src="js/futures-rebuy.js?v=201" defer></script>
+  <script src="js/rebuy.js?v=201" defer></script>
+  <script src="js/alerts.js?v=201" defer></script>
+  <script src="js/alert-target.js?v=201" defer></script>
+  <script src="js/alert-history-store.js?v=201" defer></script>
+  <script src="js/alert-history.js?v=201" defer></script>
+  <script src="js/push.js?v=201" defer></script>
+  <script src="js/member-link.js?v=201" defer></script>
+  <script src="js/member-go.js?v=201" defer></script>
+  <script src="js/start.js?v=201" defer></script>
 </body>
 </html>

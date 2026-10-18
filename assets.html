@@ -7,7 +7,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <!-- 토큰을 쓰는 페이지: 스크립트는 이 사이트 파일(+아래 해시의 초기화 script)만, 통신은 이 사이트·GitHub API만. 초기화 script를 고치면 해시도 함께(tests/files.test.cjs). -->
+  <!-- 토큰을 쓰는 페이지: 스크립트는 이 사이트 파일만(인라인 script 금지), 통신은 이 사이트·GitHub API만. 이 meta가 브라우저의 미리 받기를 꺼서 본문 script는 defer로 한꺼번에 받는다(tests/files.test.cjs). -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:; connect-src 'self' https://api.github.com; worker-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
@@ -17,10 +17,10 @@
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <script src="js/theme.js?v=200"></script>
-  <script src="js/repo-security.js?v=200"></script>
-  <link rel="stylesheet" href="css/app.css?v=200" />
-  <link rel="stylesheet" href="css/assets.css?v=200" />
+  <script src="js/theme.js?v=201"></script>
+  <script src="js/repo-security.js?v=201"></script>
+  <link rel="stylesheet" href="css/app.css?v=201" />
+  <link rel="stylesheet" href="css/assets.css?v=201" />
 </head>
 <body class="assets-page">
   <header class="top">
@@ -130,17 +130,17 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=200"></script>
-  <script src="js/data-validation.js?v=200"></script>
-  <script src="js/assets-calc.js?v=200"></script>
-  <script src="js/price-collection.js?v=200"></script>
-  <script src="js/assets-store.js?v=200"></script>
-  <script src="js/member-link.js?v=200"></script>
-  <script src="js/ledger-benchmark.js?v=200"></script>
-  <script src="js/assets.js?v=200"></script>
-  <script src="js/assets-ledger.js?v=200"></script>
-  <script src="js/assets-savings.js?v=200"></script>
-  <script src="js/assets-installments.js?v=200"></script>
-  <script src="js/assets-start.js?v=200"></script>
+  <script src="js/ma-ladder.js?v=201" defer></script>
+  <script src="js/data-validation.js?v=201" defer></script>
+  <script src="js/assets-calc.js?v=201" defer></script>
+  <script src="js/price-collection.js?v=201" defer></script>
+  <script src="js/assets-store.js?v=201" defer></script>
+  <script src="js/member-link.js?v=201" defer></script>
+  <script src="js/ledger-benchmark.js?v=201" defer></script>
+  <script src="js/assets.js?v=201" defer></script>
+  <script src="js/assets-ledger.js?v=201" defer></script>
+  <script src="js/assets-savings.js?v=201" defer></script>
+  <script src="js/assets-installments.js?v=201" defer></script>
+  <script src="js/assets-start.js?v=201" defer></script>
 </body>
 </html>
