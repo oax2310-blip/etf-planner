@@ -217,9 +217,10 @@ function recordPlanQuantity(p,i,n,redraw=renderPlans){
 const planNow = p => { const px=planQuote(p.ticker,p.currency); return Number(px?.close)>0?Number(px.close):null; };
 const planStageDue = (p, r, now) => now!==null&&!r.done&&r.trade.price>0&&(Number(p.endPrice)>Number(p.startPrice)?now>=r.trade.price:now<=r.trade.price);
 // 회차표는 분할매수 회차표(purchases.js row·css/purchases.css)와 같은 모양: 회차(아래 도달·남은 수량) · 기준가(달러면 원화 환산) · 매도 수량 · 누적 체결 입력 · 알림 · 상태(PC).
-// 회차를 파는 종목(통합 매도의 계좌·종목, 계좌 선택 매도의 실제 ETF, 직접 입력의 보유 종목 하나)은 표 위 '매도 종목'에 둔다(planSaleSellers): 새 체결이 들어갈 회차(미체결 → 부분 체결 → 전체)를
-// 파는 종목을 처음 파는 회차 순(= 매도 우선순위 순)으로 모두 올려 순서를 바꾸면 맨 위 종목도 바뀌고, 둘 이상이면 종목마다 맡은 회차(예: 1~6회)를 함께 보인다.
-// 표 위 종목으로 파는 회차는 종목을 반복하지 않고, 다른 종목으로 체결한 회차만 회차 아래 작은 줄에 둔다. 한 회차를 여러 계좌로 나눈 통합 매도 회차는 계좌마다 작은 줄과 입력칸이며
+// 회차를 파는 종목(통합 매도의 계좌·종목, 계좌 선택 매도의 실제 ETF, 직접 입력의 보유 종목 하나) 중 지금 매도 중인 종목만 표 위 '매도 종목'에 둔다(planSaleSellers): 새 체결이 들어갈 회차
+// (미체결 → 부분 체결 → 전체) 중 첫 회차의 종목이며, 그 회차를 여러 계좌로 나눴으면 그 계좌들을 우선순위 순서로 모두. 매도 우선순위를 바꾸거나 앞 계좌를 다 팔면 바뀐다.
+// 표 위 줄이 있으면 미체결 회차에는 종목을 반복하지 않고(뒤 계좌가 팔 회차도 그 계좌 차례가 되면 표 위에 보임), 지금 매도 중이 아닌 종목으로 체결한 완료·부분 체결 회차만 회차 아래 작은 줄에 둔다.
+// 한 회차를 여러 계좌로 나눈 통합 매도 회차는 계좌마다 작은 줄과 입력칸이며
 // 줄 이름은 계좌(굵게)·종목 이름, 종목 이름 끝 괄호(예: '(연저펀)', 규칙은 stock-names.js titleParts)가 있으면 그 꼬리표를 굵게 해 좁은 칸에서 잘려도 구분한다. 체크는 모든 계좌의 잔량까지 완료, 입력·체크·알림 저장 키는 그대로.
 function planSaleRowInfo(p,i){
   const r=planQuantityProgress(p,i),e=r.execution,group=!!e?.group,price=group?e.sourcePrice:r.trade.price,priced=price>0;
@@ -231,15 +232,14 @@ function planSaleRowInfo(p,i){
   return {i,r,e,group,price,priced,members,holder,sellers:holder?.many?members.map(seller):holder?[holder]:[],ready:group&&priced&&e.rows.every(row=>row.plannedQty!==null&&(!row.plannedQty||live(row)))};
 }
 function planSaleSellers(infos){
-  const base=[infos.filter(x=>!x.r.recorded),infos.filter(x=>!x.r.done),infos].find(x=>x.length)||[],found=new Map();
-  for(const {i,sellers} of base)for(const h of sellers)if(String(h.name||"").trim()){const f=found.get(h.key);if(f)f.last=i;else found.set(h.key,{...h,first:i,last:i});}
-  return [...found.values()];
+  const base=[infos.filter(x=>!x.r.recorded),infos.filter(x=>!x.r.done),infos].find(x=>x.length)||[],named=x=>x.sellers.filter(h=>String(h.name||"").trim());
+  const now=base.find(x=>named(x).length);return now?named(now):[];
 }
 const planSellerText = h => [h.account,h.ticker&&h.ticker!==h.name?h.ticker:"",...(h.live?[h.price>0?priceText(h.price,h.currency):"시세 대기",h.manual?"직접 입력":"",h.stale?"지난 시세":""]:[])].filter(Boolean).join(" · ");
 function planSellerHead(sellers){
   if(!sellers.length)return "";
   if(sellers.length===1)return `<div class="purchase-buy-target"><span>매도 종목</span><div><b>${esc(sellers[0].name)}</b>${(t=>t?`<small>${esc(t)}</small>`:"")(planSellerText(sellers[0]))}</div></div>`;
-  return `<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers">${sellers.map(h=>`<li><b>${esc(h.name)}</b><small><em>${h.first===h.last?`${h.first+1}회`:`${h.first+1}~${h.last+1}회`}</em>${(t=>t?` · ${esc(t)}`:"")(planSellerText(h))}</small></li>`).join("")}</ol></div>`;
+  return `<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers">${sellers.map(h=>`<li><b>${esc(h.name)}</b>${(t=>t?`<small>${esc(t)}</small>`:"")(planSellerText(h))}</li>`).join("")}</ol></div>`;
 }
 function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
   const {r,e,group,price,priced,members,holder}=info,partial=r.recorded&&!r.done,due=!r.recorded&&planStageDue(p,r,planNow(p)),state=r.done?"done":partial?"partial":due?"due":"";
@@ -250,7 +250,7 @@ function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
   const input=group?one&&one.plannedQty!==null?memberInput(one):"":r.target!==null?`<input type="number" min="0" max="${r.target}" step="${digits?"0.00000001":"1"}" inputmode="${digits?"decimal":"numeric"}" data-sale-filled="${i}" value="${esc(r.amount)}" placeholder="0"${!priced||e&&r.target===0?" disabled":""} aria-label="${i+1}회 매도 누적 체결 수량 (${unit})">`:"";
   const memberName=m=>{const t=stockNames.titleParts(m.name);return t.tag?[t.tag,[m.account,t.main].filter(Boolean).join(" · ")]:[m.account,m.name];};
   const lines=group&&members.length>1?members.map(m=>`<div class="sale-member-line"><span title="${esc(`${m.account} · ${m.name} (${m.ticker})`)}">${(([b,s])=>`<b>${esc(b)}</b><small>${esc(s)}</small>`)(memberName(m))}</span><span class="purchase-qty">${m.plannedQty===null?"—":`${won.format(m.plannedQty)}주`}</span><div class="purchase-fill">${m.plannedQty!==null?memberInput(m):""}</div></div>`).join(""):"";
-  const listed=Array.isArray(sellers)&&holder&&!holder.many&&sellers.some(h=>h.key===holder.key);
+  const listed=Array.isArray(sellers)&&sellers.length>0&&holder&&!holder.many&&(!r.recorded||sellers.some(h=>h.key===holder.key));
   const notes=[holder&&!holder.many&&!listed?[holder.account&&holder.name?`${holder.account} · ${holder.name}`:holder.name,holder.ticker&&holder.ticker!==holder.name?holder.ticker:""].filter(Boolean).join(" · "):"",
     group?r.target===null?"계좌별 보유량 확인 필요":r.target===0?"이번 회차 배정 없음":members.some(m=>m.plannedQty&&!m.valid)?"실제 종목의 시세·환율·보유 기록을 확인하세요.":""
     :e?e.plannedQty===null?"실제 ETF 가격·환율·보유량을 확인하세요.":e.capped?"보유량으로 제한":""
