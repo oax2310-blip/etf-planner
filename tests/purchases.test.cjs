@@ -210,7 +210,7 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
   const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,{id:'x',name:r.item.name,ticker:'333333',amount:50}]});
   const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
-  assert.match(r.html(),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
+  assert.match(r.html(),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/매수 15주/);
   other.amount=20;r.emit();assert.match(r.html(),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/매수 10주/);
   r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40% · 목표 도달<\/span>/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
   r.doc.allocation.total=200;r.emit();assert.match(r.html(),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/매수 20주/);assert.equal(r.item.buyPlan.lines.budget,50);
@@ -229,13 +229,13 @@ test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 �
 test('자산 배분 목표 21%→21.5%: 분할매수 제목·총 매수 금액·회차·알림·계획 창이 함께 바뀌고 체결 기록은 그대로 둔다',()=>{
   const r=setup({budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
   r.doc.allocation.total=1000;r.item.target=21;r.item.buyPlan.lines.target=21;r.item.buyPlan.notify={stages:true};r.initialize();r.render();
-  assert.match(r.html(),/현재 1% \/ 목표 21% · 목표까지 200만원/);assert.match(r.html(),/총 200만원/);
+  assert.match(r.html(),/현재 1% \/ 목표 21% · 목표까지 200만원/);
   const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='10';first.onchange();assert.equal(r.item.shares,20);
   const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),rules=r.rules().length,before=JSON.parse(JSON.stringify(r.doc.allocation));
   const open=()=>r.inputs('[data-purchase-buy-shares]').filter(x=>!x.attrs.value||x.attrs.value==='0').map(x=>Number(x.attrs.max)).reduce((n,v)=>n+v,0),planned=open();
   r.item.target=21.5;assert.deepEqual([...r.sync(before)],['a']);r.emit();
   assert.equal(r.item.buyPlan.lines.budget,205,'21.5% × 1,000만원 − 보유 20만원 + 체결 10만원');assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false);
-  assert.match(r.html(),/현재 2% \/ 목표 21\.5% · 목표까지 195만원/);assert.match(r.html(),/총 205만원/);
+  assert.match(r.html(),/현재 2% \/ 목표 21\.5% · 목표까지 195만원/);
   assert.ok(open()>planned,'미체결 회차 수량이 새 목표만큼 늘어남');assert.equal(r.rules().length,rules);
   assert.equal(JSON.stringify(r.item.buyPlan.buys),buys,'부분 체결 기록 유지');assert.equal(JSON.stringify(r.doc.allocation.trades),trades,'자산 반영 기록 유지');
   r.edit();assert.equal(r.form.lineTarget.value,21.5);assert.equal(r.form.lineBudget.value,205);assert.match(r.element('lineBudgetNote').textContent,/목표 21\.5%/);assert.doesNotMatch(r.element('lineBudgetNote').textContent,/직접 고친 금액/);
@@ -265,7 +265,7 @@ test('시작선 150시선: 앞선 시선은 제외하고 선택한 시선부터 
   assert.equal(r.item.buyPlan.lines.startLine,'150선');
   assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['150선','25일선','32일선']);
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['150선:0','150선:1','150선:2','25일선:0','25일선:1','25일선:2','32일선:0']);
-  assert.match(r.html(),/시작 150시선/);assert.match(r.html(),/150선~32일선까지 매수/);assert.doesNotMatch(r.html(),/매수 0주|25선<span|125선<span/);
+  assert.doesNotMatch(r.html(),/매수 0주|25선<span|125선<span/);
   r.item.buyPlan.notify={stages:true};const rules=r.rules();assert.equal(rules[0].targetPrice,10000);assert.equal(rules[1].targetPrice,11000);assert.equal(rules[2].targetPrice,12000);assert.equal(rules.length,7);
   r.edit();assert.equal(r.form.lineStartPeriod.value,150);assert.equal(r.form.lineStartUnit.value,'선');assert.equal(r.form.lineLastPeriod.value,32);assert.equal(r.form.lineLastUnit.value,'일선');
   const before=JSON.stringify(r.item.buyPlan);r.submit();assert.equal(JSON.stringify(r.item.buyPlan),before);
@@ -318,7 +318,7 @@ test('마지막 매수선 직접 입력: 기본 목록에 없는 40일선까지 
   r.edit();r.form.lineLastPeriod.value='40';r.form.lineLastUnit.value='일선';r.submit();
   assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선','32일선','40일선']);
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','25일선:1','25일선:2','32일선:0','32일선:1','32일선:2','40일선:0']);
-  assert.match(r.html(),/25일선~40일선까지 매수/);assert.doesNotMatch(r.html(),/42일선<span|매수 0주/);
+  assert.match(r.html(),/<div class="buy-track-end r"><b>₩16000<\/b><small>40일선<\/small>/);assert.doesNotMatch(r.html(),/42일선<span|매수 0주/);
   r.item.buyPlan.notify={stages:true};assert.equal(r.rules().length,7);assert.equal(r.rules().at(-1).targetPrice,16000);
   r.edit();assert.equal(r.form.lineLastPeriod.value,40);assert.equal(r.form.lineLastUnit.value,'일선');assert.equal(r.form.lineSet.value,'day');
   const before=JSON.stringify(r.item.buyPlan);r.submit();assert.equal(JSON.stringify(r.item.buyPlan),before);
@@ -396,6 +396,7 @@ test('계획 진행 카드: 다음 회차 칸 앞에 현재가 이름표를 두�
   assert.match(card(r),/<div class="buy-track-end"><b>₩10000<\/b><small>25일선<\/small><\/div>/);
   assert.match(card(r),/<div class="buy-track-end r"><b>₩16000<\/b><small>32일선<\/small><\/div>/);
   assert.match(card(r),trackStatus('매수 전',0,4));assert.doesNotMatch(card(r),/buy-track-note/);
+  assert.doesNotMatch(r.html(),/계산 요약|purchase-summary|남은 매수 금액/,'돌파 계획은 계산 요약 카드 없이 메모만 둔다');assert.match(r.html(),/<div class="control-grid"><section class="card panel memo">/);
   const before=JSON.stringify(r.doc);r.prices.stocks['111111'].close=12500;r.render();
   assert.match(card(r),/<i class="due"><\/i><i class="due"><\/i><em class="buy-track-now mid"><span>현재 <b>₩12500<\/b><\/span><\/em><i class="next"><\/i><i class="wait"><\/i>/);
   assert.match(card(r),/<span class="buy-track-chip warn">도달 2회<\/span>/);
@@ -474,7 +475,7 @@ test('분할매수 설정: 목표 가격 없는 계획을 다시 열어 종료�
 
 test('목표 가격 없는 분할매수: 마지막 평균선까지 표시하고 순차 체결·추가·취소를 자산에 반영한다',()=>{
   const r=setup({end:null,budget:40,price:9000,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':13000}});
-  assert.match(r.html(),/25일선~32일선까지 매수/);assert.doesNotMatch(r.html(),/목표가|NaN|undefined/);
+  assert.match(r.html(),/<div class="buy-track-end r"><b>₩13000<\/b><small>32일선<\/small>/);assert.doesNotMatch(r.html(),/목표가|NaN|undefined/);
   assert.equal(r.inputs('[data-purchase-buy]').length,4);
   r.change('[data-purchase-buy-shares]',7);assert.equal(r.item.shares,17);assert.match(r.html(),/남은 매수 3주/);
   r.change('[data-purchase-buy]',true);assert.equal(r.item.shares,20);
@@ -561,7 +562,7 @@ test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선�
 test('고가주 분할매수: 총예산이 모든 회차의 1주 가격 합계이면 회차를 줄이지 않는다',()=>{
   const r=setup({end:null,budget:100,price:90000,names:['25일선','32일선'],ma:{'25일선':100000,'32일선':400000}});
   assert.equal(r.inputs('[data-purchase-buy]').length,4);assert.ok(r.inputs('[data-purchase-buy]').every(x=>!x.disabled));
-  assert.equal((r.html().match(/매수 1주/g)||[]).length,4);assert.match(r.html(),/회당 10만원~40만원/);
+  assert.equal((r.html().match(/매수 1주/g)||[]).length,4);
   assert.doesNotMatch(r.html(),/매수 0주|회차 간격을 넓혀/);
 });
 
