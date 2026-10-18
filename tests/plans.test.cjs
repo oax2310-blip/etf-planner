@@ -603,3 +603,14 @@ test('분할매도: 수량 없는 옛 금액 체결도 이미 차감한 주수�
   fillQuantity(9);assert.equal(it.shares,11,'이미 차감한 8주에서 추가 1주만 차감');
   fillQuantity(0);assert.equal(it.shares,20);
 });
+
+test('통합 매도 진행 카드는 여러 계좌의 회차 체결을 합쳐 부분 체결 칸과 안내로 보이고 기록을 바꾸지 않는다',()=>{
+  const r=groupSale();r.ctx.PENCIL='';
+  const row=r.api.planSaleExecution(r.p,0).rows.find(x=>x.plannedQty>1);r.member(0,row.targetId,1);
+  const before=JSON.stringify([r.p,r.alloc]),total=r.api.planQuantityProgress(r.p,0).target;
+  const card=vm.runInContext('planTrackCard',r.ctx)(r.p,{status:'진행 중',value:'',valueTitle:'',startText:'',fxAuto:'',px:null,label:'전체 계좌 계획 진행'});
+  assert.match(card,new RegExp(`<i class="partial" style="--left:${Math.round((total-1)/total*100)}%"></i>`));
+  assert.match(card,new RegExp(`<p class="buy-track-note">1회 부분 체결 · 1주 매도, ${total-1}주 남음</p>`));
+  assert.match(card,/aria-label="전체 계좌 계획 진행"/);
+  assert.equal(JSON.stringify([r.p,r.alloc]),before,'카드를 그려도 체결·보유 기록은 그대로');
+});

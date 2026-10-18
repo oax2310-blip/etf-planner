@@ -16,6 +16,14 @@
 .buy-track-chip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.buy-track-chip.done{background:var(--good-soft);color:var(--good)}.buy-track-chip.warn{background:var(--warn-soft);color:var(--warn)}.buy-track-chip.muted{background:var(--surface-2);color:var(--text-3)}
 .buy-track-count{display:flex;align-items:baseline;gap:4px;line-height:1.05}.buy-track-count b{font-size:32px;font-weight:700;letter-spacing:-.035em}.buy-track-count span{font-size:14px;color:var(--text-2)}
 .buy-track-note{margin:10px 0 0;padding:7px 10px;border-radius:9px;background:var(--warn-soft);color:var(--warn);font-size:12px;line-height:1.45;word-break:keep-all}.buy-track-note.muted{background:var(--surface-2);color:var(--text-3)}#purchaseMain .control-grid>.memo:only-child{grid-column:1/-1}
+/* 분할매도 계획 진행 카드(plans.js planTrackCard)도 위 진행 카드를 그대로 쓴다. 매도라 남은 회차 칸을 채워(회색) 두었다가 판 회차는 빈 칸, 부분 체결은 남은 비율(--left)만큼 채운다.
+   왼쪽 끝 첫 매도 기준가는 카드에서 바로 고치는 입력(점선 밑줄·연필), 양 끝 셋째 줄은 원화 환산, 상태 아래 보유·평가액 한 줄, 맨 아래 줄은 환율 수정과 첫 매도 알림. 회차가 많으면 칸 사이를 좁힌다. */
+.sale-track .buy-track-cells i.hold{background:var(--text-3)}.sale-track .buy-track-cells i.sold{background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.sale-track .buy-track-cells i.partial{background:linear-gradient(to top,var(--warn) var(--left,50%),var(--warn-soft) var(--left,50%))}
+.sale-track .buy-track-cells.dense{gap:1px}.sale-track .buy-track-cells.tight{gap:0}.sale-track .buy-track-cells.tight i{border-radius:0}
+.sale-track .buy-track-end small+small{color:var(--text-3)}.sale-track .buy-track-legend .sold::before{background:transparent;box-shadow:inset 0 0 0 1px var(--text-3)}
+.sale-track .metric-edit{display:inline-flex;align-items:baseline;cursor:text}.sale-track .buy-track-end .metric-edit svg{width:12px;height:12px;margin-left:5px}.sale-track .fx-edit{gap:.3em}.sale-track .fx-edit svg{width:12px;height:12px;margin-left:1px}
+.sale-track-sub{margin:6px 0 0;font-size:12px;color:var(--text-2);text-align:center;word-break:keep-all;overflow-wrap:anywhere}
 .buy-track-legend{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}
 .buy-track-legend span{display:inline-flex;align-items:center;gap:5px}.buy-track-legend span::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--warn)}.buy-track-legend .next::before{background:var(--accent)}.buy-track-legend b{color:var(--text);font-weight:700}
 .buy-track-legend em{margin-left:2px;padding:0 6px;border-radius:99px;background:var(--surface-2);color:var(--text);font-size:11px;font-style:normal;font-weight:700;line-height:18px}.buy-track-legend em.up{background:var(--danger-soft);color:var(--danger)}.buy-track-legend em.down{background:var(--accent-soft);color:var(--accent)}
