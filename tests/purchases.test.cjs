@@ -58,7 +58,7 @@ function linkedAccounts(r,{ticker=r.item.ticker,tradeTicker='333333',price=20000
   return {other,zero,move:(id,direction)=>{const b=r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority===id&&Number(x.dataset.purchaseDirection)===direction);assert.ok(b);b.onclick();},ids:()=>Array.from(r.html().matchAll(/data-purchase-holding="([^"]+)"/g),m=>m[1])};
 }
 
-test('매수 화살표는 연결 계좌 순서와 매수 반영 대상·계획 주수를 함께 바꾸고 초기화·다시 그리기는 보유 기록을 보존한다',()=>{
+test('매수 화살표는 연결 계좌 순서와 매수 반영 대상·계획 주수를 함께 바꾸고 되돌리기·다시 그리기는 보유 기록을 보존한다',()=>{
   const r=setup({tracking:true,budget:12}),{other,zero,move,ids}=linkedAccounts(r),before=JSON.stringify(r.doc),groups=JSON.stringify(r.doc.allocation.groups.map(g=>({id:g.id,items:g.items.map(({buyPlan,...it})=>it)})));
   assert.deepEqual(ids(),['a','b','c']);assert.match(r.html(),/매수 12주/);
   move('a',-1);assert.equal(JSON.stringify(r.doc),before,'첫 항목 경계는 저장하지 않음');
@@ -67,7 +67,9 @@ test('매수 화살표는 연결 계좌 순서와 매수 반영 대상·계획 �
   assert.equal(JSON.stringify(r.doc.allocation.groups.map(g=>({id:g.id,items:g.items.map(({buyPlan,...it})=>it)}))),groups);assert.equal(other.buyPlan,undefined);assert.equal(zero.shares,0);assert.equal(r.doc.allocation.trades,undefined);
   r.edit();assert.match(r.element('linePreview').innerHTML,/6주/);assert.match(r.element('purchaseTargetInfo').innerHTML,/매수 반영 대상<\/b> 자산 배분 › 추가 계좌 › 다른 계좌 ETF/);assert.match(r.element('purchaseTrackingInfo').innerHTML,/실제 매수 <b>333333<\/b>/);r.submit();assert.deepEqual(ids(),['b','a','c']);
   const ordered=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),ordered,'조회만으로 순서를 다시 저장하지 않음');
-  r.element('resetPurchasePriority').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'buyPriority'),false);assert.deepEqual(ids(),['a','b','c']);assert.equal(JSON.stringify(r.doc),before);
+  assert.doesNotMatch(r.html(),/순서 초기화|resetPurchasePriority/,'순서 초기화 버튼 없이 화살표로 되돌림');
+  move('a',-1);assert.deepEqual(ids(),['a','b','c']);assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['a','b','c']);assert.match(r.html(),/매수 12주/);
+  assert.equal(JSON.stringify(r.doc.allocation.groups.map(g=>({id:g.id,items:g.items.map(({buyPlan,...it})=>it)}))),groups);assert.equal(r.doc.allocation.trades,undefined);
 });
 
 test('부분·완료 회차는 첫 반영 계좌·가격·수량을 유지하고 우선순위 변경은 미체결 회차에만 반영한다',()=>{
@@ -188,7 +190,7 @@ test('분할매수 제목·목록 카드·이름 창은 매수 우선순위 첫 
   assert.equal(r.item.name,'테스트 종목(연저펀)');assert.equal(items(),before,'자산 종목 이름·보유량은 그대로');assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c'],'저장은 화살표의 순서뿐');
   r.item.buyPlan.cardName='내 카드';r.render();assert.match(card(),/<strong>내 카드<\/strong>.*<span class="plan-title">테스트 종목\(ISA\)<\/span>/,'카드 이름이 있으면 아래 줄에 반영 대상 종목 이름');
   assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">ISA<\/span><\/h1>/,'제목은 카드 이름이 아니라 종목 이름');
-  r.element('resetPurchasePriority').onclick();delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">연저펀<\/span><\/h1>/,'순서 초기화하면 원래 종목');
+  move('a',-1);delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">연저펀<\/span><\/h1>/,'화살표로 되돌리면 원래 종목');
 });
 test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·완료/전체 회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
   const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
