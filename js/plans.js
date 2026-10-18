@@ -217,8 +217,10 @@ function recordPlanQuantity(p,i,n,redraw=renderPlans){
 const planNow = p => { const px=planQuote(p.ticker,p.currency); return Number(px?.close)>0?Number(px.close):null; };
 const planStageDue = (p, r, now) => now!==null&&!r.done&&r.trade.price>0&&(Number(p.endPrice)>Number(p.startPrice)?now>=r.trade.price:now<=r.trade.price);
 // 회차표는 분할매수 회차표(purchases.js row·css/purchases.css)와 같은 모양: 회차(아래 도달·남은 수량) · 기준가(달러면 원화 환산) · 매도 수량 · 누적 체결 입력 · 알림 · 상태(PC).
-// 회차를 파는 종목(통합 매도의 계좌·종목, 계좌 선택 매도의 실제 ETF, 직접 입력의 보유 종목 하나) 중 새 체결이 들어갈 회차(미체결 → 부분 체결 → 전체)에서 가장 많이 파는 종목을 표 위 '매도 종목' 한 줄로 올리고,
-// 다른 종목으로 파는 회차만 회차 아래 작은 줄에 둔다. 한 회차를 여러 계좌로 나눈 통합 매도 회차는 계좌마다 작은 줄과 입력칸. 체크는 모든 계좌의 잔량까지 완료, 입력·체크·알림 저장 키는 그대로.
+// 회차를 파는 종목(통합 매도의 계좌·종목, 계좌 선택 매도의 실제 ETF, 직접 입력의 보유 종목 하나)은 표 위 '매도 종목'에 둔다(planSaleSellers): 새 체결이 들어갈 회차(미체결 → 부분 체결 → 전체)를
+// 파는 종목을 처음 파는 회차 순(= 매도 우선순위 순)으로 모두 올려 순서를 바꾸면 맨 위 종목도 바뀌고, 둘 이상이면 종목마다 맡은 회차(예: 1~6회)를 함께 보인다.
+// 표 위 종목으로 파는 회차는 종목을 반복하지 않고, 다른 종목으로 체결한 회차만 회차 아래 작은 줄에 둔다. 한 회차를 여러 계좌로 나눈 통합 매도 회차는 계좌마다 작은 줄과 입력칸이며
+// 줄 이름은 계좌(굵게)·종목 이름, 종목 이름 끝 괄호(예: '(연저펀)', 규칙은 stock-names.js titleParts)가 있으면 그 꼬리표를 굵게 해 좁은 칸에서 잘려도 구분한다. 체크는 모든 계좌의 잔량까지 완료, 입력·체크·알림 저장 키는 그대로.
 function planSaleRowInfo(p,i){
   const r=planQuantityProgress(p,i),e=r.execution,group=!!e?.group,price=group?e.sourcePrice:r.trade.price,priced=price>0;
   const live=row=>priced&&row.price>0&&(row.currency!=="USD"||row.fx>0)&&planSaleItems().some(x=>x.it.id===row.targetId);
@@ -226,23 +228,30 @@ function planSaleRowInfo(p,i){
   const seller=x=>({key:x.targetId,name:x.name,account:x.account,ticker:x.ticker,price:x.price,currency:x.currency,manual:x.manual,stale:x.stale,live:true});
   const own=p.holdings.length===1?p.holdings[0].name:p.valueKrw!=null&&!p.holdings.length?p.title:"";
   const holder=group?members.length>1?{many:true}:members.length?seller(members[0]):null:e?seller(e):r.pendingAccount||!own?null:{key:"",name:own,account:"",ticker:p.ticker};
-  return {i,r,e,group,price,priced,members,holder,ready:group&&priced&&e.rows.every(row=>row.plannedQty!==null&&(!row.plannedQty||live(row)))};
+  return {i,r,e,group,price,priced,members,holder,sellers:holder?.many?members.map(seller):holder?[holder]:[],ready:group&&priced&&e.rows.every(row=>row.plannedQty!==null&&(!row.plannedQty||live(row)))};
 }
-function planSaleSeller(infos){
-  const base=[infos.filter(x=>!x.r.recorded),infos.filter(x=>!x.r.done),infos].find(x=>x.length)||[],count=new Map();
-  for(const {holder:h} of base)if(h&&!h.many&&String(h.name||"").trim())count.set(h.key,{h,n:(count.get(h.key)?.n||0)+1});
-  return [...count.values()].reduce((a,b)=>b.n>a.n?b:a,{h:null,n:0}).h;
+function planSaleSellers(infos){
+  const base=[infos.filter(x=>!x.r.recorded),infos.filter(x=>!x.r.done),infos].find(x=>x.length)||[],found=new Map();
+  for(const {i,sellers} of base)for(const h of sellers)if(String(h.name||"").trim()){const f=found.get(h.key);if(f)f.last=i;else found.set(h.key,{...h,first:i,last:i});}
+  return [...found.values()];
 }
 const planSellerText = h => [h.account,h.ticker&&h.ticker!==h.name?h.ticker:"",...(h.live?[h.price>0?priceText(h.price,h.currency):"시세 대기",h.manual?"직접 입력":"",h.stale?"지난 시세":""]:[])].filter(Boolean).join(" · ");
-function planSaleRow(p,i,shared=null,info=planSaleRowInfo(p,i)){
+function planSellerHead(sellers){
+  if(!sellers.length)return "";
+  if(sellers.length===1)return `<div class="purchase-buy-target"><span>매도 종목</span><div><b>${esc(sellers[0].name)}</b>${(t=>t?`<small>${esc(t)}</small>`:"")(planSellerText(sellers[0]))}</div></div>`;
+  return `<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers">${sellers.map(h=>`<li><b>${esc(h.name)}</b><small><em>${h.first===h.last?`${h.first+1}회`:`${h.first+1}~${h.last+1}회`}</em>${(t=>t?` · ${esc(t)}`:"")(planSellerText(h))}</small></li>`).join("")}</ol></div>`;
+}
+function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
   const {r,e,group,price,priced,members,holder}=info,partial=r.recorded&&!r.done,due=!r.recorded&&planStageDue(p,r,planNow(p)),state=r.done?"done":partial?"partial":due?"due":"";
   const digits=e?0:planShareDigits(p),unit=digits?"BTC":"주",qty=n=>group?`${won.format(n)}주`:planQuantity(n,p),shown=r.done?r.amount:r.target;
   const flag=partial?r.remaining!==null?`남은 ${qty(r.remaining)}`:"부분 체결":due?"도달":"",priceLabel=priced?priceText(price,p.currency):"—";
   const memberInput=m=>`<input type="number" min="0" max="${m.plannedQty}" step="1" inputmode="numeric" data-sale-member="${esc(m.targetId)}" data-sale-stage="${i}" value="${esc(m.qty)}" placeholder="0"${!m.valid||!m.plannedQty?" disabled":""} aria-label="${i+1}회 ${esc(m.account)} ${esc(m.name)} 매도 누적 체결 수량 (주)">`;
   const one=group&&members.length===1?members[0]:null;
   const input=group?one&&one.plannedQty!==null?memberInput(one):"":r.target!==null?`<input type="number" min="0" max="${r.target}" step="${digits?"0.00000001":"1"}" inputmode="${digits?"decimal":"numeric"}" data-sale-filled="${i}" value="${esc(r.amount)}" placeholder="0"${!priced||e&&r.target===0?" disabled":""} aria-label="${i+1}회 매도 누적 체결 수량 (${unit})">`:"";
-  const lines=group&&members.length>1?members.map(m=>`<div class="sale-member-line"><span title="${esc(`${m.account} · ${m.name} (${m.ticker})`)}"><b>${esc(m.account)}</b><small>${esc(m.name)}</small></span><span class="purchase-qty">${m.plannedQty===null?"—":`${won.format(m.plannedQty)}주`}</span><div class="purchase-fill">${m.plannedQty!==null?memberInput(m):""}</div></div>`).join(""):"";
-  const notes=[holder&&!holder.many&&holder.key!==shared?.key?[holder.account&&holder.name?`${holder.account} · ${holder.name}`:holder.name,holder.ticker&&holder.ticker!==holder.name?holder.ticker:""].filter(Boolean).join(" · "):"",
+  const memberName=m=>{const t=stockNames.titleParts(m.name);return t.tag?[t.tag,[m.account,t.main].filter(Boolean).join(" · ")]:[m.account,m.name];};
+  const lines=group&&members.length>1?members.map(m=>`<div class="sale-member-line"><span title="${esc(`${m.account} · ${m.name} (${m.ticker})`)}">${(([b,s])=>`<b>${esc(b)}</b><small>${esc(s)}</small>`)(memberName(m))}</span><span class="purchase-qty">${m.plannedQty===null?"—":`${won.format(m.plannedQty)}주`}</span><div class="purchase-fill">${m.plannedQty!==null?memberInput(m):""}</div></div>`).join(""):"";
+  const listed=Array.isArray(sellers)&&holder&&!holder.many&&sellers.some(h=>h.key===holder.key);
+  const notes=[holder&&!holder.many&&!listed?[holder.account&&holder.name?`${holder.account} · ${holder.name}`:holder.name,holder.ticker&&holder.ticker!==holder.name?holder.ticker:""].filter(Boolean).join(" · "):"",
     group?r.target===null?"계좌별 보유량 확인 필요":r.target===0?"이번 회차 배정 없음":members.some(m=>m.plannedQty&&!m.valid)?"실제 종목의 시세·환율·보유 기록을 확인하세요.":""
     :e?e.plannedQty===null?"실제 ETF 가격·환율·보유량을 확인하세요.":e.capped?"보유량으로 제한":""
     :r.pendingAccount?"계좌의 보유 ETF를 먼저 선택하세요.":r.target===null?"보유량 입력 필요":!r.recorded&&p.holdings.length>1?p.holdings.map(h=>`${h.name} ${planQuantity(sharesAt(saleShares(h.shares,p),i,p.stages,digits),p)}`).join(" · "):""].filter(Boolean);
@@ -326,7 +335,14 @@ function fitNames(){
   }
 }
 addEventListener("resize",fitNames);
-// 저장된 계획 카드: 카드 이름(cardName)을 굵게, 없으면 종목명(stockNames.planName: 계획 이름 → 같은 코드의 종목 이름 → 종목 코드). PC에서만 아래 작게 종목 코드.
+// 화면 제목·목록 카드·이름 창에 보일 종목 이름: 계획 이름이 연결 종목 이름 중 하나이면(자산 배분에서 종목을 골라 채운 이름) 매도 우선순위 맨 위 종목(보유 목록의 '매도 우선')의 이름을 따른다.
+// 분할매수 leadName과 같은 규칙. 직접 쓴 계획 이름은 그대로(stockNames.planName)이며 계획 이름·자산 종목 이름 기록은 바꾸지 않는다.
+function planShownName(p){
+  const name=stockNames.planName(p),title=String(p?.title||"").trim();
+  if(!title||!planLinkedSaleItems(p).some(({it})=>String(it.name||"").trim()===title))return name;
+  return String(planLinkedSaleSchedule(p)?.rows.find(r=>r.held!==0||r.sold)?.name||"").trim()||name;
+}
+// 저장된 계획 카드: 카드 이름(cardName)을 굵게, 없으면 종목명(planShownName: 계획 이름 → 같은 코드의 종목 이름 → 종목 코드). PC에서만 아래 작게 종목 코드.
 // 모바일은 이름을 두 줄까지 보이고 아래 줄을 숨기되, 카드 이름 없이 같은 이름이 다른 코드에도 있으면 그 카드만 코드 줄을 보인다(.show-code). 저장된 cardName·title·ticker는 바꾸지 않는다.
 // 카드 이름은 이름만 고치는 작은 창(nameDialog)으로도 바꾼다: 터치는 카드를 0.5초 누르고 있으면(손 떼기 전에) 열리고, 마우스(PC)는 카드 오른쪽 아래 연필(.plan-rename).
 // 수정 창의 카드 이름 칸과 같은 값(비우면 cardName을 지워 종목명으로). 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
@@ -367,8 +383,8 @@ function planTrackCard(p,{status,value,valueTitle,startText,fxAuto,px,label}){
 }
 function renderPlans(){
   const list=$("planList"), pencil=PENCIL;
-  const auto=state.plans.filter(p=>!String(p.cardName||"").trim()).map(p=>({name:stockNames.planName(p),code:p.ticker})), clash=stockNames.clashes(auto);
-  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, sub=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), main=card||stockNames.planName(p), showCode=!card&&sub&&sub!==main&&clash(main), fullDue=planFullSellState(p)?.due===true;
+  const shownNames=new Map(state.plans.map(p=>[p,planShownName(p)])), auto=state.plans.filter(p=>!String(p.cardName||"").trim()).map(p=>({name:shownNames.get(p),code:p.ticker})), clash=stockNames.clashes(auto);
+  list.innerHTML=state.plans.length?state.plans.map(p=>{const n=p.checked.filter(Boolean).length, sub=String(p.ticker||"").trim(), card=String(p.cardName||"").trim(), main=card||shownNames.get(p), showCode=!card&&sub&&sub!==main&&clash(main), fullDue=planFullSellState(p)?.due===true;
     return `<div class="plan-cell"><button class="plan-item ${p.id===state.selectedPlan?"active":""}${showCode?" show-code":""}" type="button" data-plan="${esc(p.id)}" aria-pressed="${p.id===state.selectedPlan}" aria-controls="planMain" title="${esc(main)}${sub&&sub!==main?` (${esc(sub)})`:""} · ${n} / ${esc(p.stages)}회 완료${fullDue?" · 전액매도 시점":""}"><span class="plan-row"><strong>${esc(main)}</strong><span class="plan-count${fullDue?" due":""}">${n}/${esc(p.stages)}<span class="plan-unit">회</span></span></span><span class="plan-title">${sub&&sub!==main?esc(sub):""}</span><span class="plan-bar"><i style="width:${Math.round(n/Math.max(p.stages,1)*100)}%"></i></span></button><button class="plan-rename" type="button" data-rename="${esc(p.id)}" aria-label="${esc(main)} 카드 이름 변경" title="카드 이름 변경">${pencil}</button></div>`;}).join(""):"<div class='empty'>계획 없음</div>";
   list.querySelectorAll("[data-plan]").forEach(b=>{b.onclick=()=>{state.selectedPlan=b.dataset.plan;save();renderPlans();[...list.querySelectorAll("[data-plan]")].find(x=>x.dataset.plan===state.selectedPlan)?.focus();};
     // 길게 누르기(터치만): 0.5초 또는 안드로이드 길게 누르기 메뉴(contextmenu) 중 먼저 오는 때에 이름 창을 연다. 10px 넘게 움직이면(스크롤) 취소.
@@ -389,17 +405,17 @@ function renderPlans(){
   const linkedSchedule=planLinkedSaleSchedule(p),linkedHeld=linkedSchedule?.rows.reduce((n,r)=>n+(r.held||0),0);
   const started=done>0||Object.keys(p.fills||{}).length>0, pct=planSalePct(p), status=done===p.stages?pct<100||linkedHeld>0?"계획 매도 완료":"전량 매도 완료":started?"진행 중":ready?"시작 전":"기준가 대기";
   const startText=!(p.startPrice>0)?"":p.currency==="USD"&&Number.isInteger(Math.round(p.startPrice*1e6)/1e4)?Number(p.startPrice).toFixed(2):String(p.startPrice); // 달러는 소수 둘째 자리까지면 $80.00처럼
-  const saleRows=Array.from({length:p.stages},(_,i)=>planSaleRowInfo(p,i)),seller=planSaleSeller(saleRows),saleAlerts=typeof tradeAlertToggle==="function";
+  const saleRows=Array.from({length:p.stages},(_,i)=>planSaleRowInfo(p,i)),sellers=planSaleSellers(saleRows),saleAlerts=typeof tradeAlertToggle==="function";
   const px=planQuote(p.ticker,p.currency); // 시세: 기준일은 제목 위에 작게, 현재 가격은 제목 아래 공통 시세 줄 맨 앞에
   const fxe=fxEntry(priceData), fxAuto=fxe&&p.auto?.fx===p.fx&&p.fx===priceRound(fxe.close,2)?`현물 USD/KRW(시세 ${fxe.asOf}${fxe.stale?" · 마지막 조회 실패":""}${priceOld(fxe)?" · 지난 시세":""})로 자동 · `:""; // 달러 계획 환율(prices.js)
   const left=sharesLeft(p), worth=shares?planWorth(left,px?.close,p.currency,p.fx):null; // 평가액: 남은 수량 × 현재가(× 환율), 수량 없이 평가액만 넣은 계획은 그 값
   const value = linkedSchedule?`${linkedSchedule.rows.filter(r=>r.held||r.sold).length}개 보유 항목 · ${linkedSchedule.rows.some(r=>r.held===null)?"보유량 확인 필요":`현재 ${won.format(linkedHeld)}주 보유`}`:shares ? `${started?`매도 ${planQuantity(Number((shares-left).toFixed(8)),p)} · 남은 ${planQuantity(left,p)}`:`${planQuantity(shares,p)} 보유`}${worth!=null?` · 평가액 ₩${won.format(worth)}만원`:""}` : p.valueKrw!=null?`평가액 ₩${won.format(p.valueKrw)}만원`:"보유 수량 미입력";
-  const head=stockNames.titleParts(stockNames.planName(p)); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
+  const head=stockNames.titleParts(planShownName(p)); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   main.innerHTML=`<div class="heading plan-heading"><div><div class="eyebrow">${esc(p.ticker)}${px?` · ${priceStamp(px)}`:""}</div><div class="title-row"><h1>${esc(head.main)}${head.tag?` <span class="title-tag">${esc(head.tag)}</span>`:""}</h1><button class="btn icon-btn" id="editPlan" type="button" aria-label="계획 수정" title="계획 수정">${pencil}</button></div>${tradeQuoteLine({now:px&&Number(px.close)>0?priceText(Number(px.close),p.currency):"",state:planEndPct(p)?`시작 기준가부터 ${decimal.format(planEndPct(p))}% 하락까지`:`${esc(movingLineText(p.startLabel))} 이탈 후 ${esc(movingLineText(p.endLabel))}까지`,round:`${planEndPct(p)?"보유 전량 ":pct<100?`보유의 ${pct}%를 `:""}${esc(p.stages)}회 분할매도`})}${planLink("line",planTicker(p.ticker))}</div></div>${px?priceWarning(px,esc(p.ticker)):""}
     ${planSaleAccountView(p)}
     ${planTrackCard(p,{status,value:`${!linkedSchedule&&p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}`,valueTitle:worth!=null&&!linkedSchedule?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:"",startText,fxAuto,px,label:linkedSchedule?"전체 계좌 계획 진행":p.sellTargetId?"기준 ETF 계획 진행":"계획 진행"})}
     <div class="control-grid"><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
-    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card purchase-table sale-table${completedOpen?"":" hide-completed"}${saleAlerts?"":" no-alert"}" id="saleTable">${seller?`<div class="purchase-buy-target"><span>매도 종목</span><div><b>${esc(seller.name)}</b>${(t=>t?`<small>${esc(t)}</small>`:"")(planSellerText(seller))}</div></div>`:""}<div class="purchase-table-head"><span>회차</span><span>기준가</span><span>매도</span><span>체결</span>${saleAlerts?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${saleRows.map(x=>planSaleRow(p,x.i,seller,x)).join("")}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
+    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card purchase-table sale-table${completedOpen?"":" hide-completed"}${saleAlerts?"":" no-alert"}" id="saleTable">${planSellerHead(sellers)}<div class="purchase-table-head"><span>회차</span><span>기준가</span><span>매도</span><span>체결</span>${saleAlerts?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${saleRows.map(x=>planSaleRow(p,x.i,sellers,x)).join("")}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
   const completedToggle=$("toggleCompletedSales");
   if(completedToggle)completedToggle.onclick=()=>{
     const open=!openCompletedSales.has(p.id);if(open)openCompletedSales.add(p.id);else openCompletedSales.delete(p.id);
@@ -544,7 +560,7 @@ $("addPlanBtn").onclick=()=>openPlanDialog();
 $("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
 const nameDialog=$("nameDialog"); let namingId=null,namingSave=null; // 카드 이름만 고치는 창(규칙은 renderPlans 위 주석). 분할매수는 저장 콜백으로 자기 계획만 수정하고 비웠을 때 보일 이름(name)을 넘긴다.
-function openNameDialog(pid,options=null){const p=options||state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;namingSave=typeof options?.onSave==="function"?options.onSave:null;const input=$("nameForm").elements.cardName,shownName=options?String(options.name||"").trim():stockNames.planName(p);$("nameTitle").textContent=`${shownName} 카드 이름`;input.value=p.cardName??"";input.placeholder=shownName;nameDialog.showModal();input.focus();input.select();}
+function openNameDialog(pid,options=null){const p=options||state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;namingSave=typeof options?.onSave==="function"?options.onSave:null;const input=$("nameForm").elements.cardName,shownName=options?String(options.name||"").trim():planShownName(p);$("nameTitle").textContent=`${shownName} 카드 이름`;input.value=p.cardName??"";input.placeholder=shownName;nameDialog.showModal();input.focus();input.select();}
 nameDialog.querySelector("[data-close-name]").onclick=()=>nameDialog.close();
 $("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.plans.find(x=>x.id===namingId),v=String(e.target.elements.cardName.value).trim(),commit=namingSave;namingSave=null;nameDialog.close();if(commit){commit(v);return;}if(!p||v===String(p.cardName||"").trim())return;if(v)p.cardName=v;else delete p.cardName;save();renderPlans();});
 // 저장: 종목·자동 기준선·통화를 바꿨거나 새 계획이면 auto를 지금 시세 기준으로 다시 표시한다(창에서 채운 값과 같음 — 창에서 직접 고친 기준가는 그 칸 시세가 다음에 바뀔 때까지 둠).
