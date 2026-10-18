@@ -28,14 +28,20 @@ function draw(plan,prices){
 // 회차 기준가 500·475·450·425·400(하락 매도), 회차마다 2주
 const plan=(extra={})=>({id:'p1',ticker:'AAA',title:'가상 ETF',currency:'USD',startLabel:'60일선',endLabel:'25개월선',startPrice:500,endPrice:400,stages:5,checked:[false,false,false,false,false],holdings:[{name:'가상 ETF',shares:10}],note:'',fx:1300,...extra});
 
+test('띠는 오른쪽이 1회이고 남은 회차 칸을 초록으로 채운다',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  assert.match(css,/\.sale-track \.buy-track-cells\{flex-direction:row-reverse\}/,'회차표 순서를 오른쪽부터 그려 판 회차가 오른쪽부터 빈다');
+  assert.match(css,/\.sale-track \.buy-track-cells i\.hold\{background:var\(--good\)\}/);
+});
+
 test('시작 전에는 띠가 모두 차 있고 현재가 이름표가 다음 1회 칸 앞에 붙는다',()=>{
   const {html,card,cells}=draw(plan({notify:{start:true}}),quote(520));
   assert.doesNotMatch(html,/class="metrics card"/,'옛 세 칸 상태 카드는 없앤다');
   assert.deepEqual(cells,['now','next','hold','hold','hold','hold']);
-  assert.match(card,/<em class="buy-track-now left"><span>현재 <b>\$520<\/b><\/span><\/em>/);
+  assert.match(card,/<em class="buy-track-now right"><span>현재 <b>\$520<\/b><\/span><\/em>/);
   assert.match(card,/<span class="buy-track-chip">시작 전<\/span><\/div><div class="buy-track-count"><b>0<\/b><span>\/ 5회<\/span><\/div>/);
-  assert.match(card,/<div class="buy-track-end"><b><label class="metric-edit"[^>]*>\$<input id="startPrice"[^>]*value="500\.00"[^>]*>✎<\/label><\/b><small>60일선<\/small><small>≈₩650000<\/small><\/div>/,'왼쪽 끝 첫 매도 기준가는 카드에서 바로 고친다');
-  assert.match(card,/<div class="buy-track-end r"><b>\$400<\/b><small>25월선<\/small><small>≈₩520000<\/small><\/div>/);
+  assert.match(card,/<div class="buy-track-end r"><b><label class="metric-edit"[^>]*>\$<input id="startPrice"[^>]*value="500\.00"[^>]*>✎<\/label><\/b><small>60일선<\/small><small>≈₩650000<\/small><\/div>/,'오른쪽 끝 첫 매도 기준가는 카드에서 바로 고친다');
+  assert.match(card,/<div class="buy-track-row"><div class="buy-track-end"><b>\$400<\/b><small>25월선<\/small><small>≈₩520000<\/small><\/div>/);
   assert.match(card,/<p class="sale-track-sub" title="남은 10주 × 현재가 \$520 × 환율 1300">10주 보유 · 평가액 ₩676만원<\/p>/);
   assert.match(card,/<span class="next">다음 1회 <b>\$500<\/b><em class="down">-3\.8%<\/em><\/span>/);
   assert.match(card,/<input id="planFx"[^>]*value="1300">/);
@@ -64,7 +70,7 @@ test('오르며 파는 계획은 현재가 이상을 도달로 보고 모두 팔
   assert.match(up.card,/다음 3회 <b>\$90<\/b><em class="up">\+5\.9%<\/em>/);
   const done=draw(plan({checked:[true,true,true,true,true]}),quote(390));
   assert.deepEqual(done.cells,['sold','sold','sold','sold','sold','now']);
-  assert.match(done.card,/<em class="buy-track-now right">/);
+  assert.match(done.card,/<em class="buy-track-now left">/,'모두 팔면 이름표는 왼쪽 끝(마지막 회차 뒤)');
   assert.match(done.card,/<span class="buy-track-chip done">전량 매도 완료<\/span>/);
   assert.doesNotMatch(done.card,/class="next"/);
 });

@@ -315,11 +315,11 @@ addEventListener("resize",fitNames);
 // 옛 currentPrice·started·asOf·basisPrice는 값만 보존하며 계산·새 계획·수정 창에 쓰지 않는다.
 // 완료 회차는 기본 접기. 계획별 펼침 상태는 이 화면에서만 유지하고 거래 기록·동기화에는 저장하지 않는다.
 const openCompletedSales=new Set();
-// 계획 진행 카드: 분할매수 진행 카드(purchases.js statusCard, CSS purchases.css .buy-track)와 같은 띠·양 끝·가운데 구성. 띠는 회차표 순서(왼쪽 1회)로 한 칸씩 나눈다.
-// 매도라 처음에는 모든 칸이 가득 차 있고(남은 매도) 매도 완료 회차는 빈 칸, 부분 체결은 남은 비율만큼만 채운다(도달·부분 주황, 다음 파랑).
+// 계획 진행 카드: 분할매수 진행 카드(purchases.js statusCard, CSS purchases.css .buy-track)와 같은 띠·양 끝·가운데 구성. 띠는 회차마다 한 칸이며 오른쪽이 1회다(CSS row-reverse).
+// 매도라 처음에는 모든 칸이 가득 차 있고(남은 매도 초록) 매도 완료 회차는 오른쪽부터 빈 칸, 부분 체결은 남은 비율만큼만 채운다(도달·부분 주황, 다음 파랑).
 // 도달 = 완료 전 회차 중 현재가가 회차 기준가에 닿은 회차(종료가 시작보다 높으면 현재가 ≥ 기준가, 아니면 ≤ — trade-alerts.js 알림 방향과 같음).
 // 다음 = 회차표 순서로 첫 미완료·미도달 회차이고 현재가 이름표를 그 칸 앞에 둔다. 다음 회차가 없으면 현재가가 지난 기준가 회차 수만큼 뒤에 둔다.
-// 왼쪽 끝은 첫 매도 기준가(카드에서 바로 수정)·시작선, 오른쪽 끝은 마지막 매도 기준가·종료선, 달러 계획은 원화 환산. 맨 아래 줄은 환율 수정과 첫 매도 알림.
+// 오른쪽 끝은 첫 매도 기준가(카드에서 바로 수정)·시작선, 왼쪽 끝은 마지막 매도 기준가·종료선, 달러 계획은 원화 환산. 맨 아래 줄은 환율 수정과 첫 매도 알림.
 // 화면 표시만 하며 기록에 필드를 만들지 않는다.
 function planTrackCard(p,{status,value,valueTitle,startText,fxAuto,px,label}){
   const now=Number(px?.close)>0?Number(px.close):null,up=Number(p.endPrice)>Number(p.startPrice),usd=p.currency==="USD",done=p.checked.filter(Boolean).length,pt=v=>priceText(v,p.currency);
@@ -327,14 +327,14 @@ function planTrackCard(p,{status,value,valueTitle,startText,fxAuto,px,label}){
   const due=x=>now!==null&&!x.r.done&&x.price!==null&&(up?now>=x.price:now<=x.price);
   const next=now===null?null:rows.find(x=>!x.r.done&&x.price!==null&&!due(x))||null,priced=rows.some(x=>x.price!==null);
   const at=now===null||!priced?-1:next?next.i:rows.filter(x=>x.price!==null&&(up?x.price<=now:x.price>=now)).length;
-  const nowTag=at<0?"":`<em class="buy-track-now ${at/rows.length<.18?"left":at/rows.length>.82?"right":"mid"}"><span>현재 <b>${pt(now)}</b></span></em>`;
+  const nowTag=at<0?"":`<em class="buy-track-now ${at/rows.length<.18?"right":at/rows.length>.82?"left":"mid"}"><span>현재 <b>${pt(now)}</b></span></em>`;
   const left=x=>x.r.target>0&&x.r.remaining!==null?Math.round(x.r.remaining/x.r.target*100):50; // 부분 체결 칸에 남은 매도 비율만큼 채움
   const cell=x=>x.r.done?'<i class="sold"></i>':x.r.recorded?`<i class="partial" style="--left:${left(x)}%"></i>`:due(x)?'<i class="due"></i>':x===next?'<i class="next"></i>':'<i class="hold"></i>';
   const dueRows=rows.filter(x=>!x.r.recorded&&due(x)),partialRows=rows.filter(x=>x.r.recorded&&!x.r.done),qtyOf=n=>planQuantity(Number(Math.max(0,n).toFixed(8)),p);
   const lineName=(name,fallback)=>movingLineName(name)?movingLineText(name):fallback,krw=v=>usd?`<small>${v>0?fxText(v*p.fx):"시세 대기"}</small>`:"";
   const startEdit=`<label class="metric-edit" title="첫 매도 기준가 — 눌러서 수정">${usd&&p.startPrice>0?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="대기" value="${esc(startText)}" aria-label="첫 매도 기준가">${usd||!(p.startPrice>0)?"":"원"}${PENCIL}</label>`;
-  const ends=[`<div class="buy-track-end"><b>${startEdit}</b><small>${esc(lineName(p.startLabel,"첫 매도"))}</small>${krw(p.startPrice)}</div>`,
-    `<div class="buy-track-end r"><b>${p.endPrice>0?pt(p.endPrice):"—"}</b><small>${esc(lineName(p.endLabel,planEndPct(p)?pctEndLabel(planEndPct(p)):"마지막 매도"))}</small>${krw(p.endPrice)}</div>`];
+  const ends=[`<div class="buy-track-end"><b>${p.endPrice>0?pt(p.endPrice):"—"}</b><small>${esc(lineName(p.endLabel,planEndPct(p)?pctEndLabel(planEndPct(p)):"마지막 매도"))}</small>${krw(p.endPrice)}</div>`,
+    `<div class="buy-track-end r"><b>${startEdit}</b><small>${esc(lineName(p.startLabel,"첫 매도"))}</small>${krw(p.startPrice)}</div>`];
   const chips=`<span class="buy-track-chip${{"전량 매도 완료":" done","계획 매도 완료":" done","기준가 대기":" muted"}[status]||""}">${esc(status)}</span>${dueRows.length?`<span class="buy-track-chip warn">도달 ${dueRows.length}회</span>`:""}${partialRows.length?`<span class="buy-track-chip warn">부분 체결 ${partialRows.length}회</span>`:""}`;
   const main=`<div class="buy-track-main"><div class="buy-track-chips">${chips}</div><div class="buy-track-count"><b>${done}</b><span>/ ${esc(p.stages)}회</span></div></div>`;
   const notes=partialRows.length===1?(x=>[`${x.i+1}회 부분 체결 · ${x.r.target!==null&&x.r.remaining!==null?`${qtyOf(x.r.amount)} 매도, ${qtyOf(x.r.remaining)} 남음`:"남은 수량은 아래 회차표에서 확인하세요"}`])(partialRows[0]):partialRows.length?[`부분 체결 ${partialRows.length}회 · 아래 회차표에서 남은 수량을 확인하세요`]:[];
