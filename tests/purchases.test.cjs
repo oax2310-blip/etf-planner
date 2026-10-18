@@ -190,11 +190,15 @@ test('분할매수 제목·목록 카드·이름 창은 매수 우선순위 첫 
   assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">ISA<\/span><\/h1>/,'제목은 카드 이름이 아니라 종목 이름');
   r.element('resetPurchasePriority').onclick();delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">연저펀<\/span><\/h1>/,'순서 초기화하면 원래 종목');
 });
-test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
+test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·완료/전체 회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
   const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
   assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.2},names:['42일선','60일선'],end:null,budget:5000})),
-    '<p class="quote-line"><strong class="quote-now">$57.61</strong><span class="quote-state">이동평균선 돌파</span><span class="quote-round">2회 분할매수</span><span class="quote-gap up">다음 42일선 1차까지 <b>+0.17%</b></span></p>');
-  assert.equal(line(setup({manual:true,price:10500})),'<p class="quote-line"><strong class="quote-now">₩10500</strong><span class="quote-state">직접 입력</span><span class="quote-round">1회 분할매수</span></p>');
+    '<p class="quote-line"><strong class="quote-now">$57.61</strong><span class="quote-state">이동평균선 돌파</span><span class="quote-round"><b>0</b>/2회 분할매수</span><span class="quote-gap up">다음 42일선 1차까지 <b>+0.17%</b></span></p>');
+  assert.equal(line(setup({manual:true,price:10500})),'<p class="quote-line"><strong class="quote-now">₩10500</strong><span class="quote-state">직접 입력</span><span class="quote-round"><b>0</b>/1회 분할매수</span></p>');
+  assert.match(line(setup({legacy:true})),/<span class="quote-round"><b>1<\/b>\/1회 분할매수<\/span>/,'완료 회차 수는 목록 카드(1/1)와 같은 표기');
+  const r=setup({manual:true,price:10500});
+  r.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8,done:true,actual:8},{id:'s2',price:10200,shares:3,plannedShares:8,amount:8.2,partial:true,actual:3.06},{id:'s3',price:10400,shares:8,amount:8.4}];r.render();
+  assert.match(line(r),/<span class="quote-round"><b>1<\/b>\/3회 분할매수<span class="quote-sub"> · 부분 1<\/span><\/span>/,'부분 체결은 완료에 넣지 않고 개수만 덧붙임');
   assert.equal(line(setup({wait:'25선',ma:{'25선':9800}})),'<p class="quote-line"><strong class="quote-now">₩10000</strong><span class="quote-state">매수대기</span><span class="quote-round">25선까지 기다립니다.</span></p>');
 });
 test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시하고 계좌 변경 알림에도 갱신한다',()=>{
