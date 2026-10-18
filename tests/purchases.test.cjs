@@ -208,7 +208,7 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
   const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
   assert.match(r.html(),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
   other.amount=20;r.emit();assert.match(r.html(),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/매수 10주/);
-  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40%/);assert.match(r.html(),/목표 도달/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40% · 목표 도달<\/span>/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
   r.doc.allocation.total=200;r.emit();assert.match(r.html(),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/매수 20주/);assert.equal(r.item.buyPlan.lines.budget,50);
 });
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
