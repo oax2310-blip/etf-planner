@@ -52,7 +52,7 @@ const untouched=(doc,start=original())=>{
 test('자산 배분 목표 21%→21.5%: 같은 저장에서 분할매수 총 매수 금액을 맞추고 분할매도·재매수 줄도 같은 목표를 읽는다',()=>{
   const storage=seeded(),assets=device(storage),planner=device(storage);
   const start=planner.view();
-  assert.equal(start.buyTarget,21);assert.equal(start.budget,65);assert.match(start.line,/현재 15% \/ 목표 21% · 목표까지 60만원/);
+  assert.equal(start.buyTarget,21);assert.equal(start.budget,65);assert.match(start.line,/비중 15% \/ 목표 21% · 목표까지 60만원/);
   assert.deepEqual(JSON.parse(storage.get(KEY)),original(),'열기만 해서는 기록을 바꾸지 않음');
   // 바꾸기 전 동작(저장 예산 65만원이 한도)이면 목표를 올려도 한도가 그대로였다.
   const stale=clone(assets.assetStore.doc.allocation);stale.groups[0].items[0].target=21.5;
@@ -67,7 +67,7 @@ test('자산 배분 목표 21%→21.5%: 같은 저장에서 분할매수 총 매
 
   planner.event();
   const now=planner.view();
-  assert.equal(now.buyTarget,21.5);assert.equal(now.budget,70);assert.match(now.line,/현재 15% \/ 목표 21\.5% · 목표까지 65만원/);
+  assert.equal(now.buyTarget,21.5);assert.equal(now.budget,70);assert.match(now.line,/비중 15% \/ 목표 21\.5% · 목표까지 65만원/);
   assert.deepEqual(clone(planner.assetStore.doc),saved,'다른 탭은 받은 기록을 다시 계산하지 않고 그대로 쓴다');
 });
 
