@@ -7,14 +7,14 @@ const man=v=>`${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`, pc=v=>`${(
 const qty=(n,it)=>`${nf8.format(n)}${linkStep(it)<1?" BTC":"주"}`;
 const sign=d=>d<0?"−":"+";
 function summary(ticker, ownId=null){const a=allocOf();return a?linkSummary(a,assetStore.prices,ticker,ownId):null;}
-// 계획 화면 한 줄: 계좌(여럿이면 개수) 평가액 · 비중 현재 / 목표 · 목표까지·목표 초과 금액. 자산 배분 꼬리표는 두지 않는다(분할매수 줄과 같음). 연결 종목이 없으면 빈 글자.
+// 계획 화면 한 줄: 연결 종목 합계 평가액 · 현재 비중 / 목표 비중 · 목표까지·목표 초과 금액. 자산 배분 꼬리표·계좌 이름(개수)은 두지 않고 계좌별 금액은 title로만 보인다. 연결 종목이 없으면 빈 글자.
 // 목표는 자산 배분 목표(linkSummary — 분할매수와 같은 규칙)를 그릴 때마다 읽으며, 자산 배분이 바뀌면 분할매도·재매수 화면이 다시 그린다(assetStore.subscribe).
 function line(ticker, ownId=null){
   const s=summary(ticker,ownId);if(!s)return "";
-  const who=s.rows.length>1?`${s.rows.length}개 계좌`:esc(s.rows[0].it.name), names=s.rows.map(r=>`${r.it.name} ${man(r.value)}`).join("\n");
+  const names=s.rows.map(r=>`${r.it.name} ${man(r.value)}`).join("\n");
   const target=s.target!==null?` / 목표 ${pc(s.target)}${{group:" (그룹)",section:" (소분류)"}[s.scope]||""}`:" · 목표 미입력";
   const gap=s.gap===null?"":Math.abs(s.gap)<.5?" · 목표 도달":s.gap>0?` · 목표까지 ${man(s.gap)}`:` · 목표 초과 ${man(-s.gap)}`;
-  return `<p class="alloc-link" title="${esc(names)}"><span>${who} ${man(s.value)} · 비중 ${pc(s.pct)}${target}${gap}</span></p>`;
+  return `<p class="alloc-link" title="${esc(names)}"><span>${man(s.value)} · 현재 ${pc(s.pct)}${target}${gap}</span></p>`;
 }
 // 보유량 가져오기: linkSummary의 같은 거래 단위 수량 합(shares) 또는 평가액 합(value, 만원)과 설명(text). 연결 종목이 없으면 null.
 function holding(ticker){

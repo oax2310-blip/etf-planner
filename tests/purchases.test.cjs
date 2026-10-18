@@ -206,10 +206,10 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
   const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,{id:'x',name:r.item.name,ticker:'333333',amount:50}]});
   const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
-  assert.match(r.html(),/비중 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 비중/,'제목 아래 줄은 꼬리표·계좌 글자 없이 비중부터');assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
-  other.amount=20;r.emit();assert.match(r.html(),/비중 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/매수 10주/);
-  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/비중 40% \/ 목표 40%/);assert.match(r.html(),/목표 도달/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
-  r.doc.allocation.total=200;r.emit();assert.match(r.html(),/비중 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/매수 20주/);assert.equal(r.item.buyPlan.lines.budget,50);
+  assert.match(r.html(),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/총 15만원/);assert.match(r.html(),/매수 15주/);
+  other.amount=20;r.emit();assert.match(r.html(),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/매수 10주/);
+  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40%/);assert.match(r.html(),/목표 도달/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  r.doc.allocation.total=200;r.emit();assert.match(r.html(),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/매수 20주/);assert.equal(r.item.buyPlan.lines.budget,50);
 });
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
   const r=setup({budget:50,tracking:true});r.doc.allocation.groups[0].target=40;
@@ -218,20 +218,20 @@ test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 �
   assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
   r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,15);assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
-  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(r.html(),/비중 40% \/ 목표 40%/);
+  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(r.html(),/현재 40% \/ 목표 40%/);
   r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(other.amount,15);assert.match(r.html(),/현재 25%/);
 });
 
 test('자산 배분 목표 21%→21.5%: 분할매수 제목·총 매수 금액·회차·알림·계획 창이 함께 바뀌고 체결 기록은 그대로 둔다',()=>{
   const r=setup({budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
   r.doc.allocation.total=1000;r.item.target=21;r.item.buyPlan.lines.target=21;r.item.buyPlan.notify={stages:true};r.initialize();r.render();
-  assert.match(r.html(),/비중 1% \/ 목표 21% · 목표까지 200만원/);assert.match(r.html(),/총 200만원/);
+  assert.match(r.html(),/현재 1% \/ 목표 21% · 목표까지 200만원/);assert.match(r.html(),/총 200만원/);
   const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='10';first.onchange();assert.equal(r.item.shares,20);
   const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),rules=r.rules().length,before=JSON.parse(JSON.stringify(r.doc.allocation));
   const open=()=>r.inputs('[data-purchase-buy-shares]').filter(x=>!x.attrs.value||x.attrs.value==='0').map(x=>Number(x.attrs.max)).reduce((n,v)=>n+v,0),planned=open();
   r.item.target=21.5;assert.deepEqual([...r.sync(before)],['a']);r.emit();
   assert.equal(r.item.buyPlan.lines.budget,205,'21.5% × 1,000만원 − 보유 20만원 + 체결 10만원');assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false);
-  assert.match(r.html(),/비중 2% \/ 목표 21\.5% · 목표까지 195만원/);assert.match(r.html(),/총 205만원/);
+  assert.match(r.html(),/현재 2% \/ 목표 21\.5% · 목표까지 195만원/);assert.match(r.html(),/총 205만원/);
   assert.ok(open()>planned,'미체결 회차 수량이 새 목표만큼 늘어남');assert.equal(r.rules().length,rules);
   assert.equal(JSON.stringify(r.item.buyPlan.buys),buys,'부분 체결 기록 유지');assert.equal(JSON.stringify(r.doc.allocation.trades),trades,'자산 반영 기록 유지');
   r.edit();assert.equal(r.form.lineTarget.value,21.5);assert.equal(r.form.lineBudget.value,205);assert.match(r.element('lineBudgetNote').textContent,/목표 21\.5%/);assert.doesNotMatch(r.element('lineBudgetNote').textContent,/직접 고친 금액/);
