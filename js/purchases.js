@@ -187,7 +187,8 @@ function renderPurchases(){
         <div class="purchase-condition"><strong>${escA(main)}</strong>${tracking}${r.plannedShares!==null||r.recorded&&!r.stage?.partial?`<label class="exec-fields purchase-exec">누적 체결 <input type="number" min="0" ${r.plannedShares!==null?`max="${r.plannedShares}"`:""} step="${unitOf(actualItem)}" inputmode="${unitOf(actualItem)<1?"decimal":"numeric"}" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${escA(r.shares??"")}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 체결 수량 (${qtyUnit(actualItem).trim()})"> ${qtyUnit(actualItem).trim()}</label>`:""}${sub?`<small class="${partial?"purchase-fill-summary":""}">${escA(sub)}</small>`:""}</div>
         <div class="status${r.done?" done":partial?" partial":reached?" due":""}">${r.done?"매수 완료":partial?"부분 체결":reached?"도달":"대기"}</div></div>`;
     };
-    const quote=tradeQuoteLine({now:now!==null?pt(now):"",state:lines?"이동평균선 돌파":"직접 입력",round:p.count?`${p.count}회 분할매수`:"",gap:nextGap});
+    // 제목 아래 회차: 완료/전체(목록 카드와 같은 표기, 부분 체결은 완료에 넣지 않고 개수만 덧붙임)
+    const quote=tradeQuoteLine({now:now!==null?pt(now):"",state:lines?"이동평균선 돌파":"직접 입력",round:p.count?`<b>${p.done}</b>/${p.count}회 분할매수${partialCount?`<span class="quote-sub"> · 부분 ${partialCount}</span>`:""}`:"",gap:nextGap});
     const bounds=lines?purchaseLineLevels(lines,entry):rows,first=rows.find(r=>r.recorded)||bounds[0],last=waitingLast?null:bounds.at(-1);
     const priceNote=r=>r?.price>0?`${escA(r.label||purchaseLineLabel(r))}${cur==="USD"&&s.fx?` · ${priceText(r.price*s.fx,"KRW")}`:""}`:"시세 대기";
     const mixedTickers=new Set(rows.map(r=>linkTicker(r.tradeTicker||assetTradeTicker(r.tradeItem)))).size>1;
