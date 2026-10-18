@@ -88,15 +88,23 @@ test('부분·완료 회차는 첫 반영 계좌·가격·수량을 유지하고
   const done=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key===key);assert.equal(done.checked,true);done.checked=false;done.onchange();assert.equal(other.shares,5);assert.equal(r.item.shares,11);assert.equal(r.doc.allocation.trades['buy:a:'+key],undefined);
 });
 
-test('회차표: 모든 회차가 같은 계좌·ETF면 표 위 매수 종목 한 줄로 올리고, 첫 체결 계좌가 다른 회차가 생기면 회차마다 계좌를 보인다',()=>{
+test('회차표: 새 체결이 들어갈 회차의 계좌·ETF가 같으면 표 위 매수 종목 한 줄로 올리고, 다른 계좌로 체결한 회차만 그 회차 아래에 계좌를 보인다',()=>{
   const r=setup({tracking:true,budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
   const target=()=>(r.html().match(/class="purchase-buy-target"/g)||[]).length,before=JSON.stringify(r.doc);
   assert.equal(target(),1);assert.match(r.html(),/<b>테스트 종목<\/b><small>테스트 계좌 · 222222 · 회차 예상 /);assert.doesNotMatch(r.html(),/purchase-sub">[^<]*테스트 계좌/,'같은 계좌·ETF는 회차마다 반복하지 않음');
   assert.match(r.html(),/<span>회차<\/span><span>기준가<\/span><span>매수<\/span><span>체결<\/span><span>알림<\/span><span>상태<\/span>/);assert.doesNotMatch(r.html(),/class="m-head"|누적 체결 <input/);
   r.render();assert.equal(JSON.stringify(r.doc),before,'표 모양만 바꾸고 기록은 그대로');
   const {move}=linkedAccounts(r);move('b',-1);const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='1';first.onchange();move('a',-1);
-  assert.equal(target(),0,'첫 체결 계좌가 다른 회차가 있으면 한 줄로 올리지 않음');
-  assert.match(r.html(),/purchase-sub">추가 계좌 · 다른 계좌 ETF · 333333 · 남은 예상 /);assert.match(r.html(),/purchase-sub">테스트 계좌 · 테스트 종목 · 222222 · 예상 /);
+  assert.equal(target(),1,'다른 계좌로 체결한 부분 체결이 있어도 새 체결 회차 기준으로 올림');assert.match(r.html(),/<b>테스트 종목<\/b><small>테스트 계좌 · 222222[ <]/);
+  assert.match(r.html(),/purchase-sub">추가 계좌 · 다른 계좌 ETF · 333333 · 남은 예상 /);assert.doesNotMatch(r.html(),/purchase-sub">[^<]*테스트 계좌/,'새 체결 회차는 계좌를 반복하지 않음');
+});
+
+test('회차표: 실제 ETF 코드를 넣기 전에 같은 계좌로 완료한 회차가 있어도 매수 종목을 표 위 한 줄로 올리고 어느 회차에도 계좌를 반복하지 않는다',()=>{
+  const r=setup({tracking:true,budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
+  const done=r.inputs('[data-purchase-buy]')[0],key=done.dataset.key;done.checked=true;done.onchange();assert.equal(r.item.buyPlan.buys[key].tradeTicker,'222222');
+  delete r.item.buyPlan.buys[key].tradeTicker;const before=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),before,'옛 기록을 다시 그려도 필드를 만들지 않음');
+  assert.equal((r.html().match(/class="purchase-buy-target"/g)||[]).length,1);assert.match(r.html(),/<b>테스트 종목<\/b><small>테스트 계좌 · 222222 · 회차 예상 /);
+  assert.doesNotMatch(r.html(),/purchase-sub">[^<]*(테스트 계좌|222222)/,'옛 완료 회차·미체결 회차 모두 계좌·코드를 반복하지 않음');
 });
 
 test('같은 ETF 코드의 다른 계좌도 화살표로 직접 바꾸며 새로 고른 계좌에만 체결·추가·취소를 반영한다',()=>{
