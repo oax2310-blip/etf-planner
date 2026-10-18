@@ -313,6 +313,20 @@ function keepBuyPlans(alloc, removed, dry=false){
   }
   return out;
 }
+// 같은 종목의 목표 비중은 대표 계좌 줄 하나에 둔다. 목표가 있는 줄을 지우면 같은 그룹·소분류에 남는 같은 기준 코드 줄로 목표를 옮긴다
+// (분할매수 계획이 있거나 옮겨 갈 줄이 우선, 없으면 자산 목록 순서). 받는 줄에 목표가 있으면 더해 종목 목표 합계를 유지한다. 옮길 줄이 없으면 목표도 함께 지운다.
+// moved는 keepBuyPlans가 돌려준 계획 이전 목록. dry면 기록을 바꾸지 않고 [{from,to,target}]만 돌려준다.
+function keepTargets(alloc, removed, moved, dry=false){
+  const out=[];
+  for(const g of alloc.groups||[])for(const from of g.items||[]){
+    const target=finite(from.target), code=linkTicker(from.ticker);if(!removed.has(from)||target===null||!code)continue;
+    const same=(g.items||[]).filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&(it.section||"")===(from.section||""));
+    const to=same.find(it=>it.buyPlan||moved.some(m=>m.to===it))||same[0];if(!to)continue;
+    out.push({from,to,target});if(dry)continue;
+    to.target=Math.round(((finite(to.target)||0)+target)*1e8)/1e8;delete from.target;
+  }
+  return out;
+}
 function openItem(id, groupId){
   const a=doc.allocation, found=id?findItem(id):null, it=found?.it||{}, f=el("itemForm");
   el("itemTitle").textContent=found?"종목 수정":"새 종목";
@@ -336,10 +350,10 @@ function openItem(id, groupId){
     return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{
-    const keep=keepBuyPlans(a,new Set([it]),true), to=keep.moved[0]?.to, code=linkTicker(it.ticker), twins=!!code&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code));
-    const notes=[to?`분할매수 계획과 체결 기록은 같은 종목의 '${to.name}' 줄로 옮겨 유지합니다.`:"",twins&&finite(it.target)!==null?`이 줄의 목표 비중 ${pc(it.target)}는 함께 지워집니다.`:""].filter(Boolean);
+    const removed=new Set([it]), keep=keepBuyPlans(a,removed,true), to=keep.moved[0]?.to, goal=keepTargets(a,removed,keep.moved,true)[0], code=linkTicker(it.ticker), twins=!!code&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code));
+    const notes=[to?`분할매수 계획과 체결 기록은 같은 종목의 '${to.name}' 줄로 옮겨 유지합니다.`:"",goal?`목표 비중 ${pc(goal.target)}는 '${goal.to.name}' 줄로 옮깁니다.`:twins&&finite(it.target)!==null?`이 줄의 목표 비중 ${pc(it.target)}는 함께 지워집니다.`:""].filter(Boolean);
     if(!confirm(`'${it.name}' 종목${keep.lost.length?"과 분할매수 계획":""}을 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
-    keepBuyPlans(a,new Set([it])); found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
+    keepTargets(a,removed,keepBuyPlans(a,removed).moved); found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
     const tradeTicker=f.tradeTicker.value.trim().toUpperCase(),sourceKind=purchaseQuoteKind(f.ticker.value),tradeKind=purchaseQuoteKind(tradeTicker);
     if(tradeTicker&&(!["국내","해외"].includes(sourceKind)||!["국내","해외"].includes(tradeKind))){alert("기준 티커와 실제 매수 ETF에 국내 종목 코드 또는 미국 심볼을 넣으세요.");f.tradeTicker.focus();return;}

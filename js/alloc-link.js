@@ -120,5 +120,28 @@ function rescale(key, trade){
   if(JSON.stringify(a.trades[key])!==before)assetStore.saveSection("allocation");
   if(rec)toast(`자산 배분도 맞춤 · ${describe(rec)}`);
 }
-return {line,holding,check,uncheck,forget,rescale,initialize};
+// 분할매수 기록 회차의 수량을 고치거나 취소할 때(출처 기록을 저장한 뒤): 바뀐 양만 지금 매수 1순위 계좌(targetId)에 더하거나 뺀다(이어 사기·되팔기 모두 1순위 기준).
+// 처음 반영한 계좌는 그대로 두고, 반영 기록 items에는 계좌별로 실제 더한 양을 합쳐 둔다. 뺄 보유량이 모자라면 0까지만 빼고 알린다.
+// o = {key, ticker(회차 실제 코드), targetId, trade: 바뀐 양 {sign, qty, price, value, currency}, total: 새 누적 {qty, value}}. total이 0이면 기록을 지운다.
+// 반영 기록이 없으면(처음에 '반영 안 함') 자산 배분은 그대로 둔다.
+function shift(o){
+  const a=allocOf(), rec=a?.trades?.[o.key];if(!rec)return;
+  const it=allocItemById(a,o.targetId), row=it&&(plus(o.trade?.qty)||plus(o.trade?.value))?tradeRows(a,assetStore.prices,o.ticker,o.trade,o.targetId).find(r=>r.it.id===it.id):null;
+  const dir=o.trade?.sign<0?-1:1, items=Array.isArray(rec.items)?rec.items:[];let done=0,short=false,field="shares";
+  if(row?.n){
+    field=row.unit==="shares"?"shares":"amount";const step=field==="shares"?row.step:0.01, s=field==="amount"?allocationSummary(a,assetStore.prices):null;
+    const was=finite(it.amount)||0, v=s?.items.get(it.id)?.value||0, want=field==="shares"?row.n:row.n*(was>0&&v>0?was/v:1);
+    const fresh=finite(it[field])===null;done=bumpField(it,field,dir*want,step);short=Math.abs(done)+step/2<want;
+    if(done&&field==="amount"&&!(was>0)&&finite(it.shares)===null)resetBase(it,assetStore.prices,a);
+    const e=done&&items.find(x=>x?.id===it.id&&finite(x[field])!==null&&!x.converted);
+    if(e){e[field]=linkRound(e[field]+done,step);if(e.fresh&&field==="shares"&&!(finite(it.shares)>0))delete it.shares;}else if(done)items.push({id:it.id,[field]:done,...(fresh&&field==="shares"?{fresh:true}:{})});
+    rec.items=items.filter(x=>finite(x?.shares)||finite(x?.amount));
+  }
+  if(!plus(o.total?.qty)&&!plus(o.total?.value)){delete a.trades[o.key];if(!Object.keys(a.trades).length)delete a.trades;}
+  else Object.assign(rec,{qty:plus(o.total.qty),value:plus(o.total.value)});
+  assetStore.saveSection("allocation");
+  if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}`);
+  else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
+}
+return {line,holding,check,uncheck,forget,rescale,shift,initialize};
 })();
