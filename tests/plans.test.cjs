@@ -606,16 +606,35 @@ test('분할매도: 수량 없는 옛 금액 체결도 이미 차감한 주수�
 
 test('통합 매도 회차표는 진행 카드와 같은 기준으로 도달 회차를 표시하고 부분 체결 회차는 부분 체결로 둔다',()=>{
   const r=groupSale(),quote=r.ctx.priceData.stocks.AAA={kind:'해외',close:96,asOf:'2026-10-08',ma:{}}; // 회차 기준가 100 · 98.33 · 96.67 · 95 …(하락 매도)
-  const rows=()=>Array.from({length:7},(_,i)=>r.api.planSaleRow(r.p,i,'')),state=html=>html.map(h=>h.match(/^<div class="sale-row tracking sale-group-row ([^"]*)"/)[1]);
+  const rows=()=>Array.from({length:7},(_,i)=>r.api.planSaleRow(r.p,i,'')),state=html=>html.map(h=>h.match(/^<div class="purchase-row ?([^"]*)"/)[1]);
   const before=JSON.stringify([r.p,r.alloc]);let html=rows();
   assert.deepEqual(state(html),['due','due','due','','','','']);
-  assert.match(html[0],/aria-label="1회 전체 계좌 매도 완료"><span class="sale-round">1회<small>도달<\/small><\/span><\/label>/);
-  assert.match(html[0],/<div class="status due">도달<\/div><\/div>$/);
-  assert.match(html[3],/aria-label="4회 전체 계좌 매도 완료">4회<\/label>/);assert.match(html[3],/<div class="status ">대기<\/div><\/div>$/);
+  assert.match(html[0],/aria-label="1회 전체 계좌 매도 완료"><span class="purchase-round"><b>1회<\/b><small>도달<\/small><\/span><\/label>/);
+  assert.match(html[0],/<div class="status due">도달<\/div>/);
+  assert.match(html[3],/aria-label="4회 전체 계좌 매도 완료"><span class="purchase-round"><b>4회<\/b><\/span><\/label>/);assert.match(html[3],/<div class="status">대기<\/div>/);
   assert.equal(JSON.stringify([r.p,r.alloc]),before,'회차표를 그려도 기록은 그대로');
   const row=r.api.planSaleExecution(r.p,0).rows.find(x=>x.plannedQty>1);r.member(0,row.targetId,1);html=rows();
   assert.deepEqual(state(html),['partial','due','due','','','','']);assert.doesNotMatch(html[0],/도달/);
   quote.close=101;assert.deepEqual(state(rows()),['partial','','','','','','']);
+});
+
+test('통합 매도 회차표는 분할매수 회차표처럼 한 줄에 입력칸 하나를 두고, 다른 계좌·여러 계좌로 나눈 회차만 작은 줄로 보인다',()=>{
+  const r=groupSale(),info=i=>vm.runInContext('planSaleRowInfo',r.ctx)(r.p,i),infos=Array.from({length:7},(_,i)=>info(i)),seller=vm.runInContext('planSaleSeller',r.ctx)(infos);
+  const before=JSON.stringify([r.p,r.alloc]),rows=infos.map(x=>r.api.planSaleRow(r.p,x.i,seller,x)),split=infos.findIndex(x=>x.members.length>1);
+  assert.deepEqual([seller.key,seller.account],['isa-etf','예시 ISA'],'가장 많은 회차를 파는 계좌를 표 위 매도 종목 한 줄로');assert.ok(split>0&&split<6,'경계 회차는 두 계좌로 나뉜다');
+  assert.equal((rows[0].match(/<input type="number"/g)||[]).length,1);assert.match(rows[0],/<div class="purchase-fill"><input type="number"[^>]*data-sale-member="isa-etf" data-sale-stage="0"/);
+  assert.doesNotMatch(rows[0],/purchase-sub/,'매도 종목과 같은 회차는 계좌를 반복하지 않는다');
+  assert.match(rows[6],/<small class="purchase-sub">예시 연저펀 · 가상 추종 ETF · 111111<\/small>/,'다른 계좌로 파는 회차만 회차 아래 작은 줄');
+  assert.match(r.api.planSaleRow(r.p,0,''),/<small class="purchase-sub">예시 ISA · 가상 추종 ETF · 111111<\/small>/,'매도 종목 줄이 없으면 회차마다 계좌');
+  assert.doesNotMatch(rows.join(''),/잔량 체결|sale-member-complete|실제 매도 합계/,'체크가 잔량 체결을 대신한다');
+  assert.equal((rows[split].match(/<div class="sale-member-line">/g)||[]).length,2);assert.match(rows[split],/<b>예시 ISA<\/b><small>가상 추종 ETF<\/small>/);assert.match(rows[split],/<div class="purchase-fill"><\/div>/,'나눈 회차의 줄 입력칸은 비우고 계좌마다 입력');
+  assert.equal((rows[split].match(/data-sale-member="/g)||[]).length,2);
+  const one=groupSale({b:0}),oneInfos=Array.from({length:7},(_,i)=>vm.runInContext('planSaleRowInfo',one.ctx)(one.p,i)),oneSeller=vm.runInContext('planSaleSeller',one.ctx)(oneInfos);
+  assert.deepEqual([oneSeller.name,oneSeller.account,oneSeller.ticker],['가상 추종 ETF','예시 ISA','111111'],'모든 회차를 한 계좌가 팔면 표 위 매도 종목 한 줄');
+  assert.equal(vm.runInContext('planSellerText',one.ctx)(oneSeller),'예시 ISA · 111111 · 10000');
+  const oneRow=one.api.planSaleRow(one.p,0,oneSeller,oneInfos[0]);
+  assert.doesNotMatch(oneRow,/purchase-sub|sale-member-line/,'회차마다 계좌·종목을 반복하지 않는다');assert.match(oneRow,/<div class="purchase-qty">\d+주<\/div><div class="purchase-fill"><input/);
+  assert.equal(JSON.stringify([r.p,r.alloc]),before,'회차표를 그려도 기록은 그대로');
 });
 
 test('통합 매도 진행 카드는 여러 계좌의 회차 체결을 합쳐 부분 체결 칸과 안내로 보이고 기록을 바꾸지 않는다',()=>{

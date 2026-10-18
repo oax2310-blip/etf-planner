@@ -65,22 +65,31 @@ test('판 회차는 빈 칸, 부분 체결은 남은 비율만큼 채우고 도�
 });
 
 test('회차표는 진행 카드와 같은 기준으로 도달 회차를 강조하고 회차 번호 아래·상태 칸에 도달로 표시한다',()=>{
-  const rows=html=>html.match(/<div class="sale-row[^"]*">/g).map(x=>x.slice(20,-2).trim());
+  const rows=html=>[...html.matchAll(/<div class="purchase-row ?([^"]*)">/g)].map(x=>x[1]);
   const due=draw(plan(),quote(460));
   assert.match(due.card,/<span class="buy-track-chip warn">도달 2회<\/span>/);
   assert.deepEqual(rows(due.html),['due','due','','','']);
-  assert.match(due.html,/aria-label="1회 매도 완료"><span class="sale-round">1회<small>도달<\/small><\/span><\/label>/);
+  assert.match(due.html,/aria-label="1회 매도 완료"><span class="purchase-round"><b>1회<\/b><small>도달<\/small><\/span><\/label>/);
   assert.equal((due.html.match(/<div class="status due">도달<\/div>/g)||[]).length,2);
-  assert.match(due.html,/aria-label="3회 매도 완료">3회<\/label>/,'닿지 않은 회차는 그대로');
+  assert.match(due.html,/aria-label="3회 매도 완료"><span class="purchase-round"><b>3회<\/b><\/span><\/label>/,'닿지 않은 회차는 그대로');
   // 완료·부분 체결 회차는 도달보다 체결 상태를 먼저 보인다.
   const fills={0:{price:500,plannedQty:2,qty:2},1:{price:475,plannedQty:2,qty:1}};
   const mixed=draw(plan({fills,checked:[true,false,false,false,false]}),quote(440));
   assert.deepEqual(rows(mixed.html),['done','partial','due','','']);
-  assert.match(mixed.html,/aria-label="3회 매도 완료"><span class="sale-round">3회<small>도달<\/small>/);
+  assert.match(mixed.html,/aria-label="3회 매도 완료"><span class="purchase-round"><b>3회<\/b><small>도달<\/small>/);
+  assert.match(mixed.html,/aria-label="2회 매도 완료"><span class="purchase-round"><b>2회<\/b><small>남은 1주<\/small>/,'부분 체결은 회차 아래 남은 수량');
   assert.equal((mixed.html.match(/<small>도달<\/small>/g)||[]).length,1);
   // 오르며 파는 계획은 현재가 이상, 시세가 없으면 도달로 보지 않는다.
   assert.deepEqual(rows(draw(plan({startPrice:80,endPrice:100}),quote(85)).html),['due','due','','','']);
   assert.deepEqual(rows(draw(plan(),null).html),['','','','','']);
+});
+
+test('분할매도 체크는 분할매수 회차표와 같은 표(매도 종목 한 줄 · 회차 · 기준가 · 매도 · 체결 · 알림 · 상태)로 그린다',()=>{
+  const {html}=draw(plan({checked:[true,false,false,false,false]}),quote(520)),table=html.match(/<section class="card table-card purchase-table sale-table[^"]*" id="saleTable">[\s\S]*?<\/section>/)?.[0]||'';
+  assert.match(table,/^<section class="card table-card purchase-table sale-table hide-completed" id="saleTable"><div class="purchase-buy-target"><span>매도 종목<\/span><div><b>가상 ETF<\/b><small>AAA<\/small><\/div><\/div><div class="purchase-table-head"><span>회차<\/span><span>기준가<\/span><span>매도<\/span><span>체결<\/span><span>알림<\/span><span>상태<\/span><\/div><button class="completed-fold-bar"/);
+  assert.doesNotMatch(table,/m-head|class="table-head"|sale-row|누적 체결 <input|purchase-sub/,'모바일 머리줄·회차마다 반복하는 종목 이름을 두지 않는다');
+  assert.match(table,/<div class="stage-price"><span class="price">\$475<\/span><span class="krw">≈₩617500<\/span><\/div>\s*<div class="purchase-qty">2주<\/div><div class="purchase-fill"><input type="number" min="0" max="2" step="1" inputmode="numeric" data-sale-filled="1" value="0" placeholder="0" aria-label="2회 매도 누적 체결 수량 \(주\)"><\/div><div class="purchase-alert"><label class="trade-alert-toggle"/);
+  assert.match(table,/<div class="purchase-row done">[\s\S]*?<div class="purchase-qty">2주<\/div>[\s\S]*?<label class="trade-alert-toggle completed"/,'완료 회차는 판 수량·완료 표시');
 });
 
 test('오르며 파는 계획은 현재가 이상을 도달로 보고 모두 팔면 이름표가 띠 끝으로 간다',()=>{
