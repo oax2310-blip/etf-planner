@@ -292,6 +292,27 @@ const dlg = id => el(id);
 all("dialog [data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
 const setNum = (obj, key, v) => { const n=numIn(v); if(n===null) delete obj[key]; else obj[key]=n; };
 const setText = (obj, key, v) => { const t=String(v??"").trim(); if(t) obj[key]=t; else delete obj[key]; };
+// 분할매수 계획은 한 줄(buyPlan)에 저장하지만 같은 종목 코드의 계좌 줄 전체가 함께 쓴다. 줄·그룹 삭제로 계획이 붙은 줄이 빠지면 기준 코드·실제 매수 코드가 같은
+// 남는 줄 중 매수 우선순위(buyPriority, 없으면 계획 줄 → 자산 목록 순서)가 가장 앞선 줄로 계획을 옮긴다. 체결 반영 키 'buy:줄 id:회차'도 새 줄 id로 바꾸고
+// 우선순위에서 지운 줄 id를 뺀다(알림 ID trade:buy:줄 id:…도 새 줄 id가 된다). 남는 같은 종목 줄에 이미 계획이 있거나(중복) 옮길 줄·코드가 없으면 계획도 지운다.
+// dry면 기록을 바꾸지 않고 {moved:[{from,to}], lost:[줄]}만 돌려준다(삭제 확인 문구용).
+function keepBuyPlans(alloc, removed, dry=false){
+  const all=(alloc.groups||[]).flatMap(g=>g.items||[]), ids=new Set([...removed].map(it=>it.id)), taken=new Set(all.filter(it=>it.buyPlan&&!removed.has(it))), out={moved:[],lost:[]};
+  for(const from of all.filter(it=>it.buyPlan&&removed.has(it))){
+    const plan=from.buyPlan, code=linkTicker(from.ticker), trade=linkTicker(assetTradeTicker(from)), rank=new Map();
+    for(const id of [...(Array.isArray(plan.buyPriority)?plan.buyPriority:[]),from.id])if(!rank.has(id))rank.set(id,rank.size);
+    const same=code?all.filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&linkTicker(assetTradeTicker(it))===trade):[];
+    const to=same.some(it=>taken.has(it))?null:same.sort((x,y)=>(rank.get(x.id)??Infinity)-(rank.get(y.id)??Infinity))[0];
+    if(!to){out.lost.push(from);continue;}
+    taken.add(to);out.moved.push({from,to});if(dry)continue;
+    const order=Array.isArray(plan.buyPriority)?plan.buyPriority.filter(id=>!ids.has(id)):[];
+    if(order.length)plan.buyPriority=order;else delete plan.buyPriority;
+    to.buyPlan=plan;delete from.buyPlan;
+    const prefix=`buy:${from.id}:`;
+    for(const key of Object.keys(alloc.trades||{}))if(key.startsWith(prefix)){alloc.trades[`buy:${to.id}:${key.slice(prefix.length)}`]=alloc.trades[key];delete alloc.trades[key];}
+  }
+  return out;
+}
 function openItem(id, groupId){
   const a=doc.allocation, found=id?findItem(id):null, it=found?.it||{}, f=el("itemForm");
   el("itemTitle").textContent=found?"종목 수정":"새 종목";
@@ -314,7 +335,11 @@ function openItem(id, groupId){
   el("itemTrades").innerHTML=trades.length?`<span>플래너 체크로 반영한 체결 <small>${trades.length}건 · 체크를 풀면 되돌립니다</small></span><ul>${trades.slice(0,20).map(({t,e})=>{const d=finite(e.shares)?e.shares:e.amount,sign=d<0?"−":"+";
     return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
-  el("itemDelete").onclick=()=>{ if(!confirm(`'${it.name}' 종목${it.buyPlan?"과 분할매수 계획":""}을 삭제할까요?`)) return; found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
+  el("itemDelete").onclick=()=>{
+    const keep=keepBuyPlans(a,new Set([it]),true), to=keep.moved[0]?.to, code=linkTicker(it.ticker), twins=!!code&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code));
+    const notes=[to?`분할매수 계획과 체결 기록은 같은 종목의 '${to.name}' 줄로 옮겨 유지합니다.`:"",twins&&finite(it.target)!==null?`이 줄의 목표 비중 ${pc(it.target)}는 함께 지워집니다.`:""].filter(Boolean);
+    if(!confirm(`'${it.name}' 종목${keep.lost.length?"과 분할매수 계획":""}을 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
+    keepBuyPlans(a,new Set([it])); found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
     const tradeTicker=f.tradeTicker.value.trim().toUpperCase(),sourceKind=purchaseQuoteKind(f.ticker.value),tradeKind=purchaseQuoteKind(tradeTicker);
     if(tradeTicker&&(!["국내","해외"].includes(sourceKind)||!["국내","해외"].includes(tradeKind))){alert("기준 티커와 실제 매수 ETF에 국내 종목 코드 또는 미국 심볼을 넣으세요.");f.tradeTicker.focus();return;}
@@ -349,7 +374,11 @@ function openGroup(id){
   const names=g?[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(x=>x.section).filter(Boolean)])]:[];
   el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%)</span>${names.map((n,i)=>{const t=targets.section(g.id,n);return `<label class="sub-target">${escA(n)}${t.linked?" · 종목 합산":""}<input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${t.target??""}"${t.linked?" disabled":""}></label>`;}).join("")}`:"";
   el("groupDelete").hidden=!g;
-  el("groupDelete").onclick=()=>{ if(!confirm(`'${g.name}' 그룹${g.items.length?`과 종목 ${g.items.length}개`:""}를 삭제할까요?`)) return; a.groups=a.groups.filter(x=>x!==g); saveSection("allocation"); dlg("groupDialog").close(); render(); };
+  el("groupDelete").onclick=()=>{
+    const removed=new Set(g.items), keep=keepBuyPlans(a,removed,true);
+    const notes=[keep.moved.length?`분할매수 계획은 같은 종목의 다른 계좌 줄로 옮겨 유지합니다: ${keep.moved.map(m=>`${m.from.name} → ${m.to.name}`).join(", ")}`:"",keep.lost.length?`분할매수 계획도 함께 삭제됩니다: ${keep.lost.map(x=>x.name).join(", ")}`:""].filter(Boolean);
+    if(!confirm(`'${g.name}' 그룹${g.items.length?`과 종목 ${g.items.length}개`:""}를 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
+    keepBuyPlans(a,removed); a.groups=a.groups.filter(x=>x!==g); saveSection("allocation"); dlg("groupDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); const t=g||{id:newId(),items:[]};
     t.name=f.name.value.trim()||"이름 없음"; t.classId=f.classId.value; if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
     const c=classes.find(x=>x.id===t.classId), stored=a.classes.find(x=>x.id===t.classId);

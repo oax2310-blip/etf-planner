@@ -123,6 +123,59 @@ test('같은 ETF 코드의 다른 계좌도 화살표로 직접 바꾸며 새로
   r.change('[data-purchase-buy-shares]',0);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.item.buyPlan.buys,undefined);
 });
 
+test('같은 종목 코드의 다른 계좌 줄로 사도 예상·잔액·→ 없이 계획 줄로 살 때와 같은 수량·모양으로 보인다',()=>{
+  const r=setup({budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}}),{other,move}=linkedAccounts(r);delete other.tradeTicker;r.render();
+  const qty=()=>Array.from(r.html().matchAll(/purchase-qty">([^<]+)</g),m=>m[1]),before=qty();assert.ok(before.length>2,'회차가 그려짐');
+  assert.match(r.html(),/<b>테스트 종목<\/b><small>테스트 계좌<\/small>/);assert.doesNotMatch(r.html(),/예상 |잔액 /);
+  move('b',-1);assert.deepEqual(qty(),before,'같은 코드라 수량 계산은 그대로');
+  assert.match(r.html(),/<b>다른 계좌 ETF<\/b><small>추가 계좌<\/small>/);assert.doesNotMatch(r.html(),/예상 |잔액 |purchase-sub">[^<]*111111/,'다른 계좌 줄이라는 이유로 예상·잔액·코드를 붙이지 않음');
+  r.edit();assert.doesNotMatch(r.element('linePreview').innerHTML,/ →/);assert.match(r.element('linePreview').innerHTML,/ · 매수 \d+주/);
+});
+
+test('같은 종목 코드의 다른 계좌 줄을 고르면 새 계획 대신 기존 계획을 열고, 이미 있는 중복 계획은 경고만 한다',()=>{
+  const r=setup(),{other,zero}=linkedAccounts(r,{tradeTicker:'111111'});delete other.tradeTicker;
+  const lone={id:'d',name:'다른 종목',ticker:'444444',shares:1};r.doc.allocation.groups[1].items.push(lone);r.initialize();r.render();
+  const list=()=>r.element('purchaseItemList').innerHTML,pick=id=>r.element('purchaseItemList').onclick({target:{closest:sel=>sel==='[data-pick]'?{dataset:{pick:id}}:null}});
+  r.element('addPurchase').onclick();assert.equal(r.element('purchaseTitle').textContent,'새 분할매수 계획');
+  for(const id of ['a','b','c'])assert.match(list(),new RegExp(`data-pick="${id}"[^>]*>.*?<em>계획 있음</em>`),id);
+  assert.doesNotMatch(list(),/data-pick="d"[^>]*>.*?<em>계획 있음<\/em>/);
+  const before=JSON.stringify(r.doc);pick('b');assert.equal(r.element('purchaseTitle').textContent,'분할매수 계획 수정');assert.equal(r.form.item.value,'a','같은 종목 계획을 연다');
+  r.submit();assert.equal(other.buyPlan,undefined);assert.equal(zero.buyPlan,undefined);assert.equal(JSON.stringify(r.doc.allocation.groups.map(g=>g.items.map(x=>x.id))),JSON.stringify(JSON.parse(before).allocation.groups.map(g=>g.items.map(x=>x.id))));
+  r.element('addPurchase').onclick();r.form.item.value='c';r.alerts.length=0;r.submit();assert.match(r.alerts[0],/같은 종목의 다른 계좌 줄에 분할매수 계획이 있습니다/);assert.equal(zero.buyPlan,undefined,'저장 직전에도 중복 계획을 막음');
+  assert.doesNotMatch(r.html(),/class="warning">같은 종목/);
+  other.buyPlan={lines:{names:['25선'],end:10000,budget:5}};r.render();assert.match(r.html(),/class="warning">같은 종목의 다른 계좌 줄\(다른 계좌 ETF\)에도 분할매수 계획이 있어 예산과 알림이 겹칩니다/);
+  r.element('addPurchase').onclick();pick('b');assert.equal(r.form.item.value,'b','계획이 있는 줄은 자기 계획을 연다');
+});
+
+// 자산 배분 줄·그룹 삭제의 계획 이전(assets.js keepBuyPlans)을 같은 기록에 실행한다. 함수만 떼어 같은 계산 코드(linkTicker·assetTradeTicker)로 돌린다.
+const assetsSource=fs.readFileSync(path.join(__dirname,'../js/assets.js'),'utf8');
+const keepBuyPlansIn=ctx=>vm.runInContext(`(${assetsSource.slice(assetsSource.indexOf('function keepBuyPlans'),assetsSource.indexOf('function openItem'))})`,ctx);
+
+test('계획이 붙은 줄을 지우면 계획·체결 기록·알림 설정을 같은 코드의 다음 우선순위 줄로 옮기고 체결·취소를 이어 간다',()=>{
+  const r=setup({budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}}),{other,zero,move}=linkedAccounts(r);delete other.tradeTicker;r.item.buyPlan.notify={stages:true};r.render();
+  const first=r.inputs('[data-purchase-buy]')[0],doneKey=first.dataset.key;first.checked=true;first.onchange();assert.equal(r.item.buyPlan.buys[doneKey].tradeTargetId,'a');
+  move('b',-1);const second=r.inputs('[data-purchase-buy-shares]').find(x=>x.dataset.key!==doneKey),partKey=second.dataset.key;second.value='1';second.onchange();assert.equal(other.shares,6);
+  const plan=r.item.buyPlan,keep=keepBuyPlansIn(r.ctx),alloc=r.doc.allocation,before=JSON.stringify(r.doc);
+  const dry=keep(alloc,new Set([r.item]),true);assert.equal(JSON.stringify(r.doc),before,'확인 문구 계산은 기록을 바꾸지 않음');assert.equal(JSON.stringify(dry.moved.map(m=>[m.from.id,m.to.id])),'[["a","b"]]');assert.equal(dry.lost.length,0);
+  keep(alloc,new Set([r.item]));alloc.groups[0].items=alloc.groups[0].items.filter(x=>x!==r.item);r.render();
+  assert.equal(other.buyPlan,plan);assert.equal(r.item.buyPlan,undefined);assert.equal(zero.buyPlan,undefined);assert.deepEqual(Array.from(plan.buyPriority),['b','c'],'지운 줄은 우선순위에서 뺌');
+  assert.deepEqual(Object.keys(alloc.trades).sort(),[`buy:b:${doneKey}`,`buy:b:${partKey}`].sort(),'체결 반영 키를 새 줄 id로 옮김');
+  assert.match(r.html(),/data-purchase-item="b"/);assert.match(r.html(),/purchase-sub">삭제한 계좌에서 체결</);assert.doesNotMatch(r.html(),/반영 계좌가 없어졌습니다/,'완료 회차는 경고 대신 체결 계좌만 알림');
+  const ids=r.rules().map(x=>x.id);assert.ok(ids.length>0);assert.ok(ids.every(id=>id.startsWith('trade:buy:b:')),'알림 ID는 새 줄 id');assert.ok(!ids.includes(`trade:buy:b:${doneKey}`),'완료 회차 알림 없음');
+  const part=r.inputs('[data-purchase-buy-shares]').find(x=>x.dataset.key===partKey);part.value='2';part.onchange();assert.equal(other.shares,7,'부분 체결 회차를 같은 계좌로 이어 체결');assert.equal(alloc.trades[`buy:b:${partKey}`].items[0].id,'b');
+  const done=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key===doneKey);done.checked=false;done.onchange();assert.equal(plan.buys[doneKey],undefined);assert.equal(alloc.trades[`buy:b:${doneKey}`],undefined,'지운 계좌의 체결도 취소할 수 있음');assert.equal(other.shares,7);
+});
+
+test('계획 이전은 기준·실제 매수 코드가 모두 같은 줄로만 하고, 남는 줄에 이미 계획이 있거나 옮길 줄이 없으면 계획도 지운다',()=>{
+  const r=setup(),{other,zero}=linkedAccounts(r),alloc=r.doc.allocation,keep=keepBuyPlansIn(r.ctx);
+  assert.equal(keep(alloc,new Set([r.item]),true).moved.map(m=>m.to.id).join(),'c','실제 매수 코드가 다른 연결 줄(333333)은 건너뜀');
+  zero.buyPlan={lines:{names:['25선'],end:10000,budget:5}};const dup=keep(alloc,new Set([r.item]),true);assert.equal(`${dup.moved.length}:${dup.lost.map(x=>x.id)}`,'0:a','같은 종목에 남는 계획이 있으면 옮기지 않음');
+  const group=new Set(alloc.groups[1].items),both=keep(alloc,group,true);assert.equal(`${both.moved.length}:${both.lost.map(x=>x.id)}`,'0:c','그룹째 지우면 그룹 밖 계획 줄이 있어 지움');
+  delete zero.buyPlan;r.item.ticker='A111111';const trades={'buy:a:end':{items:[{id:'a',shares:1}]},'buy:ab:end':{items:[]}};alloc.trades=trades;
+  keep(alloc,new Set([r.item,other]));assert.ok(zero.buyPlan,'국내 코드 A 접두는 같은 코드');assert.deepEqual(Object.keys(trades).sort(),['buy:ab:end','buy:c:end'],'다른 줄 id로 시작하는 키는 그대로');assert.equal(zero.buyPlan.buyPriority,undefined,'빈 우선순위는 저장하지 않음');
+  const solo=setup(),lost=keepBuyPlansIn(solo.ctx)(solo.doc.allocation,new Set([solo.item]));assert.equal(`${lost.moved.length}:${lost.lost.length}`,'0:1');assert.ok(solo.item.buyPlan,'옮기지 않은 계획은 줄과 함께 지워지도록 그대로 둠');
+});
+
 test('수량 입력에서 바로 화살표를 누르면 체결은 기존 계좌에 저장하고 한 번의 클릭으로 다음 대상을 바꾼다',()=>{
   const r=setup({tracking:true,budget:12}),{other,move}=linkedAccounts(r);move('b',-1);
   const arrow=r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='a'&&x.dataset.purchaseDirection==='-1'),before=r.html();
