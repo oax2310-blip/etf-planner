@@ -99,12 +99,12 @@ test('회차표: 새 체결이 들어갈 회차의 계좌·ETF가 같으면 표 
   assert.match(r.html(),/purchase-sub">추가 계좌 · 다른 계좌 ETF · 333333 · 남은 예상 /);assert.doesNotMatch(r.html(),/purchase-sub">[^<]*테스트 계좌/,'새 체결 회차는 계좌를 반복하지 않음');
 });
 
-test('회차표 기준가: 원화는 원 단위를 숫자 뒤 작은 글자로 붙이고 여섯 자리부터 글자를 줄이며 달러는 그대로 둔다',()=>{
+test('회차표 기준가: 원화 여섯 자리부터 글자를 줄이고(long) 다섯 자리·달러 가격은 그대로 둔다',()=>{
   const real=(v,cur)=>cur==='USD'?`$${v}`:`${Math.round(v).toLocaleString('ko-KR')}원`,html=options=>{const r=setup(options);r.ctx.priceText=real;r.render();return r.html();};
   const krw=html({budget:60,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
-  assert.match(krw,/<span class="price">10,000<small class="price-unit">원<\/small><\/span>/);assert.match(krw,/<span class="price">13,333<small class="price-unit">원<\/small><\/span>/);
-  assert.match(html({budget:600,end:null,names:['25일선','32일선'],ma:{'25일선':100000,'32일선':200000}}),/<span class="price long">100,000<small class="price-unit">원<\/small><\/span>/);
-  const usd=html({currency:'USD',price:57.61});assert.match(usd,/<span class="price">\$57\.61<\/span>/);assert.doesNotMatch(usd,/price-unit/);
+  assert.match(krw,/<span class="price">10,000원<\/span>/);assert.match(krw,/<span class="price">13,333원<\/span>/);
+  assert.match(html({budget:600,end:null,names:['25일선','32일선'],ma:{'25일선':100000,'32일선':200000}}),/<span class="price long">100,000원<\/span>/);
+  assert.match(html({currency:'USD',price:57.61}),/<span class="price">\$57\.61<\/span>/);
 });
 
 test('회차표: 실제 ETF 코드를 넣기 전에 같은 계좌로 완료한 회차가 있어도 매수 종목을 표 위 한 줄로 올리고 어느 회차에도 계좌를 반복하지 않는다',()=>{
