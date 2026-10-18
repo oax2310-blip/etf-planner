@@ -388,7 +388,7 @@ test('계획 목록: 선택한 계획만 표시하고 체결은 그 종목에만
   r.doc.allocation.groups=[];r.render();assert.match(r.html(),/분할매수할 종목을 추가하세요/);assert.match(r.html(),/id="addPurchase"/);
 });
 
-test('계획 진행 카드: 다음 회차 칸 앞에 현재가 이름표를 두고 양 끝은 기준가와 선 이름만, 도달 회차는 칩·안내로 표시한다',()=>{
+test('계획 진행 카드: 다음 회차 칸 앞에 현재가 이름표를 두고 양 끝은 기준가와 선 이름만, 도달 회차는 칩으로만 표시한다',()=>{
   // 25일선 3회(10000·12000·14000) + 32일선 1회(16000)
   const card=r=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
@@ -399,7 +399,7 @@ test('계획 진행 카드: 다음 회차 칸 앞에 현재가 이름표를 두�
   const before=JSON.stringify(r.doc);r.prices.stocks['111111'].close=12500;r.render();
   assert.match(card(r),/<i class="due"><\/i><i class="due"><\/i><em class="buy-track-now mid"><span>현재 <b>₩12500<\/b><\/span><\/em><i class="next"><\/i><i class="wait"><\/i>/);
   assert.match(card(r),/<span class="buy-track-chip warn">도달 2회<\/span>/);
-  assert.match(card(r),/<p class="buy-track-note">25일선 1차·2차 기준가 도달/);
+  assert.doesNotMatch(card(r),/buy-track-note|기준가 도달|체결을 입력/,'도달 회차는 안내 문장 없이 칩·범례로만 표시한다');
   assert.match(card(r),/<span class="next">다음 25일선 3차 <b>₩14000<\/b><em class="up">\+12%<\/em><\/span>/);
   assert.equal(JSON.stringify(r.doc),before,'화면 표시만 하고 기록은 바꾸지 않는다');
   r.change('[data-purchase-buy-shares]',1);
