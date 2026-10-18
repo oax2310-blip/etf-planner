@@ -618,27 +618,34 @@ test('통합 매도 회차표는 진행 카드와 같은 기준으로 도달 회
   quote.close=101;assert.deepEqual(state(rows()),['partial','','','','','','']);
 });
 
-test('통합 매도 회차표는 분할매수 회차표처럼 한 줄에 입력칸 하나를 두고, 매도 종목은 우선순위 순서로 표 위에 모으고 여러 계좌로 나눈 회차만 작은 줄로 보인다',()=>{
+test('통합 매도 회차표는 분할매수 회차표처럼 한 줄에 입력칸 하나를 두고, 매도 종목은 지금 매도 중인 종목만 표 위에 두며 여러 계좌로 나눈 회차만 작은 줄로 보인다',()=>{
   const fn=(r,name)=>vm.runInContext(name,r.ctx),table=r=>{const infos=Array.from({length:r.p.stages},(_,i)=>fn(r,'planSaleRowInfo')(r.p,i)),sellers=fn(r,'planSaleSellers')(infos);return {infos,sellers,head:fn(r,'planSellerHead')(sellers),rows:infos.map(x=>r.api.planSaleRow(r.p,x.i,sellers,x))};};
+  const keys=sellers=>Array.from(sellers,h=>h.key);
   const r=groupSale(),before=JSON.stringify([r.p,r.alloc]);let {infos,sellers,head,rows}=table(r);const split=infos.findIndex(x=>x.members.length>1);
-  assert.deepEqual(Array.from(sellers,h=>[h.key,h.account,h.first,h.last]),[['isa-etf','예시 ISA',0,4],['pension-etf','예시 연저펀',4,6]],'회차를 파는 계좌를 우선순위 순서로 모두 표 위에');assert.equal(split,4,'경계 회차는 두 계좌로 나뉜다');
-  assert.equal(head,'<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers"><li><b>가상 추종 ETF</b><small><em>1~5회</em> · 예시 ISA · 111111 · 10000</small></li><li><b>가상 추종 ETF</b><small><em>5~7회</em> · 예시 연저펀 · 111111 · 10000</small></li></ol></div>');
+  assert.deepEqual(keys(sellers),['isa-etf'],'다음 회차를 파는 계좌만 표 위에');assert.equal(split,4,'경계 회차는 두 계좌로 나뉜다');
+  assert.equal(head,'<div class="purchase-buy-target"><span>매도 종목</span><div><b>가상 추종 ETF</b><small>예시 ISA · 111111 · 10000</small></div></div>');
   assert.equal((rows[0].match(/<input type="number"/g)||[]).length,1);assert.match(rows[0],/<div class="purchase-fill"><input type="number"[^>]*data-sale-member="isa-etf" data-sale-stage="0"/);
-  assert.doesNotMatch(rows.join(''),/purchase-sub/,'표 위 매도 종목으로 파는 회차는 어느 계좌든 회차마다 계좌를 반복하지 않는다');
+  assert.doesNotMatch(rows.join(''),/purchase-sub/,'뒤 계좌가 팔 미체결 회차에도 회차마다 계좌를 더하지 않는다');
   assert.match(r.api.planSaleRow(r.p,0,''),/<small class="purchase-sub">예시 ISA · 가상 추종 ETF · 111111<\/small>/,'매도 종목 줄이 없으면 회차마다 계좌');
+  assert.match(r.api.planSaleRow(r.p,6,''),/<small class="purchase-sub">예시 연저펀 · 가상 추종 ETF · 111111<\/small>/);
   assert.doesNotMatch(rows.join(''),/잔량 체결|sale-member-complete|실제 매도 합계/,'체크가 잔량 체결을 대신한다');
   assert.equal((rows[split].match(/<div class="sale-member-line">/g)||[]).length,2);assert.match(rows[split],/<b>예시 ISA<\/b><small>가상 추종 ETF<\/small>/);assert.match(rows[split],/<div class="purchase-fill"><\/div>/,'나눈 회차의 줄 입력칸은 비우고 계좌마다 입력');
   assert.equal((rows[split].match(/data-sale-member="/g)||[]).length,2);
   assert.equal(JSON.stringify([r.p,r.alloc]),before,'회차표를 그려도 기록은 그대로');
   r.isa.name='가상 추종 ETF(ISA)';r.pension.name='가상 추종 ETF (연저펀)';r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});({sellers,head,rows}=table(r));
-  assert.deepEqual(Array.from(sellers,h=>[h.key,h.first,h.last]),[['pension-etf',0,2],['isa-etf',2,6]],'순서를 바꾸면 표 위 맨 위 종목과 회차 범위도 바뀐다');
-  assert.match(head,/<li><b>가상 추종 ETF \(연저펀\)<\/b><small><em>1~3회<\/em>/);assert.doesNotMatch(rows.join(''),/purchase-sub/,'회차 안에 계좌 이름을 더하지 않는다');
+  assert.deepEqual(keys(sellers),['pension-etf'],'순서를 바꾸면 표 위 종목도 바뀐다');assert.match(head,/<b>가상 추종 ETF \(연저펀\)<\/b><small>예시 연저펀 · 111111 · 10000<\/small>/);
+  assert.doesNotMatch(rows.join(''),/purchase-sub/,'회차 안에 계좌 이름을 더하지 않는다');
   assert.match(rows[2],/<b>연저펀<\/b><small>예시 연저펀 · 가상 추종 ETF<\/small>.*<b>ISA<\/b><small>예시 ISA · 가상 추종 ETF<\/small>/,'나눈 회차 줄은 이름 끝 괄호를 굵게 보여 잘려도 구분');
-  r.finish(0);r.pension.shares=0;({sellers,rows}=table(r));
-  assert.deepEqual(Array.from(sellers,h=>h.key),['isa-etf'],'새 체결이 들어갈 회차의 종목만');assert.match(rows[0],/<small class="purchase-sub">예시 연저펀 · 가상 추종 ETF \(연저펀\) · 111111<\/small>/,'다른 종목으로 체결한 회차만 회차 아래 작은 줄');
+  r.finish(0);r.finish(1);({sellers,head}=table(r));
+  assert.deepEqual(keys(sellers),['pension-etf','isa-etf'],'다음 회차를 두 계좌로 나눴으면 두 계좌 모두 우선순위 순서로');
+  assert.equal(head,'<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers"><li><b>가상 추종 ETF (연저펀)</b><small>예시 연저펀 · 111111 · 10000</small></li><li><b>가상 추종 ETF(ISA)</b><small>예시 ISA · 111111 · 10000</small></li></ol></div>');
+  r.finish(2);({sellers,rows}=table(r));
+  assert.deepEqual(keys(sellers),['isa-etf'],'앞 계좌를 다 팔면 다음 계좌로');
+  assert.match(rows[0],/<small class="purchase-sub">예시 연저펀 · 가상 추종 ETF \(연저펀\) · 111111<\/small>/,'지금 매도 중이 아닌 종목으로 체결한 회차만 회차 아래 작은 줄');
+  assert.doesNotMatch(rows.slice(3).join(''),/purchase-sub/);
   const one=groupSale({b:0}),oneTable=table(one),oneSeller=oneTable.sellers[0];
   assert.deepEqual([oneTable.sellers.length,oneSeller.name,oneSeller.account,oneSeller.ticker],[1,'가상 추종 ETF','예시 ISA','111111'],'모든 회차를 한 계좌가 팔면 표 위 매도 종목 한 줄');
-  assert.equal(fn(one,'planSellerText')(oneSeller),'예시 ISA · 111111 · 10000');assert.equal(oneTable.head,'<div class="purchase-buy-target"><span>매도 종목</span><div><b>가상 추종 ETF</b><small>예시 ISA · 111111 · 10000</small></div></div>','한 종목이면 회차 범위 없이 한 줄');
+  assert.equal(fn(one,'planSellerText')(oneSeller),'예시 ISA · 111111 · 10000');
   assert.doesNotMatch(oneTable.rows[0],/purchase-sub|sale-member-line/,'회차마다 계좌·종목을 반복하지 않는다');assert.match(oneTable.rows[0],/<div class="purchase-qty">\d+주<\/div><div class="purchase-fill"><input/);
 });
 
