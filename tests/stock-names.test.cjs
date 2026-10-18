@@ -130,6 +130,9 @@ test('푸시 글자: 제목은 알림 종류와 종목명, 본문은 코드만 �
   assert.deepEqual(plain(notice({ticker:'069500',name:'069500',line:'60일선',ruleId:'ma1',title:'이동평균선 알림',body:'069500 60일선 근처에 닿음 · 현재 1.0000'},map)),{title:'이동평균선 알림 · 가상 코스피 ETF',body:'60일선 근처에 닿음 · 현재 1.0000'});
   assert.equal(notice({ticker:'202612',name:'달러선물 2026.12',line:'달러선물 25일선',ruleId:'trade:future:0',title:'매매 기준 알림',body:'202612 달러선물 25일선 기준가 이상 도달'},map).title,'달러선물 알림 · 2026.12월물');
   assert.equal(notice({ticker:'QQQ',name:'QQQ',line:'분할매도 1회',ruleId:'trade:plan:bare:0',title:'매매 기준 알림',body:'QQQ 분할매도 1회'},map).title,'분할매도 알림 · QQQ','이름을 못 찾으면 코드');
+  // 이동평균선 이름은 보일 때만 N월선(받은 기록·규칙 이름은 N개월선 그대로).
+  assert.deepEqual(plain(notice({ticker:'SPY',name:'가상 미국500 ETF',line:'매수대기 25개월선',ruleId:'trade:buy:track:wait',title:'매매 기준 알림',body:'SPY 매수대기 25개월선 기준가 이하 도달'},map)),{title:'분할매수 알림 · 가상 미국500 ETF',body:'매수대기 25월선 기준가 이하 도달'});
+  assert.equal(notice({title:'새 형식 32개월선',body:'SPY 32개월선 근처'},map).body,'SPY 32월선 근처');assert.equal(p.names.lineText('달러선물 25개월선'),'달러선물 25월선');
   // 모르는 제목·코드 없는 알림은 발송 글자를 그대로, 비어 있으면 기존 기본 문구.
   assert.deepEqual(plain(notice({ticker:'SPY',title:'새 형식 제목',body:'SPY 본문'},map)),{title:'새 형식 제목',body:'SPY 본문'});
   assert.deepEqual(plain(notice({},map)),{title:'매매 플래너 알림',body:'설정한 기준선 알림을 확인해 주세요.'});

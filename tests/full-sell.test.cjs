@@ -71,7 +71,7 @@ test('하락률 계획은 시작을 직접 입력으로 고정하고 잘못된 �
 test('전액 매도 표식은 종료 기준선 없는 계획에만 손절 도달 기준과 같은 한 줄로 보이고 기존 기준선 계획 화면은 그대로다',()=>{
   const ma=draw([maPlan()],quote(450));
   assert.doesNotMatch(ma.main,/fullSellMark|전액 매도|전액매도 시점/);assert.doesNotMatch(ma.list,/plan-count due/);
-  assert.match(ma.main,/<p class="quote-line"><strong class="quote-now">\$450<\/strong><span class="quote-state">직접 이탈 후 25개월선까지<\/span><span class="quote-round">5회 분할매도<\/span><\/p>/,'현재가가 공통 시세 줄 맨 앞');
+  assert.match(ma.main,/<p class="quote-line"><strong class="quote-now">\$450<\/strong><span class="quote-state">직접 이탈 후 25월선까지<\/span><span class="quote-round">5회 분할매도<\/span><\/p>/,'현재가가 공통 시세 줄 맨 앞');
   const pct=draw([pctPlan()],quote(520));
   assert.match(pct.main,/<p class="quote-line"><strong class="quote-now">\$520<\/strong><span class="quote-state">시작 기준가부터 20% 하락까지<\/span><span class="quote-round">보유 전량 5회 분할매도<\/span><\/p>/);
   assert.match(pct.main,/<div class="cut-milestones full-sell-mark" id="fullSellMark"><dl><div><dt>전액 매도<small>100%<\/small><\/dt><dd><strong>−20% · \$400<\/strong><small>시작 \$500 · 5회 분할 · <span class="full-sell-state">대기<\/span><\/small><\/dd><\/div><\/dl><\/div><\/section>/);
