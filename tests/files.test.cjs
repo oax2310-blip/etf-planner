@@ -49,15 +49,15 @@ test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름�
     assert.doesNotThrow(() => new vm.Script(list.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
 });
 
-test('본문 script는 defer로 불러 CSP meta가 있어도 한꺼번에 받는다', () => {
+test('theme.js만 CSS보다 먼저 바로 실행하고 나머지 script는 defer로 한꺼번에 받는다', () => {
   // CSP meta가 있으면 Chromium(크롬·삼성 인터넷)은 뒤쪽 파일을 미리 받지 않아, 일반 script는 앞 파일을 실행한 뒤에야 다음을 요청한다.
-  // defer는 문서 읽기를 멈추지 않아 모두 바로 요청하고, 실행은 문서를 다 읽은 뒤 태그 순서대로 한다.
+  // defer는 문서 읽기를 멈추지 않아 모두 바로 요청하고, 실행은 문서를 다 읽은 뒤 태그 순서대로 한다(head의 defer가 먼저).
+  // theme.js는 첫 화면 색 때문에 바로 실행한다. 일반 script는 앞의 CSS(외부 글꼴 포함)를 다 받아야 실행되므로 CSS보다 앞에 둔다.
   for (const name of ['index.html', 'assets.html', 'valuation.html']) {
-    const text = fs.readFileSync(path.join(root, name), 'utf8'), end = text.indexOf('</head>');
-    const tags = [...text.matchAll(/<script\b[^>]*>/g)];
-    assert.ok(tags.filter(m => m.index < end).every(m => !/\bdefer\b/.test(m[0])), `${name}: head의 theme.js·repo-security.js는 첫 화면 전에 바로 실행한다`);
-    const body = tags.filter(m => m.index > end);
-    assert.ok(body.length && body.every(m => /^<script src="js\/[^"]+" defer>$/.test(m[0])), `${name}: 본문 script는 모두 defer 파일이어야 한다`);
+    const text = fs.readFileSync(path.join(root, name), 'utf8'), [first, ...rest] = [...text.matchAll(/<script\b[^>]*>/g)];
+    assert.match(first[0], /^<script src="js\/theme\.js\?v=\d+">$/, `${name}: 첫 script는 defer 없는 theme.js`);
+    assert.ok(first.index < text.indexOf('</head>') && !text.slice(0, first.index).includes('rel="stylesheet"'), `${name}: theme.js는 head에서 CSS보다 먼저 와야 글꼴 CSS를 기다리지 않는다`);
+    assert.ok(rest.length && rest.every(m => /^<script src="js\/[^"]+" defer>$/.test(m[0])), `${name}: theme.js 밖의 script는 모두 defer 파일이어야 한다`);
   }
 });
 
