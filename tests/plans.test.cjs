@@ -483,6 +483,7 @@ test('통합 매도 우선순위: 앞 계좌를 소진한 뒤 다음 계좌로 �
   const boundary=r.api.planSaleExecution(r.p,4);assert.deepEqual(Array.from(boundary.rows,x=>x.plannedQty),[3,10,0]);
   r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});
   assert.deepEqual(Array.from(r.p.sellPriority),[r.pension.id,r.isa.id,r.native.id]);
+  const view=r.api.planSaleAccountView(r.p);assert.match(view,/연결된 전체 보유 종목/);assert.doesNotMatch(view,/순서 초기화|resetSalePriority/,'순서 초기화 버튼 없이 화살표로 되돌림');
   assert.equal(JSON.stringify(r.alloc),before,'순서를 바꾸는 동작은 자산·체결 기록을 바꾸지 않는다');
   assert.deepEqual(Array.from(r.api.planSaleExecution(r.p,0).rows,x=>x.plannedQty),[13,0,0]);
   assert.equal(r.api.planSaleExecution(r.p,0).rows[0].targetId,r.pension.id);
