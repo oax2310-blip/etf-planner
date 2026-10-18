@@ -79,7 +79,7 @@ function match(entry, items){
   const top=near.reduce((n,x)=>Math.max(n,x.rel.score),0);
   return near.filter(x=>x.rel.score===top).map(x=>({it:x.it,how:x.rel.how}));
 }
-// label은 플래너 카드와 같은 이름(카드 이름 → 계획·종목 이름 → 종목 코드, stock-names.js).
+// label은 플래너 카드와 같은 이름(카드 이름 → 계획·종목 이름 → 종목 코드, stock-names.js). 분할매수는 매수 우선순위 첫 종목의 이름(purchases.js leadName).
 // 결과: items = Map(자산 종목 id → {buys,plans,rebuy: [{id,label,how,done?}…]}), guesses = 추정 연결 [{item,tab,label,how}], unlinked = 자산 배분에 연결되지 않은 플래너 항목 [{tab,label}].
 // done은 끝난 분할매수·분할매도 계획에만 true로 붙는다. stocks는 이동평균선 돌파 분할매수의 완료 판단에 쓰는 플래너 시세(readStocks).
 function collect(alloc, prices, planner=read(), stocks=readStocks()){
@@ -93,8 +93,9 @@ function collect(alloc, prices, planner=read(), stocks=readStocks()){
   const summary=items.some(({it})=>it.buyPlan)?allocationSummary(alloc,prices):null;
   for(const {it} of items){
     if(!it.buyPlan)continue;
-    const entry={id:it.id,label:text(it.buyPlan.cardName)||text(it.name)||text(it.ticker)||"이름 없음",done:buyDone(alloc,prices,it,summary,stocks)};
-    for(const row of purchaseAllocationSummary(alloc,prices,it,it.buyPlan,summary).rows)add("buys",row.it,entry,row.it.id===it.id?"id":"code");
+    const rows=purchaseTargets(alloc,prices,it,it.buyPlan,summary),lead=rows[0]?.it||it;
+    const entry={id:it.id,label:text(it.buyPlan.cardName)||text(lead.name)||text(lead.ticker)||"이름 없음",done:buyDone(alloc,prices,it,summary,stocks)};
+    for(const row of rows)add("buys",row.it,entry,row.it.id===it.id?"id":"code");
   }
   for(const tab of ["plans","rebuy"])for(const entry of planner[tab]){
     const hits=match(entry,items);

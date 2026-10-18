@@ -74,6 +74,16 @@ test('분할매수는 계획이 붙은 종목(id)과 같은 코드의 다른 계
   assert.deepEqual(two.items.get('b').plans.map(x => x.how), ['name']);
 });
 
+test('분할매수 연결 이름은 카드 이름이 없으면 매수 우선순위 첫 종목(플래너 제목과 같은 이름)을 쓴다', () => {
+  const buy = {lines: {names: ['25일선'], budget: 10}, buyPriority: ['b', 'a']};
+  const items = [{id: 'a', name: '계좌1', ticker: 'AAA', amount: 10, buyPlan: buy}, {id: 'b', name: '계좌2', ticker: 'AAA', amount: 5}];
+  const r = m.collect(alloc(items), null, {plans: [], rebuy: []});
+  assert.deepEqual(r.items.get('a').buys, [{id: 'a', label: '계좌2', how: 'id'}]);
+  assert.deepEqual(r.items.get('b').buys, [{id: 'a', label: '계좌2', how: 'code'}]);
+  delete buy.buyPriority;
+  assert.equal(m.collect(alloc(items), null, {plans: [], rebuy: []}).items.get('b').buys[0].label, '계좌1', '순서를 바꾸지 않으면 계획을 둔 종목');
+});
+
 test('플래너 기록 읽기는 깨진 값에도 안전하고 입력을 바꾸지 않으며 옛 단일 재매수·id 없는 항목을 읽는다', () => {
   store[m.PLANNER_KEY] = '{깨진 json';
   assert.deepEqual(m.read(), {plans: [], rebuy: []});

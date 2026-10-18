@@ -177,6 +177,19 @@ test('분할매수 제목: 이름 끝 괄호는 꼬리표로 보이고 목록·�
   assert.match(r.html(),/<strong>테스트 종목\(연저펀\)<\/strong>/,'목록 카드는 전체 이름');
   assert.equal(JSON.stringify(r.doc),before,'화면 표시만 바꾸고 기록은 그대로');
 });
+test('분할매수 제목·목록 카드·이름 창은 매수 우선순위 첫 종목(매수 반영 대상) 이름을 따르고 카드 이름·기록은 그대로 둔다',()=>{
+  const r=setup();r.item.name='테스트 종목(연저펀)';const {move}=linkedAccounts(r);r.doc.allocation.groups[1].items[0].name='테스트 종목(ISA)';r.render();
+  const card=()=>/data-purchase-select="a"[^>]*>(.*?)<\/button>/.exec(r.html())?.[1]||'';
+  assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">연저펀<\/span><\/h1>/,'순서를 바꾸지 않으면 계획을 둔 종목');
+  const items=()=>JSON.stringify(r.doc.allocation.groups.flatMap(g=>g.items.map(({buyPlan,...it})=>it))),before=items();move('b',-1);
+  assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">ISA<\/span><\/h1>/,'매수 반영 대상이 바뀌면 제목도');
+  assert.match(r.html(),/aria-label="테스트 종목\(ISA\) 분할매수 계획 수정"/);assert.match(card(),/<strong>테스트 종목\(ISA\)<\/strong>/,'목록 카드도 같은 이름');
+  r.input('[data-purchase-rename]').onclick();assert.equal(r.names.at(-1).name,'테스트 종목(ISA)','이름 창의 기본 이름도 같은 종목');
+  assert.equal(r.item.name,'테스트 종목(연저펀)');assert.equal(items(),before,'자산 종목 이름·보유량은 그대로');assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c'],'저장은 화살표의 순서뿐');
+  r.item.buyPlan.cardName='내 카드';r.render();assert.match(card(),/<strong>내 카드<\/strong>.*<span class="plan-title">테스트 종목\(ISA\)<\/span>/,'카드 이름이 있으면 아래 줄에 반영 대상 종목 이름');
+  assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">ISA<\/span><\/h1>/,'제목은 카드 이름이 아니라 종목 이름');
+  r.element('resetPurchasePriority').onclick();delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1>테스트 종목 <span class="title-tag">연저펀<\/span><\/h1>/,'순서 초기화하면 원래 종목');
+});
 test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
   const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
   assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.2},names:['42일선','60일선'],end:null,budget:5000})),
