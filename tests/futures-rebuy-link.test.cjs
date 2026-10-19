@@ -171,3 +171,14 @@ test('분할 손절 표의 손절 시점은 현재 환율이 다음 손절 회�
   assert.equal(due(1350),null,'1회를 손절하면 다음 회차 환율까지는 접는다');assert.equal(due(1300),2);
   assert.equal(ctx.futureCutDue(ctx.futureRebuySummary(futures({floorPrice:1400})),1200),null,'기준 미입력');
 });
+
+test('반등 단계별 재매수 표의 재매수 시점은 판 계약이 있고 현재 환율이 재매수 회차 환율 이상일 때만이다',()=>{
+  const ctx=load(),f=futures({currentPrice:1330,stages:[{name:'25일선',price:1340},{name:'60일선',price:1380}]});
+  const due=cur=>(x=>x&&`${x.i}:${x.t}`)(ctx.futureBuyDue(ctx.futureRebuySummary(f),cur));
+  assert.equal(due(1400),null,'손절 전에는 재매수 회차가 없어 접는다');
+  ctx.setFutureCutChecked(f,0,true);ctx.setFutureCutChecked(f,1,true);
+  assert.equal(due(1330),null,'첫 회차 환율 아래면 접는다');assert.equal(due(0),null,'현재 환율이 없으면 접는다');
+  assert.equal(due(1340),'0:0');assert.equal(due(1390),'0:0');
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
+  assert.equal(due(1390),null,'판 계약을 다 되사면 접는다');
+});

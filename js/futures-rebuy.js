@@ -2,11 +2,19 @@
 // 손절·재매수 계산은 rebuy.js에 둔다(비공개 시세 수집 작업도 같은 함수를 사용). 아래 보유 반영은 화면 쪽에서만 하며 계산 함수는 기록만 읽는다.
 // 손절은 특수한 상황이라 실행(첫 체크) 전에는 한 줄로 접어 둔다. 펼친 상태는 화면 상태라 저장·동기화하지 않는다.
 let futureRebuyExpanded=false;
-// 펼친 화면의 '1. 분할 손절' 표도 손절 시점(futureCutDue)일 때만 기본으로 펼친다. 사용자가 기본과 다르게 열거나 접은 상태와 표 안에서 체크·입력한 뒤의 열린 상태는
-// 다시 그려도 유지하고(화면 상태, 저장·동기화 안 함), 다른 회차가 새로 손절 시점이 되면 기본으로 돌린다.
-let futureCutsOpen=null,futureCutsDueAt=0;
+// 펼친 화면의 '1. 분할 손절'·'2. 반등 단계별 재매수' 표도 그 표의 회차가 매매 시점(futureCutDue·futureBuyDue)일 때만 기본으로 펼친다. 사용자가 기본과 다르게 열거나 접은 상태와
+// 표 안에서 체크·입력한 뒤의 열린 상태는 다시 그려도 유지하고(화면 상태, 저장·동기화 안 함), 다른 회차가 새로 매매 시점이 되면 기본으로 돌린다.
+const futureTableState={cuts:{open:null,due:""},buys:{open:null,due:""}};
 // 손절 시점인 다음 손절 회차(현재 환율 ≤ 회차 환율). 기준 미입력·재매수 시작 뒤·현재 환율 없음이면 null.
 function futureCutDue(s,cur){const c=s.ready&&!s.started?s.cuts.find(x=>!x.done&&x.qty>0):null;return c&&cur>0&&cur<=c.price?c:null;}
+// 재매수 시점인 첫 재매수 회차(현재 환율 ≥ 회차 환율, 표의 '재매수 시점'과 같은 조건). 손절 전·현재 환율 없음이면 null.
+function futureBuyDue(s,cur){return s.tranches.find(y=>!y.done&&y.amount>0&&cur>0&&y.price>0&&cur>=y.price)||null;}
+// kind 표를 지금 펼칠지(key: 매매 시점 회차, 없으면 ""). bindFutureTable은 그 표의 열기·접기와 표 안 체크·입력을 기억한다.
+function futureTableOpen(kind,key){const t=futureTableState[kind];if(key&&key!==t.due)t.open=null;t.due=key;return t.open??!!key;}
+function bindFutureTable(kind,box,key){
+  const t=futureTableState[kind];box.ontoggle=()=>{t.open=box.open===!!key?null:box.open;};
+  box.addEventListener("change",()=>{t.open=true;},true); // 체크·입력 처리(다시 그리기)보다 먼저 열린 상태를 남긴다
+}
 
 // 손절·재매수 체크는 보유 월물·누적 정산손익에 반영한다(분할매수 체크의 월물 편입과 같은 방식).
 // 손절: 판 계약 수 이상 남은 가장 가까운 월물에서 빼고, 남은 계약의 단순평균가는 그대로 둔다.
@@ -194,9 +202,7 @@ function renderFutureRebuy(f){
     $("frToggle").onclick=()=>{futureRebuyExpanded=true;renderFutures();};
     return;
   }
-  const cutDue=futureCutDue(s,cur),dueKey=cutDue?cutDue.k:0;
-  if(dueKey&&dueKey!==futureCutsDueAt)futureCutsOpen=null;
-  futureCutsDueAt=dueKey;
+  const cutDue=futureCutDue(s,cur),buyDue=futureBuyDue(s,cur),cutKey=cutDue?String(cutDue.k):"",buyKey=buyDue?`${buyDue.i}:${buyDue.t}`:"";
   // 재매수는 ETF 재매수 화면과 같은 규칙: 평균 손절 환율 이하 단계가 첫 단계부터 이어지는 만큼 나누고, 단계마다 다음 단계 환율까지 3회로 나눠 산다.
   const px2=v=>px(Math.round(v*100)/100);
   const trName=x=>`<span class="tr-name">${esc(movingLineText(s.stages[x.i].name))}${s.stages[x.i].done?"":`<span class="tr-no">${x.t+1}</span>`}</span>`,trText=x=>`${esc(movingLineText(s.stages[x.i].name))}${s.stages[x.i].done?"":` ${x.t+1}회차`}`;
@@ -227,15 +233,14 @@ function renderFutureRebuy(f){
   $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><div class="title-row"><h2>신저점 손절 후 재매수</h2><button class="btn icon-btn" id="frEdit" type="button" aria-label="손절 기준 수정" title="손절 기준 수정">${PENCIL}</button></div><span class="future-rebuy-basis">${basis}</span>${locked?"":'<button class="btn mini ghost" type="button" id="frToggle">접기</button>'}</div>
     ${futureRebuyTrack(r,s,cur,notify("breakdown",null,"신저점 손절 시작",s.started,"신저점 이탈"),trText)}
     ${s.overSold||s.overBought?'<div class="warning">체결 기록이 손절 목표 또는 판 계약 수를 넘습니다. 실제 체결 수량을 확인하세요.</div>':""}${unText?`<div class="warning">${unText}이 보유 월물·누적 정산손익에 반영되지 않았습니다(연동 전 체크 또는 반영할 보유 월물이 없던 체크). 계좌 기준으로 이미 직접 고쳤다면 '직접 반영함'을 누르세요. <button class="btn mini" type="button" id="frLink">보유 월물에 반영</button> <button class="btn mini" type="button" id="frManual">직접 반영함</button></div>`:""}
-    <details class="future-rebuy-details" id="frCuts"${futureCutsOpen??cutDue?" open":""}><summary>1. 분할 손절 <span>${s.doneCuts}회 · ${s.sold}계약 완료</span></summary><div class="section-heading">${all("cuts")}</div><section class="card table-card"><div class="table-head"><span>회차</span><span>손절 환율</span><span>계약 수 · 실제 체결 환율</span><span>상태</span></div>${cutRows}${s.started?'<div class="stop-note">재매수를 시작해 남은 손절 회차는 멈췄습니다.</div>':""}</section></details>
-    <details class="future-rebuy-details" ${s.sold?"open":""}><summary>2. 반등 단계별 재매수 <span>잔여 ${s.rest}계약 · ${s.doneTranches} / ${s.tranches.length}회</span></summary><div class="section-heading">${all("buys")}<button class="btn mini ghost" id="frTimeframes" type="button">시·일·주·월선 추가</button></div><section class="card table-card stage-table"><div class="table-head"><span>단계 · 회차</span><span>기준 환율 · 회차 환율</span><span>재매수 계약 수 · 체결 환율</span><span>상태</span></div>${buyRows}</section></details>
+    <details class="future-rebuy-details" id="frCuts"${futureTableOpen("cuts",cutKey)?" open":""}><summary>1. 분할 손절 <span>${s.doneCuts}회 · ${s.sold}계약 완료</span></summary><div class="section-heading">${all("cuts")}</div><section class="card table-card"><div class="table-head"><span>회차</span><span>손절 환율</span><span>계약 수 · 실제 체결 환율</span><span>상태</span></div>${cutRows}${s.started?'<div class="stop-note">재매수를 시작해 남은 손절 회차는 멈췄습니다.</div>':""}</section></details>
+    <details class="future-rebuy-details" id="frBuys"${futureTableOpen("buys",buyKey)?" open":""}><summary>2. 반등 단계별 재매수 <span>잔여 ${s.rest}계약 · ${s.doneTranches} / ${s.tranches.length}회</span></summary><div class="section-heading">${all("buys")}<button class="btn mini ghost" id="frTimeframes" type="button">시·일·주·월선 추가</button></div><section class="card table-card stage-table"><div class="table-head"><span>단계 · 회차</span><span>기준 환율 · 회차 환율</span><span>재매수 계약 수 · 체결 환율</span><span>상태</span></div>${buyRows}</section></details>
     <div class="reset-row"><button class="btn ghost mini" id="frReset" type="button" ${locked?"":"disabled"}>체크 기록 초기화</button></div><p class="footnote">실제 주문은 증권사에서 실행합니다. 손절을 체크하면 가장 가까운 보유 월물에서 계약을 빼고 실현 손익(체결 환율 − 단순평균가)을 누적 정산손익에 더하며, 재매수를 체크하면 근월물에 체결 환율로 편입합니다. 체크 후 실제 체결 환율·계약 수를 맞추면 보유도 함께 고쳐집니다. 손절·재매수 시점은 보유 근월물 시세(없으면 직접 넣은 현재 환율)로 표시합니다.</p></section>`;
   if(typeof bindFutureRebuyAlerts==="function")bindFutureRebuyAlerts(f);
   $("frTimeframes").onclick=()=>{const r=editFutureRebuy(f),stages=completeMovingStages(r.stages);if(stages.length>80){alert("재매수 단계는 80개까지 설정할 수 있습니다.");return;}r.stages=stages;if(priceData)fillPrices({futures:f},priceData);save();renderFutures();};
 
   if(!locked)$("frToggle").onclick=()=>{futureRebuyExpanded=false;renderFutures();};
-  const cutsBox=$("frCuts");cutsBox.ontoggle=()=>{futureCutsOpen=cutsBox.open===!!cutDue?null:cutsBox.open;};
-  cutsBox.addEventListener("change",()=>{futureCutsOpen=true;},true); // 체크·입력 처리(다시 그리기)보다 먼저 열린 상태를 남긴다
+  bindFutureTable("cuts",$("frCuts"),cutKey);bindFutureTable("buys",$("frBuys"),buyKey);
   $("frEdit").onclick=openFutureRebuyDialog;
   $$("[data-fcut]").forEach(input=>input.onchange=()=>{const i=Number(input.dataset.fcut),rec=futureRebuyOf(f).cuts?.[i];
     if(!input.checked&&rec?.month&&!confirm(`${rec.month} 보유분에 ${futureRebuyQty(rec.contracts)}계약(단순평균가 ${fmtPrice(rec.settlementPrice)}원)을 되돌리고 누적 정산손익에서 이 손절 손익 ${money(futureCutPnl(rec))}을 뺄까요?\n그 사이 보유 월물·누적 정산손익을 직접 고쳤다면 되돌린 뒤 값을 확인하세요.`)){renderFutures();return;}
