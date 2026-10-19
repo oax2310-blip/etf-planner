@@ -140,7 +140,29 @@ test('회차 체크만으로 다음 예정 수량은 바뀌지 않고 실제 수
   assert.notEqual(ctx.setFutureCutQty(f,0,'2'),false);
   const cuts=ctx.futureCutPlan(f);assert.equal(cuts.reduce((n,c)=>n+c.qty,0),10);
   assert.equal(ctx.setFutureCutQty(f,0,'11'),false);
-  assert.equal(ctx.setFutureRebuyField(f,'contracts','100'),false,'체결 기록이 생기면 기준 변경은 잠근다');
+});
+
+test('손절 체크 뒤에도 재매수 전에는 신저점·하단·이탈 전 계약 수·분할 횟수를 바꾸고 체결 기록은 그대로 둔다',()=>{
+  const ctx=load(),f=futures({steps:5});ctx.setFutureCutDone(f,0,true);ctx.setFutureCutDone(f,1,true);
+  f.rebuy.cuts[0].price=1399.7;const records=JSON.stringify(f.rebuy.cuts),sold=ctx.futureRebuySummary(f).sold;assert.equal(sold,4);
+  assert.notEqual(ctx.setFutureRebuyField(f,'lowPrice','1420'),false);assert.notEqual(ctx.setFutureRebuyField(f,'floorPrice','1250'),false);
+  assert.notEqual(ctx.setFutureRebuyField(f,'contracts','30'),false);assert.notEqual(ctx.setFutureRebuyField(f,'steps','8'),false);
+  let s=ctx.futureRebuySummary(f);
+  assert.equal(JSON.stringify(f.rebuy.cuts),records,'체결 기록(계약 수·체결·회차 환율)은 그대로');
+  assert.deepEqual(plain(s.cuts.filter(c=>c.done).map(c=>[c.price,c.qty])),[[1400,2],[1375,2]]);
+  assert.equal(s.goal,15);assert.equal(s.sold,4);assert.equal(s.cuts.length,8);
+  assert.equal(s.cuts.filter(c=>!c.done).reduce((n,c)=>n+c.qty,0),11,'남은 목표만 새 회차에 다시 나눈다');
+  assert.equal(s.cuts.at(-1).price,1250);assert.ok(s.cuts.filter(c=>!c.done).every(c=>c.price>=1250&&c.price<=1420));
+  const before=JSON.stringify(f);
+  for(const [key,value] of [['contracts','7'],['contracts','0'],['floorPrice','1420'],['lowPrice','1250'],['steps','0']])assert.equal(ctx.setFutureRebuyField(f,key,value),false,`${key} ${value}`);
+  assert.equal(JSON.stringify(f),before,'목표가 이미 판 4계약보다 작아지거나 잘못된 기준은 저장하지 않는다');
+  assert.notEqual(ctx.setFutureRebuyField(f,'contracts','8'),false);assert.equal(ctx.futureRebuySummary(f).goal,4);
+  assert.equal(ctx.futureRebuySummary(f).cuts.filter(c=>!c.done).reduce((n,c)=>n+c.qty,0),0);
+  f.rebuy.currentPrice=1250;f.rebuy.stages=[{name:'25선',price:1260},{name:'25일선',price:1270}];
+  const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);assert.notEqual(ctx.setFutureBuyDone(f,first.i,first.t,true),false);
+  const started=JSON.stringify(f);
+  for(const [key,value] of [['lowPrice','1410'],['floorPrice','1280'],['contracts','20'],['steps','3']])assert.equal(ctx.setFutureRebuyField(f,key,value),false,'재매수 시작 뒤 손절 기준은 고정');
+  assert.equal(JSON.stringify(f),started);assert.notEqual(ctx.setFutureRebuyField(f,'currentPrice','1260'),false);
 });
 
 test('반등 단계는 싼 환율에서도 판 계약 수만 복원하고 재매수 시작 뒤 손절을 멈춘다',()=>{
