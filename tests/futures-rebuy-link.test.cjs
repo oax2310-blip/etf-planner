@@ -96,3 +96,19 @@ test('연동 전 체크 기록은 버튼으로만 반영하고, 반영할 수 �
   const none=futures({cuts:[{contracts:9,price:1398,targetPrice:1400}]});
   assert.equal(ctx.futureRebuyLinked(none),null,'보유보다 많이 판 기록은 반영하지 않는다');
 });
+
+test('직접 반영함은 미반영 기록에 manual만 남겨 안내·반영에서 빼고, 보유·누적 정산손익은 그대로 둔다',()=>{
+  const ctx=load(),f=futures({currentPrice:1420,cuts:[{contracts:1,price:1398,targetPrice:1400},{contracts:1,price:1390,targetPrice:1390,month:'202612',settlementPrice:1450}]});
+  f.rebuy.stages=[{name:'25일선',price:1380,buys:[{contracts:1,price:1385}]},{name:'60일선',price:1420,done:true,contracts:1,execPrice:1420}];
+  const pos=JSON.stringify({p:f.positions,b:f.baselinePnl});
+  assert.deepEqual({...ctx.futureRebuyUnlinked(f)},{cuts:1,buys:2});
+  ctx.markFutureRebuyManual(f);
+  assert.deepEqual({...ctx.futureRebuyUnlinked(f)},{cuts:0,buys:0});
+  assert.equal(f.rebuy.cuts[0].manual,true);assert.equal(Object.hasOwn(f.rebuy.cuts[1],'manual'),false,'보유에 반영한 기록은 그대로');
+  assert.equal(f.rebuy.stages[0].buys[0].manual,true);assert.equal(f.rebuy.stages[1].manual,true);
+  assert.equal(JSON.stringify({p:f.positions,b:f.baselinePnl}),pos);
+  const g=ctx.futureRebuyLinked(f);
+  assert.equal(JSON.stringify({p:g.positions,b:g.baselinePnl}),pos,'보유 월물에 반영 대상에서도 빠진다');
+  assert.notEqual(ctx.setFutureBuyChecked(f,1,0,false),false);
+  assert.equal(Object.hasOwn(f.rebuy.stages[1],'manual'),false,'옛 통째 기록은 체크 해제 때 manual도 지운다');
+});

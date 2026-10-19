@@ -44,16 +44,16 @@ const externalData = (()=>{
       strings(e,["targetId","ticker","account","name","currency"],p);records(e.rows,`${p}.rows`,trade);
     });
   }
-  function stages(v,path,keys=[]){records(v,path,(x,p)=>{
-    trade(x,p);strings(x,["name","id","condition",...keys],p);
-    records(x.buys,`${p}.buys`,(b,q)=>{trade(b,q);strings(b,keys,q);},true);
+  function stages(v,path,keys=[],flagKeys=[]){records(v,path,(x,p)=>{
+    trade(x,p);strings(x,["name","id","condition",...keys],p);flags(x,flagKeys,p);
+    records(x.buys,`${p}.buys`,(b,q)=>{trade(b,q);strings(b,keys,q);flags(b,flagKeys,q);},true);
   });}
   function rebuy(v,path){
     record(v,path);strings(v,["id","name","ticker","note","currency","endLine","plannedEndLine","resumeEndLine"],path);
     numbers(v,["lowPrice","floorPrice","currentPrice","finalPrice","amount","shares","contracts","stepPct","sellPct","targetPct"],path);
     numbers(v,["steps"],path,1,10000,true);
-    // month: 달러선물 손절·재매수를 반영한 보유 월물(futures-rebuy.js).
-    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);},true);stages(v.stages,`${path}.stages`,["month"]);
+    // month: 달러선물 손절·재매수를 반영한 보유 월물, manual: 보유를 직접 고친 기록(futures-rebuy.js).
+    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);},true);stages(v.stages,`${path}.stages`,["month"],["manual"]);
     child(v,"notify",path);child(v,"auto",path);
   }
   function planner(data){
