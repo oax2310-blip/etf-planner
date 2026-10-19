@@ -162,3 +162,12 @@ test('손절 기준 수정 창은 바꾼 칸만 순서와 관계없이 함께 �
   assert.equal(ctx.applyFutureRebuyEdits(f,{lowPrice:'1410'}),null);assert.match(ctx.futureRebuyEditError(f,{}),/재매수 시작 후/);
   assert.equal(ctx.applyFutureRebuyEdits(f,{currentPrice:'1265'}).rebuy.currentPrice,1265,'재매수 시작 뒤에도 현재 환율은 바꾼다');
 });
+
+test('분할 손절 표의 손절 시점은 현재 환율이 다음 손절 회차 환율 이하일 때만이다',()=>{
+  const ctx=load(),f=futures(),due=cur=>ctx.futureCutDue(ctx.futureRebuySummary(f),cur)?.k??null;
+  assert.equal(due(1450),null,'신저점 위면 접는다');assert.equal(due(0),null,'현재 환율이 없으면 접는다');
+  assert.equal(due(1400),1);assert.equal(due(1350),1);
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  assert.equal(due(1350),null,'1회를 손절하면 다음 회차 환율까지는 접는다');assert.equal(due(1300),2);
+  assert.equal(ctx.futureCutDue(ctx.futureRebuySummary(futures({floorPrice:1400})),1200),null,'기준 미입력');
+});
