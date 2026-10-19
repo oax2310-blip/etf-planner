@@ -128,6 +128,7 @@ test('맨 위 보유 카드는 손절하면 오른쪽 칸을 비우고 재매수
   assert.equal(ctx.setFutureCutChecked(f,0,true),true);
   html=card(1290);
   assert.deepEqual(cells(html),['h keep','h keep','h due','s']);assert.deepEqual(next(html),[' due',1,1]);assert.match(html,/buy-track-chip warn">손절 시점/);assert.match(html,/손절 시점 · 2회 <b>1,300원<\/b> 1계약/);
+  assert.match(html,/<p class="fr-note">재매수: 0:0 <b>1,390원<\/b> 이상 1계약 <span class="fr-gap up">\+7\.8%<\/span><\/p>/,'손절 중 안내는 다음 재매수 회차를 한 줄로');
   // 손절 목표를 다 팔면 다음 재매수 칸(점선)을 가리킨다
   assert.equal(ctx.setFutureCutChecked(f,1,true),true);
   html=card(1350);
