@@ -98,6 +98,49 @@ function markFutureRebuyManual(f){
   const r=editFutureRebuy(f);
   [...r.cuts,...r.stages.flatMap(x=>x.done?[x]:Array.isArray(x.buys)?x.buys:[])].forEach(x=>{if(futureRebuyOpen(x))x.manual=true;});
 }
+// 손절 기준 수정 창(제목 옆 연필)에서 바꾼 칸 {키: 입력 글자}만 setFutureRebuyField로 저장한다(안 바꾼 칸은 필드를 만들지 않음).
+// 신저점>하단, 손절 목표(이탈 전 계약 × 비중)≥판 계약은 칸끼리 서로 검사하므로 사본에 순서를 바꿔 적용해 보고 처음 통과한 사본을 돌려준다.
+// 하나도 통과하지 못하면 null(원본은 그대로). 호출하는 쪽이 f.rebuy를 사본의 rebuy로 바꾼다.
+function applyFutureRebuyEdits(f,edits){
+  for(const prices of [["lowPrice","floorPrice"],["floorPrice","lowPrice"]])for(const goal of [["contracts","sellPct"],["sellPct","contracts"]]){
+    const g=JSON.parse(JSON.stringify(f));
+    if([...prices,...goal,"steps","currentPrice"].every(key=>!Object.hasOwn(edits,key)||setFutureRebuyField(g,key,String(edits[key]))!==false))return g;
+  }
+  return null;
+}
+// 저장할 수 없을 때 창에 보일 이유(values = 창의 모든 칸 글자).
+function futureRebuyEditError(f,values){
+  const n=key=>Number(values[key])||0,cuts=futureRebuyOf(f).cuts,sold=(Array.isArray(cuts)?cuts:[]).reduce((m,c)=>m+futureRebuyQty(c?.contracts),0);
+  if(futureRebuyBought(f))return "재매수 시작 후 손절 기준은 체크 기록 초기화 후 바꿀 수 있습니다.";
+  if(n("lowPrice")>0&&n("floorPrice")>0&&n("lowPrice")<=n("floorPrice"))return "손절 하단은 신저점 환율보다 낮게 입력하세요.";
+  const pct=String(values.sellPct??"").trim()===""?50:Number(values.sellPct);
+  if(sold&&futureCutGoal(f,pct,n("contracts"))<sold)return `손절 목표(이탈 전 계약 수 × 손절 비중)가 이미 손절한 ${sold}계약보다 작아집니다.`;
+  return "이탈 전 계약 수는 정수로, 분할 횟수는 1~60으로, 손절 비중은 0~100%로 입력하세요.";
+}
+function openFutureRebuyDialog(){
+  const f=state.futures,r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?shown(v):"";
+  const field=(key,label,value,attrs,off=s.started)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" type="number" ${attrs} value="${value}"${off?" disabled":""}></label>`;
+  const hint=s.started?"재매수 시작 후 손절 기준은 체크 기록 초기화 후 바꿀 수 있습니다.":locked?"기준을 바꿔도 체크한 손절의 계약 수·환율은 그대로 두고 남은 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":"손절 비중은 0~100%로 입력합니다(기본 50%). 손절 계약 수보다 많은 분할 횟수는 자동으로 줄입니다.";
+  dialog.innerHTML=`<form id="futureRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyTitle">손절 기준 수정</h2><button class="btn ghost" type="button" data-close-future-rebuy>닫기</button></div>
+    <p class="hint">신저점부터 정한 하단까지 환율을 고르게 나눕니다. 설정한 비중만큼 손절하고, 하단 아래의 손절 회차는 만들지 않습니다.</p>
+    <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'min="0" step="any" inputmode="decimal"')}${field("floorPrice","손절 하단 (원)",opt(r.floorPrice),'min="0" step="any" inputmode="decimal"')}${field("contracts","이탈 전 계약 수",s.hold||"",'min="0" step="1" inputmode="numeric"')}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${field("steps","분할 횟수",futureRebuyQty(r.steps)||10,'min="1" max="60" step="1" inputmode="numeric"')}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'min="0" step="any" inputmode="decimal" placeholder="시세 없음"',false)}</div>
+    <p class="hint">${hint}${s.cuts.length===1?" 한 번만 손절하는 계획은 하단에서 실행합니다.":""}${fe?"":" 보유 근월물 시세가 없어 현재 환율은 직접 넣습니다."}</p>
+    <p class="future-plan-error" id="futureRebuyError" role="alert"></p><div class="dialog-foot"><button class="btn" type="button" data-close-future-rebuy>취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
+  const inputs=[...dialog.querySelectorAll("[data-fr-field]")],initial=Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.value])),error=$("futureRebuyError");
+  dialog.querySelectorAll("[data-close-future-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
+  inputs.forEach(el=>el.oninput=()=>{error.textContent="";});
+  $("futureRebuyForm").onsubmit=e=>{
+    e.preventDefault();
+    const open=inputs.filter(el=>!el.disabled),invalid=open.find(el=>!el.checkValidity());if(invalid){invalid.reportValidity();return;}
+    const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.value]));
+    if(!Object.keys(edits).length){dialog.close();return;}
+    const latest=state.futures,g=applyFutureRebuyEdits(latest,edits);
+    if(!g){error.textContent=futureRebuyEditError(latest,Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.value])));return;}
+    latest.rebuy=g.rebuy;if(priceData&&Object.keys(edits).some(key=>key!=="currentPrice"))fillPrices({futures:latest},priceData);
+    save();dialog.close();renderFutures();
+  };
+  dialog.showModal();
+}
 // 맨 위 보유 카드(화면 표시만, 기록을 바꾸지 않음): 이탈 전 계약 수만큼 칸(1칸 = 1계약)을 처음 보유(초록) · 재매수로 다시 채운 칸(파랑) · 손절로 빈 칸 순서로 그린다.
 // 손절하면 오른쪽부터 비고 재매수하면 빈 칸이 다시 채워진다(빈 칸·파랑은 판 계약 수까지). 손절 목표 밖(최소 유지) 칸은 흐리게 둔다.
 // 말풍선은 다음에 비거나 채워질 칸(그 회차 계약 수만큼)을 가리킨다: 재매수 시작 전에는 다음 손절 회차, 손절 목표를 다 팔았거나 재매수를 시작했으면 다음 재매수 회차.
@@ -121,7 +164,7 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
   const x=from<0?0:Math.round((from+to)/2/hold*1e4)/100,dense=hold>60?" tight":hold>30?" dense":"";
   const gapChip=p=>gap(p)?` <span class="fr-gap${p>cur?" up":""}">${gap(p)}</span>`:"";
   const bought=s.tranches.filter(t=>t.done&&t.qty>0&&t.execPrice>0),bq=bought.reduce((n,t)=>n+t.qty,0),buyAvg=bq?bought.reduce((n,t)=>n+t.qty*t.execPrice,0)/bq:0,sellAvg=s.sellAvg?px2(s.sellAvg):"";
-  const note=!s.ready?"신저점 환율·손절 하단·이탈 전 계약 수·손절 비중을 아래 손절 기준에서 확인하세요."
+  const note=!s.ready?"신저점 환율·손절 하단·이탈 전 계약 수·손절 비중을 제목 옆 연필에서 확인하세요."
     :s.started&&!s.rest?`손절 ${s.sold}계약 → 재매수 ${s.rebought}계약${sellAvg?` · 평균 손절 ${sellAvg}`:""}${buyAvg?` → 재매수 ${px2(buyAvg)}`:""}`
     :s.started||s.sold&&!nextCut?`손절 ${s.sold}계약 완료${sellAvg?` · 평균 ${sellAvg}`:""}${s.started&&s.cuts.some(c=>!c.done&&c.qty>0)?" · 남은 손절 멈춤":""}`
     :s.sold?`재매수 시작: ${nextTr?`${trText(nextTr)} <b>${trPx(nextTr)}</b> 이상 ${nextTr.amount}계약${gapChip(Number(nextTr.price)||0)}`:"반등 신호가 나오면 판 계약만 되삽니다"}`
@@ -176,11 +219,10 @@ function renderFutureRebuy(f){
     }).join("");
   }).join("")||'<div class="empty">재매수 단계가 없습니다.</div>';
   // 제목 아래 기준 한 줄: 신저점 → 하단 · 이탈 전 계약 · 비중 · 실제 회차 수(손절 목표보다 많은 분할은 줄어듦) · 최소 유지(있을 때만)
-  // 현재 환율은 화면 맨 위 시세·보유 카드에 보이므로, 입력 칸은 보유 근월물 시세가 없을 때만 손절 기준에 둔다.
+  // 기준 입력은 제목 옆 연필(openFutureRebuyDialog). 현재 환율은 화면 맨 위 시세·보유 카드에 보이므로, 입력 칸은 보유 근월물 시세가 없을 때만 그 창에 둔다.
   const basis=s.ready?`<span class="quote-state">${cutPx(r.lowPrice)} → ${cutPx(r.floorPrice)}</span><span>이탈 전 ${s.hold}계약 · ${pctText}% · ${s.cuts.length}분할${s.hold>s.goal?` · 최소 ${s.hold-s.goal}계약 유지`:""}</span>`:`<span>기준 미입력 · 이탈 전 ${s.hold}계약 · ${pctText}%</span>`;
-  $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><h2>신저점 손절 후 재매수</h2><span class="future-rebuy-basis">${basis}</span>${locked?"":'<button class="btn mini ghost" type="button" id="frToggle">접기</button>'}</div>
+  $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><div class="title-row"><h2>신저점 손절 후 재매수</h2><button class="btn icon-btn" id="frEdit" type="button" aria-label="손절 기준 수정" title="손절 기준 수정">${PENCIL}</button></div><span class="future-rebuy-basis">${basis}</span>${locked?"":'<button class="btn mini ghost" type="button" id="frToggle">접기</button>'}</div>
     ${futureRebuyTrack(r,s,cur,notify("breakdown",null,"신저점 손절 시작",s.started,"신저점 이탈"),trText)}
-    <div class="control-grid"><section class="card panel"><div class="panel-head"><h2>손절 기준</h2></div><p>신저점부터 정한 하단까지 환율을 고르게 나눕니다. 설정한 비중만큼 손절하고, 하단 아래의 손절 회차는 만들지 않습니다.</p><div class="inline-fields"><label class="field"><span>신저점 환율 (원)</span><input id="frLow" type="number" min="0" step="any" value="${opt(r.lowPrice)}" ${s.started?"disabled":""}></label><label class="field"><span>손절 하단 (원)</span><input id="frFloor" type="number" min="0" step="any" value="${opt(r.floorPrice)}" ${s.started?"disabled":""}></label><label class="field"><span>이탈 전 계약 수</span><input id="frHold" type="number" min="0" step="1" value="${s.hold||""}" ${s.started?"disabled":""}></label><label class="field"><span>손절 비중 (%)</span><input id="frSellPct" type="number" min="0" max="100" step="any" inputmode="decimal" value="${pctText}" ${s.started?"disabled":""}></label><label class="field"><span>분할 횟수</span><input id="frSteps" type="number" min="1" max="60" step="1" value="${futureRebuyQty(r.steps)||10}" ${s.started?"disabled":""}></label>${fe?"":`<label class="field"><span>현재 환율 (원)</span><input id="frCurrent" type="number" min="0" step="any" value="${opt(r.currentPrice)}" placeholder="시세 없음"></label>`}</div><p class="hint future-rebuy-hint">${s.started?"재매수 시작 후 손절 기준은 체크 기록 초기화 후 바꿀 수 있습니다.":locked?"기준을 바꿔도 체크한 손절의 계약 수·환율은 그대로 두고 남은 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":"손절 비중은 0~100%로 입력합니다(기본 50%). 손절 계약 수보다 많은 분할 횟수는 자동으로 줄입니다."}${s.cuts.length===1?" 한 번만 손절하는 계획은 하단에서 실행합니다.":""}${fe?"":" 보유 근월물 시세가 없어 현재 환율은 직접 넣습니다."}</p></section></div>
     <div class="card progress-line">${next}</div>${s.overSold||s.overBought?'<div class="warning">체결 기록이 손절 목표 또는 판 계약 수를 넘습니다. 실제 체결 수량을 확인하세요.</div>':""}${unText?`<div class="warning">${unText}이 보유 월물·누적 정산손익에 반영되지 않았습니다(연동 전 체크 또는 반영할 보유 월물이 없던 체크). 계좌 기준으로 이미 직접 고쳤다면 '직접 반영함'을 누르세요. <button class="btn mini" type="button" id="frLink">보유 월물에 반영</button> <button class="btn mini" type="button" id="frManual">직접 반영함</button></div>`:""}
     <details class="future-rebuy-details" open><summary>1. 분할 손절 <span>${s.doneCuts}회 · ${s.sold}계약 완료</span></summary><div class="section-heading">${all("cuts")}</div><section class="card table-card"><div class="table-head"><span>회차</span><span>손절 환율</span><span>계약 수 · 실제 체결 환율</span><span>상태</span></div>${cutRows}${s.started?'<div class="stop-note">재매수를 시작해 남은 손절 회차는 멈췄습니다.</div>':""}</section></details>
     <details class="future-rebuy-details" ${s.sold?"open":""}><summary>2. 반등 단계별 재매수 <span>잔여 ${s.rest}계약 · ${s.doneTranches} / ${s.tranches.length}회</span></summary><div class="section-heading">${all("buys")}<button class="btn mini ghost" id="frTimeframes" type="button">시·일·주·월선 추가</button></div><section class="card table-card stage-table"><div class="table-head"><span>단계 · 회차</span><span>기준 환율 · 회차 환율</span><span>재매수 계약 수 · 체결 환율</span><span>상태</span></div>${buyRows}</section></details>
@@ -189,10 +231,7 @@ function renderFutureRebuy(f){
   $("frTimeframes").onclick=()=>{const r=editFutureRebuy(f),stages=completeMovingStages(r.stages);if(stages.length>80){alert("재매수 단계는 80개까지 설정할 수 있습니다.");return;}r.stages=stages;if(priceData)fillPrices({futures:f},priceData);save();renderFutures();};
 
   if(!locked)$("frToggle").onclick=()=>{futureRebuyExpanded=false;renderFutures();};
-  for(const [field,key] of [["frLow","lowPrice"],["frFloor","floorPrice"],["frHold","contracts"],["frSellPct","sellPct"],["frSteps","steps"],["frCurrent","currentPrice"]])onEdit("#"+field,v=>{
-    if(setFutureRebuyField(f,key,v)===false){alert(key==="sellPct"?"손절 비중은 0~100%로 입력하세요. 목표가 이미 손절한 계약 수보다 작아질 수 없으며, 재매수 시작 후에는 변경할 수 없습니다.":"손절 하단은 신저점보다 낮아야 하며, 계약 수·분할 횟수는 정수로 입력하세요. 손절 목표가 이미 손절한 계약 수보다 작아지는 이탈 전 계약 수는 넣을 수 없고, 재매수 시작 후 손절 기준은 체크 기록 초기화 후 바꿀 수 있습니다.");return false;}
-    if(key!=="currentPrice"&&priceData)fillPrices({futures:f},priceData);
-  },renderFutures);
+  $("frEdit").onclick=openFutureRebuyDialog;
   $$("[data-fcut]").forEach(input=>input.onchange=()=>{const i=Number(input.dataset.fcut),rec=futureRebuyOf(f).cuts?.[i];
     if(!input.checked&&rec?.month&&!confirm(`${rec.month} 보유분에 ${futureRebuyQty(rec.contracts)}계약(단순평균가 ${fmtPrice(rec.settlementPrice)}원)을 되돌리고 누적 정산손익에서 이 손절 손익 ${money(futureCutPnl(rec))}을 뺄까요?\n그 사이 보유 월물·누적 정산손익을 직접 고쳤다면 되돌린 뒤 값을 확인하세요.`)){renderFutures();return;}
     const done=setFutureCutChecked(f,i,input.checked);
