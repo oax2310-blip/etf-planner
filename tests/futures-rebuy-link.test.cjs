@@ -112,3 +112,29 @@ test('직접 반영함은 미반영 기록에 manual만 남겨 안내·반영에
   assert.notEqual(ctx.setFutureBuyChecked(f,1,0,false),false);
   assert.equal(Object.hasOwn(f.rebuy.stages[1],'manual'),false,'옛 통째 기록은 체크 해제 때 manual도 지운다');
 });
+
+test('맨 위 보유 카드는 손절하면 오른쪽 칸을 비우고 재매수하면 빈 칸을 다시 채우며 기록을 바꾸지 않는다',()=>{
+  const ctx=load();ctx.decimal=new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1});
+  const f=futures({stages:[{name:'25선',price:1390,done:false,execPrice:null}]}),tr=x=>`${x.i}:${x.t}`;
+  const card=(cur=0)=>{const before=JSON.stringify(f),html=ctx.futureRebuyTrack(f.rebuy,ctx.futureRebuySummary(f),cur,'<i>알림</i>',tr);assert.equal(JSON.stringify(f),before,'카드는 기록을 바꾸지 않는다');return html;};
+  const strip=html=>html.match(/<div class="fr-cells[^>]*>(.*?)<\/div>/)[1],cells=html=>[...strip(html).matchAll(/<i class="([^"]+)"/g)].map(m=>m[1]);
+  const next=html=>(m=>m&&[m[1],Number(m[2]),[...m[3].matchAll(/<i /g)].length])(strip(html).match(/<span class="fr-next([^"]*)" style="flex:(\d+)">(.*?)<\/span>/));
+  // 50%: 4계약 중 2계약은 최소 유지(흐림), 다음 손절 1회 칸(맨 오른쪽)을 테두리 묶음으로
+  let html=card(1410);
+  assert.deepEqual(cells(html),['h keep','h keep','h','h']);assert.deepEqual(next(html),['',1,1]);
+  assert.match(html,/신저점 이탈 시 1회 <b>1,400원<\/b> -0\.71%/);assert.match(html,/<b>4<\/b><span>\/ 4계약/);assert.match(html,/신저점 위 대기/);
+  assert.match(html,/--x:87\.5%/,'말풍선 꼬리는 가리키는 칸 가운데');
+  // 1회 손절 뒤 현재가가 2회 환율 이하면 그 칸이 주황(손절 시점)
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  html=card(1290);
+  assert.deepEqual(cells(html),['h keep','h keep','h due','s']);assert.deepEqual(next(html),[' due',1,1]);assert.match(html,/buy-track-chip warn">손절 시점/);assert.match(html,/손절 시점 · 2회 <b>1,300원<\/b> 1계약/);
+  // 손절 목표를 다 팔면 다음 재매수 칸(점선)을 가리킨다
+  assert.equal(ctx.setFutureCutChecked(f,1,true),true);
+  html=card(1350);
+  assert.deepEqual(cells(html),['h keep','h keep','s','s']);assert.deepEqual(next(html),[' buy',2,2],'다음 재매수 2계약 칸을 점선 묶음으로');assert.match(html,/다음 재매수 0:0 <b>1,390원<\/b> \+3%/);assert.match(html,/<b>2<\/b><span>\/ 4계약/);
+  // 재매수하면 빈 칸이 파랑으로 다시 채워진다
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
+  html=card(1395);
+  assert.deepEqual(cells(html),['h keep','h keep','r','r']);assert.equal(next(html),null);assert.match(html,/buy-track-chip done">재매수 완료/);assert.match(html,/손절 2계약 → 재매수 2계약/);
+  assert.equal(ctx.futureRebuyTrack({},ctx.futureRebuySummary({positions:[],levels:[],rebuy:{}}),0,'',tr).includes('fr-cells'),false,'이탈 전 계약이 없으면 칸을 그리지 않는다');
+});
