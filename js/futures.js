@@ -19,12 +19,12 @@ function removeFromPosition(f, month, qty, price){
   else { pos.settlementPrice=(Number(pos.settlementPrice)*c-price*qty)/(c-qty); pos.contracts=c-qty; }
   return true;
 }
-// 현재 기대손익 = (price−단순평균가)×계약×1만 + baselinePnl(직접 입력 누적 정산손익) + 월물 밖 옛 매수.
+// 현재 기대손익 = (price−단순평균가)×계약×1만 + baselinePnl(누적 정산손익: 직접 입력 + 손절 체크 실현손익, futures-rebuy.js) + 월물 밖 옛 매수.
 // 편입 매수는 월물에 이미 포함; 미매수 유효 가격만 projected에 추가. price 기본은 목표 환율, invested는 보유 매수금액.
 function futuresSummary(f, price=f.targetPrice){
   const tr=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({...t,price:futureTranchePrice(f.levels,li,t,ti)}))), gainAt=p=>(price-Number(p))*contractSize;
   const posContracts=f.positions.reduce((s,p)=>s+(Number(p.contracts)||0),0);
-  const existing=f.baselinePnl+f.positions.reduce((s,p)=>s+gainAt(p.settlementPrice)*(Number(p.contracts)||0),0);
+  const existing=(Number(f.baselinePnl)||0)+f.positions.reduce((s,p)=>s+gainAt(p.settlementPrice)*(Number(p.contracts)||0),0);
   const legacy=tr.filter(t=>t.completed&&!t.mergedMonth); // 이 기능 이전에 체크된 계약: 보유 월물 밖에서 따로 계산
   const legacyGain=legacy.reduce((s,t)=>s+gainAt(t.executionPrice??t.price),0);
   const open=tr.filter(t=>!t.completed&&Number(t.price)>0), unpriced=tr.filter(t=>!t.completed&&!(Number(t.price)>0)).length;

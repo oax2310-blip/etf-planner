@@ -10,7 +10,7 @@ const planner=()=>({plans:[{id:'example',stages:30,checked:[true,false],holdings
 test('옛 숫자 문자열·부분 체결·미입력 필드·호환 데이터를 추가·삭제·변경 없이 검증한다',()=>{
   const data=planner();data.plans[0].stages='30';
   data.plans[0].fills={'0':{plannedQty:10,qty:3,price:100,execution:{group:true,qty:3,sourcePrice:100,rows:[{plannedQty:10,qty:3}]}}};
-  data.futures.rolls=[{legacy:true}];data.futures.rebuy={steps:'10',cuts:[null,{contracts:2,price:100}],stages:[{name:'25분봉',price:null,buys:[null,{shares:1,execPrice:99}]}]};
+  data.futures.rolls=[{legacy:true}];data.futures.rebuy={steps:'10',cuts:[null,{contracts:2,price:100},{contracts:1,price:98,month:'202612',settlementPrice:101}],stages:[{name:'25분봉',price:null,buys:[null,{shares:1,execPrice:99},{contracts:1,price:97,month:'202612'}]}]};
   data.rebuy={items:[{id:'r',stages:[{name:'25일선',price:100}],cuts:[],oldField:{keep:true}}]};
   data.futureCompatibleField={keep:'보존'};
   const before=JSON.stringify(data);assert.equal(validate.planner(data),data);assert.equal(JSON.stringify(data),before);
@@ -39,6 +39,7 @@ test('중첩 목록·숫자·불리언 구조가 잘못된 입력과 예약된 �
     {...planner(),plans:[{stages:2,holdings:[[]]}]}, {...planner(),plans:[{stages:2,checked:['true']}]},
     {...planner(),futures:{targetPrice:'"><img src=x onerror="synthetic()">'}},
     {...planner(),alerts:{rules:[{period:401}]}},
+    {...planner(),futures:{rebuy:{cuts:[{contracts:1,price:100,month:{}}]}}}, {...planner(),futures:{rebuy:{stages:[{name:'25일선',buys:[{contracts:1,price:100,month:['202612']}]}]}}},
     JSON.parse('{"plans":[],"futures":{},"actions":{},"__proto__":{"polluted":true}}'),
     {...planner(),legacy:{constructor:{prototype:{polluted:true}}}}
   ];
