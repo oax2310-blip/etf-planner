@@ -296,7 +296,7 @@ function futureRebuyHold(f){
 }
 // 손절 목표 = floor(고정 이탈 전 계약 × sellPct/100). 비중은 0~100%, 옛 기록·빈 입력은 50%; 읽을 때 필드를 만들지 않는다.
 const futureRebuySellPct = f => {const raw=futureRebuyOf(f).sellPct,v=Number(raw);return raw==null||raw===""||!Number.isFinite(v)||v<0||v>100?50:v;};
-const futureCutGoal = (f,pct=futureRebuySellPct(f)) => Math.floor(futureRebuyHold(f)*pct/100+1e-9);
+const futureCutGoal = (f,pct=futureRebuySellPct(f),hold=futureRebuyHold(f)) => Math.floor(hold*pct/100+1e-9);
 // 신저점~직접 하단을 고르게 나눠 손절 목표 계약만 손절. 회차 수≤목표 계약, 1회면 하단.
 // 체결량 수정 후 남은 목표는 미완료 회차의 원래 비중으로 재배분; 기존 체결은 유지.
 // 모든 회차 체결 뒤 목표를 늘렸으면 남은 수량을 하단의 추가 회차에 배정한다.
@@ -343,13 +343,15 @@ function editFutureRebuy(f){
 }
 function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(stageTouched);}
 function futureRebuyLocked(f){const r=futureRebuyOf(f);return (Array.isArray(r.cuts)?r.cuts:[]).some(Boolean)||futureRebuyBought(f);}
-// 비중은 손절 체결 뒤에도 이미 판 계약 이상으로 변경 가능(기존 체결 유지, 예정 회차만 재배분). 재매수 시작 뒤에는 고정.
+// 손절 기준(신저점·하단·이탈 전 계약 수·비중·분할 횟수)은 ETF 재매수처럼 손절 체결 뒤에도 바꿀 수 있다:
+// 체결 기록(계약 수·회차 환율 targetPrice)은 그대로 두고 예정 회차만 새 기준으로 다시 나눈다(futureCutPlan).
+// 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에는 남은 손절이 멈추므로 현재 환율만 바꾼다.
 // 비중을 비우면 필드를 지워 기본 50%로 돌아간다; 이 경우에도 이미 판 수량보다 목표가 작아지면 거절한다.
 function setFutureRebuyField(f,key,text){
-  if(!["lowPrice","floorPrice","contracts","sellPct","steps","currentPrice"].includes(key)||(key==="sellPct"?futureRebuyBought(f):key!=="currentPrice"&&futureRebuyLocked(f)))return false;
+  if(!["lowPrice","floorPrice","contracts","sellPct","steps","currentPrice"].includes(key)||key!=="currentPrice"&&futureRebuyBought(f))return false;
   const empty=text.trim()==="",v=empty?0:Number(text);if(!Number.isFinite(v)||v<0)return false;
-  const r=futureRebuyOf(f);
-  if(key==="sellPct"&&(v>100||futureCutGoal(f,empty?50:v)<(Array.isArray(r.cuts)?r.cuts:[]).reduce((n,c)=>n+futureRebuyQty(c?.contracts),0)))return false;
+  const r=futureRebuyOf(f),sold=(Array.isArray(r.cuts)?r.cuts:[]).reduce((n,c)=>n+futureRebuyQty(c?.contracts),0);
+  if(key==="sellPct"&&(v>100||futureCutGoal(f,empty?50:v)<sold)||key==="contracts"&&futureCutGoal(f,futureRebuySellPct(f),v)<sold)return false;
   if(key==="lowPrice"&&v>0&&Number(r.floorPrice)>0&&v<=Number(r.floorPrice)||key==="floorPrice"&&v>0&&Number(r.lowPrice)>0&&v>=Number(r.lowPrice))return false;
   if(key==="steps"&&(!Number.isInteger(v)||v<1||v>60)||key==="contracts"&&!Number.isInteger(v))return false;
   const edited=editFutureRebuy(f);if(v>0||key==="contracts"||key==="sellPct"&&!empty)edited[key]=v;else delete edited[key];

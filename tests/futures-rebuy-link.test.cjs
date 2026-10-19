@@ -138,3 +138,26 @@ test('맨 위 보유 카드는 손절하면 오른쪽 칸을 비우고 재매수
   assert.deepEqual(cells(html),['h keep','h keep','r','r']);assert.equal(next(html),null);assert.match(html,/buy-track-chip done">재매수 완료/);assert.match(html,/손절 2계약 → 재매수 2계약/);
   assert.equal(ctx.futureRebuyTrack({},ctx.futureRebuySummary({positions:[],levels:[],rebuy:{}}),0,'',tr).includes('fr-cells'),false,'이탈 전 계약이 없으면 칸을 그리지 않는다');
 });
+
+test('손절 기준 수정 창은 바꾼 칸만 순서와 관계없이 함께 저장하고 실패하면 원본을 그대로 둔다',()=>{
+  const ctx=load(),f=futures({contracts:20,steps:5});f.positions[0].contracts=20;
+  ctx.setFutureCutChecked(f,0,true);ctx.setFutureCutChecked(f,1,true);
+  const records=JSON.stringify(f.rebuy.cuts),before=JSON.stringify(f);assert.equal(ctx.futureRebuySummary(f).sold,4);
+  // 둘 다 내리는 신저점·하단(하단 먼저), 계약 수를 줄이며 비중을 올림(비중 먼저)도 한 번에 저장된다.
+  let g=ctx.applyFutureRebuyEdits(f,{lowPrice:'1280',floorPrice:'1200',contracts:'6',sellPct:'100'});
+  assert.ok(g);assert.equal(JSON.stringify(f),before,'원본은 사본 적용 뒤 호출하는 쪽에서 바꾼다');
+  assert.deepEqual([g.rebuy.lowPrice,g.rebuy.floorPrice,g.rebuy.contracts,g.rebuy.sellPct],[1280,1200,6,100]);
+  assert.equal(JSON.stringify(g.rebuy.cuts),records,'체크한 손절 기록은 그대로');
+  g=ctx.applyFutureRebuyEdits(f,{lowPrice:'1500',floorPrice:'1420',contracts:'40',sellPct:'10'});
+  assert.deepEqual([g.rebuy.lowPrice,g.rebuy.floorPrice,g.rebuy.contracts,g.rebuy.sellPct],[1500,1420,40,10],'둘 다 올림(신저점 먼저)·계약 수를 늘리며 비중을 내림(계약 수 먼저)');
+  g=ctx.applyFutureRebuyEdits(f,{steps:'8'});
+  assert.equal(Object.hasOwn(g.rebuy,'sellPct'),false,'바꾸지 않은 비중은 필드를 만들지 않는다');assert.equal(g.rebuy.steps,8);
+  for(const edits of [{lowPrice:'1300'},{contracts:'7'},{sellPct:'10'},{steps:''},{contracts:'2.5'}])assert.equal(ctx.applyFutureRebuyEdits(f,edits),null,JSON.stringify(edits));
+  assert.equal(JSON.stringify(f),before);
+  assert.match(ctx.futureRebuyEditError(f,{lowPrice:'1300',floorPrice:'1300',contracts:'20',sellPct:'50',steps:'5'}),/하단은 신저점 환율보다 낮게/);
+  assert.match(ctx.futureRebuyEditError(f,{lowPrice:'1400',floorPrice:'1300',contracts:'7',sellPct:'',steps:'5'}),/이미 손절한 4계약보다 작아집니다/);
+  f.rebuy.currentPrice=1250;f.rebuy.stages=[{name:'25선',price:1260},{name:'25일선',price:1270}];
+  const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);assert.notEqual(ctx.setFutureBuyChecked(f,first.i,first.t,true),false);
+  assert.equal(ctx.applyFutureRebuyEdits(f,{lowPrice:'1410'}),null);assert.match(ctx.futureRebuyEditError(f,{}),/재매수 시작 후/);
+  assert.equal(ctx.applyFutureRebuyEdits(f,{currentPrice:'1265'}).rebuy.currentPrice,1265,'재매수 시작 뒤에도 현재 환율은 바꾼다');
+});
