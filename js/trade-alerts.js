@@ -94,11 +94,25 @@ function buildTradeAlertRules(data,priceDoc){
     }
   }
   const f=d.futures,month=priceMonth(f);
+  const maEndPlan=f?.buyPlan?.endLine?futureAutoBuyPlan(f):null;
   if(f&&month)for(const [i,l] of (Array.isArray(f.levels)?f.levels:[]).entries()){
+    if(maEndPlan?.error||maEndPlan?.waiting)continue;
     const tr=Array.isArray(l.tranches)?l.tranches:[],done=Number(l.contracts)>0&&tr.length>=Number(l.contracts)&&tr.every(t=>t.completed===true);
     if(done||f.buyPlan&&!(Number(l.contracts)>0))continue;
     // 종료가 회차도 기존 추가매수 라벨을 유지해 수집 작업의 알림 검증과 호환한다.
     const line=futureLineName(l),name=line||`추가 ${i+1}`,next=nextFutureLine(f.levels,i),direction=line||l.planEnd?"up":"down";
+    // 이동평균 종료 계획의 실제 배분가·직접 수정가를 사용한다. 같은 회차·가격의 여러 계약은 한 번만 알린다.
+    if(maEndPlan){
+      const seen=new Set();
+      tr.forEach((t,ti)=>{
+        if(t.completed||!tradeFutureTrancheEnabled(f,l,t))return;
+        const slot=futureTrancheSlot(l,t,ti),price=Number(t.price),key=`${slot}:${price}`;
+        if(seen.has(key))return;seen.add(key);
+        const manual=futureFixedBuyPrice(l,t);
+        add(`trade:future:${i}${slot?`:${slot+1}`:""}${manual?`:manual:${manual}`:""}`,month,`달러선물 ${name}${line&&slot?` ${slot+1}차`:""}`,price,"up",["up",name,slot,f.buyPlan.startLine,f.buyPlan.endLine,manual],"futures","달러선물");
+      });
+      continue;
+    }
     const basisOf=level=>{const name=futureLineName(level),mark=Number(f.auto?.[name]);return name?[name,Number(level.price)>0&&(!(mark>0)||Number(level.price)!==mark)?Number(level.price):null]:[Number(level.price)];};
     const prices=line?futureBuyPrices(f.levels,i):[Number(l.price)];
     for(const [t,price] of prices.entries()){

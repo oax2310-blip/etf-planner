@@ -76,7 +76,7 @@ const externalData = (()=>{
     numbers(f,["targetPrice","baselinePnl","targetProfit","lossPrice","rollSpread"],"futures");strings(f,["note"],"futures");
     records(f.positions,"futures.positions",(v,p)=>{trade(v,p);if(!absent(v.month)&&!["string","number"].includes(typeof v.month))fail(`${p}.month`);});
     records(f.levels,"futures.levels",(v,p)=>{trade(v,p);strings(v,["unit","label","name"],p);numbers(v,["days"],p,0,400,true);numbers(v,["contracts"],p,0,10000);records(v.tranches,`${p}.tranches`,trade);});
-    records(f.rolls,"futures.rolls");child(f,"buyPlan","futures",(v,p)=>{numbers(v,["endPrice"],p);numbers(v,["contracts"],p,1,100,true);strings(v,["startLine"],p);list(v.units,`${p}.units`,(x,k)=>{if(typeof x!=="string")fail(k);});});
+    records(f.rolls,"futures.rolls");child(f,"buyPlan","futures",(v,p)=>{numbers(v,["endPrice","manualEndPrice"],p);numbers(v,["contracts"],p,1,100,true);strings(v,["startLine","endLine"],p);list(v.units,`${p}.units`,(x,k)=>{if(typeof x!=="string")fail(k);});});
     child(f,"rebuy","futures",rebuy);child(data,"actions","플래너",(v,p)=>{records(v.buys,`${p}.buys`,trade);records(v.adobeSales,`${p}.adobeSales`,trade);});
     child(data,"rebuy","플래너",(v,p)=>{if(v.items!==undefined)records(v.items,`${p}.items`,rebuy);else rebuy(v,p);});
     child(data,"alerts","플래너",(v,p)=>{

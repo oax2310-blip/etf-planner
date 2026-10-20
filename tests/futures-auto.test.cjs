@@ -118,3 +118,122 @@ test('잘못된 자동 설정과 자동 설정이 없는 옛 계획은 기록에
   const full={...f,levels:Array.from({length:80},(_,i)=>level(i+1,'일선',1320))},saved=JSON.stringify(full);
   assert.equal(ctx.applyFutureAutoBuyPlan(full,config()),false);assert.equal(JSON.stringify(full),saved);
 });
+
+
+test('종료 이동평균은 네 시간축·임의 기간의 기존 시세를 사용하고 직접 입력값을 따로 보존한다',()=>{
+  const ctx=load();
+  const entry={asOf:'2026-10-20',ma:{'17선':1370},closes:{D:Array(19).fill(1371),W:Array(11).fill(1372),M:Array(9).fill(1373)}};
+  for(const [endLine,endPrice] of [['17선',1370],['19일선',1371],['11주선',1372],['9개월선',1373]]){
+    const f=futures(),before=JSON.stringify(f),input=config({endLine,manualEndPrice:1380});
+    const source=ctx.futureAutoSource(f,input,entry),plan=ctx.futureAutoBuyPlan(source);
+    assert.equal(JSON.stringify(f),before);assert.equal(plan.config.endLine,endLine);assert.equal(plan.config.endPrice,endPrice);
+    assert.equal(plan.config.manualEndPrice,1380);assert.equal(plan.rows.at(-1).price,endPrice);
+    assert.equal(ctx.applyFutureAutoBuyPlan(source),true);
+    assert.equal(source.buyPlan.endLine,endLine);assert.equal(pending(source).length,7);
+    assert.equal(ctx.applyFutureAutoBuyPlan(source),false,'재적용은 멱등이다');
+  }
+  const missing=ctx.futureAutoSource(futures(),config({endLine:'399선'}),entry);
+  assert.ok(ctx.futureAutoBuyPlan(missing).error,'없는 시간봉 시세를 직접 입력 종료가로 추정하지 않는다');
+  for(const endLine of ['401일선','0일선','잘못된 선'])assert.ok(ctx.futureAutoBuyPlan(futures(),config({endLine})).error);
+});
+
+test('종료선만 바뀐 시세도 미매수 계약만 배분하고 수동 가격·월물·알림·완료 내역을 유지한다',()=>{
+  const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선',manualEndPrice:1390,customSetting:'보존'}));
+  const record=f.levels[0].tranches[0];Object.assign(record,{completed:true,executionPrice:1319.8,mergedMonth:'202612',month:'202612',notify:false});
+  const bought=plain(record),manual=f.levels[0].tranches[1];Object.assign(manual,{price:1335,priceOverride:1335,month:'202701',notify:false});
+  pending(f).forEach((x,i)=>x.t.memo=`가상 ${i}`);const fixed=plain(manual);
+  const marked=pending(f).map(x=>x.t.memo).sort(),positions=JSON.stringify(f.positions);
+  const quote=(hour,end)=>({updatedAt:`2026-10-20T${hour}:00:00Z`,stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-20',ma:{'19일선':end}}}});
+  assert.equal(ctx.fillPrices({futures:f},quote('01',1365)),true);
+  assert.equal(f.buyPlan.endPrice,1365);assert.equal(f.buyPlan.manualEndPrice,1390);assert.equal(f.buyPlan.customSetting,'보존');
+  assert.equal(pending(f).length,6);assert.equal(f.levels.reduce((n,l)=>n+l.contracts,0),7);
+  assert.deepEqual(plain(pending(f).find(x=>x.t.priceOverride).t),fixed);
+  assert.deepEqual(pending(f).map(x=>x.t.memo).sort(),marked,'배분에서 빠진 회차의 설정도 새 회차에서 재사용한다');
+  assert.deepEqual(plain(f.levels[0].tranches.find(t=>t.completed)),bought);assert.equal(JSON.stringify(f.positions),positions);
+  const before=JSON.stringify(f);ctx.refreshFutureBuyPrices(f);assert.equal(JSON.stringify(f),before,'렌더링에서 자동 배분가를 다시 덮어쓰지 않는다');
+  assert.equal(ctx.fillPrices({futures:f},quote('01',1365)),false);assert.equal(JSON.stringify(f),before);
+  assert.equal(ctx.fillPrices({futures:f},quote('00',1390)),false);assert.equal(JSON.stringify(f),before,'오래된 시세는 되돌리지 않는다');
+  assert.equal(ctx.applyFutureAutoBuyPlan(f),false);
+  const rules=plain(ctx.buildTradeAlertRules({futures:f},null));
+  assert.ok(rules.every(r=>pending(f).some(x=>x.t.price===r.targetPrice)));
+  assert.ok(rules.every(r=>r.targetPrice<=1365));
+});
+
+test('잘못된 이동평균 종료가는 기존 배분·수동값을 보존하고 경고하며 새 매수 알림을 중지한다',()=>{
+  const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선'}));
+  const levels=JSON.stringify(f.levels);
+  for(const endPrice of [1320,1319,0]){
+    f.buyPlan.endPrice=endPrice;const before=JSON.stringify(f);
+    assert.ok(ctx.futureAutoBuyPlan(f).error);assert.equal(ctx.applyFutureAutoBuyPlan(f),false);
+    ctx.refreshFutureBuyPrices(f);assert.equal(JSON.stringify(f),before);assert.equal(JSON.stringify(f.levels),levels);
+    assert.equal(ctx.buildTradeAlertRules({futures:f},null).length,0);
+  }
+  f.buyPlan.endPrice=1380;const t=pending(f)[0].t;t.priceOverride=1400;t.price=1400;
+  const before=JSON.stringify(f);assert.match(ctx.futureAutoBuyPlan(f).error,/직접 수정/);assert.equal(ctx.applyFutureAutoBuyPlan(f),false);assert.equal(JSON.stringify(f),before);
+  f.buyPlan.endPrice=1410;assert.equal(ctx.applyFutureAutoBuyPlan(f),true);assert.equal(pending(f).length,7,'정상 범위로 돌아오면 총 수량을 유지해 재개한다');
+});
+
+test('이동평균 종료가 갱신 실패 후 복구해도 완료 내역·계약 합계를 유지하며 체결한 가격을 중복 추가하지 않는다',()=>{
+  const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선'}));
+  f.levels[0].tranches.filter(t=>t.slot===0).forEach(t=>Object.assign(t,{completed:true,executionPrice:1321,mergedMonth:'202612'}));
+  const bought=plain(f.levels[0].tranches.filter(t=>t.completed));
+  const data=end=>({updatedAt:`2026-10-20T${end===1310?'01':'02'}:00:00Z`,stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-20',ma:{'19일선':end,'32일선':1320,'42일선':1395}}}});
+  const before=JSON.stringify(f.levels.map(l=>l.tranches));
+  ctx.fillPrices({futures:f},data(1310));assert.equal(JSON.stringify(f.levels.map(l=>l.tranches)),before);assert.ok(ctx.futureAutoBuyPlan(f).error);
+  ctx.fillPrices({futures:f},data(1390));assert.equal(ctx.futureAutoBuyPlan(f).error,undefined);
+  assert.deepEqual(plain(f.levels[0].tranches.filter(t=>t.completed)),bought);
+  assert.equal(pending(f).length,7-bought.length);assert.ok(pending(f).every(x=>x.t.price!==1320));
+  for(let total=bought.length;total<=100;total++){
+    ctx.applyFutureAutoBuyPlan(f,{...f.buyPlan,contracts:total});
+    assert.equal(f.levels.reduce((n,l)=>n+l.contracts,0),total);
+    assert.deepEqual(plain(f.levels[0].tranches.filter(t=>t.completed)),bought);
+    const snapshot=JSON.stringify(f);assert.equal(ctx.applyFutureAutoBuyPlan(f),false);assert.equal(JSON.stringify(f),snapshot);
+  }
+});
+
+test('이동평균 종료 설정만 자동 시세를 충돌 비교에서 제외하고 설정 변경은 감지한다',()=>{
+  const ctx=load(),a=config({endLine:'19일선'}),b={...a,endPrice:1370};
+  assert.equal(ctx.futurePlanConfigKey(a),ctx.futurePlanConfigKey(b));
+  assert.notEqual(ctx.futurePlanConfigKey(a),ctx.futurePlanConfigKey({...b,endLine:'20일선'}));
+  assert.notEqual(ctx.futurePlanConfigKey(a),ctx.futurePlanConfigKey({...b,contracts:8}));
+  assert.notEqual(ctx.futurePlanConfigKey(config()),ctx.futurePlanConfigKey(config({endPrice:1370})));
+});
+
+
+test('이동평균 종료 계획의 기준가 수정은 다른 수동 가격·최신 체결 기록을 지우지 않는다',()=>{
+  const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선'}));
+  const t=f.levels[0].tranches[0];Object.assign(t,{price:1335,priceOverride:1335,month:'202701',notify:false});
+  const base=plain(f.levels),edited=plain(base);edited[0].price=1321;
+  f.levels[0].tranches[1].completed=true;f.levels[0].tranches[1].executionPrice=1320.5;
+  assert.equal(ctx.applyFuturePlanEdits(f,base,edited),true);
+  assert.equal(f.levels[0].tranches[0].priceOverride,1335);assert.equal(f.levels[0].tranches[0].notify,false);
+  assert.equal(f.levels[0].tranches[1].executionPrice,1320.5);
+});
+
+test('이동평균 종료 시세만 바뀌면 같은 회차 알림 ID와 이력을 유지한다',()=>{
+  const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선'}));
+  const first=plain(ctx.buildTradeAlertRules({futures:f},null));
+  f.buyPlan.endPrice=1370;ctx.applyFutureAutoBuyPlan(f);
+  const next=plain(ctx.buildTradeAlertRules({futures:f},null));
+  assert.equal(next.length,first.length);
+  assert.deepEqual(next.map(r=>[r.id,r.revision]),first.map(r=>[r.id,r.revision]));
+  assert.notEqual(next.at(-1).targetPrice,first.at(-1).targetPrice);
+});
+
+
+test('직접 설정한 추가 매수와 가격을 비운 예외도 이동평균 종료 선택으로 초기화하지 않는다',()=>{
+  const ctx=load(),f=futures(),manual={days:0,unit:'',label:'가상 추가 매수',price:1350,contracts:1,tranches:[{price:1350,completed:false,executionPrice:null,month:'202701',notify:true}]};
+  f.levels.push(manual);const before=plain(manual);
+  ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선'}));assert.deepEqual(plain(f.levels[2]),before);
+  assert.equal(pending(f).length,7);
+  const t=pending(f).find(x=>x.li===0).t;t.price=0;t.priceOverride=0;
+  const snapshot=JSON.stringify(f);assert.match(ctx.futureAutoBuyPlan(f).error,/직접 수정/);assert.equal(ctx.applyFutureAutoBuyPlan(f),false);assert.equal(JSON.stringify(f),snapshot);
+});
+
+test('계획 창의 오래된 로컬 시세는 최신 저장 종료가를 되돌리지 않는다',()=>{
+  const ctx=load(),f=futures();f.buyPlan=config({endLine:'19일선',endPrice:1370});f.auto={at:'2026-10-20T02:00:00Z'};
+  const source=ctx.futureAutoSource(f,f.buyPlan,{asOf:'2026-10-20',ma:{'19일선':1380}},'2026-10-20T01:00:00Z');
+  assert.equal(source.buyPlan.endPrice,1370);
+  const changed=ctx.futureAutoSource(f,{...f.buyPlan,endLine:'20일선'},{asOf:'2026-10-20',ma:{'20일선':1380}},'2026-10-20T01:00:00Z');
+  assert.ok(ctx.futureAutoBuyPlan(changed).error);
+});

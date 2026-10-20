@@ -69,3 +69,11 @@ test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한
     {savings:{scenarios:[{endAge:'<img src=x onerror="synthetic()">'}]}}
   ])assert.throws(()=>validate.assets(data),/기록 형식/);
 });
+
+
+test('이동평균 종료 설정은 변경 없이 불러오고 잘못된 필드 형식은 거부한다',()=>{
+  const data=planner();data.futures.buyPlan={startLine:'32일선',endLine:'19일선',endPrice:1370,manualEndPrice:1380,contracts:7,units:['일선']};
+  const before=JSON.stringify(data);assert.equal(validate.planner(data),data);assert.equal(JSON.stringify(data),before);
+  data.futures.buyPlan.endLine={};assert.throws(()=>validate.planner(data),/endLine/);
+  data.futures.buyPlan.endLine='19일선';data.futures.buyPlan.manualEndPrice='잘못된 값';assert.throws(()=>validate.planner(data),/manualEndPrice/);
+});
