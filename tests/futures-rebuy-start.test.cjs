@@ -112,3 +112,63 @@ test('옛 환율 복귀 체결도 시작선 이전의 완료 내역으로 보존
   assert.equal(c.futureRebuyWithStart(full,'50선'),null);assert.equal(JSON.stringify(full),before);
   assert.equal(c.futureRebuyWithStart(full,'50일선').rebuy.stages.length,80);
 });
+
+test('직접 지정한 종료가격을 마지막 회차로 두고 범위 안에서만 계약·도달·알림을 계산한다',()=>{
+  const c=load(),f=fixture(),before=JSON.stringify(f),g=c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},'1375'),s=c.futureRebuySummary(g),pending=open(s);
+  assert.equal(JSON.stringify(f),before);assert.equal(g.rebuy.endPrice,1375);
+  assert.equal(s.stages[pending[0].i].name,'50선');assert.equal(pending.at(-1).price,1375);assert.equal(s.stages[pending.at(-1).i].rebuyEnd,true);
+  assert.ok(pending.every(x=>x.price<=1375));assert.equal(pending.reduce((n,x)=>n+x.amount,0),10);
+  const rules=plain(c.buildTradeAlertRules({futures:g},quote({'50선':1350}))).filter(x=>x.condition==='up');
+  assert.equal(rules.at(-1).label,'달러선물 재매수 종료가격');assert.equal(rules.at(-1).targetPrice,1375);assert.ok(rules.every(x=>x.targetPrice<=1375));
+  for(const x of pending)assert.notEqual(c.setFutureBuyDone(g,x.i,x.t,true),false);
+  assert.equal(c.futureRebuySummary(g).rest,0);assert.equal(c.futureBuyDue(c.futureRebuySummary(g),1500),null);
+  assert.equal(c.buildTradeAlertRules({futures:g},quote()).filter(x=>x.condition==='up').length,0);
+});
+
+test('종료가격은 평균 손절 환율보다 높게도 설정하며 같은 가격의 평균선 도달과 중복하지 않는다',()=>{
+  const c=load(),f=fixture(),entry={ma:{'50선':1350}};
+  const g=c.futureRebuyWithStart(f,'50선',entry,'1450'),s=c.futureRebuySummary(g);
+  assert.ok(open(s).some(x=>x.price>1400));assert.equal(open(s).at(-1).price,1450);
+  const h=c.futureRebuyWithStart(f,'50선',entry,'1360'),t=c.futureRebuySummary(h);
+  assert.equal(open(t).filter(x=>x.price===1360).length,1);assert.equal(t.stages[open(t).at(-1).i].rebuyEnd,true);
+});
+
+test('종료가격 범위에서 계약이 적어도 마지막 가격을 배분하고 두 계약 이상이면 시작·종료를 포함한다',()=>{
+  const c=load();
+  for(const qty of [1,2,3,4,8]){
+    const f=fixture();f.rebuy.cuts[0].contracts=qty;
+    const g=c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},'1395'),s=c.futureRebuySummary(g),pending=open(s);
+    assert.equal(pending.reduce((n,x)=>n+x.amount,0),qty);assert.ok(pending.every(x=>Number.isInteger(x.amount)&&x.amount>0));
+    assert.equal(pending.at(-1).price,1395);
+    if(qty>1)assert.equal(s.stages[pending[0].i].name,'50선');else assert.equal(pending.length,1);
+  }
+});
+
+test('종료 회차 체결 뒤 범위 변경은 새 회차를 만들고 이전 체결·가격·알림 인덱스는 보존한다',()=>{
+  const c=load(),f=fixture(),g=c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},'1375'),s=c.futureRebuySummary(g),end=open(s).at(-1);
+  assert.notEqual(c.setFutureBuyDone(g,end.i,0,true),false);const recorded=JSON.stringify(g.rebuy.stages[end.i]),before=JSON.stringify(g.rebuy.stages);
+  const h=c.futureRebuyWithStart(g,'50선',null,'1450'),t=c.futureRebuySummary(h);
+  assert.equal(JSON.stringify(h.rebuy.stages[end.i]),recorded);assert.notEqual(h.rebuy.stages[t.endIndex].name,g.rebuy.stages[end.i].name);
+  assert.equal(open(t).at(-1).price,1450);assert.equal(open(t).reduce((n,x)=>n+x.amount,0),t.sold-t.rebought);
+  const loaded=JSON.parse(JSON.stringify(h));assert.deepEqual(plain(c.futureRebuySummary(loaded).planKeys),plain(t.planKeys));
+  const cleared=c.futureRebuyWithStart(g,'50선',null,'');assert.equal(Object.hasOwn(cleared.rebuy,'endPrice'),false);
+  assert.equal(JSON.stringify(cleared.rebuy.stages),before);assert.equal(c.futureRebuySummary(cleared).rebought,s.sold-c.futureRebuySummary(g).rest);
+});
+
+test('시작가보다 낮거나 잘못된 종료가격은 저장하지 않고 이후 시세로 범위가 뒤집혀도 앞·뒤 회차로 대체하지 않는다',()=>{
+  const c=load(),f=fixture(),before=JSON.stringify(f);
+  for(const end of ['1349','0','-1','NaN','Infinity'])assert.equal(c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},end),null);
+  assert.equal(JSON.stringify(f),before);
+  const g=c.futureRebuyWithStart(f,'50선',null,'1375');assert.equal(c.futureRebuySummary(g).waitingStart,true);
+  c.fillPrices({futures:g},quote({'50선':1380}));const s=c.futureRebuySummary(g);
+  assert.match(s.rangeError,/종료가격보다 높/);assert.equal(open(s).length,0);assert.equal(c.futureBuyDue(s,1500),null);
+  assert.equal(c.buildTradeAlertRules({futures:g},quote()).filter(x=>x.condition==='up').length,0);
+});
+
+test('종료가격은 하나의 저장 기준을 따르고 백업 검증은 원본과 기존 체결을 보존한다',()=>{
+  const c=load(),g=c.futureRebuyWithStart(fixture(),'50선',{ma:{'50선':1350}},'1375'),s=c.futureRebuySummary(g);
+  g.rebuy.stages[s.endIndex].price=9999;const before=JSON.stringify(g);
+  assert.equal(open(c.futureRebuySummary(g)).at(-1).price,1375);assert.equal(JSON.stringify(g),before);
+  c.data={plans:[],futures:g,actions:{}};vm.runInContext('externalData.planner(data)',c);
+  for(const end of [-1,{},true]){c.data.futures.rebuy.endPrice=end;assert.throws(()=>vm.runInContext('externalData.planner(data)',c),/endPrice/);}
+});

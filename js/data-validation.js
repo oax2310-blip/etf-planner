@@ -52,8 +52,9 @@ const externalData = (()=>{
     record(v,path);strings(v,["id","name","ticker","note","currency","startLine","endLine","plannedEndLine","resumeEndLine"],path);
     numbers(v,["lowPrice","floorPrice","currentPrice","finalPrice","amount","shares","contracts","stepPct","sellPct","targetPct"],path);
     numbers(v,["steps"],path,1,10000,true);
+    numbers(v,["endPrice"],path,0);
     // month: 달러선물 손절·재매수를 반영한 보유 월물, manual: 보유를 직접 고친 기록(futures-rebuy.js). 손절의 partial·plannedQty(부분 체결)는 trade에서 검사한다(rebuy.js futureCutPlan).
-    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);},true);stages(v.stages,`${path}.stages`,["month"],["manual"]);
+    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);},true);stages(v.stages,`${path}.stages`,["month"],["manual","rebuyEnd"]);
     child(v,"notify",path);child(v,"auto",path);
   }
   function planner(data){

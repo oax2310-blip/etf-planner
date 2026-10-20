@@ -327,34 +327,44 @@ const futureCutRest = c => c.done?0:c.recorded?c.plannedQty-c.qty:c.qty;
 // 시작선을 따로 고른 기록만 시·일·주·월/기간 순으로 계산한다. 저장 배열의 위치는 체결·알림 키이므로 옮기지 않는다.
 // 시작선이 없던 옛 기록은 기존 순서 그대로. 선택한 선이 아직 없으면 앞 단계로 되돌아가지 않고 대기한다.
 function futureRebuyStageIndices(r,stages){
-  if(!r.startLine)return stages.map((_,i)=>i);
+  if(!r.startLine)return stages.map((_,i)=>i).filter(i=>!stages[i].rebuyEnd);
   const start=movingLineName(r.startLine),rank=n=>MA_UNITS.indexOf(movingLineUnit(n))*500+parseInt(n);
   if(!start||!stages.some(x=>movingLineName(x.name)===start))return [];
   return stages.map((x,i)=>({i,name:movingLineName(x.name)})).filter(x=>x.name&&rank(x.name)>=rank(start))
     .sort((a,b)=>rank(a.name)-rank(b.name)||a.i-b.i).map(x=>x.i);
 }
 // 판 계약(부분 체결 포함)만 복원. 평균 손절 환율은 실제 체결(없으면 회차 환율)의 계약 가중평균. doneCuts는 완료 회차, filledCuts는 체결 기록이 있는 회차 수.
-// 시작선 이후의 연속한 평균 손절가 이하 회차(rebuyPlanned)에 남은 계약을 splitWhole로 배분한다.
+// 종료가격 미지정은 시작선 이후의 연속한 평균 손절가 이하 회차(rebuyPlanned)에 남은 계약을 splitWhole로 배분한다.
+// 종료가격 지정은 그 가격 미만의 회차 + 종료가격 도달 1회에만 배분하며, 범위 밖 다음 단계로 넘어가지 않는다.
+// 계약보다 미체결 회차가 많으면 첫·끝을 포함해 순서상 고르게 고른다(1계약이면 종료가격). 기존 체결은 범위 밖이어도 보존한다.
 // 시작선 이전 체결은 수량·가격·월물과 함께 유지하며 신규 배분만 제외한다. 실제 시작선 시세가 없으면 배분·판정·알림 대기.
-// 시작선 변경 때만 미체결 고정 계획을 다시 계산하고, 시세 변동은 기존 고정 계획을 유지한다. 재매수 시작 후 손절 중단; 보유/정산손익은 건드리지 않음.
+// 범위 변경 때 미체결 고정 계획을 다시 계산한다. 시세 변동은 고정 회차를 유지하되 지정 종료가격 밖으로는 배분하지 않는다. 재매수 시작 후 손절 중단; 보유/정산손익은 건드리지 않음.
 function futureRebuySummary(f){
   const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
-  const stages=futureRebuyStages(r),fills=stages.map(x=>stageFills(x,"contracts")),all=fills.flat(),started=all.length>0;
+  const raw=futureRebuyStages(r),endPrice=Number(r.endPrice)>0?Number(r.endPrice):null,endIndex=endPrice?raw.findLastIndex(x=>x.rebuyEnd===true):-1;
+  const stages=endIndex>=0?raw.map((x,i)=>i===endIndex?{...x,price:endPrice}:x):raw,fills=stages.map(x=>stageFills(x,"contracts")),all=fills.flat(),started=all.length>0;
   const sold=filled.reduce((n,c)=>n+c.qty,0),rebought=all.reduce((n,x)=>n+x.qty,0),rest=Math.max(0,sold-rebought);
   const sellAvg=sold?filled.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)/sold:null;
-  const active=futureRebuyStageIndices(r,stages),history=stages.map((_,i)=>i).filter(i=>!active.includes(i)&&fills[i].length),stageOrder=[...history,...active];
+  const active=[...futureRebuyStageIndices(r,stages),...(endIndex>=0?[endIndex]:[])],history=stages.map((_,i)=>i).filter(i=>!active.includes(i)&&fills[i].length),stageOrder=[...history,...active];
   const view=stageOrder.map(i=>stages[i]),lastBuy=[...all].reverse().find(x=>x.price>0),start=cur>0?cur:lastBuy?lastBuy.price:sellAvg||0;
   const prices=stageEstimates(view,start),est=stages.map((x,i)=>stageOrder.includes(i)?prices[stageOrder.indexOf(i)]:Number(x.price)>0?Number(x.price):null);
-  const waitingStart=!!r.startLine&&(!active.length||!(Number(stages[active[0]].price)>0));
+  const waitingStart=!!(r.startLine||endPrice)&&(!active.length||active[0]===endIndex||!(Number(stages[active[0]].price)>0));
+  const rangeError=endPrice?(endIndex<0?"종료가격 설정을 다시 저장하세요.":Number(stages[active[0]]?.price)>endPrice?"시작 기준가가 종료가격보다 높습니다. 시작선 또는 종료가격을 수정하세요.":""):"";
   const saved=started&&storedPlan(r,stages)?.filter(([i])=>active.includes(i));
-  const planned=waitingStart?[]:saved?.length?saved:rebuyPlanned(active.map(i=>stages[i]),active.map(i=>est[i]),sellAvg).map(([i,t])=>[active[i],t]);
-  const tranches=rebuyTranches(view,prices,stageOrder.map(i=>fills[i]),planned.map(([i,t])=>[stageOrder.indexOf(i),t]),rest,splitWhole,trancheLevels,!waitingStart);
+  let planned=waitingStart||rangeError?[]:saved?.length?saved:rebuyPlanned(active.map(i=>stages[i]),active.map(i=>est[i]),endPrice??sellAvg).map(([i,t])=>[active[i],t]);
+  if(endPrice&&!waitingStart&&!rangeError){
+    planned=planned.filter(([i,t])=>{const x=trancheLevels(view,prices,stageOrder.indexOf(i))[t];return i!==endIndex&&!x.est&&x.price>0&&x.price<endPrice;});
+    planned.push([endIndex,0]);
+  }
+  const tranches=rebuyTranches(view,prices,stageOrder.map(i=>fills[i]),planned.map(([i,t])=>[stageOrder.indexOf(i),t]),rest,splitWhole,trancheLevels,!waitingStart&&!rangeError&&!endPrice);
   tranches.forEach(x=>{x.i=stageOrder[x.i];});
   tranches.forEach(x=>{if(x.done)x.amount=x.qty;});
+  const open=tranches.filter(x=>!x.done);
+  if(endPrice&&rest>0&&rest<open.length){const picked=new Set(Array.from({length:rest},(_,k)=>rest===1?open.length-1:Math.round(k*(open.length-1)/(rest-1))));open.forEach((x,k)=>{x.amount=picked.has(k)?1:0;});}
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});
-  return {hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
+  return {hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
 }
 // futures.rebuy는 최초 입력 때만 생성하고 이탈 전 계약 수를 고정(읽기/normalize는 생성·이전 안 함).
@@ -366,11 +376,13 @@ function editFutureRebuy(f){
   r.stages=futureRebuyStages(r);delete r.returns;delete r.buyMode; // 예전 환율 복귀 방식 기록을 반등 단계로, 옛 이름 'N분봉'을 'N선'으로 옮김
   return r;
 }
-// 시작선 편집·미리보기용 사본. 새 선만 뒤에 추가하고 기존 단계·체결·알림 인덱스와 다른 선물 설정은 보존한다.
-// 시작선을 바꾼 입력에서만 고정 계획을 갱신한다. normalize·불러오기·시세 조회에서는 새 필드를 만들지 않는다.
-function futureRebuyWithStart(f,name,entry=null){
+// 시작선·종료가격 편집용 사본. 새 단계는 뒤에 추가해 기존 체결·알림 인덱스와 다른 선물 설정을 보존한다.
+// 종료가격을 비우면 필드만 지우고 그 단계의 체결은 남긴다. 체결한 종료 회차와 다른 범위를 저장하면 새 이름의 종료 회차에 남은 계약만 배분한다.
+// 범위를 바꾼 입력에서만 고정 계획을 갱신한다. normalize·불러오기·시세 조회에서는 새 필드를 만들지 않는다.
+function futureRebuyWithStart(f,name,entry=null,endText=futureRebuyOf(f).endPrice??""){
   const line=movingLineName(name);if(!line)return null;
-  const g=JSON.parse(JSON.stringify(f)),old=movingLineName(futureRebuyOf(f).startLine),r=editFutureRebuy(g);
+  const empty=String(endText??"").trim()==="",endPrice=empty?null:Number(endText);if(!empty&&(!Number.isFinite(endPrice)||endPrice<=0))return null;
+  const g=JSON.parse(JSON.stringify(f)),old=futureRebuyOf(f),r=editFutureRebuy(g),changed=line!==movingLineName(old.startLine)||endPrice!==(Number(old.endPrice)>0?Number(old.endPrice):null);
   if(!r.stages.some(x=>x.name===line)){
     if(r.stages.length>=80)return null;
     r.stages.push({name:line,price:0,done:false,execPrice:null,contracts:null});
@@ -378,7 +390,17 @@ function futureRebuyWithStart(f,name,entry=null){
   const stage=r.stages.find(x=>x.name===line),price=maValue(entry,line);
   if(!(Number(stage.price)>0)&&price>0)stage.price=priceRound(price,2);
   r.startLine=line;
-  if(line!==old){delete r.planned;if(futureRebuyBought(g))r.planned=futureRebuySummary(g).planKeys;}
+  if(endPrice){
+    if(Number(stage.price)>endPrice)return null;
+    let end=r.stages.findLast(x=>x.rebuyEnd===true);
+    if(!end||changed&&stageTouched(end)){
+      if(r.stages.length>=80)return null;
+      let n=1;while(r.stages.some(x=>x.name===`종료가격 ${n}`))n++;
+      end={name:`종료가격 ${n}`,price:endPrice,rebuyEnd:true};r.stages.push(end);
+    }
+    end.price=endPrice;r.endPrice=endPrice;
+  }else delete r.endPrice;
+  if(changed){delete r.planned;if(futureRebuyBought(g))r.planned=futureRebuySummary(g).planKeys;}
   return g;
 }
 function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(stageTouched);}
