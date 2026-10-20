@@ -413,12 +413,13 @@ function setFutureCutQty(f,i,text){
 // 회차 체결 기록(옛 통째 기록은 단계 자체 — contracts·execPrice, 새 기록은 buys[t] — contracts·price). 고칠 수 있게 저장된 기록을 돌려준다.
 function futureFillRec(f,i,t){const x=editFutureRebuy(f).stages[i];return !x?null:x.done?(t===0?[x,"execPrice"]:null):Array.isArray(x.buys)&&x.buys[t]?[x.buys[t],"price"]:null;}
 // 회차 t를 체크하면 회차 가격(추정치면 현재 환율, 없으면 추정치)으로 기록한다. 첫 재매수 때 회차 계획(r.planned)을 고정한다.
+// 체결 뒤 시작선을 바꿔 시세를 기다렸으면, 새 범위에서 처음 체결할 때 그때 채워진 회차 계획을 고정한다.
 function setFutureBuyDone(f,i,t,on){
   const s=futureRebuySummary(f),x=s.stages[i];if(!x)return false;
   if(on){
     const tr=s.tranches.find(y=>y.i===i&&y.t===t),qty=tr?.amount||0,cur=Number(futureRebuyOf(f).currentPrice)||0,round=v=>Math.round(v*100)/100,price=tr&&tr.price>0&&!tr.est?round(tr.price):cur>0?cur:tr?.price>0?round(tr.price):0;
     if(!tr||tr.done||qty<1||qty>s.rest||!(price>0)||!Number.isFinite(price))return false;
-    const r=editFutureRebuy(f),st=r.stages[i];if(!s.started)r.planned=s.planKeys; // 첫 재매수 때 회차 계획을 고정
+    const r=editFutureRebuy(f),st=r.stages[i];if(!s.started||r.startLine&&!(storedPlan(r,s.stages)||[]).some(([j])=>s.active.includes(j)))r.planned=s.planKeys;
     if(!Array.isArray(st.buys))st.buys=[];while(st.buys.length<t)st.buys.push(null);st.buys[t]={contracts:qty,price};
   }else{
     const r=editFutureRebuy(f),st=r.stages[i];

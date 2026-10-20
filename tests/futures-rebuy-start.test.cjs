@@ -79,6 +79,15 @@ test('앞 체결만 남아 있어도 다음 미체결은 선택 범위 안에서
   assert.equal(open(t).reduce((n,x)=>n+x.amount,0),t.sold-t.rebought);
 });
 
+test('기존 체결 뒤 새 시작선 시세를 기다린 경우도 시세 수신 후 첫 체결에서 새 회차 계획을 고정한다',()=>{
+  const c=load(),f=fixture();f.rebuy.stages[0].buys=[{contracts:1,price:1320,month:'202612'}];f.rebuy.planned=[['25선',0]];
+  const g=c.futureRebuyWithStart(f,'50선');assert.equal(c.futureRebuySummary(g).waitingStart,true);
+  c.fillPrices({futures:g},quote({'50선':1350}));
+  const s=c.futureRebuySummary(g),first=open(s)[0];assert.notEqual(c.setFutureBuyDone(g,first.i,first.t,true),false);
+  assert.deepEqual(plain(g.rebuy.planned),plain(s.planKeys));
+  g.rebuy.stages[3].price=1450;assert.deepEqual(plain(c.futureRebuySummary(g).planKeys),plain(s.planKeys));
+});
+
 test('옛 시작선 미설정 기록은 읽기만 해서는 필드를 만들거나 회차·알림·체결을 바꾸지 않는다',()=>{
   const c=load(),f=fixture(),before=JSON.stringify(f),s=c.futureRebuySummary(f);
   c.buildTradeAlertRules({futures:f},quote());assert.equal(JSON.stringify(f),before);
