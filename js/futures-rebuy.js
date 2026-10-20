@@ -248,7 +248,7 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
   const legend=`<div class="fr-legend"><span>처음 보유 <b>${green}</b>${keep&&green?`<small> · 최소 유지 ${Math.min(keep,green)}</small>`:""}</span><span class="r">재매수 <b>${back}</b></span><span class="s">손절로 빈 칸 <b>${sold-back}</b></span></div>`;
   const track=hold?`${bub?`<div class="fr-bub-row" style="--x:${x}%"><span class="fr-bub${due?" due":""}">${bub}</span><span class="fr-arrow${due?" due":""}"></span></div>`:""}<div class="fr-cells${dense}" role="img" aria-label="이탈 전 ${hold}계약 중 보유 ${s.held}계약 · 손절 ${sold}계약 · 재매수 ${back}계약">${strip}</div>${legend}`:"";
   return `<section class="card fr-track" aria-label="보유 계약"><div class="fr-track-body"><div class="fr-track-top"><div><strong>보유 계약</strong><span class="buy-track-chip${chipCls?` ${chipCls}`:""}">${chipText}</span></div><div class="fr-count"><b>${s.held}</b><span>/ ${hold}계약</span></div></div>${track}<p class="fr-note">${hold?note:"이탈 전 계약 수를 넣으면 보유 계약 칸이 생깁니다."}</p></div>
-    <div class="fr-track-foot"><span>${cur>0?`현재 <b>${fmtPrice(cur)}원</b>`:"현재 환율 미입력"}</span>${toggle}</div></section>`;
+    <div class="fr-track-foot"><span>손절 평균가 <b>${sellAvg||"—"}</b></span>${toggle}</div></section>`;
 }
 // 접힌 한 줄 {text, due}: 상태 · 다음 손절·재매수 환율 · 보유 계약(실행 뒤). 폰(393px) 한 줄에 들도록 회차·단계 이름·계약 수·현재 환율은 넣지 않는다
 // (펼치면 보이고, 현재 환율은 화면 맨 위에 있음). 손절·재매수 시점과 실행 전 신저점 이탈은 주황(due). 진행 상태 이름은 보유 계약 카드 칩과 같다.
