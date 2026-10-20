@@ -263,12 +263,14 @@ test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·�
   assert.match(html,/<summary><h2>1\. 분할 손절<\/h2><span>0 \/ 2회 완료<\/span>/);
   assert.match(html,/class="card table-card purchase-table sale-table future-cut-table hide-completed no-alert" id="frCutTable"><div class="purchase-table-head"><span>회차<\/span><span>손절 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div><div id="frCutRows">/);
   assert.match(html,/<div class="purchase-row partial">[^]*data-fcut-partial="true"[^]*<b>1회<\/b><small>남은 1<\/small>[^]*<div class="purchase-qty">2계약<\/div>[^]*data-fcut-qty="0" value="1"/);
-  assert.match(html,/data-fcut-price="0"[^>]*value="1400"[^]*202609 보유 반영 · <b class="future-cut-gone">현재 보유 없음<\/b>/,'기록한 월물이 지금 보유에 없으면 표시');
-  assert.doesNotMatch(html.slice(html.indexOf('id="frCuts"'),html.indexOf('id="frBuys"')),/sale-row|class="table-head"|계획상 남은/,'옛 손절 줄 모양을 쓰지 않는다');
+  assert.match(html,/<div class="stage-price"><label class="future-cut-exec" title="1회 체결 환율 수정"><span class="price" aria-hidden="true">1,400원<\/span><input data-fcut-price="0"[^>]*value="1400"[^>]*><\/label><span class="krw future-cut-warn">202609 보유 없음<\/span><\/div>/,'체결 환율은 그 자리에서 고치고, 기록한 월물이 지금 보유에 없을 때만 작은 줄');
+  assert.match(html,/<div class="stage-price"><span class="price">1,300원<\/span><\/div>/,'체결 전 회차는 회차 환율만');
+  assert.doesNotMatch(html.slice(html.indexOf('id="frCuts"'),html.indexOf('id="frBuys"')),/sale-row|class="table-head"|계획상 남은|purchase-sub/,'회차마다 한 줄, 옛 손절 줄 모양을 쓰지 않는다');
   handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'1'}});
   assert.deepEqual([f.rebuy.cuts[1].contracts,f.rebuy.cuts[1].month,Object.hasOwn(f.rebuy.cuts[1],'partial')],[2,'202612',false]);
   handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'0'}});
   ctx.renderFutureRebuy(f);html=els.futureRebuyPanel.innerHTML;
-  assert.match(html,/<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="false" aria-controls="frCutRows"><span>손절 완료 <b>2회 · 4계약<\/b><\/span>/);
+  assert.match(html,/<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="false" aria-controls="frCutRows"><span>손절 완료 <b>2회 · 4계약<\/b> · 202612 반영<\/span>/,'반영한 월물은 완료 띠에 모은다');
+  assert.doesNotMatch(html,/future-cut-warn/,'채울 때 지금 월물로 옮긴 기록은 표시할 것이 없다');
   assert.match(html,/completed-fold-empty">모든 회차의 손절이 완료되었습니다/);
 });
