@@ -2,7 +2,7 @@
 // 손절·재매수 계산은 rebuy.js에 둔다(비공개 시세 수집 작업도 같은 함수를 사용). 아래 보유 반영은 화면 쪽에서만 하며 계산 함수는 기록만 읽는다.
 // 손절은 특수한 상황이라 실행 전·진행 중·완료 모두 섹션 전체를 한 줄로 접어 두고(futureRebuyFoldLine), 매매 시점(futureCutDue·futureBuyDue)이나
 // 보유 미반영·체결 초과 경고가 새로 생기면 펼친다(futureRebuyOpenNow). 펼치기·접기로 고른 상태는 다음에 새 매매 시점·경고가 생길 때까지 유지한다.
-// 화면 상태라 저장·동기화하지 않는다(페이지를 새로 열면 다시 접힘). 손절·재매수 알림으로 이동하면 push.js가 펼친다.
+// 접힌 줄 전체와 펼친 제목(왼쪽 화살표)을 누르면 펼치고 접는다. 화면 상태라 저장·동기화하지 않는다(페이지를 새로 열면 다시 접힘). 손절·재매수 알림으로 이동하면 push.js가 펼친다.
 let futureRebuyExpanded=false,futureRebuySeen=[];
 // 펼친 화면의 '1. 분할 손절'·'2. 반등 단계별 재매수' 표도 그 표의 회차가 매매 시점(futureCutDue·futureBuyDue)일 때만 기본으로 펼친다. 사용자가 기본과 다르게 열거나 접은 상태와
 // 표 안에서 체크·입력한 뒤의 열린 상태는 다시 그려도 유지하고(화면 상태, 저장·동기화 안 함), 다른 회차가 새로 매매 시점이 되면 기본으로 돌린다.
@@ -191,7 +191,7 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
   return `<section class="card fr-track" aria-label="보유 계약"><div class="fr-track-body"><div class="fr-track-top"><div><strong>보유 계약</strong><span class="buy-track-chip${chipCls?` ${chipCls}`:""}">${chipText}</span></div><div class="fr-count"><b>${s.held}</b><span>/ ${hold}계약</span></div></div>${track}<p class="fr-note">${hold?note:"이탈 전 계약 수를 넣으면 보유 계약 칸이 생깁니다."}</p></div>
     <div class="fr-track-foot"><span>${cur>0?`현재 <b>${fmtPrice(cur)}원</b>`:"현재 환율 미입력"}</span>${toggle}</div></section>`;
 }
-// 접힌 한 줄 {text, due}: 상태 · 다음 회차 · 현재 환율 · 보유(실행 뒤). 폰에서는 두 줄 뒤가 잘리므로 상태와 다음 회차를 앞에 둔다(줄바꿈 때 '·'는 앞 글자에 붙임).
+// 접힌 한 줄 {text, due}: 상태 · 다음 회차 · 현재 환율 · 보유(실행 뒤). 폰에서는 두 줄 뒤가 잘리므로 상태와 다음 회차를 앞에 둔다(줄바꿈 때 '·'는 앞 글자에, 현재·보유는 뒤 숫자에 붙임).
 // 손절·재매수 시점과 실행 전 신저점 이탈은 주황(due). 진행 상태 이름은 보유 계약 카드 칩과 같다. trText는 재매수 회차 이름(이스케이프됨).
 function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,trText){
   const px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—",cutAt=c=>`${c.k}회 ${decimal.format(c.price)}원 이하`;
@@ -216,7 +216,7 @@ function renderFutureRebuy(f){
   const un=futureRebuyUnlinked(f),unText=[un.cuts?`손절 ${un.cuts}계약`:"",un.buys?`재매수 ${un.buys}계약`:""].filter(Boolean).join("·");
   if(!futureRebuyOpenNow([cutKey&&`cut:${cutKey}`,buyKey&&`buy:${buyKey}`,unText&&`unlinked:${unText}`,(s.overSold||s.overBought)&&"over"].filter(Boolean))){
     const {text,due}=futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,trText);
-    $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><div class="card rebuy-fold${due?" due":""}"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text.replace(/ · /g,"&nbsp;· ")}</span><button class="btn mini ghost" type="button" id="frToggle">펼치기</button></div></section>`;
+    $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><button class="card rebuy-fold${due?" due":""}" type="button" id="frToggle" aria-expanded="false"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text.replace(/ · /g,"&nbsp;· ").replace(/(현재|보유) /g,"$1&nbsp;")}</span></button></section>`;
     $("frToggle").onclick=()=>{futureRebuyExpanded=true;renderFutures();};
     return;
   }
@@ -245,7 +245,7 @@ function renderFutureRebuy(f){
   // 제목 아래 기준 한 줄: 신저점 → 하단 · 이탈 전 계약 · 비중 · 실제 회차 수(손절 목표보다 많은 분할은 줄어듦) · 최소 유지(있을 때만)
   // 기준 입력은 제목 옆 연필(openFutureRebuyDialog). 현재 환율은 화면 맨 위 시세·보유 카드에 보이므로, 입력 칸은 보유 근월물 시세가 없을 때만 그 창에 둔다.
   const basis=s.ready?`<span class="quote-state">${cutPx(r.lowPrice)} → ${cutPx(r.floorPrice)}</span><span>이탈 전 ${s.hold}계약 · ${pctText}% · ${s.cuts.length}분할${s.hold>s.goal?` · 최소 ${s.hold-s.goal}계약 유지`:""}</span>`:`<span>기준 미입력 · 이탈 전 ${s.hold}계약 · ${pctText}%</span>`;
-  $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><div class="title-row"><h2>신저점 손절 후 재매수</h2><button class="btn icon-btn" id="frEdit" type="button" aria-label="손절 기준 수정" title="손절 기준 수정">${PENCIL}</button></div><span class="future-rebuy-basis">${basis}</span><button class="btn mini ghost" type="button" id="frToggle">접기</button></div>
+  $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><div class="title-row"><h2><button class="fr-fold-title" type="button" id="frToggle" aria-expanded="true">신저점 손절 후 재매수</button></h2><button class="btn icon-btn" id="frEdit" type="button" aria-label="손절 기준 수정" title="손절 기준 수정">${PENCIL}</button></div><span class="future-rebuy-basis">${basis}</span></div>
     ${futureRebuyTrack(r,s,cur,notify("breakdown",null,"신저점 손절 시작",s.started,"신저점 이탈"),trText)}
     ${s.overSold||s.overBought?'<div class="warning">체결 기록이 손절 목표 또는 판 계약 수를 넘습니다. 실제 체결 수량을 확인하세요.</div>':""}${unText?`<div class="warning">${unText}이 보유 월물·누적 정산손익에 반영되지 않았습니다(연동 전 체크 또는 반영할 보유 월물이 없던 체크). 계좌 기준으로 이미 직접 고쳤다면 '직접 반영함'을 누르세요. <button class="btn mini" type="button" id="frLink">보유 월물에 반영</button> <button class="btn mini" type="button" id="frManual">직접 반영함</button></div>`:""}
     <details class="future-rebuy-details" id="frCuts"${futureTableOpen("cuts",cutKey)?" open":""}><summary>1. 분할 손절 <span>${s.doneCuts}회 · ${s.sold}계약 완료</span></summary><div class="section-heading">${all("cuts")}</div><section class="card table-card"><div class="table-head"><span>회차</span><span>손절 환율</span><span>계약 수 · 실제 체결 환율</span><span>상태</span></div>${cutRows}${s.started?'<div class="stop-note">재매수를 시작해 남은 손절 회차는 멈췄습니다.</div>':""}</section></details>
