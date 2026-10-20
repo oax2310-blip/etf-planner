@@ -263,3 +263,5 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
 #futureRebuyStartDialog .dialog-inner{display:flex;flex-direction:column;gap:16px;max-height:92vh;max-height:92dvh;overflow:hidden}#futureRebuyStartDialog .dialog-head,#futureRebuyStartDialog .dialog-foot,#futureRebuyStartDialog .future-auto-grid{flex:none}#futureRebuyStartPreview{min-height:0;overflow:auto;overscroll-behavior:contain}#futureRebuyStartDialog .future-auto-hint{margin:0}#futureRebuyStartDialog output{display:flex;align-items:center;min-height:38px;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
 
 #futureRebuyStartLimit{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+
+#futureRebuyStartDialog .future-auto-grid{grid-template-columns:repeat(2,minmax(0,1fr))}

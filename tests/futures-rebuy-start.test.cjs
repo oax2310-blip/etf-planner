@@ -172,3 +172,52 @@ test('종료가격은 하나의 저장 기준을 따르고 백업 검증은 원�
   c.data={plans:[],futures:g,actions:{}};vm.runInContext('externalData.planner(data)',c);
   for(const end of [-1,{},true]){c.data.futures.rebuy.endPrice=end;assert.throws(()=>vm.runInContext('externalData.planner(data)',c),/endPrice/);}
 });
+
+test('종료선을 시·일·주·월선으로 고르면 그 선의 도달까지만 배분하고 시세 변경을 가격·알림에 반영한다',()=>{
+  const c=load();
+  for(const unit of ['선','일선','주선','개월선']){
+    const f=fixture();f.rebuy.stages=['선','일선','주선','개월선'].flatMap(u=>[25,60,80].map(n=>({name:`${n}${u}`,price:n===25?1320:n===60?1380:1390})));
+    const first=`50${unit}`,last=`70${unit}`,g=c.futureRebuyWithStart(f,first,{ma:{[first]:1350,[last]:1385}},last),s=c.futureRebuySummary(g);
+    assert.equal(g.rebuy.endLine,last);assert.equal(Object.hasOwn(g.rebuy,'endPrice'),false);
+    assert.equal(s.stages[open(s)[0].i].name,first);assert.equal(s.stages[open(s).at(-1).i].name,last);assert.equal(open(s).at(-1).t,0);
+    assert.deepEqual(plain(s.active.map(i=>s.stages[i].name)),[first,`60${unit}`,last]);
+    assert.equal(open(s).reduce((n,x)=>n+x.amount,0),10);assert.equal(open(s).filter(x=>x.i===s.endIndex).length,1);
+    const rules=plain(c.buildTradeAlertRules({futures:g},quote({[last]:1385,[first]:1350}))).filter(x=>x.condition==='up');
+    assert.equal(rules.at(-1).label,`달러선물 재매수 ${last}`);assert.equal(rules.at(-1).targetPrice,1385);
+    c.fillPrices({futures:g},{...quote({[last]:1388,[first]:1350}),updatedAt:'2026-10-15T02:00:00Z'});
+    assert.equal(c.futureRebuySummary(g).endPrice,1388);
+    const moved=plain(c.buildTradeAlertRules({futures:g},null)).filter(x=>x.condition==='up');
+    assert.equal(moved.at(-1).targetPrice,1388);assert.equal(moved.at(-1).revision,rules.at(-1).revision,'이평선 시세 이동만으로 알림 이력을 초기화하지 않는다');
+    const loaded=JSON.parse(JSON.stringify(g));assert.equal(loaded.rebuy.endLine,last);assert.deepEqual(plain(c.futureRebuySummary(loaded).planKeys),plain(c.futureRebuySummary(g).planKeys));
+  }
+});
+
+test('종료선 시세가 비면 중간 단계나 자동 기준으로 대체하지 않고 시세를 받은 후에만 시작한다',()=>{
+  const c=load(),g=c.futureRebuyWithStart(fixture(),'50선',{ma:{'50선':1350}},'70일선');
+  const before=JSON.stringify(g),s=c.futureRebuySummary(g);assert.equal(s.waitingEnd,true);assert.equal(s.endPrice,null);assert.equal(open(s).length,0);
+  assert.equal(c.futureBuyDue(s,1500),null);assert.equal(c.setFutureBuyDone(g,s.endIndex,0,true),false);
+  assert.equal(c.buildTradeAlertRules({futures:g},quote()).filter(x=>x.condition==='up').length,0);assert.equal(JSON.stringify(g),before);
+  c.fillPrices({futures:g},quote({'70일선':1450}));const ready=c.futureRebuySummary(g);
+  assert.equal(ready.waitingEnd,false);assert.equal(ready.endPrice,1450);assert.equal(ready.stages[open(ready).at(-1).i].name,'70일선');
+});
+
+test('같은 시작·종료선은 도달 1회이며 역순 종료선은 거절하고 종료선 뒤의 싼 평균선도 제외한다',()=>{
+  const c=load(),f=fixture(),before=JSON.stringify(f),g=c.futureRebuyWithStart(f,'60선',null,'60선'),s=c.futureRebuySummary(g);
+  assert.equal(open(s).length,1);assert.equal(open(s)[0].price,1360);assert.equal(open(s)[0].amount,10);
+  for(const last of ['42선','25선','0일선','401주선'])assert.equal(c.futureRebuyWithStart(f,'60선',null,last),null);
+  assert.equal(JSON.stringify(f),before);
+  const h=c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},'60선');h.rebuy.stages[4].price=1351;
+  assert.equal(c.futureRebuySummary(h).active.includes(4),false);assert.ok(open(c.futureRebuySummary(h)).every(x=>x.i!==4));
+});
+
+test('직접·평균선·자동으로 종료 기준을 바꿔도 체결 기록과 다른 설정은 보존한다',()=>{
+  const c=load(),f=fixture(),g=c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},'1375'),s=c.futureRebuySummary(g),end=open(s).at(-1);
+  c.setFutureBuyDone(g,end.i,0,true);const record=JSON.stringify(g.rebuy.stages[end.i]),cuts=JSON.stringify(g.rebuy.cuts),settings=JSON.stringify({...g,rebuy:undefined});
+  const h=c.futureRebuyWithStart(g,'50선',null,'80선'),t=c.futureRebuySummary(h);
+  assert.equal(h.rebuy.endLine,'80선');assert.equal(Object.hasOwn(h.rebuy,'endPrice'),false);assert.equal(t.endPrice,1380);
+  assert.equal(JSON.stringify(h.rebuy.stages[end.i]),record);assert.equal(JSON.stringify(h.rebuy.cuts),cuts);assert.equal(JSON.stringify({...h,rebuy:undefined}),settings);
+  assert.equal(open(t).reduce((n,x)=>n+x.amount,0),t.rest);
+  const direct=c.futureRebuyWithStart(h,'50선',null,'1395');assert.equal(Object.hasOwn(direct.rebuy,'endLine'),false);assert.equal(direct.rebuy.endPrice,1395);
+  const cleared=c.futureRebuyWithStart(h,'50선',null,'');assert.equal(Object.hasOwn(cleared.rebuy,'endLine'),false);assert.equal(Object.hasOwn(cleared.rebuy,'endPrice'),false);
+  assert.equal(c.futureRebuySummary(cleared).rebought,t.rebought);assert.equal(JSON.stringify(cleared.rebuy.stages[end.i]),record);
+});
