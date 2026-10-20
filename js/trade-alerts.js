@@ -64,7 +64,7 @@ function tradePriceBasis(obj,key,label,auto){
 const tradeStageName = (name,i) => autoKey(name)||`${i+1}단계`;
 // 회차 알림 기준: 단계 기준가(시세로 채운 이평선은 이름, 직접 고친 값만) + 2·3차는 회차와 다음 단계 기준. 이평선만 움직이면 같은 알림 이력.
 function tradeStageBasis(r,x){const mark=Number(r.auto?.[autoMark(x.name)]);return autoKey(x.name)?[x.name,Number(x.price)>0&&mark>0&&Number(x.price)!==mark?Number(x.price):null]:[x.name,Number(x.price)];}
-const tradeTrancheBasis = (r,s,x,next=s.stages[x.i+1]) => x.t?[...tradeStageBasis(r,s.stages[x.i]),x.t,...(next?tradeStageBasis(r,next):[])]:tradeStageBasis(r,s.stages[x.i]);
+const tradeTrancheBasis = (r,s,x,next=s.stages[s.nextStages?.[x.i]??x.i+1]) => x.t?[...tradeStageBasis(r,s.stages[x.i]),x.t,...(next?tradeStageBasis(r,next):[])]:tradeStageBasis(r,s.stages[x.i]);
 // ETF 직접 회차 가격·하락 도달 조건은 알림 이력에도 반영한다. 옛 자동 반등 기준의 이력은 유지한다.
 function tradeEtfTrancheBasis(r,s,x){
   const basis=tradeTrancheBasis(r,s,x,s.stages[etfNextStage(s.stages,x.i)]),st=s.stages[x.i];

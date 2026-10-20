@@ -49,7 +49,7 @@ const externalData = (()=>{
     records(x.buys,`${p}.buys`,(b,q)=>{trade(b,q);strings(b,keys,q);flags(b,flagKeys,q);},true);
   });}
   function rebuy(v,path){
-    record(v,path);strings(v,["id","name","ticker","note","currency","endLine","plannedEndLine","resumeEndLine"],path);
+    record(v,path);strings(v,["id","name","ticker","note","currency","startLine","endLine","plannedEndLine","resumeEndLine"],path);
     numbers(v,["lowPrice","floorPrice","currentPrice","finalPrice","amount","shares","contracts","stepPct","sellPct","targetPct"],path);
     numbers(v,["steps"],path,1,10000,true);
     // month: 달러선물 손절·재매수를 반영한 보유 월물, manual: 보유를 직접 고친 기록(futures-rebuy.js). 손절의 partial·plannedQty(부분 체결)는 trade에서 검사한다(rebuy.js futureCutPlan).

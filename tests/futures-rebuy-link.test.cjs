@@ -284,7 +284,7 @@ test('반등 단계별 재매수 표도 회차마다 한 줄로 그리고, 배�
   ctx.setFutureCutChecked(f,0,true);ctx.setFutureCutChecked(f,1,true);
   const section=()=>{ctx.renderFutureRebuy(f);const html=els.futureRebuyPanel.innerHTML;return html.slice(html.indexOf('id="frBuys"'));};
   let html=section();
-  assert.match(html,/<summary><h2>2\. 반등 단계별 재매수<\/h2><span>잔여 4계약 · 0 \/ \d+회<\/span><\/summary><section class="card table-card purchase-table sale-table future-rebuy-table hide-completed no-alert" id="frBuyTable"><div class="purchase-table-head"><span>회차<\/span><span>재매수 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div>/);
+  assert.match(html,/<summary><h2>2\. 반등 단계별 재매수<\/h2><button[^>]*id="frBuyEdit"[^>]*>[^]*?<\/button><span>잔여 4계약 · 0 \/ \d+회<\/span><\/summary><section class="card table-card purchase-table sale-table future-rebuy-table hide-completed no-alert" id="frBuyTable"><div class="future-rebuy-start">[^]*?<\/div><div class="purchase-table-head"><span>회차<\/span><span>재매수 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div>/);
   assert.match(html,/<b><span class="tr-name">25선<span class="tr-no">1<\/span><\/span><\/b>[^]*?<label class="future-tap-price" title="25선 기준 환율 수정"><span class="price" aria-hidden="true">1,380원<\/span><input data-fbuy-price="0"[^>]*value="1380"/,'단계 첫 회차 줄의 환율이 그 단계 기준 환율');
   assert.match(html,/id="toggleFutureStages"[^>]*><span>다른 단계 <b>\d+개<\/b> · 기준 환율<\/span>[^]*<div id="frStageRows" hidden>[^]*data-fbuy-price="2"/,'배분 없는 단계의 기준 환율은 다른 단계 띠 안에서 고친다');
   assert.match(html,/id="frTimeframes"/);assert.doesNotMatch(html,/sale-row|class="table-head"|25선→32선/,'회차마다 한 줄, 옛 줄 모양을 쓰지 않는다');
