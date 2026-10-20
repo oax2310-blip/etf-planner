@@ -118,7 +118,7 @@ test('달러선물 가격 글자·입력칸은 소수 첫째 자리까지만 보
   ctx.refreshFutureBuyPrices(f);Object.assign(f.levels[0].tranches[2],{completed:true,executionPrice:f.levels[0].tranches[2].price,mergedMonth:'202612'});
   const before=JSON.stringify(f),html=ctx.futureBuyTable(f);
   assert.equal(JSON.stringify(f),before,'표시는 기록을 바꾸지 않는다');
-  assert.match(html,/data-tranche-price="0:1"[^>]*value="1371\.7"/);assert.match(html,/<strong>1,373\.3원 · 1계약<\/strong>/);
+  assert.match(html,/data-tranche-price="0:1"[^>]*value="1371\.7"/);assert.match(html.replace(/<[^>]*>/g,''),/1,373\.3원 · 1계약/);
   assert.doesNotMatch(html,/\d\.\d{2}/,'둘째 자리 이상 숫자를 보이지 않는다');
   assert.equal(f.levels[0].tranches[1].price,1370+5/3);
 });
