@@ -43,11 +43,11 @@ function alignAlertHistorySnapshots(local,remote,base){
   state.alertHistory=merged;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
   return {local:apply(docs[0]),remote:apply(docs[1]),base:apply(docs[2])};
 }
-// 달러선물 알림은 달러선물 화면(futures.js fmtPrice)과 같게 소수 둘째 자리, 나머지는 넷째 자리까지 보인다. 저장된 가격은 그대로 둔다.
+// 달러선물 알림은 달러선물 화면(futures.js fmtPrice)과 같게 소수 첫째 자리, 나머지는 넷째 자리까지 보인다. 저장된 가격은 그대로 둔다.
 function alertHistoryPrice(value,item){
   if(typeof value!=="number")return "확인 불가";
   const future=typeof stockNames==="object"&&stockNames.alertKind(item).menu==="달러선물",currency=item?.currency;
-  const number=value.toLocaleString("ko-KR",{maximumFractionDigits:future?2:4});return currency==="USD"?`$${number}`:currency==="KRW"?`${number}원`:number;
+  const number=value.toLocaleString("ko-KR",{maximumFractionDigits:future?1:4});return currency==="USD"?`$${number}`:currency==="KRW"?`${number}원`:number;
 }
 function alertHistoryCondition(item){
   const target=alertHistoryPrice(item.ma,item);

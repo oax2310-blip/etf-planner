@@ -107,18 +107,18 @@ test('제목 아래 현재가는 보유 근월물 선물 시세와 수집 시각
   assert.match(ctx.futureQuote(f,null),/시세 없음/);
 });
 
-test('달러선물 가격 글자·입력칸은 소수 둘째 자리까지만 보이고 기록한 가격은 그대로 둔다',()=>{
+test('달러선물 가격 글자·입력칸은 소수 첫째 자리까지만 보이고 기록한 가격은 그대로 둔다',()=>{
   const ctx=vm.createContext({contractSize:10000,esc:v=>String(v),PENCIL:'',decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),money:v=>`${Math.round(v)}원`});
   vm.runInContext(source,ctx);
   const run=expr=>vm.runInContext(expr,ctx);
-  assert.equal(run('fmtPrice(1378.3333333333333)'),'1,378.33');assert.equal(run('fmtPrice(1401.6666666666667)'),'1,401.67');assert.equal(run('fmtPrice(1385.2)'),'1,385.2');
-  assert.equal(run('futureShown(1378.3333333333333)'),'1378.33');assert.equal(run('futureShown(1385.2)'),'1385.2');
-  // 25일선 1,370 → 다음 32일선 1,375의 ⅓ 회차(1,371.6666…)는 매수가 칸과 체크한 회차 모두 둘째 자리까지
+  assert.equal(run('fmtPrice(1378.3333333333333)'),'1,378.3');assert.equal(run('fmtPrice(1401.6666666666667)'),'1,401.7');assert.equal(run('fmtPrice(1385.2)'),'1,385.2');assert.equal(run('fmtPrice(1371.649)'),'1,371.6');assert.equal(run('fmtPrice(1380)'),'1,380');
+  assert.equal(run('futureShown(1378.3333333333333)'),'1378.3');assert.equal(run('futureShown(1401.6666666666667)'),'1401.7');assert.equal(run('futureShown(1385.2)'),'1385.2');
+  // 25일선 1,370 → 다음 32일선 1,375의 ⅓ 회차(1,371.6666…)는 매수가 칸과 체크한 회차 모두 첫째 자리까지
   const f={targetPrice:1480,positions:[{month:'202612',contracts:3,settlementPrice:1372.3333333333333}],levels:[level(25,1370),level(32,1375)]};
   ctx.refreshFutureBuyPrices(f);Object.assign(f.levels[0].tranches[2],{completed:true,executionPrice:f.levels[0].tranches[2].price,mergedMonth:'202612'});
   const before=JSON.stringify(f),html=ctx.futureBuyTable(f);
   assert.equal(JSON.stringify(f),before,'표시는 기록을 바꾸지 않는다');
-  assert.match(html,/data-tranche-price="0:1"[^>]*value="1371\.67"/);assert.match(html,/<strong>1,373\.33원 · 1계약<\/strong>/);
-  assert.doesNotMatch(html,/\d\.\d{3}/,'셋째 자리 이상 숫자를 보이지 않는다');
+  assert.match(html,/data-tranche-price="0:1"[^>]*value="1371\.7"/);assert.match(html,/<strong>1,373\.3원 · 1계약<\/strong>/);
+  assert.doesNotMatch(html,/\d\.\d{2}/,'둘째 자리 이상 숫자를 보이지 않는다');
   assert.equal(f.levels[0].tranches[1].price,1370+5/3);
 });
