@@ -263,7 +263,7 @@ test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·�
   assert.match(html,/<summary><h2>1\. 분할 손절<\/h2><span>0 \/ 2회 완료<\/span>/);
   assert.match(html,/class="card table-card purchase-table sale-table future-cut-table hide-completed no-alert" id="frCutTable"><div class="purchase-table-head"><span>회차<\/span><span>손절 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div><div id="frCutRows">/);
   assert.match(html,/<div class="purchase-row partial">[^]*data-fcut-partial="true"[^]*<b>1회<\/b><small>남은 1<\/small>[^]*<div class="purchase-qty">2계약<\/div>[^]*data-fcut-qty="0" value="1"/);
-  assert.match(html,/<div class="stage-price"><label class="future-cut-exec" title="1회 체결 환율 수정"><span class="price" aria-hidden="true">1,400원<\/span><input data-fcut-price="0"[^>]*value="1400"[^>]*><\/label><span class="krw future-cut-warn">202609 보유 없음<\/span><\/div>/,'체결 환율은 그 자리에서 고치고, 기록한 월물이 지금 보유에 없을 때만 작은 줄');
+  assert.match(html,/<div class="stage-price"><label class="future-tap-price" title="1회 손절 체결 환율 수정"><span class="price" aria-hidden="true">1,400원<\/span><input data-fcut-price="0"[^>]*value="1400"[^>]*><\/label><span class="krw future-row-warn">202609 보유 없음<\/span><\/div>/,'체결 환율은 그 자리에서 고치고, 기록한 월물이 지금 보유에 없을 때만 작은 줄');
   assert.match(html,/<div class="stage-price"><span class="price">1,300원<\/span><\/div>/,'체결 전 회차는 회차 환율만');
   assert.doesNotMatch(html.slice(html.indexOf('id="frCuts"'),html.indexOf('id="frBuys"')),/sale-row|class="table-head"|계획상 남은|purchase-sub/,'회차마다 한 줄, 옛 손절 줄 모양을 쓰지 않는다');
   handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'1'}});
@@ -271,6 +271,27 @@ test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·�
   handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'0'}});
   ctx.renderFutureRebuy(f);html=els.futureRebuyPanel.innerHTML;
   assert.match(html,/<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="false" aria-controls="frCutRows"><span>손절 완료 <b>2회 · 4계약<\/b> · 202612 반영<\/span>/,'반영한 월물은 완료 띠에 모은다');
-  assert.doesNotMatch(html,/future-cut-warn/,'채울 때 지금 월물로 옮긴 기록은 표시할 것이 없다');
+  assert.doesNotMatch(html,/future-row-warn/,'채울 때 지금 월물로 옮긴 기록은 표시할 것이 없다');
   assert.match(html,/completed-fold-empty">모든 회차의 손절이 완료되었습니다/);
+});
+
+test('반등 단계별 재매수 표도 회차마다 한 줄로 그리고, 배분 없는 단계는 다른 단계 띠로 접는다',()=>{
+  const ctx=load(),els={};
+  const el=id=>els[id]||(els[id]={id,innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
+  Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){},confirm:()=>true,alert:msg=>{throw Error(msg);}});
+  vm.runInContext('futureRebuyExpanded=true',ctx);
+  const f=futures({contracts:4,sellPct:100,steps:2,currentPrice:1385,stages:[{name:'25선',price:1380},{name:'32선',price:1390},{name:'42선',price:1500}]});
+  ctx.setFutureCutChecked(f,0,true);ctx.setFutureCutChecked(f,1,true);
+  const section=()=>{ctx.renderFutureRebuy(f);const html=els.futureRebuyPanel.innerHTML;return html.slice(html.indexOf('id="frBuys"'));};
+  let html=section();
+  assert.match(html,/<summary><h2>2\. 반등 단계별 재매수<\/h2><span>잔여 4계약 · 0 \/ \d+회<\/span><\/summary><section class="card table-card purchase-table sale-table future-rebuy-table hide-completed no-alert" id="frBuyTable"><div class="purchase-table-head"><span>회차<\/span><span>재매수 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div>/);
+  assert.match(html,/<b><span class="tr-name">25선<span class="tr-no">1<\/span><\/span><\/b>[^]*?<label class="future-tap-price" title="25선 기준 환율 수정"><span class="price" aria-hidden="true">1,380원<\/span><input data-fbuy-price="0"[^>]*value="1380"/,'단계 첫 회차 줄의 환율이 그 단계 기준 환율');
+  assert.match(html,/id="toggleFutureStages"[^>]*><span>다른 단계 <b>\d+개<\/b> · 기준 환율<\/span>[^]*<div id="frStageRows" hidden>[^]*data-fbuy-price="2"/,'배분 없는 단계의 기준 환율은 다른 단계 띠 안에서 고친다');
+  assert.match(html,/id="frTimeframes"/);assert.doesNotMatch(html,/sale-row|class="table-head"|25선→32선/,'회차마다 한 줄, 옛 줄 모양을 쓰지 않는다');
+  const s=ctx.futureRebuySummary(f),tr=s.tranches.find(x=>x.amount>0);
+  assert.equal(ctx.setFutureBuyChecked(f,tr.i,tr.t,true),true);
+  html=section();
+  assert.match(html,/<span>재매수 완료 <b>1회 · \d+계약<\/b> · 202612 반영<\/span>/,'반영한 월물은 완료 띠에 모은다');
+  assert.match(html,new RegExp(`<label class="future-tap-price"[^>]*><span class="price" aria-hidden="true">[^<]+</span><input data-fbuy-exec="${tr.i}:${tr.t}"`),'산 회차는 체결 환율을 그 자리에서 고친다');
+  assert.match(html,new RegExp(`data-fbuy-qty="${tr.i}:${tr.t}"`),'산 회차의 계약 수는 체결 칸');
 });
