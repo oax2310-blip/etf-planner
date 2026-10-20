@@ -182,3 +182,31 @@ test('반등 단계별 재매수 표의 재매수 시점은 판 계약이 있고
   assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
   assert.equal(due(1390),null,'판 계약을 다 되사면 접는다');
 });
+
+test('접힌 한 줄은 실행 전·손절 진행·재매수 대기·완료 상태와 다음 회차·현재 환율·보유를 보여 주며 기록을 바꾸지 않는다',()=>{
+  const ctx=load();ctx.decimal=new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1});
+  const f=futures({stages:[{name:'25선',price:1390,done:false,execPrice:null}]}),tr=x=>`${x.i}:${x.t}`;
+  const fold=cur=>{const before=JSON.stringify(f),s=ctx.futureRebuySummary(f),out=ctx.futureRebuyFoldLine(f.rebuy,s,cur,ctx.futureRebuyLocked(f),ctx.futureCutDue(s,cur),ctx.futureBuyDue(s,cur),tr);assert.equal(JSON.stringify(f),before);return [out.text,out.due];};
+  assert.deepEqual(fold(1410),['실행 전 · 신저점 1,400원 · 하단 1,300원 · 최대 2계약 손절 · 현재 1,410원',false]);
+  assert.deepEqual(fold(1400),['<b>손절 시점</b> · 1회 1,400원 이하 1계약 · 현재 1,400원',true]);
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  assert.deepEqual(fold(1350),['손절 진행 중 · 2회 1,300원 이하 · 현재 1,350원 · 보유 3/4계약',false],'실행 뒤에도 접히고 보유 계약을 덧붙인다');
+  assert.deepEqual(fold(1300),['<b>손절 시점</b> · 2회 1,300원 이하 1계약 · 현재 1,300원 · 보유 3/4계약',true]);
+  assert.equal(ctx.setFutureCutChecked(f,1,true),true);
+  assert.deepEqual(fold(1350),['재매수 대기 · 0:0 1,390원 이상 · 현재 1,350원 · 보유 2/4계약',false]);
+  assert.deepEqual(fold(1395),['<b>재매수 시점</b> · 0:0 1,390원 이상 2계약 · 현재 1,395원 · 보유 2/4계약',true]);
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
+  assert.deepEqual(fold(1395),['재매수 완료 · 손절 2 → 재매수 2계약 · 현재 1,395원 · 보유 4/4계약',false]);
+});
+
+test('손절 영역은 새 매매 시점·경고가 생길 때만 저절로 펼치고 펼치기·접기로 고른 상태를 그 사이 유지한다',()=>{
+  const ctx=load(),open=keys=>ctx.futureRebuyOpenNow(keys),set=v=>vm.runInContext(`futureRebuyExpanded=${v}`,ctx);
+  assert.equal(open([]),false,'처음에는 접힌다');
+  assert.equal(open(['cut:2']),true,'손절 시점이 되면 펼친다');
+  set(false);assert.equal(open(['cut:2']),false,'같은 회차에서 접으면 다시 그려도 접어 둔다');
+  assert.equal(open([]),false);
+  assert.equal(open(['cut:2']),true,'시점을 벗어났다가 다시 오면 펼친다');
+  set(false);assert.equal(open(['cut:2','unlinked:손절 1계약']),true,'새 경고가 생기면 펼친다');
+  set(false);assert.equal(open(['unlinked:손절 1계약']),false,'시점·경고가 사라지기만 하면 고른 상태 그대로');
+  set(true);assert.equal(open([]),true,'펼쳐 두면 매매 시점이 지나도 그대로 둔다');
+});
