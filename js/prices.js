@@ -77,7 +77,8 @@ function fillMarked(obj, at, rows){
 // data = {plans,futures,rebuy}(state/원격 기록); 바꾼 칸이 있으면 true. 채우기 대상:
 // plans: 통화에 맞는 stocks 종료 MA; 시작 MA는 startAuto=true만('직접'/옛 auto.startPrice는 안 씀).
 // 달러 계획 환율은 보유 선물과 무관한 fx.USDKRW 현물; 없으면 기존 값 유지.
-// futures: 보유 근월물 MA 구간 + 미매수 가격. buyPlan이 있으면 미매수 계약을 자동 재배분하며 완료 기록은 유지.
+// futures: 보유 근월물 MA 구간 + 미매수 가격. buyPlan.endLine은 같은 캐시의 ma·closes만 사용한다(추가 수집 없음).
+// 이동평균 종료가가 잘못되면 이전 회차·직접 수정값은 유지하며 화면·알림에서 추가 매수를 막는다.
 // futures.rebuy가 있을 때만 현재가·자동 단계도 같은 월물로 채움.
 // 선물 재매수 신저점·하단·이탈 전 계약 수는 직접 입력. ETF rebuy.items(옛 단일 종목도)은 국내 원/해외 달러만.
 // 분할매도·선물 현재가와 분할매도 평가액(planWorth)은 화면 전용. 단계 MA가 null이면 직접 입력값 유지.
@@ -95,6 +96,7 @@ function fillPrices(data, prices){
     const rows=names.map(name=>[name,priceRound(maValue(fe,name),2),v=>{
       updated.push(name);f.levels.forEach(l=>{if(futureLineName(l)===name)l.price=v;});
     }]);
+    if(f.buyPlan?.endLine)rows.push([`buyPlanEnd:${f.buyPlan.endLine}`,priceRound(maValue(fe,f.buyPlan.endLine),2),v=>f.buyPlan.endPrice=v]);
     const filled=fillMarked(f,at,rows);
     if(filled){refreshFutureBuyPrices(f,updated);if(f.buyPlan)applyFutureAutoBuyPlan(f);}
     changed=filled||changed;

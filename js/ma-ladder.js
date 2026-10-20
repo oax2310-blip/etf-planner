@@ -94,6 +94,8 @@ function futureTranchePrice(levels,index,tranche,ti){
   return prices[futureTrancheSlot(levels[index],tranche,ti)]??prices[0]??0;
 }
 function refreshFutureBuyPrices(f,changedNames=null){
+  // 이동평균 종료 계획은 검증 후 배분한 가격(직접 수정 예외 포함)을 그대로 사용한다.
+  if(f?.buyPlan?.endLine)return;
   const levels=Array.isArray(f?.levels)?f.levels:[];
   levels.forEach((level,i)=>{
     const name=futureLineName(level),next=nextFutureLine(levels,i)?.name;
@@ -107,30 +109,45 @@ function refreshFutureBuyPrices(f,changedNames=null){
   });
 }
 
+// 이동평균 종료 계획에서 보존할 직접 수정가. 0으로 비운 값도 자동 가격으로 되돌리지 않고 검증한다.
+function futureFixedBuyPrice(level,tranche){return tranche.priceOverride!=null?Number(tranche.priceOverride):!futureLineName(level)&&!level.planEnd?Number(tranche.price):null;}
+
 // 자동 분할매수: 시작선 가격 이상·종료가격 미만의 시·일·주·월선 0·⅓·⅔ 회차를 가격순으로 모으고 종료가를 한 번 붙인다.
 // 소수 넷째 자리 표시가 같은 가격은 시작선을 우선해 합치며 종료가와 겹치면 종료가만 둔다.
 // 완료한 회차는 제외하되 같은 회차의 미체결 계약은 계속 배분한다.
 // 총 계약 수에는 이 계획의 완료 계약을 포함한다(별도로 입력한 보유 월물은 제외). 남은 계약보다 회차가 많으면
 // 첫·끝을 포함해 회차 순서상 고르게 고른다(1계약이면 끝 회차). 적으면 같은 수량씩, 나머지는 앞 회차부터 1계약씩 배분한다.
 // 시작선 시세가 없거나 종료가보다 높아지면 미매수 회차를 만들지 않는다. 읽기·미리보기는 저장 기록을 바꾸지 않는다.
+// endLine을 선택한 계획만 종료가<=시작가·시세 없음·직접 수정가의 범위 이탈을 오류로 막고 기존 회차를 보존한다.
+// 직접 수정한 미매수 계약은 남은 수량에서 먼저 확보하며, 완료된 회차와 같은 가격의 새 회차는 만들지 않는다.
 function futureAutoBuyPlan(f, input=f?.buyPlan){
   const startLine=movingLineName(input?.startLine),endPrice=Number(input?.endPrice),contracts=Number(input?.contracts);
+  const endLine=input?.endLine?movingLineName(input.endLine):"";
   const units=MA_UNITS.filter(unit=>Array.isArray(input?.units)&&input.units.includes(unit));
+  const levels=Array.isArray(f?.levels)?f.levels:[],startIndex=levels.findIndex(l=>futureLineName(l)===startLine),startPrice=Number(levels[startIndex]?.price)||0;
+  if(input?.endLine&&(!endLine||!Number.isFinite(endPrice)||endPrice<=0))return {error:"종료 이동평균선의 기간(1~400)과 시세를 확인하세요. 기존 수집 데이터에 시세가 없으면 배분하지 않습니다.",startPrice,rows:[]};
   if(!startLine||!Number.isFinite(endPrice)||endPrice<=0||!Number.isInteger(contracts)||contracts<1||contracts>100||!units.length)
     return {error:"시작선, 종료가격, 총 계약 수(1~100), 사용할 시간축을 확인하세요.",rows:[]};
   if(!units.includes(movingLineUnit(startLine)))units.push(movingLineUnit(startLine));
-  const config={startLine,endPrice,contracts,units:MA_UNITS.filter(unit=>units.includes(unit))};
-  const levels=Array.isArray(f?.levels)?f.levels:[],startIndex=levels.findIndex(l=>futureLineName(l)===startLine);
-  const startPrice=Number(levels[startIndex]?.price)||0;
+  const config={...input,startLine,endPrice,contracts,units:MA_UNITS.filter(unit=>units.includes(unit))};
+  if(endLine)config.endLine=endLine;else{delete config.endLine;delete config.manualEndPrice;}
   const completed=levels.reduce((n,l)=>n+(l.tranches||[]).filter(t=>t.completed).length,0),remaining=contracts-completed;
   if(remaining<0)return {error:`이미 매수한 ${completed}계약보다 총 계약 수를 줄일 수 없습니다.`,rows:[]};
   const result={config,startPrice,completed,remaining,rows:[],available:0};
+  if(endLine&&startPrice>0&&endPrice<=startPrice)return {...result,error:"종료 이동평균선 가격은 시작 기준가보다 높아야 합니다. 기존 계획을 유지하며 추가 매수를 중지합니다."};
   if(!remaining)return result;
+  if(endLine&&!(startPrice>0))return {...result,error:"시작 기준선의 시세가 없어 추가 매수를 중지합니다. 기존 계획은 유지합니다."};
   if(!(startPrice>0))return {...result,waiting:"시작 기준선의 시세를 기다립니다."};
   if(startPrice>endPrice)return {...result,waiting:"시작 기준가가 종료가격보다 높아 추가 매수를 기다립니다."};
   const roundKey=(l,slot)=>l.planEnd?"end":`${futureLineName(l)}:${slot}`;
-  const filled=new Set(),pending=new Set();
-  levels.forEach(l=>(l.tranches||[]).forEach((t,i)=>{const key=roundKey(l,futureTrancheSlot(l,t,i));(t.completed?filled:pending).add(key);}));
+  const filled=new Set(),pending=new Set(),filledPrices=new Set(),fixed=[];
+  levels.forEach((l,li)=>(l.tranches||[]).forEach((t,i)=>{
+    const slot=futureTrancheSlot(l,t,i),key=roundKey(l,slot);(t.completed?filled:pending).add(key);
+    if(t.completed)filledPrices.add(Math.round(Number(t.price)*1e4));
+    else if(endLine&&futureFixedBuyPrice(l,t)!==null)fixed.push({li,line:futureLineName(l)||l.label,slot,price:futureFixedBuyPrice(l,t),key,contracts:1,fixed:true});
+  }));
+  if(fixed.length>remaining)return {...result,error:"직접 수정한 미매수 계약 수보다 총 계약 수를 줄일 수 없습니다. 직접 수정값을 먼저 확인하세요."};
+  if(fixed.some(r=>!Number.isFinite(r.price)||r.price<startPrice||r.price>endPrice))return {...result,error:"직접 수정한 매수가가 시작·종료 범위를 벗어납니다. 직접 수정값을 확인하세요. 기존 계획은 유지합니다."};
   const finished=key=>filled.has(key)&&!pending.has(key);
   const candidates=[];
   levels.forEach((l,li)=>{
@@ -138,34 +155,56 @@ function futureAutoBuyPlan(f, input=f?.buyPlan){
     if(!name||!config.units.includes(unit)||price<startPrice||price>=endPrice)return;
     futureBuyPrices(levels,li).forEach((p,slot)=>{
       const price=Number(p),key=roundKey(l,slot);
-      if(price>=startPrice&&price<endPrice&&Math.round(price*1e4)!==Math.round(endPrice*1e4)&&!finished(key))candidates.push({li,line:name,slot,price,key});
+      if(price>=startPrice&&price<endPrice&&Math.round(price*1e4)!==Math.round(endPrice*1e4)&&!finished(key)&&!(endLine&&filledPrices.has(Math.round(price*1e4))&&!pending.has(key)))candidates.push({li,line:name,slot,price,key});
     });
   });
   candidates.sort((a,b)=>a.price-b.price||Number(b.line===startLine)-Number(a.line===startLine)||a.li-b.li||a.slot-b.slot);
-  if(!finished("end"))candidates.push({li:levels.findIndex(l=>l.planEnd),line:"종료가",slot:0,price:endPrice,key:"end"});
+  if(!finished("end")&&!(endLine&&filledPrices.has(Math.round(endPrice*1e4))&&!pending.has("end")))candidates.push({li:levels.findIndex(l=>l.planEnd),line:"종료가",slot:0,price:endPrice,key:"end"});
   const seen=new Set(),unique=candidates.filter(row=>{const price=Math.round(row.price*1e4);if(seen.has(price))return false;seen.add(price);return true;});
-  const count=Math.min(remaining,unique.length);result.available=unique.length;
+  const toAllocate=remaining-fixed.length,count=Math.min(toAllocate,unique.length);result.available=unique.length;
   result.rows=Array.from({length:count},(_,i)=>{
     const at=count===1?unique.length-1:Math.round(i*(unique.length-1)/(count-1));
-    return {...unique[at],contracts:Math.floor(remaining/count)+(i<remaining%count?1:0)};
+    return {...unique[at],contracts:Math.floor(toAllocate/count)+(i<toAllocate%count?1:0)};
   });
-  if(remaining&&!count)result.waiting="남은 계약을 배분할 새 기준선을 기다립니다.";
+  result.rows.push(...fixed);
+  if(toAllocate&&!count)result.waiting="남은 계약을 배분할 새 기준선을 기다립니다.";
   return result;
 }
 
 // 자동 설정을 저장하거나 새 시세를 반영할 때만 호출한다. levels 순서·완료 계약·편입 월물·개별 알림은 유지한다.
-// 미매수 계약은 같은 선·회차의 기록을 먼저 재사용하고, 직접 가격 예외는 자동 가격으로 돌린다.
+// 미매수 계약은 같은 선·회차의 기록을 먼저 재사용한다. 직접 종료 계획의 가격 예외는 기존대로 자동 가격으로 돌린다.
+// 이동평균 종료 계획은 직접 가격 예외를 보존하고 회차 이동 때도 월물·알림을 재사용한다. 오류·대기 중에는 기존 회차를 유지한다.
 // buyPlan 없는 옛 기록은 그대로 두며, 실패하면 어떤 필드도 바꾸지 않는다.
 function applyFutureAutoBuyPlan(f, input=f?.buyPlan){
   if(!input)return false;
   const plan=futureAutoBuyPlan(f,input);if(plan.error)return false;
+  if(plan.config.endLine&&plan.waiting)return false;
   const levels=JSON.parse(JSON.stringify(f.levels)),byLevel=new Map();
   if(!levels.some(l=>futureLineName(l)===plan.config.startLine))levels.push({days:parseInt(plan.config.startLine),unit:movingLineUnit(plan.config.startLine),price:0,confirmed:false,contracts:0,tranches:[]});
   if(levels.length>80)return false;
   let endIndex=levels.findIndex(l=>l.planEnd);
   if(endIndex<0){if(levels.length>=80)return false;endIndex=levels.length;levels.push({days:0,unit:"",label:"종료가",planEnd:true,price:plan.config.endPrice,confirmed:true,contracts:0,tranches:[]});}
   levels[endIndex].price=plan.config.endPrice;
-  for(const row of plan.rows){const li=row.key==="end"?endIndex:row.li;if(!byLevel.has(li))byLevel.set(li,[]);byLevel.get(li).push(row);}
+  for(const row of plan.rows){if(row.fixed)continue;const li=row.key==="end"?endIndex:row.li;if(!byLevel.has(li))byLevel.set(li,[]);byLevel.get(li).push(row);}
+  if(plan.config.endLine){
+    const pool=levels.flatMap((l,li)=>(l.tranches||[]).map((t,i)=>({t,li,slot:futureTrancheSlot(l,t,i)}))).filter(x=>!x.t.completed&&futureFixedBuyPrice(levels[x.li],x.t)===null);
+    const allocated=new Map();
+    // 모든 행의 같은 회차를 먼저 확보해 뒤 회차의 설정까지 앞에서 사용하지 않는다.
+    for(const [li,rows] of byLevel)for(const row of rows)for(let n=0;n<row.contracts;n++){
+      const at=pool.findIndex(x=>x.li===li&&x.slot===row.slot),record=at<0?null:pool.splice(at,1)[0];
+      if(!allocated.has(li))allocated.set(li,[]);allocated.get(li).push({row,record});
+    }
+    for(const [li,items] of allocated)for(const item of items){
+      if(!item.record){const at=pool.findIndex(x=>x.li===li);item.record=pool.splice(at<0?0:at,1)[0]||{t:{completed:false,executionPrice:null},li};}
+      const {t,li:oldLi}=item.record;
+      if(oldLi!==li&&t.notify===undefined){
+        const enabled=l=>typeof l.notify==="boolean"?l.notify:f.notify?.levels===true;
+        if(enabled(levels[oldLi])!==enabled(levels[li]))t.notify=enabled(levels[oldLi]);
+      }
+      t.slot=item.row.slot;t.price=item.row.price;
+    }
+    levels.forEach((l,li)=>{l.tranches=[...(l.tranches||[]).filter(t=>t.completed||futureFixedBuyPrice(l,t)!==null),...(allocated.get(li)||[]).map(x=>x.record.t)];l.contracts=l.tranches.length;});
+  }else{
   levels.forEach((l,li)=>{
     const old=l.tranches||[],done=old.filter(t=>t.completed),open=[];
     old.forEach((t,i)=>{if(t.completed)t.slot=futureTrancheSlot(l,t,i);});
@@ -176,6 +215,7 @@ function applyFutureAutoBuyPlan(f, input=f?.buyPlan){
     }
     l.tranches=[...done,...open];l.contracts=l.tranches.length;
   });
+  }
   if(JSON.stringify(f.buyPlan)===JSON.stringify(plan.config)&&JSON.stringify(f.levels)===JSON.stringify(levels))return false;
   f.buyPlan=plan.config;f.levels=levels;return true;
 }

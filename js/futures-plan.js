@@ -1,12 +1,14 @@
 // 달러선물 분할매수 계획 창(기준선별 직접 설정·시작·종료 기준 자동 배분). 계산·화면은 futures.js.
 // DOM 없는 계산 호출을 위해 함수 밖에서 화면을 건드리지 않는다. 수정 중인 초안은 화면 상태라 저장하지 않는다.
 let futurePlanDraft=null;
+// 이동평균 시세 갱신은 사용자 설정 충돌로 취급하지 않는다.
+function futurePlanConfigKey(plan){const config={...plan};if(config.endLine)delete config.endPrice;return JSON.stringify(config);}
 
 // 수정 창에서 바꾼 기준가·계약 수·알림만 최신 구간에 적용한다. 그 사이 채워진 시세·체결·알림은 보존한다.
 // 실패 시 원본을 건드리지 않으며, 이미 매수한 계약보다 줄이거나 같은 평균선을 중복 추가하지 않는다.
 function applyFuturePlanEdits(f,base,edited,alertEdits=[]){
   if(!Array.isArray(base)||!Array.isArray(edited)||edited.length<base.length||edited.length>80)return false;
-  const next={levels:JSON.parse(JSON.stringify(f.levels))},changedNames=[];let changed=false;
+  const next={levels:JSON.parse(JSON.stringify(f.levels)),...(f.buyPlan?.endLine?{buyPlan:f.buyPlan}:{})},changedNames=[];let changed=false;
   for(let i=0;i<edited.length;i++){
     const row=edited[i],price=Number(row.price),qty=Number(row.contracts),name=futureLineName(row);
     if(!Number.isFinite(price)||price<0||!Number.isInteger(qty)||qty<0||qty>100)return false;
@@ -46,18 +48,22 @@ function openFuturePlanDialog(){
   const f=state.futures,base=JSON.parse(JSON.stringify(f.levels));
   const active=base.find(l=>Number(l.contracts)>0),unit=active?movingLineUnit(futureLineName(active)):"일선";
   const contracts=base.reduce((n,l)=>n+Number(l.contracts||0),0);
-  futurePlanDraft={base,levels:JSON.parse(JSON.stringify(base)),unit,alertEdits:new Set(),basePlan:JSON.stringify(f.buyPlan),autoEnabled:!!f.buyPlan||!contracts,autoDirty:false,
+  futurePlanDraft={base,levels:JSON.parse(JSON.stringify(base)),unit,alertEdits:new Set(),basePlan:futurePlanConfigKey(f.buyPlan),autoEnabled:!!f.buyPlan||!contracts,autoDirty:false,
+    endMode:f.buyPlan?.endLine?"ma":"price",endLine:f.buyPlan?.endLine||"150일선",manualEndPrice:f.buyPlan?.endLine?(f.buyPlan.manualEndPrice??""):(f.buyPlan?.endPrice??""),
     auto:f.buyPlan?JSON.parse(JSON.stringify(f.buyPlan)):{startLine:futureLineName(active)||"25일선",endPrice:"",contracts:contracts||"",units:["선","일선","개월선"]}};
   renderFuturePlanDialog();$("futurePlanDialog").showModal();
 }
 
 // 새 시작선에는 확인된 이동평균 시세만 채운다. 미리보기·저장 준비는 원본 기록을 바꾸지 않는다.
-function futureAutoSource(f,config,entry){
+function futureAutoSource(f,config,entry,at=""){
+  if(at&&(Date.parse(f.auto?.at)||0)>(Date.parse(at)||0))entry=null;
   const levels=JSON.parse(JSON.stringify(f.levels)),name=movingLineName(config.startLine);
   if(name&&!levels.some(l=>futureLineName(l)===name))levels.push({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]});
   const start=levels.find(l=>futureLineName(l)===name),price=maValue(entry,name);
   if(start&&!(Number(start.price)>0)&&price>0)start.price=priceRound(price,2);
-  return {...f,levels};
+  const buyPlan={...config};
+  if(config.endLine)buyPlan.endPrice=priceRound(maValue(entry,config.endLine),2)??(f.buyPlan?.endLine===config.endLine?f.buyPlan.endPrice:0);
+  return {...f,levels,buyPlan};
 }
 
 function futureAutoBreakdown(f){
@@ -80,10 +86,16 @@ function renderFuturePlanDialog(){
   const draft=futurePlanDraft;if(!draft)return;
   const dialog=$("futurePlanDialog"),f=state.futures,fe=futuresEntry(priceData,f);
   const units=[["선","시선 · 60분봉"],["일선","일선"],["주선","주선"],["개월선","월선"],["","직접 입력"]];
+  const lineOptions=selected=>units.filter(([value])=>value).map(([value,label])=>`<option value="${value}"${selected===value?" selected":""}>${label}</option>`).join("");
   const options=selected=>units.map(([value,name])=>`<option value="${value}"${selected===value?" selected":""}>${name}</option>`).join("");
   dialog.innerHTML=`<form id="futurePlanForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futurePlanTitle">분할매수 계획 수정</h2><button class="btn mini ghost" type="button" id="closeFuturePlan" aria-label="수정 창 닫기">닫기</button></div>
     <label class="field future-plan-mode"><span>배분 방식</span><select id="futurePlanMode"><option value="auto"${draft.autoEnabled?" selected":""}>시작·종료 기준으로 자동 배분</option><option value="manual"${draft.autoEnabled?"":" selected"}>기준선별 직접 설정</option></select></label>
-    <div id="futureAutoFields"${draft.autoEnabled?"":' class="hidden"'}><div class="future-auto-grid"><label class="field future-auto-start"><span>시작기준선</span><div><input id="futureAutoPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.auto.startLine)||""}" required aria-label="시작 이동평균 기간"><select id="futureAutoStartUnit" aria-label="시작 이동평균 시간축">${units.filter(([value])=>value).map(([value,label])=>`<option value="${value}"${movingLineUnit(draft.auto.startLine)===value?" selected":""}>${label}</option>`).join("")}</select></div><small id="futureAutoStartPrice"></small></label><label class="field"><span>종료가격 (원)</span><input id="futureAutoEnd" type="number" min="0.0001" step="any" inputmode="decimal" value="${esc(draft.auto.endPrice)}" required></label><label class="field"><span>총 매수 계약 수</span><input id="futureAutoContracts" type="number" min="1" max="100" step="1" inputmode="numeric" value="${esc(draft.auto.contracts)}" required></label></div>
+    <div id="futureAutoFields"${draft.autoEnabled?"":' class="hidden"'}><div class="future-auto-grid"><label class="field future-auto-start"><span>시작기준선</span><div><input id="futureAutoPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.auto.startLine)||""}" required aria-label="시작 이동평균 기간"><select id="futureAutoStartUnit" aria-label="시작 이동평균 시간축">${lineOptions(movingLineUnit(draft.auto.startLine))}</select></div><small id="futureAutoStartPrice"></small></label>
+    <div class="field future-auto-start future-auto-end"><span id="futureAutoEndLabel">종료가격${draft.endMode==="price"?" (원)":""}</span><div>
+    <input id="futureAutoEnd" type="number" min="0.0001" step="any" inputmode="decimal" value="${esc(draft.manualEndPrice)}" required aria-label="종료가격 (원)"${draft.endMode==="ma"?" hidden disabled":""}>
+    <input id="futureAutoEndPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.endLine)||""}" required aria-label="종료 이동평균 기간"${draft.endMode==="ma"?"":" hidden disabled"}>
+    <select id="futureAutoEndUnit" aria-label="종료가격 기준"><option value=""${draft.endMode==="price"?" selected":""}>직접 입력</option>${units.filter(([value])=>value).map(([value,label])=>`<option value="${value}"${draft.endMode==="ma"&&movingLineUnit(draft.endLine)===value?" selected":""}>${value==="선"?"시선":label}</option>`).join("")}</select></div><small id="futureAutoEndPrice"${draft.endMode==="ma"?"":" hidden"}></small></div>
+    <label class="field future-auto-contracts"><span>총 매수 계약 수</span><input id="futureAutoContracts" type="number" min="1" max="100" step="1" inputmode="numeric" value="${esc(draft.auto.contracts)}" required></label></div>
     <fieldset class="future-auto-units"><legend>배분할 기준선</legend>${units.filter(([value])=>value).map(([value,label])=>`<label><input type="checkbox" data-future-auto-unit="${value}"${draft.auto.units.includes(value)?" checked":""}>${label}</label>`).join("")}</fieldset>
     <div id="futureAutoPreview" class="future-auto-preview" aria-live="polite"></div><p class="hint future-auto-hint">시세가 있는 기준선으로 회차와 계약 수를 계산합니다. 이미 매수한 계약은 포함하고, 남은 계약만 자동 배분합니다.</p></div>
     <div id="futureManualFields"${draft.autoEnabled?' class="hidden"':""}>
@@ -94,21 +106,32 @@ function renderFuturePlanDialog(){
     </div>
     <p class="future-plan-error" id="futurePlanError" role="alert"></p><div class="dialog-foot"><button class="btn" id="cancelFuturePlan" type="button">취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   const updateAutoPreview=()=>{
-    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe),plan=futureAutoBuyPlan(source,draft.auto);
+    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe,priceData?.updatedAt),plan=futureAutoBuyPlan(source);
     $("futureAutoStartPrice").textContent=plan.startPrice>0?`시작 기준가 ${fmtPrice(plan.startPrice)}원`:"시작 기준선 시세 대기";
-    if(plan.error){$("futureAutoPreview").innerHTML=`<p class="hint">${esc(draft.auto.endPrice===""||draft.auto.contracts===""?"종료가격과 총 계약 수를 입력하면 자동 배분 결과를 보여 줍니다.":plan.error)}</p>`;return;}
+    $("futureAutoEndPrice").textContent=source.buyPlan.endPrice>0?`종료 기준가 ${fmtPrice(source.buyPlan.endPrice)}원`:"종료 기준선 시세 없음";
+    if(plan.error){$("futureAutoPreview").innerHTML=`<p class="hint" role="alert">${esc((draft.endMode==="price"&&draft.auto.endPrice===""||draft.auto.contracts==="")?"종료가격과 총 계약 수를 입력하면 자동 배분 결과를 보여 줍니다.":plan.error)}</p>`;return;}
     const used=new Set(plan.rows.map(r=>r.key));
-    const body=plan.rows.map(r=>`<div class="future-auto-preview-row"><span>${esc(r.line)}${r.key==="end"?"":` <small>${r.slot+1}차</small>`}</span><span>${fmtPrice(r.price)}원</span><strong>${r.contracts}계약</strong></div>`).join("");
-    const arranged=JSON.parse(JSON.stringify(source));applyFutureAutoBuyPlan(arranged,draft.auto);
+    const body=plan.rows.map(r=>`<div class="future-auto-preview-row"><span>${esc(movingLineText(r.line))}${r.fixed?" · 직접 수정":""}${r.key==="end"?"":` <small>${r.slot+1}차</small>`}</span><span>${fmtPrice(r.price)}원</span><strong>${r.contracts}계약</strong></div>`).join("");
+    const arranged=JSON.parse(JSON.stringify(source));applyFutureAutoBuyPlan(arranged);
     $("futureAutoPreview").innerHTML=`<div class="future-auto-preview-head"><strong>${plan.waiting?"추가 매수 대기":`${used.size}분할 · 남은 ${plan.remaining}계약`}</strong><span>총 ${plan.config.contracts}계약${plan.completed?` · 매수 완료 ${plan.completed}`:""}</span></div>${plan.waiting?`<p class="hint">${esc(plan.waiting)}</p>`:`<div class="future-auto-breakdown">${futureAutoBreakdown(arranged)}</div><div class="future-auto-preview-table"><div class="future-auto-preview-row head"><span>기준선 · 회차</span><span>매수가</span><span>계약 수</span></div>${body}</div>`}`;
   };
   const readAuto=()=>{
     const unit=$("futureAutoStartUnit").value;
     $$("[data-future-auto-unit]").forEach(input=>{input.disabled=input.dataset.futureAutoUnit===unit;if(input.disabled)input.checked=true;});
-    draft.auto={startLine:`${$("futureAutoPeriod").value}${unit}`,endPrice:$("futureAutoEnd").value,contracts:$("futureAutoContracts").value,units:[...$$("[data-future-auto-unit]")].filter(x=>x.checked).map(x=>x.dataset.futureAutoUnit)};
+    draft.manualEndPrice=$("futureAutoEnd").value;
+    if(draft.endMode==="ma")draft.endLine=`${$("futureAutoEndPeriod").value}${$("futureAutoEndUnit").value}`;
+    draft.auto={...draft.auto,startLine:`${$("futureAutoPeriod").value}${unit}`,endPrice:$("futureAutoEnd").value,contracts:$("futureAutoContracts").value,units:[...$$("[data-future-auto-unit]")].filter(x=>x.checked).map(x=>x.dataset.futureAutoUnit)};
+    if(draft.endMode==="ma"){draft.auto.endLine=draft.endLine;if(Number(draft.manualEndPrice)>0)draft.auto.manualEndPrice=Number(draft.manualEndPrice);else delete draft.auto.manualEndPrice;}
+    else{delete draft.auto.endLine;delete draft.auto.manualEndPrice;}
     draft.autoDirty=true;$("futurePlanError").textContent="";updateAutoPreview();
   };
-  $$("#futureAutoPeriod, #futureAutoEnd, #futureAutoContracts").forEach(input=>input.oninput=readAuto);
+  $$("#futureAutoPeriod, #futureAutoEnd, #futureAutoEndPeriod, #futureAutoContracts").forEach(input=>input.oninput=readAuto);
+  $("futureAutoEndUnit").onchange=e=>{
+    const ma=!!e.target.value;draft.endMode=ma?"ma":"price";
+    $("futureAutoEnd").hidden=ma;$("futureAutoEnd").disabled=ma;
+    $("futureAutoEndPeriod").hidden=!ma;$("futureAutoEndPeriod").disabled=!ma;
+    $("futureAutoEndPrice").hidden=!ma;$("futureAutoEndLabel").textContent=ma?"종료가격":"종료가격 (원)";readAuto();
+  };
   $("futureAutoStartUnit").onchange=readAuto;$$("[data-future-auto-unit]").forEach(input=>{input.onchange=readAuto;input.disabled=input.dataset.futureAutoUnit===movingLineUnit(draft.auto.startLine);if(input.disabled)input.checked=true;});
   $("futurePlanMode").onchange=e=>{draft.autoEnabled=e.target.value==="auto";$("futureAutoFields").classList.toggle("hidden",!draft.autoEnabled);$("futureManualFields").classList.toggle("hidden",draft.autoEnabled);$("futurePlanError").textContent="";updateAutoPreview();};
   updateAutoPreview();
@@ -137,12 +160,12 @@ function renderFuturePlanDialog(){
       invalid.reportValidity();return;
     }
     const latest=state.futures,next=JSON.parse(JSON.stringify(latest));
-    if(JSON.stringify(latest.buyPlan)!==draft.basePlan||!applyFuturePlanEdits(next,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
+    if(futurePlanConfigKey(latest.buyPlan)!==draft.basePlan||!applyFuturePlanEdits(next,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
     if(draft.autoEnabled&&(!latest.buyPlan||draft.autoDirty||JSON.stringify(draft.levels)!==JSON.stringify(draft.base))){
-      const source=futureAutoSource(next,draft.auto,futuresEntry(priceData,latest)),plan=futureAutoBuyPlan(source,draft.auto);
+      const source=futureAutoSource(next,draft.auto,futuresEntry(priceData,latest),priceData?.updatedAt),plan=futureAutoBuyPlan(source);
       if(plan.error||plan.startPrice>plan.config.endPrice){$("futurePlanError").textContent=plan.error||"종료가격은 시작 기준가 이상으로 입력하세요.";return;}
       if(source.levels.length+(source.levels.some(l=>l.planEnd)?0:1)>80){$("futurePlanError").textContent="종료가를 포함해 기준선은 80개까지 설정할 수 있습니다.";return;}
-      applyFutureAutoBuyPlan(source,draft.auto);next.levels=source.levels;next.buyPlan=source.buyPlan;
+      applyFutureAutoBuyPlan(source);next.levels=source.levels;next.buyPlan=source.buyPlan;
     }
     if(!draft.autoEnabled)delete next.buyPlan;
     latest.levels=next.levels;if(next.buyPlan)latest.buyPlan=next.buyPlan;else delete latest.buyPlan;
