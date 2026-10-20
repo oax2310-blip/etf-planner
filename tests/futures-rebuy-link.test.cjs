@@ -183,20 +183,20 @@ test('반등 단계별 재매수 표의 재매수 시점은 판 계약이 있고
   assert.equal(due(1390),null,'판 계약을 다 되사면 접는다');
 });
 
-test('접힌 한 줄은 실행 전·손절 진행·재매수 대기·완료 상태와 다음 회차·현재 환율·보유를 보여 주며 기록을 바꾸지 않는다',()=>{
+test('접힌 한 줄은 실행 전·손절 진행·재매수 대기·완료 상태와 다음 환율·보유 계약만 보여 주며 기록을 바꾸지 않는다',()=>{
   const ctx=load();ctx.decimal=new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1});
-  const f=futures({stages:[{name:'25선',price:1390,done:false,execPrice:null}]}),tr=x=>`${x.i}:${x.t}`;
-  const fold=cur=>{const before=JSON.stringify(f),s=ctx.futureRebuySummary(f),out=ctx.futureRebuyFoldLine(f.rebuy,s,cur,ctx.futureRebuyLocked(f),ctx.futureCutDue(s,cur),ctx.futureBuyDue(s,cur),tr);assert.equal(JSON.stringify(f),before);return [out.text,out.due];};
-  assert.deepEqual(fold(1410),['실행 전 · 신저점 1,400원 · 하단 1,300원 · 최대 2계약 손절 · 현재 1,410원',false]);
-  assert.deepEqual(fold(1400),['<b>손절 시점</b> · 1회 1,400원 이하 1계약 · 현재 1,400원',true]);
+  const f=futures({stages:[{name:'25선',price:1390,done:false,execPrice:null}]});
+  const fold=cur=>{const before=JSON.stringify(f),s=ctx.futureRebuySummary(f),out=ctx.futureRebuyFoldLine(f.rebuy,s,cur,ctx.futureRebuyLocked(f),ctx.futureCutDue(s,cur),ctx.futureBuyDue(s,cur));assert.equal(JSON.stringify(f),before);return [out.text,out.due];};
+  assert.deepEqual(fold(1410),['실행 전 · 1,400원 → 1,300원 · 최대 2계약',false],'폰 한 줄에 들도록 회차·계약 수·현재 환율은 뺀다');
+  assert.deepEqual(fold(1400),['<b>손절 시점</b> · 1,400원 이하',true]);
   assert.equal(ctx.setFutureCutChecked(f,0,true),true);
-  assert.deepEqual(fold(1350),['손절 진행 중 · 2회 1,300원 이하 · 현재 1,350원 · 보유 3/4계약',false],'실행 뒤에도 접히고 보유 계약을 덧붙인다');
-  assert.deepEqual(fold(1300),['<b>손절 시점</b> · 2회 1,300원 이하 1계약 · 현재 1,300원 · 보유 3/4계약',true]);
+  assert.deepEqual(fold(1350),['손절 진행 중 · 1,300원 이하 · 보유 3/4',false],'실행 뒤에도 접히고 보유 계약을 덧붙인다');
+  assert.deepEqual(fold(1300),['<b>손절 시점</b> · 1,300원 이하 · 보유 3/4',true]);
   assert.equal(ctx.setFutureCutChecked(f,1,true),true);
-  assert.deepEqual(fold(1350),['재매수 대기 · 0:0 1,390원 이상 · 현재 1,350원 · 보유 2/4계약',false]);
-  assert.deepEqual(fold(1395),['<b>재매수 시점</b> · 0:0 1,390원 이상 2계약 · 현재 1,395원 · 보유 2/4계약',true]);
+  assert.deepEqual(fold(1350),['재매수 대기 · 1,390원 이상 · 보유 2/4',false]);
+  assert.deepEqual(fold(1395),['<b>재매수 시점</b> · 1,390원 이상 · 보유 2/4',true]);
   assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
-  assert.deepEqual(fold(1395),['재매수 완료 · 손절 2 → 재매수 2계약 · 현재 1,395원 · 보유 4/4계약',false]);
+  assert.deepEqual(fold(1395),['재매수 완료 · 보유 4/4',false]);
 });
 
 test('손절 영역은 새 매매 시점·경고가 생길 때만 저절로 펼치고 펼치기·접기로 고른 상태를 그 사이 유지한다',()=>{

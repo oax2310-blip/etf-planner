@@ -191,21 +191,21 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
   return `<section class="card fr-track" aria-label="보유 계약"><div class="fr-track-body"><div class="fr-track-top"><div><strong>보유 계약</strong><span class="buy-track-chip${chipCls?` ${chipCls}`:""}">${chipText}</span></div><div class="fr-count"><b>${s.held}</b><span>/ ${hold}계약</span></div></div>${track}<p class="fr-note">${hold?note:"이탈 전 계약 수를 넣으면 보유 계약 칸이 생깁니다."}</p></div>
     <div class="fr-track-foot"><span>${cur>0?`현재 <b>${fmtPrice(cur)}원</b>`:"현재 환율 미입력"}</span>${toggle}</div></section>`;
 }
-// 접힌 한 줄 {text, due}: 상태 · 다음 회차 · 현재 환율 · 보유(실행 뒤). 폰에서는 두 줄 뒤가 잘리므로 상태와 다음 회차를 앞에 둔다(줄바꿈 때 '·'는 앞 글자에, 현재·보유는 뒤 숫자에 붙임).
-// 손절·재매수 시점과 실행 전 신저점 이탈은 주황(due). 진행 상태 이름은 보유 계약 카드 칩과 같다. trText는 재매수 회차 이름(이스케이프됨).
-function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,trText){
-  const px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—",cutAt=c=>`${c.k}회 ${decimal.format(c.price)}원 이하`;
-  const trAt=x=>`${trText(x)} ${Number(x.price)>0?`${x.est?"≈":""}${fmtPrice(Math.round(x.price*100)/100)}원 이상`:"기준가 없음"}`;
+// 접힌 한 줄 {text, due}: 상태 · 다음 손절·재매수 환율 · 보유 계약(실행 뒤). 폰(393px) 한 줄에 들도록 회차·단계 이름·계약 수·현재 환율은 넣지 않는다
+// (펼치면 보이고, 현재 환율은 화면 맨 위에 있음). 손절·재매수 시점과 실행 전 신저점 이탈은 주황(due). 진행 상태 이름은 보유 계약 카드 칩과 같다.
+function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue){
+  const px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—",cutAt=c=>`${decimal.format(c.price)}원 이하`;
+  const trAt=x=>Number(x.price)>0?`${x.est?"≈":""}${fmtPrice(Math.round(x.price*100)/100)}원 이상`:"기준가 없음";
   const low=Number(r.lowPrice)||0,broken=!locked&&s.ready&&cur>0&&cur<low,nextCut=s.ready&&!s.started?s.cuts.find(c=>!c.done&&c.qty>0):null,nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
-  const held=locked&&s.hold?` · 보유 ${s.held}/${s.hold}계약`:"";
-  const line=cutDue?`<b>손절 시점</b> · ${cutAt(cutDue)} ${cutDue.qty}계약`:buyDue?`<b>재매수 시점</b> · ${trAt(buyDue)} ${buyDue.amount}계약`
-    :!s.goal&&s.hold>0?"손절 목표 0계약 · 펼쳐서 손절 비중을 확인하세요":!s.ready?"기준 미입력 · 펼쳐서 신저점·하단·이탈 전 계약 수를 넣으세요"
+  const held=locked&&s.hold?` · 보유 ${s.held}/${s.hold}`:"";
+  const line=cutDue?`<b>손절 시점</b> · ${cutAt(cutDue)}`:buyDue?`<b>재매수 시점</b> · ${trAt(buyDue)}`
+    :!s.goal&&s.hold>0?"손절 목표 0계약 · 펼쳐서 비중을 확인하세요":!s.ready?"기준 미입력 · 펼쳐서 기준을 넣으세요"
     :broken?`<b>신저점 이탈</b> · 다음 손절 ${nextCut?cutAt(nextCut):"없음"}`
-    :!locked?`실행 전 · 신저점 ${px(low)} · 하단 ${px(r.floorPrice)} · 최대 ${s.goal}계약 손절`
-    :s.started&&!s.rest?`재매수 완료 · 손절 ${s.sold} → 재매수 ${s.rebought}계약`
+    :!locked?`실행 전 · ${px(low)} → ${px(r.floorPrice)} · 최대 ${s.goal}계약`
+    :s.started&&!s.rest?"재매수 완료"
     :nextCut?`손절 진행 중 · ${cutAt(nextCut)}`
     :`${s.started?"재매수 진행 중":"재매수 대기"} · ${nextTr?trAt(nextTr):`남은 ${s.rest}계약`}`;
-  return {text:line+(s.ready&&cur>0?` · 현재 ${px(cur)}`:"")+held,due:!!(cutDue||buyDue||broken)};
+  return {text:line+held,due:!!(cutDue||buyDue||broken)};
 }
 function renderFutureRebuy(f){
   const r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),cur=Number(r.currentPrice)||0,pctText=shown(s.sellPct),opt=v=>Number(v)>0?shown(v):"",px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—";
@@ -215,8 +215,8 @@ function renderFutureRebuy(f){
   const cutDue=futureCutDue(s,cur),buyDue=futureBuyDue(s,cur),cutKey=cutDue?String(cutDue.k):"",buyKey=buyDue?`${buyDue.i}:${buyDue.t}`:"";
   const un=futureRebuyUnlinked(f),unText=[un.cuts?`손절 ${un.cuts}계약`:"",un.buys?`재매수 ${un.buys}계약`:""].filter(Boolean).join("·");
   if(!futureRebuyOpenNow([cutKey&&`cut:${cutKey}`,buyKey&&`buy:${buyKey}`,unText&&`unlinked:${unText}`,(s.overSold||s.overBought)&&"over"].filter(Boolean))){
-    const {text,due}=futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,trText);
-    $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><button class="card rebuy-fold${due?" due":""}" type="button" id="frToggle" aria-expanded="false"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text.replace(/ · /g,"&nbsp;· ").replace(/(현재|보유) /g,"$1&nbsp;")}</span></button></section>`;
+    const {text,due}=futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue);
+    $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><button class="card rebuy-fold${due?" due":""}" type="button" id="frToggle" aria-expanded="false"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text}</span></button></section>`;
     $("frToggle").onclick=()=>{futureRebuyExpanded=true;renderFutures();};
     return;
   }
