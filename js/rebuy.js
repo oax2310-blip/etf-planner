@@ -298,12 +298,17 @@ function futureRebuyHold(f){
 const futureRebuySellPct = f => {const raw=futureRebuyOf(f).sellPct,v=Number(raw);return raw==null||raw===""||!Number.isFinite(v)||v<0||v>100?50:v;};
 const futureCutGoal = (f,pct=futureRebuySellPct(f),hold=futureRebuyHold(f)) => Math.floor(hold*pct/100+1e-9);
 // 신저점~직접 하단을 고르게 나눠 손절 목표 계약만 손절. 회차 수≤목표 계약, 1회면 하단.
-// 체결량 수정 후 남은 목표는 미완료 회차의 원래 비중으로 재배분; 기존 체결은 유지.
+// cuts[i] = 체결 기록 {contracts, price, targetPrice}. 부분 체결만 partial·plannedQty(그 회차 계획 계약)로 남은 계약을 그 회차에 고정한다(입력 때 생성).
+// partial 없는 기록(옛 기록 포함)은 완료로 읽는다. 부분 체결 회차의 남은 계약은 손절 목표 안에서만 남기고(넘으면 줄이고, 0이면 완료로 읽음),
+// 회차 결과의 qty는 체결(기록 없는 회차는 배정) 계약, plannedQty는 기록한 회차의 계획 계약이다.
+// 체결량 수정 후 남은 목표는 기록 없는 회차의 원래 비중으로 재배분; 기존 체결은 유지.
 // 모든 회차 체결 뒤 목표를 늘렸으면 남은 수량을 하단의 추가 회차에 배정한다.
 function futureCutPlan(f){
   const r=futureRebuyOf(f),low=Number(r.lowPrice)||0,floor=Number(r.floorPrice)||0,hold=futureRebuyHold(f),goal=futureCutGoal(f),records=Array.isArray(r.cuts)?r.cuts:[];
   const valid=Number.isFinite(low)&&Number.isFinite(floor)&&low>floor&&floor>0&&goal>0;
-  const lastDone=records.reduce((n,c,i)=>c?i+1:n,0),sold=records.reduce((n,c)=>n+futureRebuyQty(c?.contracts),0),rest=Math.max(0,goal-sold);
+  const lastDone=records.reduce((n,c,i)=>c?i+1:n,0),sold=records.reduce((n,c)=>n+futureRebuyQty(c?.contracts),0);
+  let rest=Math.max(0,goal-sold);
+  const open=Array.from({length:lastDone},(_,i)=>{const c=records[i],x=c?.partial===true?Math.min(rest,Math.max(0,futureRebuyQty(c.plannedQty)-futureRebuyQty(c.contracts))):0;rest-=x;return x;});
   let n=Math.max(lastDone,valid?Math.min(60,Math.max(1,futureRebuyQty(r.steps)||10),goal):0);
   const finished=lastDone>0&&Number(records[lastDone-1]?.targetPrice)===floor&&Array.from({length:lastDone},(_,i)=>records[i]).every(Boolean);
   if(valid&&rest>0){if(finished)n=lastDone+1;else if(Array.from({length:n},(_,i)=>records[i]).every(Boolean))n++;}
@@ -312,24 +317,26 @@ function futureCutPlan(f){
   return Array.from({length:n},(_,i)=>{
     const rec=records[i],target=valid?(n===1?floor:low-(low-floor)*i/(n-1)):0,price=Number(rec?.targetPrice)>0?Number(rec.targetPrice):target;
     const before=pending;pending+=weights[i];
-    const qty=rec?futureRebuyQty(rec.contracts):valid&&openWeight?Math.round(rest*pending/openWeight)-Math.round(rest*before/openWeight):0;
-    left=Math.max(0,left-qty);
-    return {k:i+1,price,qty,left,done:!!rec,execPrice:Number(rec?.price)>0?Number(rec.price):null};
+    const qty=rec?futureRebuyQty(rec.contracts):valid&&openWeight?Math.round(rest*pending/openWeight)-Math.round(rest*before/openWeight):0,extra=rec?open[i]:0;
+    left=Math.max(0,left-qty-extra);
+    return {k:i+1,price,qty,left,done:!!rec&&!extra,...(rec?{recorded:true,plannedQty:qty+extra}:{}),...(extra?{partial:true}:{}),execPrice:Number(rec?.price)>0?Number(rec.price):null};
   });
 }
-// 판 계약만 복원. 평균 손절 환율은 실제 체결(없으면 회차 환율)의 계약 가중평균.
+// 회차에 남은 손절 계약: 부분 체결은 계획 − 체결, 기록 없는 회차는 배정 계약, 완료는 0.
+const futureCutRest = c => c.done?0:c.recorded?c.plannedQty-c.qty:c.qty;
+// 판 계약(부분 체결 포함)만 복원. 평균 손절 환율은 실제 체결(없으면 회차 환율)의 계약 가중평균. doneCuts는 완료 회차, filledCuts는 체결 기록이 있는 회차 수.
 // ETF와 같은 rebuyPlanned·rebuyTranches, 계약은 splitWhole로 배분. 재매수 시작 후 손절 중단; 보유 월물/정산손익은 건드리지 않음.
 function futureRebuySummary(f){
-  const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),done=cuts.filter(c=>c.done),cur=Number(r.currentPrice)||0;
+  const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
   const stages=futureRebuyStages(r),fills=stages.map(x=>stageFills(x,"contracts")),all=fills.flat(),started=all.length>0;
-  const sold=done.reduce((n,c)=>n+c.qty,0),rebought=all.reduce((n,x)=>n+x.qty,0),rest=Math.max(0,sold-rebought);
-  const sellAvg=sold?done.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)/sold:null;
+  const sold=filled.reduce((n,c)=>n+c.qty,0),rebought=all.reduce((n,x)=>n+x.qty,0),rest=Math.max(0,sold-rebought);
+  const sellAvg=sold?filled.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)/sold:null;
   const lastBuy=[...all].reverse().find(x=>x.price>0),start=cur>0?cur:lastBuy?lastBuy.price:sellAvg||0,est=stageEstimates(stages,start);
   const planned=started&&storedPlan(r,stages)||rebuyPlanned(stages,est,sellAvg);
   const tranches=rebuyTranches(stages,est,fills,planned,rest,splitWhole);
   tranches.forEach(x=>{if(x.done)x.amount=x.qty;});
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
-  return {hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped:rebuySkipped(stages,est,tranches),planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,
+  return {hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped:rebuySkipped(stages,est,tranches),planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
 }
 // futures.rebuy는 최초 입력 때만 생성하고 이탈 전 계약 수를 고정(읽기/normalize는 생성·이전 안 함).
@@ -356,15 +363,19 @@ function setFutureRebuyField(f,key,text){
   if(key==="steps"&&(!Number.isInteger(v)||v<1||v>60)||key==="contracts"&&!Number.isInteger(v))return false;
   const edited=editFutureRebuy(f);if(v>0||key==="contracts"||key==="sellPct"&&!empty)edited[key]=v;else delete edited[key];
 }
+// 체크: 기록 없는 회차는 배정 계약, 부분 체결 회차는 계획 계약까지 채워 완료한다(setFutureCutQty). 해제는 그 회차 기록을 지운다.
 function setFutureCutDone(f,i,on){
   const s=futureRebuySummary(f),c=s.cuts[i];if(!c)return false;
-  if(on){if(s.started||c.done||c.qty<1||s.sold+c.qty>s.goal)return false;editFutureRebuy(f).cuts[i]={contracts:c.qty,price:c.price,targetPrice:c.price};}
-  else{if(!c.done||s.sold-c.qty<s.rebought)return false;editFutureRebuy(f).cuts[i]=null;}
+  if(on)return s.started||c.done?false:setFutureCutQty(f,i,String(c.recorded?c.plannedQty:c.qty));
+  if(!c.recorded||s.sold-c.qty<s.rebought)return false;editFutureRebuy(f).cuts[i]=null;
 }
+// 누적 체결 계약(1 이상 정수)을 기록한다. 회차 계획보다 적으면 partial·plannedQty로 남은 계약을 그 회차에 두고, 계획 이상이면 완료로 둔다.
+// 새 기록은 회차 환율을 체결 환율로 남기고, 재매수를 시작한 뒤에는 새 회차를 기록하지 않는다(기록한 회차의 수정은 가능). 손절 합계는 손절 목표 이하·재매수 이상.
 function setFutureCutQty(f,i,text){
-  const qty=Number(text),s=futureRebuySummary(f),c=s.cuts[i];
-  if(!c?.done||text.trim()===""||!Number.isInteger(qty)||qty<1||s.sold-c.qty+qty>s.goal||s.sold-c.qty+qty<s.rebought)return false;
-  editFutureRebuy(f).cuts[i].contracts=qty;
+  const qty=Number(text),s=futureRebuySummary(f),c=s.cuts[i],had=c?.recorded?c.qty:0;
+  if(!c||String(text).trim()===""||!Number.isInteger(qty)||qty<1||!c.recorded&&(s.started||c.qty<1)||s.sold-had+qty>s.goal||s.sold-had+qty<s.rebought)return false;
+  const planned=c.recorded?c.plannedQty:c.qty,r=editFutureRebuy(f),rec=r.cuts[i]||(r.cuts[i]={contracts:qty,price:c.price,targetPrice:c.price});
+  rec.contracts=qty;delete rec.partial;delete rec.plannedQty;if(qty<planned)Object.assign(rec,{partial:true,plannedQty:planned});
 }
 // 회차 체결 기록(옛 통째 기록은 단계 자체 — contracts·execPrice, 새 기록은 buys[t] — contracts·price). 고칠 수 있게 저장된 기록을 돌려준다.
 function futureFillRec(f,i,t){const x=editFutureRebuy(f).stages[i];return !x?null:x.done?(t===0?[x,"execPrice"]:null):Array.isArray(x.buys)&&x.buys[t]?[x.buys[t],"price"]:null;}

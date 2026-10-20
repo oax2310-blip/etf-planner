@@ -138,7 +138,9 @@ test('회차 체크만으로 다음 예정 수량은 바뀌지 않고 실제 수
   ctx.setFutureCutDone(f,0,true);
   assert.deepEqual(plain(ctx.futureCutPlan(f)).slice(1),original.slice(1));
   assert.notEqual(ctx.setFutureCutQty(f,0,'2'),false);
-  const cuts=ctx.futureCutPlan(f);assert.equal(cuts.reduce((n,c)=>n+c.qty,0),10);
+  const cuts=ctx.futureCutPlan(f);assert.equal(cuts.reduce((n,c)=>n+(c.plannedQty??c.qty),0),10);
+  assert.deepEqual([cuts[0].qty,cuts[0].plannedQty,cuts[0].partial,cuts[0].done],[2,3,true,false],'계획보다 적게 고치면 남은 계약은 그 회차에 둔다');
+  assert.deepEqual(plain(cuts).slice(1),original.slice(1),'다음 회차 배정은 그대로');
   assert.equal(ctx.setFutureCutQty(f,0,'11'),false);
 });
 
@@ -252,4 +254,18 @@ test('달러 재매수 시세는 소수 환율을 보존하고 손절 기준·�
   assert.deepEqual([f.rebuy.lowPrice,f.rebuy.floorPrice,f.rebuy.contracts],[1400,1300,20]);
   assert.equal(ctx.fillPrices(data,q),false);
   const without=futures();delete without.rebuy;ctx.fillPrices({futures:without},q);assert.equal(without.rebuy,undefined);
+});
+
+test('부분 체결한 손절 회차는 남은 계약 알림을 이어 가고, 손절 목표를 줄여 남은 계약이 없으면 완료로 읽는다',()=>{
+  const ctx=load(),f=futures({notify:{cuts:true}}),labels=()=>plain(ctx.buildTradeAlertRules({futures:f},null)).map(r=>r.label);
+  assert.notEqual(ctx.setFutureCutDone(f,0,true),false);
+  assert.deepEqual(labels(),['달러선물 손절 2회','달러선물 손절 3회']);
+  assert.notEqual(ctx.setFutureCutQty(f,0,'2'),false);
+  assert.deepEqual(plain(f.rebuy.cuts[0]),{contracts:2,price:1400,targetPrice:1400,partial:true,plannedQty:3});
+  assert.deepEqual(labels(),['달러선물 손절 1회','달러선물 손절 2회','달러선물 손절 3회'],'남은 1계약이 있는 1회 알림을 이어 간다');
+  assert.equal(ctx.futureRebuySummary(f).sold,2,'판 계약은 체결한 계약만');
+  assert.notEqual(ctx.setFutureRebuyField(f,'contracts','4'),false);
+  const c=ctx.futureCutPlan(f)[0];
+  assert.deepEqual([c.qty,c.plannedQty,c.done,Object.hasOwn(c,'partial')],[2,2,true,false],'목표(2계약)를 다 팔았으면 남은 계약을 두지 않는다');
+  assert.equal(f.rebuy.cuts[0].plannedQty,3,'읽기만으로 기록을 고치지 않는다');
 });

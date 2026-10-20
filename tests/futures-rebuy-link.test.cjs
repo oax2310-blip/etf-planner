@@ -210,3 +210,67 @@ test('손절 영역은 새 매매 시점·경고가 생길 때만 저절로 펼�
   set(false);assert.equal(open(['unlinked:손절 1계약']),false,'시점·경고가 사라지기만 하면 고른 상태 그대로');
   set(true);assert.equal(open([]),true,'펼쳐 두면 매매 시점이 지나도 그대로 둔다');
 });
+
+test('분할 손절 체결 칸은 분할매도처럼 누적 체결이고, 계획보다 적으면 남은 계약을 그 회차에 두며 체크로 채운다',()=>{
+  const ctx=load(),f=futures({contracts:8,steps:2});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}];
+  assert.equal(ctx.setFutureCutCount(f,0,'1'),true);
+  let rec=f.rebuy.cuts[0];
+  assert.deepEqual([rec.contracts,rec.partial,rec.plannedQty,rec.month],[1,true,2,'202612'],'계획 2계약 중 1계약');
+  assert.equal(held(f),7);assert.equal(f.baselinePnl,50000+(1400-1450)*10000,'체결한 계약만 보유·손익에 반영');
+  let s=ctx.futureRebuySummary(f);const c=s.cuts[0];
+  assert.deepEqual([c.qty,c.plannedQty,c.partial,c.done,vm.runInContext('futureCutRest',ctx)(c)],[1,2,true,false,1]);
+  assert.deepEqual([...s.cuts].map(x=>x.recorded?x.plannedQty:x.qty),[2,2],'남은 1계약을 뒤 회차로 옮기지 않는다');
+  assert.deepEqual([s.sold,s.doneCuts,s.filledCuts],[1,0,1]);
+  assert.equal(ctx.futureCutDue(s,1400)?.k,1,'부분 체결 회차가 다음 손절 회차');
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  rec=f.rebuy.cuts[0];
+  assert.deepEqual([rec.contracts,Object.hasOwn(rec,'partial'),Object.hasOwn(rec,'plannedQty')],[2,false,false],'체크하면 계획 계약까지 채워 완료');
+  assert.equal(held(f),6);assert.equal(f.baselinePnl,50000+(1400-1450)*2*10000);
+  assert.notEqual(ctx.setFutureCutCount(f,0,'1'),false);
+  assert.deepEqual([f.rebuy.cuts[0].partial,f.rebuy.cuts[0].plannedQty,held(f)],[true,2,7],'완료 회차를 줄이면 다시 부분 체결');
+  assert.equal(ctx.setFutureCutCount(f,0,'5'),false,'손절 목표(4계약)를 넘으면 거부');assert.equal(ctx.setFutureCutCount(f,0,'1.5'),false);
+  assert.notEqual(ctx.setFutureCutCount(f,0,'0'),false);
+  assert.equal(f.rebuy.cuts[0],null);assert.equal(held(f),8);assert.equal(f.baselinePnl,50000,'0이면 체크 해제와 같다');
+});
+
+test('월물교체 뒤 부분 체결을 채우면 지금 보유 월물에서 빼고, 보유에 없는 월물로 되돌릴 때 detach면 보유를 그대로 둔다',()=>{
+  const ctx=load(),f=futures({contracts:8,steps:2});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}];
+  ctx.setFutureCutCount(f,0,'1');
+  f.positions=[{month:'202703',contracts:7,settlementPrice:1460}]; // 계좌를 보고 보유를 직접 교체
+  const pnl=f.baselinePnl;
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  let rec=f.rebuy.cuts[0];
+  assert.deepEqual([rec.month,rec.settlementPrice,rec.contracts],['202703',1455,2],'기록은 지금 월물·계약 가중평균');
+  assert.equal(held(f),6);assert.equal(f.baselinePnl,pnl+(1400-1460)*10000,'채운 계약은 지금 월물 단순평균가로 손익');
+  f.positions=[{month:'202706',contracts:6,settlementPrice:1470}];
+  const keep=JSON.stringify(f.positions);
+  assert.notEqual(ctx.setFutureCutCount(f,0,'1',true),false);
+  assert.equal(JSON.stringify(f.positions),keep,'없는 월물을 되살리지 않는다');
+  assert.equal(f.baselinePnl,50000+(1400-1455)*10000);assert.equal(f.rebuy.cuts[0].partial,true);
+  assert.notEqual(ctx.setFutureCutChecked(f,0,false,true),false);
+  assert.equal(JSON.stringify(f.positions),keep);assert.equal(f.baselinePnl,50000,'손익만 되돌린다');
+  ctx.setFutureCutCount(f,0,'2');f.positions=[];
+  assert.equal(ctx.setFutureCutCount(f,0,'3'),false,'더 뺄 보유 월물이 없으면 늘리지 않는다');
+});
+
+test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·완료 접기·보유에 없는 월물을 표시한다',()=>{
+  const ctx=load(),els={},handlers={};
+  const el=id=>els[id]||(els[id]={id,innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
+  Object.assign(ctx,{$:el,$$:()=>[],onEdit:(sel,set)=>{handlers[sel]=set;},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){},confirm:()=>true,alert:msg=>{throw Error(msg);}});
+  vm.runInContext('futureRebuyExpanded=true',ctx);
+  const f=futures({contracts:8,steps:2,currentPrice:1420,cuts:[{contracts:1,price:1400,targetPrice:1400,month:'202609',settlementPrice:1445,partial:true,plannedQty:2}]});f.positions=[{month:'202612',contracts:7,settlementPrice:1450}];
+  ctx.renderFutureRebuy(f);let html=els.futureRebuyPanel.innerHTML;
+  assert.match(html,/<summary><h2>1\. 분할 손절<\/h2><span>0 \/ 2회 완료<\/span>/);
+  assert.match(html,/class="card table-card purchase-table sale-table future-cut-table hide-completed no-alert" id="frCutTable"><div class="purchase-table-head"><span>회차<\/span><span>손절 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div><div id="frCutRows">/);
+  assert.match(html,/<div class="purchase-row partial">[^]*data-fcut-partial="true"[^]*<b>1회<\/b><small>남은 1<\/small>[^]*<div class="purchase-qty">2계약<\/div>[^]*data-fcut-qty="0" value="1"/);
+  assert.match(html,/<div class="stage-price"><label class="future-cut-exec" title="1회 체결 환율 수정"><span class="price" aria-hidden="true">1,400원<\/span><input data-fcut-price="0"[^>]*value="1400"[^>]*><\/label><span class="krw future-cut-warn">202609 보유 없음<\/span><\/div>/,'체결 환율은 그 자리에서 고치고, 기록한 월물이 지금 보유에 없을 때만 작은 줄');
+  assert.match(html,/<div class="stage-price"><span class="price">1,300원<\/span><\/div>/,'체결 전 회차는 회차 환율만');
+  assert.doesNotMatch(html.slice(html.indexOf('id="frCuts"'),html.indexOf('id="frBuys"')),/sale-row|class="table-head"|계획상 남은|purchase-sub/,'회차마다 한 줄, 옛 손절 줄 모양을 쓰지 않는다');
+  handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'1'}});
+  assert.deepEqual([f.rebuy.cuts[1].contracts,f.rebuy.cuts[1].month,Object.hasOwn(f.rebuy.cuts[1],'partial')],[2,'202612',false]);
+  handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'0'}});
+  ctx.renderFutureRebuy(f);html=els.futureRebuyPanel.innerHTML;
+  assert.match(html,/<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="false" aria-controls="frCutRows"><span>손절 완료 <b>2회 · 4계약<\/b> · 202612 반영<\/span>/,'반영한 월물은 완료 띠에 모은다');
+  assert.doesNotMatch(html,/future-cut-warn/,'채울 때 지금 월물로 옮긴 기록은 표시할 것이 없다');
+  assert.match(html,/completed-fold-empty">모든 회차의 손절이 완료되었습니다/);
+});
