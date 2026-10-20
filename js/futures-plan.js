@@ -91,9 +91,10 @@ function renderFuturePlanDialog(){
   dialog.innerHTML=`<form id="futurePlanForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futurePlanTitle">분할매수 계획 수정</h2><button class="btn mini ghost" type="button" id="closeFuturePlan" aria-label="수정 창 닫기">닫기</button></div>
     <label class="field future-plan-mode"><span>배분 방식</span><select id="futurePlanMode"><option value="auto"${draft.autoEnabled?" selected":""}>시작·종료 기준으로 자동 배분</option><option value="manual"${draft.autoEnabled?"":" selected"}>기준선별 직접 설정</option></select></label>
     <div id="futureAutoFields"${draft.autoEnabled?"":' class="hidden"'}><div class="future-auto-grid"><label class="field future-auto-start"><span>시작기준선</span><div><input id="futureAutoPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.auto.startLine)||""}" required aria-label="시작 이동평균 기간"><select id="futureAutoStartUnit" aria-label="시작 이동평균 시간축">${lineOptions(movingLineUnit(draft.auto.startLine))}</select></div><small id="futureAutoStartPrice"></small></label>
-    <div class="future-auto-end"><label class="field"><span>종료가격 설정</span><select id="futureAutoEndMode"><option value="price"${draft.endMode==="price"?" selected":""}>직접 가격 입력</option><option value="ma"${draft.endMode==="ma"?" selected":""}>이동평균선 선택</option></select></label>
-    <label class="field" id="futureAutoEndPriceField"${draft.endMode==="ma"?' hidden':""}><span>종료가격 (원)</span><input id="futureAutoEnd" type="number" min="0.0001" step="any" inputmode="decimal" value="${esc(draft.manualEndPrice)}" required${draft.endMode==="ma"?" disabled":""}></label>
-    <div class="field future-auto-start" id="futureAutoEndLineField"${draft.endMode==="ma"?"":" hidden"}><span>종료기준선</span><div><input id="futureAutoEndPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.endLine)||""}" required aria-label="종료 이동평균 기간"${draft.endMode==="ma"?"":" disabled"}><select id="futureAutoEndUnit" aria-label="종료 이동평균 시간축"${draft.endMode==="ma"?"":" disabled"}>${lineOptions(movingLineUnit(draft.endLine))}</select></div><small id="futureAutoEndPrice"></small></div></div>
+    <div class="field future-auto-start future-auto-end"><span id="futureAutoEndLabel">종료가격${draft.endMode==="price"?" (원)":""}</span><div>
+    <input id="futureAutoEnd" type="number" min="0.0001" step="any" inputmode="decimal" value="${esc(draft.manualEndPrice)}" required aria-label="종료가격 (원)"${draft.endMode==="ma"?" hidden disabled":""}>
+    <input id="futureAutoEndPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(draft.endLine)||""}" required aria-label="종료 이동평균 기간"${draft.endMode==="ma"?"":" hidden disabled"}>
+    <select id="futureAutoEndUnit" aria-label="종료가격 기준"><option value=""${draft.endMode==="price"?" selected":""}>직접 입력</option>${units.filter(([value])=>value).map(([value,label])=>`<option value="${value}"${draft.endMode==="ma"&&movingLineUnit(draft.endLine)===value?" selected":""}>${value==="선"?"시선":label}</option>`).join("")}</select></div><small id="futureAutoEndPrice"${draft.endMode==="ma"?"":" hidden"}></small></div>
     <label class="field future-auto-contracts"><span>총 매수 계약 수</span><input id="futureAutoContracts" type="number" min="1" max="100" step="1" inputmode="numeric" value="${esc(draft.auto.contracts)}" required></label></div>
     <fieldset class="future-auto-units"><legend>배분할 기준선</legend>${units.filter(([value])=>value).map(([value,label])=>`<label><input type="checkbox" data-future-auto-unit="${value}"${draft.auto.units.includes(value)?" checked":""}>${label}</label>`).join("")}</fieldset>
     <div id="futureAutoPreview" class="future-auto-preview" aria-live="polite"></div><p class="hint future-auto-hint">시세가 있는 기준선으로 회차와 계약 수를 계산합니다. 이미 매수한 계약은 포함하고, 남은 계약만 자동 배분합니다.</p></div>
@@ -117,19 +118,20 @@ function renderFuturePlanDialog(){
   const readAuto=()=>{
     const unit=$("futureAutoStartUnit").value;
     $$("[data-future-auto-unit]").forEach(input=>{input.disabled=input.dataset.futureAutoUnit===unit;if(input.disabled)input.checked=true;});
-    draft.manualEndPrice=$("futureAutoEnd").value;draft.endLine=`${$("futureAutoEndPeriod").value}${$("futureAutoEndUnit").value}`;
+    draft.manualEndPrice=$("futureAutoEnd").value;
+    if(draft.endMode==="ma")draft.endLine=`${$("futureAutoEndPeriod").value}${$("futureAutoEndUnit").value}`;
     draft.auto={...draft.auto,startLine:`${$("futureAutoPeriod").value}${unit}`,endPrice:$("futureAutoEnd").value,contracts:$("futureAutoContracts").value,units:[...$$("[data-future-auto-unit]")].filter(x=>x.checked).map(x=>x.dataset.futureAutoUnit)};
     if(draft.endMode==="ma"){draft.auto.endLine=draft.endLine;if(Number(draft.manualEndPrice)>0)draft.auto.manualEndPrice=Number(draft.manualEndPrice);else delete draft.auto.manualEndPrice;}
     else{delete draft.auto.endLine;delete draft.auto.manualEndPrice;}
     draft.autoDirty=true;$("futurePlanError").textContent="";updateAutoPreview();
   };
   $$("#futureAutoPeriod, #futureAutoEnd, #futureAutoEndPeriod, #futureAutoContracts").forEach(input=>input.oninput=readAuto);
-  $("futureAutoEndMode").onchange=e=>{
-    draft.endMode=e.target.value;const ma=draft.endMode==="ma";
-    $("futureAutoEndPriceField").hidden=ma;$("futureAutoEnd").disabled=ma;
-    $("futureAutoEndLineField").hidden=!ma;$("futureAutoEndPeriod").disabled=!ma;$("futureAutoEndUnit").disabled=!ma;readAuto();
+  $("futureAutoEndUnit").onchange=e=>{
+    const ma=!!e.target.value;draft.endMode=ma?"ma":"price";
+    $("futureAutoEnd").hidden=ma;$("futureAutoEnd").disabled=ma;
+    $("futureAutoEndPeriod").hidden=!ma;$("futureAutoEndPeriod").disabled=!ma;
+    $("futureAutoEndPrice").hidden=!ma;$("futureAutoEndLabel").textContent=ma?"종료가격":"종료가격 (원)";readAuto();
   };
-  $("futureAutoEndUnit").onchange=readAuto;
   $("futureAutoStartUnit").onchange=readAuto;$$("[data-future-auto-unit]").forEach(input=>{input.onchange=readAuto;input.disabled=input.dataset.futureAutoUnit===movingLineUnit(draft.auto.startLine);if(input.disabled)input.checked=true;});
   $("futurePlanMode").onchange=e=>{draft.autoEnabled=e.target.value==="auto";$("futureAutoFields").classList.toggle("hidden",!draft.autoEnabled);$("futureManualFields").classList.toggle("hidden",draft.autoEnabled);$("futurePlanError").textContent="";updateAutoPreview();};
   updateAutoPreview();
