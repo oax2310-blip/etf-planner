@@ -2,7 +2,7 @@
 // 손절·재매수 계산은 rebuy.js에 둔다(비공개 시세 수집 작업도 같은 함수를 사용). 아래 보유 반영은 화면 쪽에서만 하며 계산 함수는 기록만 읽는다.
 // 손절은 특수한 상황이라 실행 전·진행 중·완료 모두 섹션 전체를 한 줄로 접어 두고(futureRebuyFoldLine), 매매 시점(futureCutDue·futureBuyDue)이나
 // 보유 미반영·체결 초과 경고가 새로 생기면 펼친다(futureRebuyOpenNow). 펼치기·접기로 고른 상태는 다음에 새 매매 시점·경고가 생길 때까지 유지한다.
-// 접힌 줄 전체와 펼친 제목(왼쪽 화살표)을 누르면 펼치고 접는다. 화면 상태라 저장·동기화하지 않는다(페이지를 새로 열면 다시 접힘). 손절·재매수 알림으로 이동하면 push.js가 펼친다.
+// 접힌 줄 전체와 펼친 제목(왼쪽 화살표)을 누르면 펼치고 접는다. 접힌 줄은 '보유·계산 기준'과 같은 details 카드다(배경 있는 button은 삼성 인터넷 다크 색 변환에서 혼자 밝아짐). 화면 상태라 저장·동기화하지 않는다(페이지를 새로 열면 다시 접힘). 손절·재매수 알림으로 이동하면 push.js가 펼친다.
 let futureRebuyExpanded=false,futureRebuySeen=[];
 // 펼친 화면의 '1. 분할 손절'·'2. 반등 단계별 재매수' 표도 그 표의 회차가 매매 시점(futureCutDue·futureBuyDue)일 때만 기본으로 펼친다. 사용자가 기본과 다르게 열거나 접은 상태와
 // 표 안에서 체크·입력한 뒤의 열린 상태는 다시 그려도 유지하고(화면 상태, 저장·동기화 안 함), 다른 회차가 새로 매매 시점이 되면 기본으로 돌린다.
@@ -216,8 +216,8 @@ function renderFutureRebuy(f){
   const un=futureRebuyUnlinked(f),unText=[un.cuts?`손절 ${un.cuts}계약`:"",un.buys?`재매수 ${un.buys}계약`:""].filter(Boolean).join("·");
   if(!futureRebuyOpenNow([cutKey&&`cut:${cutKey}`,buyKey&&`buy:${buyKey}`,unText&&`unlinked:${unText}`,(s.overSold||s.overBought)&&"over"].filter(Boolean))){
     const {text,due}=futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue);
-    $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><button class="card rebuy-fold${due?" due":""}" type="button" id="frToggle" aria-expanded="false"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text}</span></button></section>`;
-    $("frToggle").onclick=()=>{futureRebuyExpanded=true;renderFutures();};
+    $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><details class="card rebuy-fold${due?" due":""}"><summary id="frToggle"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text}</span></summary></details></section>`;
+    $("frToggle").onclick=e=>{e.preventDefault();futureRebuyExpanded=true;renderFutures();};
     return;
   }
   // 재매수는 ETF 재매수 화면과 같은 규칙: 평균 손절 환율 이하 단계가 첫 단계부터 이어지는 만큼 나누고, 단계마다 다음 단계 환율까지 3회로 나눠 산다.
