@@ -135,7 +135,7 @@ function futureRebuyEditError(f,values){
   return "이탈 전 계약 수는 정수로, 분할 횟수는 1~60으로, 손절 비중은 0~100%로 입력하세요.";
 }
 function openFutureRebuyDialog(){
-  const f=state.futures,r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?shown(v):"";
+  const f=state.futures,r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?futureShown(v):"";
   const field=(key,label,value,attrs,off=s.started)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" type="number" ${attrs} value="${value}"${off?" disabled":""}></label>`;
   const hint=s.started?"재매수 시작 후 손절 기준은 체크 기록 초기화 후 바꿀 수 있습니다.":locked?"기준을 바꿔도 체크한 손절의 계약 수·환율은 그대로 두고 남은 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":"손절 비중은 0~100%로 입력합니다(기본 50%). 손절 계약 수보다 많은 분할 횟수는 자동으로 줄입니다.";
   dialog.innerHTML=`<form id="futureRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyTitle">손절 기준 수정</h2><button class="btn ghost" type="button" data-close-future-rebuy>닫기</button></div>
@@ -208,7 +208,7 @@ function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue){
   return {text:line+held,due:!!(cutDue||buyDue||broken)};
 }
 function renderFutureRebuy(f){
-  const r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),cur=Number(r.currentPrice)||0,pctText=shown(s.sellPct),opt=v=>Number(v)>0?shown(v):"",px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—";
+  const r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),cur=Number(r.currentPrice)||0,pctText=shown(s.sellPct),opt=v=>Number(v)>0?futureShown(v):"",px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—";
   const cutPx=v=>Number(v)>0?`${decimal.format(v)}원`:"—";
   const nextTr=s.tranches.find(x=>!x.done&&x.amount>0),auto=fe?'<small class="auto-tag">(자동)</small>':"";
   const trName=x=>`<span class="tr-name">${esc(movingLineText(s.stages[x.i].name))}${s.stages[x.i].done?"":`<span class="tr-no">${x.t+1}</span>`}</span>`,trText=x=>`${esc(movingLineText(s.stages[x.i].name))}${s.stages[x.i].done?"":` ${x.t+1}회차`}`;
