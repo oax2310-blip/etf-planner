@@ -43,12 +43,14 @@ function alignAlertHistorySnapshots(local,remote,base){
   state.alertHistory=merged;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
   return {local:apply(docs[0]),remote:apply(docs[1]),base:apply(docs[2])};
 }
-function alertHistoryPrice(value,currency){
+// 달러선물 알림은 달러선물 화면(futures.js fmtPrice)과 같게 소수 둘째 자리, 나머지는 넷째 자리까지 보인다. 저장된 가격은 그대로 둔다.
+function alertHistoryPrice(value,item){
   if(typeof value!=="number")return "확인 불가";
-  const number=value.toLocaleString("ko-KR",{maximumFractionDigits:4});return currency==="USD"?`$${number}`:currency==="KRW"?`${number}원`:number;
+  const future=typeof stockNames==="object"&&stockNames.alertKind(item).menu==="달러선물",currency=item?.currency;
+  const number=value.toLocaleString("ko-KR",{maximumFractionDigits:future?2:4});return currency==="USD"?`$${number}`:currency==="KRW"?`${number}원`:number;
 }
 function alertHistoryCondition(item){
-  const target=alertHistoryPrice(item.ma,item.currency);
+  const target=alertHistoryPrice(item.ma,item);
   if(item.condition)return `${item.line} · 현재가가 기준값 ${target} ${item.condition==="up"?"이상에 도달":item.condition==="below"?"미만으로 이탈":"이하에 도달"}`;
   if(item.trigger==="near"&&typeof item.tolerancePct==="number")return `${item.line} · 기준선 ${target}의 ±${item.tolerancePct}% 범위에 진입`;
   if(item.trigger==="cross")return `${item.line} · 기준선을 ${item.direction==="up"?"아래에서 위로":item.direction==="down"?"위에서 아래로":"위·아래로"} 통과`;
@@ -67,7 +69,7 @@ function alertHistoryCard(item,names=null){
       <span class="alert-history-meta"><span class="alert-history-type">${esc(type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
       <span class="alert-history-name">${esc(name)}${name!==item.ticker?`<small>${esc(item.ticker)}</small>`:""}<span aria-hidden="true">↗</span></span>
       <span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span>
-      <span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item.currency))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item.currency))}</strong></span></span>
+      <span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span>
       ${item.krOpenReminder&&item.observedAt?`<span class="alert-history-note">미국 신호 ${esc(alertHistoryTime(item.observedAt))}${item.asOf?` · 시세 기준일 ${esc(item.asOf)}`:""}</span>`:""}
       ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}
     </button><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(name)} 알림 삭제">삭제</button></div>
