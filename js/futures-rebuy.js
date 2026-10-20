@@ -164,7 +164,7 @@ function openFutureRebuyDialog(){
 // 손절 시점(현재 환율 ≤ 회차 환율)·재매수 시점(현재 환율 ≥ 회차 환율)은 주황. toggle은 신저점 이탈 알림 스위치, trText는 재매수 회차 이름(이스케이프됨).
 function futureRebuyTrack(r,s,cur,toggle,trText){
   const hold=s.hold,sold=Math.min(s.sold,hold),back=Math.min(s.rebought,sold),green=hold-sold,filled=green+back,keep=Math.max(0,hold-s.goal),low=Number(r.lowPrice)||0;
-  const cutPx=v=>`${decimal.format(v)}원`,px2=v=>`${fmtPrice(Math.round(v*100)/100)}원`;
+  const cutPx=v=>`${decimal.format(v)}원`,px2=v=>`${fmtPrice(v)}원`;
   const pct=p=>{const g=(p/cur-1)*100;return `${g>0?"+":""}${new Intl.NumberFormat("ko-KR",{maximumFractionDigits:Math.abs(g)<1?2:1}).format(g)}%`;},gap=p=>cur>0&&p>0?pct(p):"";
   const nextCut=s.ready&&!s.started?s.cuts.find(c=>!c.done&&c.qty>0):null,nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
   const trPx=x=>Number(x.price)>0?`${x.est?"≈":""}${px2(Number(x.price))}`:"기준가 없음";
@@ -195,7 +195,7 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
 // (펼치면 보이고, 현재 환율은 화면 맨 위에 있음). 손절·재매수 시점과 실행 전 신저점 이탈은 주황(due). 진행 상태 이름은 보유 계약 카드 칩과 같다.
 function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue){
   const px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—",cutAt=c=>`${decimal.format(c.price)}원 이하`;
-  const trAt=x=>Number(x.price)>0?`${x.est?"≈":""}${fmtPrice(Math.round(x.price*100)/100)}원 이상`:"기준가 없음";
+  const trAt=x=>Number(x.price)>0?`${x.est?"≈":""}${fmtPrice(x.price)}원 이상`:"기준가 없음";
   const low=Number(r.lowPrice)||0,broken=!locked&&s.ready&&cur>0&&cur<low,nextCut=s.ready&&!s.started?s.cuts.find(c=>!c.done&&c.qty>0):null,nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
   const held=locked&&s.hold?` · 보유 ${s.held}/${s.hold}`:"";
   const line=cutDue?`<b>손절 시점</b> · ${cutAt(cutDue)}`:buyDue?`<b>재매수 시점</b> · ${trAt(buyDue)}`
@@ -221,7 +221,6 @@ function renderFutureRebuy(f){
     return;
   }
   // 재매수는 ETF 재매수 화면과 같은 규칙: 평균 손절 환율 이하 단계가 첫 단계부터 이어지는 만큼 나누고, 단계마다 다음 단계 환율까지 3회로 나눠 산다.
-  const px2=v=>px(Math.round(v*100)/100);
   const notify=(kind,key,label,done,lead)=>typeof futureRebuyAlertEnabled==="function"?tradeAlertToggle(futureRebuyAlertEnabled(f,kind,key),`data-frebuy-alert="${kind}"${key==null?"":` data-alert-key="${esc(key)}"`}`,label,done,lead):"";
   const all=kind=>typeof futureRebuyAllButtons==="function"?futureRebuyAllButtons(kind):"";
   const linkText=rec=>`<div class="sub">${rec?.month?`${esc(rec.month)} 보유 반영`:rec?.manual?"직접 반영":"보유 미반영"}</div>`;
@@ -232,11 +231,11 @@ function renderFutureRebuy(f){
   // 분할 범위 단계(또는 산 단계)는 회차마다 한 줄(첫 줄에 단계 기준 환율·알림), 나머지 단계는 기준 환율만 한 줄.
   const buyRows=s.stages.map((x,i)=>{
     const own=s.tranches.filter(y=>y.i===i),rows=[...own,...s.skipped.filter(y=>y.i===i).map(y=>({...y,skip:true}))].sort((a,b)=>a.t-b.t),price=Number(x.price)||0,nextName=esc(movingLineText(s.stages[i+1]?.name||""));
-    const priceInput=`<span class="exec-fields"><input data-fbuy-price="${i}" type="number" min="0" step="any" value="${opt(price)}" placeholder="${s.est[i]?`≈${fmtPrice(Math.round(s.est[i]*100)/100)}`:"기준가"}" aria-label="${esc(movingLineText(x.name))} 기준 환율">원${autoKey(x.name)?auto:""}</span>${notify("buys",`stage:${i}`,movingLineText(`${x.name} 재매수`),own.length>0&&own.every(y=>y.done))}`;
+    const priceInput=`<span class="exec-fields"><input data-fbuy-price="${i}" type="number" min="0" step="any" value="${opt(price)}" placeholder="${s.est[i]?`≈${fmtPrice(s.est[i])}`:"기준가"}" aria-label="${esc(movingLineText(x.name))} 기준 환율">원${autoKey(x.name)?auto:""}</span>${notify("buys",`stage:${i}`,movingLineText(`${x.name} 재매수`),own.length>0&&own.every(y=>y.done))}`;
     if(!own.length)return `<div class="sale-row"><label class="check"><input type="checkbox" disabled>${esc(movingLineText(x.name))}</label><div class="stage-price">${priceInput}</div><div class="shares">${s.sold?"배분 없음":"손절 후 계산"}</div><div class="status">대기</div></div>`;
     return rows.map((y,k)=>{
       const due=!y.skip&&!y.done&&y.amount>0&&cur>0&&y.price>0&&cur>=y.price,nextUp=y===nextTr,where=y.step?`${esc(movingLineText(x.name))}→${nextName} ${y.t}/${TRANCHES}`:y.t?"단계 환율과 같음":"";
-      const pricePart=k===0?priceInput:`<span class="price">${y.price>0?`${y.est?"≈":""}${px2(y.price)}`:"—"}</span><span class="krw">${where}</span>`;
+      const pricePart=k===0?priceInput:`<span class="price">${y.price>0?`${y.est?"≈":""}${px(y.price)}`:"—"}</span><span class="krw">${where}</span>`;
       if(y.skip)return `<div class="sale-row"><label class="check"><input type="checkbox" disabled>${trName(y)}</label><div class="stage-price">${pricePart}</div><div class="shares">—<div class="sub">${y.est?"추정 환율이라 제외":s.sellAvg&&y.price>s.sellAvg?"평균 손절 환율 위":"계획 밖"}</div></div><div class="status">안 삼</div></div>`;
       const shares=y.done?`<span class="exec-fields"><input class="qty" data-fbuy-qty="${i}:${y.t}" type="number" min="1" step="1" value="${y.qty}" aria-label="${trText(y)} 재매수 계약 수">계약 <input data-fbuy-exec="${i}:${y.t}" type="number" min="0" step="any" value="${opt(y.execPrice)}" aria-label="${trText(y)} 재매수 체결 환율">원</span>${linkText(futureFillOf(f,i,y.t)?.[0])}`:!s.sold?"손절 후 계산":y.amount?`${y.amount}계약`:"배분 없음";
       return `<div class="sale-row ${y.done?"done":""} ${due?"due":""}"><label class="check"><input type="checkbox" data-fbuy="${i}:${y.t}" ${y.done?"checked":""} ${!y.done&&!y.amount?"disabled":""}>${trName(y)}</label><div class="stage-price">${pricePart}</div><div class="shares">${shares}</div><div class="status ${y.done?"done":due||nextUp?"due":""}">${y.done?"재매수 완료":due?"재매수 시점":nextUp?"다음 신호":"대기"}</div></div>`;

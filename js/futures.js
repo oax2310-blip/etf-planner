@@ -2,9 +2,9 @@
 // 시세는 prices.js, 단계는 ma-ladder.js, 손절·재매수 계산은 rebuy.js.
 // DOM 없는 계산 호출을 위해 함수 밖에서 화면을 건드리지 않는다.
 const monthOk = m => /^\d{6}$/.test(m) && Number(m.slice(4)) >= 1 && Number(m.slice(4)) <= 12;
-// 달러선물 가격은 소수 둘째 자리까지만 보인다(계산·저장은 원래 값). fmtPrice는 글자, futureShown은 입력칸 값(futures-plan.js·futures-rebuy.js 공용).
-const fmtPrice = v => Number(v).toLocaleString("ko-KR",{maximumFractionDigits:2});
-const futureShown = v => Number.isFinite(Number(v)) ? String(Math.round(Number(v)*100)/100) : "";
+// 달러선물 가격은 소수 첫째 자리까지만 보인다(계산·저장은 원래 값). fmtPrice는 글자, futureShown은 입력칸 값(futures-plan.js·futures-rebuy.js 공용).
+const fmtPrice = v => Number(v).toLocaleString("ko-KR",{maximumFractionDigits:1});
+const futureShown = v => Number.isFinite(Number(v)) ? String(Math.round(Number(v)*10)/10) : "";
 const nearestMonth = f => f.positions.filter(p=>Number(p.contracts)>0 && monthOk(String(p.month))).map(p=>String(p.month)).sort()[0] || "";
 const sortPositions = f => f.positions.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
 // 같은 월물은 계약 수 가중평균으로 합침; settlementPrice는 화면 '단순평균가'. 선형 손익이라 따로 둘 때와 기대손익이 같다.

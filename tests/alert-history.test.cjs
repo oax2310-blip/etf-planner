@@ -130,12 +130,12 @@ test('잘못된 재알림 필드는 합치지 않고 일반 알림으로만 저�
   h.ctx.acceptAlertHistory([event(FIRST),event('newer',{occurredAt:'2026-10-15T00:00:00Z'}),followUp('r'.repeat(64),1,'2026-10-16T00:45:00Z')]);
   assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(item=>item.id)),[FIRST,'newer']);
 });
-test('달러선물 알림의 당시 가격·기준값은 달러선물 화면처럼 소수 둘째 자리까지, 다른 알림은 넷째 자리까지 보인다',()=>{
+test('달러선물 알림의 당시 가격·기준값은 달러선물 화면처럼 소수 첫째 자리까지, 다른 알림은 넷째 자리까지 보인다',()=>{
   const h=load();vm.runInContext(source('stock-names.js'),h.ctx);
   const future=event('future',{ticker:'202612',ruleId:'trade:future:0:2',line:'달러선물 25일선 2차',name:'',price:1371.6666666666667,ma:1371.6666666666667,currency:'KRW',condition:'below'});
   h.ctx.acceptAlertHistory([future,event('etf')]);
   const items=plain(h.ctx.state.alertHistory.items),card=id=>h.ctx.alertHistoryCard(items.find(item=>item.id===id));
-  assert.match(card('future'),/당시 가격 <strong>1,371\.67원<\/strong>.*기준값 <strong>1,371\.67원<\/strong>/s);assert.match(card('future'),/기준값 1,371\.67원 미만으로 이탈/);
+  assert.match(card('future'),/당시 가격 <strong>1,371\.7원<\/strong>.*기준값 <strong>1,371\.7원<\/strong>/s);assert.match(card('future'),/기준값 1,371\.7원 미만으로 이탈/);
   assert.match(card('etf'),/기준값 <strong>\$100\.1234<\/strong>/);
   assert.equal(items.find(item=>item.id==='future').ma,1371.6666666666667,'저장된 가격은 그대로');
 });
