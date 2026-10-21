@@ -47,7 +47,8 @@ function ui(state = {}, {alloc = allocation(), link = true} = {}) {
   const click = (node, attr, dataset = {}) => node.onclick({target: {closest: sel => sel.split(',').includes(`[${attr}]`) ? {dataset} : null}});
   const pick = itemId => click(els.rebuyItemList, 'data-pick', {pick: itemId});
   const repick = () => click(els.rebuyPicked, 'data-repick');
-  return {ctx, els, form, listeners, assetStore, pick, repick, items: () => ctx.state.rebuy?.items || []};
+  const rules = () => { els.rRules.onclick(); return els.rebuyRuleDialog.innerHTML; }; // 손절 기준 창(현재가·이탈 전 보유는 이 창에 읽기 전용)
+  return {ctx, els, form, listeners, assetStore, pick, repick, rules, items: () => ctx.state.rebuy?.items || []};
 }
 // alloc-link.js의 holding()과 같은 계산(linkSummary 사용) — 파일 자체는 DOM에 의존하므로 계산 함수만 그대로 부른다.
 function linkSummaryOf(ctx, store, ticker) {
@@ -154,10 +155,11 @@ test('수정 창: 기록 전에 다른 종목 코드로 바꾸면 이전 종목�
 
 test('기준 입력: 이탈 전 보유는 읽기 전용으로 자산 배분 보유를 따르고, 저장은 입력 때만, 첫 손절 기록부터 고정한다', () => {
   const state = {tab: 'rebuy', rebuy: {items: [{id: 'a', name: '가상국내ETF', ticker: '900001', lowPrice: 10000, shares: 80, stepPct: 1, sellPct: 1}]}};
-  const {ctx, els, listeners, assetStore, items} = ui(state);
+  const {ctx, els, listeners, assetStore, items, rules} = ui(state);
   const hold = () => vm.runInContext('holdShares(rebuyPick())', ctx);
-  assert.match(els.rebuyMain.innerHTML, /이탈 전 보유<small class="auto-tag">\(자산 배분\)<\/small><\/span><input id="rHold" type="text" value="150주"[^>]*readonly/);
-  assert.match(els.rebuyMain.innerHTML, /자산 배분 보유\(2개 계좌 150주\)를 불러옵니다/);
+  assert.match(rules(), /이탈 전 보유<small class="auto-tag">\(자산 배분\)<\/small><\/span><input id="rHold" type="text" value="150주"[^>]*readonly/);
+  assert.match(rules(), /자산 배분 보유\(2개 계좌 150주\)를 불러옵니다/);
+  assert.match(els.rebuyMain.innerHTML, /<span>이탈 전 150주 · 30회 표시<\/span>/, '기준 줄에도 이탈 전 보유');
   assert.equal(hold(), 150, '계산도 자산 배분 보유');
   assert.equal(items()[0].shares, 80, '그리기만 해서는 저장하지 않는다');
   vm.runInContext('editRebuy()', ctx);
@@ -166,7 +168,8 @@ test('기준 입력: 이탈 전 보유는 읽기 전용으로 자산 배분 보�
   assetStore.doc.allocation.groups[1].items[0].shares = 28; // 손절이 자산 배분에 반영된 뒤
   listeners[0]('change');
   assert.equal(hold(), 150, '기록 뒤에는 저장한 값으로 고정');
-  assert.match(els.rebuyMain.innerHTML, /이탈 전 보유<small class="auto-tag">\(고정\)<\/small><\/span><input id="rHold" type="text" value="150주"/);
+  assert.match(rules(), /이탈 전 보유<small class="auto-tag">\(고정\)<\/small><\/span><input id="rHold" type="text" value="150주"/);
+  assert.match(els.rebuyMain.innerHTML, /<span>이탈 전 150주\(고정\) · 30회 표시<\/span>/);
   vm.runInContext('editRebuy()', ctx);
   assert.equal(items()[0].shares, 150, '기록이 있으면 입력 때도 바꾸지 않는다');
   items()[0].cuts = [];
@@ -174,12 +177,12 @@ test('기준 입력: 이탈 전 보유는 읽기 전용으로 자산 배분 보�
 });
 
 test('기준 입력: 자산 배분에 없는 종목은 저장된 보유로 계산하고 등록을 안내한다', () => {
-  const {els} = ui({rebuy: {items: [{id: 'a', name: '없는 종목', ticker: '900099', lowPrice: 10000, amount: 1000}]}});
-  assert.match(els.rebuyMain.innerHTML, /<input id="rHold" type="text" value="1,000만원 ≈ 1,000주"/);
-  assert.match(els.rebuyMain.innerHTML, /자산 배분에 이 종목 코드의 보유가 없어 저장된 보유로 계산합니다/);
-  const none = ui({rebuy: {items: [{id: 'a', name: '없는 종목', ticker: '900099', lowPrice: 10000}]}}).els.rebuyMain.innerHTML;
-  assert.match(none, /<input id="rHold" type="text" value="" placeholder="자산 배분 보유 없음"/);
-  assert.match(none, /손절 수량을 계산할 수 없습니다/);
+  const {rules} = ui({rebuy: {items: [{id: 'a', name: '없는 종목', ticker: '900099', lowPrice: 10000, amount: 1000}]}});
+  assert.match(rules(), /<input id="rHold" type="text" value="1,000만원 ≈ 1,000주"/);
+  assert.match(rules(), /자산 배분에 이 종목 코드의 보유가 없어 저장된 보유로 계산합니다/);
+  const none = ui({rebuy: {items: [{id: 'a', name: '없는 종목', ticker: '900099', lowPrice: 10000}]}});
+  assert.match(none.rules(), /<input id="rHold" type="text" value="" placeholder="자산 배분 보유 없음"/);
+  assert.match(none.els.rebuyMain.innerHTML, /손절 수량을 계산할 수 없습니다/, '보유가 없으면 본 화면 보유 카드에서도 안내');
 });
 
 test('자산 쪽 보유가 바뀌면 재매수 화면을 다시 그려 자산 배분 줄·이탈 전 보유에 바로 반영한다 (입력 중에는 건너뜀)', () => {
@@ -205,7 +208,7 @@ test('자산 쪽 보유가 바뀌면 재매수 화면을 다시 그려 자산 �
   listeners[0]('sync');
   assert.match(els.rebuyMain.innerHTML, /130주/, '무관한 알림에는 다시 그리지 않는다');
   listeners[0]('change');
-  assert.match(els.rebuyMain.innerHTML, /value="170주"/);
+  assert.match(els.rebuyMain.innerHTML, /이탈 전 170주 ·/);
 });
 
 test('가져오기 변환: 수량 합이 없으면 평가액(미국은 환율로 달러 환산), 값이 없으면 null', () => {
