@@ -77,3 +77,9 @@ test('이동평균 종료 설정은 변경 없이 불러오고 잘못된 필드 
   data.futures.buyPlan.endLine={};assert.throws(()=>validate.planner(data),/endLine/);
   data.futures.buyPlan.endLine='19일선';data.futures.buyPlan.manualEndPrice='잘못된 값';assert.throws(()=>validate.planner(data),/manualEndPrice/);
 });
+
+test('달러선물 손절 하단선은 변경 없이 불러오고 문자열이 아니면 거부한다',()=>{
+  const data=planner();data.futures.rebuy={lowPrice:1400,floorLine:'20개월선',floorPrice:1310.46,auto:{at:'2026-10-04T00:00:00Z',floorPrice:1310.46}};
+  const before=JSON.stringify(data);assert.equal(validate.planner(data),data);assert.equal(JSON.stringify(data),before);
+  data.futures.rebuy.floorLine=20;assert.throws(()=>validate.planner(data),/floorLine/);
+});

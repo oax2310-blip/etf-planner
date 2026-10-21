@@ -297,7 +297,10 @@ function futureRebuyHold(f){
 // 손절 목표 = floor(고정 이탈 전 계약 × sellPct/100). 비중은 0~100%, 옛 기록·빈 입력은 50%; 읽을 때 필드를 만들지 않는다.
 const futureRebuySellPct = f => {const raw=futureRebuyOf(f).sellPct,v=Number(raw);return raw==null||raw===""||!Number.isFinite(v)||v<0||v>100?50:v;};
 const futureCutGoal = (f,pct=futureRebuySellPct(f),hold=futureRebuyHold(f)) => Math.floor(hold*pct/100+1e-9);
-// 신저점~직접 하단을 고르게 나눠 손절 목표 계약만 손절. 회차 수≤목표 계약, 1회면 하단.
+// 손절 하단 기준선(floorLine): N일선·N주선·N개월선(입력의 월선·달선도 N개월선)만 받고, 아니면 "". 고르면 prices.js fillPrices가 보유 근월물 시세로 floorPrice를 채운다.
+const futureFloorLine = name => {const line=movingLineName(name);return ["일선","주선","개월선"].includes(movingLineUnit(line))?line:"";};
+// 신저점~하단(직접 가격, 또는 하단선 시세로 채운 floorPrice)을 고르게 나눠 손절 목표 계약만 손절. 회차 수≤목표 계약, 1회면 하단.
+// 하단선 시세가 없거나 신저점 이상이면 기록한 회차만 남고(ready false) 하단선이 움직이면 기록 없는 회차만 새 하단으로 다시 나눈다.
 // cuts[i] = 체결 기록 {contracts, price, targetPrice}. 부분 체결만 partial·plannedQty(그 회차 계획 계약)로 남은 계약을 그 회차에 고정한다(입력 때 생성).
 // partial 없는 기록(옛 기록 포함)은 완료로 읽는다. 부분 체결 회차의 남은 계약은 손절 목표 안에서만 남기고(넘으면 줄이고, 0이면 완료로 읽음),
 // 회차 결과의 qty는 체결(기록 없는 회차는 배정) 계약, plannedQty는 기록한 회차의 계획 계약이다.
@@ -410,18 +413,28 @@ function futureRebuyWithStart(f,name,entry=null,endText=futureRebuyOf(f).endLine
 }
 function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(stageTouched);}
 function futureRebuyLocked(f){const r=futureRebuyOf(f);return (Array.isArray(r.cuts)?r.cuts:[]).some(Boolean)||futureRebuyBought(f);}
-// 손절 기준(신저점·하단·이탈 전 계약 수·비중·분할 횟수)은 ETF 재매수처럼 손절 체결 뒤에도 바꿀 수 있다:
+// 손절 기준(신저점·하단·하단선·이탈 전 계약 수·비중·분할 횟수)은 ETF 재매수처럼 손절 체결 뒤에도 바꿀 수 있다:
 // 체결 기록(계약 수·회차 환율 targetPrice)은 그대로 두고 예정 회차만 새 기준으로 다시 나눈다(futureCutPlan).
 // 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에는 남은 손절이 멈추므로 현재 환율만 바꾼다.
 // 비중을 비우면 필드를 지워 기본 50%로 돌아간다; 이 경우에도 이미 판 수량보다 목표가 작아지면 거절한다.
+// 하단선(floorLine, futureFloorLine)을 고르거나 바꾸면 floorPrice와 자동 채움 표시(auto.floorPrice)를 지워 다음 시세 채우기를 기다리고,
+// 빈 글자로 끄면 마지막 floorPrice를 직접 하단으로 남긴다. 직접 하단(floorPrice)을 넣으면 하단선을 끈다.
 function setFutureRebuyField(f,key,text){
-  if(!["lowPrice","floorPrice","contracts","sellPct","steps","currentPrice"].includes(key)||key!=="currentPrice"&&futureRebuyBought(f))return false;
+  if(!["lowPrice","floorPrice","floorLine","contracts","sellPct","steps","currentPrice"].includes(key)||key!=="currentPrice"&&futureRebuyBought(f))return false;
+  if(key==="floorLine"){
+    const line=futureFloorLine(text);if(text.trim()&&!line)return false;
+    if(line===(futureRebuyOf(f).floorLine||""))return; // 그대로면 기록을 만들지 않는다
+    const r=editFutureRebuy(f);if(r.auto)delete r.auto.floorPrice;
+    if(line){r.floorLine=line;delete r.floorPrice;}else delete r.floorLine;
+    return;
+  }
   const empty=text.trim()==="",v=empty?0:Number(text);if(!Number.isFinite(v)||v<0)return false;
   const r=futureRebuyOf(f),sold=(Array.isArray(r.cuts)?r.cuts:[]).reduce((n,c)=>n+futureRebuyQty(c?.contracts),0);
   if(key==="sellPct"&&(v>100||futureCutGoal(f,empty?50:v)<sold)||key==="contracts"&&futureCutGoal(f,futureRebuySellPct(f),v)<sold)return false;
   if(key==="lowPrice"&&v>0&&Number(r.floorPrice)>0&&v<=Number(r.floorPrice)||key==="floorPrice"&&v>0&&Number(r.lowPrice)>0&&v>=Number(r.lowPrice))return false;
   if(key==="steps"&&(!Number.isInteger(v)||v<1||v>60)||key==="contracts"&&!Number.isInteger(v))return false;
   const edited=editFutureRebuy(f);if(v>0||key==="contracts"||key==="sellPct"&&!empty)edited[key]=v;else delete edited[key];
+  if(key==="floorPrice"&&edited.floorLine){delete edited.floorLine;if(edited.auto)delete edited.auto.floorPrice;}
 }
 // 체크: 기록 없는 회차는 배정 계약, 부분 체결 회차는 계획 계약까지 채워 완료한다(setFutureCutQty). 해제는 그 회차 기록을 지운다.
 function setFutureCutDone(f,i,on){

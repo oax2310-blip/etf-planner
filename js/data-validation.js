@@ -49,7 +49,7 @@ const externalData = (()=>{
     records(x.buys,`${p}.buys`,(b,q)=>{trade(b,q);strings(b,keys,q);flags(b,flagKeys,q);},true);
   });}
   function rebuy(v,path){
-    record(v,path);strings(v,["id","name","ticker","note","currency","startLine","endLine","plannedEndLine","resumeEndLine"],path);
+    record(v,path);strings(v,["id","name","ticker","note","currency","startLine","endLine","floorLine","plannedEndLine","resumeEndLine"],path);
     numbers(v,["lowPrice","floorPrice","currentPrice","finalPrice","amount","shares","contracts","stepPct","sellPct","targetPct"],path);
     numbers(v,["steps"],path,1,10000,true);
     numbers(v,["endPrice"],path,0);

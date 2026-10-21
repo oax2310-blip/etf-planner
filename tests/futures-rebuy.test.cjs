@@ -269,3 +269,45 @@ test('부분 체결한 손절 회차는 남은 계약 알림을 이어 가고, �
   assert.deepEqual([c.qty,c.plannedQty,c.done,Object.hasOwn(c,'partial')],[2,2,true,false],'목표(2계약)를 다 팔았으면 남은 계약을 두지 않는다');
   assert.equal(f.rebuy.cuts[0].plannedQty,3,'읽기만으로 기록을 고치지 않는다');
 });
+
+test('손절 하단선(일·주·월선)은 보유 근월물 시세로 하단을 채우고 기록 없는 회차만 다시 나누며 직접 하단으로 되돌린다',()=>{
+  const ctx=load(),fresh={positions:[],levels:[]},prices=s=>plain(s.cuts.map(c=>Math.round(c.price*100)/100));
+  for(const v of ['25선','25시선','60분봉','0일선','401주선','abc'])assert.equal(ctx.setFutureRebuyField(fresh,'floorLine',v),false,v);
+  assert.notEqual(ctx.setFutureRebuyField(fresh,'floorLine',''),false);assert.equal(fresh.rebuy,undefined,'선택 안 함 그대로면 기록을 만들지 않는다');
+  const f=futures({contracts:20,sellPct:100,notify:{cuts:true}}),data={futures:f},rules=ma=>plain(ctx.buildTradeAlertRules({futures:f},quote(1340,ma)));
+  assert.notEqual(ctx.setFutureRebuyField(f,'floorLine','20월선'),false);
+  assert.equal(f.rebuy.floorLine,'20개월선','월선은 기존 이름 N개월선으로 저장');assert.equal(Object.hasOwn(f.rebuy,'floorPrice'),false,'새 선은 시세를 기다린다');
+  assert.equal(ctx.futureRebuySummary(f).ready,false);assert.equal(ctx.futureCutPlan(f).length,0);assert.deepEqual(rules({}),[],'하단선 시세가 없으면 손절 알림도 없다');
+  assert.equal(ctx.fillPrices(data,quote(1340,{'20개월선':1310.456})),true);
+  assert.equal(f.rebuy.floorPrice,1310.46);assert.deepEqual(prices(ctx.futureRebuySummary(f)),[1400,1355.23,1310.46]);
+  const first=rules({'20개월선':1310.456}),moved=rules({'20개월선':1320});
+  assert.deepEqual(first.map(x=>x.id),['trade:future-rebuy:cut:0','trade:future-rebuy:cut:1','trade:future-rebuy:cut:2']);
+  assert.equal(moved[2].targetPrice,1320);assert.deepEqual(moved.map(x=>x.revision),first.map(x=>x.revision),'하단선 시세만 움직이면 같은 알림 이력');
+  assert.equal(JSON.parse(first[0].revision)[1],'20개월선');
+  assert.notEqual(ctx.setFutureCutDone(f,0,true),false);assert.equal(f.rebuy.cuts[0].targetPrice,1400);
+  ctx.fillPrices(data,quote(1340,{'20개월선':1320}));
+  let s=ctx.futureRebuySummary(f);assert.deepEqual(prices(s),[1400,1360,1320],'체크한 회차는 그대로, 남은 회차만 새 하단으로');assert.deepEqual(plain(s.cuts.map(c=>c.qty)),[7,6,7]);
+  // 직접 하단을 넣으면 하단선을 끄고 시세로 덮어쓰지 않는다. 같은 선을 다시 고르면 지난 자동 값과 같은 시세도 다시 채운다.
+  assert.notEqual(ctx.setFutureRebuyField(f,'floorPrice','1290'),false);
+  assert.equal(Object.hasOwn(f.rebuy,'floorLine'),false);assert.equal(Object.hasOwn(f.rebuy.auto,'floorPrice'),false);
+  ctx.fillPrices(data,quote(1340,{'20개월선':1320}));assert.equal(f.rebuy.floorPrice,1290);
+  assert.notEqual(ctx.setFutureRebuyField(f,'floorLine','20개월선'),false);assert.equal(Object.hasOwn(f.rebuy,'floorPrice'),false);
+  ctx.fillPrices(data,quote(1340,{'20개월선':1320}));assert.equal(f.rebuy.floorPrice,1320);
+  // 하단선을 끄면 마지막 하단을 직접 하단으로 남긴다.
+  assert.notEqual(ctx.setFutureRebuyField(f,'floorLine',''),false);
+  assert.equal(Object.hasOwn(f.rebuy,'floorLine'),false);assert.equal(f.rebuy.floorPrice,1320);
+  ctx.fillPrices(data,quote(1340,{'20개월선':1330}));assert.equal(f.rebuy.floorPrice,1320);
+  assert.equal(JSON.stringify(f.rebuy.cuts),JSON.stringify([{contracts:7,price:1400,targetPrice:1400}]),'손절 기록은 그대로');
+});
+
+test('하단선 시세가 신저점 이상이면 손절 회차·알림을 멈추고, 직접 하단의 알림 기준과 재매수 시작 뒤 잠금은 그대로다',()=>{
+  const ctx=load(),f=futures({contracts:20,sellPct:100,notify:{cuts:true}}),q=quote(1340,{'60주선':1405});
+  assert.notEqual(ctx.setFutureRebuyField(f,'floorLine','60주선'),false);ctx.fillPrices({futures:f},q);
+  assert.equal(f.rebuy.floorPrice,1405);assert.equal(ctx.futureRebuySummary(f).ready,false);assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},q)),[]);
+  assert.equal(ctx.setFutureRebuyField(f,'lowPrice','1405'),false,'신저점은 하단선 시세보다 높아야 한다');
+  assert.notEqual(ctx.setFutureRebuyField(f,'lowPrice','1450'),false);assert.equal(ctx.futureRebuySummary(f).ready,true);
+  const direct=futures({notify:{cuts:true}}),rule=plain(ctx.buildTradeAlertRules({futures:direct},null))[0];
+  assert.deepEqual(JSON.parse(rule.revision),[1400,1300,3,1],'직접 하단 기록의 알림 기준(이력)은 바뀌지 않는다');
+  const bought=futures({stages:[{name:'25일선',price:1260,done:true,contracts:1,execPrice:1259.3}]});
+  assert.equal(ctx.setFutureRebuyField(bought,'floorLine','60일선'),false);assert.equal(Object.hasOwn(bought.rebuy,'floorLine'),false);
+});
