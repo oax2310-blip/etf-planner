@@ -261,6 +261,23 @@ function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
     <div class="purchase-qty">${shown!==null?esc(qty(shown)):"—"}</div><div class="purchase-fill">${input}</div>${typeof tradeAlertToggle==="function"?`<div class="purchase-alert">${tradeAlertToggle(tradePlanEnabled(p,i),`data-sale-alert="${i}"`,`${i+1}회 매도`,r.done)}</div>`:""}
     <div class="status${state?` ${state}`:""}">${r.done?"매도 완료":partial?"부분 체결":due?"도달":"대기"}</div>${notes.length?`<small class="purchase-sub">${esc(notes.join(" · "))}</small>`:""}${lines}</div>`;
 }
+// 회차표 이평선 위치(화면 전용): 같은 간격·같은 수량의 회차는 그대로 두고, 지금 시세의 일선·주선·월선 중 시작·종료 기준가 사이에 있는 선을
+// 그 선에 처음 닿거나 넘는 회차(하락 계획은 회차 기준가 ≤ 선, 상승은 ≥) 앞에 한 줄로 보인다. 시작·종료 기준선 자체와 60분봉 N선은 빼고,
+// 같은 회차 앞의 선은 한 줄에 가까운 순서로 모은다. rows = planSaleRowInfo 목록(체결 회차는 첫 체결 가격). 계산·저장·알림에는 쓰지 않는다.
+function planLineMarks(p,rows){
+  const q=planQuote(p.ticker,p.currency),a=Number(p.startPrice),b=Number(p.endPrice),out=new Map();
+  if(!q||!(a>0)||!(b>0)||a===b)return out;
+  const up=b>a,skip=new Set([p.startLabel,p.endLabel].map(movingLineName).filter(Boolean)),digits=quoteDigits(p.ticker,p.currency);
+  for(const name of MA_LINES){
+    if(movingLineUnit(name)==="선"||skip.has(name))continue;
+    const v=priceRound(maValue(q,name),digits),at=v>0&&(up?v>a&&v<b:v<a&&v>b)?rows.find(x=>x.priced&&(up?x.price>=v:x.price<=v)):null;
+    if(at){if(!out.has(at.i))out.set(at.i,[]);out.get(at.i).push({name,price:v});}
+  }
+  for(const list of out.values())list.sort((x,y)=>up?x.price-y.price:y.price-x.price);
+  return out;
+}
+// 선 줄은 바로 다음 회차가 매도 완료면 그 회차와 함께 접힌다(완료 회차 접기).
+const planLineMark = (p,list,done) => `<div class="sale-line-mark${done?" done":""}" role="note" aria-label="${esc(list.map(m=>`${movingLineText(m.name)} ${priceText(m.price,p.currency)}`).join(", "))} 위치">${list.map(m=>`<span><b>${esc(movingLineText(m.name))}</b>${esc(priceText(m.price,p.currency))}</span>`).join("")}</div>`;
 function planSaleAccountView(p){
   if(isBitcoinTicker(p.ticker))return "";
   const schedule=planLinkedSaleSchedule(p),summary=allocationSummary(planSaleAssets(),typeof assetStore==="object"?assetStore.prices:null);
@@ -415,7 +432,7 @@ function renderPlans(){
     ${planSaleAccountView(p)}
     ${planTrackCard(p,{status,value:`${!linkedSchedule&&p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}`,valueTitle:worth!=null&&!linkedSchedule?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:"",startText,fxAuto,px,label:linkedSchedule?"전체 계좌 계획 진행":p.sellTargetId?"기준 ETF 계획 진행":"계획 진행"})}
     <div class="control-grid"><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
-    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card purchase-table sale-table${completedOpen?"":" hide-completed"}${saleAlerts?"":" no-alert"}" id="saleTable">${planSellerHead(sellers)}<div class="purchase-table-head"><span>회차</span><span>기준가</span><span>매도</span><span>체결</span>${saleAlerts?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${saleRows.map(x=>planSaleRow(p,x.i,sellers,x)).join("")}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
+    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card purchase-table sale-table${completedOpen?"":" hide-completed"}${saleAlerts?"":" no-alert"}" id="saleTable">${planSellerHead(sellers)}<div class="purchase-table-head"><span>회차</span><span>기준가</span><span>매도</span><span>체결</span>${saleAlerts?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${(marks=>saleRows.map(x=>(marks.has(x.i)?planLineMark(p,marks.get(x.i),x.r.done):"")+planSaleRow(p,x.i,sellers,x)).join(""))(planLineMarks(p,saleRows))}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section><p class="footnote">누적 체결 주수를 입력하면 실제 판 만큼만 자산에서 빼고 잔량은 계속 표시합니다. 체크하면 잔량까지 모두 매도한 것으로 기록합니다. 0으로 고치거나 완료 체크를 풀면 체결 기록과 자산 반영을 되돌립니다. 실제 주문은 증권사에서 직접 실행하세요.</p>`;
   const completedToggle=$("toggleCompletedSales");
   if(completedToggle)completedToggle.onclick=()=>{
     const open=!openCompletedSales.has(p.id);if(open)openCompletedSales.add(p.id);else openCompletedSales.delete(p.id);

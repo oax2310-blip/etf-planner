@@ -57,6 +57,8 @@
 .purchase-buy-target>span{flex:none;padding:2px 7px;border-radius:6px;background:var(--surface-3);color:var(--text-3);font-size:11px;font-weight:600}.purchase-buy-target>div{display:grid;min-width:0}.purchase-buy-target b{font-size:13.5px;font-weight:600;overflow-wrap:anywhere}.purchase-buy-target small{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 /* 분할매도 지금 매도 중인 회차를 여러 계좌로 나눈 경우(plans.js planSellerHead): 매도 우선순위 순서로 계좌마다 한 칸. */
 .purchase-buy-target.many{align-items:flex-start}.purchase-buy-target.many>span{margin-top:1px}.sale-sellers{display:grid;gap:6px;min-width:0;margin:0;padding:0;list-style:none}.sale-sellers li{display:grid;min-width:0}
+/* 분할매도 회차표의 이평선 위치 줄(plans.js planLineMark): 회차 사이 얇은 띠, 선 이름은 강조색·점선 표시. 완료 회차와 함께 접힌다. */
+.sale-line-mark{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;min-height:30px;padding:5px 20px;border-bottom:1px solid var(--line);background:var(--completed-fold-bg);color:var(--text-2);font-size:12px;line-height:1.4;font-variant-numeric:tabular-nums}.sale-line-mark span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.sale-line-mark span::before{content:"";width:14px;border-top:1.5px dashed var(--accent)}.sale-line-mark b{font-weight:600;color:var(--accent)}.purchase-table.hide-completed .sale-line-mark.done{display:none}
 .purchase-note{margin:0;padding:12px 16px;border-top:1px solid var(--line);font-size:12.5px;line-height:1.6;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere}
 .purchase-stage-rows{display:grid;gap:10px;margin-bottom:18px}.purchase-stage{display:grid;grid-template-columns:44px repeat(3,minmax(0,1fr)) auto;align-items:end;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.purchase-stage>b{grid-row:1;grid-column:1;align-self:center;font-size:13px}.purchase-stage>b small{display:block;font-size:10px;color:var(--good);font-weight:500}.purchase-stage label{display:grid;gap:4px;min-width:0;font-size:11.5px;color:var(--text-2)}.purchase-stage input{width:100%;min-width:0;min-height:36px;padding:6px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);font-size:13px}.purchase-stage input:focus,.purchase-fill input:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 /* 회차 칸: 윗줄 가격·수량·예정액·삭제, 아랫줄 예정일·조건. 체결은 카드의 누적 주수로 입력한다. */
@@ -96,7 +98,7 @@
   /* 폰: 393px 폭에서 한 줄에 회차 96px(직접 입력 64px) · 기준가 · 매수 46px · 체결 58px · 알림 38px */
   .purchase-table-head,.purchase-row{--round-column:64px;grid-template-columns:var(--round-column) minmax(0,1fr) 46px 58px 38px;gap:8px}.purchase-table-head.line,.purchase-row.line{--round-column:96px}
   .purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 46px 58px}
-  .purchase-table-head{padding:8px 12px;font-size:11.5px}.purchase-row{min-height:52px;padding:6px 12px}.purchase-row .check{min-width:0;gap:8px}
+  .purchase-table-head{padding:8px 12px;font-size:11.5px}.purchase-row{min-height:52px;padding:6px 12px}.sale-line-mark{padding:4px 12px;font-size:11.5px}.purchase-row .check{min-width:0;gap:8px}
   .purchase-row .stage-price{flex-direction:column;align-items:flex-start;gap:0;line-height:1.25}.purchase-row .stage-price .price{font-size:14px;overflow-wrap:anywhere}.purchase-row .stage-price .price.long{font-size:13px}.purchase-row .stage-price .price.xlong{font-size:12px}.purchase-row .stage-price .krw{font-size:11px}
   .purchase-qty{font-size:14px}.purchase-fill input{min-height:32px;padding:4px 7px;font-size:14px}.purchase-alert .trade-alert-toggle.completed{padding:0;font-size:11px}
   .purchase-sub{margin-top:-2px;font-size:11px}.purchase-buy-target{padding:10px 14px}.completed-fold-bar{padding-right:14px;padding-left:14px}
@@ -108,7 +110,7 @@
   /* 360·384px 폰: 기준가 칸이 좁아 원화 가격의 '원'이나 숫자가 아랫줄로 밀리지 않게 다른 칸·간격을 줄인다 */
   .purchase-table-head,.purchase-row{--round-column:56px;grid-template-columns:var(--round-column) minmax(0,1fr) 40px 50px 34px;gap:6px}.purchase-table-head.line,.purchase-row.line{--round-column:84px}
   .purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 40px 50px}
-  .purchase-table-head,.purchase-row{padding-right:10px;padding-left:10px}.purchase-row .check{gap:6px;font-size:13px}.purchase-qty{font-size:13px}.purchase-fill input{padding:4px 6px;font-size:13.5px}
+  .purchase-table-head,.purchase-row,.sale-line-mark{padding-right:10px;padding-left:10px}.purchase-row .check{gap:6px;font-size:13px}.purchase-qty{font-size:13px}.purchase-fill input{padding:4px 6px;font-size:13.5px}
 }
 
 /* 재매수 범위 편집은 분할매수의 시작·마지막 선 입력과 미리보기를 함께 쓴다. */
