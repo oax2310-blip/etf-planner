@@ -295,3 +295,27 @@ test('반등 단계별 재매수 표도 회차마다 한 줄로 그리고, 배�
   assert.match(html,new RegExp(`<label class="future-tap-price"[^>]*><span class="price" aria-hidden="true">[^<]+</span><input data-fbuy-exec="${tr.i}:${tr.t}"`),'산 회차는 체결 환율을 그 자리에서 고친다');
   assert.match(html,new RegExp(`data-fbuy-qty="${tr.i}:${tr.t}"`),'산 회차의 계약 수는 체결 칸');
 });
+
+test('손절 기준 창의 하단선은 신저점보다 먼저 적용하고, 하단선 대기·신저점 이상을 접힌 줄·보유 카드·기준 줄에 보인다',()=>{
+  const ctx=load(),els={};
+  const el=id=>els[id]||(els[id]={id,innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
+  Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){},confirm:()=>true,alert:msg=>{throw Error(msg);}});
+  const f=futures(),before=JSON.stringify(f);
+  // 옛 직접 하단(1,300원)보다 낮은 신저점도 새 하단선과 함께면 저장된다(하단선이 하단 가격을 지우고 시세를 기다림).
+  let g=ctx.applyFutureRebuyEdits(f,{floorLine:'60주선',lowPrice:'1280'});
+  assert.deepEqual([g.rebuy.lowPrice,g.rebuy.floorLine,Object.hasOwn(g.rebuy,'floorPrice')],[1280,'60주선',false]);assert.equal(JSON.stringify(f),before);
+  assert.equal(ctx.applyFutureRebuyEdits(f,{floorLine:'25선'}),null,'시선은 하단선으로 받지 않는다');
+  g.rebuy.floorPrice=1250;g=ctx.applyFutureRebuyEdits(g,{floorLine:''});
+  assert.deepEqual([Object.hasOwn(g.rebuy,'floorLine'),g.rebuy.floorPrice],[false,1250],'하단선을 끄면 마지막 하단을 직접 하단으로 남긴다');
+  assert.match(ctx.futureRebuyEditError(f,{lowPrice:'1300',floorPrice:'1310',floorLine:'60주선',contracts:'4',sellPct:'',steps:'2'}),/^손절 하단 60주선\(1,310원\)이 신저점 환율 이상입니다/);
+  // 화면: 하단선 시세 대기 → 신저점 이상 → 정상
+  const line=futures({floorLine:'60주선'});delete line.rebuy.floorPrice;
+  const view=()=>{const s=ctx.futureRebuySummary(line);return {fold:ctx.futureRebuyFoldLine(line.rebuy,s,1410,false,null,null).text,card:ctx.futureRebuyTrack(line.rebuy,s,1410,'',x=>x),basis:(vm.runInContext('futureRebuyExpanded=true',ctx),ctx.renderFutureRebuy(line),els.futureRebuyPanel.innerHTML.match(/<span class="future-rebuy-basis">(.*?)<\/span><\/div>/)[1])};};
+  let v=view();
+  assert.equal(v.fold,'하단 60주선 시세 대기 · 펼쳐서 확인하세요');assert.match(v.card,/손절 하단 60주선의 시세를 기다립니다/);assert.match(v.basis,/^<span>하단 60주선 시세 대기 · 이탈 전 4계약/);
+  line.rebuy.floorPrice=1405;v=view();
+  assert.equal(v.fold,'하단 60주선이 신저점 이상 · 펼쳐서 확인하세요');assert.match(v.card,/손절 하단 60주선\(1,405원\)이 신저점 환율 이상이라/);
+  line.rebuy.floorPrice=1310.46;line.rebuy.floorLine='20개월선';const kept=JSON.stringify(line);v=view();
+  assert.equal(v.fold,'실행 전 · 1,400원 → 20월선 · 최대 2계약');assert.match(v.basis,/^<span class="quote-state">1,400원 → 20월선 1,310\.5원<\/span>/);
+  assert.equal(JSON.stringify(line),kept,'화면은 기록을 바꾸지 않는다');
+});

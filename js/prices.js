@@ -79,8 +79,8 @@ function fillMarked(obj, at, rows){
 // 달러 계획 환율은 보유 선물과 무관한 fx.USDKRW 현물; 없으면 기존 값 유지.
 // futures: 보유 근월물 MA 구간 + 미매수 가격. buyPlan.endLine은 같은 캐시의 ma·closes만 사용한다(추가 수집 없음).
 // 이동평균 종료가가 잘못되면 이전 회차·직접 수정값은 유지하며 화면·알림에서 추가 매수를 막는다.
-// futures.rebuy가 있을 때만 현재가·자동 단계도 같은 월물로 채움.
-// 선물 재매수 신저점·하단·이탈 전 계약 수는 직접 입력. ETF rebuy.items(옛 단일 종목도)은 국내 원/해외 달러만.
+// futures.rebuy가 있을 때만 현재가·자동 단계도 같은 월물로 채움. 손절 하단선(floorLine: N일선·N주선·N개월선)을 고른 기록만 floorPrice도 채운다.
+// 선물 재매수 신저점·이탈 전 계약 수와 하단선이 없는 하단은 직접 입력. ETF rebuy.items(옛 단일 종목도)은 국내 원/해외 달러만.
 // 분할매도·선물 현재가와 분할매도 평가액(planWorth)은 화면 전용. 단계 MA가 null이면 직접 입력값 유지.
 function fillPrices(data, prices){
   if(!prices||!data)return false;
@@ -102,8 +102,8 @@ function fillPrices(data, prices){
     changed=filled||changed;
   }
   if(fe&&f.rebuy&&typeof f.rebuy==="object"&&!Array.isArray(f.rebuy)){
-    const r=f.rebuy,stages=Array.isArray(r.stages)?r.stages:[];
-    changed=fillMarked(r,at,[["currentPrice",priceRound(fe.close,2),v=>r.currentPrice=v],
+    const r=f.rebuy,stages=Array.isArray(r.stages)?r.stages:[],floor=maKey(r.floorLine);
+    changed=fillMarked(r,at,[["currentPrice",priceRound(fe.close,2),v=>r.currentPrice=v],...(floor?[["floorPrice",priceRound(maValue(fe,floor),2),v=>r.floorPrice=v]]:[]),
       ...stages.filter(x=>x&&autoKey(x.name)).map(x=>[autoMark(x.name),priceRound(maValue(fe,x.name),2),v=>x.price=v])])||changed;
   }
   const rb=data.rebuy, items=rb&&typeof rb==="object"?(Array.isArray(rb.items)?rb.items:[rb]):[];
