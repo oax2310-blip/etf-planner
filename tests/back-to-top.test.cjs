@@ -66,8 +66,14 @@ test('같은 스크립트가 다시 실행돼도 맨 위 버튼은 한 개만 �
   assert.equal(h.buttons.length,1);
 });
 
-test('삼성 인터넷에서는 기본 맨 위 버튼과 겹치는 사이트 버튼을 만들지 않는다',()=>{
+test('삼성 인터넷에서도 위로 되돌릴 때만 사이트 버튼을 표시하고 아래로 이동하면 숨긴다',()=>{
   const h=setup({userAgent:'Mozilla/5.0 (Linux; Android 15) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36'});
-  h.scroll(1200);h.scroll(1180);h.run();
-  assert.equal(h.buttons.length,0);
+  assert.equal(h.buttons.length,1);
+  h.scroll(1200);assert.equal(h.button.hidden,true);
+  h.scroll(1180);assert.equal(h.button.hidden,false);
+  h.scroll(1190);assert.equal(h.button.hidden,true);
+  h.scroll(1170);assert.equal(h.button.hidden,false);
+  h.click();assert.equal(h.button.hidden,true);
+  assert.equal(h.calls[0].top,0);
+  h.run();assert.equal(h.buttons.length,1);
 });
