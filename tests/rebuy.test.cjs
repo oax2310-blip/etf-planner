@@ -734,6 +734,41 @@ test('재이탈 화면: 재매수 중에도 남은 손절을 보이고, 다시 �
 const flowFixture = extra => ({id:'flow',name:'테스트 ETF',ticker:'900001',lowPrice:10000,shares:1000,stepPct:1,sellPct:1,steps:10,currentPrice:10050,cuts:[{shares:10,price:9900},{shares:4,price:9800,partial:true,plannedShares:10}],
   stages:[{name:'25선',price:10100},{name:'32선',price:10200},{name:'42선',price:10300}],range:{startLine:'25선',lastLine:'25선',names:['25선'],lastRound:3,targetPct:100},...extra});
 
+test('0주 손절 회차는 띠·표·진행 집계에서 건너뛰고 다음 손절의 원래 번호와 입력 인덱스를 유지한다', () => {
+  const r=flowFixture({shares:100,sellPct:.5,steps:14,cuts:[{shares:1,price:9900}]}),before=JSON.stringify(r),{ctx,els}=ui({rebuy:{items:[r]}});
+  const html=els.rebuyMain.innerHTML,strip=html.match(/<div class="fr-cells rebuy-cells[^"]*"[^>]*>(.*?)<\/div>/)[1];
+  assert.equal(ctx.cutPlan(r).length,14,'수량 배분·손절가·저장 인덱스는 원래 회차를 유지');
+  assert.equal((strip.match(/<i /g)||[]).length,7,'1주씩 배정된 홀수 회차만 칸으로 표시');
+  assert.doesNotMatch(strip,/class="z"/);
+  assert.match(strip,/<span class="fr-next"><i class="h"><\/i><\/span><i class="s"><\/i>$/,'0주인 2회를 건너뛰고 3회 칸을 가리킨다');
+  assert.match(html,/<div class="fr-bub-row" style="--x:78\.57%">/,'숨긴 회차를 뺀 실제 칸 위치에 말풍선을 둔다');
+  assert.match(html,/다음 손절 3회 <b>9700원<\/b> · 1주/);
+  assert.match(html,/<h2>1\. 분할 손절<\/h2><span>1 \/ 7회 완료<\/span>/);
+  assert.deepEqual([...html.matchAll(/data-cut="(\d+)"/g)].map(m=>Number(m[1])),[0,2,4,6,8,10,12]);
+  assert.match(html,/남은 손절 <b>1회<\/b> · 8700원 이하/,'가까운 5회와 나머지 집계도 수량이 있는 회차만 센다');
+  assert.equal(JSON.stringify(r),before,'그리기로 체결 기록을 만들거나 회차를 다시 매기지 않는다');
+});
+
+test('0주 회차를 숨겨도 재매수로 채운 칸·다음 재매수 위치와 부분 손절 기록은 유지한다', () => {
+  const r=flowFixture({shares:100,sellPct:.5,steps:14,cuts:[{shares:1,price:9900},{shares:1,price:9800}],stages:[{name:'25선',price:10100,buys:[{shares:1,price:10100}]},{name:'32선',price:10200},{name:'42선',price:10300}],planned:[['25선',0],['25선',1],['25선',2]]});
+  let html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
+  const strip=html.match(/<div class="fr-cells rebuy-cells[^"]*"[^>]*>(.*?)<\/div>/)[1];
+  assert.doesNotMatch(strip,/class="z"/);
+  assert.match(strip,/<i class="r"><\/i><span class="fr-next buy"><i class="s"><\/i><\/span>$/,'가장 최근 손절 칸부터 재매수로 채우고 다음 빈 칸에 점선을 둔다');
+  r.cuts[1]={shares:0,price:9800,partial:true,plannedShares:1};
+  html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
+  assert.match(html,/data-cut="1" [^>]*aria-checked="mixed"/,'체결 수량이 0이어도 부분 손절 기록과 남은 수량은 남긴다');
+  assert.match(html,/data-cut-qty="1" value="0"/);
+});
+
+test('표시 구간 전체가 0주이면 빈 회차를 만들지 않고 손절할 수량이 없음을 안내한다', () => {
+  const r=flowFixture({shares:1,sellPct:.5,cuts:[]}),before=JSON.stringify(r),html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
+  assert.doesNotMatch(html,/fr-cells rebuy-cells|data-cut="|fr-bub-row/);
+  assert.match(html,/표시 구간에 손절할 수량이 없습니다\./);
+  assert.match(html,/<h2>1\. 분할 손절<\/h2><span>0 \/ 0회 완료<\/span>/);
+  assert.equal(JSON.stringify(r),before);
+});
+
 test('보유 주수 카드: 1칸 = 손절 1회(표시 회차), 1회 칸이 오른쪽 끝이고 손절한 만큼 비우며 다음 손절을 말풍선으로 가리킨다', () => {
   const r=flowFixture(),before=JSON.stringify(r),{ctx,els}=ui({rebuy:{items:[r]}});
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js/trade-alerts.js'),'utf8'),ctx);ctx.renderRebuy();
