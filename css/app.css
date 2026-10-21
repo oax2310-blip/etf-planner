@@ -122,6 +122,8 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
    보유 주수 카드는 1칸 = 손절 1회. .mix는 부분 손절·부분 재매수 칸(아래부터 초록 --g, 파랑 --b까지, 나머지는 빈 칸), .z는 배정 주수가 없는 회차.
    절반·전액 매도는 카드 아래 얇은 두 줄(.rebuy-milestones), 단계 기준가 옆 (자동)은 점선 가격 뒤 작은 글자. */
 #rebuyMain .rebuy-flow{margin-bottom:18px}.rebuy-price-hint{margin:-4px 2px 12px;font-size:12px;word-break:keep-all}
+/* 보유 카드 안내 줄의 회차 번호는 배경 없이 주변 문구의 글자색을 따른다. */
+.rebuy-track .fr-note .tr-no{background:transparent;color:inherit}
 .rebuy-cells i.mix{background:linear-gradient(to top,var(--good) var(--g),var(--accent) var(--g),var(--accent) var(--b),transparent var(--b));box-shadow:inset 0 0 0 1px var(--line-strong)}.rebuy-cells i.z{background:var(--surface-2)}
 .rebuy-milestones{margin:-4px 0 4px;padding:0 16px;font-variant-numeric:tabular-nums}.rebuy-milestones>div{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:9px 0}.rebuy-milestones>div+div{border-top:1px solid var(--line)}
 .rebuy-milestones dt{font-size:13px;font-weight:600;color:var(--text-2);white-space:nowrap}.rebuy-milestones dt small{margin-left:5px;font-size:11.5px;font-weight:400;color:var(--text-3)}
