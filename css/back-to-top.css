@@ -1,10 +1,10 @@
-/* 세 페이지의 색 토큰을 따르고 PC·인쇄에서는 숨긴다. safe-area는 휴대폰 하단·가로 화면의 가장자리를 피한다. */
-.back-to-top{display:none}
+/* 모바일 하단 가운데의 반투명 회색 버튼. safe-area는 휴대폰 하단을 피하고 PC·인쇄에서는 숨긴다. */
+.back-to-top{display:none;--back-to-top-bg:rgba(56,56,56,.8);--back-to-top-active:rgba(56,56,56,.95);--back-to-top-icon:rgba(255,255,255,.55)}
 @media screen and (max-width:700px), screen and (hover:none) and (pointer:coarse){
-  .back-to-top:not([hidden]){display:grid;place-items:center;position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:6;width:48px;height:48px;padding:0;border:1px solid var(--accent-line);border-radius:50%;background:var(--accent);color:var(--on-accent);box-shadow:var(--shadow);cursor:pointer;-webkit-tap-highlight-color:transparent;animation:back-to-top-in .18s ease-out}
-  .back-to-top svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  .back-to-top:active{background:var(--accent-hover)}
+  .back-to-top:not([hidden]){display:grid;place-items:center;position:fixed;left:50%;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:6;width:42px;height:42px;padding:0;border:0;border-radius:50%;background:var(--back-to-top-bg);color:var(--back-to-top-icon);box-shadow:none;transform:translateX(-50%);cursor:pointer;-webkit-tap-highlight-color:transparent;animation:back-to-top-in .18s ease-out}
+  .back-to-top svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .back-to-top:active{background:var(--back-to-top-active)}
   .back-to-top:focus-visible{outline:2px solid var(--text);outline-offset:3px}
 }
-@keyframes back-to-top-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes back-to-top-in{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 @media(prefers-reduced-motion:reduce){.back-to-top:not([hidden]){animation:none}}

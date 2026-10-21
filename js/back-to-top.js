@@ -5,7 +5,7 @@
   button.className = "back-to-top";
   button.hidden = true;
   button.setAttribute("aria-label", "맨 위로 올라가기");
-  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 6-6 6 6M12 6v13"/></svg>';
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 18l8-8 8 8"/></svg>';
   button.addEventListener("click", () => {
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({top:0, behavior:reduced ? "instant" : "smooth"});
