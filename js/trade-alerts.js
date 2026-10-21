@@ -29,8 +29,9 @@ function setTradeRebuyAll(r,kind,on){
   if(kind==="buys"&&Array.isArray(r.stages))r.stages.forEach(s=>delete s.notify);
 }
 // lead: 가격 칸 옆이 아닌 곳(카드 제목 줄 등)에 둘 때 글자 앞에 붙일 이름(예: "신저점 이탈" → "신저점 이탈 알림 OFF")
-function tradeAlertToggle(on,attrs,name,done=false,lead=""){
-  return `<label class="trade-alert-toggle${done?" completed":""}" title="${esc(name)} 알림"><input type="checkbox" ${attrs} ${on&&!done?"checked":""} ${done?"disabled":""} aria-label="${esc(name)} 알림"><span>${lead?`${esc(lead)} `:""}${done?"완료":`알림 ${on?"ON":"OFF"}`}</span></label>`;
+// showState=false면 ON/OFF 글자 없이 체크박스 자체로 켜짐·꺼짐을 나타낸다.
+function tradeAlertToggle(on,attrs,name,done=false,lead="",showState=true){
+  return `<label class="trade-alert-toggle${done?" completed":""}" title="${esc(name)} 알림"><input type="checkbox" ${attrs} ${on&&!done?"checked":""} ${done?"disabled":""} aria-label="${esc(name)} 알림"><span>${lead?`${esc(lead)} `:""}${done?"완료":`알림${showState?` ${on?"ON":"OFF"}`:""}`}</span></label>`;
 }
 function tradeAlertAllButtons(attrs){return `<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" ${attrs}="on">전체 ON</button><button class="btn mini ghost" type="button" ${attrs}="off">OFF</button></span>`;}
 function bindTradePlanAlerts(p){
