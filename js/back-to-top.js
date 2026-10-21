@@ -1,8 +1,8 @@
 // 세 페이지 공통: 160px 아래에서 위로 8px 되돌릴 때만 표시하고, 아래로 이동하거나 맨 아래에 닿으면 숨긴다.
 // 스크롤 끝의 탄성 움직임은 실제 범위로 제한하고, 버튼으로 맨 위로 이동하는 중에는 다시 표시하지 않는다.
-// 삼성 인터넷은 브라우저 자체의 맨 위로 이동 버튼을 사용하므로 사이트 버튼을 만들지 않는다.
+// 삼성 인터넷에서도 같은 사이트 버튼을 사용한다. 중복되는 브라우저 기본 버튼은 브라우저 설정에서 끈다.
 (function(){
-  if (/SamsungBrowser\//i.test(navigator.userAgent) || document.querySelector(".back-to-top")) return;
+  if (document.querySelector(".back-to-top")) return;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "back-to-top";
