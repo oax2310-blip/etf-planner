@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-21T22:52:09.094Z",
+  "generatedAt": "2026-10-22T22:51:33.567Z",
   "series": {
     "usGdp": {
       "code": "GDPC1",
@@ -245,13 +245,11 @@
       ],
       "sourceUpdatedAt": "2026-09-30",
       "releaseDate": null,
-      "status": "error",
-      "fetchedAt": "2026-10-20T22:51:01.940Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "status": "ready",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
-      "lastRevisionAt": null,
-      "errorCode": "invalid-response",
-      "message": "공식 자료 수집 실패"
+      "lastRevisionAt": null
     },
     "usM2": {
       "code": "M2SL",
@@ -967,13 +965,11 @@
       ],
       "sourceUpdatedAt": "2026-09-22",
       "releaseDate": null,
-      "status": "error",
-      "fetchedAt": "2026-10-20T22:51:01.940Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "status": "ready",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
-      "lastRevisionAt": null,
-      "errorCode": "invalid-response",
-      "message": "공식 자료 수집 실패"
+      "lastRevisionAt": null
     },
     "fx": {
       "code": "EXKOUS",
@@ -1694,13 +1690,11 @@
       ],
       "sourceUpdatedAt": null,
       "releaseDate": null,
-      "status": "error",
-      "fetchedAt": "2026-10-20T22:51:01.940Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "status": "ready",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
-      "lastRevisionAt": null,
-      "errorCode": "invalid-response",
-      "message": "공식 자료 수집 실패"
+      "lastRevisionAt": null
     },
     "usRate": {
       "code": "FEDFUNDS",
@@ -2421,13 +2415,11 @@
       ],
       "sourceUpdatedAt": null,
       "releaseDate": null,
-      "status": "error",
-      "fetchedAt": "2026-10-20T22:51:01.940Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "status": "ready",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
-      "lastRevisionAt": null,
-      "errorCode": "invalid-response",
-      "message": "공식 자료 수집 실패"
+      "lastRevisionAt": null
     },
     "krM2": {
       "table": "161Y005",
@@ -3151,8 +3143,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-21T22:52:09.094Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
       "lastRevisionAt": "2026-10-15T22:48:51.833Z"
     },
@@ -3882,8 +3874,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-21T22:52:09.094Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     },
@@ -4137,8 +4129,8 @@
       "sourceUpdatedAt": null,
       "releaseDate": null,
       "status": "ready",
-      "fetchedAt": "2026-10-21T22:52:09.094Z",
-      "lastAttemptAt": "2026-10-21T22:52:09.094Z",
+      "fetchedAt": "2026-10-22T22:51:33.567Z",
+      "lastAttemptAt": "2026-10-22T22:51:33.567Z",
       "revisedPeriods": [],
       "lastRevisionAt": null
     }
