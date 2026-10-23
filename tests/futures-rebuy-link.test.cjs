@@ -319,3 +319,13 @@ test('손절 기준 창의 하단선은 신저점보다 먼저 적용하고, 하
   assert.equal(v.fold,'실행 전 · 1,400원 → 20월선 · 최대 2계약');assert.match(v.basis,/^<span class="quote-state">1,400원 → 20월선 1,310\.5원<\/span>/);
   assert.equal(JSON.stringify(line),kept,'화면은 기록을 바꾸지 않는다');
 });
+
+test('손절로 보유를 모두 판 뒤 재매수 체크는 마지막 손절 월물(최종거래일부터 다음 월물)에 넣는다',()=>{
+  for(const [updatedAt,month] of [[null,'202612'],['2026-12-21T00:00:00Z','202701']]){
+    const ctx=load(),f=futures({sellPct:100,steps:1,currentPrice:1320});
+    if(updatedAt)ctx.priceData={updatedAt};
+    assert.equal(ctx.setFutureCutChecked(f,0,true),true);assert.equal(f.positions.length,0,'손절로 보유를 모두 판다');
+    assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
+    assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month,contracts:4,settlementPrice:1320}]);
+  }
+});

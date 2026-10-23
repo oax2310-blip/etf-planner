@@ -114,9 +114,10 @@ function futureFixedBuyPrice(level,tranche){return tranche.priceOverride!=null?N
 
 // 자동 분할매수: 시작선 가격 이상·종료가격 미만의 시·일·주·월선 0·⅓·⅔ 회차를 가격순으로 모으고 종료가를 한 번 붙인다.
 // 소수 넷째 자리 표시가 같은 가격은 시작선을 우선해 합치며 종료가와 겹치면 종료가만 둔다.
-// 완료한 회차는 제외하되 같은 회차의 미체결 계약은 계속 배분한다.
-// 총 계약 수에는 이 계획의 완료 계약을 포함한다(별도로 입력한 보유 월물은 제외). 남은 계약보다 회차가 많으면
-// 첫·끝을 포함해 회차 순서상 고르게 고른다(1계약이면 끝 회차). 적으면 같은 수량씩, 나머지는 앞 회차부터 1계약씩 배분한다.
+// 총 계약 수에는 이 계획의 완료 계약을 포함한다(별도로 입력한 보유 월물은 제외). 다 산 회차도 순서에 남겨 간격을 잡는다:
+// 첫·끝을 포함해 회차 순서상 고르게 고른 회차 중 아직 안 끝난 회차가 남은 계약 수 이하인 가장 많은 회차 수를 쓰고(1계약이면 끝 회차),
+// 고른 안 끝난 회차의 완료 계약까지 합친 수를 같은 수량씩(나머지는 앞 회차부터 1계약) 나눈 뒤 완료 계약을 뺀다(같은 회차의 미체결 계약은 계속 배분).
+// 그래서 회차를 체결해도 시세가 같으면 남은 회차의 가격·계약 수가 바뀌지 않는다. 완료 계약이 그 회차 몫보다 많으면 앞 회차부터 줄인다.
 // 시작선 시세가 없거나 종료가보다 높아지면 미매수 회차를 만들지 않는다. 읽기·미리보기는 저장 기록을 바꾸지 않는다.
 // endLine을 선택한 계획만 종료가<=시작가·시세 없음·직접 수정가의 범위 이탈을 오류로 막고 기존 회차를 보존한다.
 // 직접 수정한 미매수 계약은 남은 수량에서 먼저 확보하며, 완료된 회차와 같은 가격의 새 회차는 만들지 않는다.
@@ -140,10 +141,10 @@ function futureAutoBuyPlan(f, input=f?.buyPlan){
   if(!(startPrice>0))return {...result,waiting:"시작 기준선의 시세를 기다립니다."};
   if(startPrice>endPrice)return {...result,waiting:"시작 기준가가 종료가격보다 높아 추가 매수를 기다립니다."};
   const roundKey=(l,slot)=>l.planEnd?"end":`${futureLineName(l)}:${slot}`;
-  const filled=new Set(),pending=new Set(),filledPrices=new Set(),fixed=[];
+  const filled=new Set(),pending=new Set(),filledPrices=new Set(),fixed=[],bought=new Map();
   levels.forEach((l,li)=>(l.tranches||[]).forEach((t,i)=>{
     const slot=futureTrancheSlot(l,t,i),key=roundKey(l,slot);(t.completed?filled:pending).add(key);
-    if(t.completed)filledPrices.add(Math.round(Number(t.price)*1e4));
+    if(t.completed){filledPrices.add(Math.round(Number(t.price)*1e4));bought.set(key,(bought.get(key)||0)+1);}
     else if(endLine&&futureFixedBuyPrice(l,t)!==null)fixed.push({li,line:futureLineName(l)||l.label,slot,price:futureFixedBuyPrice(l,t),key,contracts:1,fixed:true});
   }));
   if(fixed.length>remaining)return {...result,error:"직접 수정한 미매수 계약 수보다 총 계약 수를 줄일 수 없습니다. 직접 수정값을 먼저 확인하세요."};
@@ -154,20 +155,30 @@ function futureAutoBuyPlan(f, input=f?.buyPlan){
     const name=futureLineName(l),unit=movingLineUnit(name),price=Number(l.price);
     if(!name||!config.units.includes(unit)||price<startPrice||price>=endPrice)return;
     futureBuyPrices(levels,li).forEach((p,slot)=>{
-      const price=Number(p),key=roundKey(l,slot);
-      if(price>=startPrice&&price<endPrice&&Math.round(price*1e4)!==Math.round(endPrice*1e4)&&!finished(key)&&!(endLine&&filledPrices.has(Math.round(price*1e4))&&!pending.has(key)))candidates.push({li,line:name,slot,price,key});
+      const price=Number(p),key=roundKey(l,slot),done=finished(key);
+      if(price>=startPrice&&price<endPrice&&Math.round(price*1e4)!==Math.round(endPrice*1e4)&&(done||!(endLine&&filledPrices.has(Math.round(price*1e4))&&!pending.has(key))))candidates.push({li,line:name,slot,price,key,done});
     });
   });
-  candidates.sort((a,b)=>a.price-b.price||Number(b.line===startLine)-Number(a.line===startLine)||a.li-b.li||a.slot-b.slot);
-  if(!finished("end")&&!(endLine&&filledPrices.has(Math.round(endPrice*1e4))&&!pending.has("end")))candidates.push({li:levels.findIndex(l=>l.planEnd),line:"종료가",slot:0,price:endPrice,key:"end"});
+  // 같은 가격이면 다 산 회차를 남겨 그 가격에 새 계약을 두지 않는다.
+  candidates.sort((a,b)=>a.price-b.price||Number(b.done)-Number(a.done)||Number(b.line===startLine)-Number(a.line===startLine)||a.li-b.li||a.slot-b.slot);
+  if(finished("end")||!(endLine&&filledPrices.has(Math.round(endPrice*1e4))&&!pending.has("end")))candidates.push({li:levels.findIndex(l=>l.planEnd),line:"종료가",slot:0,price:endPrice,key:"end",done:finished("end")});
   const seen=new Set(),unique=candidates.filter(row=>{const price=Math.round(row.price*1e4);if(seen.has(price))return false;seen.add(price);return true;});
-  const toAllocate=remaining-fixed.length,count=Math.min(toAllocate,unique.length);result.available=unique.length;
-  result.rows=Array.from({length:count},(_,i)=>{
-    const at=count===1?unique.length-1:Math.round(i*(unique.length-1)/(count-1));
-    return {...unique[at],contracts:Math.floor(toAllocate/count)+(i<toAllocate%count?1:0)};
-  });
+  const toAllocate=remaining-fixed.length;result.available=unique.filter(r=>!r.done).length;
+  const spread=(list,count)=>Array.from({length:count},(_,i)=>list[count===1?list.length-1:Math.round(i*(list.length-1)/(count-1))]);
+  let picked=[];
+  for(let count=unique.length;count>0&&toAllocate>0;count--){
+    const open=spread(unique,count).filter(r=>!r.done);
+    if(open.length&&open.length<=toAllocate){picked=open;break;}
+  }
+  // 고른 회차가 모두 다 산 회차뿐이면 안 끝난 회차끼리 고르게 고른다.
+  if(!picked.length&&toAllocate>0){const open=unique.filter(r=>!r.done);picked=open.length?spread(open,Math.min(toAllocate,open.length)):[];}
+  const total=toAllocate+picked.reduce((n,r)=>n+(bought.get(r.key)||0),0);
+  const rows=picked.map(({done,...r},i)=>({...r,contracts:Math.max(0,Math.floor(total/picked.length)+(i<total%picked.length?1:0)-(bought.get(r.key)||0))}));
+  let over=rows.reduce((n,r)=>n+r.contracts,0)-toAllocate;
+  for(const r of rows){if(over<=0)break;const cut=Math.min(r.contracts,over);r.contracts-=cut;over-=cut;}
+  result.rows=rows.filter(r=>r.contracts>0);
   result.rows.push(...fixed);
-  if(toAllocate&&!count)result.waiting="남은 계약을 배분할 새 기준선을 기다립니다.";
+  if(toAllocate&&!result.rows.some(r=>!r.fixed))result.waiting="남은 계약을 배분할 새 기준선을 기다립니다.";
   return result;
 }
 

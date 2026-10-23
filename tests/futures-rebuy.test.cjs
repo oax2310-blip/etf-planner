@@ -311,3 +311,42 @@ test('하단선 시세가 신저점 이상이면 손절 회차·알림을 멈추
   const bought=futures({stages:[{name:'25일선',price:1260,done:true,contracts:1,execPrice:1259.3}]});
   assert.equal(ctx.setFutureRebuyField(bought,'floorLine','60일선'),false);assert.equal(Object.hasOwn(bought.rebuy,'floorLine'),false);
 });
+
+test('재매수 회차를 체결해도 남은 회차의 환율·계약은 처음 계획 그대로다(종료 기준 유무 모두)',()=>{
+  const ctx=load(),r=v=>Math.round(v*10)/10,line={'25선':1330,'32선':1340,'42선':1350,'60선':1360};
+  const make=end=>{
+    const f=futures({contracts:6,sellPct:50,steps:1,floorPrice:1355,stages:vm.runInContext('MA_LINES',ctx).map(name=>({name,price:line[name]||0,done:false,execPrice:null,shares:null}))});
+    assert.notEqual(ctx.setFutureCutQty(f,0,'3'),false);
+    return ctx.futureRebuyWithStart(f,'25선',null,end);
+  };
+  const open=f=>plain(ctx.futureRebuySummary(f).tranches.filter(x=>!x.done&&x.amount>0).map(x=>[r(x.price),x.amount]));
+  const buy=(f,price)=>{const x=ctx.futureRebuySummary(f).tranches.find(y=>!y.done&&y.amount>0&&r(y.price)===price);assert.notEqual(ctx.setFutureBuyDone(f,x.i,x.t,true),false);};
+  let f=make('1345');
+  assert.deepEqual(open(f),[[1330,1],[1340,1],[1345,1]],'종료가 계획: 첫·끝 포함 고르게');
+  buy(f,1330);assert.deepEqual(open(f),[[1340,1],[1345,1]],'다음 목표가 1,333.3으로 당겨지지 않는다');
+  buy(f,1340);assert.deepEqual(open(f),[[1345,1]]);
+  f=make('');
+  assert.deepEqual(open(f),[[1333.3,1],[1340,1],[1350,1]],'평균 손절 환율 이하 회차에 고르게');
+  buy(f,1333.3);assert.deepEqual(open(f),[[1340,1],[1350,1]]);
+  buy(f,1340);assert.deepEqual(open(f),[[1350,1]],'마지막 목표가 1,343.3으로 내려오지 않는다');
+});
+
+test('손절로 보유를 모두 팔아도 마지막 손절 월물로 시세·알림을 이어 가고 셋째 월요일부터 다음 월물을 쓴다',()=>{
+  const ctx=load(),f=futures({contracts:4,sellPct:100,steps:1,notify:{buys:true},cuts:[{contracts:4,price:1300,targetPrice:1300,month:'202611',settlementPrice:1450}],
+    stages:vm.runInContext('MA_LINES',ctx).map(name=>({name,price:0,done:false,execPrice:null,shares:null}))});
+  f.positions=[];
+  const doc=(at,month)=>({updatedAt:at,stocks:{},futures:{[month]:{kind:'달러선물',asOf:'2026-11-13',close:1320,ma:{'25선':1330}}}});
+  // 11월물 최종거래일은 셋째 월요일 2026-11-16(KST). 그 전날까지는 손절한 11월물.
+  let d=doc('2026-11-15T14:59:00Z','202611');
+  assert.equal(ctx.priceMonth(f,d),'202611');
+  const data={futures:plain(f)};assert.equal(ctx.fillPrices(data,d),true);assert.equal(data.futures.rebuy.currentPrice,1320,'보유가 없어도 현재 환율을 채운다');
+  let rules=plain(ctx.buildTradeAlertRules({futures:f},d));
+  assert.ok(rules.length>0&&rules.every(x=>x.ticker==='202611'&&x.id.startsWith('trade:future-rebuy:buy:')),'보유가 없어도 재매수 알림이 나온다');
+  d=doc('2026-11-15T15:00:00Z','202612');
+  assert.equal(ctx.priceMonth(f,d),'202612','최종거래일 당일부터 다음 월물');
+  rules=plain(ctx.buildTradeAlertRules({futures:f},d));assert.ok(rules.length>0&&rules.every(x=>x.ticker==='202612'));
+  assert.equal(ctx.priceMonth(f,{updatedAt:'2026-12-21T00:00:00Z'}),'202701','12월물 셋째 월요일(12/21)부터 다음 해 1월물');
+  assert.equal(ctx.priceMonth(f,null),'202611','시세 파일이 없으면 넘기지 않는다');
+  assert.equal(ctx.priceMonth({...f,positions:[{month:'202612',contracts:1,settlementPrice:1400}]},{updatedAt:'2027-03-01T00:00:00Z'}),'202612','보유 월물이 있으면 그 월물');
+  assert.equal(ctx.priceMonth({positions:[],rebuy:{}},d),'','손절 기록이 없으면 월물 없음');
+});

@@ -342,7 +342,7 @@ function futureRebuyStageIndices(r,stages){
 // 종료가격 지정은 그 가격 미만의 회차 + 종료가격 도달 1회에만 배분하며, 범위 밖 다음 단계로 넘어가지 않는다.
 // 종료 이동평균선 지정은 시작선~종료선을 포함한 범위에만 배분하며, 종료선은 도달 1회만 쓴다. 종료가는 그 선의 시세를 따라 움직인다.
 // 시작·종료선 중 시세가 없는 선은 추정하거나 이전 기준으로 대체하지 않고 배분·판정·알림을 기다린다.
-// 계약보다 미체결 회차가 많으면 첫·끝을 포함해 순서상 고르게 고른다(1계약이면 종료가격). 기존 체결은 범위 밖이어도 보존한다.
+// 계약보다 회차가 많으면 체결한 계획 회차까지 포함해 첫·끝을 포함해 순서상 고르게 고른다(1계약이면 종료가격, 아래 배분 주석). 기존 체결은 범위 밖이어도 보존한다.
 // 시작선 이전 체결은 수량·가격·월물과 함께 유지하며 신규 배분만 제외한다. 실제 시작선 시세가 없으면 배분·판정·알림 대기.
 // 범위 변경 때 미체결 고정 계획을 다시 계산한다. 시세 변동은 고정 회차를 유지하되 지정 종료가격 밖으로는 배분하지 않는다. 재매수 시작 후 손절 중단; 보유/정산손익은 건드리지 않음.
 function futureRebuySummary(f){
@@ -367,8 +367,18 @@ function futureRebuySummary(f){
   const tranches=rebuyTranches(view,prices,stageOrder.map(i=>fills[i]),planned.map(([i,t])=>[stageOrder.indexOf(i),t]),rest,splitWhole,trancheLevels,!waitingStart&&!waitingEnd&&!rangeError&&!hasEnd);
   tranches.forEach(x=>{x.i=stageOrder[x.i];});
   tranches.forEach(x=>{if(x.done)x.amount=x.qty;});
+  // 남은 계약은 체결한 계획 회차까지 포함한 회차 순서로 나눈 뒤 체결 회차의 몫을 빼서, 체결해도 남은 회차의 환율·계약이 처음 계획과 같다.
+  // 종료 기준이 있고 계약이 회차보다 적으면 첫·끝을 포함해 순서상 고르게 고른 회차에 1계약씩(1계약이면 종료 회차), 그 밖은 splitWhole.
+  // 체결 계약이 그 회차 몫과 다르면 차이만큼 남은 회차에서 앞(낮은 환율)부터 빼거나 고르게 더한다.
   const open=tranches.filter(x=>!x.done);
-  if(hasEnd&&rest>0&&rest<open.length){const picked=new Set(Array.from({length:rest},(_,k)=>rest===1?open.length-1:Math.round(k*(open.length-1)/(rest-1))));open.forEach((x,k)=>{x.amount=picked.has(k)?1:0;});}
+  if(rest>0&&open.length){
+    const inPlan=new Set(planned.map(([i,t])=>`${i}:${t}`)),slots=tranches.filter(x=>!x.done||inPlan.has(`${x.i}:${x.t}`)),n=slots.length,total=rest+slots.reduce((m,x)=>m+(x.done?x.qty:0),0);
+    const picked=hasEnd&&total<n?new Set(Array.from({length:total},(_,k)=>total===1?n-1:Math.round(k*(n-1)/(total-1)))):null,share=picked?slots.map((_,k)=>picked.has(k)?1:0):splitWhole(total,n);
+    open.forEach(x=>{x.amount=share[slots.indexOf(x)];});
+    let diff=rest-open.reduce((m,x)=>m+x.amount,0);
+    for(const x of open){if(diff>=0)break;const cut=Math.min(x.amount,-diff);x.amount-=cut;diff+=cut;}
+    if(diff>0)splitWhole(diff,open.length).forEach((v,k)=>{open[k].amount+=v;});
+  }
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});

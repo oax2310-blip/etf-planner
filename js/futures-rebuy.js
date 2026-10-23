@@ -24,7 +24,7 @@ function bindFutureTable(kind,box,key){
 // 손절·재매수 체크는 보유 월물·누적 정산손익에 반영한다(분할매수 체크의 월물 편입과 같은 방식).
 // 손절: 판 계약 수 이상 남은 가장 가까운 월물에서 빼고, 남은 계약의 단순평균가는 그대로 둔다.
 //   실현 손익 round((체결 환율 − 판 시점 단순평균가) × 계약 × 1만)을 누적 정산손익에 더하고 기록에 month·settlementPrice를 남긴다.
-// 재매수: 보유 근월물(없으면 마지막 손절 월물)에 체결 환율로 편입(가중평균)하고 기록에 month를 남긴다.
+// 재매수: 시세 월물(prices.js priceMonth — 보유 근월물, 없으면 마지막 손절 월물이며 그 최종거래일부터 다음 월물)에 체결 환율로 편입(가중평균)하고 기록에 month를 남긴다.
 // 해제·계약 수·체결 환율 수정은 기록한 월물에서 같은 계산으로 되돌린다(손절로 다 판 월물은 되살린다).
 // 손절 계약 수는 분할매도처럼 회차의 누적 체결(체결 칸)이고, 회차 계획보다 적으면 부분 체결로 남은 계약을 그 회차에 둔다(futureCutPlan).
 // month 없는 기록(연동 전 체크·보유 월물이 없을 때 체크)은 계산에 넣지 않고 '보유 월물에 반영'을 누를 때만 반영한다(직접 고친 보유와 중복 방지).
@@ -52,7 +52,7 @@ function linkFutureCut(f,rec){
 function unlinkFutureCut(f,rec,detach=false){if(!detach)addToPosition(f,rec.month,futureRebuyQty(rec.contracts),Number(rec.settlementPrice));addFuturePnl(f,-futureCutPnl(rec));}
 // fill = [기록, 가격 필드](futureFillRec): 새 기록 buys[t].price, 옛 통째 기록은 단계의 execPrice.
 function linkFutureRebuy(f,[rec,key]){
-  const cuts=futureRebuyOf(f).cuts,qty=futureRebuyQty(rec.contracts),price=Number(rec[key]),month=nearestMonth(f)||(Array.isArray(cuts)?cuts:[]).filter(c=>c?.month).at(-1)?.month||"";
+  const qty=futureRebuyQty(rec.contracts),price=Number(rec[key]),month=priceMonth(f,typeof priceData==="object"?priceData:null);
   if(!qty||!(price>0)||!month)return false;
   addToPosition(f,month,qty,price);rec.month=month;
   return true;

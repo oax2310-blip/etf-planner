@@ -75,10 +75,10 @@ function futureQuoteTime(fe, updatedAt, now=new Date()){
   const min=Math.max(0,Math.floor((now-at)/6e4)),delayed=min>=FUTURE_QUOTE_DELAY_MIN,ago=min<1?"방금":min<60?`${min}분 전`:min<1440?`${Math.floor(min/60)}시간 전`:`${Math.floor(min/1440)}일 전`;
   return {text:`${md(kst)} ${kst.slice(11)} 수집 · ${ago}${delayed?" · 지연":""}`,old,delayed};
 }
-// 제목 아래 현재가: 보유 근월물(nearestMonth = prices.js futuresEntry 월물)의 달러선물 시세. 현물 환율(fx.USDKRW)은 쓰지 않는다.
-// 월물 이름은 보유·계산 기준 줄에 있으므로 가격 줄에는 붙이지 않고 시각 툴팁에만 둔다.
+// 제목 아래 현재가: prices.js priceMonth 월물(보유 근월물, 손절로 보유를 모두 팔았으면 마지막 손절 월물 또는 그 다음 월물)의 달러선물 시세.
+// 현물 환율(fx.USDKRW)은 쓰지 않는다. 월물 이름은 보유·계산 기준 줄에 있으므로 가격 줄에는 붙이지 않고 시각 툴팁에만 둔다.
 function futureQuote(f,fe){
-  const near=nearestMonth(f);
+  const near=priceMonth(f,typeof priceData==="object"?priceData:null);
   if(!near)return tradeQuoteLine({round:"보유 월물을 입력하면 현재가를 표시합니다."});
   if(!fe||!(Number(fe.close)>0))return tradeQuoteLine({round:"시세 없음 · 시세를 불러오면 표시합니다."});
   const q=futureQuoteTime(fe,priceData?.updatedAt);
@@ -86,7 +86,7 @@ function futureQuote(f,fe){
 }
 
 function futureBuyTable(f){
-  const near=nearestMonth(f),target=decimal.format(f.targetPrice),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length,auto=f.buyPlan?futureAutoBuyPlan(f):null;
+  const near=priceMonth(f,typeof priceData==="object"?priceData:null),target=decimal.format(f.targetPrice),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length,auto=f.buyPlan?futureAutoBuyPlan(f):null;
   const bell='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>';
   const allAlerts=typeof tradeAlertAllButtons==="function"?`<span class="trade-alert-actions future-buy-alert-actions"><span class="future-buy-bell" aria-hidden="true">${bell}</span><button class="btn mini ghost" type="button" data-level-alert-all="on" aria-label="분할매수 전체 알림 켜기">전체 ON</button><button class="btn mini ghost" type="button" data-level-alert-all="off" aria-label="분할매수 전체 알림 끄기">OFF</button></span>`:"";
   if(auto)rows.sort((a,b)=>Number(a.t.completed?(a.t.executionPrice??a.t.price):a.t.price)-Number(b.t.completed?(b.t.executionPrice??b.t.price):b.t.price)||a.li-b.li||a.ti-b.ti);

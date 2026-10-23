@@ -237,3 +237,25 @@ test('계획 창의 오래된 로컬 시세는 최신 저장 종료가를 되돌
   const changed=ctx.futureAutoSource(f,{...f.buyPlan,endLine:'20일선'},{asOf:'2026-10-20',ma:{'20일선':1380}},'2026-10-20T01:00:00Z');
   assert.ok(ctx.futureAutoBuyPlan(changed).error);
 });
+
+test('회차를 체결해도 시세가 같으면 남은 회차의 가격·계약 수는 처음 계획 그대로다',()=>{
+  const ctx=load(),open=f=>{const m=new Map();for(const x of pending(f))m.set(x.t.price,(m.get(x.t.price)||0)+1);return [...m].sort((a,b)=>a[0]-b[0]);};
+  // 계약이 회차보다 적으면 첫·끝 포함 고르게: 1,320·1,360·1,380. 1,320을 사도 다음 목표가 1,340으로 당겨지지 않는다.
+  let f=futures();ctx.applyFutureAutoBuyPlan(f,config({contracts:3}));
+  assert.deepEqual(open(f),[[1320,1],[1360,1],[1380,1]]);
+  Object.assign(pending(f)[0].t,{completed:true,executionPrice:1320});ctx.applyFutureAutoBuyPlan(f);
+  assert.deepEqual(open(f),[[1360,1],[1380,1]]);
+  Object.assign(pending(f).find(x=>x.t.price===1360).t,{completed:true,executionPrice:1360.5});ctx.applyFutureAutoBuyPlan(f);
+  assert.deepEqual(open(f),[[1380,1]]);
+  // 계약이 회차보다 많으면 회차의 일부 계약만 체결해도 다른 회차 계약 수가 옮겨 다니지 않는다.
+  f=futures();ctx.applyFutureAutoBuyPlan(f,config());
+  assert.deepEqual(open(f),[[1320,2],[1340,2],[1360,2],[1380,1]]);
+  Object.assign(pending(f)[0].t,{completed:true,executionPrice:1320});ctx.applyFutureAutoBuyPlan(f);
+  assert.deepEqual(open(f),[[1320,1],[1340,2],[1360,2],[1380,1]]);
+  // 이평선이 움직이면 같은 회차(32일선 3차 = 1,326 + 54 × ⅔)의 가격이 선을 따라 움직인다.
+  const prices=(at,start,next)=>({updatedAt:at,stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-08',close:1390,ma:{'32일선':start,'42일선':next}}}});
+  f=futures();ctx.applyFutureAutoBuyPlan(f,config({contracts:3}));Object.assign(pending(f)[0].t,{completed:true,executionPrice:1320});
+  ctx.fillPrices({futures:f},prices('2026-10-08T01:00:00Z',1326,1380));
+  assert.deepEqual(open(f),[[1362,1],[1380,1]]);
+  assert.equal(f.levels.reduce((n,l)=>n+l.tranches.length,0),3,'총 계약 수는 그대로');
+});
