@@ -333,6 +333,19 @@ test('손절 기준 창의 하단선은 신저점보다 먼저 적용하고, 하
   assert.deepEqual(cuts(),planned,'손절 회차는 마지막 하단 그대로');
   ctx.priceData={...quote({}),futures:{}};assert.equal(ctx.futureFloorStale(line,line.rebuy),true,'보유 월물 시세가 없어도 같은 표시');
   const direct=futures();assert.equal(ctx.futureFloorStale(direct,direct.rebuy),false,'직접 하단');
+  // 보유 근월물의 월봉이 12개뿐인데 20월선을 고르면(수집기가 150개월선까지 요청하고도 12개만 받음) 계산할 수 없다고 알리고 고를 수 있는 길이를 보인다
+  const young=futures({floorLine:'20개월선'});delete young.rebuy.floorPrice;
+  const quote12=ma=>({updatedAt:'2026-10-05T00:00:00Z',stocks:{},fx:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-05',close:1405,ma,closes:{M:Array(12).fill(1300)}}}});
+  ctx.priceData=quote12({'150개월선':null});
+  const fe=vm.runInContext('futuresEntry',ctx)(ctx.priceData,young),ys=ctx.futureRebuySummary(young);
+  assert.deepEqual({...ctx.futureFloorShort(fe,'20개월선')},{have:12,max:'12월선'});assert.equal(ctx.futureFloorShort(fe,'12개월선'),null,'12월선은 계산 가능');
+  assert.equal(ctx.futureRebuyFoldLine(young.rebuy,ys,1410,false,null,null,fe).text,'하단 20월선 계산 불가 · 12월선까지 · 펼쳐서 확인하세요');
+  assert.match(ctx.futureRebuyTrack(young.rebuy,ys,1410,'',x=>x,fe),/보유 근월물은 봉이 12개뿐이라 손절 하단 20월선을 계산할 수 없습니다\. 제목 옆 연필에서 12월선 이하로/);
+  ctx.priceData=quote12({'12개월선':1310});
+  assert.equal(ctx.futureFloorShort(vm.runInContext('futuresEntry',ctx)(ctx.priceData,young),'20개월선'),null,'수집기가 그 길이까지 요청하지 않았으면(덜 받은 봉) 한계로 보지 않는다');
+  ctx.priceData=quote12({'25개월선':null});
+  assert.ok(ctx.futureFloorShort(vm.runInContext('futuresEntry',ctx)(ctx.priceData,young),'20개월선'));
+  assert.equal(ctx.futureFloorShort(null,'20개월선'),null,'시세 파일 전');
   ctx.priceData=null;
   assert.equal(JSON.stringify(line),kept,'화면은 기록을 바꾸지 않는다');
 });
