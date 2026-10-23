@@ -735,7 +735,7 @@ test('저축 계획: 옛 할부·큰 지출 기록은 예측에 반영하지 않
   }
 });
 
-test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저장 우선 + 버린 쪽 보관', () => {
+test('기기 간 병합: 구역마다 바뀐 쪽, 같은 칸을 둘 다 바꾸면 나중 저장 우선 + 버린 쪽 보관', () => {
   const base = {version: 1, allocation: {savedAt: 'T1', total: 1}, ledger: {savedAt: 'T1', years: []}};
   const local = {version: 1, allocation: {savedAt: 'T3', total: 2}, ledger: {savedAt: 'T1', years: []}, savings: {savedAt: 'T2', actual: [], scenarios: []}};
   const remote = {version: 1, allocation: {savedAt: 'T2', total: 3}, ledger: {savedAt: 'T4', years: [{year: 2026}]}};
@@ -748,6 +748,52 @@ test('기기 간 병합: 구역마다 바뀐 쪽, 둘 다 바뀌면 나중 저�
   assert.equal(c.cleanAssets({version: 2}), null); assert.equal(c.cleanAssets([]), null);
   assert.deepEqual(c.cleanAssets({allocation: {}}).allocation, {classes: [], groups: [], cash: []});
   assert.equal(c.assetsBlank({version: 1}), true); assert.equal(c.assetsBlank(local), false);
+});
+
+test('기기 간 병합: 두 기기가 다른 종목·칸을 고치면 둘 다 남기고, 같은 칸만 나중 저장 값을 쓴다(가짜 기록)', () => {
+  const it = (id, amount, extra = {}) => ({id, name: `가상 ${id}`, amount, ...extra});
+  const base = {version: 1, allocation: {savedAt: 'T1', total: 10, classes: [{id: 'c', name: '주식'}], cash: [], groups: [{id: 'g', items: [it('x', 100), it('y', 200), it('z', 300)]}],
+    trades: {'buy:x:25일선:0': {items: [{id: 't1', qty: 1}]}}}};
+  const before = JSON.stringify(base), local = structuredClone(base), remote = structuredClone(base);
+  local.allocation.savedAt = 'T2'; local.allocation.groups[0].items[0].amount = 150; local.allocation.groups[0].items.push(it('n1', 50));
+  local.allocation.trades['buy:x:25일선:1'] = {items: [{id: 't2', qty: 2}]};
+  remote.allocation.savedAt = 'T3'; remote.allocation.groups[0].items[1].note = '메모'; remote.allocation.groups[0].items.splice(2, 1); remote.allocation.groups[0].items.splice(1, 0, it('r1', 70));
+  remote.allocation.trades['buy:x:25일선:0'].items[0].qty = 3;
+  const lb = JSON.stringify(local), rb = JSON.stringify(remote);
+  let {doc, lost, conflicts} = c.mergeAssets(local, remote, base);
+  assert.deepEqual(doc.allocation.groups[0].items.map(x => [x.id, x.amount, x.note ?? '']), [['x', 150, ''], ['r1', 70, ''], ['y', 200, '메모'], ['n1', 50, '']], '이 기기 금액·새 종목 + 저장소 메모·새 종목, 저장소만 지운 z는 지움');
+  assert.deepEqual(doc.allocation.trades, {'buy:x:25일선:0': {items: [{id: 't1', qty: 3}]}, 'buy:x:25일선:1': {items: [{id: 't2', qty: 2}]}}, '분할매수 체결 기록도 회차별로 합침');
+  assert.equal(doc.allocation.savedAt, 'T3'); assert.deepEqual([lost, conflicts], [[], 0], '겹친 칸이 없으면 보관하지 않음');
+  assert.equal(JSON.stringify([base, local, remote]), `[${before},${lb},${rb}]`, '병합은 원본을 바꾸지 않는다');
+  // 같은 칸(x 금액)을 둘 다 고침 → 늦은 저장(저장소) 값, 다른 쪽 구역 전체를 보관
+  remote.allocation.groups[0].items[0].amount = 180;
+  ({doc, lost, conflicts} = c.mergeAssets(local, remote, base));
+  assert.equal(doc.allocation.groups[0].items[0].amount, 180); assert.equal(doc.allocation.groups[0].items[2].note, '메모');
+  assert.equal(conflicts, 1); assert.deepEqual(lost, [{section: 'allocation', data: local.allocation}]);
+  // 한쪽이 지우고 다른 쪽이 고친 종목은 고친 쪽을 남긴다
+  local.allocation.groups[0].items[2].amount = 333; remote.allocation.groups[0].items[0].amount = 150;
+  ({doc, conflicts} = c.mergeAssets(local, remote, base));
+  assert.equal(doc.allocation.groups[0].items.find(x => x.id === 'z').amount, 333); assert.equal(conflicts, 1);
+});
+
+test('기기 간 병합: 월별 손익은 연·월, 저축 실적은 연월로 합치고 키 없는 목록은 한 칸으로 본다(가짜 기록)', () => {
+  const month = (m, pnl, balances = [1, 2]) => ({m, pnl, balances});
+  const base = {version: 1, ledger: {savedAt: 'T1', years: [{year: 2026, accounts: [{name: '가상 계좌'}], months: [month(1, 10), month(2, 20)]}]},
+    savings: {savedAt: 'T1', actual: [{ym: '2026-01', total: 1}], scenarios: [{id: 's', stages: [{age: 40}]}]}};
+  const local = structuredClone(base), remote = structuredClone(base);
+  local.ledger.savedAt = 'T2'; local.ledger.years[0].months.push(month(3, 30)); local.ledger.years[0].months[0].balances = [5, 2];
+  local.savings.savedAt = 'T2'; local.savings.actual.push({ym: '2026-02', total: 2});
+  remote.ledger.savedAt = 'T3'; remote.ledger.years[0].months[1].pnl = 25; remote.ledger.years[0].months[0].balances = [1, 6]; remote.ledger.years.push({year: 2027, accounts: [], months: []});
+  remote.savings.savedAt = 'T3'; remote.savings.actual.push({ym: '2026-03', total: 3}); remote.savings.scenarios[0].stages[0].age = 41;
+  const {doc, lost, conflicts} = c.mergeAssets(local, remote, base);
+  assert.deepEqual(doc.ledger.years.map(y => y.year), [2026, 2027]);
+  assert.deepEqual(doc.ledger.years[0].months.map(x => [x.m, x.pnl]), [[1, 10], [2, 25], [3, 30]]);
+  assert.deepEqual(doc.ledger.years[0].months[0].balances, [1, 6], '계좌별 잔액(키 없는 목록)은 한 칸: 늦은 저장');
+  assert.deepEqual(doc.savings.actual.map(a => a.ym), ['2026-01', '2026-02', '2026-03']); assert.equal(doc.savings.scenarios[0].stages[0].age, 41);
+  assert.equal(conflicts, 1); assert.deepEqual(lost.map(x => x.section), ['ledger']);
+  // 지난 기준에 없던 구역을 양쪽이 만들었으면 키·항목을 모두 남긴다(같은 칸만 늦은 쪽)
+  const fresh = c.mergeAssets({version: 1, installments: {savedAt: 'T2', price: 1, months: 3}}, {version: 1, installments: {savedAt: 'T3', price: 2, fee: 5}}, {version: 1});
+  assert.deepEqual(fresh.doc.installments, {savedAt: 'T3', price: 2, months: 3, fee: 5}); assert.equal(fresh.conflicts, 1);
 });
 
 // ---------- 플래너 체결 → 자산 배분 연동 ----------

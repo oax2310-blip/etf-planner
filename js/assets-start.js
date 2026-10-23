@@ -9,11 +9,12 @@ function priceLine(message=assetStore.priceMessage){
 }
 function setAssetSync(){
   const cfg=assetConfig(),s=assetStore.status;
-  const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`}[s.state];
+  const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];
   el("syncStatus").textContent=text;el("syncDialogStatus").textContent=text;el("syncBtn").title=text;
-  el("syncBtn").className="btn mini sync-btn "+(!cfg?"off":s.state==="error"?"warn":s.state==="busy"?"busy":"ok");
+  el("syncBtn").className="btn mini sync-btn "+(!cfg?"off":s.state==="error"||s.state==="choose"?"warn":s.state==="busy"?"busy":"ok");
   el("syncOff").hidden=!!cfg;el("syncOn").hidden=!cfg;el("syncRepo").textContent=cfg?.repo||"";el("syncNowBtn").hidden=!cfg;
   el("downloadRecovery").hidden=!assetStore.recovery().length;
+  assetStore.renderNotice?.(el("assetSyncNotice"),()=>el("downloadRecovery").click());
 }
 assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;setAssetSync();priceLine();if(type==="prices"||type==="change")updateLedgerDividendFx?.();if(type==="change")redrawIdle();});
 el("syncBtn").onclick=()=>el("syncDialog").showModal();
