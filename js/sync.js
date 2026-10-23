@@ -13,7 +13,7 @@ const PRICE_FILE = "etf-planner-prices.json"; // 데이터 저장소 Actions(KIS
 const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우기·표시에 쓰는 값과 ETag만). 이 기기에만 두고 동기화 기록에는 넣지 않는다
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
 let priceRefreshBusy=false, priceReadMessage="";
-const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false};
+const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false,waitTyping:false};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
 function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
@@ -136,6 +136,10 @@ async function refreshPrices(){
 function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt),fx=fxEntry(d),btc=btcEntry(d),stocks=Object.values(d?.stocks||{}).filter(e=>e?.kind!=="코인").length;
   priceReadMessage=message||"";$("priceRefreshStatus").className=message?"warning":"";$("priceRefreshStatus").textContent=message||(at?`최근 수집 ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:connected()?"시세를 바로 수집한 뒤 불러옵니다.":"동기화를 연결하면 시세를 불러올 수 있습니다.");
   $("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${stocks}개 · 달러선물 ${Object.keys(d.futures).length}개 월물 · ${fx?`현물 환율 ${priceRound(fx.close,2)}원 (${fx.asOf}${fx.stale?" · 조회 실패":""}${priceOld(fx)?" · 지난 시세":""})`:"현물 환율 없음(기존 값 유지)"}${btc?` · 비트코인 $${priceRound(btc.close,2).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} (${btc.asOf} UTC${btc.stale?" · 조회 실패":""}${priceOld(btc)?" · 지난 시세":""})`:""}. 현재가·이동평균선 기준가·달러 계획 환율을 자동으로 채웁니다.`:"");}
+// 입력 중인 칸(글자·숫자·선택, 동기화 창의 연결 칸은 제외). 다른 기기 기록을 적용하면 화면을 다시 그리며 저장하지 않은 입력이 지워지고
+// 그 칸의 저장 버튼도 바뀌기 전 기록에 묶이므로, 적용(자동 병합·충돌 창 포함)은 칸에서 나올 때까지 미루고 focusout에서 다시 동기화한다.
+function typingIn(el){return !!el&&(el.tagName==="TEXTAREA"||el.tagName==="SELECT"||el.tagName==="INPUT"&&!["checkbox","radio","button","submit","file"].includes(el.type))&&!el.closest?.("#syncDialog");}
+function holdForTyping(){if(!typingIn(document.activeElement))return false;sync.waitTyping=true;syncStatus("입력 중 · 끝나면 동기화");return true;}
 // 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
@@ -154,7 +158,7 @@ async function syncNow(beforePriceCollection=false){
   if(!connected())return;
   if(sync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){sync.again=true;return;}
   const repo=sync.repo,token=sync.token,same=()=>sync.repo===repo&&sync.token===token;
-  sync.busy=true;sync.again=false;sync.failed=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
+  sync.busy=true;sync.again=false;sync.failed=false;sync.waitTyping=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
   try{
     if(!sync.checked){await checkRepo();if(!same())return;}
     const {sha,snapshot:raw}=await readRemote();if(!same())return;
@@ -178,13 +182,14 @@ async function syncNow(beforePriceCollection=false){
       }
       await writeRemote(local,"");if(!same())return;markSynced(local);sync.blocked=false;
     }
-    else if(local===base||(!base&&(isBlank(local)||(!hadStoredState&&local===initialSnapshot)))){applyRemote(remote);await settle(remote);}
+    else if(local===base||(!base&&(isBlank(local)||(!hadStoredState&&local===initialSnapshot)))){if(holdForTyping())return;applyRemote(remote);await settle(remote);}
     else if(remote===base)await settle(local);
     else if(base&&!(merged=mergeThreeWay(JSON.parse(local),JSON.parse(remote),JSON.parse(base))).conflicts.length){
       // 양쪽이 지난 동기화 뒤 서로 다른 칸만 바꿨으면 묻지 않고 합친다(계획·알림·재매수 종목은 항목별, 달러선물 보유·손절처럼 함께 바뀌는 칸은 겹치면 묻는다).
-      const json=snapshotOf(merged.value);applyRemote(json);await settle(json);
+      const json=snapshotOf(merged.value);if(holdForTyping())return;applyRemote(json);await settle(json);
     }
     else{
+      if(holdForTyping())return;
       sync.blocked=true;syncStatus("기록 차이 확인 필요 · 자동 저장 대기");
       const choice=await chooseConflict(local,remote,merged?.conflicts);
       if(!same())return;
@@ -198,7 +203,7 @@ async function syncNow(beforePriceCollection=false){
       else syncStatus("기록 차이 확인 전 · 이 기기에만 저장 중");
     }
   }catch(error){if(error.stale){sync.again=true;syncStatus("다른 기기 저장 확인 중…");}else{sync.failed=true;syncStatus(`이 기기 저장됨 · ${error.message}`);}}
-  finally{sync.busy=false;syncBadge();if(sync.redraw)redrawIdle();if(typeof renderPushSetup==="function")renderPushSetup();if(sync.failed)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
+  finally{sync.busy=false;syncBadge();if(sync.redraw)redrawIdle();if(typeof renderPushSetup==="function")renderPushSetup();if(sync.failed||sync.waitTyping)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
 }
 function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.checked=false;sync.blocked=false;}
 function refreshTokenField(){$("githubToken").placeholder=localStorage.getItem(TOKEN_KEY)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 값";}
@@ -226,6 +231,7 @@ $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeIte
 // 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 자동 동기화를 멈춘다.
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
+document.addEventListener("focusout",e=>{if(sync.waitTyping&&!typingIn(e.relatedTarget)){sync.waitTyping=false;scheduleSync(300);}}); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 loadConfig();refreshTokenField();refreshCollectionTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
 // JSON 복원: 검사 → 백업 시각·계획 수를 보여 주고 확인 → 지금 기록을 복구본에 남긴 뒤 바꾼다(남기지 못하면 바꾸지 않음). 백업·복구본의 시각·사유는 기록에 넣지 않는다.
