@@ -29,9 +29,26 @@ const planQuoteKind = (ticker, currency) => currency==="KRW"?"국내":isBitcoinT
 const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&Number(e.close)>0?e:null; };
 // 시세 통화: 해외 종목·비트코인은 달러, 그 밖(국내)은 원화
 const quoteCurrency = e => e?.kind==="해외"||e?.kind==="코인" ? "USD" : "KRW";
-// 달러선물은 보유 근월물(계약 수 > 0인 가장 가까운 월물, futures.js nearestMonth와 같음)의 시세
-function priceMonth(f){ return (Array.isArray(f?.positions)?f.positions:[]).filter(p=>Number(p.contracts)>0&&/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.month))).map(p=>String(p.month)).sort()[0]||""; }
-const futuresEntry = (prices, f) => priceEntry(prices?.futures?.[priceMonth(f)]);
+// 달러선물 시세·알림 월물: 보유 근월물(계약 수 > 0인 가장 가까운 월물, futures.js nearestMonth와 같음).
+// 손절로 보유를 모두 팔았으면 마지막 손절 기록의 월물(futures.rebuy.cuts[].month)을 쓰고, 시세 파일 수집 시각(prices.updatedAt, KST 날짜)이
+// 그 월물의 셋째 월요일(최종거래일) 당일부터는 다음 월물로 넘긴다(공휴일로 앞당겨진 최종거래일은 따지지 않음). prices가 없으면 넘기지 않는다.
+// 비공개 수집기 kis_prices.py targets·rebuy_month가 같은 규칙으로 시세를 받는다(바꾸면 함께).
+function priceMonth(f, prices=null){
+  const ok=m=>typeof m==="string"&&/^\d{4}(0[1-9]|1[0-2])$/.test(m);
+  const held=(Array.isArray(f?.positions)?f.positions:[]).filter(p=>Number(p.contracts)>0&&/^\d{4}(0[1-9]|1[0-2])$/.test(String(p.month))).map(p=>String(p.month)).sort()[0];
+  if(held)return held;
+  const cuts=f?.rebuy&&typeof f.rebuy==="object"&&Array.isArray(f.rebuy.cuts)?f.rebuy.cuts:[];
+  let month=cuts.filter(c=>c&&typeof c==="object"&&ok(c.month)).at(-1)?.month||"";
+  const at=Date.parse(prices?.updatedAt);if(!month||!Number.isFinite(at))return month;
+  const today=new Date(at+9*36e5).toISOString().slice(0,10);
+  for(let n=0;n<24;n++){
+    const y=Number(month.slice(0,4)),m=Number(month.slice(4)),first=new Date(Date.UTC(y,m-1,1)).getUTCDay();
+    if(today<`${month.slice(0,4)}-${month.slice(4)}-${String(1+(8-first)%7+14).padStart(2,"0")}`)break;
+    month=m===12?`${y+1}01`:`${y}${String(m+1).padStart(2,"0")}`;
+  }
+  return month;
+}
+const futuresEntry = (prices, f) => priceEntry(prices?.futures?.[priceMonth(f,prices)]);
 // 봉 기록(daily·weekly·monthly)에서 종가만 오래된 것부터: {D 일봉, W 주봉, M 월봉}. 주봉이 없으면(N주선을 쓰는 계획이 아직 없으면)
 // 일봉을 주(월~일)마다 묶어 그 주 마지막 종가로 만든다. cols는 시세 파일 columns(없으면 스크립트 기본 date·open·high·low·close·volume).
 function barCloses(e, cols){

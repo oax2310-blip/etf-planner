@@ -94,7 +94,7 @@ function buildTradeAlertRules(data,priceDoc){
       add(`trade:plan:${p.id}:${i}`,ticker,i===0?"분할매도 첫 매도":"분할매도 "+(i+1)+"회",price,Number(p.endPrice)>Number(p.startPrice)?"up":"down",basis,"stocks",kind);
     }
   }
-  const f=d.futures,month=priceMonth(f);
+  const f=d.futures,month=priceMonth(f,prices);
   const maEndPlan=f?.buyPlan?.endLine?futureAutoBuyPlan(f):null;
   if(f&&month)for(const [i,l] of (Array.isArray(f.levels)?f.levels:[]).entries()){
     if(maEndPlan?.error||maEndPlan?.waiting)continue;

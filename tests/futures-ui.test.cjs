@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const source=['ma-ladder.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
+const source=['ma-ladder.js','prices.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const clone=value=>JSON.parse(JSON.stringify(value));
 const level=(days,price,contracts=3)=>({days,unit:'일선',price,confirmed:true,contracts,tranches:Array.from({length:contracts},(_,slot)=>({price,completed:false,executionPrice:null,slot}))});
