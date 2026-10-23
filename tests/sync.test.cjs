@@ -30,14 +30,14 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const server = {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
   const element = name => {
-    if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }});
+    if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }, replaceChildren(...children) { this.children = children; }});
     return elements.get(name);
   };
   const reply = (status, body, headers = {}) => ({ok: status >= 200 && status < 300, status, headers: {get: name => headers[name.toLowerCase()] ?? null}, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
-    $: element, $$:()=>[], esc:value=>String(value??""), document: {addEventListener() {}, hidden: false},
+    $: element, $$:()=>[], esc:value=>String(value??""), document: {addEventListener() {}, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,crypto:require('node:crypto').webcrypto,
     setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval() {},
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
@@ -79,6 +79,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   if(includeHistory)for(const name of ['alert-history-store.js','alert-history.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js',name),'utf8'),context);
   vm.runInContext(source, context);
   vm.runInContext(pricesSource, context);
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../js/assets-calc.js'), 'utf8'), context); // 충돌 자동 병합(mergeThreeWay)
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
@@ -104,13 +105,46 @@ test('악성·잘못된 백업은 현재 기록·복구본·원격 저장을 변
 
 test('정상 옛 백업을 가져오고 저장·동기화·내려받기·재복원해도 선택 필드와 체결을 보존한다',async()=>{
   const incoming={...empty(),plans:[{id:'legacy',stages:'2',checked:[true,false],holdings:[{name:'예시',shares:4}],note:'문자 < > & 메모',fills:{0:{plannedQty:2,qty:2,price:100}}}],rebuy:{items:[{id:'r',stages:[{name:'25분봉',price:100}],cuts:[null]}]}};
-  const h=harness({connect:false});h.context.alert=()=>{};
+  const h=harness({connect:false});h.context.alert=()=>{};h.context.confirm=()=>true;
   const restore=async value=>h.elements.get('importInput').onchange({target:{files:[{text:async()=>JSON.stringify(value)}],value:'backup.json'}});
   await restore(incoming);assert.deepEqual(JSON.parse(h.items.get('test-state')),incoming);
   let downloaded;h.context.downloadJson=value=>{downloaded=JSON.parse(JSON.stringify(value));};h.elements.get('exportBtn').onclick();
   delete downloaded.exportedAt;assert.deepEqual(downloaded,incoming);
   h.items.set('etf-planner-data-repo',REPO);h.items.set('etf-planner-github-token','test-token');h.context.loadConfig();await h.run();
   assert.deepEqual(h.remoteData(),incoming);await restore(downloaded);assert.deepEqual(JSON.parse(h.items.get('test-state')),incoming);
+});
+
+test('JSON 복원은 백업 시각·계획 수를 보여 주고 확인해야 바꾸며, 바꾸기 전 기록을 복구본 목록에 남긴다',async()=>{
+  const local={...empty(),plans:[{id:'now',stages:2},{id:'now2',stages:2}]},backup={...empty(),plans:[{id:'old',stages:2}],exportedAt:'2026-09-01T05:20:00Z'};
+  const h=harness({local,connect:false,stored:{'test-state':JSON.stringify(local)}}),asked=[],alerts=[];h.context.alert=m=>alerts.push(m);
+  const restore=async(value,answer)=>{h.context.confirm=m=>{asked.push(m);return answer;};await h.elements.get('importInput').onchange({target:{files:[{text:async()=>JSON.stringify(value)}],value:'backup.json'}});};
+  await restore(backup,false);
+  assert.match(asked[0],/백업 파일: 2026\. 9\. 1\..* 백업 · 계획 1개 · 달러선물 0개 월물/);assert.match(asked[0],/지금 기록: 계획 2개/);
+  assert.deepEqual(h.context.state,local);assert.equal(h.items.get('etf-planner-sync-recovery'),undefined,'취소하면 아무것도 바꾸지 않는다');assert.equal(alerts.length,0);
+  await restore(backup,true);
+  assert.deepEqual(JSON.parse(h.items.get('test-state')).plans,backup.plans);assert.equal(JSON.parse(h.items.get('test-state')).exportedAt,undefined,'백업 시각은 기록에 넣지 않는다');
+  const kept=JSON.parse(h.items.get('etf-planner-sync-recovery'));
+  assert.equal(kept.length,1);assert.deepEqual(kept[0].plans,local.plans);assert.equal(kept[0].recoveryReason,'JSON 복원 전 이 기기 기록');
+  // 받은 복구본은 그대로 다시 복원할 수 있다
+  await restore(kept[0],true);assert.deepEqual(JSON.parse(h.items.get('test-state')).plans,local.plans);
+  assert.equal(JSON.parse(h.items.get('test-state')).recoveryReason,undefined);
+});
+
+test('복구본은 최근 5개까지 목록으로 남기고 옛 한 개 형식도 이어 받으며, 항목마다 내려받을 수 있다',async()=>{
+  const old={...empty(),plans:[{id:'legacy-recovery'}],recoveryReason:'옛 복구본',exportedAt:'2026-10-01T00:00:00Z'};
+  const h=harness({connect:false,stored:{'etf-planner-sync-recovery':JSON.stringify(old)}});
+  const box=h.elements.get('syncRecoveryList');assert.equal(box.hidden,false);assert.equal(box.children.length,2,'제목 + 옛 복구본 1개');
+  for(let i=0;i<6;i++)h.context.backupRecord(JSON.stringify({...empty(),plans:[{id:'r'+i}]}),'시험 보관');
+  const list=JSON.parse(h.items.get('etf-planner-sync-recovery'));
+  assert.deepEqual(list.map(r=>r.plans[0].id),['r1','r2','r3','r4','r5'],'오래된 것부터 지운다');
+  assert.equal(box.children.length,6);assert.match(box.children[1].textContent,/시험 보관 · 계획 1개/);
+  let downloaded;h.context.downloadJson=v=>{downloaded=v;};box.children[1].children[0].onclick();assert.equal(downloaded.plans[0].id,'r5','맨 위가 최근 것');
+  // 저장 공간이 모자라면 오래된 복구본을 줄여서라도 남기고, 하나도 못 남기면 예외(덮어쓰기 중단)
+  const setItem=h.context.localStorage.setItem;h.context.localStorage.setItem=(k,v)=>{if(k==='etf-planner-sync-recovery'&&JSON.parse(v).length>2)throw Error('full');setItem(k,v);};
+  h.context.backupRecord(JSON.stringify({...empty(),plans:[{id:'r6'}]}),'시험 보관');
+  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).map(r=>r.plans[0].id),['r5','r6']);
+  h.context.localStorage.setItem=()=>{throw Error('full');};
+  assert.throws(()=>h.context.backupRecord(JSON.stringify(empty()),'시험 보관'),/full/);
 });
 
 test('잘못된 원격 JSON은 이 기기의 기록·동기화 기준·원격 기록을 보존하고 오류를 표시한다',async()=>{
@@ -126,7 +160,7 @@ test('잘못된 원격 JSON은 이 기기의 기록·동기화 기준·원격 �
 test('백업 복원·원격 적용 중 브라우저 저장이 실패하면 메모리의 기존 기록도 유지한다',async()=>{
   const local={...empty(),plans:[{id:'original',stages:2}]},incoming={...empty(),plans:[{id:'new',stages:2}]};
   const h=harness({local,connect:false,stored:{'test-state':JSON.stringify(local)}}),before=[...h.items];
-  h.context.localStorage.setItem=()=>{throw Error('synthetic storage full');};h.context.alert=()=>{};
+  h.context.localStorage.setItem=()=>{throw Error('synthetic storage full');};h.context.alert=()=>{};h.context.confirm=()=>true;
   await h.elements.get('importInput').onchange({target:{files:[{text:async()=>JSON.stringify(incoming)}],value:'backup.json'}});
   assert.deepEqual(h.context.state,local);assert.deepEqual([...h.items],before);
   assert.throws(()=>h.context.applyRemote(JSON.stringify(incoming)),/synthetic storage full/);
@@ -237,10 +271,11 @@ test('저장소가 그대로인 동안 이 기기 수정만 현재 sha로 올린
   assert.deepEqual(h.remoteData().plans, local.plans);
 });
 
-test('양쪽 다 바뀌면 묻고, 나중에 결정하면 어느 쪽도 덮어쓰지 않는다', async () => {
-  const local = {plans: [{id: 'device'}], futures: {positions: []}, actions: {}};
-  const remote = {plans: [{id: 'repo'}], futures: {positions: []}, actions: {}};
-  const h = harness({local, remote, base: snap(empty())});
+test('양쪽이 같은 칸을 다르게 바꾸면 겹친 곳과 함께 묻고, 나중에 결정하면 어느 쪽도 덮어쓰지 않는다', async () => {
+  const old = {plans: [{id: 'p', note: '처음'}], futures: {positions: []}, actions: {}};
+  const local = {plans: [{id: 'p', note: '이 기기'}], futures: {positions: []}, actions: {}};
+  const remote = {plans: [{id: 'p', note: '저장소'}], futures: {positions: []}, actions: {}};
+  const h = harness({local, remote, base: snap(old)});
   const work = h.restored();
   await waitFor(() => h.elements.get('conflictLater')?.onclick);
   h.elements.get('conflictLater').onclick();
@@ -248,6 +283,37 @@ test('양쪽 다 바뀌면 묻고, 나중에 결정하면 어느 쪽도 덮어�
   assert.equal(h.server.writes, 0);
   assert.deepEqual(h.remoteData().plans, remote.plans);
   assert.match(h.status(), /이 기기에만/);
+  assert.match(h.elements.get('conflictMessage').textContent, /같은 곳\(분할매도\)을 다르게 고쳤습니다\. 이 기기: 계획 1개/);
+});
+
+test('양쪽이 지난 동기화 뒤 서로 다른 칸만 바꿨으면 묻지 않고 합쳐 올린다', async () => {
+  const old = {plans: [{id: 'a', note: ''}, {id: 'b', note: ''}, {id: 'gone'}], futures: {positions: [{month: '202612', contracts: 2}], targetPrice: 1480}, actions: {}};
+  const local = structuredClone(old), remote = structuredClone(old);
+  local.plans[0].note = '이 기기 메모'; local.plans.push({id: 'new-device'}); local.futures.targetPrice = 1500;
+  remote.plans[1].note = '저장소 메모'; remote.plans.splice(2, 1); remote.alerts = {rules: [{id: 'r', ticker: 'AAA', period: 20, unit: '일선', enabled: true}]};
+  const h = harness({local, remote, base: snap(old)});
+  await h.restored();
+  assert.equal(h.elements.get('conflictDialog')?.open, undefined, h.status());
+  const saved = h.remoteData();
+  assert.deepEqual(saved.plans.map(p => [p.id, p.note]), [['a', '이 기기 메모'], ['b', '저장소 메모'], ['new-device', undefined]], '저장소가 지운 계획은 지우고 이 기기가 만든 계획은 남긴다');
+  assert.equal(saved.futures.targetPrice, 1500); assert.deepEqual(saved.alerts, remote.alerts);
+  assert.deepEqual(JSON.parse(h.items.get('test-state')).plans, saved.plans); assert.match(h.status(), /동기화 완료/);
+  assert.equal(h.items.get('etf-planner-sync-base:' + REPO), vm.runInContext('dataSnapshot()', h.context));
+  assert.equal(h.server.writes, 1); assert.equal(h.items.get('etf-planner-sync-recovery'), undefined, '겹치지 않으면 보관하지 않는다');
+});
+
+test('달러선물 보유처럼 함께 바뀌는 칸을 양쪽이 고쳤으면 합치지 않고 저장소를 기본으로 묻는다', async () => {
+  const old = {plans: [], futures: {positions: [{month: '202612', contracts: 4, settlementPrice: 1450}], baselinePnl: 0}, actions: {}};
+  const local = structuredClone(old), remote = structuredClone(old);
+  local.futures.positions[0].contracts = 3; local.futures.baselinePnl = -500000; // 이 기기: 손절 체크(보유·정산손익)
+  remote.futures.positions[0].contracts = 6; // 저장소: 보유 직접 수정
+  const h = harness({local, remote, base: snap(old)});
+  const work = h.restored();
+  await waitFor(() => h.elements.get('keepRemote')?.onclick);
+  assert.match(h.elements.get('conflictMessage').textContent, /같은 곳\(달러선물\)/);
+  h.elements.get('keepRemote').onclick(); await work;
+  assert.deepEqual(JSON.parse(h.items.get('test-state')).futures, remote.futures, '겹치면 한쪽 기록 전체를 쓴다(보유·정산손익을 섞지 않음)');
+  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).at(-1).futures, local.futures);
 });
 
 test('저장소 기록을 고르면 이 기기 기록을 복구용으로 남긴다', async () => {
@@ -259,7 +325,7 @@ test('저장소 기록을 고르면 이 기기 기록을 복구용으로 남긴�
   h.elements.get('keepRemote').onclick();
   await work;
   assert.deepEqual(JSON.parse(h.items.get('test-state')).plans, remote.plans);
-  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).plans, local.plans);
+  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).at(-1).plans, local.plans);
   assert.equal(h.server.writes, 0);
 });
 
@@ -272,7 +338,7 @@ test('이 기기 기록을 고르면 저장소 기록을 복구용으로 남기�
   h.elements.get('keepLocal').onclick();
   await work;
   assert.deepEqual(h.remoteData().plans, local.plans);
-  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).plans, remote.plans);
+  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).at(-1).plans, remote.plans);
 });
 
 test('올리는 순간 다른 기기가 먼저 저장했으면(409) 덮어쓰지 않는다', async () => {

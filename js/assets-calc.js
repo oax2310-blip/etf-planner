@@ -762,38 +762,43 @@ function cleanAssets(doc){
   return out;
 }
 const assetsBlank = doc => !doc||ASSET_SECTIONS.every(s=>!doc[s]);
-// 구역마다 3방향 병합: 한쪽에만 있는 구역은 그쪽, 한쪽만 바뀌었으면(지난 동기화 base와 비교) 바뀐 쪽, 둘 다 바뀌었으면 칸마다 합친다.
-// 객체는 키마다, id(없으면 ym·year·m)가 모두 있고 겹치지 않는 목록은 항목마다 합치며, 그 밖의 목록·값은 한 칸으로 본다.
-// 한쪽만 바꾼 칸은 그 값, 한쪽이 지우고 다른 쪽이 고친 칸은 고친 쪽, 양쪽이 다르게 바꾼 칸은 구역 savedAt이 늦은 쪽(같으면 이 기기)을 쓴다.
-// base에 없던 칸은 양쪽에서 새로 만든 키·항목을 모두 남긴다. 목록 순서는 늦은 쪽(순서를 바꾼 쪽이 한쪽뿐이면 그쪽)을 따르고 다른 쪽에만 있는 항목은 앞 항목 뒤에 둔다.
-// 칸이 겹친(지움·고침 포함) 구역은 다른 쪽 기록 전체를 lost로 돌려줘 이 기기에 보관하고, conflicts는 겹친 칸 수다. savedAt은 늦은 값.
+// 기기 간 3방향 병합(자산 mergeAssets·플래너 sync.js 공용): 지난 동기화 기록(base)과 비교해 이 기기(local)·저장소(remote)가 바꾼 칸을 모두 반영한다.
+// 객체는 키마다(savedAt은 늦은 값), id(없으면 ym·year·m)가 모두 있고 겹치지 않는 목록은 항목마다 합치며, 그 밖의 목록·값은 한 칸으로 본다.
+// 한쪽만 바꾼 칸은 그 값, 한쪽이 지우고 다른 쪽이 고친 칸은 고친 쪽, 양쪽이 다르게 바꾼 칸은 preferLocal 쪽을 쓴다. base에 없던 칸은 양쪽에서 새로 만든 키·항목을 모두 남긴다.
+// 목록 순서는 preferLocal 쪽(순서를 바꾼 쪽이 한쪽뿐이면 그쪽)을 따르고 다른 쪽에만 있는 항목은 앞 항목 뒤에 둔다.
+// conflicts는 겹친(지움·고침 포함) 칸의 경로(키·항목 키 목록)다. 원본은 바꾸지 않는다.
+function mergeThreeWay(local, remote, base, preferLocal=true){
+  const same=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null), plain=v=>v!==null&&typeof v==="object"&&!Array.isArray(v), conflicts=[];
+  const listKey=lists=>["id","ym","year","m"].find(k=>lists.every(a=>a.every(x=>plain(x)&&["string","number"].includes(typeof x[k]))&&new Set(a.map(x=>x[k])).size===a.length));
+  const merge=(l,r,b,path)=>{
+    if(same(l,r))return l;
+    if(b!==undefined){if(same(l,b))return r;if(same(r,b))return l;}
+    if(l===undefined||r===undefined){if(b!==undefined)conflicts.push(path);return l===undefined?r:l;} // 지운 쪽보다 고친 쪽을 남긴다
+    if(plain(l)&&plain(r)&&(b===undefined||plain(b))){
+      const out={};
+      for(const k of new Set([...Object.keys(l),...Object.keys(r)])){const v=k==="savedAt"?(String(l[k]||"")>=String(r[k]||"")?l[k]:r[k]):merge(l[k],r[k],b?.[k],[...path,k]);if(v!==undefined)out[k]=v;}
+      return out;
+    }
+    const was=b===undefined?[]:b,key=Array.isArray(l)&&Array.isArray(r)&&Array.isArray(was)&&listKey([l,r,was]);
+    if(!key){conflicts.push(path);return preferLocal?l:r;}
+    const map=a=>new Map(a.map(x=>[x[key],x])),lm=map(l),rm=map(r),bm=map(was);
+    const moved=a=>JSON.stringify(a.map(x=>x[key]).filter(k=>bm.has(k)))!==JSON.stringify(was.map(x=>x[key]).filter(k=>a.some(x=>x[key]===k)));
+    const first=preferLocal?(moved(r)&&!moved(l)?r:l):(moved(l)&&!moved(r)?l:r),order=first.map(x=>x[key]);
+    (first===l?r:l).forEach((x,i,a)=>{if(order.includes(x[key]))return;const at=i?order.indexOf(a[i-1][key])+1:0;order.splice(at>0||!i?at:order.length,0,x[key]);});
+    return order.map(k=>merge(lm.get(k),rm.get(k),bm.get(k),[...path,k])).filter(v=>v!==undefined);
+  };
+  return {value:merge(local,remote,base,[]),conflicts};
+}
+// 자산 기록 구역마다: 한쪽에만 있는 구역은 그쪽, 그 밖에는 mergeThreeWay(겹친 칸은 구역 savedAt이 늦은 쪽, 같으면 이 기기).
+// 칸이 겹친 구역은 다른 쪽 기록 전체를 lost로 돌려줘 이 기기에 보관하고, conflicts는 겹친 칸 수다.
 // 저축 최단 기록만은 양쪽·지난 동기화의 가장 빠른 연월을 보존해, 가정 변경이나 옛 기기의 저장으로 늦어지거나 지워지지 않게 한다.
 function mergeAssets(local, remote, base){
-  const same=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null), plain=v=>v!==null&&typeof v==="object"&&!Array.isArray(v), doc={version:1}, lost=[];
-  const listKey=lists=>["id","ym","year","m"].find(k=>lists.every(a=>a.every(x=>plain(x)&&["string","number"].includes(typeof x[k]))&&new Set(a.map(x=>x[k])).size===a.length));
+  const doc={version:1}, lost=[];
   let conflicts=0;
   for(const s of ASSET_SECTIONS){
     const L=local?.[s], R=remote?.[s], B=base?.[s], newer=String(L?.savedAt||"")>=String(R?.savedAt||"");
-    let hits=0;
-    const merge=(l,r,b)=>{
-      if(same(l,r))return l;
-      if(b!==undefined){if(same(l,b))return r;if(same(r,b))return l;}
-      if(l===undefined||r===undefined){if(b!==undefined)hits++;return l===undefined?r:l;} // 지운 쪽보다 고친 쪽을 남긴다
-      if(plain(l)&&plain(r)&&(b===undefined||plain(b))){
-        const out={};
-        for(const k of new Set([...Object.keys(l),...Object.keys(r)])){const v=k==="savedAt"?(String(l[k]||"")>=String(r[k]||"")?l[k]:r[k]):merge(l[k],r[k],b?.[k]);if(v!==undefined)out[k]=v;}
-        return out;
-      }
-      const was=b===undefined?[]:b,key=Array.isArray(l)&&Array.isArray(r)&&Array.isArray(was)&&listKey([l,r,was]);
-      if(!key){hits++;return newer?l:r;}
-      const map=a=>new Map(a.map(x=>[x[key],x])),lm=map(l),rm=map(r),bm=map(was);
-      const moved=a=>JSON.stringify(a.map(x=>x[key]).filter(k=>bm.has(k)))!==JSON.stringify(was.map(x=>x[key]).filter(k=>a.some(x=>x[key]===k)));
-      const first=newer?(moved(r)&&!moved(l)?r:l):(moved(l)&&!moved(r)?l:r),order=first.map(x=>x[key]);
-      (first===l?r:l).forEach((x,i,a)=>{if(order.includes(x[key]))return;const at=i?order.indexOf(a[i-1][key])+1:0;order.splice(at>0||!i?at:order.length,0,x[key]);});
-      return order.map(k=>merge(lm.get(k),rm.get(k),bm.get(k))).filter(v=>v!==undefined);
-    };
-    const pick=!R?L:!L?R:merge(L,R,B);
-    if(hits){conflicts+=hits;lost.push({section:s,data:newer?R:L});}
+    const m=L&&R?mergeThreeWay(L,R,B,newer):null, pick=m?m.value:L||R;
+    if(m?.conflicts.length){conflicts+=m.conflicts.length;lost.push({section:s,data:newer?R:L});}
     if(pick){const record=s==="savings"?earlierSavingsRecord(L?.milestoneRecord,R?.milestoneRecord,B?.milestoneRecord):null;doc[s]=record?{...pick,milestoneRecord:record}:pick;}
   }
   return {doc, lost, conflicts};

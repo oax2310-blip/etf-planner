@@ -16,7 +16,8 @@ let priceRefreshBusy=false, priceReadMessage="";
 const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
-function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions,rebuy:state.rebuy,alerts:state.alerts,alertHistory:state.alertHistory});}
+function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
+function dataSnapshot(){return snapshotOf(state);}
 const repoOk = r => /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r);
 const connected = () => !!(sync.token && sync.repo);
 // 빈 기기만 처음 연결 때 자동 수신. rebuy·alerts가 있으면 비어 있지 않다.
@@ -29,7 +30,26 @@ function priceRefreshControls(){for(const key of ["refreshPricesBtn","refreshPri
 function scheduleSync(delay=1500){if(!connected()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),delay);}
 // 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다.
 function save(next=state){localStorage.setItem(STORAGE_KEY,JSON.stringify(next));state=next;if(connected() && dataSnapshot()!==sync.base) scheduleSync();if(typeof stockNames==="object")stockNames.remember();}
-function backupRecord(json,reason){localStorage.setItem(RECOVERY_KEY,JSON.stringify({...JSON.parse(json),recoveryReason:reason,exportedAt:new Date().toISOString()}));$("downloadSyncBackup").hidden=false;}
+// 복구본: 덮어쓰기(충돌 선택·JSON 복원) 전 기록을 이 기기에 최근 RECOVERY_LIMIT개까지 목록으로 남긴다(옛 한 개 형식도 목록으로 읽음).
+// 각 항목은 그대로 JSON 복원할 수 있는 플래너 기록 + recoveryReason·exportedAt. 저장 공간이 모자라면 오래된 것부터 줄이고, 하나도 못 남기면 예외로 덮어쓰기를 멈춘다.
+const RECOVERY_LIMIT = 5;
+function recoveryList(){try{const v=JSON.parse(localStorage.getItem(RECOVERY_KEY)||"null");return (Array.isArray(v)?v:v?[v]:[]).filter(x=>x&&typeof x==="object"&&!Array.isArray(x));}catch{return [];}}
+function backupRecord(json,reason){
+  const list=[...recoveryList(),{...JSON.parse(json),recoveryReason:reason,exportedAt:new Date().toISOString()}];
+  for(let n=Math.min(RECOVERY_LIMIT,list.length);;n--){try{localStorage.setItem(RECOVERY_KEY,JSON.stringify(list.slice(-n)));break;}catch(error){if(n<=1)throw error;}}
+  renderRecovery();
+}
+const recordSummary = d => {const pos=Array.isArray(d?.futures?.positions)?d.futures.positions:[],n=pos.reduce((t,p)=>t+(Number(p?.contracts)>0?Number(p.contracts):0),0);return `계획 ${Array.isArray(d?.plans)?d.plans.length:0}개 · 달러선물 ${pos.length}개 월물${n?` ${n}계약`:""}`;};
+const recordTime = at => {const t=Date.parse(at);return t?new Date(t).toLocaleString("ko-KR",{year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"";};
+// 동기화 창의 복구본 목록(최근 것부터). 글자는 textContent로만 넣는다.
+function renderRecovery(){
+  const box=$("syncRecoveryList"),list=recoveryList().reverse();box.hidden=!list.length;
+  box.replaceChildren(...(list.length?[Object.assign(document.createElement("p"),{className:"sync-details",textContent:`플래너 보관 기록 (이 기기에만 최근 ${RECOVERY_LIMIT}개까지 · 내려받아 JSON 파일 복원으로 되돌릴 수 있음)`})]:[]),...list.map(r=>{
+    const row=Object.assign(document.createElement("p"),{className:"sync-details sync-recovery-row",textContent:`${recordTime(r.exportedAt)||"시각 없음"} · ${typeof r.recoveryReason==="string"?r.recoveryReason:"보관한 기록"} · ${recordSummary(r)} `});
+    row.append(Object.assign(document.createElement("button"),{type:"button",className:"btn mini",textContent:"내려받기",onclick:()=>downloadJson(r,`etf-planner-recovery-${String(r.exportedAt||"").slice(0,10)||"record"}.json`)}));
+    return row;
+  }));
+}
 function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 const toB64 = text => {const bytes=new TextEncoder().encode(text);let bin="";for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(bin);};
 const fromB64 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
@@ -59,7 +79,7 @@ async function readRemote(){
   let data;try{data=JSON.parse(text);}catch{throw Error("저장소의 기록 파일을 읽을 수 없습니다. 자동으로 덮어쓰지 않았습니다.");}
   externalData.planner(data);
   if(!data.actions)throw Error("저장소의 기록 파일 형식을 확인할 수 없습니다. 자동으로 덮어쓰지 않았습니다.");
-  return {sha:meta.sha,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions,rebuy:data.rebuy,alerts:data.alerts,alertHistory:data.alertHistory})};
+  return {sha:meta.sha,snapshot:snapshotOf(data)};
 }
 // SHA로 다른 기기의 선행 저장(409/422)을 감지해 다시 읽는다.
 async function writeRemote(snapshot,sha){
@@ -121,9 +141,11 @@ function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|S
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
 // 병합: 원격에 rebuy·alerts가 없으면 이 기기 값 유지. 빈 목록도 지우려면 {items:[]}·{rules:[]}로 저장.
 function applyRemote(snapshot){const incoming=externalData.planner(JSON.parse(snapshot)),next={...state,...incoming};normalize(next);localStorage.setItem(STORAGE_KEY,JSON.stringify(next));state=next;render();}
-function chooseConflict(local,remote){return new Promise(resolve=>{
-  const dialog=$("conflictDialog"),summary=json=>{const d=JSON.parse(json);return `${d.plans.length}개 계획 · 달러선물 ${d.futures.positions?.length||0}개 월물`;};
-  $("conflictMessage").textContent=`이 기기: ${summary(local)} / 저장소: ${summary(remote)}. 먼저 JSON 백업을 내려받아 두면 더 안전합니다.`;
+// 충돌 창: 겹친 곳(overlap = mergeThreeWay 경로, 없으면 지난 동기화 기준이 없는 기기)과 양쪽 계획·월물 수. 저장소 기록을 기본(첫 버튼)으로 둔다.
+const CONFLICT_AREAS={plans:"분할매도",futures:"달러선물",rebuy:"재매수",alerts:"알림 설정",actions:"이전 기록",alertHistory:"알림내역"};
+function chooseConflict(local,remote,overlap=[]){return new Promise(resolve=>{
+  const dialog=$("conflictDialog"),summary=json=>recordSummary(JSON.parse(json)),areas=[...new Set(overlap.map(path=>CONFLICT_AREAS[path[0]]||"기타"))].join("·");
+  $("conflictMessage").textContent=`${areas?`두 기기에서 같은 곳(${areas})을 다르게 고쳤습니다.`:"이 기기와 저장소의 기록이 다릅니다(지난 동기화 기준이 없는 기기)."} 이 기기: ${summary(local)} / 저장소: ${summary(remote)}.`;
   let done=false;const finish=value=>{if(done)return;done=true;dialog.close();resolve(value);};
   $("keepLocal").onclick=()=>finish("local");$("keepRemote").onclick=()=>finish("remote");$("conflictLater").onclick=()=>finish("later");
   dialog.onclose=()=>finish("later");dialog.showModal();
@@ -145,7 +167,7 @@ async function syncNow(beforePriceCollection=false){
     if(fillPrices(state,priceData)){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));sync.redraw=true;}
     sync.sha=sha;
     // 로컬·원격·base를 같은 시세로 채운 뒤 비교(시세 갱신만으로 충돌 창이 뜨지 않음). settle은 채운 원격 값도 저장.
-    let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
+    let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData),merged=null;
     if(typeof alignAlertHistorySnapshots==="function")({local,remote,base}=alignAlertHistorySnapshots(local,remote,base));
     const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha);if(!same())return;markSynced(json);}sync.blocked=false;};
     if(remote===local)await settle(local);
@@ -158,9 +180,13 @@ async function syncNow(beforePriceCollection=false){
     }
     else if(local===base||(!base&&(isBlank(local)||(!hadStoredState&&local===initialSnapshot)))){applyRemote(remote);await settle(remote);}
     else if(remote===base)await settle(local);
+    else if(base&&!(merged=mergeThreeWay(JSON.parse(local),JSON.parse(remote),JSON.parse(base))).conflicts.length){
+      // 양쪽이 지난 동기화 뒤 서로 다른 칸만 바꿨으면 묻지 않고 합친다(계획·알림·재매수 종목은 항목별, 달러선물 보유·손절처럼 함께 바뀌는 칸은 겹치면 묻는다).
+      const json=snapshotOf(merged.value);applyRemote(json);await settle(json);
+    }
     else{
       sync.blocked=true;syncStatus("기록 차이 확인 필요 · 자동 저장 대기");
-      const choice=await chooseConflict(local,remote);
+      const choice=await chooseConflict(local,remote,merged?.conflicts);
       if(!same())return;
       if(choice==="remote"){backupRecord(dataSnapshot(),"저장소 기록을 선택하기 전 이 기기 기록");applyRemote(remote);await settle(remote);}
       else if(choice==="local"){
@@ -180,8 +206,7 @@ function refreshCollectionTokenField(){$("collectionToken").placeholder=localSto
 $("syncBtn").onclick=()=>$("syncDialog").showModal();
 $("closeSync").onclick=()=>$("syncDialog").close();
 $("dataRepo").value=localStorage.getItem(REPO_KEY)||DEFAULT_DATA_REPO;
-$("downloadSyncBackup").hidden=!localStorage.getItem(RECOVERY_KEY);
-$("downloadSyncBackup").onclick=()=>{const raw=localStorage.getItem(RECOVERY_KEY);if(raw)downloadJson(JSON.parse(raw),`etf-planner-recovery-${new Date().toISOString().slice(0,10)}.json`);};
+renderRecovery();
 $("connectRepo").onclick=()=>{
   if(sync.busy){syncStatus("현재 동기화가 끝나면 다시 눌러 주세요.");return;}
   const repo=$("dataRepo").value.trim(),token=$("githubToken").value.trim()||localStorage.getItem(TOKEN_KEY)||"";
@@ -203,5 +228,10 @@ setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},450
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
 loadConfig();refreshTokenField();refreshCollectionTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
-$("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=externalData.planner(JSON.parse(await file.text())),next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
+// JSON 복원: 검사 → 백업 시각·계획 수를 보여 주고 확인 → 지금 기록을 복구본에 남긴 뒤 바꾼다(남기지 못하면 바꾸지 않음). 백업·복구본의 시각·사유는 기록에 넣지 않는다.
+$("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{
+  const {exportedAt,recoveryReason,...incoming}=externalData.planner(JSON.parse(await file.text())),at=recordTime(exportedAt);
+  if(confirm(`이 백업으로 플래너 기록을 바꿀까요?\n백업 파일: ${at?`${at} 백업`:"백업 시각 없음"} · ${recordSummary(incoming)}\n지금 기록: ${recordSummary(state)}\n지금 기록은 이 기기에 보관합니다(동기화 창에서 내려받기).`)){
+    backupRecord(dataSnapshot(),"JSON 복원 전 이 기기 기록");const next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");
+  }}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
 function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // js/start.js에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)
