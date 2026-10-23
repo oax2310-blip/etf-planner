@@ -320,7 +320,20 @@ test('손절 기준 창의 하단선은 신저점보다 먼저 적용하고, 하
   line.rebuy.floorPrice=1405;v=view();
   assert.equal(v.fold,'하단 60주선이 신저점 이상 · 펼쳐서 확인하세요');assert.match(v.card,/손절 하단 60주선\(1,405원\)이 신저점 환율 이상이라/);
   line.rebuy.floorPrice=1310.46;line.rebuy.floorLine='20개월선';const kept=JSON.stringify(line);v=view();
-  assert.equal(v.fold,'실행 전 · 1,400원 → 20월선 · 최대 2계약');assert.match(v.basis,/^<span class="quote-state">1,400원 → 20월선 1,310\.5원<\/span>/);
+  assert.equal(v.fold,'실행 전 · 1,400원 → 20월선 · 최대 2계약');assert.match(v.basis,/^<span class="quote-state">1,400원 → 20월선 1,310\.5원<\/span><span>이탈 전/);
+  // 채운 뒤 그 선 시세가 빠지면 마지막 하단으로 회차를 이어 가고 기준 줄에만 알린다(시세 파일을 받기 전·직접 하단은 표시 안 함).
+  const quote=ma=>({updatedAt:'2026-10-05T00:00:00Z',stocks:{},fx:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-05',close:1405,ma}}});
+  const cuts=()=>ctx.futureRebuySummary(line).cuts.map(c=>[c.price,c.qty]),planned=cuts();
+  assert.equal(ctx.futureFloorStale(line,line.rebuy),false,'시세 파일 전');
+  ctx.priceData=quote({'20개월선':1310.46});v=view();
+  assert.equal(ctx.futureFloorStale(line,line.rebuy),false);assert.doesNotMatch(v.basis,/시세 없음/);
+  ctx.priceData=quote({});v=view();
+  assert.equal(ctx.futureFloorStale(line,line.rebuy),true);
+  assert.match(v.basis,/^<span class="quote-state">1,400원 → 20월선 1,310\.5원<\/span><span class="future-floor-stale">시세 없음 · 마지막 값<\/span><span>이탈 전 4계약/);
+  assert.deepEqual(cuts(),planned,'손절 회차는 마지막 하단 그대로');
+  ctx.priceData={...quote({}),futures:{}};assert.equal(ctx.futureFloorStale(line,line.rebuy),true,'보유 월물 시세가 없어도 같은 표시');
+  const direct=futures();assert.equal(ctx.futureFloorStale(direct,direct.rebuy),false,'직접 하단');
+  ctx.priceData=null;
   assert.equal(JSON.stringify(line),kept,'화면은 기록을 바꾸지 않는다');
 });
 
