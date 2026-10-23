@@ -29,7 +29,26 @@ function priceRefreshControls(){for(const key of ["refreshPricesBtn","refreshPri
 function scheduleSync(delay=1500){if(!connected()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),delay);}
 // 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다.
 function save(next=state){localStorage.setItem(STORAGE_KEY,JSON.stringify(next));state=next;if(connected() && dataSnapshot()!==sync.base) scheduleSync();if(typeof stockNames==="object")stockNames.remember();}
-function backupRecord(json,reason){localStorage.setItem(RECOVERY_KEY,JSON.stringify({...JSON.parse(json),recoveryReason:reason,exportedAt:new Date().toISOString()}));$("downloadSyncBackup").hidden=false;}
+// 복구본: 덮어쓰기(충돌 선택·JSON 복원) 전 기록을 이 기기에 최근 RECOVERY_LIMIT개까지 목록으로 남긴다(옛 한 개 형식도 목록으로 읽음).
+// 각 항목은 그대로 JSON 복원할 수 있는 플래너 기록 + recoveryReason·exportedAt. 저장 공간이 모자라면 오래된 것부터 줄이고, 하나도 못 남기면 예외로 덮어쓰기를 멈춘다.
+const RECOVERY_LIMIT = 5;
+function recoveryList(){try{const v=JSON.parse(localStorage.getItem(RECOVERY_KEY)||"null");return (Array.isArray(v)?v:v?[v]:[]).filter(x=>x&&typeof x==="object"&&!Array.isArray(x));}catch{return [];}}
+function backupRecord(json,reason){
+  const list=[...recoveryList(),{...JSON.parse(json),recoveryReason:reason,exportedAt:new Date().toISOString()}];
+  for(let n=Math.min(RECOVERY_LIMIT,list.length);;n--){try{localStorage.setItem(RECOVERY_KEY,JSON.stringify(list.slice(-n)));break;}catch(error){if(n<=1)throw error;}}
+  renderRecovery();
+}
+const recordSummary = d => `계획 ${Array.isArray(d?.plans)?d.plans.length:0}개 · 달러선물 ${Array.isArray(d?.futures?.positions)?d.futures.positions.length:0}개 월물`;
+const recordTime = at => {const t=Date.parse(at);return t?new Date(t).toLocaleString("ko-KR",{year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"";};
+// 동기화 창의 복구본 목록(최근 것부터). 글자는 textContent로만 넣는다.
+function renderRecovery(){
+  const box=$("syncRecoveryList"),list=recoveryList().reverse();box.hidden=!list.length;
+  box.replaceChildren(...(list.length?[Object.assign(document.createElement("p"),{className:"sync-details",textContent:`플래너 보관 기록 (이 기기에만 최근 ${RECOVERY_LIMIT}개까지 · 내려받아 JSON 파일 복원으로 되돌릴 수 있음)`})]:[]),...list.map(r=>{
+    const row=Object.assign(document.createElement("p"),{className:"sync-details sync-recovery-row",textContent:`${recordTime(r.exportedAt)||"시각 없음"} · ${typeof r.recoveryReason==="string"?r.recoveryReason:"보관한 기록"} · ${recordSummary(r)} `});
+    row.append(Object.assign(document.createElement("button"),{type:"button",className:"btn mini",textContent:"내려받기",onclick:()=>downloadJson(r,`etf-planner-recovery-${String(r.exportedAt||"").slice(0,10)||"record"}.json`)}));
+    return row;
+  }));
+}
 function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 const toB64 = text => {const bytes=new TextEncoder().encode(text);let bin="";for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(bin);};
 const fromB64 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
@@ -180,8 +199,7 @@ function refreshCollectionTokenField(){$("collectionToken").placeholder=localSto
 $("syncBtn").onclick=()=>$("syncDialog").showModal();
 $("closeSync").onclick=()=>$("syncDialog").close();
 $("dataRepo").value=localStorage.getItem(REPO_KEY)||DEFAULT_DATA_REPO;
-$("downloadSyncBackup").hidden=!localStorage.getItem(RECOVERY_KEY);
-$("downloadSyncBackup").onclick=()=>{const raw=localStorage.getItem(RECOVERY_KEY);if(raw)downloadJson(JSON.parse(raw),`etf-planner-recovery-${new Date().toISOString().slice(0,10)}.json`);};
+renderRecovery();
 $("connectRepo").onclick=()=>{
   if(sync.busy){syncStatus("현재 동기화가 끝나면 다시 눌러 주세요.");return;}
   const repo=$("dataRepo").value.trim(),token=$("githubToken").value.trim()||localStorage.getItem(TOKEN_KEY)||"";
@@ -203,5 +221,10 @@ setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},450
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
 loadConfig();refreshTokenField();refreshCollectionTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
-$("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const incoming=externalData.planner(JSON.parse(await file.text())),next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
+// JSON 복원: 검사 → 백업 시각·계획 수를 보여 주고 확인 → 지금 기록을 복구본에 남긴 뒤 바꾼다(남기지 못하면 바꾸지 않음). 백업·복구본의 시각·사유는 기록에 넣지 않는다.
+$("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{
+  const {exportedAt,recoveryReason,...incoming}=externalData.planner(JSON.parse(await file.text())),at=recordTime(exportedAt);
+  if(confirm(`이 백업으로 플래너 기록을 바꿀까요?\n백업 파일: ${at?`${at} 백업`:"백업 시각 없음"} · ${recordSummary(incoming)}\n지금 기록: ${recordSummary(state)}\n지금 기록은 이 기기에 보관합니다(동기화 창에서 내려받기).`)){
+    backupRecord(dataSnapshot(),"JSON 복원 전 이 기기 기록");const next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");
+  }}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
 function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // js/start.js에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)
