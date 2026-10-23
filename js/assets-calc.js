@@ -428,7 +428,7 @@ function syncPurchaseTargets(before, after, prices){
 // 분할매도 회차·재매수 손절·재매수 회차·분할매수 회차를 체크하면 종목 코드가 같은 자산 배분 종목(계좌)의 보유량을 줄이거나 늘리고, 체크를 풀면 되돌린다.
 // 연결: 종목 코드가 같은 종목(대문자, 국내 코드 'A' 접두 무시, '비트코인' = BTC-USD). 분할매수는 계획이 붙은 종목도(코드가 없어도) 연결.
 // 반영 기록 allocation.trades = {출처 키: {label, at, qty, price, value, items:[{id, shares?, amount?, fresh?}]}} — 체크한 동안만 두고 풀면 지운다(처음 반영할 때만 만듦).
-//   items의 shares·amount는 그 종목에 실제로 더한 양(매도는 음수, 0 아래로 내려가지 않게 자른 값)이라 되돌리면 원래 값. fresh는 보유 수량 칸을 새로 만든 것(되돌려 0이면 칸을 지움).
+//   items의 shares·amount는 그 종목에 실제로 더한 양(매도는 음수, 0 아래로 내려가지 않게 자른 값)이라 되돌리면 원래 값. fresh는 보유 수량 칸을 새로 만든 것(되돌려 0이면 칸을 지움). exact는 rescaleTrade의 반올림 전 양(그 함수 주석).
 //   qty(주)·price(체결 통화)·value(만원)는 반영할 때의 체결 크기 — 체크 뒤 체결 수량·가격·금액을 고치면 같은 비율로 items를 다시 맞춘다(rescaleTrade).
 //   기준 티커와 실제 ETF 단위가 다르면 투자 금액을 실제 ETF 가격으로 나눈 주수를 내림하고 items[].converted로 표시해 금액 비율로 정정한다.
 // 출처 키(기존 반영을 되돌리는 데 쓰는 형식): 'sell:계획 id:회차', 'cut:재매수 종목 id:회차', 'rebuy:재매수 종목 id:단계 이름:회차', 'buy:자산 종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'.
@@ -498,7 +498,7 @@ function revertTrade(alloc, key){
   const rec=alloc?.trades?.[key];if(!rec)return null;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it)continue;
-    if(finite(e.shares)){bumpField(it,"shares",-e.shares,linkStep(it));if(e.fresh&&!(finite(it.shares)>0))delete it.shares;}
+    if(finite(e.shares)!==null){if(e.shares)bumpField(it,"shares",-e.shares,linkStep(it));if(e.fresh&&!(finite(it.shares)>0))delete it.shares;}
     if(finite(e.amount))bumpField(it,"amount",-e.amount,0.01);
   }
   delete alloc.trades[key];if(!Object.keys(alloc.trades).length)delete alloc.trades;
@@ -506,31 +506,40 @@ function revertTrade(alloc, key){
 }
 // 체크 뒤 체결 크기를 고쳤을 때(trade = 새 {qty, price, value}): 수량 종목은 수량 비율, 금액 종목은 금액 비율(금액이 없으면 수량 × 가격, 그다음 수량 비율)로
 // 반영한 양을 다시 맞춘다. 수량은 같은 최소 단위·방향의 계좌별 합계를 먼저 반올림하고, 남는 최소 단위는 소수부가 큰 계좌부터 배분한다(4주+4주를 7주로 고쳐도 합계 7주).
+// 반올림·내림 전 양은 items[].exact에 두고 다음 수정의 기준으로 쓴다(수량은 반영량과 다를 때, 금액은 0.01만원 아래라 0이 될 때만 저장).
+// 크게 줄여 반영량이 0이 된 계좌도 다시 고치면 같은 비율로 돌아오고, 추종 ETF 주수 내림이 고칠 때마다 쌓이지 않는다.
+// exact는 반영량과 방향이 같고 최소 단위 2개 안일 때만 읽는다(없거나 맞지 않으면 지금 반영량 — 반영량만 고친 옛 기록·다른 경로 호환).
 // 비율을 알 수 없거나(0·빈 값) 그대로면 바꾸지 않는다. 바뀐 기록(없으면 null).
 function rescaleTrade(alloc, key, trade){
   const rec=alloc?.trades?.[key];if(!rec)return null;
   const q=plus(trade?.qty), p=plus(trade?.price), v=plus(trade?.value), ratio=(a,b)=>a&&b?a/b:null;
   const rq=ratio(q,rec.qty), rpq=ratio(q&&p?q*p:null,rec.qty&&rec.price?rec.qty*rec.price:null), rv=ratio(v,rec.value);
   const fShares=rq??rv??rpq, fAmount=rv??rpq??rq;
-  const quantities=new Map(), groups=new Map();
+  const start=(e,field,step)=>{const n=finite(e[field]), x=finite(e.exact);return x&&(!n||Math.sign(x)===Math.sign(n))&&Math.abs(x-(n||0))<2*step?x:n;};
+  const keep=(e,exact,n,step)=>{if(exact&&Math.abs(exact-n)>step*1e-6)e.exact=Number(exact.toPrecision(12));else delete e.exact;};
+  const targets=new Map(), groups=new Map();
   for(const e of Array.isArray(rec.items)?rec.items:[]){
-    const it=allocItemById(alloc,e?.id);if(!it||!finite(e.shares))continue;
+    const it=allocItemById(alloc,e?.id);if(!it||finite(e.shares)===null)continue;
     const factor=e.converted?fAmount:fShares;if(!factor||factor===1)continue;
-    const step=linkStep(it), sign=e.shares<0?-1:1, key=`${step}:${sign}:${!!e.converted}`, rows=groups.get(key)||[];
-    const units=Math.round(Math.abs(e.shares)/step), scaled=units*factor;
-    rows.push({e,step,sign,units,factor,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
+    const step=linkStep(it), from=start(e,"shares",step);if(!from)continue;
+    const sign=from<0?-1:1, key=`${step}:${sign}:${!!e.converted}`, rows=groups.get(key)||[], scaled=Math.abs(from)/step*factor;
+    rows.push({e,step,sign,scaled,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
   }
   for(const rows of groups.values()){
-    const total=rows.reduce((n,r)=>n+r.units,0)*rows[0].factor,extra=(rows[0].e.converted?Math.floor(total+1e-9):Math.round(total))-rows.reduce((n,r)=>n+r.base,0);
+    const total=rows.reduce((n,r)=>n+r.scaled,0),extra=Math.max(0,(rows[0].e.converted?Math.floor(total+1e-9):Math.round(total))-rows.reduce((n,r)=>n+r.base,0));
     [...rows].sort((a,b)=>b.fraction-a.fraction).slice(0,extra).forEach(r=>r.base++);
-    rows.forEach(r=>quantities.set(r.e,linkRound(r.sign*r.base*r.step,r.step)));
+    rows.forEach(r=>targets.set(r.e,{n:linkRound(r.sign*r.base*r.step,r.step),exact:r.sign*r.scaled*r.step}));
   }
   let changed=false;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
-    const it=allocItemById(alloc,e?.id);if(!it)continue;
-    const factor=e.converted?fAmount:fShares;
-    if(finite(e.shares)&&factor&&factor!==1){const step=linkStep(it), add=bumpField(it,"shares",(quantities.get(e)??linkRound(e.shares*factor,step))-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}}
-    if(finite(e.amount)&&fAmount&&fAmount!==1){const add=bumpField(it,"amount",Math.round(e.amount*fAmount*100)/100-e.amount,0.01);if(add){e.amount=linkRound(e.amount+add,0.01);changed=true;}}
+    const it=allocItemById(alloc,e?.id), t=targets.get(e);if(!it)continue;
+    if(t){const step=linkStep(it), add=bumpField(it,"shares",t.n-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}keep(e,t.exact,t.n,step);}
+    else if(finite(e.shares)===null&&finite(e.amount)!==null&&fAmount&&fAmount!==1){
+      const from=start(e,"amount",0.01);if(!from)continue;
+      const exact=from*fAmount, n=Math.round(exact*100)/100, add=bumpField(it,"amount",n-e.amount,0.01);
+      if(add){e.amount=linkRound(e.amount+add,0.01);changed=true;}
+      keep(e,n?0:exact,n,0.01);
+    }
   }
   rec.qty=q??rec.qty;rec.price=p??rec.price;rec.value=v??rec.value;
   return changed?rec:null;

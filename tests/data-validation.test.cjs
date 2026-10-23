@@ -57,7 +57,7 @@ test('목록 크기·중첩 깊이를 제한하며 값이 오류 메시지로 �
 });
 
 test('자산 배분·분할매수·저축의 기존 필드와 체결을 그대로 보존한다',()=>{
-  const data={version:1,allocation:{groups:[{id:'g',items:[{id:'i',target:'10',amount:20,buyPlan:{lines:{names:['25분봉'],startLine:'25분봉'},buys:{'25분봉:0':{shares:2,price:100}},stages:[{id:'s',amount:3}]}}]}],trades:{'buy:i:25분봉:0':{qty:2,items:[{id:'i',shares:2}]}}},savings:{scenarios:[{name:'옛 계획',endAge:'60',stages:[{age:40,salary:200}]}]}};
+  const data={version:1,allocation:{groups:[{id:'g',items:[{id:'i',target:'10',amount:20,buyPlan:{lines:{names:['25분봉'],startLine:'25분봉'},buys:{'25분봉:0':{shares:2,price:100}},stages:[{id:'s',amount:3}]}}]}],trades:{'buy:i:25분봉:0':{qty:2,items:[{id:'i',shares:2,exact:2.25}]}}},savings:{scenarios:[{name:'옛 계획',endAge:'60',stages:[{age:40,salary:200}]}]}};
   const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
 });
 
@@ -65,6 +65,7 @@ test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한
   for(const data of [
     {allocation:{groups:[null]}}, {allocation:{groups:[{items:'not-a-list'}]}},
     {allocation:{groups:[{items:[{target:'"><img src=x onerror="synthetic()">'}]}]}},
+    {allocation:{trades:{k:{items:[{id:'i',shares:0,exact:'<img src=x onerror="synthetic()">'}]}}}},
     {ledger:{years:[{year:'<img src=x onerror="synthetic()">'}]}},
     {savings:{scenarios:[{endAge:'<img src=x onerror="synthetic()">'}]}}
   ])assert.throws(()=>validate.assets(data),/기록 형식/);

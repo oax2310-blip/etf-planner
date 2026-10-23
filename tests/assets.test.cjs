@@ -179,6 +179,25 @@ test('미국 기준 계획과 연결한 추종 ETF 계좌는 보유 주수를 �
   c.revertTrade(alloc,'r');assert.equal(it.shares,100);
 });
 
+test('체결 크기를 크게 줄여 반영량이 0이 돼도 다시 고치면 돌아오고 추종 ETF 주수 내림이 쌓이지 않는다',()=>{
+  const it={id:'a',ticker:'AAA',tradeTicker:'111111',shares:100},am={id:'b',ticker:'111111',amount:2,base:10000},z={id:'z',ticker:'AAA',tradeTicker:'111111'};
+  const alloc={total:1000,groups:[{id:'g',items:[it,am,z]}],cash:[],classes:[]},usd={ticker:'AAA',sign:1,qty:2,price:50,currency:'USD',value:10};
+  c.applyTrade(alloc,prices,'r',usd,'환산',[{id:'a',unit:'shares',n:10}]);
+  c.rescaleTrade(alloc,'r',{qty:2,price:50,value:0.5});assert.equal(it.shares,100,'금액 오타로 0.5주 → 0주');assert.equal(alloc.trades.r.items[0].exact,0.5);
+  c.rescaleTrade(alloc,'r',{qty:2,price:50,value:10});assert.equal(it.shares,110,'바로잡으면 10주를 다시 반영');assert.equal('exact' in alloc.trades.r.items[0],false);
+  c.rescaleTrade(alloc,'r',{qty:2,price:50,value:7.5});assert.equal(it.shares,107,'7.5주는 내림');
+  c.rescaleTrade(alloc,'r',{qty:2,price:50,value:10});assert.equal(it.shares,110,'내림한 7주 × 4/3 = 9주로 줄지 않음');
+  c.revertTrade(alloc,'r');assert.equal(it.shares,100);
+  c.applyTrade(alloc,prices,'m',{sign:1,qty:1,price:10000,currency:'KRW',value:1},'금액',[{id:'b',unit:'amount',n:1}]);assert.equal(am.amount,3);
+  c.rescaleTrade(alloc,'m',{qty:1,price:10000,value:0.001});assert.equal(am.amount,2,'0.01만원 아래는 0');
+  c.rescaleTrade(alloc,'m',{qty:1,price:10000,value:1});assert.equal(am.amount,3,'금액 종목도 돌아옴');
+  c.applyTrade(alloc,prices,'f',{...usd,qty:1,value:5},'새 칸',[{id:'z',unit:'shares',n:5}]);
+  c.rescaleTrade(alloc,'f',{qty:1,price:50,value:0.5});assert.equal(z.shares,0);
+  c.revertTrade(alloc,'f');assert.equal('shares' in z,false,'새로 만든 수량 칸은 0으로 남기지 않고 지움');
+  c.applyTrade(alloc,prices,'s',usd,'환산',[{id:'a',unit:'shares',n:10}]);alloc.trades.s.items[0].exact=30;
+  c.rescaleTrade(alloc,'s',{qty:2,price:50,value:5});assert.equal(it.shares,105,'반영량과 맞지 않는 exact(반영량만 고친 기록)는 읽지 않음');
+});
+
 test('목표 비중: 종목 수정·이동·삭제가 소분류·그룹·분류·지역 합계에 반영되고 기존 기록은 보존한다', () => {
   const alloc = {classes: [{id:'c',region:'국내',target:80},{id:'cash',region:'현금',target:20,cash:true}],cash:[],
     groups:[{id:'g',classId:'c',target:70,sections:[{name:'배당',target:40}],items:[{id:'a',amount:10,target:3.3,section:'배당'},{id:'b',amount:10,target:6.7,section:'배당'},{id:'z',target:0},{id:'blank'}]},
