@@ -197,7 +197,7 @@ function openFutureRebuyDialog(){
   const syncFloor=()=>{
     const ma=!!unit.value,line=chosenLine(),v=line?lineValue(line):0;
     price.hidden=ma;price.disabled=ma||s.started;period.hidden=!ma;period.disabled=!ma||s.started;
-    const last=v>0&&!(priceRound(maValue(fe,line),2)>0)&&!!priceData; // 시세 파일에 선 값이 없어 저장한 마지막 하단을 보이는 중
+    const last=line===floorLine&&futureFloorStale(f,r); // 시세 파일에 선 값이 없어 저장한 마지막 하단을 보이는 중
     floorNote.textContent=!ma?"":!line?"기간은 1~400으로 입력하세요.":v>0?`${movingLineText(line)} ${last?"시세 없음 · 마지막 값 ":""}${fmtPrice(v)}원`:`${movingLineText(line)} 시세 대기`;floorNote.classList.toggle("warn",last);
   };
   syncFloor();

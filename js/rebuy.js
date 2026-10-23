@@ -300,7 +300,8 @@ const futureCutGoal = (f,pct=futureRebuySellPct(f),hold=futureRebuyHold(f)) => M
 // 손절 하단 기준선(floorLine): N일선·N주선·N개월선(입력의 월선·달선도 N개월선)만 받고, 아니면 "". 고르면 prices.js fillPrices가 보유 근월물 시세로 floorPrice를 채운다.
 const futureFloorLine = name => {const line=movingLineName(name);return ["일선","주선","개월선"].includes(movingLineUnit(line))?line:"";};
 // 신저점~하단(직접 가격, 또는 하단선 시세로 채운 floorPrice)을 고르게 나눠 손절 목표 계약만 손절. 회차 수≤목표 계약, 1회면 하단.
-// 하단선 시세가 없거나 신저점 이상이면 기록한 회차만 남고(ready false) 하단선이 움직이면 기록 없는 회차만 새 하단으로 다시 나눈다.
+// 하단선 시세를 아직 못 받아 하단이 비었거나 신저점 이상이면 기록한 회차만 남고(ready false) 하단선이 움직이면 기록 없는 회차만 새 하단으로 다시 나눈다.
+// 채운 뒤 그 선 시세가 빠지면 fillPrices가 마지막 floorPrice를 남기므로 그 하단으로 회차·알림을 이어 간다(화면 표시는 futures-rebuy.js futureFloorStale).
 // cuts[i] = 체결 기록 {contracts, price, targetPrice}. 부분 체결만 partial·plannedQty(그 회차 계획 계약)로 남은 계약을 그 회차에 고정한다(입력 때 생성).
 // partial 없는 기록(옛 기록 포함)은 완료로 읽는다. 부분 체결 회차의 남은 계약은 손절 목표 안에서만 남기고(넘으면 줄이고, 0이면 완료로 읽음),
 // 회차 결과의 qty는 체결(기록 없는 회차는 배정) 계약, plannedQty는 기록한 회차의 계획 계약이다.
