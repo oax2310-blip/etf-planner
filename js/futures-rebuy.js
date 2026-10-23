@@ -197,8 +197,10 @@ function openFutureRebuyDialog(){
   const syncFloor=()=>{
     const ma=!!unit.value,line=chosenLine(),v=line?lineValue(line):0;
     price.hidden=ma;price.disabled=ma||s.started;period.hidden=!ma;period.disabled=!ma||s.started;
-    const last=line===floorLine&&futureFloorStale(f,r); // 시세 파일에 선 값이 없어 저장한 마지막 하단을 보이는 중
-    floorNote.textContent=!ma?"":!line?"기간은 1~400으로 입력하세요.":v>0?`${movingLineText(line)} ${last?"시세 없음 · 마지막 값 ":""}${fmtPrice(v)}원`:`${movingLineText(line)} 시세 대기`;floorNote.classList.toggle("warn",last);
+    const last=line===floorLine&&futureFloorStale(f,r),short=!(v>0)&&futureFloorShort(fe,line); // 마지막 값 표시 중 / 이 월물의 봉이 모자라 계산할 수 없음
+    floorNote.textContent=!ma?"":!line?"기간은 1~400으로 입력하세요.":v>0?`${movingLineText(line)} ${last?"시세 없음 · 마지막 값 ":""}${fmtPrice(v)}원`
+      :short?`${movingLineText(line)}은 보유 근월물 봉 ${short.have}개로 계산할 수 없습니다 · ${short.max}까지 고를 수 있습니다`:`${movingLineText(line)} 시세 대기`;
+    floorNote.classList.toggle("warn",last||!!short);
   };
   syncFloor();
   dialog.querySelectorAll("[data-close-future-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
@@ -271,7 +273,7 @@ function openFutureRebuyStartDialog(){
 // 손절하면 오른쪽부터 비고 재매수하면 빈 칸이 다시 채워진다(빈 칸·파랑은 판 계약 수까지). 손절 목표 밖(최소 유지) 칸은 흐리게 둔다.
 // 말풍선은 다음에 비거나 채워질 칸(그 회차 계약 수만큼)을 가리킨다: 재매수 시작 전에는 다음 손절 회차, 손절 목표를 다 팔았거나 재매수를 시작했으면 다음 재매수 회차.
 // 손절 시점(현재 환율 ≤ 회차 환율)·재매수 시점(현재 환율 ≥ 회차 환율)은 주황. toggle은 신저점 이탈 알림 스위치, trText는 재매수 회차 이름(이스케이프됨).
-function futureRebuyTrack(r,s,cur,toggle,trText){
+function futureRebuyTrack(r,s,cur,toggle,trText,fe=null){
   const hold=s.hold,sold=Math.min(s.sold,hold),back=Math.min(s.rebought,sold),green=hold-sold,filled=green+back,keep=Math.max(0,hold-s.goal),low=Number(r.lowPrice)||0;
   const cutPx=v=>`${decimal.format(v)}원`,px2=v=>`${fmtPrice(v)}원`;
   const pct=p=>{const g=(p/cur-1)*100;return `${g>0?"+":""}${new Intl.NumberFormat("ko-KR",{maximumFractionDigits:Math.abs(g)<1?2:1}).format(g)}%`;},gap=p=>cur>0&&p>0?pct(p):"";
@@ -290,7 +292,7 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
   const x=from<0?0:Math.round((from+to)/2/hold*1e4)/100,dense=hold>60?" tight":hold>30?" dense":"";
   const gapChip=p=>gap(p)?` <span class="fr-gap${p>cur?" up":""}">${gap(p)}</span>`:"";
   const bought=s.tranches.filter(t=>t.done&&t.qty>0&&t.execPrice>0),bq=bought.reduce((n,t)=>n+t.qty,0),buyAvg=bq?bought.reduce((n,t)=>n+t.qty*t.execPrice,0)/bq:0,sellAvg=s.sellAvg?px2(s.sellAvg):"";
-  const floorWait=s.goal>0?futureFloorWait(r):null;
+  const floorWait=s.goal>0?futureFloorWait(r,fe):null;
   const note=!s.ready?floorWait?floorWait.long:"신저점 환율·손절 하단·이탈 전 계약 수·손절 비중을 제목 옆 연필에서 확인하세요."
     :s.started&&!s.rest?`손절 ${s.sold}계약 → 재매수 ${s.rebought}계약${sellAvg?` · 평균 손절 ${sellAvg}`:""}${buyAvg?` → 재매수 ${px2(buyAvg)}`:""}`
     :s.started||s.sold&&!nextCut?`손절 ${s.sold}계약 완료${sellAvg?` · 평균 ${sellAvg}`:""}${s.started&&s.cuts.some(c=>futureCutRest(c)>0)?" · 남은 손절 멈춤":""}`
@@ -301,12 +303,23 @@ function futureRebuyTrack(r,s,cur,toggle,trText){
   return `<section class="card fr-track" aria-label="보유 계약"><div class="fr-track-body"><div class="fr-track-top"><div><strong>보유 계약</strong><span class="buy-track-chip${chipCls?` ${chipCls}`:""}">${chipText}</span></div><div class="fr-count"><b>${s.held}</b><span>/ ${hold}계약</span></div></div>${track}<p class="fr-note">${hold?note:"이탈 전 계약 수를 넣으면 보유 계약 칸이 생깁니다."}</p></div>
     <div class="fr-track-foot"><span>손절 평균가 <b>${sellAvg||"—"}</b></span>${toggle}</div></section>`;
 }
+// 하단선 기간이 보유 근월물(fe)의 그 단위 봉 수보다 길어 계산할 수 없으면 {have 봉 수, max 고를 수 있는 가장 긴 선(화면 글자)}, 알 수 없으면 null.
+// 수집기가 그 단위의 더 긴 선을 요청하고도(ma 이름) 봉이 그보다 적게 왔을 때만 상장 기간 한계로 본다(아직 덜 받은 봉을 한계로 오해하지 않게).
+function futureFloorShort(fe,line){
+  const unit=movingLineUnit(line),n=parseInt(line),c=fe?.closes?.[{일선:"D",주선:"W",개월선:"M"}[unit]];
+  if(!Array.isArray(c)||!(n>c.length))return null;
+  const asked=Math.max(0,...Object.keys(fe.ma||{}).filter(k=>movingLineUnit(k)===unit).map(k=>parseInt(k)||0));
+  return asked>c.length&&c.length>0?{have:c.length,max:movingLineText(`${c.length}${unit}`)}:null;
+}
 // 하단선(floorLine)을 골랐지만 손절 회차를 나눌 수 없는 이유 {short 짧은 글자, long 안내 문장}. 신저점이 없거나 나눌 수 있으면 null. 화면 글자만 만든다.
+// fe(보유 근월물 시세)를 주면 봉이 모자라 계산할 수 없는 선인지도 알린다(futureFloorShort).
 // 선 이름은 futureFloorLine이 '숫자+일선·주선·개월선'으로 정규화한 값만 쓰므로 HTML에 그대로 넣어도 된다(접힌 줄·보유 카드도 같음).
-function futureFloorWait(r){
+function futureFloorWait(r,fe=null){
   const line=futureFloorLine(r.floorLine),floor=Number(r.floorPrice)||0,low=Number(r.lowPrice)||0,name=movingLineText(line);
   if(!line||!(low>0)||floor>0&&floor<low)return null;
+  const short=!(floor>0)&&futureFloorShort(fe,line);
   return floor>0?{short:`하단 ${name}이 신저점 이상`,long:`손절 하단 ${name}(${fmtPrice(floor)}원)이 신저점 환율 이상이라 손절 회차를 나눌 수 없습니다. 제목 옆 연필에서 하단을 다시 정하세요.`}
+    :short?{short:`하단 ${name} 계산 불가 · ${short.max}까지`,long:`보유 근월물은 봉이 ${short.have}개뿐이라 손절 하단 ${name}을 계산할 수 없습니다. 제목 옆 연필에서 ${short.max} 이하로 고르거나 직접 가격을 넣으세요.`}
     :{short:`하단 ${name} 시세 대기`,long:`손절 하단 ${name}의 시세를 기다립니다. 보유 근월물 시세가 채워지면 손절 회차를 나눕니다.`};
 }
 // 하단선을 고른 기록인데 받은 시세 파일에 그 선 값이 없으면 true(시세를 받기 전·직접 하단은 false). 손절 회차·알림은 저장한 마지막 하단을 그대로 쓰고 화면에만 알린다.
@@ -316,11 +329,11 @@ function futureFloorStale(f,r){
 }
 // 접힌 한 줄 {text, due}: 상태 · 다음 손절·재매수 환율 · 보유 계약(실행 뒤). 폰(393px) 한 줄에 들도록 회차·단계 이름·계약 수·현재 환율은 넣지 않는다
 // (펼치면 보이고, 현재 환율은 화면 맨 위에 있음). 손절·재매수 시점과 실행 전 신저점 이탈은 주황(due). 진행 상태 이름은 보유 계약 카드 칩과 같다.
-function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue){
+function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,fe=null){
   const px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—",cutAt=c=>`${decimal.format(c.price)}원 이하`;
   const trAt=x=>Number(x.price)>0?`${x.est?"≈":""}${fmtPrice(x.price)}원 이상`:"기준가 없음";
   const low=Number(r.lowPrice)||0,broken=!locked&&s.ready&&cur>0&&cur<low,nextCut=s.ready&&!s.started?s.cuts.find(c=>futureCutRest(c)>0):null,nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
-  const held=locked&&s.hold?` · 보유 ${s.held}/${s.hold}`:"",floorLine=futureFloorLine(r.floorLine),floorWait=s.goal>0?futureFloorWait(r):null;
+  const held=locked&&s.hold?` · 보유 ${s.held}/${s.hold}`:"",floorLine=futureFloorLine(r.floorLine),floorWait=s.goal>0?futureFloorWait(r,fe):null;
   const line=cutDue?`<b>손절 시점</b> · ${cutAt(cutDue)}`:buyDue?`<b>재매수 시점</b> · ${trAt(buyDue)}`
     :!s.goal&&s.hold>0?"손절 목표 0계약 · 펼쳐서 비중을 확인하세요":!s.ready?floorWait?`${floorWait.short} · 펼쳐서 확인하세요`:"기준 미입력 · 펼쳐서 기준을 넣으세요"
     :broken?`<b>신저점 이탈</b> · 다음 손절 ${nextCut?cutAt(nextCut):"없음"}`
@@ -331,6 +344,7 @@ function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue){
   return {text:line+held,due:!!(cutDue||buyDue||broken)};
 }
 function renderFutureRebuy(f){
+  const fe=futuresEntry(typeof priceData==="object"?priceData:null,f); // 하단선 봉 부족 안내(futureFloorShort)
   const r=futureRebuyOf(f),s=futureRebuySummary(f),locked=futureRebuyLocked(f),cur=Number(r.currentPrice)||0,pctText=shown(s.sellPct),opt=v=>Number(v)>0?futureShown(v):"",px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—";
   const cutPx=v=>Number(v)>0?`${decimal.format(v)}원`:"—";
   const nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
@@ -338,7 +352,7 @@ function renderFutureRebuy(f){
   const cutDue=futureCutDue(s,cur),buyDue=futureBuyDue(s,cur),cutKey=cutDue?String(cutDue.k):"",buyKey=buyDue?`${buyDue.i}:${buyDue.t}`:"";
   const un=futureRebuyUnlinked(f),unText=[un.cuts?`손절 ${un.cuts}계약`:"",un.buys?`재매수 ${un.buys}계약`:""].filter(Boolean).join("·");
   if(!futureRebuyOpenNow([cutKey&&`cut:${cutKey}`,buyKey&&`buy:${buyKey}`,unText&&`unlinked:${unText}`,(s.overSold||s.overBought)&&"over",s.rangeError&&"range"].filter(Boolean))){
-    const {text,due}=futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue);
+    const {text,due}=futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,fe);
     $("futureRebuyPanel").innerHTML=`<section class="future-rebuy folded"><details class="card rebuy-fold${due?" due":""}"><summary id="frToggle"><strong>신저점 손절<span class="hide-mobile"> 후 재매수</span></strong><span class="fold-summary" title="${esc(text.replace(/<[^>]+>/g,""))}">${text}</span></summary></details></section>`;
     $("frToggle").onclick=e=>{e.preventDefault();futureRebuyExpanded=true;renderFutures();};
     return;
@@ -392,10 +406,10 @@ function renderFutureRebuy(f){
   // 제목 아래 기준 한 줄: 신저점 → 하단 · 이탈 전 계약 · 비중 · 실제 회차 수(손절 목표보다 많은 분할은 줄어듦) · 최소 유지(있을 때만)
   // 기준 입력은 제목 옆 연필(openFutureRebuyDialog). 현재 환율은 화면 맨 위 시세·보유 카드에 보이므로, 입력 칸은 보유 근월물 시세가 없을 때만 그 창에 둔다.
   // 하단선(floorLine)을 고르면 하단 자리에 선 이름과 시세로 채운 하단 환율을 보인다(시세 대기·신저점 이상이면 그 이유). 나중에 그 선 시세가 빠지면 마지막 값임을 주황 글자로 알린다.
-  const floorLine=futureFloorLine(r.floorLine),floorWait=s.goal>0?futureFloorWait(r):null,floorPx=floorLine?`${esc(movingLineText(floorLine))} ${cutPx(r.floorPrice)}`:cutPx(r.floorPrice);
+  const floorLine=futureFloorLine(r.floorLine),floorWait=s.goal>0?futureFloorWait(r,fe):null,floorPx=floorLine?`${esc(movingLineText(floorLine))} ${cutPx(r.floorPrice)}`:cutPx(r.floorPrice);
   const basis=s.ready?`<span class="quote-state">${cutPx(r.lowPrice)} → ${floorPx}</span>${futureFloorStale(f,r)?'<span class="future-floor-stale">시세 없음 · 마지막 값</span>':""}<span>이탈 전 ${s.hold}계약 · ${pctText}% · ${s.cuts.length}분할${s.hold>s.goal?` · 최소 ${s.hold-s.goal}계약 유지`:""}</span>`:`<span>${floorWait?.short||"기준 미입력"} · 이탈 전 ${s.hold}계약 · ${pctText}%</span>`;
   $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><div class="title-row"><h2><button class="fr-fold-title" type="button" id="frToggle" aria-expanded="true">신저점 손절 후 재매수</button></h2><button class="btn icon-btn" id="frEdit" type="button" aria-label="손절 기준 수정" title="손절 기준 수정">${PENCIL}</button></div><span class="future-rebuy-basis">${basis}</span></div>
-    ${futureRebuyTrack(r,s,cur,notify("breakdown",null,"신저점 손절 시작",s.started,"신저점 이탈"),trText)}
+    ${futureRebuyTrack(r,s,cur,notify("breakdown",null,"신저점 손절 시작",s.started,"신저점 이탈"),trText,fe)}
     ${s.rangeError?`<div class="warning">${esc(s.rangeError)}</div>`:""}${s.overSold||s.overBought?'<div class="warning">체결 기록이 손절 목표 또는 판 계약 수를 넘습니다. 실제 체결 수량을 확인하세요.</div>':""}${unText?`<div class="warning">${unText}이 보유 월물·누적 정산손익에 반영되지 않았습니다(연동 전 체크 또는 반영할 보유 월물이 없던 체크). 계좌 기준으로 이미 직접 고쳤다면 '직접 반영함'을 누르세요. <button class="btn mini" type="button" id="frLink">보유 월물에 반영</button> <button class="btn mini" type="button" id="frManual">직접 반영함</button></div>`:""}
     <details class="future-rebuy-details" id="frCuts"${futureTableOpen("cuts",cutKey)?" open":""}><summary><h2>1. 분할 손절</h2><span>${s.doneCuts} / ${s.cuts.length}회 완료</span>${all("cuts")}</summary><section class="card table-card purchase-table sale-table future-cut-table${futureCutsOpen?"":" hide-completed"}${cutAlerts?"":" no-alert"}" id="frCutTable"><div class="purchase-table-head"><span>회차</span><span>손절 환율</span><span>계약</span><span>체결</span>${cutAlerts?"<span>알림</span>":""}<span>상태</span></div>${cutDone.length?`<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="${futureCutsOpen}" aria-controls="frCutRows"><span>손절 완료 <b>${cutDone.length}회 · ${cutDone.reduce((n,c)=>n+c.qty,0)}계약</b>${cutMonths.length?` · ${cutMonths.map(esc).join("·")} 반영`:""}</span><span class="completed-fold-action" data-completed-action>${futureCutsOpen?"접기":"펼치기"}</span></button>`:""}<div id="frCutRows">${cutRows}</div>${cutDone.length&&cutDone.length===s.cuts.length?'<div class="completed-fold-empty">모든 회차의 손절이 완료되었습니다.</div>':""}${s.started?'<div class="stop-note">재매수를 시작해 남은 손절 회차는 멈췄습니다.</div>':""}</section></details>
     <details class="future-rebuy-details" id="frBuys"${futureTableOpen("buys",buyKey)?" open":""}><summary><h2>2. 반등 단계별 재매수</h2><button class="btn icon-btn" id="frBuyEdit" type="button" aria-label="재매수 기준 수정" title="재매수 기준 수정">${PENCIL}</button><span>잔여 ${s.rest}계약 · ${s.doneTranches} / ${s.tranches.length}회</span>${all("buys")}</summary><section class="card table-card purchase-table sale-table future-rebuy-table${futureBuysOpen?"":" hide-completed"}${buyAlerts?"":" no-alert"}" id="frBuyTable"><div class="future-rebuy-start"><span>시작 기준선 <b>${esc(futureRebuyLineText(movingLineName(r.startLine)||movingLineName(s.stages[0]?.name)||"25선"))}</b></span>${s.endLine?`<span>종료 기준 <b>${esc(futureRebuyLineText(s.endLine))}</b> · ${s.waitingEnd?"시세 대기":px(s.endPrice)}</span>`:s.endPrice?`<span>종료가격 <b>${px(s.endPrice)}</b></span>`:""}<span>${s.waitingStart?"시작선 시세 대기":"이전 단계 미체결 제외"}</span></div><div class="purchase-table-head"><span>회차</span><span>재매수 환율</span><span>계약</span><span>체결</span>${buyAlerts?"<span>알림</span>":""}<span>상태</span></div>${buyDone.length?`<button class="completed-fold-bar" id="toggleFutureBuys" type="button" aria-expanded="${futureBuysOpen}" aria-controls="frBuyRows"><span>재매수 완료 <b>${buyDone.length}회 · ${buyDone.reduce((n,x)=>n+x.qty,0)}계약</b>${buyMonths.length?` · ${buyMonths.map(esc).join("·")} 반영`:""}</span><span class="completed-fold-action" data-completed-action>${futureBuysOpen?"접기":"펼치기"}</span></button>`:""}<div id="frBuyRows">${buyRows}</div>${buyDone.length&&!s.rest&&s.tranches.every(x=>x.done||!x.amount)?'<div class="completed-fold-empty">판 계약을 모두 재매수했습니다.</div>':""}${others.length?`<button class="completed-fold-bar future-stage-bar" id="toggleFutureStages" type="button" aria-expanded="${futureBuyStagesOpen}" aria-controls="frStageRows"><span>다른 단계 <b>${others.length}개</b> · 기준 환율${buyAlerts?"·알림":""}</span><span class="completed-fold-action" data-completed-action>${futureBuyStagesOpen?"접기":"펼치기"}</span></button><div id="frStageRows"${futureBuyStagesOpen?"":" hidden"}>${others.map(otherRow).join("")}</div>`:""}<div class="future-rebuy-foot"><button class="btn mini ghost" id="frTimeframes" type="button">＋ 시·일·주·월선 추가</button></div></section></details></section>`;

@@ -32,7 +32,7 @@ function toast(text){
 function describe(rec){
   const a=allocOf(), s=a?allocationSummary(a,assetStore.prices):null, list=(rec?.items||[]).map(e=>{
     const it=allocItemById(a,e.id);if(!it)return null;
-    if(finite(e.shares))return `${it.name} ${sign(e.shares)}${qty(Math.abs(e.shares),it)}`;
+    if(finite(e.shares)!==null)return `${it.name} ${sign(e.shares)}${qty(Math.abs(e.shares),it)}`;
     const v=s?.items.get(it.id)?.value||0, amt=finite(it.amount)||0, eq=Math.abs(e.amount)*(amt>0&&v>0?v/amt:1);
     return `${it.name} ${sign(e.amount)}${man(eq)}`;
   }).filter(Boolean);
@@ -134,8 +134,8 @@ function shift(o){
     const fresh=finite(it[field])===null;done=bumpField(it,field,dir*want,step);short=Math.abs(done)+step/2<want;
     if(done&&field==="amount"&&!(was>0)&&finite(it.shares)===null)resetBase(it,assetStore.prices,a);
     const e=done&&items.find(x=>x?.id===it.id&&finite(x[field])!==null&&!x.converted);
-    if(e){e[field]=linkRound(e[field]+done,step);if(e.fresh&&field==="shares"&&!(finite(it.shares)>0))delete it.shares;}else if(done)items.push({id:it.id,[field]:done,...(fresh&&field==="shares"?{fresh:true}:{})});
-    rec.items=items.filter(x=>finite(x?.shares)||finite(x?.amount));
+    if(e){e[field]=linkRound(e[field]+done,step);delete e.exact;if(e.fresh&&field==="shares"&&!(finite(it.shares)>0))delete it.shares;}else if(done)items.push({id:it.id,[field]:done,...(fresh&&field==="shares"?{fresh:true}:{})});
+    rec.items=items.filter(x=>finite(x?.shares)||finite(x?.amount)||finite(x?.exact)); // 0이 됐어도 반올림 전 양(exact, rescaleTrade)이 남은 계좌는 둔다
   }
   if(!plus(o.total?.qty)&&!plus(o.total?.value)){delete a.trades[o.key];if(!Object.keys(a.trades).length)delete a.trades;}
   else Object.assign(rec,{qty:plus(o.total.qty),value:plus(o.total.value)});

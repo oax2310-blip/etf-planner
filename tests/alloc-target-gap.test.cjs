@@ -7,11 +7,11 @@ const vm = require('node:vm');
 // 자산 배분 탭의 목표 대비(%p)·경고 색·매수중/매도중 표시. assets.js를 가상 DOM으로 불러 그리며 종목·금액은 모두 테스트용 가짜 값이다.
 const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 const PLANNER_KEY = 'etf-exit-planner-standalone-v1';
-function page(data, planner, hash = '#alloc') {
+function page(data, planner, hash = '#alloc', save = null) {
   const nodes = new Map(), storage = new Map([[PLANNER_KEY, JSON.stringify(planner)]]);
-  const node = id => { if (!nodes.has(id)) nodes.set(id, {dataset: {}, hidden: false, value: '', innerHTML: '', textContent: '', style: {}, classList: {toggle() {}}, querySelector: sel => node(`${id}:${sel}`), querySelectorAll: () => [], setAttribute() {}, getAttribute() {}}); return nodes.get(id); };
+  const node = id => { if (!nodes.has(id)) nodes.set(id, {dataset: {}, hidden: false, value: '', innerHTML: '', textContent: '', style: {}, classList: {toggle() {}}, querySelector: sel => node(`${id}:${sel}`), querySelectorAll: () => [], setAttribute() {}, getAttribute() {}, showModal() {}, close() {}}); return nodes.get(id); };
   const document = {hidden: false, activeElement: null, getElementById: node, querySelector: node, querySelectorAll: () => [], addEventListener() {}};
-  const store = {doc: data, prices: null, status: {state: 'off'}, config: () => null, recovery: () => [], subscribe() {}, start() {}, saveSection() { throw Error('조회만으로 저장하면 안 된다'); }};
+  const store = {doc: data, prices: null, status: {state: 'off'}, config: () => null, recovery: () => [], subscribe() {}, start() {}, saveSection(name) { if (!save) throw Error('조회만으로 저장하면 안 된다'); save(name); }};
   const ctx = vm.createContext({document, assetStore: store, URLSearchParams, crypto: require('node:crypto').webcrypto,
     localStorage: {getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v))}, addEventListener() {}, setInterval() {}, setTimeout: fn => { fn(); return 1; },
     location: {hash}, history: {replaceState() {}}, scrollTo() {}});
@@ -19,7 +19,7 @@ function page(data, planner, hash = '#alloc') {
   const html = node(hash.slice(1) + 'View').innerHTML;
   // 종목 줄 하나: data-alloc-item부터 다음 종목 줄 또는 그룹 끝(＋ 종목 줄) 전까지.
   const row = id => { const start = html.indexOf(`data-alloc-item="${id}"`); assert.ok(start >= 0, id); const ends = ['class="asset-row', 'class="group-foot"'].map(k => html.indexOf(k, start)).filter(i => i >= 0); return html.slice(start, ends.length ? Math.min(...ends) : undefined); };
-  return {html, row, gap: ctx.allocTargetGap};
+  return {html, row, gap: ctx.allocTargetGap, ctx, node};
 }
 const item = (id, amount, target, extra = {}) => ({id, name: `종목 ${id}`, ticker: id.toUpperCase(), amount, ...(target === null ? {} : {target}), ...extra});
 const stages = done => ({stages: done.map((d, i) => ({id: `s${i}`, amount: 5, price: 100, ...(d ? {done: true} : {})}))});
@@ -116,4 +116,20 @@ test('그룹 차이가 1.0%p를 넘어도 종목이 모두 회색(1.0%p 이내 �
   assert.match(head('빈종목'), /<b class="target-gap"[^>]*>\+5\.0%<\/b>/, '비중 0%인 목표 없는 종목은 그룹 회색을 막지 않는다');
   assert.match(head('그룹'), /<b class="target-gap over"[^>]*>\+3\.0%<\/b>/, '빨강·파랑 종목이 하나라도 있으면 그룹도 경고 색');
   assert.equal(JSON.stringify(data), before);
+});
+
+test('현금 합계는 한 분류에만 더한다: 다른 분류에 체크하면 옮긴다고 알리고 저장할 때 원래 분류의 체크를 푼다', () => {
+  const data = fixture(), a = data.allocation, saved = [];
+  a.classes.push({id: 'k1', region: '현금', name: '현금', cash: true}, {id: 'k2', region: '현금', name: '달러'});
+  a.cash = [{id: 'w', name: '예금', amount: 1000000}];
+  const {ctx, node} = page(data, planner, '#alloc', name => saved.push(name)), f = node('classForm'), hint = node('classCashHint');
+  Object.assign(f, {name: {value: ''}, region: {value: ''}, target: {value: '', disabled: false}, cash: {checked: false}});
+  vm.runInContext('openClass("k2")', ctx);
+  assert.equal(hint.hidden, true, '체크 전에는 안내를 숨김');assert.match(hint.textContent, /'현금' 분류에 더하던 현금 합계를 이 분류로/);
+  f.cash.checked = true; f.cash.onchange(); assert.equal(hint.hidden, false);
+  f.onsubmit({preventDefault() {}});
+  assert.deepEqual(a.classes.filter(c => c.cash).map(c => c.id), ['k2'], '현금 체크는 새 분류 하나만');assert.deepEqual(saved, ['allocation']);
+  const s = vm.runInContext('allocationSummary', ctx)(a, null);
+  assert.equal(s.regions.find(r => r.name === '현금').value, 100, '지역 합계에 현금 100만원이 한 번만');
+  vm.runInContext('openClass("c1")', ctx); assert.equal(f.cash.checked, false); assert.equal(hint.hidden, true);
 });

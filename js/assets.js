@@ -408,12 +408,16 @@ function openClass(id){
   el("regionList").innerHTML=[...new Set([...ASSET_REGIONS,...classes.map(x=>x.region).filter(Boolean)])].map(r=>`<option value="${escA(r)}">`).join("");
   const target=c?allocationTargets(a).classes.get(c.id):{target:null,linked:false};
   f.name.value=display?.name||""; f.region.value=display?.region||""; f.target.value=target.target??""; f.target.disabled=target.linked; f.cash.checked=!!c?.cash;
+  // 현금 합계는 한 분류에만 더한다(둘 이상이면 지역 합계에 현금이 겹침). 다른 분류에 있으면 체크할 때 그 분류에서 옮긴다고 알린다.
+  const cashOwner=a.classes.find(x=>x.cash&&x!==c), cashHint=el("classCashHint"), showCashHint=()=>{cashHint.hidden=!(cashOwner&&f.cash.checked);};
+  cashHint.textContent=cashOwner?`저장하면 '${allocationClassList(a).find(x=>x.id===cashOwner.id)?.name||cashOwner.name}' 분류에 더하던 현금 합계를 이 분류로 옮깁니다.`:"";
+  f.cash.onchange=showCashHint; showCashHint();
   el("classTargetHint").textContent=target.linked?"그룹 목표의 합계입니다. 종목별에서 수정하면 자동 반영됩니다.":"하위 목표가 없을 때만 직접 입력합니다. 기준 총자산 대비입니다.";
   const used=c?a.groups.filter(g=>g.classId===c.id).length:0;
   el("classDelete").hidden=!c;
   el("classDelete").onclick=()=>{ if(used){ alert(`이 분류에 그룹 ${used}개가 있습니다. 그룹을 다른 분류로 옮기거나 지운 뒤 삭제하세요.`); return; } if(!confirm(`'${c.name}' 분류를 삭제할까요?`)) return; a.classes=a.classes.filter(x=>x!==c); saveSection("allocation"); dlg("classDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
-    t.name=f.name.value.trim()||"이름 없음"; t.region=f.region.value.trim()||"기타"; if(!f.target.disabled)setNum(t,"target",f.target.value); if(f.cash.checked) t.cash=true; else delete t.cash;
+    t.name=f.name.value.trim()||"이름 없음"; t.region=f.region.value.trim()||"기타"; if(!f.target.disabled)setNum(t,"target",f.target.value); if(f.cash.checked){ t.cash=true; a.classes.forEach(x=>{ if(x!==t) delete x.cash; }); } else delete t.cash;
     if(!c) a.classes.push(t); saveSection("allocation"); dlg("classDialog").close(); render(); };
   dlg("classDialog").showModal();
 }

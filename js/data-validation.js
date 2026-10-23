@@ -102,7 +102,7 @@ const externalData = (()=>{
           child(v,"buyPlan",q,(b,t)=>{stages(b.stages,`${t}.stages`);recordMap(b.buys,`${t}.buys`,trade);child(b,"lines",t);child(b,"wait",t);});
         });
       });
-      recordMap(a.trades,`${p}.trades`,v=>records(v.items,`${p}.trades.items`,trade));
+      recordMap(a.trades,`${p}.trades`,v=>records(v.items,`${p}.trades.items`,(x,q)=>{trade(x,q);numbers(x,["exact"],q);}));
     });
     child(data,"ledger","자산",(v,p)=>records(v.years,`${p}.years`,(y,k)=>{
       numbers(y,["year"],k,1,9999,true);records(y.accounts,`${k}.accounts`,(a,q)=>strings(a,["id","name"],q));
