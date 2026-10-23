@@ -141,7 +141,7 @@ test('무이자 조건은 따로 저장·동기화하며 저축 기록과 다른
     if(options.method==='PUT'){uploaded=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new'}});}
     return contents(original);
   });
-  connect(synced.storage);await synced.store.sync();
+  connect(synced.storage);synced.storage.set(BASE,JSON.stringify(original));await synced.store.sync(); // 이미 동기화하던 기기(기준 없이 처음 연결하면 고르게 한다)
   assert.equal(synced.store.status.state,'done');assert.equal(uploaded.installments.price,3600000);assert.deepEqual(uploaded.savings,original.savings);
   assert.deepEqual(uploaded.installments,clone(first.store.doc.installments));
   const reloaded=setup(uploaded);reloaded.store.start();assert.deepEqual(clone(reloaded.store.doc.installments),uploaded.installments);
@@ -214,6 +214,57 @@ test('분할매수 기기 간 동기화는 저장 중 409를 다시 병합하고
   assert.equal(remote.allocation.groups[0].items[0].buyPlan.stages[0].actual,25);
   assert.equal(remote.ledger.years[0].months[0].pnl,100);
   assert.deepEqual(JSON.parse(storage.get(BASE)),remote);
+});
+
+test('두 기기가 동기화 사이에 다른 종목을 고쳐도 둘 다 올리고, 같은 칸만 나중 값을 쓰며 안내한다',async()=>{
+  const original=fake();original.allocation.groups[0].items.push({id:'b',amount:200});
+  const remote=clone(original);remote.allocation.savedAt='2026-01-03';remote.allocation.groups[0].items[1].note='다른 기기 메모';
+  let uploaded;const {store,storage,context}=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+    if(options.method==='PUT'){uploaded=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new'}});}
+    return contents(remote);
+  });
+  connect(storage);storage.set(BASE,JSON.stringify(original));
+  store.doc.allocation.groups[0].items[0].amount=150;store.saveSection('allocation');await store.sync();
+  assert.equal(store.status.state,'done');assert.deepEqual(uploaded.allocation.groups[0].items.map(x=>[x.amount,x.note??'']),[[150,''],[200,'다른 기기 메모']]);
+  assert.equal(store.recovery().length,0);assert.equal(store.notice,null);
+  // 같은 칸(a 금액)을 저장소가 나중에 다르게 바꿨으면 그 값을 쓰고, 이 기기 값은 보관·안내한다
+  storage.set(BASE,JSON.stringify(uploaded));Object.assign(remote,clone(uploaded));remote.allocation.savedAt='2099-01-01';remote.allocation.groups[0].items[0].amount=170;
+  store.doc.allocation.groups[0].items[0].amount=160;store.saveSection('allocation');await store.sync();
+  assert.equal(store.doc.allocation.groups[0].items[0].amount,170);assert.equal(store.recovery().at(-1).data.groups[0].items[0].amount,160);
+  assert.equal(store.notice.kind,'merged');assert.equal(store.notice.count,1);
+  const box={hidden:true,replaceChildren(...parts){this.parts=parts;}},buttons=[];
+  context.document.createElement=()=>{const b={};buttons.push(b);return b;};let downloaded=0;
+  store.renderNotice(box,()=>downloaded++);
+  assert.equal(box.hidden,false);assert.match(box.parts[0],/같은 칸을 함께 고친 1곳/);assert.deepEqual(clone(buttons.map(b=>b.textContent)),['보관 기록 내려받기','확인']);
+  buttons[0].onclick();buttons[1].onclick();assert.equal(downloaded,1);assert.equal(store.notice,null,'확인하면 안내를 지운다');
+  store.renderNotice(box,()=>{});assert.equal(box.hidden,true);
+});
+
+test('처음 맞추는 저장소에 이 기기와 다른 기록이 있으면 합치지 않고 고른 쪽을 쓴다',async()=>{
+  const repoDoc=fake();repoDoc.allocation.groups[0].items.push(...[2,3,4,5].map(n=>({id:'r'+n,amount:n})));
+  for(const side of ['remote','local']){
+    const local=fake();local.allocation.groups[0].items=[{id:'n1',amount:9}];local.installments={savedAt:'2026-01-01',price:1000};
+    let writes=0,uploaded;const {store,storage}=setup(local,async(url,options)=>{
+      if(url.endsWith('/repos/example/private-data'))return json({private:true});
+      if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+      if(options.method==='PUT'){writes++;uploaded=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new'}});}
+      return contents(uploaded||repoDoc);
+    });
+    connect(storage);await store.sync();
+    assert.equal(store.status.state,'choose');assert.equal(writes,0,'고르기 전에는 올리지 않는다');assert.equal(storage.get(BASE),undefined);
+    assert.deepEqual(clone(store.notice),{kind:'choose',local:'자산 배분 종목 1개',remote:'자산 배분 종목 5개'},'내용이 같은 구역(월별 손익)은 묻지 않는다');
+    store.doc.allocation.groups[0].items[0].amount=10;store.saveSection('allocation');await store.sync();
+    assert.equal(store.status.state,'choose');assert.equal(writes,0,'고르기 전 수정도 이 기기에만 저장');
+    assert.equal(await store.choose(side),true);
+    assert.equal(store.status.state,'done');assert.equal(await store.choose(side),false,'이미 골랐으면 다시 고르지 않음');
+    const ids=clone(store.doc.allocation.groups[0].items.map(x=>x.id));
+    assert.deepEqual(ids,side==='remote'?['a','r2','r3','r4','r5']:['n1']);
+    assert.equal(store.doc.installments.price,1000,'이 기기에만 있는 구역은 그대로');
+    assert.equal(store.recovery().length,1);assert.deepEqual(clone(store.recovery()[0].data.groups[0].items.map(x=>x.id)),side==='remote'?['n1']:['a','r2','r3','r4','r5'],'고르지 않은 쪽은 보관');
+    if(side==='local'){assert.deepEqual(uploaded.allocation.groups[0].items.map(x=>x.id),['n1']);}
+  }
 });
 
 test('분할매수·자산 JSON 복원은 기존 기록을 보관하고 체결 기록까지 복원한다',()=>{
@@ -315,7 +366,7 @@ test('새 자산 종목의 저장 대기를 먼저 처리하고 동기화가 실
     if(options.method==='PUT'){remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new-sha'}});}
     return contents(remote);
   });
-  connect(h.storage);h.store.doc.allocation.groups[0].items[0].ticker='AAA';h.store.saveSection('allocation');
+  connect(h.storage);h.storage.set(BASE,JSON.stringify(original));h.store.doc.allocation.groups[0].items[0].ticker='AAA';h.store.saveSection('allocation');
   const fetch=h.context.fetch;h.context.fetch=async(url,options)=>{
     if(url.endsWith('/issues'))assert.equal(remote.allocation.groups[0].items[0].ticker,'AAA');
     return fetch(url,options);

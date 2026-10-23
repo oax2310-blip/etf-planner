@@ -16,11 +16,11 @@
   <title>자산 현황</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=267"></script>
+  <script src="js/theme.js?v=268"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=267" />
-  <link rel="stylesheet" href="css/assets.css?v=267" />
-  <script src="js/repo-security.js?v=267" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=268" />
+  <link rel="stylesheet" href="css/assets.css?v=268" />
+  <script src="js/repo-security.js?v=268" defer></script>
 </head>
 <body class="assets-page">
   <header class="top">
@@ -40,6 +40,7 @@
       <button class="btn mini" id="refreshPricesBtn" type="button" title="시세를 바로 수집하도록 요청하고, 완료된 최신 시세를 자동으로 불러옵니다." aria-describedby="priceRefreshStatus">시세 즉시 불러오기</button>
       <span id="priceRefreshStatus" role="status"></span>
     </div>
+    <div class="warning asset-sync-notice" id="assetSyncNotice" role="status" hidden></div>
     <section id="strategyView" class="hidden"></section>
     <section id="allocView"></section>
     <section id="ledgerView" class="hidden"></section>
@@ -122,7 +123,7 @@
   <dialog id="syncDialog"><div class="dialog-inner">
     <div class="dialog-head"><h2>기기 간 동기화</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <p class="sync-details" id="syncOff"><a href="index.html">메인 플래너</a>의 <b>동기화</b>에서 비공개 데이터 저장소를 연결하면, 이 페이지의 기록도 같은 저장소의 <b>etf-planner-assets.json</b>에 함께 동기화됩니다.</p>
-    <p class="sync-details" id="syncOn" hidden><b id="syncRepo"></b> 저장소의 etf-planner-assets.json에 저장합니다. 자산 배분·월별 손익·저축 계획·할부 계산은 따로 맞추고, 두 기기에서 같은 화면을 함께 바꿨으면 나중에 저장한 쪽을 씁니다(다른 쪽은 이 기기에 보관).</p>
+    <p class="sync-details" id="syncOn" hidden><b id="syncRepo"></b> 저장소의 etf-planner-assets.json에 저장합니다. 자산 배분·월별 손익·저축 계획·할부 계산은 따로 맞추고, 두 기기에서 고친 칸은 모두 합치고, 같은 칸을 함께 고쳤으면 나중에 저장한 값을 씁니다(이전 값은 이 기기에 보관).</p>
     <p class="sync-details" id="syncDialogStatus" role="status"></p>
     <p class="sync-details" id="assetPriceStatus"></p>
     <div class="sync-controls"><button class="btn primary" id="syncNowBtn" type="button">지금 동기화</button><button class="btn mini" id="refreshPricesDialogBtn" type="button" aria-describedby="priceRefreshStatus assetPriceStatus">시세 즉시 불러오기</button></div>
@@ -130,17 +131,17 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=267" defer></script>
-  <script src="js/data-validation.js?v=267" defer></script>
-  <script src="js/assets-calc.js?v=267" defer></script>
-  <script src="js/price-collection.js?v=267" defer></script>
-  <script src="js/assets-store.js?v=267" defer></script>
-  <script src="js/member-link.js?v=267" defer></script>
-  <script src="js/ledger-benchmark.js?v=267" defer></script>
-  <script src="js/assets.js?v=267" defer></script>
-  <script src="js/assets-ledger.js?v=267" defer></script>
-  <script src="js/assets-savings.js?v=267" defer></script>
-  <script src="js/assets-installments.js?v=267" defer></script>
-  <script src="js/assets-start.js?v=267" defer></script>
+  <script src="js/ma-ladder.js?v=268" defer></script>
+  <script src="js/data-validation.js?v=268" defer></script>
+  <script src="js/assets-calc.js?v=268" defer></script>
+  <script src="js/price-collection.js?v=268" defer></script>
+  <script src="js/assets-store.js?v=268" defer></script>
+  <script src="js/member-link.js?v=268" defer></script>
+  <script src="js/ledger-benchmark.js?v=268" defer></script>
+  <script src="js/assets.js?v=268" defer></script>
+  <script src="js/assets-ledger.js?v=268" defer></script>
+  <script src="js/assets-savings.js?v=268" defer></script>
+  <script src="js/assets-installments.js?v=268" defer></script>
+  <script src="js/assets-start.js?v=268" defer></script>
 </body>
 </html>

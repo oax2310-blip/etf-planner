@@ -535,10 +535,11 @@ function openPurchase(id){
 }
 
 
-function statusText(){const s=assetStore.status;return {off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`}[s.state];}
+function statusText(){const s=assetStore.status;return {off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];}
 function updateStatus(){
   const text=statusText();if(el("purchaseSaveStatus"))el("purchaseSaveStatus").textContent=text;
   el("purchaseSyncDialogStatus").textContent=`분할매수·자산: ${text}`;el("purchaseRecovery").hidden=!assetStore.recovery().length;
+  assetStore.renderNotice?.(el("assetSyncNotice"),()=>el("purchaseRecovery").click());
 }
 function redrawIdle(){
   if(state.tab!=="buys")return;const active=document.activeElement;
