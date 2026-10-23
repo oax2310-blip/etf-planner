@@ -87,7 +87,7 @@
       <label class="field"><span>이름</span><input name="name" required maxlength="40" autocomplete="off" /></label>
       <label class="field"><span>지역</span><input name="region" required maxlength="20" list="regionList" autocomplete="off" /><datalist id="regionList"></datalist></label>
       <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" aria-describedby="classTargetHint" /><small class="field-hint" id="classTargetHint"></small></label>
-      <label class="field check-field"><span>현금 합계</span><span class="check"><input name="cash" type="checkbox" /> 아래 현금 목록 합계를 이 분류에 더함</span></label>
+      <label class="field check-field"><span>현금 합계</span><span class="check"><input name="cash" type="checkbox" aria-describedby="classCashHint" /> 아래 현금 목록 합계를 이 분류에 더함 (한 분류만)</span><small class="field-hint" id="classCashHint" hidden></small></label>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="classDelete">분류 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
