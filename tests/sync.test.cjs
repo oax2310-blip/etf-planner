@@ -37,7 +37,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
-    $: element, $$:()=>[], esc:value=>String(value??""), document: {addEventListener() {}, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
+    $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,crypto:require('node:crypto').webcrypto,
     setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval() {},
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
@@ -314,6 +314,37 @@ test('달러선물 보유처럼 함께 바뀌는 칸을 양쪽이 고쳤으면 �
   h.elements.get('keepRemote').onclick(); await work;
   assert.deepEqual(JSON.parse(h.items.get('test-state')).futures, remote.futures, '겹치면 한쪽 기록 전체를 쓴다(보유·정산손익을 섞지 않음)');
   assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).at(-1).futures, local.futures);
+});
+
+test('입력 칸에서 쓰는 중이면 다른 기기 기록 적용을 미루고, 칸에서 나오면 이어서 맞춘다', async () => {
+  const local = {plans: [{id: 'p', note: ''}], futures: {positions: []}, actions: {}};
+  const remote = {plans: [{id: 'p', note: ''}, {id: 'other-device'}], futures: {positions: []}, actions: {}};
+  const h = harness({local, remote, base: snap(local)}), doc = h.context.document;
+  doc.activeElement = {tagName: 'TEXTAREA', closest: () => null}; // 메모를 쓰는 중(아직 저장 전)
+  await h.restored();
+  assert.deepEqual(h.context.state.plans, local.plans, '쓰는 동안 화면 기록을 바꾸지 않는다');
+  assert.equal(h.server.writes, 0); assert.match(h.status(), /입력 중 · 끝나면 동기화/);
+  doc.on.focusout.forEach(fn => fn({relatedTarget: {tagName: 'INPUT', type: 'number', closest: () => null}}));
+  assert.equal(vm.runInContext('sync.waitTyping', h.context), true, '다른 입력 칸으로 옮기면 계속 미룬다');
+  doc.activeElement = null; doc.on.focusout.forEach(fn => fn({relatedTarget: null}));
+  assert.equal(vm.runInContext('sync.waitTyping', h.context), false);
+  await h.run();
+  assert.deepEqual(h.context.state.plans.map(p => p.id), ['p', 'other-device']); assert.match(h.status(), /동기화 완료/);
+  // 동기화 창의 연결 칸·체크박스는 입력 중으로 보지 않는다
+  const h2 = harness({local, remote, base: snap(local)});
+  h2.context.document.activeElement = {tagName: 'INPUT', type: 'password', closest: sel => sel === '#syncDialog'};
+  await h2.restored(); assert.deepEqual(h2.context.state.plans.map(p => p.id), ['p', 'other-device']);
+  const h3 = harness({local, remote, base: snap(local)});
+  h3.context.document.activeElement = {tagName: 'INPUT', type: 'checkbox', closest: () => null};
+  await h3.restored(); assert.deepEqual(h3.context.state.plans.map(p => p.id), ['p', 'other-device']);
+});
+
+test('입력 중에도 이 기기 수정만 올리는 경우는 미루지 않는다', async () => {
+  const old = empty(), local = {plans: [{id: 'mine'}], futures: {positions: []}, actions: {}};
+  const h = harness({local, remote: old, base: snap(old)});
+  h.context.document.activeElement = {tagName: 'TEXTAREA', closest: () => null};
+  await h.restored();
+  assert.deepEqual(h.remoteData().plans, local.plans); assert.equal(vm.runInContext('sync.waitTyping', h.context), false);
 });
 
 test('저장소 기록을 고르면 이 기기 기록을 복구용으로 남긴다', async () => {
