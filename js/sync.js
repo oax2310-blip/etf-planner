@@ -16,7 +16,8 @@ let priceRefreshBusy=false, priceReadMessage="";
 const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
-function dataSnapshot(){return JSON.stringify({plans:state.plans,futures:state.futures,actions:state.actions,rebuy:state.rebuy,alerts:state.alerts,alertHistory:state.alertHistory});}
+function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
+function dataSnapshot(){return snapshotOf(state);}
 const repoOk = r => /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r);
 const connected = () => !!(sync.token && sync.repo);
 // 빈 기기만 처음 연결 때 자동 수신. rebuy·alerts가 있으면 비어 있지 않다.
@@ -38,7 +39,7 @@ function backupRecord(json,reason){
   for(let n=Math.min(RECOVERY_LIMIT,list.length);;n--){try{localStorage.setItem(RECOVERY_KEY,JSON.stringify(list.slice(-n)));break;}catch(error){if(n<=1)throw error;}}
   renderRecovery();
 }
-const recordSummary = d => `계획 ${Array.isArray(d?.plans)?d.plans.length:0}개 · 달러선물 ${Array.isArray(d?.futures?.positions)?d.futures.positions.length:0}개 월물`;
+const recordSummary = d => {const pos=Array.isArray(d?.futures?.positions)?d.futures.positions:[],n=pos.reduce((t,p)=>t+(Number(p?.contracts)>0?Number(p.contracts):0),0);return `계획 ${Array.isArray(d?.plans)?d.plans.length:0}개 · 달러선물 ${pos.length}개 월물${n?` ${n}계약`:""}`;};
 const recordTime = at => {const t=Date.parse(at);return t?new Date(t).toLocaleString("ko-KR",{year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"";};
 // 동기화 창의 복구본 목록(최근 것부터). 글자는 textContent로만 넣는다.
 function renderRecovery(){
@@ -78,7 +79,7 @@ async function readRemote(){
   let data;try{data=JSON.parse(text);}catch{throw Error("저장소의 기록 파일을 읽을 수 없습니다. 자동으로 덮어쓰지 않았습니다.");}
   externalData.planner(data);
   if(!data.actions)throw Error("저장소의 기록 파일 형식을 확인할 수 없습니다. 자동으로 덮어쓰지 않았습니다.");
-  return {sha:meta.sha,snapshot:JSON.stringify({plans:data.plans,futures:data.futures,actions:data.actions,rebuy:data.rebuy,alerts:data.alerts,alertHistory:data.alertHistory})};
+  return {sha:meta.sha,snapshot:snapshotOf(data)};
 }
 // SHA로 다른 기기의 선행 저장(409/422)을 감지해 다시 읽는다.
 async function writeRemote(snapshot,sha){
@@ -140,9 +141,11 @@ function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|S
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
 // 병합: 원격에 rebuy·alerts가 없으면 이 기기 값 유지. 빈 목록도 지우려면 {items:[]}·{rules:[]}로 저장.
 function applyRemote(snapshot){const incoming=externalData.planner(JSON.parse(snapshot)),next={...state,...incoming};normalize(next);localStorage.setItem(STORAGE_KEY,JSON.stringify(next));state=next;render();}
-function chooseConflict(local,remote){return new Promise(resolve=>{
-  const dialog=$("conflictDialog"),summary=json=>{const d=JSON.parse(json);return `${d.plans.length}개 계획 · 달러선물 ${d.futures.positions?.length||0}개 월물`;};
-  $("conflictMessage").textContent=`이 기기: ${summary(local)} / 저장소: ${summary(remote)}. 먼저 JSON 백업을 내려받아 두면 더 안전합니다.`;
+// 충돌 창: 겹친 곳(overlap = mergeThreeWay 경로, 없으면 지난 동기화 기준이 없는 기기)과 양쪽 계획·월물 수. 저장소 기록을 기본(첫 버튼)으로 둔다.
+const CONFLICT_AREAS={plans:"분할매도",futures:"달러선물",rebuy:"재매수",alerts:"알림 설정",actions:"이전 기록",alertHistory:"알림내역"};
+function chooseConflict(local,remote,overlap=[]){return new Promise(resolve=>{
+  const dialog=$("conflictDialog"),summary=json=>recordSummary(JSON.parse(json)),areas=[...new Set(overlap.map(path=>CONFLICT_AREAS[path[0]]||"기타"))].join("·");
+  $("conflictMessage").textContent=`${areas?`두 기기에서 같은 곳(${areas})을 다르게 고쳤습니다.`:"이 기기와 저장소의 기록이 다릅니다(지난 동기화 기준이 없는 기기)."} 이 기기: ${summary(local)} / 저장소: ${summary(remote)}.`;
   let done=false;const finish=value=>{if(done)return;done=true;dialog.close();resolve(value);};
   $("keepLocal").onclick=()=>finish("local");$("keepRemote").onclick=()=>finish("remote");$("conflictLater").onclick=()=>finish("later");
   dialog.onclose=()=>finish("later");dialog.showModal();
@@ -164,7 +167,7 @@ async function syncNow(beforePriceCollection=false){
     if(fillPrices(state,priceData)){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));sync.redraw=true;}
     sync.sha=sha;
     // 로컬·원격·base를 같은 시세로 채운 뒤 비교(시세 갱신만으로 충돌 창이 뜨지 않음). settle은 채운 원격 값도 저장.
-    let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData);
+    let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData),merged=null;
     if(typeof alignAlertHistorySnapshots==="function")({local,remote,base}=alignAlertHistorySnapshots(local,remote,base));
     const settle=async json=>{if(json===raw)markSynced(json,sha);else{await writeRemote(json,sha);if(!same())return;markSynced(json);}sync.blocked=false;};
     if(remote===local)await settle(local);
@@ -177,9 +180,13 @@ async function syncNow(beforePriceCollection=false){
     }
     else if(local===base||(!base&&(isBlank(local)||(!hadStoredState&&local===initialSnapshot)))){applyRemote(remote);await settle(remote);}
     else if(remote===base)await settle(local);
+    else if(base&&!(merged=mergeThreeWay(JSON.parse(local),JSON.parse(remote),JSON.parse(base))).conflicts.length){
+      // 양쪽이 지난 동기화 뒤 서로 다른 칸만 바꿨으면 묻지 않고 합친다(계획·알림·재매수 종목은 항목별, 달러선물 보유·손절처럼 함께 바뀌는 칸은 겹치면 묻는다).
+      const json=snapshotOf(merged.value);applyRemote(json);await settle(json);
+    }
     else{
       sync.blocked=true;syncStatus("기록 차이 확인 필요 · 자동 저장 대기");
-      const choice=await chooseConflict(local,remote);
+      const choice=await chooseConflict(local,remote,merged?.conflicts);
       if(!same())return;
       if(choice==="remote"){backupRecord(dataSnapshot(),"저장소 기록을 선택하기 전 이 기기 기록");applyRemote(remote);await settle(remote);}
       else if(choice==="local"){

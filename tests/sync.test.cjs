@@ -79,6 +79,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   if(includeHistory)for(const name of ['alert-history-store.js','alert-history.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js',name),'utf8'),context);
   vm.runInContext(source, context);
   vm.runInContext(pricesSource, context);
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../js/assets-calc.js'), 'utf8'), context); // 충돌 자동 병합(mergeThreeWay)
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
@@ -270,10 +271,11 @@ test('저장소가 그대로인 동안 이 기기 수정만 현재 sha로 올린
   assert.deepEqual(h.remoteData().plans, local.plans);
 });
 
-test('양쪽 다 바뀌면 묻고, 나중에 결정하면 어느 쪽도 덮어쓰지 않는다', async () => {
-  const local = {plans: [{id: 'device'}], futures: {positions: []}, actions: {}};
-  const remote = {plans: [{id: 'repo'}], futures: {positions: []}, actions: {}};
-  const h = harness({local, remote, base: snap(empty())});
+test('양쪽이 같은 칸을 다르게 바꾸면 겹친 곳과 함께 묻고, 나중에 결정하면 어느 쪽도 덮어쓰지 않는다', async () => {
+  const old = {plans: [{id: 'p', note: '처음'}], futures: {positions: []}, actions: {}};
+  const local = {plans: [{id: 'p', note: '이 기기'}], futures: {positions: []}, actions: {}};
+  const remote = {plans: [{id: 'p', note: '저장소'}], futures: {positions: []}, actions: {}};
+  const h = harness({local, remote, base: snap(old)});
   const work = h.restored();
   await waitFor(() => h.elements.get('conflictLater')?.onclick);
   h.elements.get('conflictLater').onclick();
@@ -281,6 +283,37 @@ test('양쪽 다 바뀌면 묻고, 나중에 결정하면 어느 쪽도 덮어�
   assert.equal(h.server.writes, 0);
   assert.deepEqual(h.remoteData().plans, remote.plans);
   assert.match(h.status(), /이 기기에만/);
+  assert.match(h.elements.get('conflictMessage').textContent, /같은 곳\(분할매도\)을 다르게 고쳤습니다\. 이 기기: 계획 1개/);
+});
+
+test('양쪽이 지난 동기화 뒤 서로 다른 칸만 바꿨으면 묻지 않고 합쳐 올린다', async () => {
+  const old = {plans: [{id: 'a', note: ''}, {id: 'b', note: ''}, {id: 'gone'}], futures: {positions: [{month: '202612', contracts: 2}], targetPrice: 1480}, actions: {}};
+  const local = structuredClone(old), remote = structuredClone(old);
+  local.plans[0].note = '이 기기 메모'; local.plans.push({id: 'new-device'}); local.futures.targetPrice = 1500;
+  remote.plans[1].note = '저장소 메모'; remote.plans.splice(2, 1); remote.alerts = {rules: [{id: 'r', ticker: 'AAA', period: 20, unit: '일선', enabled: true}]};
+  const h = harness({local, remote, base: snap(old)});
+  await h.restored();
+  assert.equal(h.elements.get('conflictDialog')?.open, undefined, h.status());
+  const saved = h.remoteData();
+  assert.deepEqual(saved.plans.map(p => [p.id, p.note]), [['a', '이 기기 메모'], ['b', '저장소 메모'], ['new-device', undefined]], '저장소가 지운 계획은 지우고 이 기기가 만든 계획은 남긴다');
+  assert.equal(saved.futures.targetPrice, 1500); assert.deepEqual(saved.alerts, remote.alerts);
+  assert.deepEqual(JSON.parse(h.items.get('test-state')).plans, saved.plans); assert.match(h.status(), /동기화 완료/);
+  assert.equal(h.items.get('etf-planner-sync-base:' + REPO), vm.runInContext('dataSnapshot()', h.context));
+  assert.equal(h.server.writes, 1); assert.equal(h.items.get('etf-planner-sync-recovery'), undefined, '겹치지 않으면 보관하지 않는다');
+});
+
+test('달러선물 보유처럼 함께 바뀌는 칸을 양쪽이 고쳤으면 합치지 않고 저장소를 기본으로 묻는다', async () => {
+  const old = {plans: [], futures: {positions: [{month: '202612', contracts: 4, settlementPrice: 1450}], baselinePnl: 0}, actions: {}};
+  const local = structuredClone(old), remote = structuredClone(old);
+  local.futures.positions[0].contracts = 3; local.futures.baselinePnl = -500000; // 이 기기: 손절 체크(보유·정산손익)
+  remote.futures.positions[0].contracts = 6; // 저장소: 보유 직접 수정
+  const h = harness({local, remote, base: snap(old)});
+  const work = h.restored();
+  await waitFor(() => h.elements.get('keepRemote')?.onclick);
+  assert.match(h.elements.get('conflictMessage').textContent, /같은 곳\(달러선물\)/);
+  h.elements.get('keepRemote').onclick(); await work;
+  assert.deepEqual(JSON.parse(h.items.get('test-state')).futures, remote.futures, '겹치면 한쪽 기록 전체를 쓴다(보유·정산손익을 섞지 않음)');
+  assert.deepEqual(JSON.parse(h.items.get('etf-planner-sync-recovery')).at(-1).futures, local.futures);
 });
 
 test('저장소 기록을 고르면 이 기기 기록을 복구용으로 남긴다', async () => {

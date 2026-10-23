@@ -259,8 +259,8 @@
   <dialog id="conflictDialog"><div class="dialog-inner">
     <div class="dialog-head"><h2>기록이 서로 다릅니다</h2></div>
     <p class="sync-details" id="conflictMessage"></p>
-    <p class="sync-details">어느 기록을 쓸지 선택하세요. 덮어쓰기 전 다른 기록은 이 기기에 복구용 JSON으로 보관합니다.</p>
-    <div class="sync-controls"><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn" id="keepRemote" type="button">저장소 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
+    <p class="sync-details">보통은 다른 기기와 같은 <b>저장소 기록</b>을 쓰면 됩니다. 고르지 않은 쪽은 이 기기의 플래너 보관 기록(동기화 창)에 남습니다.</p>
+    <div class="sync-controls"><button class="btn primary" id="keepRemote" type="button">저장소 기록 사용 (권장)</button><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
   </div></dialog>
 
   <dialog id="futurePlanDialog" aria-labelledby="futurePlanTitle"></dialog>
