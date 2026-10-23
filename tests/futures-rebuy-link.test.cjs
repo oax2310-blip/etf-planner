@@ -241,12 +241,15 @@ test('월물교체 뒤 부분 체결을 채우면 지금 보유 월물에서 빼
   assert.equal(ctx.setFutureCutChecked(f,0,true),true);
   let rec=f.rebuy.cuts[0];
   assert.deepEqual([rec.month,rec.settlementPrice,rec.contracts],['202703',1455,2],'기록은 지금 월물·계약 가중평균');
+  assert.deepEqual(JSON.parse(JSON.stringify(rec.legs)),[{month:'202612',contracts:1,settlementPrice:1450},{month:'202703',contracts:1,settlementPrice:1460}],'월물별 판 계약·평균가');
   assert.equal(held(f),6);assert.equal(f.baselinePnl,pnl+(1400-1460)*10000,'채운 계약은 지금 월물 단순평균가로 손익');
   f.positions=[{month:'202706',contracts:6,settlementPrice:1470}];
   const keep=JSON.stringify(f.positions);
   assert.notEqual(ctx.setFutureCutCount(f,0,'1',true),false);
   assert.equal(JSON.stringify(f.positions),keep,'없는 월물을 되살리지 않는다');
-  assert.equal(f.baselinePnl,50000+(1400-1455)*10000);assert.equal(f.rebuy.cuts[0].partial,true);
+  rec=f.rebuy.cuts[0];
+  assert.deepEqual([rec.month,rec.settlementPrice,rec.contracts,Object.hasOwn(rec,'legs')],['202612',1450,1,false],'마지막에 판 202703 계약을 빼면 처음 판 월물·평균가만 남는다');
+  assert.equal(f.baselinePnl,50000+(1400-1450)*10000);assert.equal(f.rebuy.cuts[0].partial,true);
   assert.notEqual(ctx.setFutureCutChecked(f,0,false,true),false);
   assert.equal(JSON.stringify(f.positions),keep);assert.equal(f.baselinePnl,50000,'손익만 되돌린다');
   ctx.setFutureCutCount(f,0,'2');f.positions=[];
@@ -271,7 +274,8 @@ test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·�
   handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'0'}});
   ctx.renderFutureRebuy(f);html=els.futureRebuyPanel.innerHTML;
   assert.match(html,/<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="false" aria-controls="frCutRows"><span>손절 완료 <b>2회 · 4계약<\/b> · 202612 반영<\/span>/,'반영한 월물은 완료 띠에 모은다');
-  assert.doesNotMatch(html,/future-row-warn/,'채울 때 지금 월물로 옮긴 기록은 표시할 것이 없다');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.rebuy.cuts[0].legs)),[{month:'202609',contracts:1,settlementPrice:1445},{month:'202612',contracts:1,settlementPrice:1450}],'채운 1계약만 지금 월물에서 뺀다');
+  assert.deepEqual(html.match(/future-row-warn">[^<]*/g),['future-row-warn">202609 보유 없음'],'처음 판 202609 계약은 그대로 보유 없음으로 남는다');
   assert.match(html,/completed-fold-empty">모든 회차의 손절이 완료되었습니다/);
 });
 
@@ -328,4 +332,67 @@ test('손절로 보유를 모두 판 뒤 재매수 체크는 마지막 손절 �
     assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
     assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month,contracts:4,settlementPrice:1320}]);
   }
+});
+
+test('여러 월물에서 판 손절은 줄이면 마지막에 판 월물부터, 해제하면 월물마다 판 시점 평균가로 되돌린다',()=>{
+  const ctx=load(),f=futures({contracts:4,sellPct:100,steps:1});
+  f.positions=[{month:'202611',contracts:1,settlementPrice:1440},{month:'202612',contracts:3,settlementPrice:1450}];
+  const orig=JSON.stringify({p:f.positions,b:f.baselinePnl}),plain=v=>JSON.parse(JSON.stringify(v));
+  assert.equal(ctx.setFutureCutCount(f,0,'1'),true);assert.equal(f.rebuy.cuts[0].month,'202611','가장 가까운 월물부터');
+  assert.notEqual(ctx.setFutureCutCount(f,0,'3'),false);
+  let rec=f.rebuy.cuts[0];
+  assert.deepEqual(plain(rec.legs),[{month:'202611',contracts:1,settlementPrice:1440},{month:'202612',contracts:2,settlementPrice:1450}]);
+  assert.deepEqual([rec.month,Math.round(rec.settlementPrice*100)/100],['202612',1446.67],'월물은 마지막에 판 월물, 평균가는 계약 가중평균');
+  assert.deepEqual(plain(f.positions),[{month:'202612',contracts:1,settlementPrice:1450}]);
+  assert.equal(Math.round(f.baselinePnl),Math.round(50000+((1300-1440)*1+(1300-1450)*2)*10000));
+  // 2계약으로 줄이면 마지막에 판 202612에서 1계약을 그 평균가로 되돌린다.
+  assert.notEqual(ctx.setFutureCutCount(f,0,'2'),false);rec=f.rebuy.cuts[0];
+  assert.deepEqual(plain(f.positions),[{month:'202612',contracts:2,settlementPrice:1450}]);
+  assert.deepEqual(plain(rec.legs),[{month:'202611',contracts:1,settlementPrice:1440},{month:'202612',contracts:1,settlementPrice:1450}]);
+  // 1계약으로 줄이면 한 월물만 남아 legs를 지운다.
+  assert.notEqual(ctx.setFutureCutCount(f,0,'1'),false);rec=f.rebuy.cuts[0];
+  assert.deepEqual([rec.month,rec.settlementPrice,Object.hasOwn(rec,'legs')],['202611',1440,false]);
+  assert.notEqual(ctx.setFutureCutCount(f,0,'3'),false);
+  assert.equal(ctx.setFutureCutChecked(f,0,false),undefined);
+  assert.equal(JSON.stringify({p:f.positions,b:f.baselinePnl}),orig,'해제하면 처음 보유·누적 정산손익 그대로');
+});
+
+test('달러선물 재매수 체결 수를 줄이면 부분 체결로 남은 계약을 그 회차에 두고 보유도 체결한 계약만큼만 반영한다',()=>{
+  const ctx=load(),plain=v=>JSON.parse(JSON.stringify(v)),r=v=>Math.round(v*10)/10;
+  const stages=vm.runInContext('MA_LINES',ctx).map(name=>({name,price:{'25선':1330,'32선':1340}[name]||0,done:false,execPrice:null,shares:null}));
+  let f=futures({contracts:8,sellPct:50,steps:1,stages,currentPrice:1325,notify:{buys:true}});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}];
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  f=ctx.futureRebuyWithStart(f,'25선',null,'1335');
+  const held=()=>f.positions.reduce((n,p)=>n+p.contracts,0),open=()=>plain(ctx.futureRebuySummary(f).tranches.filter(x=>!x.done&&x.amount>0).map(x=>[r(x.price),x.amount,!!x.partial]));
+  assert.equal(held(),4);assert.deepEqual(open(),[[1330,1,false],[1333.3,2,false],[1335,1,false]]);
+  const x=ctx.futureRebuySummary(f).tranches.find(y=>r(y.price)===1333.3);
+  assert.equal(ctx.setFutureBuyChecked(f,x.i,x.t,true),true);assert.equal(held(),6);
+  // 실제로 1계약만 샀으면 체결 칸을 1로: 남은 1계약은 같은 회차에 부분 체결로 남고 알림도 이어진다.
+  assert.notEqual(ctx.setFutureBuyCount(f,x.i,x.t,'1'),false);assert.equal(held(),5);
+  const rec=f.rebuy.stages[x.i].buys[x.t];assert.deepEqual([rec.contracts,rec.partial,rec.plannedQty],[1,true,2]);
+  assert.deepEqual(open(),[[1330,1,false],[1333.3,1,true],[1335,1,false]],'다른 회차 배분은 그대로');
+  const part=ctx.futureRebuySummary(f).tranches.find(y=>y.partial);assert.ok(part.amount>0&&!part.est&&part.price>0,'알림 대상 조건(trade-alerts.js tradeTranchesToSend)을 유지한다');
+  // 체크하면 남은 계약까지 채우고 보유에는 더한 1계약만 넣는다.
+  assert.equal(ctx.setFutureBuyChecked(f,x.i,x.t,true),true);assert.equal(held(),6);
+  assert.deepEqual([rec.contracts,Object.hasOwn(rec,'partial'),Object.hasOwn(rec,'plannedQty')],[2,false,false]);
+  // 다시 줄였다가 해제하면 체결한 계약만 보유에서 뺀다.
+  assert.notEqual(ctx.setFutureBuyCount(f,x.i,x.t,'1'),false);assert.equal(held(),5);
+  assert.notEqual(ctx.setFutureBuyChecked(f,x.i,x.t,false),false);assert.equal(held(),4);
+  assert.equal(f.rebuy.stages[x.i].buys,undefined);
+  assert.deepEqual(open(),[[1330,1,false],[1333.3,2,false],[1335,1,false]],'해제하면 처음 계획으로');
+});
+
+test('재매수 표의 부분 체결 회차는 손절 표처럼 체크 −·남은 계약·부분 체결로 보인다',()=>{
+  const ctx=load(),els={};
+  const el=id=>els[id]||(els[id]={id,innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
+  Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){},confirm:()=>true,alert:msg=>{throw Error(msg);}});
+  vm.runInContext('futureRebuyExpanded=true',ctx);
+  const stages=vm.runInContext('MA_LINES',ctx).map(name=>({name,price:{'25선':1330,'32선':1340}[name]||0,done:false,execPrice:null,shares:null}));
+  let f=futures({contracts:8,sellPct:50,steps:1,stages,currentPrice:1325});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}];
+  ctx.setFutureCutChecked(f,0,true);f=ctx.futureRebuyWithStart(f,'25선',null,'1335');
+  const x=ctx.futureRebuySummary(f).tranches.find(y=>Math.round(y.price*10)===13333);
+  ctx.setFutureBuyChecked(f,x.i,x.t,true);ctx.setFutureBuyCount(f,x.i,x.t,'1');
+  ctx.renderFutureRebuy(f);const html=els.futureRebuyPanel.innerHTML;
+  assert.match(html,new RegExp(`<div class="purchase-row partial">[^]*data-fbuy="${x.i}:${x.t}" data-fbuy-partial="true" aria-checked="mixed"[^]*<small>남은 1</small>[^]*<div class="purchase-qty">2계약</div>[^]*data-fbuy-qty="${x.i}:${x.t}" value="1"[^]*<div class="status partial">부분 체결</div>`));
+  assert.match(html,new RegExp(`data-fbuy-exec="${x.i}:${x.t}"`),'산 계약의 체결 환율은 그 자리에서 고친다');
 });
