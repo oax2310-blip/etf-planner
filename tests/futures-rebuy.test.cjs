@@ -350,3 +350,27 @@ test('손절로 보유를 모두 팔아도 마지막 손절 월물로 시세·�
   assert.equal(ctx.priceMonth({...f,positions:[{month:'202612',contracts:1,settlementPrice:1400}]},{updatedAt:'2027-03-01T00:00:00Z'}),'202612','보유 월물이 있으면 그 월물');
   assert.equal(ctx.priceMonth({positions:[],rebuy:{}},d),'','손절 기록이 없으면 월물 없음');
 });
+
+test('재매수 부분 체결은 계획 계약까지 그 회차에 남기고, 다른 회차 배분과 남은 재매수 한도를 지킨다',()=>{
+  const ctx=load(),r=v=>Math.round(v*10)/10,line={'25선':1330,'32선':1340,'42선':1350};
+  const f=futures({contracts:24,sellPct:50,steps:1,floorPrice:1355,stages:vm.runInContext('MA_LINES',ctx).map(name=>({name,price:line[name]||0,done:false,execPrice:null,shares:null}))});
+  assert.notEqual(ctx.setFutureCutQty(f,0,'12'),false);
+  const open=()=>plain(ctx.futureRebuySummary(f).tranches.filter(x=>!x.done&&x.amount>0).map(x=>[r(x.price),x.amount,!!x.partial]));
+  const first=open();assert.equal(first.reduce((n,x)=>n+x[1],0),12);
+  const x=ctx.futureRebuySummary(f).tranches.find(y=>!y.done&&y.amount>=2);
+  assert.notEqual(ctx.setFutureBuyDone(f,x.i,x.t,true),false);
+  const planned=ctx.futureRebuySummary(f).tranches.find(y=>y.i===x.i&&y.t===x.t).qty;assert.ok(planned>=2);
+  {
+    assert.notEqual(ctx.setFutureBuyQty(f,x.i,x.t,String(planned-1)),false);
+    const s=ctx.futureRebuySummary(f),p=s.tranches.find(y=>y.i===x.i&&y.t===x.t);
+    assert.deepEqual([p.done,p.partial,p.qty,p.amount],[false,true,planned-1,1],'남은 1계약은 같은 회차');
+    assert.deepEqual(open().filter(y=>!y[2]),first.filter(y=>y[0]!==r(x.price)),'다른 회차는 처음 계획 그대로');
+    assert.equal(s.tranches.reduce((n,y)=>n+(y.done?0:y.amount),0),s.rest,'남은 재매수 계약을 모두 배분');
+    const rule=plain(ctx.buildTradeAlertRules({futures:{...f,rebuy:{...f.rebuy,notify:{buys:true}}}},null)).find(y=>y.id===`trade:future-rebuy:buy:stage:${x.i}${x.t?`:${x.t+1}`:''}`);
+    assert.ok(rule&&rule.targetPrice===p.price,'부분 체결 회차의 재매수 알림이 같은 id로 이어진다');
+    assert.notEqual(ctx.setFutureBuyQty(f,x.i,x.t,String(planned)),false,'계획 이상으로 고치면 완료');
+    assert.equal(Object.hasOwn(f.rebuy.stages[x.i].buys[x.t],'partial'),false);
+  }
+  assert.equal(ctx.setFutureBuyQty(f,x.i,x.t,'0'),false,'0계약은 체크 해제로');
+  assert.equal(ctx.setFutureBuyQty(f,x.i,x.t,'99'),false,'판 계약 수를 넘기지 않는다');
+});

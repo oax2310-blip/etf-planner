@@ -83,3 +83,12 @@ test('달러선물 손절 하단선은 변경 없이 불러오고 문자열이 �
   const before=JSON.stringify(data);assert.equal(validate.planner(data),data);assert.equal(JSON.stringify(data),before);
   data.futures.rebuy.floorLine=20;assert.throws(()=>validate.planner(data),/floorLine/);
 });
+
+test('여러 월물에서 판 손절의 월물별 내역(legs)은 기록·계약·평균가 형식만 받고 그대로 둔다',()=>{
+  const data=planner();data.futures.rebuy={cuts:[{contracts:3,price:1300,month:'202612',settlementPrice:1446.67,legs:[{month:'202611',contracts:1,settlementPrice:1440},{month:'202612',contracts:2,settlementPrice:1450}]}]};
+  const before=JSON.stringify(data);validate.planner(data);assert.equal(JSON.stringify(data),before);
+  for(const legs of ['202611',[null],[{month:{},contracts:1,settlementPrice:1440}],[{month:'202611',contracts:'x',settlementPrice:1440}],[{month:'202611',contracts:1,settlementPrice:[1440]}]]){
+    const bad=planner();bad.futures.rebuy={cuts:[{contracts:1,price:1300,month:'202611',settlementPrice:1440,legs}]};
+    assert.throws(()=>validate.planner(bad),/legs/,JSON.stringify(legs));
+  }
+});

@@ -54,7 +54,8 @@ const externalData = (()=>{
     numbers(v,["steps"],path,1,10000,true);
     numbers(v,["endPrice"],path,0);
     // month: 달러선물 손절·재매수를 반영한 보유 월물, manual: 보유를 직접 고친 기록(futures-rebuy.js). 손절의 partial·plannedQty(부분 체결)는 trade에서 검사한다(rebuy.js futureCutPlan).
-    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);},true);stages(v.stages,`${path}.stages`,["month"],["manual","rebuyEnd"]);
+    // 손절 legs: 여러 월물에서 판 손절의 월물별 계약·판 시점 단순평균가(futures-rebuy.js futureCutLegs).
+    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);records(x.legs,`${p}.legs`,(l,q)=>{trade(l,q);strings(l,["month"],q);});},true);stages(v.stages,`${path}.stages`,["month"],["manual","rebuyEnd"]);
     child(v,"notify",path);child(v,"auto",path);
   }
   function planner(data){
