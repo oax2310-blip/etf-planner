@@ -18,7 +18,7 @@ function load(plan){
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),usd:new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
     priceText:(v,c)=>c==='USD'?`$${v}`:`${v}원`,fxText:v=>`≈₩${v}`,
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
-    priceData:{updatedAt:new Date().toISOString(),stocks:{'BTC-USD':{kind:'코인',asOf:today,close:61000,ma:{}},AAA:{kind:'해외',asOf:today,close:610,ma:{}}},futures:{}}});
+    priceData:{updatedAt:new Date().toISOString(),stocks:{'BTC-USD':{kind:'코인',asOf:today,close:61000,ma:{'80일선':55555.55}},AAA:{kind:'해외',asOf:today,close:610,ma:{}}},futures:{}}});
   for(const f of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const draw=()=>{ctx.renderPlans();return els.planMain.innerHTML;};
   return {ctx,draw,row:i=>(draw().match(/<div class="purchase-row[^"]*"><label class="check"[\s\S]*?(?=<div class="purchase-row|<\/div><\/section>)/g)||[])[i]||'',
@@ -34,7 +34,10 @@ test('비트코인 회차표는 매도·체결을 한 칸(머리 BTC)에 쌓고 
   assert.match(row(0),/class="purchase-qty">0\.00036134<\/div><div class="purchase-fill"><input type="number" min="0" max="0\.00036134" step="0\.00000001" inputmode="decimal" data-sale-filled="0" value="0"/);
   assert.match(row(0),/aria-label="1회 매도 누적 체결 수량 \(BTC\)"/);
   assert.match(row(1),/<span class="price">\$59,655<\/span><span class="krw">≈₩59655172\.41/,'기준가 칸은 센트를 빼고 반올림($59,655.17), 원화 환산은 원래 가격');
+  assert.match(html,/<div class="sale-line-mark" role="note" aria-label="80일선 \$55,556 위치"><span><b>80일선<\/b>\$55,556<\/span><\/div>/,'이평선 줄도 센트 없이');
   assert.equal(JSON.stringify(p),before,'화면 표시만 바꾼다');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  assert.match(css,/\.purchase-table\.btc \.purchase-fill input\{width:86px;min-height:26px;padding:2px 5px;font-size:12px\}/,'입력칸은 BTC 소수 8자리만큼만');
 });
 
 test('부분 체결 회차는 수량 자리에 남은 BTC를 보이고 체결은 BTC 소수로 저장한다',()=>{

@@ -52,6 +52,7 @@
 .purchase-table.btc .purchase-table-head>:nth-child(n+4){text-align:center}.purchase-table.btc .purchase-row{row-gap:3px}
 .purchase-table.btc .purchase-row>:is(.check,.stage-price,.purchase-alert,.status){grid-row:1/3}.purchase-table.btc .purchase-row>.check{grid-column:1}.purchase-table.btc .purchase-row>.stage-price{grid-column:2}.purchase-table.btc .purchase-row>.purchase-alert{grid-column:4}.purchase-table.btc .purchase-row>.status{grid-column:-2/-1}
 .purchase-table.btc .purchase-row>.purchase-qty{grid-column:3;grid-row:1;align-self:end;font-size:13px;line-height:1.3;white-space:nowrap}.purchase-table.btc .purchase-row>.purchase-fill{grid-column:3;grid-row:2;align-self:start}
+.purchase-table.btc .purchase-fill input{width:86px;min-height:26px;padding:2px 5px;font-size:12px} /* 입력칸은 BTC 소수 8자리(12px 약 72px)만큼만 */
 .purchase-qty .qty-left{margin-right:4px;font-size:11px;font-weight:700;color:var(--warn)}
 .purchase-table.btc .purchase-row>.check{display:grid;grid-template-columns:auto minmax(0,1fr);align-content:center;row-gap:2px}.purchase-table.btc .purchase-row .purchase-round{display:contents}.purchase-table.btc .purchase-round small{grid-column:1/-1;white-space:nowrap} /* 회차 칸 아래 줄(부분 체결·도달)은 체크칸 밑부터 써서 한 줄에 */
 .purchase-fill{display:flex;justify-content:flex-end;min-width:0}.purchase-fill input{width:100%;min-width:0;min-height:34px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);font-weight:600;text-align:right;-moz-appearance:textfield;appearance:textfield}
