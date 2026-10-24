@@ -438,7 +438,7 @@ function describeAssumptions(values){
   const parts=assumptionGroups.map(([name,list])=>[name,list.filter(id=>owns(values,id)).length]).filter(([,count])=>count>0).map(([name,count])=>name+" "+count+"개");
   return parts.length?parts.join(" · ")+" 변경":"모두 기본값";
 }
-const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,timer:null};
+const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,waitTyping:false,timer:null};
 const numericValues=values=>{ const source=validValues(values); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="number"&&Number.isFinite(source[id])).map(id=>[id,source[id]])); };
 // 추가 프리셋은 있을 때만 남긴다. 옛 저장본·옛 코드 기기가 올린 기록에는 없는 필드를 보태지 않는다.
 const presetChoices=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:"",...(typeof presets?.humn==="string"?{humn:presets.humn}:{}),...(typeof presets?.ai==="string"?{ai:presets.ai}:{})});
@@ -452,7 +452,7 @@ function adoptAssumptions(saved){
 }
 function showAssumptionState(){
   const values=validValues(currentAssumptions.values),count=changedCount(values);
-  const sync={pending:" · 동기화 대기",busy:" · 동기화 중",done:" · 동기화됨",error:" · 동기화 오류"}[scenarioSync.state]||(count?" · 자동 저장됨":"");
+  const sync={pending:" · 동기화 대기",busy:" · 동기화 중",typing:" · 입력 후 동기화",done:" · 동기화됨",error:" · 동기화 오류"}[scenarioSync.state]||(count?" · 자동 저장됨":"");
   el("saveState").textContent=!assumptionStorageOk?"저장 안 됨":(count?"조정 "+count+"개":"기본값")+sync;
   el("currentSummary").textContent=(assumptionStorageOk?"":"이 브라우저에 저장할 수 없습니다 · ")+describeAssumptions(values);
 }
@@ -617,22 +617,26 @@ function setScenarioSyncState(state,message=""){
   const config=readSyncConfig();
   scenarioSync.state=state; scenarioSync.message=message;
   if(state==="done") scenarioSync.at=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
-  el("scenarioSyncStatus").textContent={off:"연결 안 됨",pending:"잠시 후 동기화",busy:"동기화 중…",done:"동기화 완료 · "+scenarioSync.at,error:"동기화 오류 · 이 기기에는 저장됨"}[state];
+  el("scenarioSyncStatus").textContent={off:"연결 안 됨",pending:"잠시 후 동기화",busy:"동기화 중…",typing:"입력 중 · 끝나면 동기화",done:"동기화 완료 · "+scenarioSync.at,error:"동기화 오류 · 이 기기에는 저장됨"}[state];
   el("scenarioSyncError").textContent=message; el("scenarioSyncError").hidden=!message;
   el("scenarioSyncNow").hidden=!config; el("scenarioSyncOff").hidden=!!config; el("scenarioSyncOn").hidden=!config;
   el("scenarioSyncRepo").textContent=config?config.repo:"";
   showAssumptionState();
 }
+const remoteCurrentNewer=(merged,local)=>!!merged.current&&merged.current.savedAt>(local.current?.savedAt||"");
+// 숫자 칸을 입력하는 중(빈칸·범위 밖 값은 저장하지 않고 직전 값을 유지)에는 다른 기기의 더 새 조정값으로 칸을 다시 쓰지 않는다.
+// 적용은 칸에서 나올 때까지 미루고 focusout에서 다시 동기화한다(js/sync.js holdForTyping과 같은 방식). 슬라이더·선택 칸은 바꾸는 즉시 저장되어 대상이 아니다.
+const typingAssumption=node=>!!node&&node.tagName==="INPUT"&&node.type!=="range"&&assumptionIdSet.has(node.id);
 function adoptMergedScenarios(merged,local){
   writeStored(SCENARIO_LIST_KEY,merged.scenarios); writeStored(DELETED_KEY,merged.deleted);
-  if(merged.current&&merged.current.savedAt>(local.current?.savedAt||"")){ adoptAssumptions(merged.current); assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions); }
+  if(remoteCurrentNewer(merged,local)){ adoptAssumptions(merged.current); assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions); }
   if(el("savesDialog").open) renderScenarioList();
 }
 async function syncScenarios(){
   const config=readSyncConfig();
   if(!config){ clearTimeout(scenarioSync.timer); scenarioSync.timer=null; setScenarioSyncState("off"); return; }
   if(scenarioSync.busy){ scenarioSync.again=true; return; }
-  scenarioSync.busy=true; scenarioSync.again=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null;
+  scenarioSync.busy=true; scenarioSync.again=false; scenarioSync.waitTyping=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null;
   setScenarioSyncState("busy");
   try {
     if(scenarioSync.checked!==config.repo){ await checkScenarioRepo(config); scenarioSync.checked=config.repo; }
@@ -640,6 +644,7 @@ async function syncScenarios(){
       const remote=await readRemoteScenarios(config);
       if(assumptionSaveTimer) saveAssumptions();
       const local=localScenarioData(),merged=mergeScenarioData(local,remote.data||{current:null,scenarios:[],deleted:{}});
+      if(remoteCurrentNewer(merged,local)&&typingAssumption(document.activeElement)){ scenarioSync.waitTyping=true; setScenarioSyncState("typing"); return; }
       adoptMergedScenarios(merged,local);
       const empty=!merged.current&&!merged.scenarios.length&&!Object.keys(merged.deleted).length;
       if(remote.data?JSON.stringify(merged)===JSON.stringify(remote.data):empty) break;
@@ -651,9 +656,10 @@ async function syncScenarios(){
     setScenarioSyncState("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error));
   } finally {
     scenarioSync.busy=false;
-    if(scenarioSync.again) scheduleScenarioSync(300);
+    if(scenarioSync.again&&!scenarioSync.waitTyping) scheduleScenarioSync(300);
   }
 }
+document.addEventListener("focusout",event=>{ if(scenarioSync.waitTyping&&!typingAssumption(event.relatedTarget)){ scenarioSync.waitTyping=false; scheduleScenarioSync(300); } }); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 function scheduleScenarioSync(delay){
   if(!readSyncConfig()) return;
   clearTimeout(scenarioSync.timer);
