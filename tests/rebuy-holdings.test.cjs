@@ -159,7 +159,8 @@ test('기준 입력: 이탈 전 보유는 읽기 전용으로 자산 배분 보�
   const hold = () => vm.runInContext('holdShares(rebuyPick())', ctx);
   assert.match(rules(), /이탈 전 보유<small class="auto-tag">\(자산 배분\)<\/small><\/span><input id="rHold" type="text" value="150주"[^>]*readonly/);
   assert.match(rules(), /자산 배분 보유\(2개 계좌 150주\)를 불러옵니다/);
-  assert.match(els.rebuyMain.innerHTML, /<span>이탈 전 150주 · 30회 표시<\/span>/, '기준 줄에도 이탈 전 보유');
+  assert.match(els.rebuyMain.innerHTML, /<div class="fr-count" title="이탈 전 보유 150주"><b>150<\/b><span>\/ 150주<\/span>/, '보유 카드에 이탈 전 보유');
+  assert.doesNotMatch(els.rebuyMain.innerHTML, /<span>이탈 전 /, '기준 줄에는 카드와 같은 이탈 전 보유를 다시 적지 않는다');
   assert.equal(hold(), 150, '계산도 자산 배분 보유');
   assert.equal(items()[0].shares, 80, '그리기만 해서는 저장하지 않는다');
   vm.runInContext('editRebuy()', ctx);
@@ -169,7 +170,7 @@ test('기준 입력: 이탈 전 보유는 읽기 전용으로 자산 배분 보�
   listeners[0]('change');
   assert.equal(hold(), 150, '기록 뒤에는 저장한 값으로 고정');
   assert.match(rules(), /이탈 전 보유<small class="auto-tag">\(고정\)<\/small><\/span><input id="rHold" type="text" value="150주"/);
-  assert.match(els.rebuyMain.innerHTML, /<span>이탈 전 150주\(고정\) · 30회 표시<\/span>/);
+  assert.match(els.rebuyMain.innerHTML, /<div class="fr-count" title="이탈 전 보유 150주\(고정\)"><b>148<\/b><span>\/ 150주<\/span>/);
   vm.runInContext('editRebuy()', ctx);
   assert.equal(items()[0].shares, 150, '기록이 있으면 입력 때도 바꾸지 않는다');
   items()[0].cuts = [];
@@ -208,7 +209,7 @@ test('자산 쪽 보유가 바뀌면 재매수 화면을 다시 그려 자산 �
   listeners[0]('sync');
   assert.match(els.rebuyMain.innerHTML, /130주/, '무관한 알림에는 다시 그리지 않는다');
   listeners[0]('change');
-  assert.match(els.rebuyMain.innerHTML, /이탈 전 170주 ·/);
+  assert.match(els.rebuyMain.innerHTML, /title="이탈 전 보유 170주"/);
 });
 
 test('가져오기 변환: 수량 합이 없으면 평가액(미국은 환율로 달러 환산), 값이 없으면 null', () => {

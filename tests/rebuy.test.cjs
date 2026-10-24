@@ -333,7 +333,8 @@ test('재매수 제목 아래 시세 줄: 분할매도·분할매수와 같은 �
 test('손절 기준 창: 신저점·하락 간격·회당 손절·표시 회차만 저장하고 현재가(시세)·이탈 전 보유(자산 배분)는 읽기 전용이며 마지막 단계 가격 칸은 없다', () => {
   const {ctx, els, rules} = ui({rebuy: {items: [{id: 'a', name: '테스트 ETF', currentPrice: 9500, shares: 800}]}});
   assert.doesNotMatch(els.rebuyMain.innerHTML, /id="r(Low|Current|Hold|Step|Sell|Steps)"/, '본 화면에는 기준 입력칸을 두지 않는다');
-  assert.match(els.rebuyMain.innerHTML, /<button class="btn icon-btn" id="rRules" type="button" aria-label="손절 기준 수정"/);
+  assert.match(els.rebuyMain.innerHTML, /<section class="future-rebuy rebuy-flow"><button class="rebuy-rule" id="rRules" type="button" aria-label="손절 기준 수정: 신저점 미입력 · −1%마다 0% 손절" title="손절 기준 수정"><span>신저점 미입력 · −1%마다 0% 손절<\/span>/, '종목 제목 아래 손절 기준 한 줄이 손절 기준 창 버튼');
+  assert.doesNotMatch(els.rebuyMain.innerHTML, /<h2>신저점 손절 후 재매수<\/h2>/, '위 글자(손절 후 재매수)와 겹치는 구역 제목은 두지 않는다');
   const html = rules();
   assert.equal(els.rebuyRuleDialog.open, true);
   assert.match(html, /<input id="rCurrent" type="number" value="9500" placeholder="종목 코드 필요" readonly tabindex="-1">/);
@@ -661,8 +662,9 @@ test('손절 도달 기준 화면은 하락 간격·비중·회차·신저점 �
   assert.match(row(100),/−20% · 8000원<\/b><small>20회차</);
   rules({stepPct:'2'});assert.match(row(50),/−20% · 8000원/);assert.match(row(100),/−40% · 6000원/);
   rules({sellPct:'10'});assert.match(row(50),/<small>5회차<\/small>/);
-  rules({steps:'3'});assert.match(row(50),/<small>5회차<\/small>/,'표시 회차 밖이어도 회차만');assert.doesNotMatch(els.rebuyMain.innerHTML,/회 밖/);assert.match(els.rebuyMain.innerHTML,/3회 표시/);
+  rules({steps:'3'});assert.match(row(50),/<small>5회차<\/small>/,'표시 회차 밖이어도 회차만');assert.doesNotMatch(els.rebuyMain.innerHTML,/회 밖/);assert.match(els.rebuyMain.innerHTML,/<span>0 \/ 3회 완료<\/span>/,'표시 회차는 1번 표 제목 줄');
   rules({lowPrice:'20000'});assert.match(row(50),/−10% · 18000원/);assert.match(row(100),/−20% · 16000원/);
+  assert.match(els.rebuyMain.innerHTML,/<span>신저점 <b>20000원<\/b> · −2%마다 10% 손절<\/span>/,'기준 줄 버튼도 고친 기준');
 });
 
 test('회차 상한 제거: 표시 30회여도 전액 매도 기준은 100회차까지 계산한다', () => {
@@ -780,7 +782,8 @@ test('보유 주수 카드: 1칸 = 손절 1회(표시 회차), 1회 칸이 오�
   assert.match(html,/<span class="fr-next"><i class="mix"[^>]*><\/i><\/span>/,'남은 손절이 있는 2회 칸을 다음 손절로 감싼다');
   assert.match(html,/<span class="fr-bub">다음 손절 2회 <b>9800원<\/b> · 6주 /);
   assert.match(html,/<b>986<\/b><span>\/ 1,000주<\/span>/,'보유 / 이탈 전 주수');
-  assert.match(html,/<span class="buy-track-chip">손절 진행 중<\/span>/);
+  assert.doesNotMatch(html,/buy-track-chip/,'진행 상태는 제목 아래 상태 칩(손절 1회 진행)과 같아 카드에 다시 적지 않는다');
+  assert.match(html,/<span class="quote-state">손절 1회 진행 · 부분 체결<\/span>/);
   assert.match(html,/<div class="fr-track-foot"><span>손절 평균가 <b>[\d.]+원<\/b>[^<]*<\/span><label class="trade-alert-toggle"[^>]*><input type="checkbox" data-rebuy-alert="breakdown"/,'아래 줄에 손절 평균가와 신저점 이탈 알림');
   assert.match(html,/재매수: <span class="tr-name">25선<span class="tr-no">1<\/span><\/span> <b>10100원<\/b> 이상 약 /,'안내 줄은 재매수 시작 조건');
   assert.equal(JSON.stringify(r),before,'그리기만 해서는 기록을 바꾸지 않는다');
@@ -791,7 +794,7 @@ test('보유 주수 카드: 재매수 주수는 가장 최근에 비운 칸부�
   let html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
   const cells=()=>[...html.match(/<div class="fr-cells rebuy-cells[^"]*"[^>]*>(.*?)<\/div>/)[1].matchAll(/<i class="([^" ]+)/g)].map(m=>m[1]);
   assert.deepEqual(cells().slice(-2),['r','mix'],'2회 칸(10주)은 다 채우고 1회 칸은 남은 2주만');
-  assert.match(html,/<span class="buy-track-chip">재매수 진행 중<\/span>/);
+  assert.doesNotMatch(html,/buy-track-chip/,'재매수 진행 중도 제목 아래 상태 칩만');
   assert.match(html,/<span class="fr-next buy">/,'재매수 시작 뒤에는 다음 재매수가 채울 칸을 점선으로');
   assert.match(html,/재매수 <b>12<\/b>/);assert.match(html,/손절 <b>[\d.]+원<\/b> → 재매수 <b>10100원<\/b>/);
   r.currentPrice=9690;html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
