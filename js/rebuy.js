@@ -875,11 +875,11 @@ function openRebuyRuleDialog(v){
   };
   dialog.showModal();
 }
-// '1. 분할 손절'·'2. 반등 단계별 재매수' 표는 그 표의 회차가 손절·재매수 시점(key)일 때만 기본으로 펼친다(달러선물 futureTableOpen과 같음).
-// 기본과 다르게 열거나 접은 상태와 표 안에서 체크·입력한 뒤의 열린 상태는 다시 그려도 유지하고, 다른 회차가 새로 시점이 되면 기본으로 돌린다. 화면 상태라 저장하지 않는다.
-function rebuyTableOpen(t,key){if(key&&key!==t.due)t.open=null;t.due=key;return t.open??!!key;}
-function bindRebuyTable(t,box,key){
-  if(!box)return;box.ontoggle=()=>{t.open=box.open===!!key?null:box.open;};
+// '1. 분할 손절'·'2. 반등 단계별 재매수' 표는 기본으로 펼친다(달러선물 futureTableOpen은 시점일 때만 펼침).
+// 사용자가 접은 상태는 다시 그려도 유지하고, 다른 회차가 새로 손절·재매수 시점(key)이 되면 다시 펼친다. 화면 상태라 저장하지 않는다.
+function rebuyTableOpen(t,key){if(key&&key!==t.due)t.open=null;t.due=key;return t.open??true;}
+function bindRebuyTable(t,box){
+  if(!box)return;box.ontoggle=()=>{t.open=box.open?null:false;};
   box.addEventListener?.("change",()=>{t.open=true;},true); // 체크·입력 처리(다시 그리기)보다 먼저 열린 상태를 남긴다
   box.querySelector?.("summary")?.addEventListener("click",e=>{if(e.target.closest("button"))e.preventDefault();}); // 제목 줄의 연필·알림 버튼은 표를 접지 않는다
 }
@@ -950,15 +950,11 @@ function renderRebuy(){
       <div class="stage-price">${price}<span class="krw">${c.done?amt(c.qty,c.execPrice||c.price):`신저점 −${shown(c.drop)}%`}</span></div><div class="purchase-qty">${won.format(planned)}주</div><div class="purchase-fill"><input type="number" min="0" step="1" inputmode="numeric" data-cut-qty="${c.k-1}" value="${c.recorded?c.qty:""}" placeholder="0"${blocked?" disabled":""} aria-label="${c.k}회 누적 손절 수량"></div>${alerts?`<div class="purchase-alert">${toggle(alertOn(r,"cuts",c.k-1),`data-rebuy-alert="cuts" data-alert-index="${c.k-1}"`,`${c.k}회 손절`,c.done)}</div>`:""}
       <div class="status${state?` ${state}`:""}">${c.done?"손절 완료":partial?"부분 손절":due?"손절 시점":"대기"}</div></div>`;
   };
-  // 남은 손절의 기준 보유(cutBase): 재매수 뒤 다음 손절은 그때 보유의 회당 비율, 재이탈 손절 뒤 재매수 전에는 재이탈 직전 보유.
-  const base=s.cutBase,mark=s.started&&!s.cycle?etfResumeMark(r,s):null,baseText=base?`${base.cont?"재이탈 직전":"지금"} 보유 ${won.format(base.base)}주의 ${shown(sellPct)}%씩`:"";
-  const stopNote=!s.started?"":s.cycle?(resumeName?`재이탈 손절을 기록해 재매수는 ${L(etfSkipText(s.cycle.after,s.cycle.round))} ${L(resumeName)}부터 다시 합니다.`:`재이탈 손절을 기록했지만 ${L(s.cycle.after)} 다음 평균선이 없어 새 재매수를 배정하지 않습니다.`)+(base?` ${base.cont?`남은 손절은 ${baseText}입니다.`:`다시 내려가면 ${baseText} 손절합니다.`}`:"")
-    :`재매수 중에도 남은 손절 회차는 이어집니다. 다시 내려가면 ${baseText?`${baseText} 손절하고, `:""}재매수는 ${L(mark?etfSkipText(mark.afterLine,mark.afterRound):"")} ${mark?.afterRound?`${L(mark.afterLine)} ${mark.afterRound+1}회차부터`:"다음 선부터"} 합니다.`;
   // 끝나지 않은 회차는 가까운 REBUY_NEAR_CUTS개만 바로 보이고 나머지는 '남은 손절' 띠(fold.rest)를 펼쳐 본다. 완료 회차는 '손절 완료' 띠(fold.cuts).
   const openCuts=cuts.filter(c=>!c.done),near=openCuts.slice(0,REBUY_NEAR_CUTS),far=openCuts.slice(REBUY_NEAR_CUTS);
   const cutRows=!ready&&!s.filledCuts?"<div class='empty'>손절 기준 연필에서 신저점 가격을 넣고, 자산 배분에 이 종목 보유를 등록하세요.</div>"
     :!cuts.length?'<div class="empty">표시 구간에 손절할 수량이 없습니다.</div>'
-    :(stopNote?`<div class="stop-note">${stopNote}</div>`:"")+cuts.filter(c=>c.done||near.includes(c)).map(cutRow).join("")
+    :cuts.filter(c=>c.done||near.includes(c)).map(cutRow).join("")
     +(far.length?`<button class="completed-fold-bar future-stage-bar" id="toggleRebuyCutRest" type="button" aria-expanded="${fold.rest}" aria-controls="rebuyCutRest"><span>남은 손절 <b>${far.length}회</b> · ${P(far[0].price)} 이하</span><span class="completed-fold-action">${fold.rest?"접기":"펼치기"}</span></button><div id="rebuyCutRest"${fold.rest?"":" hidden"}>${far.map(cutRow).join("")}</div>`:"");
   // 반등 단계별 재매수 표(달러선물 '2. 반등 단계별 재매수'와 같은 회차표): 회차 · 재매수가 · 계획 주수 · 누적 체결 주수 · 알림(단계 첫 줄) · 상태(PC만).
   // 배분한(또는 산) 회차가 있는 단계만 표에 두고, 단계 첫 회차 줄의 가격(점선)이 그 단계 기준가다. 산 회차의 가격 칸은 실제 체결가(점선).
@@ -1001,7 +997,7 @@ function renderRebuy(){
     <section class="card panel memo" style="margin-top:16px"><div class="memo-head"><h2>메모</h2><span id="rNoteCount" class="memo-count">${memoCount(r.note)}</span><button class="btn mini" id="rSave" type="button">저장</button></div><textarea id="rNote" maxlength="4000">${esc(r.note||"")}</textarea></section>
     <p class="footnote">자산 배분에 같은 종목 코드가 있으면 체크할 때 그 계좌 보유량도 줄이거나 늘리고(계좌가 여럿이면 고름), 체결 수량·가격을 고치면 같이 맞추며, 체크를 풀면 되돌립니다. 재매수 시점은 현재가 시세가 있어야 표시됩니다. 수량은 정수 주로 나누며 수수료·세금은 빼지 않았습니다.</p>`;
   for(const [key,buttonId] of [["cuts","toggleRebuyCuts"],["buys","toggleRebuyBuys"],["rest","toggleRebuyCutRest"],["others","toggleRebuyStages"]])if($(buttonId))$(buttonId).onclick=()=>{fold[key]=!fold[key];fold.tables[key==="cuts"||key==="rest"?"cuts":"buys"].open=true;renderRebuy();$(buttonId)?.focus?.({preventScroll:true});};
-  bindRebuyTable(fold.tables.cuts,$("rCuts"),cutKey);bindRebuyTable(fold.tables.buys,$("rBuys"),buyKey);
+  bindRebuyTable(fold.tables.cuts,$("rCuts"));bindRebuyTable(fold.tables.buys,$("rBuys"));
   $$("#rebuyMain [aria-checked=mixed]").forEach(input=>{input.indeterminate=true;});
   if(typeof bindTradeRebuyAlerts==="function")bindTradeRebuyAlerts();
   $("rEdit").onclick=()=>openRebuyDialog(r);

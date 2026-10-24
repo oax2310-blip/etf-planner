@@ -530,7 +530,8 @@ test('손절 카드: 미국 달러·옛 완료 기록을 유지하고 재매수 
   assert.deepEqual(plain(r),before,'옛 완료 기록에 partial·plannedShares를 생성하지 않는다');
   r.stages[0]={...r.stages[0],done:true,shares:10,execPrice:494.5};before=structuredClone(r);view=ui({rebuy:{items:[r]}});
   const cuts=view.els.rebuyMain.innerHTML.split('id="rebuyCutRows">')[1].split('</section>')[0];
-  assert.match(cuts,/재매수 중에도 남은 손절 회차는 이어집니다\. 다시 내려가면 지금 보유 100주의 10%씩 손절하고, 재매수는 25선까지 산 선을 건너뛰고 다음 선부터 합니다/);
+  assert.doesNotMatch(cuts,/stop-note/,'재매수 중 안내 문단 없이 남은 손절 회차만');
+  assert.equal(view.ctx.rebuySummary(r).cutBase.base,100,'남은 손절은 지금 보유 100주 기준');
   assert.match(cuts,/data-cut="1" (?![^>]*disabled)[^>]*aria-label="2회 손절 완료"/,'재이탈 손절 회차는 체크할 수 있다');
   assert.deepEqual(plain(r),before);
 });
@@ -719,14 +720,16 @@ test('재이탈 화면: 재매수 중에도 남은 손절을 보이고, 다시 �
   for(const [i,t] of [[0,0],[0,1],[0,2],[1,0]])handlers['[data-tranche-qty]'](pending(i,t),{dataset:{trancheQty:`${i}:${t}`}});
   let html=els.rebuyMain.innerHTML;
   const held=ctx.rebuySummary(r).held;
-  assert.match(html,new RegExp(`<div class="stop-note">재매수 중에도 남은 손절 회차는 이어집니다\\. 다시 내려가면 지금 보유 ${held.toLocaleString('ko-KR')}주의 2%씩 손절하고, 재매수는 32선 1회차까지 건너뛰고 32선 2회차부터 합니다\\.<\\/div>`));
+  assert.doesNotMatch(html,/stop-note|남은 손절 회차는 이어집니다/,'손절 표 위 안내 문단은 두지 않는다(다음 재매수·재손절은 보유 카드 안내 줄)');
+  assert.equal(held,ctx.rebuySummary(r).cutBase.base,'남은 손절은 지금 보유 기준');
   assert.match(html,/다음 재매수 <b>.*? · 다시 [\d.]+원 이하면 손절 6회<\/p>/);
   assert.match(rules(),/재매수 뒤 다시 내려가면 그때 보유\(재매수 포함\)의 같은 비율씩 이어서 손절하고, 그다음 재매수는 이미 산 회차의 다음부터 합니다/);
   assert.match(html,/data-cut="5" (?![^>]*disabled)[^>]*aria-label="6회 손절 완료"/,'재매수 중에도 남은 손절을 체크할 수 있다');
   handlers['[data-cut-qty]']('20',{dataset:{cutQty:'5'}});
   assert.deepEqual([r.cuts[5].afterLine,r.cuts[5].afterRound],['32선',1]);
   html=els.rebuyMain.innerHTML;
-  assert.match(html,new RegExp(`<div class="stop-note">재이탈 손절을 기록해 재매수는 32선 1회차까지 건너뛰고 32선 2회차부터 다시 합니다\\. 남은 손절은 재이탈 직전 보유 ${held.toLocaleString('ko-KR')}주의 2%씩입니다\\.<\\/div>`));
+  assert.doesNotMatch(html,/stop-note|재이탈 손절을 기록해/,'재이탈 뒤에도 안내 문단 없이');
+  assert.deepEqual([ctx.rebuySummary(r).cutBase.cont,ctx.rebuySummary(r).cutBase.base],[true,held],'남은 손절은 재이탈 직전 보유 기준');
   assert.match(html,/재이탈 · 32선 1회차까지 건너뜀 · 다음 재매수 <b><span class="tr-name">32선<span class="tr-no">2<\/span>/);
   assert.doesNotMatch(html,/재이탈로 건너뜀/,'32선의 남은 2·3회차는 다시 산다');
   assert.match(html,/data-cut="6" (?![^>]*disabled)[^>]*aria-label="7회 손절 완료"/);
@@ -802,15 +805,18 @@ test('보유 주수 카드: 재매수 주수는 가장 최근에 비운 칸부�
   assert.match(html,/<span class="fr-bub due">손절 시점 · 3회 <b>9700원<\/b>/);
 });
 
-test('1·2 표는 접어 두고 그 표의 회차가 손절·재매수 시점일 때만 펼치며, 사용자가 연 상태는 다시 그려도 유지한다', () => {
+test('1·2 표는 기본으로 펼치고, 사용자가 접은 상태는 다시 그려도 유지하며 다른 회차가 새로 시점이 되면 다시 펼친다', () => {
   const r=flowFixture(),{ctx,els}=ui({rebuy:{items:[r]}});
   const open=id=>new RegExp(`<details class="future-rebuy-details" id="${id}" open>`).test(els.rebuyMain.innerHTML);
-  assert.deepEqual([open('rCuts'),open('rBuys')],[false,false],'시점이 아니면 접는다');
-  r.currentPrice=9790;ctx.renderRebuy();assert.deepEqual([open('rCuts'),open('rBuys')],[true,false],'손절 시점이면 손절 표만');
-  r.currentPrice=10050;ctx.renderRebuy();assert.equal(open('rCuts'),false,'시점이 지나면 기본으로 돌아간다');
-  els.rCuts.open=true;els.rCuts.ontoggle();ctx.renderRebuy();assert.equal(open('rCuts'),true,'사용자가 연 표는 열어 둔다');
+  assert.deepEqual([open('rCuts'),open('rBuys')],[true,true],'시점이 아니어도 펼친다');
+  els.rCuts.open=false;els.rCuts.ontoggle();els.rBuys.open=false;els.rBuys.ontoggle();ctx.renderRebuy();
+  assert.deepEqual([open('rCuts'),open('rBuys')],[false,false],'사용자가 접은 표는 접어 둔다');
+  r.currentPrice=9790;ctx.renderRebuy();assert.deepEqual([open('rCuts'),open('rBuys')],[true,false],'손절 시점이 되면 손절 표만 다시 펼친다');
+  els.rCuts.open=false;els.rCuts.ontoggle();ctx.renderRebuy();assert.equal(open('rCuts'),false,'같은 시점에서 다시 접으면 유지');
+  r.currentPrice=10050;ctx.renderRebuy();assert.equal(open('rCuts'),false,'시점이 지나도 접은 상태 유지');
+  els.rCuts.open=true;els.rCuts.ontoggle();ctx.renderRebuy();assert.equal(open('rCuts'),true,'다시 열면 기본(펼침)');
   r.cuts[1]={shares:10,price:9800};r.stages[0].buys=[{shares:2,price:10100}];r.planned=[['25선',0],['25선',1],['25선',2]];r.currentPrice=10140;ctx.renderRebuy();
-  assert.equal(open('rBuys'),true,'재매수 시점이면 재매수 표를 펼친다');
+  assert.equal(open('rBuys'),true,'재매수 시점이면 접어 둔 재매수 표도 펼친다');
 });
 
 test('손절 표는 끝나지 않은 가까운 5회만 바로 보이고 나머지는 남은 손절 띠로, 배분 없는 단계는 다른 단계 띠로 접는다', () => {
