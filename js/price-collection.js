@@ -43,3 +43,14 @@ async function collectPricesNow(cfg, progress=()=>{}, same=()=>true){
     throw Error(waitingMessage);
   }finally{clearTimeout(timer);}
 }
+// 정기 수집이 늦어졌는지: GitHub 예약 실행이 빠지거나 크게 늦으면 그동안 시세·알림도 멈춘다. 마지막 수집(시세 파일 updatedAt)이
+// 한국 시간 평일 10:20~15:20(국내 장중 약 30분마다, 실제 시작은 예약보다 13~41분 늦음)에는 70분, 그 밖에는 7시간 30분 넘게 지났으면 true.
+// 장중 한 번 빠짐은 보통 1시간 안팎이라 두 번 이상 빠지거나 크게 늦을 때 표시한다. 그 밖의 시간은 휴장일에 저녁 수집을 건너뛰어
+// 16:40→23:10 예약 사이가 최대 7시간 가까이 빌 수 있어 길게 둔다(주말 3시간·밤 최대 3시간 반 간격도 두 번 이상 빠질 때 표시).
+// 수집 시각을 모르면 false. 화면 표시용이며 기록은 바꾸지 않는다.
+function priceCollectionLate(updatedAt, now=new Date()){
+  const at=Date.parse(updatedAt);if(!Number.isFinite(at))return false;
+  const kst=new Date(now.getTime()+9*3600e3),day=kst.getUTCDay(),minute=kst.getUTCHours()*60+kst.getUTCMinutes();
+  const intraday=day>=1&&day<=5&&minute>=10*60+20&&minute<15*60+20;
+  return now.getTime()-at>(intraday?70:450)*60e3;
+}
