@@ -45,6 +45,8 @@ test('부분 체결 회차는 수량 자리에 남은 BTC를 보이고 체결은
   fill(0,'0.00036134');assert.equal(p.fills[0].qty,0.00036134);assert.equal(p.checked[0],true);
   assert.match(row(0),/class="purchase-qty">0\.00036134<\/div>/);
   fill(0,'0');assert.equal(p.fills,undefined);assert.equal(p.checked[0],false);
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  assert.match(css,/\.purchase-table\.btc \.purchase-row \.purchase-round\{display:contents\}\.purchase-table\.btc \.purchase-round small\{grid-column:1\/-1;white-space:nowrap\}/,'회차 칸의 부분 체결은 체크칸 밑부터 한 줄');
 });
 
 test('주식 회차표와 진행 카드 등 다른 표시는 그대로',()=>{
