@@ -131,3 +131,14 @@ test('연도별 요약 아래에 내 연평균·S&P 500 연평균·차이(%p)와
   const empty=ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,[1])]}},new Date(2026,9,16).getTime());
   assert.match(empty,/비교할 완료 연도가 아직 없습니다/);assert.doesNotMatch(empty,/benchmark-grid/);assert.match(empty,/올해 2026년 1월 누적/);
 });
+
+test('월별 손익: 앞뒤 달에는 잔액이 있는데 그달만 빈 계좌는 표시만 하고, 아직 없던·해지한 계좌는 표시하지 않는다',()=>{
+  // A 매달 · B 3월만 빔(입력 빠짐) · C 3월부터 빔(해지) · D 4월부터 있음(새 계좌). 금액은 가짜 값.
+  const rows=[[100,100,100,null],[100,100,100,null],[100,null,null,null],[100,100,null,100]];
+  const year={year:2026,accounts:['A','B','C','D'].map(name=>({name})),months:rows.map((balances,i)=>({m:i+1,pnl:1,balances}))};
+  const data={version:1,ledger:{savedAt:'',years:[year]}},before=JSON.stringify(data),html=ledgerHtml(data,new Date(2026,9,16).getTime());
+  const row=n=>html.slice(html.indexOf(`data-month="${n}"`),html.indexOf(`data-month="${n+1}"`));
+  assert.match(row(3),/빈 계좌 1개 · 확인/,'B만 표시');
+  for(const n of [1,2,4])assert.doesNotMatch(row(n),/빈 계좌/,`${n}월`);
+  assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
+});
