@@ -123,6 +123,10 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
    보유 주수 카드는 1칸 = 손절 1회. .mix는 부분 손절·부분 재매수 칸(아래부터 초록 --g, 파랑 --b까지, 나머지는 빈 칸), .z는 배정 주수가 없는 회차.
    절반·전액 매도는 카드 아래 얇은 두 줄(.rebuy-milestones), 단계 기준가 옆 (자동)은 점선 가격 뒤 작은 글자. */
 #rebuyMain .rebuy-flow{margin-bottom:18px}.rebuy-price-hint{margin:-4px 2px 12px;font-size:12px;word-break:keep-all}
+/* 손절 기준 한 줄 버튼(신저점 · 하락 간격마다 회당 손절 + 연필): 누르면 손절 기준 창. 따로 제목 줄을 두지 않는다. */
+.rebuy-rule{display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;min-height:34px;margin:0 0 12px;padding:6px 11px 6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--text-2);font:inherit;font-size:13px;font-weight:500;line-height:1.35;text-align:left;font-variant-numeric:tabular-nums;word-break:keep-all;transition:background .12s,border-color .12s}
+.rebuy-rule b{color:var(--text);font-weight:700}.rebuy-rule svg{flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--text-3)}
+@media(hover:hover) and (pointer:fine){.rebuy-rule:hover{background:var(--surface-3);border-color:var(--line-strong)}.rebuy-rule:hover svg{color:var(--text-2)}}
 /* 보유 카드 안내 줄의 회차 번호는 배경 없이 주변 문구의 글자색을 따른다. */
 .rebuy-track .fr-note .tr-no{background:transparent;color:inherit}
 /* 평균가·금액과 이탈 알림을 한 줄로 유지하고 휴대폰에서는 글자·여백을 화면 너비에 맞춘다. */
@@ -194,7 +198,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
 .kr-open-reminder{border-top:1px solid var(--line);margin-top:18px;padding-top:16px}.kr-open-reminder .alert-section-head{margin:0 0 8px}.kr-open-reminder .hint{word-break:keep-all}
 @media(min-width:701px) and (max-width:900px){.top{flex-wrap:wrap;gap:10px}.tabs{order:3;width:100%}.tab{flex:1}}
 @media(max-width:700px){.top .brand{font-size:16px;gap:8px}.top .brand b{width:28px;height:28px;border-radius:9px}.top .brand svg{width:17px;height:17px}.top .sync-head{margin-left:auto;gap:2px}.top .sync-head .btn.mini{padding:5px 8px;font-size:12px}#alertsDialog .dialog-inner{padding:18px}.alert-prices{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.alert-prices>div:last-child{grid-column:1/-1}.alert-prices>div:last-child b{display:flex;align-items:baseline;gap:8px}.alert-editor{padding:12px}.alert-rule{padding:12px}.alert-rule-head>div{display:block}.alert-rule-head span{display:block}.alert-explanation{font-size:11.5px}
-  .section-heading{margin-top:24px}.rebuy .section-heading>span:not(.trade-alert-actions){flex-basis:100%}.rebuy .section-heading>.trade-alert-actions{margin-left:0}.rebuy .section-heading>.btn{margin-left:auto}}
+  .section-heading{margin-top:24px}}
 /* 매매 기준 옆의 알림 스위치(거래 완료 체크와 따로 저장). 체크박스를 작은 켜기/끄기 스위치로 그린다 */
 .trade-alert-toggle{display:inline-flex;align-items:center;gap:6px;min-height:26px;width:max-content;max-width:100%;padding:3px 9px 3px 4px;border:1px solid transparent;border-radius:999px;color:var(--text-3);font-size:11.5px;font-weight:600;white-space:nowrap;cursor:pointer;vertical-align:middle;transition:background .12s,color .12s}
 .trade-alert-toggle:hover{background:var(--surface-3)}.trade-alert-toggle:has(input:checked),.trade-alert-toggle:has(input:indeterminate){background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}.trade-alert-toggle.completed{padding:3px 8px;opacity:.6;cursor:default}.trade-alert-toggle.completed:hover{background:transparent}.trade-alert-toggle.completed input{display:none}
