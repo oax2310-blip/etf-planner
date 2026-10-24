@@ -37,7 +37,7 @@ test('비트코인 회차표는 매도·체결을 한 칸(머리 BTC)에 쌓고 
   assert.match(html,/<div class="sale-line-mark" role="note" aria-label="80일선 \$55,556 위치"><span><b>80일선<\/b>\$55,556<\/span><\/div>/,'이평선 줄도 센트 없이');
   assert.equal(JSON.stringify(p),before,'화면 표시만 바꾼다');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
-  assert.match(css,/\.purchase-table\.btc \.purchase-fill input\{width:94px;min-height:28px;padding:3px 6px;font-size:13px\}/,'입력칸은 BTC 소수 8자리만큼만');
+  assert.match(css,/\.purchase-table\.btc \.purchase-fill input\{width:86px;min-height:26px;padding:2px 5px;font-size:12px\}/,'입력칸은 BTC 소수 8자리만큼만');
 });
 
 test('부분 체결 회차는 수량 자리에 남은 BTC를 보이고 체결은 BTC 소수로 저장한다',()=>{
