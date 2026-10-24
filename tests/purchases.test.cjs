@@ -5,14 +5,14 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
-function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000}={}){
-  const ticker=currency==='USD'?'AAA':'111111',item={id:'a',name:'테스트 종목',ticker,shares:legacy?19:10,amount:0,
+function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false}={}){
+  const ticker=bitcoin?'BTC-USD':currency==='USD'?'AAA':'111111',item={id:'a',name:'테스트 종목',ticker,shares:bitcoin?0.01:legacy?19:10,amount:0,
     buyPlan:wait?{wait:{line:wait},notify:{stages:true}}:manual?{stages:[{id:'s',price,...(manualShares===null?{}:{shares:manualShares}),amount:manualAmount}]}:{lines:{names,...(end===null?{}:{end}),budget}}};
   if(currency==='USD')item.buyPlan.currency='USD';
   if(tracking){item.tradeTicker=trackingCurrency==='USD'?'BBB':'222222';if(manualTrackingPrice!==null){item.tradePrice=manualTrackingPrice;item.tradePriceAt='2026-01-02T00:00:00Z';}}
   const doc={version:1,allocation:{total:100,classes:[],cash:[],groups:[{id:'g',name:'테스트 계좌',items:[item]}]}};
   if(legacy){item.buyPlan.buys={end:{actual:8.9,price}};doc.allocation.trades={'buy:a:end':{qty:null,price,value:8.9,items:[{id:'a',shares:9}]}};}
-  const prices={fx:{close:fx,asOf:'2026-01-02'},stocks:{[ticker]:{kind:currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
+  const prices={fx:{close:fx,asOf:'2026-01-02'},stocks:{[ticker]:{kind:bitcoin?'코인':currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
   if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
   function element(){return {dataset:{},value:'',classList,setAttribute(){},append(){},focus(){},textContent:'',addEventListener(){},querySelectorAll:selector=>document.querySelectorAll(selector)};}
@@ -737,6 +737,17 @@ test('분할매수 직접 입력: 체결 주수만 입력하고 금액은 자동
   r.change('[data-purchase-shares]',7);assert.equal(r.item.shares,17);
   assert.equal(r.item.buyPlan.stages[0].actual,7.7875);
   r.change('[data-purchase-done]',false);assert.equal(r.item.shares,10);
+});
+
+test('비트코인 회차표는 매수·체결을 한 칸(머리 BTC)에 쌓고 수량은 BTC 소수 그대로, 부분 체결은 남은 BTC, 기준가 칸은 센트 없이 보인다',()=>{
+  const r=setup({bitcoin:true,currency:'USD',manual:true,price:60000.5,manualShares:0.00036134,manualAmount:2.16804}),html=r.html();
+  assert.match(html,/class="card table-card purchase-table[^"]* btc" id="purchaseTable"/);
+  assert.match(html,/<span>회차<\/span><span>기준가<\/span><span>매수 \/ 체결 <small>BTC<\/small><\/span><span>알림<\/span>/);
+  assert.match(html,/<span class="price">\$60,001<\/span><span class="krw">≈ ₩60,000,500/,'기준가 칸은 센트를 빼고 반올림, 원화 환산은 원래 가격');
+  assert.match(html,/class="purchase-qty">0\.00036134<\/div>\s*<div class="purchase-fill"><input type="number" min="0" max="0\.00036134" step="1e-8" inputmode="decimal" data-purchase-shares="a"[^>]*누적 체결 수량 \(BTC\)"/);
+  r.change('[data-purchase-shares]','0.00012');assert.equal(r.item.shares,0.01012);assert.equal(r.item.buyPlan.stages[0].shares,0.00012);
+  assert.match(r.html(),/<small>부분 체결<\/small>[\s\S]*?class="purchase-qty"><small class="qty-left">남은<\/small>0\.00024134<\/div>[\s\S]*?value="0\.00012"/);
+  assert.doesNotMatch(setup({manual:true}).html(),/ btc"|qty-left|매수 \/ 체결/,'주식 회차표는 그대로');
 });
 
 test('분할매수: 체크 전 10주 중 7주를 기록하면 7주만 반영하고 잔량 3주를 유지한다',()=>{
