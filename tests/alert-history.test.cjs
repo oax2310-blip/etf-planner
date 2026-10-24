@@ -139,3 +139,39 @@ test('달러선물 알림의 당시 가격·기준값은 달러선물 화면처�
   assert.match(card('etf'),/기준값 <strong>\$100\.1234<\/strong>/);
   assert.equal(items.find(item=>item.id==='future').ma,1371.6666666666667,'저장된 가격은 그대로');
 });
+// 읽지 않음 판단(alert-history.js의 const 함수)은 vm 전역 속성이 아니라 이름으로 꺼낸다.
+const unreadOf=h=>vm.runInContext('alertHistoryUnread',h.ctx);
+test('읽은 뒤 같은 회차 재알림이 또 오면 다시 읽지 않음·배지로 보이고, 읽으면 기기 시계가 늦어도 읽음이 된다',()=>{
+  const h=load(),isUnread=unreadOf(h);h.ctx.acceptAlertHistory([event(FIRST)]);h.ctx.markAlertHistoryRead(FIRST);
+  const readAt=h.ctx.state.alertHistory.items[0].readAt,unread=()=>h.ctx.state.alertHistory.items.filter(isUnread).length;
+  assert.equal(unread(),0);
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),1,'2099-01-01T00:45:00Z')]); // 읽은 뒤에 보낸 재알림
+  const item=h.ctx.state.alertHistory.items[0];
+  assert.equal(item.readAt,readAt,'저장된 읽음 시각은 그대로');assert.equal(unread(),1);
+  h.ctx.renderAlertHistory();assert.equal(h.nodes.get('alertsUnreadBadge').textContent,1);assert.equal(h.nodes.get('alertsUnreadBadge').hidden,false);
+  assert.match(h.ctx.alertHistoryCard(item),/읽지 않음/);assert.match(h.ctx.alertHistoryCard(item),/data-read-history/);
+  assert.equal(h.ctx.markAlertHistoryRead(FIRST),true);
+  assert.equal(h.ctx.state.alertHistory.items[0].readAt,'2099-01-01T00:45:00.000Z','발송 시각보다 이르지 않게');assert.equal(unread(),0);
+  assert.equal(h.ctx.markAlertHistoryRead(FIRST),false);
+  // 다른 기기가 그 뒤에 읽은 기록과 합치면 읽음, 그보다 앞선 읽음만 있으면 읽지 않음이다.
+  const stored=plain(h.ctx.state.alertHistory.items[0]),later={items:[{...stored,readAt:'2099-01-01T01:00:00Z'}]},earlier={items:[{...stored,readAt}]};
+  assert.equal(isUnread(h.ctx.store.merge(earlier).items[0]),true);
+  assert.equal(isUnread(h.ctx.store.merge(earlier,later).items[0]),false);
+});
+test('푸시로 연 재알림은 뒤늦게 들어와도 읽음, 누른 뒤 다음 시간대에 온 재알림은 읽지 않음으로 남는다',()=>{
+  const h=load(),isUnread=unreadOf(h);h.ctx.acceptAlertHistory([event(FIRST)]);h.ctx.markAlertHistoryRead(FIRST);
+  h.ctx.noteAlertHistoryRead(FIRST); // 재알림 푸시를 누르면 최초 알림 ID(alertKey)로 읽음 처리한다(alert-target.js)
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),1,new Date(Date.now()-60e3).toISOString())]);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),false);
+  h.ctx.acceptAlertHistory([followUp('s'.repeat(64),2,'2099-01-01T05:00:00Z')]);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),true);
+});
+test('모두 읽음은 재알림으로 다시 읽지 않음이 된 항목도 읽음으로 바꾼다',()=>{
+  const h=load(),isUnread=unreadOf(h);h.ctx.acceptAlertHistory([event(FIRST),event(OTHER,{occurredAt:'2026-10-14T02:00:00Z'})]);
+  for(const id of [FIRST,OTHER])h.ctx.markAlertHistoryRead(id);
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),1,'2099-01-01T00:45:00Z')]);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.filter(isUnread).map(item=>item.id)),[FIRST]);
+  Object.assign(h.ctx,{navigator:{},document:{addEventListener(){}},addEventListener(){}});h.ctx.initializeAlertHistory();
+  h.nodes.get('readAllHistory').onclick();
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.filter(isUnread).map(item=>item.id)),[]);
+});

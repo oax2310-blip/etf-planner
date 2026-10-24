@@ -1,11 +1,21 @@
 // 알림내역 화면·발송 이력/수신함 불러오기. state.alertHistory는 새 알림 수신·사용자 조작 때만 생성한다.
 // 기존 localStorage·비공개 동기화·플래너 JSON 백업을 사용하며 매매 기록은 수정하지 않는다.
 let alertHistoryFilter="all",alertHistoryBusy=false,alertHistoryAgain=false,alertHistoryMessage="";
-const alertHistoryReadIds=new Set();
+const alertHistoryReadIds=new Map(); // 푸시를 눌러 연 항목 ID → 누른 시각(ms). 이 페이지가 열려 있는 동안만 둔다.
 const alertHistoryItems=()=>alertHistoryStore.merge(state.alertHistory).items;
+// 읽지 않음: 읽은 적이 없거나, 마지막으로 읽은 뒤 같은 회차의 재알림이 또 왔을 때(lastSentAt > readAt).
+// 화면 판단만 하고 저장 필드(readAt·lastSentAt)는 그대로라 옛 기록·다른 기기와 호환된다.
+const alertHistoryUnread=item=>!item.readAt||!!item.lastSentAt&&Date.parse(item.lastSentAt)>Date.parse(item.readAt);
+// 읽음 시각은 마지막 발송 시각보다 이르지 않게 둔다. 기기 시계가 발송 서버보다 늦어도 방금 읽은 재알림이 다시 읽지 않음이 되지 않는다.
+const alertHistoryReadStamp=item=>new Date(Math.max(Date.now(),Date.parse(item.lastSentAt||"")||0)).toISOString();
+// 푸시를 눌러 연 알림은 뒤늦게 수신함·동기화로 들어와도 읽음으로 둔다. 누른 뒤 30분 넘어 보낸 재알림(다음 시간대)은
+// 새로 온 알림이라 그대로 둔다(30분은 기기·서버 시계 차이 여유).
+function alertHistoryApplyTaps(items){
+  for(const item of items){const at=alertHistoryReadIds.get(item.id);if(at!==undefined&&alertHistoryUnread(item)&&(!item.lastSentAt||Date.parse(item.lastSentAt)<=at+30*60e3))item.readAt=alertHistoryReadStamp(item);}
+}
 function acceptAlertHistory(items){
   const next=alertHistoryStore.merge(state.alertHistory,{items});
-  for(const item of next.items)if(alertHistoryReadIds.has(item.id)&&!item.readAt)item.readAt=new Date().toISOString();
+  alertHistoryApplyTaps(next.items);
   if(!next.items.length&&!state.alertHistory)return false;
   if(JSON.stringify(state.alertHistory)===JSON.stringify(next))return false;
   state.alertHistory=next;save();renderAlertHistory();return true;
@@ -38,7 +48,7 @@ function alignAlertHistorySnapshots(local,remote,base){
   const sources=docs.slice(0,2).map(doc=>doc?.alertHistory).filter(Boolean);
   if(!sources.length)return {local,remote,base};
   const merged=alertHistoryStore.merge(...sources);
-  for(const item of merged.items)if(alertHistoryReadIds.has(item.id)&&!item.readAt)item.readAt=new Date().toISOString();
+  alertHistoryApplyTaps(merged.items);
   const apply=doc=>doc?JSON.stringify({...doc,alertHistory:merged}):null;
   state.alertHistory=merged;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
   return {local:apply(docs[0]),remote:apply(docs[1]),base:apply(docs[2])};
@@ -61,9 +71,10 @@ function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{
 // 기준선 글자는 화면에서만 'N개월선'→'N월선'(stock-names.js lineText). 저장된 line·body는 받은 그대로 둔다.
 const alertHistoryText=v=>typeof stockNames==="object"?stockNames.lineText(v):String(v??"");
 const alertHistoryView=(item,names)=>typeof stockNames==="object"?{name:stockNames.alertName(item,names),type:stockNames.alertKind(item).text}:{name:item.name,type:item.type};
-// 같은 매매 회차의 재알림은 최초 알림 카드 하나에 횟수·마지막 발송 시각만 보인다. 당시 조건·가격은 최초 알림 그대로다.
+// 같은 매매 회차의 재알림은 최초 알림 카드 하나에 횟수·마지막 발송 시각만 보인다. 당시 조건·가격은 최초 알림 그대로이고,
+// 읽은 뒤 재알림이 또 오면 다시 읽지 않음으로 보인다(alertHistoryUnread).
 function alertHistoryCard(item,names=null){
-  const read=!!item.readAt,count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0,{name,type}=alertHistoryView(item,names);
+  const read=!alertHistoryUnread(item),count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0,{name,type}=alertHistoryView(item,names);
   return `<article class="alert-history-card${read?" is-read":""}">
     <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(type)} ${esc(name)} ${esc(alertHistoryText(item.line))} 알림${count?` 재알림 ${count}회`:""} ${read?"읽음":"읽지 않음"}, 종목으로 이동">
       <span class="alert-history-meta"><span class="alert-history-type">${esc(type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
@@ -76,12 +87,12 @@ function alertHistoryCard(item,names=null){
   </article>`;
 }
 function markAlertHistoryRead(eventId){
-  const item=state.alertHistory?.items?.find(item=>item.id===eventId);if(!item||item.readAt)return false;
-  item.readAt=new Date().toISOString();save();renderAlertHistory();return true;
+  const item=state.alertHistory?.items?.find(item=>item.id===eventId);if(!item||!alertHistoryUnread(item))return false;
+  item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();return true;
 }
 function noteAlertHistoryRead(eventId){
   if(typeof eventId!=="string"||!eventId||eventId.length>128)return;
-  alertHistoryReadIds.add(eventId);markAlertHistoryRead(eventId);
+  alertHistoryReadIds.set(eventId,Date.now());markAlertHistoryRead(eventId);
 }
 function removeAlertHistory(eventId){
   if(!alertHistoryItems().some(item=>item.id===eventId))return false;
@@ -89,7 +100,7 @@ function removeAlertHistory(eventId){
 }
 function renderAlertHistory(){
   const list=$("alertHistoryList");if(!list)return;
-  const all=alertHistoryItems(),unread=all.filter(item=>!item.readAt),items=alertHistoryFilter==="unread"?unread:all;
+  const all=alertHistoryItems(),unread=all.filter(alertHistoryUnread),items=alertHistoryFilter==="unread"?unread:all;
   $("historyAllCount").textContent=all.length;$("historyUnreadCount").textContent=unread.length;
   $("alertsUnreadBadge").textContent=unread.length;$("alertsUnreadBadge").hidden=!unread.length;
   $("alertsBtn").ariaLabel=`알림${unread.length?`, 읽지 않은 알림 ${unread.length}개`:""}`;
@@ -114,7 +125,7 @@ function initializeAlertHistory(){
   $("alertHistoryBtn").onclick=openAlertHistory;$("closeAlertHistory").onclick=()=>$("alertHistoryDialog").close();
   $("openAlertSettings").onclick=()=>{$("alertHistoryDialog").close();openAlertSettings();};
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
-  $("readAllHistory").onclick=()=>{const now=new Date().toISOString();for(const item of state.alertHistory?.items||[])if(!item.readAt)item.readAt=now;save();renderAlertHistory();};
+  $("readAllHistory").onclick=()=>{for(const item of state.alertHistory?.items||[])if(alertHistoryUnread(item))item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();};
   $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:items.map(item=>item.id)});save();renderAlertHistory();};
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
