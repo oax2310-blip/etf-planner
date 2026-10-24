@@ -47,7 +47,12 @@
 .purchase-table-head>:nth-child(3),.purchase-table-head>:nth-child(4){text-align:right}.purchase-table-head>:nth-child(n+5){text-align:center}
 .purchase-round{display:grid;line-height:1.3}.purchase-round>b{font-weight:600}.purchase-round small{font-size:11px;font-weight:700;color:var(--warn);white-space:normal;word-break:keep-all}
 .purchase-qty{min-width:0;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.purchase-qty .qty-unit{margin-left:3px;font-size:11px;font-weight:500;color:var(--text-3)}.purchase-qty .sat-n{overflow-wrap:normal} /* 비트코인 sat 수량: 폰에서는 단위를 숫자 아래 줄(기준가의 원화 줄과 같은 높이)에, 넘치면 쉼표에서만 줄바꿈 */
+/* 비트코인 회차표(.btc): 매도·매수 수량(위)과 체결 칸(아래)을 한 칸에 쌓고 회차·기준가·알림·상태는 두 줄에 걸쳐 가운데. 칸 폭은 BTC 소수 8자리가 수량·입력칸 모두 한 줄에 들어가는 너비 */
+.purchase-table.btc :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 128px 56px 100px}.purchase-table.btc.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 128px 100px}
+.purchase-table.btc .purchase-table-head>:nth-child(n+4){text-align:center}.purchase-table.btc .purchase-row{row-gap:3px}
+.purchase-table.btc .purchase-row>:is(.check,.stage-price,.purchase-alert,.status){grid-row:1/3}.purchase-table.btc .purchase-row>.check{grid-column:1}.purchase-table.btc .purchase-row>.stage-price{grid-column:2}.purchase-table.btc .purchase-row>.purchase-alert{grid-column:4}.purchase-table.btc .purchase-row>.status{grid-column:-2/-1}
+.purchase-table.btc .purchase-row>.purchase-qty{grid-column:3;grid-row:1;align-self:end;font-size:13px;line-height:1.3;white-space:nowrap}.purchase-table.btc .purchase-row>.purchase-fill{grid-column:3;grid-row:2;align-self:start}
+.purchase-qty .qty-left{margin-right:4px;font-size:11px;font-weight:700;color:var(--warn)}
 .purchase-fill{display:flex;justify-content:flex-end;min-width:0}.purchase-fill input{width:100%;min-width:0;min-height:34px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--field);color:var(--text);font-weight:600;text-align:right;-moz-appearance:textfield;appearance:textfield}
 .purchase-fill input::-webkit-inner-spin-button,.purchase-fill input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.purchase-row.partial .purchase-fill input{border-color:var(--warn-line);color:var(--warn)}.purchase-row.done .purchase-fill input{color:var(--good)}
 .purchase-alert{display:flex;justify-content:center;min-width:0}.purchase-alert .trade-alert-toggle{gap:0;padding:4px}.purchase-alert .trade-alert-toggle:not(.completed)>span{display:none}
@@ -94,29 +99,28 @@
 .purchase-target-info .purchase-target-quantity{font-size:11.5px}
 .purchase-row.partial{box-shadow:inset 3px 0 var(--warn);background:var(--warn-soft)}
 .purchase-row>.check input[type=checkbox]:indeterminate{background:var(--warn);border-color:var(--warn)}.purchase-row>.check input[type=checkbox]:indeterminate::before{clip-path:none;width:10px;height:2px;transform:scale(1)}
-@media(max-width:1000px){.purchase-table-head,.purchase-row{grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 80px 88px 56px}.purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 80px 88px}}
+@media(max-width:1000px){.purchase-table-head,.purchase-row{grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 80px 88px 56px}.purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 80px 88px}
+  .purchase-table.btc :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 120px 56px}.purchase-table.btc.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column,max-content) minmax(0,1fr) 120px}}
 @media(max-width:700px){
   /* 폰: 393px 폭에서 한 줄에 회차 96px(직접 입력 64px) · 기준가 · 매수 46px · 체결 58px · 알림 38px */
   .purchase-table-head,.purchase-row{--round-column:64px;grid-template-columns:var(--round-column) minmax(0,1fr) 46px 58px 38px;gap:8px}.purchase-table-head.line,.purchase-row.line{--round-column:96px}
   .purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 46px 58px}
   .purchase-table-head{padding:8px 12px;font-size:11.5px}.purchase-row{min-height:52px;padding:6px 12px}.sale-line-mark{padding:4px 12px;font-size:11.5px}.purchase-row .check{min-width:0;gap:8px}
   .purchase-row .stage-price{flex-direction:column;align-items:flex-start;gap:0;line-height:1.25}.purchase-row .stage-price .price{font-size:14px;overflow-wrap:anywhere}.purchase-row .stage-price .price.long{font-size:13px}.purchase-row .stage-price .price.xlong{font-size:12px}.purchase-row .stage-price .krw{font-size:11px}
-  .purchase-qty{font-size:14px}.purchase-qty .qty-unit{display:block;margin:0;line-height:1.2}.purchase-fill input{min-height:32px;padding:4px 7px;font-size:14px}.purchase-alert .trade-alert-toggle.completed{padding:0;font-size:11px}
+  .purchase-qty{font-size:14px}.purchase-fill input{min-height:32px;padding:4px 7px;font-size:14px}.purchase-alert .trade-alert-toggle.completed{padding:0;font-size:11px}
   .purchase-sub{margin-top:-2px;font-size:11px}.purchase-buy-target{padding:10px 14px}.completed-fold-bar{padding-right:14px;padding-left:14px}
   .purchase-stage{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.purchase-stage>b{grid-column:1/3}.purchase-stage>[data-purchase-remove]{grid-column:3;justify-self:end}.purchase-stage .date-field{grid-row:3;grid-column:1/-1}.purchase-stage .condition-field{grid-row:4;grid-column:1/-1}
   .purchase-head{padding:12px}.purchase-progress{gap:6px 8px}.purchase-line-bounds,.purchase-line-preview{grid-template-columns:minmax(0,1fr)}.purchase-line-set,.purchase-line-budget{grid-column:1/-1}.purchase-ladder-foot{flex-direction:column;align-items:stretch}
   .purchase-wait-grid{grid-template-columns:minmax(0,1fr)}
-  /* 비트코인 회차표(.sat): 기준가 칸에서 10px을 덜어 sat 수량(36,134)과 체결 입력 5자리가 한 줄에 들어가게 한다. 회차 칸이 넓은 이동평균 회차(.line)는 칸 대신 글자를 줄인다 */
-  .purchase-table.sat :is(.purchase-table-head,.purchase-row):not(.line){grid-template-columns:var(--round-column) minmax(0,1fr) 51px 61px 38px}.purchase-table.sat.no-alert :is(.purchase-table-head,.purchase-row):not(.line){grid-template-columns:var(--round-column) minmax(0,1fr) 51px 61px}
-  .purchase-table.sat .purchase-fill input{padding-right:5px;padding-left:5px}.purchase-row.line .sat-n{font-size:13px}.purchase-qty .sat-n.long{font-size:12px}
+  .purchase-table.btc :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 108px 38px}.purchase-table.btc.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 108px}
 }
 @media(max-width:390px){
   /* 360·384px 폰: 기준가 칸이 좁아 원화 가격의 '원'이나 숫자가 아랫줄로 밀리지 않게 다른 칸·간격을 줄인다 */
   .purchase-table-head,.purchase-row{--round-column:56px;grid-template-columns:var(--round-column) minmax(0,1fr) 40px 50px 34px;gap:6px}.purchase-table-head.line,.purchase-row.line{--round-column:84px}
   .purchase-table.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 40px 50px}
   .purchase-table-head,.purchase-row,.sale-line-mark{padding-right:10px;padding-left:10px}.purchase-row .check{gap:6px;font-size:13px}.purchase-qty{font-size:13px}.purchase-fill input{padding:4px 6px;font-size:13.5px}
-  .purchase-table.sat :is(.purchase-table-head,.purchase-row):not(.line){grid-template-columns:var(--round-column) minmax(0,1fr) 47px 57px 34px}.purchase-table.sat.no-alert :is(.purchase-table-head,.purchase-row):not(.line){grid-template-columns:var(--round-column) minmax(0,1fr) 47px 57px}
-  .purchase-row.line .sat-n{font-size:11.5px}.purchase-qty .sat-n.long{font-size:11.5px}
+  .purchase-table.btc :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 100px 34px}.purchase-table.btc.no-alert :is(.purchase-table-head,.purchase-row){grid-template-columns:var(--round-column) minmax(0,1fr) 100px}
+  .purchase-table.btc .purchase-row>.purchase-qty{font-size:12px}
 }
 
 /* 재매수 범위 편집은 분할매수의 시작·마지막 선 입력과 미리보기를 함께 쓴다. */
