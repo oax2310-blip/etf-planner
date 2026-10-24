@@ -51,7 +51,7 @@ function control(id, {type = 'range', value, min = 0, max = 1000, options}) {
       get value() { return current; }, set value(v) { current = options.some(o => o.value === String(v)) ? String(v) : ''; }};
   }
   let current = String(value);
-  return {id, tagName: 'INPUT', defaultValue: String(value),
+  return {id, tagName: 'INPUT', type, defaultValue: String(value),
     checkValidity: () => type === 'range' || (current !== '' && Number(current) >= min && Number(current) <= max),
     get value() { return current; },
     set value(v) { current = type === 'range' ? String(Math.min(max, Math.max(min, Number(v)))) : String(v); }};
@@ -365,6 +365,27 @@ test('다른 기기에서 나중에 바꾼 조정값을 화면에 가져오고 �
   assert.deepEqual(h.stored(LIST).map(s => s.name), ['보수', '낙관']);
   assert.deepEqual(server.data().scenarios.map(s => s.id), ['b', 'a']);
   assert.deepEqual(server.data().current.values, {humnUnits: 60, robotM: 40});
+});
+
+test('숫자 칸을 입력하는 중이면 다른 기기의 새 조정값은 칸에서 나올 때까지 적용하지 않는다', async () => {
+  // 이미 직접 조정 중(프리셋 선택 없음)이라 칸을 비워도 바뀐 것이 없다. 프리셋이 선택돼 있었다면 선택이 풀리며 이 기기가 더 새 값이 된다.
+  const direct = {sdi: '', battery: ''};
+  const server = githubServer({remote: remoteFile({current: saved({batCarM: 90}, T1, direct)})});
+  const h = page({server, storage: connectedStorage({[CURRENT]: saved({batCarM: 90}, T1, direct)})});
+  await h.ready();
+  const doc = vm.runInContext('document', h.context);
+  doc.activeElement = h.el('batCarM'); h.adjust('batCarM', ''); h.flush();
+  assert.equal(h.stored(CURRENT).savedAt, T1, '빈칸은 저장하지 않아 이 기기 변경 시각이 그대로다');
+  server.file = {sha: 'sha-other', text: JSON.stringify(remoteFile({current: saved({batCarM: 120}, T2, direct)}))};
+  await h.sync();
+  assert.equal(h.el('batCarM').value, '', '입력 중인 칸을 다른 기기 값으로 다시 채우지 않는다');
+  assert.equal(h.el('scenarioSyncStatus').textContent, '입력 중 · 끝나면 동기화');
+  assert.equal(h.stored(CURRENT).values.batCarM, 90);assert.equal(server.puts.length, 0);
+  doc.activeElement = h.el('robotM'); h.fire('focusout', h.el('batCarM'));
+  assert.ok(h.pendingSync(), '슬라이더로 옮기면 입력이 끝난 것으로 보고 이어서 동기화한다');
+  await h.sync();
+  assert.equal(h.el('batCarM').value, '120');assert.equal(h.stored(CURRENT).savedAt, T2);
+  assert.match(h.el('scenarioSyncStatus').textContent, /^동기화 완료/);
 });
 
 test('이 기기에서 나중에 바꾼 조정값은 저장소에 올리고 다른 기기의 저장본은 지우지 않는다', async () => {
