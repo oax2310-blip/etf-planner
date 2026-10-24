@@ -60,3 +60,17 @@ test('데이터 또는 요청 토큰 변경 후에는 이전 인증으로 후속
   let same=true;const h=setup(()=>{same=false;return reply({number:123},201);});await assert.rejects(h.run(()=>same),/연결 설정/);assert.equal(h.requests.length,1);
   const h2=setup(()=>{h2.stored.set('etf-planner-collection-request-token','different-token');return reply({number:123},201);});await assert.rejects(h2.run(),/연결 설정/);assert.equal(h2.requests.length,1);
 });
+
+test('정기 수집 지연: 평일 10:20~15:20은 70분, 그 밖(저녁·밤·주말·휴장일)은 7시간 30분 넘게 수집이 없으면 지연으로 본다',()=>{
+  const context=vm.createContext({});vm.runInContext(source,context);
+  const late=(updated,now)=>context.priceCollectionLate(updated,new Date(now));
+  const kst=s=>`${s}+09:00`;
+  assert.equal(late(kst('2026-10-26T10:00:00'),kst('2026-10-26T11:05:00')),false,'월요일 장중 65분(한 번 빠짐)');
+  assert.equal(late(kst('2026-10-26T09:50:00'),kst('2026-10-26T11:05:00')),true,'월요일 장중 75분 → 두 번 빠짐');
+  assert.equal(late(kst('2026-10-26T03:23:00'),kst('2026-10-26T10:10:00')),false,'10:20 전은 밤 기준(06:40 예약 한 번 빠짐)');
+  assert.equal(late(kst('2026-10-26T16:53:00'),kst('2026-10-26T23:53:00')),false,'휴장일 저녁 수집 건너뜀: 16:40→23:10 예약 사이');
+  assert.equal(late(kst('2026-10-26T15:00:00'),kst('2026-10-26T23:00:00')),true,'저녁 8시간 → 16:40 수집도 빠짐');
+  assert.equal(late(kst('2026-10-25T09:00:00'),kst('2026-10-25T15:00:00')),false,'일요일 6시간(3시간 예약 한 번 빠짐)');
+  assert.equal(late(kst('2026-10-25T07:00:00'),kst('2026-10-25T15:00:00')),true,'일요일 8시간 → 두 번 빠짐');
+  for(const bad of ['', null, undefined, 'not-a-date'])assert.equal(late(bad,kst('2026-10-26T11:00:00')),false,`수집 시각 모름: ${bad}`);
+});
