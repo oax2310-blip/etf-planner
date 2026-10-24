@@ -6,7 +6,7 @@ const fractionalQuantity = new Intl.NumberFormat("ko-KR",{maximumFractionDigits:
 const planQuantity = (shares, p) => isBitcoinTicker(p.ticker)?`${fractionalQuantity.format(shares)} BTC`:`${won.format(shares)}주`;
 const planReferenceQuantity = (shares, p) => isBitcoinTicker(p.ticker)?planQuantity(shares,p):`${fractionalQuantity.format(shares)}주`;
 // 비트코인 회차표(화면 전용): 좁은 매도·체결 두 칸을 한 칸으로 합쳐 매도 수량(BTC 소수 8자리, 단위는 표 머리)을 체결 칸 위에 쌓아 보인다.
-// 부분 체결 회차는 그 자리에 남은 수량을 보인다. 기준가 칸의 달러 가격은 센트를 빼고 반올림($79,031.03 → $79,031). 원화 환산 줄·알림·기록은 원래 값 그대로.
+// 부분 체결 회차는 그 자리에 남은 수량을 보인다. 기준가 칸과 이평선 줄의 달러 가격은 센트를 빼고 반올림($79,031.03 → $79,031). 원화 환산 줄·알림·기록은 원래 값 그대로.
 const planRowPrice = (v, p) => isBitcoinTicker(p.ticker)&&p.currency==="USD"?`$${won.format(v)}`:priceText(v,p.currency);
 const hasPlanShares = (ticker, shares) => shares>0&&(isBitcoinTicker(ticker)?Number.isFinite(shares)&&Number.isSafeInteger(Math.round(shares*1e8))&&Number(shares.toFixed(8))===shares:Number.isSafeInteger(shares));
 // 매도 비중(plans[].salePct, 1~99 정수 %): 보유 수량(또는 평가액만 넣은 계획은 평가액)의 이 비중만 회차에 나눠 팔고 나머지는 남긴다.
@@ -280,7 +280,7 @@ function planLineMarks(p,rows){
   return out;
 }
 // 선 줄은 바로 다음 회차가 매도 완료면 그 회차와 함께 접힌다(완료 회차 접기).
-const planLineMark = (p,list,done) => `<div class="sale-line-mark${done?" done":""}" role="note" aria-label="${esc(list.map(m=>`${movingLineText(m.name)} ${priceText(m.price,p.currency)}`).join(", "))} 위치">${list.map(m=>`<span><b>${esc(movingLineText(m.name))}</b>${esc(priceText(m.price,p.currency))}</span>`).join("")}</div>`;
+const planLineMark = (p,list,done) => `<div class="sale-line-mark${done?" done":""}" role="note" aria-label="${esc(list.map(m=>`${movingLineText(m.name)} ${planRowPrice(m.price,p)}`).join(", "))} 위치">${list.map(m=>`<span><b>${esc(movingLineText(m.name))}</b>${esc(planRowPrice(m.price,p))}</span>`).join("")}</div>`;
 function planSaleAccountView(p){
   if(isBitcoinTicker(p.ticker))return "";
   const schedule=planLinkedSaleSchedule(p),summary=allocationSummary(planSaleAssets(),typeof assetStore==="object"?assetStore.prices:null);
