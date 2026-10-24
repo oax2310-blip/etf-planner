@@ -740,7 +740,8 @@ test('분할매수 직접 입력: 체결 주수만 입력하고 금액은 자동
 });
 
 test('비트코인 회차표의 좁은 매수·체결 칸은 sat 정수로 보이고 체결은 sat 정수나 BTC 소수로 받아 BTC로 반영한다',()=>{
-  const r=setup({bitcoin:true,currency:'USD',manual:true,price:60000,manualShares:0.00036134,manualAmount:2.16804}),html=r.html();
+  const r=setup({bitcoin:true,currency:'USD',manual:true,price:60000.5,manualShares:0.00036134,manualAmount:2.16804}),html=r.html();
+  assert.match(html,/<span class="price">\$60,001<\/span><span class="krw">≈ ₩60,000,500/,'기준가 칸은 센트를 빼고 반올림, 원화 환산은 원래 가격');
   assert.match(html,/class="card table-card purchase-table[^"]* sat" id="purchaseTable"/,'폰에서 sat 칸 너비를 쓰는 표');
   assert.match(html,/· 1억 sat = 1 BTC<\/small>/);
   assert.match(html,/class="purchase-qty"><span class="sat-n">36,<wbr>134<\/span><small class="qty-unit">sat<\/small><\/div>/,'0.00036134 BTC → 36,134 sat');

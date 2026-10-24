@@ -11,6 +11,8 @@ const planSats = btc => won.format(Math.round(Number(btc)*1e8));
 // 칸 글자: 숫자와 아랫줄 sat. 폰에서 7자리 이상(100,000 sat~)은 글자를 줄이고, 그래도 넘치면 쉼표에서만 줄을 바꾼다.
 const planSatCell = btc => (t=>`<span class="sat-n${t.length>6?" long":""}">${t.replace(/,/g,",<wbr>")}</span><small class="qty-unit">sat</small>`)(planSats(btc));
 const planSatInput = v => { const n=Number(v); return Number.isInteger(n)?n/1e8:n; };
+// 같은 회차표의 기준가 칸도 비트코인 달러 가격은 센트를 빼고 반올림해 보인다($79,031.03 → $79,031). 원화 환산 줄·알림·기록은 원래 가격 그대로.
+const planRowPrice = (v, p) => isBitcoinTicker(p.ticker)&&p.currency==="USD"?`$${won.format(v)}`:priceText(v,p.currency);
 const hasPlanShares = (ticker, shares) => shares>0&&(isBitcoinTicker(ticker)?Number.isFinite(shares)&&Number.isSafeInteger(Math.round(shares*1e8))&&Number(shares.toFixed(8))===shares:Number.isSafeInteger(shares));
 // 매도 비중(plans[].salePct, 1~99 정수 %): 보유 수량(또는 평가액만 넣은 계획은 평가액)의 이 비중만 회차에 나눠 팔고 나머지는 남긴다.
 // 없으면 100%(전량) — 100이면 저장하지 않고 delete. 매도 수량은 최소 단위(1주·0.00000001 BTC)로 내림해 정한 비중보다 더 팔지 않는다.
@@ -250,7 +252,7 @@ function planSellerHead(sellers,sats=false){
 function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
   const {r,e,group,price,priced,members,holder}=info,partial=r.recorded&&!r.done,due=!r.recorded&&planStageDue(p,r,planNow(p)),state=r.done?"done":partial?"partial":due?"due":"";
   const digits=e?0:planShareDigits(p),unit=digits?"sat":"주",qty=n=>group?`${won.format(n)}주`:digits?`${planSats(n)} sat`:planQuantity(n,p),shown=r.done?r.amount:r.target;
-  const flag=partial?r.remaining!==null?`남은 ${digits?planSats(r.remaining):qty(r.remaining)}`:"부분 체결":due?"도달":"",priceLabel=priced?priceText(price,p.currency):"—";
+  const flag=partial?r.remaining!==null?`남은 ${digits?planSats(r.remaining):qty(r.remaining)}`:"부분 체결":due?"도달":"",priceLabel=priced?planRowPrice(price,p):"—";
   const memberInput=m=>`<input type="number" min="0" max="${m.plannedQty}" step="1" inputmode="numeric" data-sale-member="${esc(m.targetId)}" data-sale-stage="${i}" value="${esc(m.qty)}" placeholder="0"${!m.valid||!m.plannedQty?" disabled":""} aria-label="${i+1}회 ${esc(m.account)} ${esc(m.name)} 매도 누적 체결 수량 (주)">`;
   const one=group&&members.length===1?members[0]:null;
   const input=group?one&&one.plannedQty!==null?memberInput(one):"":r.target!==null?`<input type="number" min="0" max="${digits?Math.round(r.target*1e8):r.target}" step="1" inputmode="numeric" data-sale-filled="${i}" value="${esc(digits?Math.round(r.amount*1e8):r.amount)}" placeholder="0"${!priced||e&&r.target===0?" disabled":""} aria-label="${i+1}회 매도 누적 체결 수량 (${unit})">`:"";

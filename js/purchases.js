@@ -41,6 +41,7 @@ const qtyNum=(v,it)=>(unitOf(it)<1?nf8:nf1).format(v), qtyUnit=it=>unitOf(it)<1?
 // 회차표의 좁은 매수·체결 칸(화면 전용)은 비트코인 수량을 사토시 정수로 보인다(1 sat = 0.00000001 BTC = 매수 단위, 1억 sat = 1 BTC).
 // 체결 칸은 sat 정수로 받고 소수점 있는 값(거래소 체결 수량)은 BTC로 읽는다. 기록·계산과 진행 카드 등 다른 수량 글자는 BTC 그대로.
 // 칸 글자는 숫자와 아랫줄 sat(폰에서 7자리 이상은 글자를 줄이고 쉼표에서만 줄바꿈), 회차 칸 '남은' 수량은 숫자만.
+// 기준가 칸의 비트코인 달러 가격은 센트를 빼고 반올림(renderPurchases rowPt). 원화 환산 줄·알림·기록은 원래 가격 그대로.
 const sats=v=>nf1.format(Math.round(Number(v)*1e8)), cellQty=(v,it)=>unitOf(it)<1?sats(v):qtyText(v,it);
 const satCell=v=>(t=>`<span class="sat-n${t.length>6?" long":""}">${t.replace(/,/g,",<wbr>")}</span><small class="qty-unit">sat</small>`)(sats(v));
 const cellIn=(v,it)=>v===null||unitOf(it)>=1||!Number.isInteger(v)?v:v/1e8;
@@ -159,7 +160,7 @@ function renderPurchases(){
     if(it.buyPlan.wait)return waitCard({g,it},s);
     const plan=it.buyPlan, lines=plan.lines, entry=lines?lineEntry(it):null, trade=lineOptions(it),target=targetsOf(it,plan,s)[0],p=purchaseSummary(plan,entry,trade), id=escA(it.id);
     const cur=planCurrency(plan,it), q=quoteOf(it), now=q&&q.currency===cur?q.close:null, up=purchaseDirection(plan)==="up";
-    const pt=v=>priceText(v,cur), kind=purchaseQuoteKind(it.ticker), alertable=!!kind&&(kind==="국내"?"KRW":"USD")===cur;
+    const pt=v=>priceText(v,cur), kind=purchaseQuoteKind(it.ticker), rowPt=v=>kind==="코인"&&cur==="USD"?`$${nf1.format(Math.round(v))}`:pt(v), alertable=!!kind&&(kind==="국내"?"KRW":"USD")===cur;
     // 회차 줄(두 방식 공통 모양): 이동평균선 돌파는 키(data-key), 직접 입력은 순번(data-stage)으로 체크·체결·알림을 저장한다.
     const rows=lines?purchaseLineRows(plan,entry,trade).map(r=>{
       const key=`buy:${it.id}:${r.key}`, b=purchaseBuys(plan)[r.key], fill=b?null:purchaseTrackingFill(r,it,prices,s.fx,cur,trade.target);if(fill)fills.set(key,fill);
@@ -215,7 +216,7 @@ function renderPurchases(){
       const tag=r.line?(r.line.key==="end"?"목표가":`${escA(movingLineText(r.line.line))}<span class="tr-no">${r.line.t+1}</span>`):escA(r.label);
       // 표 열: 회차(아래 도달·남은 수량) · 기준가(매수 수량과 같은 중간 굵기, 달러면 원화 환산) · 매수 수량 · 누적 체결 입력 · 알림 · 상태(PC). 입력·알림의 저장 키는 그대로 쓴다.
       return `<div class="purchase-row${r.line?" line":""}${r.done?" done":partial?" partial":reached?" due":""}"><label class="check" title="잔량까지 매수 완료"><input type="checkbox" ${r.line?"data-purchase-buy":"data-purchase-done"}="${id}" ${r.attr}${r.done?" checked":""}${partial?' data-purchase-partial="true" aria-checked="mixed"':""}${blocked||missingTarget&&!r.done&&!follows?" disabled":""} aria-label="${escA(name)} 매수 완료"><span class="purchase-round"><b>${tag}</b>${flag?`<small>${escA(flag)}</small>`:""}</span></label>
-        <div class="stage-price">${(t=>`<span class="price${t.length>9?" xlong":t.length>7?" long":""}">${escA(t)}</span>`)(r.price>0?pt(r.price):"—")}${krw}</div>
+        <div class="stage-price">${(t=>`<span class="price${t.length>9?" xlong":t.length>7?" long":""}">${escA(t)}</span>`)(r.price>0?rowPt(r.price):"—")}${krw}</div>
         <div class="purchase-qty">${shown===null?"—":unitOf(actualItem)<1?satCell(shown):escA(qtyText(shown,actualItem))}</div>
         <div class="purchase-fill">${r.plannedShares!==null||r.recorded&&!r.stage?.partial?(sat=>`<input type="number" min="0" ${r.plannedShares!==null?`max="${sat?Math.round(r.plannedShares*1e8):r.plannedShares}"`:""} step="1" inputmode="numeric" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${escA(sat&&r.shares!=null?Math.round(r.shares*1e8):r.shares??"")}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 누적 체결 수량 (${sat?"sat":qtyUnit(actualItem).trim()})">`)(unitOf(actualItem)<1):""}</div>
         ${alertable?`<div class="purchase-alert">${(r.done||!blocked)&&r.price>0?tradeAlertToggle(purchaseAlertOn(plan,r.line||r.stage),`data-purchase-alert="${id}" ${r.attr}`,name,r.done):""}</div>`:""}
