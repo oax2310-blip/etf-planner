@@ -374,3 +374,13 @@ test('재매수 부분 체결은 계획 계약까지 그 회차에 남기고, �
   assert.equal(ctx.setFutureBuyQty(f,x.i,x.t,'0'),false,'0계약은 체크 해제로');
   assert.equal(ctx.setFutureBuyQty(f,x.i,x.t,'99'),false,'판 계약 수를 넘기지 않는다');
 });
+
+test('달러선물 손절의 quiet 계산은 끈 손절 회차를 notify:false로 더하고 신저점 손절 시작은 켤 때만 넣는다',()=>{
+  const ctx=load(),f=futures(),before=JSON.stringify(f);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[]);
+  const all=plain(ctx.buildTradeAlertRules({futures:f},null,true));
+  assert.deepEqual(all.map(r=>[r.label,r.notify]),[['달러선물 손절 1회',false],['달러선물 손절 2회',false],['달러선물 손절 3회',false]]);
+  assert.equal(JSON.stringify(f),before);
+  f.rebuy.notify={cuts:true,cutsOverrides:{1:false}};
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null,true)).map(r=>[r.label,r.notify]),[['달러선물 손절 1회',undefined],['달러선물 손절 2회',false],['달러선물 손절 3회',undefined]]);
+});

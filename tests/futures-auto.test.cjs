@@ -259,3 +259,18 @@ test('회차를 체결해도 시세가 같으면 남은 회차의 가격·계약
   assert.deepEqual(open(f),[[1362,1],[1380,1]]);
   assert.equal(f.levels.reduce((n,l)=>n+l.tranches.length,0),3,'총 계약 수는 그대로');
 });
+
+test('이동평균 종료 계획의 quiet 계산은 끈 미완료 회차를 더하고 같은 회차·가격에 켠 계약이 있으면 켠 규칙만 둔다',()=>{
+  const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config());f.notify={levels:false};
+  const before=JSON.stringify(f);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[]);
+  const all=plain(ctx.buildTradeAlertRules({futures:f},null,true));
+  assert.deepEqual(all.map(r=>[r.targetPrice,r.notify]),[[1320,false],[1340,false],[1360,false],[1380,false]]);
+  assert.equal(JSON.stringify(f),before);
+  const same=pending(f).filter(x=>x.t.price===1340);assert.ok(same.length>1,'같은 가격의 여러 계약');
+  same[1].t.notify=true;
+  const mixed=plain(ctx.buildTradeAlertRules({futures:f},null,true));
+  assert.deepEqual(mixed.filter(r=>r.targetPrice===1340).map(r=>r.notify),[undefined],'켠 계약이 있으면 quiet 중복 없이 켠 규칙 하나');
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),mixed.filter(r=>r.notify===undefined));
+  pending(f).forEach(x=>x.t.completed=true);assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null,true)),[]);
+});
