@@ -147,9 +147,11 @@ function notice(){
 function renderNotice(box,download){
   const n=notice(),btn=(text,fn)=>Object.assign(document.createElement("button"),{type:"button",className:"btn mini",textContent:text,onclick:fn});
   box.hidden=!n;if(!n)return;
-  box.replaceChildren(...(n.kind==="choose"?[`분할매수·자산 기록이 이 기기와 저장소에서 다릅니다. 이 기기: ${n.local} / 저장소: ${n.remote}. 어느 쪽을 쓸까요? 고르지 않은 쪽은 이 기기에 보관합니다.`,
-    btn("저장소 기록 사용",()=>choose("remote")),btn("이 기기 기록 사용",()=>choose("local"))]
-    :[`다른 기기와 같은 칸을 함께 고친 ${n.count}곳은 나중에 저장한 값을 썼습니다. 이전 값은 이 기기에 보관했습니다.`,btn("보관 기록 내려받기",download),btn("확인",()=>{localStorage.removeItem(A_NOTICE_KEY);emit("recovery");})]));
+  // 글자는 한 문단, 버튼은 그 아래 줄에 모은다(버튼이 글자 줄에 끼어 줄 간격이 벌어지지 않게).
+  const show=(text,...buttons)=>{const p=Object.assign(document.createElement("p"),{textContent:text}),row=Object.assign(document.createElement("div"),{className:"notice-actions"});row.append(...buttons);box.replaceChildren(p,row);};
+  if(n.kind==="choose")show(`분할매수·자산 기록이 이 기기와 저장소에서 다릅니다. 이 기기: ${n.local} / 저장소: ${n.remote}. 어느 쪽을 쓸까요? 고르지 않은 쪽은 이 기기에 보관합니다.`,
+    btn("저장소 기록 사용",()=>choose("remote")),btn("이 기기 기록 사용",()=>choose("local")));
+  else show(`다른 기기와 같은 칸을 함께 고친 ${n.count}곳은 나중에 저장한 값을 썼습니다. 이전 값은 이 기기에 보관했습니다.`,btn("보관 기록 내려받기",download),btn("확인",()=>{localStorage.removeItem(A_NOTICE_KEY);emit("recovery");}));
 }
 async function syncAssets(beforePriceCollection=false){
   const cfg=assetConfig();

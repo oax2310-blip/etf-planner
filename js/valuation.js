@@ -366,6 +366,9 @@ function renderAiSubscription(){
 aiControlIds.forEach(id=>el(id).addEventListener("input",()=>{ document.querySelectorAll("[data-ai-preset]").forEach(button=>button.classList.toggle("active",false)); el("aiPresetLabel").textContent="직접 조정"; renderAiSubscription(); }));
 document.querySelectorAll("[data-ai-preset]").forEach(button=>button.addEventListener("click",()=>{ for(const [id,value] of Object.entries(aiPresetValues[button.dataset.aiPreset])){ const node=el(id); if(node.dataset.sliderMax) node.max=node.dataset.sliderMax; node.value=value; } document.querySelectorAll("[data-ai-preset]").forEach(b=>b.classList.toggle("active",b===button)); el("aiPresetLabel").textContent=aiPresetLabels[button.dataset.aiPreset]; renderAiSubscription(); }));
 renderAiSubscription();
+// 위 메뉴가 화면보다 길면 끝까지 밀기 전까지 오른쪽 끝을 흐리게 해 메뉴가 더 있음을 보인다(css/valuation.css .nav-links.more).
+const navLinks=el("navLinks"),navMore=()=>navLinks.classList.toggle("more",navLinks.scrollLeft+navLinks.clientWidth<navLinks.scrollWidth-2);
+navLinks.addEventListener("scroll",navMore,{passive:true}); window.addEventListener("resize",navMore); navMore();
 document.querySelectorAll(".mobile-fold").forEach(button=>button.addEventListener("click",()=>{
   const expanded=button.getAttribute("aria-expanded")!=="true";
   button.setAttribute("aria-expanded",String(expanded));

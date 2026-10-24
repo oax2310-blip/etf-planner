@@ -235,9 +235,10 @@ test('두 기기가 동기화 사이에 다른 종목을 고쳐도 둘 다 올�
   assert.equal(store.doc.allocation.groups[0].items[0].amount,170);assert.equal(store.recovery().at(-1).data.groups[0].items[0].amount,160);
   assert.equal(store.notice.kind,'merged');assert.equal(store.notice.count,1);
   const box={hidden:true,replaceChildren(...parts){this.parts=parts;}},buttons=[];
-  context.document.createElement=()=>{const b={};buttons.push(b);return b;};let downloaded=0;
+  context.document.createElement=tag=>{const node={tag,children:[],append(...kids){this.children.push(...kids);}};if(tag==='button')buttons.push(node);return node;};let downloaded=0;
   store.renderNotice(box,()=>downloaded++);
-  assert.equal(box.hidden,false);assert.match(box.parts[0],/같은 칸을 함께 고친 1곳/);assert.deepEqual(clone(buttons.map(b=>b.textContent)),['보관 기록 내려받기','확인']);
+  assert.equal(box.hidden,false);assert.equal(box.parts[0].tag,'p');assert.match(box.parts[0].textContent,/같은 칸을 함께 고친 1곳/);
+  assert.equal(box.parts[1].className,'notice-actions','버튼은 글자 아래 줄에 모은다');assert.deepEqual(box.parts[1].children,buttons);assert.deepEqual(clone(buttons.map(b=>b.textContent)),['보관 기록 내려받기','확인']);
   buttons[0].onclick();buttons[1].onclick();assert.equal(downloaded,1);assert.equal(store.notice,null,'확인하면 안내를 지운다');
   store.renderNotice(box,()=>{});assert.equal(box.hidden,true);
 });
