@@ -243,3 +243,33 @@ test('재매수 손절 알림은 60회 이후의 회차도 생성하고 완료 �
   assert.equal(rules.at(-1).id,'trade:rebuy:demo-rebuy:cut:99');assert.ok(Math.abs(rules.at(-1).targetPrice-2000)<1e-6);assert.equal(JSON.stringify(data),before);
   r.cuts[99]={shares:10,price:2000};rules=plain(ctx.buildTradeAlertRules(data,null));assert.equal(rules.length,99);assert.equal(rules.some(x=>x.id==='trade:rebuy:demo-rebuy:cut:99'),false);
 });
+
+test('quiet 계산은 알림을 끈 미완료 매매 회차를 notify:false로 더하고 켠 규칙·화면 계산은 그대로 둔다',()=>{
+  const ctx=load(),p=sale({notify:{start:true},checked:[false,false,true]}),data={plans:[p]},before=JSON.stringify(data);
+  const on=plain(ctx.buildTradeAlertRules(data,quote())),all=plain(ctx.buildTradeAlertRules(data,quote(),true));
+  assert.deepEqual(on.map(r=>r.label),['분할매도 첫 매도']);
+  assert.deepEqual(all.map(r=>[r.label,r.notify]),[['분할매도 첫 매도',undefined],['분할매도 2회',false]],'완료 회차는 quiet에도 넣지 않는다');
+  assert.deepEqual(all[0],on[0],'켠 규칙은 quiet 여부와 관계없이 같은 모양');
+  assert.equal(JSON.stringify(data),before,'quiet 계산도 기록을 바꾸지 않는다');
+  ctx.setTradePlanAll(p,true);
+  assert.deepEqual(all.map(({notify,...rule})=>rule),plain(ctx.buildTradeAlertRules(data,quote())),'알림을 켜고 꺼도 같은 id·기준·이력');
+});
+test('quiet 계산은 재매수 손절·재매수 회차만 더하고 체결로 끝나지 않는 신저점 이탈은 켤 때만 넣는다',()=>{
+  const ctx=load(),r=rebuy({cuts:[{shares:10,price:9900}]}),data={rebuy:{items:[r]}},before=JSON.stringify(data);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules(data,null)),[]);
+  const all=plain(ctx.buildTradeAlertRules(data,null,true));
+  assert.ok(all.length>0&&all.every(x=>x.notify===false));
+  assert.ok(!all.some(x=>x.label.includes('이탈')));assert.ok(!all.some(x=>x.label==='재매수 손절 1회'),'완료한 손절 회차는 제외');
+  assert.ok(all.some(x=>x.label==='재매수 손절 2회')&&all.some(x=>x.label==='재매수 25선'));
+  assert.equal(JSON.stringify(data),before,'quiet 계산도 기록을 바꾸지 않는다');
+  ctx.setTradeRebuyAll(r,'cuts',true);ctx.setTradeRebuyAll(r,'buys',true);
+  assert.deepEqual(all.map(({notify,...x})=>x),plain(ctx.buildTradeAlertRules(data,null)).filter(x=>!x.label.includes('이탈')));
+});
+test('quiet 계산은 달러선물 계약 회차만 더하고 같은 가격에 켠 계약이 있으면 켠 규칙 하나로 둔다',()=>{
+  const ctx=load(),f=futurePlan(),l=f.levels[0],get=()=>plain(ctx.buildTradeAlertRules({futures:f},null,true));
+  assert.deepEqual(get().map(r=>[r.targetPrice,r.notify]),[[1400,false],[1410,false],[1420,false]],'계약 수 없는 옛 기준선은 quiet에 넣지 않는다');
+  ctx.setTradeFutureTrancheAlert(l,1,true);
+  assert.deepEqual(get().map(r=>[r.id,r.notify]),[['trade:future:0',false],['trade:future:0:2',undefined],['trade:future:0:3',false]]);
+  l.contracts=6;l.tranches=[0,0,1,1,2,2].map(slot=>({slot,completed:false,notify:false}));l.tranches[3].notify=true;l.tranches[4].completed=l.tranches[5].completed=true;
+  assert.deepEqual(get().map(r=>[r.id,r.notify]),[['trade:future:0',false],['trade:future:0:2',undefined]],'완료한 가격 회차는 제외');
+});

@@ -911,3 +911,17 @@ test('체결 연동: 여러 계좌 수량 수정 시 계좌별 반올림으로 �
   assert.equal(alloc.trades[key].items.reduce((n,e)=>n+e.shares,0),9,'재수정해도 합계 유지');
   c.revertTrade(alloc,key);assert.deepEqual([byId(alloc,'a').shares,byId(alloc,'b').shares],[10,5],'계좌마다 정확히 원래 보유량 복원');
 });
+
+test('분할매수 quiet 계산은 알림을 끈 미완료 회차를 notify:false로 더하고 매수대기·완료 회차는 넣지 않는다', () => {
+  const lines={currency:'USD',lines:{names:['25일선','32일선'],budget:40},notify:{keys:{'25일선:1':true}}};
+  const stages={currency:'USD',notify:{stages:true},stages:[{id:'s1',price:30,amount:3,done:true},{id:'s2',price:31,amount:3,notify:false},{id:'s3',price:32,amount:3}]};
+  const assets={allocation:{groups:[{items:[{id:'a',ticker:'AAA',buyPlan:lines},{id:'b',ticker:'BBB',buyPlan:stages},{id:'w',ticker:'CCC',buyPlan:{wait:{line:'60일선'},currency:'USD'}}]}]}};
+  const prices={stocks:{AAA:{kind:'해외',ma:{'25일선':100,'32일선':130}},BBB:{kind:'해외'},CCC:{kind:'해외',close:105,ma:{'60일선':100}}}},before=JSON.stringify(assets);
+  const on=c.purchaseAlertRules(assets,prices),all=c.purchaseAlertRules(assets,prices,true);
+  assert.deepEqual(on.map(r=>r.id),['trade:buy:a:25일선:1','trade:buy:b:s3']);
+  assert.deepEqual(all.map(r=>[r.id,r.notify]),[['trade:buy:a:25일선:0',false],['trade:buy:a:25일선:1',undefined],['trade:buy:a:25일선:2',false],['trade:buy:a:32일선:0',false],['trade:buy:b:s2',false],['trade:buy:b:s3',undefined]]);
+  assert.deepEqual(all.filter(r=>r.notify===undefined),on,'켠 규칙은 quiet 여부와 관계없이 같은 모양');
+  assert.equal(JSON.stringify(assets),before,'quiet 계산도 기록을 바꾸지 않는다');
+  lines.notify={stages:true};stages.stages[1].notify=true;
+  assert.deepEqual(all.map(({notify,...r})=>r),c.purchaseAlertRules(assets,prices),'알림을 켜고 꺼도 같은 id·기준·이력');
+});
