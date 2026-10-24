@@ -3,7 +3,7 @@ let editingAlertId = null;
 let alertsInitialized = false;
 // 조회·창 열기는 state.alerts를 만들거나 저장 기록을 바꾸지 않는다. DOM 없이 불러 쓰므로 함수 밖에서 화면을 건드리지 않는다.
 const alertRules = () => Array.isArray(state.alerts?.rules) ? state.alerts.rules.filter(r=>r&&typeof r==="object") : [];
-// 기본 OFF. alerts.krOpenReminder=true면 밤사이 미국 종목 신호를 한국장 09:45 이후 기준별 한 번 재발송한다.
+// 기본 OFF. alerts.krOpenReminder=true면 밤사이 미국 종목 신호를 한국장 09:20 이후 첫 국내 조회(보통 09:45쯤)에 기준별 한 번 재발송한다.
 // 발송·휴장 확인·대기 이력은 비공개 수집 작업에서 관리한다.
 const krOpenReminderEnabled = () => state.alerts?.krOpenReminder===true;
 function setKrOpenReminder(enabled){

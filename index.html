@@ -15,11 +15,11 @@
   <title>매매 플래너 (독립형)</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=274"></script>
+  <script src="js/theme.js?v=275"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=274" />
-  <link rel="stylesheet" href="css/purchases.css?v=274" />
-  <script src="js/repo-security.js?v=274" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=275" />
+  <link rel="stylesheet" href="css/purchases.css?v=275" />
+  <script src="js/repo-security.js?v=275" defer></script>
 </head>
 <body>
   <header class="top">
@@ -209,7 +209,7 @@
       <p class="hint">밤사이 발생한 미국 종목 알림을 한국장 <b>오전 9시 45분쯤</b>에 기준별로 한 번 더 받습니다. 미국 ETF를 추종하는 국내 ETF를 거래할 때 켜세요.</p>
       <p class="hint">새 신호가 없거나 기준을 OFF·삭제·완료 처리하면 보내지 않습니다. 주말·한국장 휴장일은 건너뛰며, 예약 실행에 따라 늦어질 수 있습니다. 재알림에는 신호 당시 미국 시세를 표시합니다.</p>
     </section>
-    <p class="alert-explanation">국내 주식·ETF는 09:45부터 15:20 전까지 알립니다(09:45 첫 조회, 이후 대략 30분마다, 마지막 예약 15:10). 16:40 종가는 이동평균·평가액만 갱신합니다. 미국 장중은 1시간 20분마다, 비트코인 BTC-USD는 저녁·주말에도 약 3시간마다 수집한 시세를 비교합니다. 달러선물은 국내 주식 알림 시간 제한을 적용하지 않습니다. 수집 사이의 순간적인 도달은 놓칠 수 있습니다. 매도·손절·달러선물 매수는 기준가 이하, 재매수는 기준가 이상, 신저점 이탈은 기준가 미만, 분할매수는 이동평균선 돌파 회차 가격 이상, 매수대기는 선택한 이동평균선 이하에서 알립니다(기존 회차는 계획 방향을 따름). 같은 조건에 머물면 반복하지 않습니다.</p>
+    <p class="alert-explanation">국내 주식·ETF는 09:20부터 15:20 전까지 알립니다(첫 조회는 보통 09:45쯤, 이후 약 30분마다, 마지막 조회는 15:10 전). 16:40 종가는 이동평균·평가액만 갱신합니다. 미국 장중은 1시간 20분마다, 비트코인 BTC-USD는 저녁·주말에도 약 3시간마다 수집한 시세를 비교합니다. 달러선물은 국내 주식 알림 시간 제한을 적용하지 않습니다. 수집 사이의 순간적인 도달은 놓칠 수 있습니다. 매도·손절·달러선물 매수는 기준가 이하, 재매수는 기준가 이상, 신저점 이탈은 기준가 미만, 분할매수는 이동평균선 돌파 회차 가격 이상, 매수대기는 선택한 이동평균선 이하에서 알립니다(기존 회차는 계획 방향을 따름). 같은 조건에 머물면 반복하지 않습니다.</p>
     <details class="trade-alert-advanced"><summary>직접 추가 알림 (선택)</summary>
     <p class="hint">계획 외의 N일선·N주선·N월선은 따로 등록할 수 있습니다. 허용 범위 진입·위아래 통과를 감지합니다.</p>
     <div class="alert-section-head"><h3>알림 규칙 <small id="alertsCount">0개</small></h3><button class="btn primary mini" id="addAlertBtn" type="button">＋ 추가</button></div>
@@ -268,31 +268,31 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=274" defer></script>
-  <script src="js/data-validation.js?v=274" defer></script>
-  <script src="js/core.js?v=274" defer></script>
-  <script src="js/price-collection.js?v=274" defer></script>
-  <script src="js/sync.js?v=274" defer></script>
-  <script src="js/prices.js?v=274" defer></script>
-  <script src="js/assets-calc.js?v=274" defer></script>
-  <script src="js/assets-store.js?v=274" defer></script>
-  <script src="js/alloc-link.js?v=274" defer></script>
-  <script src="js/stock-names.js?v=274" defer></script>
-  <script src="js/item-search.js?v=274" defer></script>
-  <script src="js/purchases.js?v=274" defer></script>
-  <script src="js/trade-alerts.js?v=274" defer></script>
-  <script src="js/plans.js?v=274" defer></script>
-  <script src="js/futures.js?v=274" defer></script>
-  <script src="js/futures-plan.js?v=274" defer></script>
-  <script src="js/futures-rebuy.js?v=274" defer></script>
-  <script src="js/rebuy.js?v=274" defer></script>
-  <script src="js/alerts.js?v=274" defer></script>
-  <script src="js/alert-target.js?v=274" defer></script>
-  <script src="js/alert-history-store.js?v=274" defer></script>
-  <script src="js/alert-history.js?v=274" defer></script>
-  <script src="js/push.js?v=274" defer></script>
-  <script src="js/member-link.js?v=274" defer></script>
-  <script src="js/member-go.js?v=274" defer></script>
-  <script src="js/start.js?v=274" defer></script>
+  <script src="js/ma-ladder.js?v=275" defer></script>
+  <script src="js/data-validation.js?v=275" defer></script>
+  <script src="js/core.js?v=275" defer></script>
+  <script src="js/price-collection.js?v=275" defer></script>
+  <script src="js/sync.js?v=275" defer></script>
+  <script src="js/prices.js?v=275" defer></script>
+  <script src="js/assets-calc.js?v=275" defer></script>
+  <script src="js/assets-store.js?v=275" defer></script>
+  <script src="js/alloc-link.js?v=275" defer></script>
+  <script src="js/stock-names.js?v=275" defer></script>
+  <script src="js/item-search.js?v=275" defer></script>
+  <script src="js/purchases.js?v=275" defer></script>
+  <script src="js/trade-alerts.js?v=275" defer></script>
+  <script src="js/plans.js?v=275" defer></script>
+  <script src="js/futures.js?v=275" defer></script>
+  <script src="js/futures-plan.js?v=275" defer></script>
+  <script src="js/futures-rebuy.js?v=275" defer></script>
+  <script src="js/rebuy.js?v=275" defer></script>
+  <script src="js/alerts.js?v=275" defer></script>
+  <script src="js/alert-target.js?v=275" defer></script>
+  <script src="js/alert-history-store.js?v=275" defer></script>
+  <script src="js/alert-history.js?v=275" defer></script>
+  <script src="js/push.js?v=275" defer></script>
+  <script src="js/member-link.js?v=275" defer></script>
+  <script src="js/member-go.js?v=275" defer></script>
+  <script src="js/start.js?v=275" defer></script>
 </body>
 </html>
