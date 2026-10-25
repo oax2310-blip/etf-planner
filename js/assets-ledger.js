@@ -9,10 +9,10 @@ function ledgerBalanceGaps(y, m){
 // 맨 위 카드 누적 그래프(HTML 글자). 너비는 그릴 때의 카드 안쪽 너비라 PC에서도 낮고 넓게 그린다. 자료는 ledger-benchmark.js ledgerChartData.
 // 선·영역·점만 SVG로 그리고 눈금선·축·월 글자는 HTML로 얹는다(삼성 인터넷 등 웹페이지 다크 색 변환이 SVG 글자·선 색을 바꾸지 않아도 읽히게).
 // won이면 월 실현손익 누적(원)만, 아니면 내 누적 수익률과 S&P 500 누적(1월부터 이어진 값은 점선, 연간 값만 있는 해는 점)을 그린다.
-// 선물·옵션은 마지막 기록 달에서 점선(손실 빨강·이익 파랑)으로 더해 실제 합계(채운 점)에 닿게 한다.
+// 월별 선물·옵션은 그 달 선에 들어 있고, 달을 모르는 연 합계만 마지막 기록 달에서 점선(손실 빨강·이익 파랑)으로 더해 실제 합계(채운 점)에 닿게 한다.
 const ledgerAxisWon=v=>v===0?"0":Math.abs(v)>=1e8?`${nf1.format(v/1e8)}억`:`${nf0.format(v/1e4)}만`;
 function ledgerChartHtml(c, won, width){
-  const line=won?c.won:c.rate||[], sp=won?[]:c.sp, end=line[line.length-1], fut=won?c.futures:c.futuresRate;
+  const line=won?c.won:c.rate||[], sp=won?[]:c.sp, end=line[line.length-1], fut=won?c.rest:c.restRate;
   if(!end)return "";
   const final=fut!==null?end.v+fut:end.v, vals=[0,...line.map(p=>p.v),...sp.map(p=>p.v),final];
   let lo=Math.min(...vals), hi=Math.max(...vals);const pad=(hi-lo||Math.abs(hi)||1)*.08;lo-=pad;hi+=pad;
@@ -36,9 +36,8 @@ function ledgerChartHtml(c, won, width){
 // 맨 위: 연도 칩 한 줄(가로로 밀기, 끝에 연도 추가) + 카드(누적 수익률·S&P 500 비교 또는 실현손익 금액, 그래프, 월 손익 합 + 선물·옵션 = 누적, 요약 3칸).
 // 수익률/금액 선택은 화면 설정(ui.ledgerChart)이라 이 기기에만 기억하고 기록에 넣지 않는다.
 let ledgerChartWidth=0, ledgerResizeTimer=0;
-function ledgerTopHtml(y, ys, years){
-  loadSp500();
-  const c=ledgerChartData(y,new Date(),sp500Data), won=ui.ledgerChart==="won", view=el("ledgerView");
+function ledgerTopHtml(y, ys, years, c){
+  const won=ui.ledgerChart==="won", view=el("ledgerView");
   ledgerChartWidth=Math.round(Math.min(1000,Math.max(280,(Number(view.clientWidth)||361)-34)));
   const first=c.from+1, span=c.month?`${first<c.month?`${first}~`:""}${c.month}월`:"", noRate=!won&&c.month&&!c.rate;
   const em=(text,good)=>`<em class="${good?"up":"down"}">${text}</em>`;
@@ -46,14 +45,15 @@ function ledgerTopHtml(y, ys, years){
     :won?`실현손익 ${em(wonA(c.pnl),c.pnl>=0)}`
     :c.diff===null?`내 누적 ${em(pct2(c.total),c.total>=0)}`
     :Math.abs(c.diff)<.005?"S&amp;P 500과 같아요":`S&amp;P 500보다 ${em(`${pct2(Math.abs(c.diff),"%p").replace("+","")} ${c.diff>0?"높아요":"낮아요"}`,c.diff>0)}`;
-  const keys=!c.month||noRate?"":won?`<span class="ledger-key"><i></i>월 손익 누적</span>${c.futures!==null?`<span class="ledger-key"><i class="end"></i>선물·옵션 포함</span>`:""}`
+  const keys=!c.month||noRate?"":won?`<span class="ledger-key"><i></i>${c.futures!==null&&c.rest===null?"실현손익 + 선물·옵션 누적":"월 손익 누적"}</span>${c.rest!==null?`<span class="ledger-key"><i class="end"></i>선물·옵션 연 합계 포함</span>`:""}`
     :`<span class="ledger-key"><i></i>내 누적<b>${pct2(c.total)}</b></span><span class="ledger-key"><i class="sp"></i>S&amp;P 500<b>${c.spAt!==null?pct2(c.spAt):Number(y.year)>new Date().getFullYear()?"—":"반영 전"}</b></span>`;
-  const end=(won?c.won:c.rate||[]).at(-1), fut=won?c.futures:c.futuresRate, sum=won?eok:pct2, b=(v,t)=>`<b class="${v<0?"neg":""}">${t}</b>`;
-  const calc=end&&fut!==null?`<div class="ledger-calc"><span>월 손익 합 ${b(end.v,sum(end.v))}</span><span><i>+</i> 선물·옵션 ${b(fut,won?eok(fut):pct2(fut,"%p"))}</span><span><i>=</i> ${won?"":"누적 "}${b(end.v+fut,sum(end.v+fut))}</span></div>`:"";
+  // 계산 줄: 실현손익만의 합 + 선물·옵션(월별 + 연 합계) = 누적. 수익률은 나눌 수 없는 달(총자산 빈 달)이 있으면 그리지 않는다.
+  const b=(v,t)=>`<b class="${v<0?"neg":""}">${t}</b>`, parts=won?[c.monthPnl,c.futures,c.pnl]:[c.monthRate,c.futuresRate,c.total];
+  const calc=c.month&&c.futures!==null&&parts.every(v=>v!==null)?`<div class="ledger-calc"><span>월 손익 합 ${b(parts[0],won?eok(parts[0]):pct2(parts[0]))}</span><span><i>+</i> 선물·옵션 ${b(parts[1],won?eok(parts[1]):pct2(parts[1],"%p"))}</span><span><i>=</i> ${won?"":"누적 "}${b(parts[2],won?eok(parts[2]):pct2(parts[2]))}</span></div>`:"";
   const info=!c.month?"달마다 실현손익과 계좌 잔액을 넣으면 누적 그래프를 그립니다."
     :noRate?"아래 표에서 그 달 계좌 잔액을 넣으면 그래프를 그립니다. ‘금액’에서는 실현손익 누적을 볼 수 있습니다."
-    :won?"선물·옵션 손익은 한 해 합계로 기록해 마지막 기록 달에 더합니다."
-    :`S&amp;P 500은 달러·배당 재투자, 내 수익률은 원화 실현손익 기준${c.sp.length&&c.sp[0].m!==1?" · 월말 값이 없는 해는 S&amp;P 500 연간 값만 점으로 표시":""}`;
+    :won?(c.rest!==null?"연도 설정의 선물·옵션(달을 모르는 금액)은 마지막 기록 달에 더합니다. 달마다 넣으면 그 달에 반영합니다.":"실현손익과 선물·옵션을 기록한 달에 더합니다.")
+    :`S&amp;P 500은 달러·배당 재투자, 내 수익률은 원화 실현손익 기준${c.sp.length&&c.sp[0].m!==1?" · 월말 값이 없는 해는 S&amp;P 500 연간 값만 점으로 표시":""}${c.rest!==null?" · 선물·옵션 연 합계는 마지막 기록 달에 더함":""}`;
   const cell=(label,value,neg)=>`<div><span>${label}</span><b class="${neg?"neg":""}">${value}</b></div>`;
   return `<h1 class="sr-only">월별 손익</h1>
     <div class="ledger-years" role="group" aria-label="연도 선택">${years.map(x=>`<button class="chip${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}" aria-pressed="${x===y}">${escA(x.year)}</button>`).join("")}<button class="chip add" id="addYear" type="button" aria-label="연도 추가" title="연도 추가">＋</button></div>
@@ -77,14 +77,16 @@ function renderLedger(){
   // 잔액이 전달과 똑같은 달(엑셀에서 전달 값을 그대로 둔 것일 수 있음)은 작게 표시
   const sameAsPrev=m=>{ const prev=y.months.find(x=>x.m===m.m-1), values=r=>accounts.map(x=>finite(r?.balances?.[x.index]));return Array.isArray(m.balances)&&values(m).some(v=>v!==null)&&JSON.stringify(values(m))===JSON.stringify(values(prev)); };
   const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=monthPnl(m), r=p!==null&&t.total>0?p/t.total*100:null, gaps=m?ledgerBalanceGaps(y,m).length:0;
-    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${m?.pnlEntries?.length?`<small>내역 ${m.pnlEntries.length}건</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${gaps?`<small class="same-tag">빈 계좌 ${gaps}개 · 확인</small>`:m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
+    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${m?.pnlEntries?.length?`<small>내역 ${m.pnlEntries.length}건</small>`:""}${finite(m?.futures)!==null?`<small class="${m.futures<0?"neg":""}">선물·옵션 ${eok(m.futures)}</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${gaps?`<small class="same-tag">빈 계좌 ${gaps}개 · 확인</small>`:m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
   const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}"><span>${escA(x.year)}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}</span><span>${t.last?wonA(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
-  view.innerHTML=`${ledgerTopHtml(y,ys,years)}
+  loadSp500();
+  const chart=ledgerChartData(y,new Date(),sp500Data), monthFutures=y.months.filter(m=>finite(m.futures)!==null).length;
+  view.innerHTML=`${ledgerTopHtml(y,ys,years,chart)}
     <div class="section-heading ledger-sec"><h2>${escA(y.year)}년 월별</h2><span>줄을 누르면 그 달 기록을 고칩니다 · 계좌 ${accounts.length}개</span><button class="btn mini" type="button" id="editYear">연도 설정</button></div>
     <section class="card ledger-table"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>
       ${Array.from({length:12},(_,i)=>monthRow(i+1)).join("")}
-      <button class="ledger-row foot" type="button" id="editFutures" aria-label="${escA(y.year)}년 선물·옵션 손익 수정"><span>선물·<wbr>옵션<small>수정</small></span><span class="${ys.futures<0?"neg":""}">${ys.futures!==null?wonA(ys.futures):"입력"}</span><span>${ys.futures!==null&&ys.last?.total>0?pc(ys.futures/ys.last.total*100):"—"}</span><span></span></button>
-      <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}</span><span>${ys.annual!==null?`<small>연환산 ${pc(ys.annual)} · 선물·옵션 제외</small>`:""}</span></div></section>
+      <button class="ledger-row foot" type="button" id="editFutures" aria-label="${escA(y.year)}년 선물·옵션 손익 수정"><span>선물·<wbr>옵션<small>수정</small></span><span class="${ys.futures<0?"neg":""}">${ys.futures!==null?wonA(ys.futures):"입력"}${monthFutures?`<small>월별 ${monthFutures}개월${ys.futuresYear!==null?` + 연 합계 ${wonA(ys.futuresYear)}`:""}</small>`:""}</span><span>${pc(chart.futuresRate)}</span><span></span></button>
+      <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}</span><span>${ys.annual!==null?`<small>연환산 ${pc(ys.annual)}</small><small>선물·옵션 제외</small>`:""}</span></div></section>
     ${y.note?`<p class="footnote">${escA(y.note)}</p>`:""}
     <div class="section-heading"><h2>연도별 요약</h2><span>연 수익률 · 선물·옵션 포함</span></div>
     <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연평균 수익률 <small>${avg.years}개 연도의 연 수익률 평균${years.some(x=>Number(x.year)===new Date().getFullYear()&&yearSummary(x).rate!==null)?" · 올해 포함":""}</small></span><strong class="${avg.rate<0?"neg":""}">${pc(avg.rate)}</strong></div>${sp500Block(years)}</section>`;
@@ -150,6 +152,7 @@ function openMonth(y, n){
     <div class="dialog-wide pnl-broker-grid"><section class="pnl-broker"><h3>신한</h3>${input(0,"기본계좌+ISA (원)")}${input(1,"연금저축 (원)")}${input(2,"배당 (원)")}</section>
       <section class="pnl-broker"><h3>키움증권</h3>${input(3,"실현손익 (원)")}${input(4,"배당 (달러)")}<label class="field"><span id="dividendFxLabel"></span><input name="dividendFx" ${moneyAttrs} readonly placeholder="평균선 필요"><small class="field-hint" id="dividendFxHint"></small></label><div class="pnl-conversion"><span>배당 원화 환산액</span><output id="kiwoomDividendWon"></output></div><button class="btn mini ghost" type="button" id="refreshDividendFx">125개월 평균선 갱신</button></section></div>
     <details class="dialog-wide pnl-other" id="pnlOther"${extra.length?" open":""}><summary>다른 증권사·항목 추가</summary><div id="pnlEntryRows"></div><button class="btn mini" type="button" id="addPnlEntry">＋ 내역</button></details>
+    <label class="field dialog-wide"><span>선물·옵션 손익 (원)</span><input name="futures" ${moneyAttrs} value="${moneyText(m.futures)}" placeholder="미입력"><small class="field-hint">그달 선물·옵션 실현손익입니다. 실현손익 합계와 따로 더해 그래프·연 수익률에 반영하고 연환산에서는 뺍니다.${finite(y.futures)!==null?` 연도 설정에 달을 모르는 선물·옵션 ${escA(wonA(y.futures))}이 따로 있어 마지막 기록 달에 더합니다. 달마다 나눠 넣었다면 그 값은 비워 주세요.`:""}</small></label>
     <h3 class="dialog-wide pnl-balance-title">계좌 잔액 (원)</h3>
     ${accounts.map(({account,index})=>`<label class="field"><span>${escA(account.name)}</span><input name="bal${index}" ${moneyAttrs} value="${moneyText(bal[index])}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 0원으로 더해 이달 수익률이 높게 나옵니다(해지했으면 0).</small>`:""}</label>`).join("")}
     ${!y.accounts.length?`<label class="field"><span>총자산 (원)</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`:""}
@@ -195,7 +198,7 @@ function openMonth(y, n){
   draw();
   el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>x.m!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault();update();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
-    const t={...m,m:n}; setNum(t,"pnl",f.pnl.value);delete t.pnlEntries;delete t.balances;delete t.total;
+    const t={...m,m:n}; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;delete t.total;
     const rows=entries();
     if(rows.length){if(rows.some(r=>!String(r.broker||"").trim())){alert("내역의 증권사 이름을 넣어 주세요.");return;}if(pnlEntriesTotal(rows)===null){alert("내역의 금액과 원화 입금액을 모두 넣어 주세요.");return;}t.pnlEntries=rows.map(r=>({...r}));t.pnl=pnlEntriesTotal(rows);}
     if(y.accounts.length){ const b=y.accounts.map((acc,i)=>acc.loan?finite(bal[i]):numIn(f[`bal${i}`].value)); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) t.balances=b; }
@@ -207,6 +210,9 @@ function openMonth(y, n){
 function openYear(y){
   const f=el("yearForm"); el("yearTitle").textContent=`${y.year}년 설정`;
   f.futures.value=assetNumberText(y.futures); f.futures.setCustomValidity(""); f.note.value=y.note||"";
+  // 월별 선물·옵션(월 입력 창)과 달을 모르는 연 합계(이 칸)는 함께 더한다(assets-calc.js yearSummary).
+  const monthly=y.months.filter(m=>finite(m.futures)!==null);
+  el("yearFuturesHint").textContent=`달마다 넣으려면 월 입력 창의 선물·옵션 칸을 쓰세요. 이 칸 금액은 마지막 기록 달에 더합니다.${monthly.length?` 월별 입력 ${monthly.length}개월 합계 ${wonA(monthly.reduce((t,m)=>t+Number(m.futures),0))}.`:""}`;
   // 숨긴 옛 계좌·잔액은 저장 호환을 위해 보존한다. 새 계좌에는 loan 필드를 만들지 않는다.
   const hidden=y.accounts.map((a,i)=>({from:i,name:a.name})).filter(r=>y.accounts[r.from].loan);
   let rows=ledgerAccounts(y).map(({account,index})=>({from:index,name:account.name}));

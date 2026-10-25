@@ -529,6 +529,19 @@ test('월별 손익: 옛 대출 계좌는 계산에서 빼고 월·연도·연�
   assert.equal(c.yearSummary({accounts: [], months: []}).annual, null);
 });
 
+test('월별 선물옵션은 그 달 총자산으로, 달을 모르는 연 합계는 마지막 총자산으로 나눠 연 수익률에 더하고 연환산에서는 뺀다',()=>{
+  const year={accounts:[],futures:-1000,months:[{m:1,pnl:1000,futures:-500,total:100000},{m:2,futures:2000,total:200000},{m:3,pnl:3000,total:300000}]},before=JSON.stringify(year);
+  const y=c.yearSummary(year);
+  assert.deepEqual([y.futures,y.futuresYear,y.monthPnl,y.pnl,y.months],[500,-1000,4000,4500,2],'선물옵션 = 월별 1,500 + 연 합계 −1,000');
+  near(y.rate,1+1-0.5+1-1000/300000*100,'실현손익 1%+1%, 월별 선물옵션 −0.5%+1%, 연 합계 ÷ 3월 총자산');
+  near(y.annual,(1+1)*12/2,'연환산은 실현손익만');
+  const only=c.yearSummary({accounts:[],months:[{m:1,futures:300,total:1000}]});
+  assert.deepEqual([only.futures,only.futuresYear,only.pnl,only.months],[300,null,300,0]);near(only.rate,30,'선물옵션만 있는 해');
+  assert.equal(c.yearSummary({accounts:[],months:[{m:1,pnl:10,total:1000},{m:2,futures:5}]}).rate,null,'선물옵션을 넣은 달의 총자산이 없으면 연 수익률을 계산하지 않는다');
+  assert.equal(c.yearSummary({accounts:[],months:[{m:1,pnl:10,total:1000}]}).futures,null,'선물옵션 기록이 없으면 null');
+  assert.equal(JSON.stringify(year),before,'계산만으로 기록을 바꾸지 않는다');
+});
+
 test('달러 배당은 적용 환율로 반올림하고 저장된 환산액과 과거 환율을 유지한다',()=>{
   assert.equal(c.pnlDollarKrw(12.75,1310),16703);
   assert.equal(c.pnlDollarKrw(-2,1310),-2620);

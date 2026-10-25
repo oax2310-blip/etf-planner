@@ -584,20 +584,24 @@ function monthTotals(year, m){
   bal.forEach((v,i)=>{if(!acc[i]?.loan)total+=finite(v)||0;});
   return {total,noLoan:total};
 }
-// 연 요약: 월 손익 ÷ 그 달 총자산을 합산하고, 선물옵션은 마지막 잔액의 총자산으로 나눈다.
-// 실현손익이 있는 달의 분모가 하나라도 없거나 0 이하면 해당 연 수익률은 null. 빈 해도 null(연평균에 0%로 섞지 않는다).
+// 연 요약: 월 손익 ÷ 그 달 총자산을 합산한다. 선물옵션은 달마다 넣은 값(m.futures)을 그 달 총자산으로 나눠 더하고,
+// 달을 모르는 연 합계(year.futures, 옛 기록 방식)는 마지막 잔액의 총자산으로 나눠 더한다. 두 방식은 함께 쓸 수 있으며 둘 다 합한다.
+// 실현손익·선물옵션이 있는 달의 분모가 하나라도 없거나 0 이하면 해당 연 수익률은 null. 빈 해도 null(연평균에 0%로 섞지 않는다).
+// futures = 월별 선물옵션 합 + 연 합계(둘 다 없으면 null), futuresYear = 연 합계만.
 // annual은 월 수익률 합 × 12 ÷ 실현손익 기록 개월 수(선물옵션 제외). rateNoLoan·annualNoLoan은 이전 호출부 호환 별칭이다.
 function yearSummary(year){
-  let pnl=0,rate=0,months=0,rated=0,interest=0,hasInterest=false,last=null;
+  let pnl=0,rate=0,months=0,rated=0,interest=0,hasInterest=false,last=null,monthFut=null,futRate=0,futRated=true;
   for(const m of [...(year?.months||[])].sort((a,b)=>a.m-b.m)){
-    const t=monthTotals(year,m), p=monthPnl(m);
+    const t=monthTotals(year,m), p=monthPnl(m), f=finite(m.futures);
     if(t.total!==null)last={m:m.m,...t};
     if(p!==null){pnl+=p;months++;if(t.total>0){rate+=p/t.total*100;rated++;}}
+    if(f!==null){monthFut=(monthFut||0)+f;if(t.total>0)futRate+=f/t.total*100;else futRated=false;}
     if(finite(m.interest)!==null){interest+=Number(m.interest);hasInterest=true;}
   }
-  const fut=finite(year?.futures), yearly=(months||fut!==null)&&rated===months&&(fut===null||last?.total>0)?rate+(fut!==null?fut/last.total*100:0):null;
+  const rest=finite(year?.futures), fut=monthFut===null&&rest===null?null:(monthFut||0)+(rest||0);
+  const yearly=(months||fut!==null)&&rated===months&&futRated&&(rest===null||last?.total>0)?rate+futRate+(rest!==null?rest/last.total*100:0):null;
   const annual=months&&rated===months?rate*12/months:null;
-  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, months, rate:yearly, rateNoLoan:yearly,
+  return {pnl:pnl+(fut||0), monthPnl:pnl, futures:fut, futuresYear:rest, months, rate:yearly, rateNoLoan:yearly,
     annual, annualNoLoan:annual, interest:hasInterest?interest:null, last};
 }
 // 연평균 수익률: 계산 가능한 해의 연 수익률(선물옵션 포함) 산술평균. 빈 해·분모가 부족한 해는 개수에서도 제외한다.
