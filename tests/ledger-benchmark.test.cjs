@@ -209,10 +209,10 @@ test('월별 선물·옵션: 그래프는 그 달에 더하고 달을 모르는 
   assert.equal(JSON.stringify(year),before,'기록은 바꾸지 않음');
 });
 
-test('월별 손익: 손익 칸에만 +/− 부호 버튼을 붙이고, 버튼은 포커스를 유지한 채 부호만 바꾸며 읽기 전용 칸은 건드리지 않는다',()=>{
-  // 숫자 키패드(inputmode=decimal)에 '-' 키가 없는 삼성 키보드·iPhone용. 금액은 가짜 값.
+test('월별 손익: 원 단위 손익 칸은 \'-\' 키가 있는 정수 키패드, 달러 내역 금액만 +/− 부호 버튼을 쓰고 버튼은 포커스를 유지한 채 부호만 바꾼다',()=>{
+  // 삼성 키보드는 inputmode=decimal 키패드에 '-' 키가 없고 numeric 키패드에는 있다. 금액은 가짜 값.
   const nodes=new Map(),listeners={},storage=new Map(),field=()=>({value:'',readOnly:false,setCustomValidity(){}});
-  const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},hidden:false,innerHTML:'',textContent:'',open:false,classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),setAttribute(){},getAttribute(){},showModal(){this.open=true;}});return nodes.get(id);};
+  const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},hidden:false,innerHTML:'',textContent:'',open:false,classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),setAttribute(){},getAttribute(){},focus(){},showModal(){this.open=true;}});return nodes.get(id);};
   Object.assign(node('monthForm'),{pnl:field(),futures:field(),dividendFx:field()});
   const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:()=>[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
   const store={doc:{version:1,ledger:{savedAt:'',years:[]}},prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){throw Error('창을 열기만 해서 저장하면 안 된다');}};
@@ -220,15 +220,20 @@ test('월별 손익: 손익 칸에만 +/− 부호 버튼을 붙이고, 버튼�
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
   vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
-  ctx.year={year:2026,accounts:[{name:'A'}],months:[{m:3,pnl:-5000,futures:-12000,balances:[1000000]}]};
+  const entries=[{broker:'B',amount:-700},{broker:'C',amount:-1.5,currency:'USD',krw:-2000}];
+  ctx.year={year:2026,accounts:[{name:'A'}],months:[{m:3,pnl:-5000,futures:-12000,balances:[1000000],pnlEntries:entries}]};
   vm.runInContext('openMonth(year,3)',ctx);
-  const html=node('monthFields').innerHTML,toggle=attr=>new RegExp(`<span class="sign-input"><input ${attr}[^>]*data-money><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle`);
-  assert.match(html,toggle('name="pnl" value="-5,000"'));
-  assert.match(html,toggle('name="futures" value="-12,000"'));
-  for(const i of [0,1,3])assert.match(html,toggle(`data-pnl-fixed="${i}"`),`손익 항목 ${i}`);
-  for(const i of [2,4])assert.match(html,new RegExp(`<input data-pnl-fixed="${i}"[^>]*></label>`),`배당 ${i}는 버튼 없음`);
-  assert.match(html,/<input name="bal0" [^>]*><\/label>/,'잔액은 버튼 없음');
-  assert.match(read('assets.html'),/<span class="sign-input"><input name="futures" type="text" inputmode="decimal"[^>]*\/><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle/,'연도 설정 선물·옵션');
+  const html=node('monthFields').innerHTML,rows=node('pnlEntryRows').innerHTML,numeric=attr=>new RegExp(`<input ${attr}[^>]*type="text" inputmode="numeric" autocomplete="off" data-money[^>]*>(?!<button)`);
+  assert.match(html,numeric('name="pnl"'));
+  assert.match(html,numeric('name="futures"'));
+  for(const i of [0,1,3])assert.match(html,numeric(`data-pnl-fixed="${i}"`),`손익 항목 ${i}`);
+  for(const i of [2,4])assert.match(html,new RegExp(`<input data-pnl-fixed="${i}"[^>]*inputmode="decimal"[^>]*></label>`),`배당 ${i}는 소수 키패드`);
+  assert.match(html,/<input name="bal0" [^>]*inputmode="decimal"[^>]*><\/label>/,'잔액은 소수 키패드');
+  assert.doesNotMatch(html,/data-sign-toggle/,'원 단위 칸에는 버튼 없음');
+  assert.match(rows,numeric('data-pnl-entry="0" data-k="amount"'),'원화 내역 금액');
+  assert.match(rows,/<span class="sign-input"><input data-pnl-entry="1" data-k="amount" required value="-1\.5" type="text" inputmode="decimal" autocomplete="off" data-money><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle/,'달러 내역 금액만 부호 버튼');
+  assert.match(rows,numeric('data-pnl-entry="1" data-k="krw"'),'원화 입금액');
+  assert.match(read('assets.html'),/<input name="futures" type="text" inputmode="numeric" autocomplete="off" data-money aria-describedby="yearFuturesHint" \/>/,'연도 설정 선물·옵션');
   const input={value:'1,234',readOnly:false,disabled:false,events:[],focus(){this.focused=true;},setSelectionRange(a,b){this.selection=[a,b];},dispatchEvent(e){this.events.push(`${e.type}:${e.bubbles}`);}};
   const button={closest:sel=>sel==='[data-sign-toggle]'?button:null,previousElementSibling:input};
   let prevented=false;listeners.mousedown({target:button,preventDefault(){prevented=true;}});assert.ok(prevented,'키보드가 닫히지 않게 포커스 이동을 막는다');

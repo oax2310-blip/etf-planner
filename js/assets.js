@@ -32,8 +32,10 @@ document.addEventListener("input",e=>{
   while(pos<formatted.length&&count<before){if(formatted[pos]!==",")count++;pos++;}
   x.setSelectionRange(pos,pos);
 });
-// 손익처럼 음수가 될 수 있는 금액 칸. 숫자 키패드(inputmode=decimal)는 삼성 키보드·iPhone에 '-' 키가 없어 부호 버튼을 붙인다.
-// 버튼은 입력 칸 포커스·키보드를 유지한 채 앞의 '-'를 넣거나 빼고 input 이벤트로 기존 쉼표 표시·저장 처리를 잇는다. 읽기 전용(자동 합계) 칸은 숨기고 바꾸지 않는다.
+// 손익처럼 음수가 될 수 있는 원 금액 칸. 삼성 키보드는 소수 키패드(decimal)에 '-' 키가 없고 정수 키패드(numeric)에는 있다. 원 단위라 소수점은 쓰지 않는다.
+const signedWonAttrs = moneyAttrs.replace('inputmode="decimal"','inputmode="numeric"');
+// 소수점이 필요한 음수 금액 칸(달러)은 소수 키패드에 '-' 키가 없어 부호 버튼을 붙인다.
+// 버튼은 입력 칸 포커스·키보드를 유지한 채 앞의 '-'를 넣거나 빼고 input 이벤트로 기존 쉼표 표시·저장 처리를 잇는다. 읽기 전용·비활성 칸은 바꾸지 않는다.
 const signedMoney = attrs => `<span class="sign-input"><input ${attrs} ${moneyAttrs}><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle aria-label="부호 바꾸기 (+/−)">+/−</button></span>`;
 document.addEventListener("mousedown",e=>{ if(e.target.closest?.("[data-sign-toggle]")) e.preventDefault(); });
 document.addEventListener("click",e=>{
