@@ -1,4 +1,4 @@
-// 월별 손익 ‘연도별 요약’의 S&P 500 수익률 비교. 내 연 수익률은 assets-calc.js yearSummary가 기준이다.
+// 월별 손익 맨 위 누적 그래프와 ‘연도별 요약’의 S&P 500 수익률 비교. 내 연 수익률은 assets-calc.js yearSummary가 기준이다.
 // 화면 없이 계산한다(tests/ledger-benchmark.test.cjs). 공개 자료 수집 scripts/collect-sp500.cjs는 공표치 검증에 아래 두 표만 읽는다.
 // 개인 기록은 읽기만 하며 저장·변경하지 않는다. 시세 수집(비공개 저장소)은 이 파일을 읽지 않는다.
 
@@ -59,5 +59,34 @@ function sp500Comparison(years, today=new Date(), data=null){
   }
   return {from:rows.length?rows[0].year:null, to:rows.length?rows[rows.length-1].year:null, end, years:rows.length, rows,
     mine, sp, diff:mine!==null&&sp!==null?mine-sp:null, missing, pending, current};
+}
+// 월별 손익 맨 위 카드의 누적 그래프 자료(연도 하나). 기록은 읽기만 한다.
+// 실현손익을 기록한 달마다 rate = 월 수익률(그달 실현손익 ÷ 그달 총자산, %) 누적, won = 월 실현손익 누적(원)을 [{m, v}]로 둔다.
+// 실현손익이 있는 달 중 총자산이 0 이하·빈 달(unrated)이 있으면 rate는 null(yearSummary.rate와 같은 조건). from = 첫 기록 달 − 1(0점), month = 마지막 기록 달.
+// 선물·옵션은 한 해 합계라 달에 나누지 않고 futures(원)·futuresRate(마지막 총자산 기준 %p)로 따로 두며, 마지막 누적에 더하면 yearSummary의 pnl·rate가 된다.
+// sp = S&P 500 누적 [{m, v}]: 올해는 1월~month의 월말 누적, 지난해는 월말 값이 있는 달과 12월의 연간 수익률. 값이 없는 달은 넣지 않는다.
+// spAt = 비교할 S&P 500(올해는 month 말 누적, 지난해는 연간, 아직 오지 않은 해는 null) — sp500Comparison과 같은 기준. diff = 내 연 수익률 − spAt.
+function ledgerChartData(year, today=new Date(), data=null){
+  const s=yearSummary(year), rate=[], won=[], unrated=[];
+  let r=0, w=0;
+  for(const m of (Array.isArray(year?.months)?year.months:[]).filter(m=>Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).sort((a,b)=>a.m-b.m)){
+    const p=monthPnl(m), t=monthTotals(year,m).total;
+    if(p===null)continue;
+    w+=p;won.push({m:m.m,v:w});
+    if(t>0){r+=p/t*100;rate.push({m:m.m,v:r});}else unrated.push(m.m);
+  }
+  const month=won.length?won[won.length-1].m:null, y=Number(year?.year), thisYear=today.getFullYear(), sp=[];
+  let spAt=null;
+  if(month&&y===thisYear){
+    for(let n=1;n<=month;n++){const v=sp500YtdAt(y,n,data);if(v!==null)sp.push({m:n,v});}
+    spAt=sp500YtdAt(y,month,data);
+  }else if(month&&y<thisYear){
+    for(let n=1;n<=12;n++){const v=sp500YtdAt(y,n,data);if(v!==null)sp.push({m:n,v});}
+    spAt=sp500YearReturn(y,data);
+    if(spAt!==null&&!sp.some(p=>p.m===12))sp.push({m:12,v:spAt});
+  }
+  return {rate:unrated.length?null:rate, unrated, won, from:won.length?won[0].m-1:0, month, futures:s.futures,
+    futuresRate:s.futures!==null&&s.last?.total>0?s.futures/s.last.total*100:null, pnl:s.pnl, total:s.rate,
+    sp, spAt, diff:s.rate!==null&&spAt!==null?s.rate-spAt:null};
 }
 if(typeof module!=="undefined"&&module.exports)module.exports={SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data};
