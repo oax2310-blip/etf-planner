@@ -162,7 +162,7 @@ test('맨 위 누적 그래프 자료: 월 수익률 누적 끝에 선물·옵�
   const years=fixture(),before=JSON.stringify(years),today=new Date(2026,9,16);
   const now=c.ledgerChartData(yearOf(2026,Array(9).fill(1),{futures:-20000}),today);
   assert.deepEqual(now.rate.map(p=>p.m),[1,2,3,4,5,6,7,8,9]);near(now.rate[7].v,8,'8월까지 월 수익률 1% × 8');
-  near(now.futuresRate,-2,'선물·옵션 −20,000원 ÷ 마지막 총자산 1,000,000원');near(now.rate.at(-1).v,9-2,'달을 모르는 연 합계는 마지막 달에 더한다');near(now.rate.at(-1).v,now.total,'그래프 끝 = 연 수익률');near(now.total,7,'yearSummary.rate');
+  near(now.rate.at(-1).v,9-2,'달을 모르는 연 합계는 마지막 달에 더한다');near(now.rate.at(-1).v,now.total,'그래프 끝 = 연 수익률');near(now.total,7,'yearSummary.rate');
   assert.deepEqual(now.won.map(p=>p.v),[1,2,3,4,5,6,7,8,7].map(n=>n*10000));assert.equal(now.won.at(-1).v,now.pnl,'그래프 끝 = 실현손익 + 선물·옵션');
   assert.deepEqual([now.from,now.month,now.unrated],[0,9,[]]);
   assert.deepEqual(now.sp,[{m:8,v:13.14},{m:9,v:12.75}],'수집 자료가 없으면 공표치가 있는 달만');near(now.diff,7-12.75,'올해는 기록한 마지막 달 말 누적과 비교');
@@ -171,7 +171,7 @@ test('맨 위 누적 그래프 자료: 월 수익률 누적 끝에 선물·옵�
   const past=c.ledgerChartData(years[4],today);
   assert.deepEqual(past.sp,[{m:12,v:17.88}],'월말 값이 없는 지난해는 12월 연간 값만');near(past.diff,12-17.88,'지난해는 연간 수익률과 비교');
   const future=c.ledgerChartData(yearOf(2027,[1]),today);assert.deepEqual([future.sp,future.spAt,future.diff],[[],null,null],'아직 오지 않은 해');
-  const empty=c.ledgerChartData({year:2026,accounts:[],months:[]},today);assert.deepEqual([empty.month,empty.won,empty.rate,empty.sp,empty.futuresRate],[null,[],[],[],null]);
+  const empty=c.ledgerChartData({year:2026,accounts:[],months:[]},today);assert.deepEqual([empty.month,empty.won,empty.rate,empty.sp],[null,[],[],[]]);
   const gap=yearOf(2026,Array(9).fill(1));gap.months[3].balances=[];
   const g=c.ledgerChartData(gap,today);assert.deepEqual([g.rate,g.unrated,g.won.length,c.yearSummary(gap).rate],[null,[4],9,null],'총자산이 빈 달이 있으면 수익률 누적을 그리지 않고 금액은 그린다');
   const late=yearOf(2026,[1,1,1]);late.months.forEach((m,i)=>{m.m=i+3;});assert.equal(c.ledgerChartData(late,today).from,2,'3월부터 기록했으면 0점은 2월');
@@ -203,23 +203,29 @@ test('월별 손익 맨 위 카드: 고른 연도의 누적 수익률(선물·�
   assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
 });
 
-test('월별 선물·옵션: 그래프는 그 달에 더하고 달을 모르는 연 합계는 마지막 달에 더하며, 월별 표만 실현손익과 나눠 보여 준다',()=>{
+test('월별 선물·옵션: 그래프·월별 표의 달 값에 더하고, 달을 모르는 연 합계는 그래프 마지막 달에 더하며 표에는 그 금액 줄만 둔다',()=>{
   const today=new Date(2026,9,16), year=yearOf(2026,Array(9).fill(1),{futures:-10000});
   year.months[1].futures=-30000;year.months[4].futures=20000;// 2월 −3%, 5월 +2% (총자산 1,000,000원)
   const before=JSON.stringify(year), g=c.ledgerChartData(year,today);
   near(g.rate[1].v,2-3,'2월 누적 = 1% + 1% − 3%');
   near(g.rate[7].v,8-3+2,'8월 누적에 월별 선물·옵션 포함');near(g.rate.at(-1).v,9-3+2-1,'9월 누적에 연 합계(−10,000원 ÷ 마지막 총자산)까지 포함');near(g.rate.at(-1).v,g.total,'그래프 끝 = 연 수익률');
-  assert.deepEqual([g.won[1].v,g.won.at(-1).v],[-10000,70000]);assert.equal(g.won.at(-1).v,g.pnl);near(g.futuresRate,-3+2-1,'월별 표의 선물·옵션 줄: 월별 + 연 합계');
+  assert.deepEqual([g.won[1].v,g.won.at(-1).v],[-10000,70000]);assert.equal(g.won.at(-1).v,g.pnl);
   const tenth={...yearOf(2026,Array(9).fill(1)),months:[...yearOf(2026,Array(9).fill(1)).months,{m:10,futures:5000,balances:[1000000]}]};
   assert.equal(c.ledgerChartData(tenth,new Date(2026,10,3)).month,10,'선물·옵션만 넣은 달도 기록 달');assert.equal(c.sp500Comparison([tenth],new Date(2026,10,3)).current.month,10,'S&P 500 비교 달도 같다');
   const html=ledgerHtml({version:1,ledger:{savedAt:'',years:[year]}},today.getTime());
   assert.match(html,/내 누적<b>7.00%<\/b>/);assert.doesNotMatch(html.slice(0,html.indexOf('</section>')).replace('(선물·옵션 포함)',''),/선물·옵션|ledger-calc/,'카드에는 선물·옵션 포함 누적만');
   const row=n=>html.slice(html.indexOf(`data-month="${n}"`),html.indexOf(`data-month="${n+1}"`));
-  for(const n of [2,5])assert.doesNotMatch(row(n),/선물·옵션/,`${n}월: 넣은 값은 줄에 표시하지 않음`);
+  for(const n of [2,5])assert.doesNotMatch(row(n),/선물·옵션/,`${n}월: 넣은 값은 줄에 따로 표시하지 않음`);
+  assert.match(row(2),/<span class="neg">-20,000원<\/span><span class="neg">-2%<\/span>/,'2월 줄 = 실현손익 10,000원 + 선물·옵션 −30,000원');
+  assert.match(row(5),/<span class="">30,000원<\/span><span class="">3%<\/span>/,'5월 줄 = 실현손익 10,000원 + 선물·옵션 20,000원');
   for(const n of [1,3,9])assert.match(row(n),/<small class="same-tag">선물·옵션 미입력<\/small>/,`${n}월: 월별로 넣는 해의 빈 달`);
   assert.doesNotMatch(row(10),/미입력/,'기록 없는 달은 표시하지 않음');
   assert.doesNotMatch(ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,Array(9).fill(1),{futures:-10000})]}},today.getTime()),/선물·옵션 미입력/,'연 합계만 쓰는 해는 표시하지 않음');
-  assert.match(html,/<span>선물·<wbr>옵션<small>수정<\/small><\/span><span class="neg">-20,000원<small>월별 2개월 \+ 연 합계 -10,000원<\/small><\/span><span>-2%<\/span>/);
+  assert.match(html,/<button class="ledger-row foot" type="button" id="editFutures" aria-label="2026년 달을 모르는 선물·옵션 손익 수정"><span>선물·<wbr>옵션<small>수정<\/small><\/span><span class="neg">-10,000원<small>달을 모르는 금액<\/small><\/span><span>-1%<\/span>/,'연 합계만 따로 한 줄');
+  assert.match(html,/<span>합계<\/span><span class="">70,000원<\/span><span>7%<\/span>/,'달 줄 합(80,000원) + 연 합계(−10,000원) = 합계');
+  const monthly=JSON.parse(before);delete monthly.futures;const only=ledgerHtml({version:1,ledger:{savedAt:'',years:[monthly]}},today.getTime());
+  assert.doesNotMatch(only,/id="editFutures"/,'월별로만 넣은 해는 선물·옵션 줄 없음(연도 설정에서 넣음)');assert.match(only,/<span>합계<\/span><span class="">80,000원<\/span><span>8%<\/span>/,'달 줄의 합 = 합계');
+  assert.doesNotMatch(ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,Array(9).fill(1))]}},today.getTime()),/id="editFutures"/,'선물·옵션이 없는 해도 줄 없음');
   assert.equal(JSON.stringify(year),before,'기록은 바꾸지 않음');
 });
 
