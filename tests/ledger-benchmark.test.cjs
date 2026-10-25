@@ -144,6 +144,20 @@ test('월별 손익: 앞뒤 달에는 잔액이 있는데 그달만 빈 계좌�
   assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
 });
 
+test('월별 손익: 항목별로 적은 달은 내역 건수 대신 비어 있는 전용 칸만 경고로 표시한다',()=>{
+  // 전용 칸 5개(신한 기본계좌+ISA·연금저축·배당, 키움 실현손익·배당 달러). 금액은 가짜 값.
+  const all=[{broker:'신한',label:'기본계좌+ISA',amount:100},{broker:'신한',label:'연금저축',amount:0},{broker:'신한 증권',label:'배당입금내역',amount:10},
+    {broker:'키움(영웅문)',label:'실현손익',amount:-50},{broker:'키움',label:'배당',amount:1,currency:'USD',fx:1400,krw:1400}];
+  const months=[{m:1,pnl:1000},{m:2,pnlEntries:all},{m:3,pnlEntries:[all[0],all[3]]},{m:4,pnlEntries:[all[0],{broker:'다른 증권사',amount:5}]}];
+  const data={version:1,ledger:{savedAt:'',years:[{year:2026,accounts:[],months}]}},before=JSON.stringify(data),html=ledgerHtml(data,new Date(2026,9,16).getTime());
+  const row=n=>html.slice(html.indexOf(`data-month="${n}"`),html.indexOf(`data-month="${n+1}"`));
+  assert.doesNotMatch(html,/내역 \d+건/,'건수 표시 없음');
+  for(const n of [1,2])assert.doesNotMatch(row(n),/빈칸/,`${n}월: 합계만 적었거나(1월) 0원·옛 이름 포함 모두 채움(2월)`);
+  assert.match(row(3),/<small class="same-tag">빈칸 3개 · 확인<\/small>/);
+  assert.match(row(4),/<small class="same-tag">빈칸 4개 · 확인<\/small>/,'추가 내역은 전용 칸으로 세지 않음');
+  assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
+});
+
 test('맨 위 누적 그래프 자료: 월 수익률 누적과 선물·옵션을 나눠 두고, 더하면 연 수익률이며 S&P 500은 연도별 요약과 같은 기준이다',()=>{
   const years=fixture(),before=JSON.stringify(years),today=new Date(2026,9,16);
   const now=c.ledgerChartData(yearOf(2026,Array(9).fill(1),{futures:-20000}),today);
