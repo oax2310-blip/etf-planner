@@ -34,13 +34,13 @@ function renderSavings(){
     el("startSavings").onclick=()=>{ const y=new Date().getFullYear(); doc.savings={savedAt:"",startYear:y,startAge:30,actual:[],scenarios:[{id:newId(),name:"기본",salary:0,giving:0,spending:0,spendingYear:y,growth:2,returnRate:5,endAge:60,stages:[]}]}; saveSection("savings"); render(); }; return; }
   const sc=S.scenarios.find(x=>x.id===ui.scenario)||S.scenarios[0], sim=sc?simulateSavings(S,sc):null;
   if(ui.scenario&&!S.scenarios.some(x=>x.id===ui.scenario))setUi({scenario:sc?.id??null});
-  const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):escA(sc[key]??"")}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
+  const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:key==="growth"||key==="returnRate"?signedNumAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):escA(sc[key]??"")}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
   const stageRow=(st,i)=>{
     const applied=savingsStageApplied(S,sc,st);
     const input=(key,label,money=false)=>{
       const value=applied?.[key], hint=value===null||value===undefined?"—":money?nf0.format(Math.round(value)):assetNumberText(value);
       const detail=finite(st[key])===null&&applied?` title="적용값: ${escA(assetNumberText(value))}${money?"원":"%"}"`:"";
-      return `<label><span>${label}</span><input data-stage="${i}" data-k="${key}" ${money?moneyAttrs:'type="number" step="any"'} value="${money?moneyText(st[key]):escA(st[key]??"")}" placeholder="${escA(hint)}"${detail}></label>`;
+      return `<label><span>${label}</span><input data-stage="${i}" data-k="${key}" ${money?moneyAttrs:signedNumAttrs} value="${money?moneyText(st[key]):escA(st[key]??"")}" placeholder="${escA(hint)}"${detail}></label>`;
     };
     return `<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${escA(st.age??"")}"></label>${input("salary","월급 (원)",true)}${input("spending","사용금액 (원)",true)}${input("growth","증가율 (%)")}${input("returnRate","수익률 (%)")}<button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
   };
