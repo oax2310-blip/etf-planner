@@ -77,8 +77,8 @@ function renderLedger(){
   // 잔액이 전달과 똑같은 달(엑셀에서 전달 값을 그대로 둔 것일 수 있음)은 작게 표시
   const sameAsPrev=m=>{ const prev=y.months.find(x=>x.m===m.m-1), values=r=>accounts.map(x=>finite(r?.balances?.[x.index]));return Array.isArray(m.balances)&&values(m).some(v=>v!==null)&&JSON.stringify(values(m))===JSON.stringify(values(prev)); };
   // 선물·옵션을 월별로 넣는 해(한 달이라도 넣음)만 기록한 달 중 비어 있는 달에 '선물·옵션 미입력'을 표시한다. 넣은 값(0원 포함)은 줄에 표시하지 않는다.
-  const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=monthPnl(m), r=p!==null&&t.total>0?p/t.total*100:null, gaps=m?ledgerBalanceGaps(y,m).length:0;
-    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${m?.pnlEntries?.length?`<small>내역 ${m.pnlEntries.length}건</small>`:""}${m&&monthFutures&&finite(m.futures)===null?`<small class="same-tag">선물·옵션 미입력</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${gaps?`<small class="same-tag">빈 계좌 ${gaps}개 · 확인</small>`:m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
+  const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, p=monthPnl(m), r=p!==null&&t.total>0?p/t.total*100:null, gaps=m?ledgerBalanceGaps(y,m).length:0, blanks=ledgerPnlBlanks(m);
+    return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${blanks?`<small class="same-tag">빈칸 ${blanks}개 · 확인</small>`:""}${m&&monthFutures&&finite(m.futures)===null?`<small class="same-tag">선물·옵션 미입력</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${gaps?`<small class="same-tag">빈 계좌 ${gaps}개 · 확인</small>`:m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
   const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}"><span>${escA(x.year)}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}</span><span>${t.last?wonA(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
   loadSp500();
   const chart=ledgerChartData(y,new Date(),sp500Data), monthFutures=y.months.filter(m=>finite(m.futures)!==null).length;
@@ -134,15 +134,22 @@ function sp500YtdRow(now){
 let updateLedgerDividendFx=null;
 const LEDGER_PNL_FIELDS=[{broker:"신한",label:"기본계좌+ISA"},{broker:"신한",label:"연금저축"},{broker:"신한",label:"배당"},
   {broker:"키움(영웅문)",label:"실현손익"},{broker:"키움(영웅문)",label:"배당",currency:"USD"}];
-function openMonth(y, n){
-  const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
+// 저장된 pnlEntries를 전용 칸(증권사·구분·통화가 같은 항목, 옛 이름 포함)과 추가 내역으로 나눈 사본. 빈 전용 칸은 이름만 남는다.
+function ledgerPnlSlots(m){
   const fixed=LEDGER_PNL_FIELDS.map(p=>({...p})), extra=[], matched=new Set();
-  const gaps=new Set(ledgerBalanceGaps(y,m).map(x=>x.index)); // 입력이 빠졌을 수 있는 계좌 칸(ledgerBalanceGaps)
   const brokerKey=v=>String(v||"").replace(/\s|\(영웅문\)|증권/g,""), labelKey=v=>String(v||"").replace(/\s/g,"").replace(/·/g,"+").replace(/^배당입금내역$/, "배당");
-  for(const entry of Array.isArray(m.pnlEntries)?m.pnlEntries:[]){
+  for(const entry of Array.isArray(m?.pnlEntries)?m.pnlEntries:[]){
     const i=LEDGER_PNL_FIELDS.findIndex((p,i)=>!matched.has(i)&&brokerKey(p.broker)===brokerKey(entry.broker)&&labelKey(p.label)===labelKey(entry.label)&&(p.currency||"KRW")===(entry.currency||"KRW"));
     if(i<0)extra.push({...entry});else{fixed[i]={...entry};matched.add(i);}
   }
+  return {fixed,extra};
+}
+// 항목별로 적은 달(pnlEntries 있음)에서 비어 있는 전용 칸 수. 0원을 넣은 칸은 채운 것으로 보고, 합계만 적은 달은 0이다.
+const ledgerPnlBlanks=m=>Array.isArray(m?.pnlEntries)&&m.pnlEntries.length?ledgerPnlSlots(m).fixed.filter(r=>finite(r.amount)===null&&finite(r.krw)===null).length:0;
+function openMonth(y, n){
+  const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
+  const {fixed,extra}=ledgerPnlSlots(m);
+  const gaps=new Set(ledgerBalanceGaps(y,m).map(x=>x.index)); // 입력이 빠졌을 수 있는 계좌 칸(ledgerBalanceGaps)
   const fxLine="125개월선", savedDividend=finite(fixed[4].amount)!==null&&finite(fixed[4].krw)!==null;
   let dividendFx=pnlDollarFx(fixed[4],assetDividendFx(prices)), dividendBasis=savedDividend?fixed[4].fxBasis:fxLine;
   let dividendFxAt=savedDividend?fixed[4].fxAt:prices?.fx?.maAsOf||prices?.fx?.asOf;
