@@ -199,7 +199,11 @@ test('월별 선물·옵션: 그래프는 그 달에 더하고 달을 모르는 
   assert.equal(c.ledgerChartData(tenth,new Date(2026,10,3)).month,10,'선물·옵션만 넣은 달도 기록 달');assert.equal(c.sp500Comparison([tenth],new Date(2026,10,3)).current.month,10,'S&P 500 비교 달도 같다');
   const html=ledgerHtml({version:1,ledger:{savedAt:'',years:[year]}},today.getTime());
   assert.match(html,/월 손익 합 <b class="">9.00%<\/b><\/span><span><i>\+<\/i> 선물·옵션 <b class="neg">-2.00%p<\/b><\/span><span><i>=<\/i> 누적 <b class="">7.00%<\/b>/);
-  assert.match(html,/data-month="2">.*?<small class="neg">선물·옵션 −3만원<\/small>/s,'그 달 줄에 선물·옵션');
+  const row=n=>html.slice(html.indexOf(`data-month="${n}"`),html.indexOf(`data-month="${n+1}"`));
+  for(const n of [2,5])assert.doesNotMatch(row(n),/선물·옵션/,`${n}월: 넣은 값은 줄에 표시하지 않음`);
+  for(const n of [1,3,9])assert.match(row(n),/<small class="same-tag">선물·옵션 미입력<\/small>/,`${n}월: 월별로 넣는 해의 빈 달`);
+  assert.doesNotMatch(row(10),/미입력/,'기록 없는 달은 표시하지 않음');
+  assert.doesNotMatch(ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,Array(9).fill(1),{futures:-10000})]}},today.getTime()),/선물·옵션 미입력/,'연 합계만 쓰는 해는 표시하지 않음');
   assert.match(html,/<span>선물·<wbr>옵션<small>수정<\/small><\/span><span class="neg">-20,000원<small>월별 2개월 \+ 연 합계 -10,000원<\/small><\/span><span>-2%<\/span>/);
   assert.match(html,/선물·옵션 연 합계는 마지막 기록 달에 더함/);
   assert.equal(JSON.stringify(year),before,'기록은 바꾸지 않음');
