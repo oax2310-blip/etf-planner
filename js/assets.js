@@ -32,6 +32,15 @@ document.addEventListener("input",e=>{
   while(pos<formatted.length&&count<before){if(formatted[pos]!==",")count++;pos++;}
   x.setSelectionRange(pos,pos);
 });
+// 손익처럼 음수가 될 수 있는 금액 칸. 숫자 키패드(inputmode=decimal)는 삼성 키보드·iPhone에 '-' 키가 없어 부호 버튼을 붙인다.
+// 버튼은 입력 칸 포커스·키보드를 유지한 채 앞의 '-'를 넣거나 빼고 input 이벤트로 기존 쉼표 표시·저장 처리를 잇는다. 읽기 전용(자동 합계) 칸은 숨기고 바꾸지 않는다.
+const signedMoney = attrs => `<span class="sign-input"><input ${attrs} ${moneyAttrs}><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle aria-label="부호 바꾸기 (+/−)">+/−</button></span>`;
+document.addEventListener("mousedown",e=>{ if(e.target.closest?.("[data-sign-toggle]")) e.preventDefault(); });
+document.addEventListener("click",e=>{
+  const x=e.target.closest?.("[data-sign-toggle]")?.previousElementSibling;if(!x||x.readOnly||x.disabled)return;
+  const v=x.value.trim();x.value=v.startsWith("-")?v.slice(1):`-${v.replace(/^\+/,"")}`;
+  x.focus();x.setSelectionRange(x.value.length,x.value.length);x.dispatchEvent(new Event("input",{bubbles:true}));
+});
 
 let doc=assetStore.doc, prices=assetStore.prices;
 // 고른 탭·연도·시나리오는 이 기기 etf-planner-assets-ui에만 저장하고 동기화하지 않는다.

@@ -208,3 +208,36 @@ test('월별 선물·옵션: 그래프는 그 달에 더하고 달을 모르는 
   assert.match(html,/선물·옵션 연 합계는 마지막 기록 달에 더함/);
   assert.equal(JSON.stringify(year),before,'기록은 바꾸지 않음');
 });
+
+test('월별 손익: 손익 칸에만 +/− 부호 버튼을 붙이고, 버튼은 포커스를 유지한 채 부호만 바꾸며 읽기 전용 칸은 건드리지 않는다',()=>{
+  // 숫자 키패드(inputmode=decimal)에 '-' 키가 없는 삼성 키보드·iPhone용. 금액은 가짜 값.
+  const nodes=new Map(),listeners={},storage=new Map(),field=()=>({value:'',readOnly:false,setCustomValidity(){}});
+  const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},hidden:false,innerHTML:'',textContent:'',open:false,classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),setAttribute(){},getAttribute(){},showModal(){this.open=true;}});return nodes.get(id);};
+  Object.assign(node('monthForm'),{pnl:field(),futures:field(),dividendFx:field()});
+  const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:()=>[],addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const store={doc:{version:1,ledger:{savedAt:'',years:[]}},prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){throw Error('창을 열기만 해서 저장하면 안 된다');}};
+  const ctx=vm.createContext({Date,Event,document,assetStore:store,crypto:require('node:crypto').webcrypto,
+    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
+    location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
+  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
+  ctx.year={year:2026,accounts:[{name:'A'}],months:[{m:3,pnl:-5000,futures:-12000,balances:[1000000]}]};
+  vm.runInContext('openMonth(year,3)',ctx);
+  const html=node('monthFields').innerHTML,toggle=attr=>new RegExp(`<span class="sign-input"><input ${attr}[^>]*data-money><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle`);
+  assert.match(html,toggle('name="pnl" value="-5,000"'));
+  assert.match(html,toggle('name="futures" value="-12,000"'));
+  for(const i of [0,1,3])assert.match(html,toggle(`data-pnl-fixed="${i}"`),`손익 항목 ${i}`);
+  for(const i of [2,4])assert.match(html,new RegExp(`<input data-pnl-fixed="${i}"[^>]*></label>`),`배당 ${i}는 버튼 없음`);
+  assert.match(html,/<input name="bal0" [^>]*><\/label>/,'잔액은 버튼 없음');
+  assert.match(read('assets.html'),/<span class="sign-input"><input name="futures" type="text" inputmode="decimal"[^>]*\/><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle/,'연도 설정 선물·옵션');
+  const input={value:'1,234',readOnly:false,disabled:false,events:[],focus(){this.focused=true;},setSelectionRange(a,b){this.selection=[a,b];},dispatchEvent(e){this.events.push(`${e.type}:${e.bubbles}`);}};
+  const button={closest:sel=>sel==='[data-sign-toggle]'?button:null,previousElementSibling:input};
+  let prevented=false;listeners.mousedown({target:button,preventDefault(){prevented=true;}});assert.ok(prevented,'키보드가 닫히지 않게 포커스 이동을 막는다');
+  const tap=()=>listeners.click({target:button});
+  tap();assert.equal(input.value,'-1,234');assert.ok(input.focused);assert.deepEqual(input.selection,[6,6]);assert.deepEqual(input.events,['input:true']);
+  tap();assert.equal(input.value,'1,234');
+  input.value='';tap();assert.equal(input.value,'-','빈 칸은 부호부터');
+  input.value='+500';tap();assert.equal(input.value,'-500');
+  input.readOnly=true;tap();assert.equal(input.value,'-500','자동 합계(읽기 전용)는 그대로');
+  input.readOnly=false;input.disabled=true;tap();assert.equal(input.value,'-500');
+  listeners.click({target:{closest:()=>null}});assert.equal(input.events.length,4,'다른 곳 클릭은 무시');
+});
