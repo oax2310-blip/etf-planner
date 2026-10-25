@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const root=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const c=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
-return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,sp500YtdAt,sp500YearReturn,sp500Comparison,yearSummary,averageYearReturn};})()`);
+return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,sp500YtdAt,sp500YearReturn,sp500Comparison,ledgerChartData,yearSummary,averageYearReturn};})()`);
 const near=(a,b,msg)=>assert.ok(Math.abs(a-b)<1e-9,`${msg}: ${a} ≠ ${b}`);
 // 월 수익률 r%를 기록한 가상 연도(총자산 1,000,000원, 월 손익 = r% × 총자산). 연 수익률 = 월 수익률 합(+선물·옵션 ÷ 마지막 총자산).
 const yearOf=(year,rates,extra={})=>({year,accounts:[{name:'가상 계좌'}],months:rates.map((r,i)=>({m:i+1,pnl:r*10000,balances:[1000000]})),...extra});
@@ -98,7 +98,7 @@ test('수집 자료는 형식·지수·통화를 확인해 종가만 남기고, 
 });
 
 // 연도별 요약 화면: 자산 현황 스크립트(assets.js·assets-ledger.js 등)를 가상 DOM으로 불러 월별 손익 탭만 그린다.
-function ledgerHtml(data,now){
+function ledgerHtml(data,now,ui=null){
   class SystemDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
   const nodes=new Map(),storage=new Map();
   const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},hidden:false,innerHTML:'',textContent:'',classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),setAttribute(){},getAttribute(){}});return nodes.get(id);};
@@ -107,6 +107,7 @@ function ledgerHtml(data,now){
   const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
+  if(ui)storage.set('etf-planner-assets-ui',JSON.stringify({tab:'ledger',...ui}));
   vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
   return node('ledgerView').innerHTML;
 }
@@ -140,5 +141,48 @@ test('월별 손익: 앞뒤 달에는 잔액이 있는데 그달만 빈 계좌�
   const row=n=>html.slice(html.indexOf(`data-month="${n}"`),html.indexOf(`data-month="${n+1}"`));
   assert.match(row(3),/빈 계좌 1개 · 확인/,'B만 표시');
   for(const n of [1,2,4])assert.doesNotMatch(row(n),/빈 계좌/,`${n}월`);
+  assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
+});
+
+test('맨 위 누적 그래프 자료: 월 수익률 누적과 선물·옵션을 나눠 두고, 더하면 연 수익률이며 S&P 500은 연도별 요약과 같은 기준이다',()=>{
+  const years=fixture(),before=JSON.stringify(years),today=new Date(2026,9,16);
+  const now=c.ledgerChartData(yearOf(2026,Array(9).fill(1),{futures:-20000}),today);
+  assert.deepEqual(now.rate.map(p=>p.m),[1,2,3,4,5,6,7,8,9]);near(now.rate.at(-1).v,9,'월 수익률 1% × 9');
+  near(now.futuresRate,-2,'선물·옵션 −20,000원 ÷ 마지막 총자산 1,000,000원');near(now.rate.at(-1).v+now.futuresRate,now.total,'더하면 연 수익률');near(now.total,7,'yearSummary.rate');
+  assert.deepEqual(now.won.map(p=>p.v),[1,2,3,4,5,6,7,8,9].map(n=>n*10000));assert.equal(now.pnl,70000,'월 손익 합 + 선물·옵션');
+  assert.deepEqual([now.from,now.month,now.unrated],[0,9,[]]);
+  assert.deepEqual(now.sp,[{m:8,v:13.14},{m:9,v:12.75}],'수집 자료가 없으면 공표치가 있는 달만');near(now.diff,7-12.75,'올해는 기록한 마지막 달 말 누적과 비교');
+  const sp=c.ledgerChartData(yearOf(2026,Array(10).fill(1)),new Date(2026,10,3),c.cleanSp500Data(collected())).sp;
+  assert.deepEqual(sp.map(p=>p.m),[8,9,10]);assert.equal(sp[1].v,12.75,'공표치 우선');near(sp[2].v,14,'10월은 수집 종가');
+  const past=c.ledgerChartData(years[4],today);
+  assert.deepEqual(past.sp,[{m:12,v:17.88}],'월말 값이 없는 지난해는 12월 연간 값만');near(past.diff,12-17.88,'지난해는 연간 수익률과 비교');
+  const future=c.ledgerChartData(yearOf(2027,[1]),today);assert.deepEqual([future.sp,future.spAt,future.diff],[[],null,null],'아직 오지 않은 해');
+  const empty=c.ledgerChartData({year:2026,accounts:[],months:[]},today);assert.deepEqual([empty.month,empty.won,empty.rate,empty.sp,empty.futuresRate],[null,[],[],[],null]);
+  const gap=yearOf(2026,Array(9).fill(1));gap.months[3].balances=[];
+  const g=c.ledgerChartData(gap,today);assert.deepEqual([g.rate,g.unrated,g.won.length,c.yearSummary(gap).rate],[null,[4],9,null],'총자산이 빈 달이 있으면 수익률 누적을 그리지 않고 금액은 그린다');
+  const late=yearOf(2026,[1,1,1]);late.months.forEach((m,i)=>{m.m=i+3;});assert.equal(c.ledgerChartData(late,today).from,2,'3월부터 기록했으면 0점은 2월');
+  assert.equal(JSON.stringify(years),before,'조회만으로 기록을 바꾸지 않는다');
+});
+
+test('월별 손익 맨 위 카드: 고른 연도의 누적 수익률을 S&P 500과 비교하고 월 손익 합 + 선물·옵션 = 누적, 금액 보기는 이 기기 화면 설정',()=>{
+  const years=fixture().map(y=>y.year===2026?yearOf(2026,Array(9).fill(1),{futures:-20000}):y),data={version:1,ledger:{savedAt:'',years}},before=JSON.stringify(data),at=new Date(2026,9,16).getTime();
+  const html=ledgerHtml(data,at);
+  assert.match(html,/<h1 class="sr-only">월별 손익<\/h1>/);assert.doesNotMatch(html,/class="card metrics"/,'세 칸 지표 카드 대신 맨 위 카드');
+  assert.match(html,/data-pick-year="2026" aria-pressed="true">2026<\/button><button class="chip add" id="addYear"/,'연도 칩 끝에 연도 추가');
+  assert.match(html,/2026년 1~9월 누적 수익률/);assert.match(html,/S&amp;P 500보다 <em class="down">5.75%p 낮아요<\/em>/);
+  assert.match(html,/내 누적<b>7.00%<\/b><\/span><span class="ledger-key"><i class="sp"><\/i>S&amp;P 500<b>12.75%<\/b>/);
+  assert.match(html,/월 손익 합 <b class="">9.00%<\/b><\/span><span><i>\+<\/i> 선물·옵션 <b class="neg">-2.00%p<\/b><\/span><span><i>=<\/i> 누적 <b class="">7.00%<\/b>/);
+  assert.equal((html.match(/class="month(?: on)?" style="left:/g)||[]).length,12,'월 글자 12개');assert.match(html,/class="month on" style="left:[\d.]+%">9</,'마지막 기록 달 강조');
+  assert.match(html,/<span>실현손익<\/span><b class="">7만원<\/b>.*<span>선물·옵션<\/span><b class="neg">−2만원<\/b>.*<span>총자산 9월 말<\/span><b class="">100만원<\/b>/s);
+  assert.match(html,/<small>연환산 12% · 선물·옵션 제외<\/small>/,'연환산은 합계 줄로');
+  const won=ledgerHtml(data,at,{ledgerChart:'won'});
+  assert.match(won,/2026년 1~9월 누적 실현손익/);assert.match(won,/실현손익 <em class="up">70,000원<\/em>/);assert.doesNotMatch(won,/class="ledger-key"><i class="sp">/,'금액 보기에는 S&P 500 없음');
+  assert.match(won,/월 손익 합 <b class="">9만원<\/b><\/span><span><i>\+<\/i> 선물·옵션 <b class="neg">−2만원<\/b><\/span><span><i>=<\/i> <b class="">7만원<\/b>/);
+  const past=ledgerHtml(data,at,{year:2025});
+  assert.match(past,/2025년 1~12월 누적 수익률/);assert.match(past,/S&amp;P 500보다 <em class="down">5.88%p 낮아요<\/em>/);assert.match(past,/연간 값만 점으로 표시/);
+  const gap=JSON.parse(before);gap.ledger.years[5].months[3].balances=[];
+  assert.match(ledgerHtml(gap,at),/<h2 class="warn">4월 총자산이 없어 수익률을 계산하지 못했습니다<\/h2>/);
+  const blank=JSON.parse(before);blank.ledger.years.push({year:2027,accounts:[],months:[]});
+  assert.match(ledgerHtml(blank,at,{year:2027}),/아직 기록한 달이 없습니다/);
   assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
 });
