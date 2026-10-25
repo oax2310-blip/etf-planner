@@ -8,13 +8,13 @@ function ledgerBalanceGaps(y, m){
 }
 // 맨 위 카드 누적 그래프(HTML 글자). 너비는 그릴 때의 카드 안쪽 너비라 PC에서도 낮고 넓게 그린다. 자료는 ledger-benchmark.js ledgerChartData.
 // 선·영역·점만 SVG로 그리고 눈금선·축·월 글자는 HTML로 얹는다(삼성 인터넷 등 웹페이지 다크 색 변환이 SVG 글자·선 색을 바꾸지 않아도 읽히게).
-// won이면 월 실현손익 누적(원)만, 아니면 내 누적 수익률과 S&P 500 누적(1월부터 이어진 값은 점선, 연간 값만 있는 해는 점)을 그린다.
-// 월별 선물·옵션은 그 달 선에 들어 있고, 달을 모르는 연 합계만 마지막 기록 달에서 점선(손실 빨강·이익 파랑)으로 더해 실제 합계(채운 점)에 닿게 한다.
+// won이면 월 손익 누적(원)만, 아니면 내 누적 수익률과 S&P 500 누적(1월부터 이어진 값은 점선, 연간 값만 있는 해는 점)을 그린다.
+// 선물·옵션은 따로 그리지 않는다. 월별 값은 그 달에, 달을 모르는 연 합계는 마지막 기록 달에 들어 있어 선 끝(점)이 선물·옵션 포함 누적이다.
 const ledgerAxisWon=v=>v===0?"0":Math.abs(v)>=1e8?`${nf1.format(v/1e8)}억`:`${nf0.format(v/1e4)}만`;
 function ledgerChartHtml(c, won, width){
-  const line=won?c.won:c.rate||[], sp=won?[]:c.sp, end=line[line.length-1], fut=won?c.rest:c.restRate;
+  const line=won?c.won:c.rate||[], sp=won?[]:c.sp, end=line[line.length-1];
   if(!end)return "";
-  const final=fut!==null?end.v+fut:end.v, vals=[0,...line.map(p=>p.v),...sp.map(p=>p.v),final];
+  const vals=[0,...line.map(p=>p.v),...sp.map(p=>p.v)];
   let lo=Math.min(...vals), hi=Math.max(...vals);const pad=(hi-lo||Math.abs(hi)||1)*.08;lo-=pad;hi+=pad;
   const raw=(hi-lo)/5, mag=10**Math.floor(Math.log10(raw)), step=Math.max(won?1e4:0,[1,2,5,10].map(f=>f*mag).find(s=>s>=raw));
   const W=width, H=104, left=won?40:28, px=m=>left+m/12*(W-left-4), py=v=>H-4-(v-lo)/(hi-lo)*(H-10), at=p=>`${px(p.m).toFixed(1)},${py(p.v).toFixed(1)}`;
@@ -22,18 +22,17 @@ function ledgerChartHtml(c, won, width){
   const label=v=>won?ledgerAxisWon(v):`${(step<1?nf1:nf0).format(v)}%`, path=pts=>pts.map((p,i)=>`${i?"L":"M"}${at(p)}`).join("");
   const mine=[{m:c.from,v:0},...line], spLine=sp.length&&sp[0].m===1?[{m:0,v:0},...sp]:[], spEnd=sp.find(p=>p.m===end.m)||(!won&&sp[sp.length-1]?.m===12?sp[sp.length-1]:null);
   const top=v=>`${(py(v)/(H+16)*100).toFixed(2)}%`, x=m=>`${(px(m)/W*100).toFixed(2)}%`;
-  return `<div class="ledger-chart" role="img" aria-label="${won?"월 실현손익 누적":"내 누적 수익률과 S&amp;P 500 누적 수익률"} 그래프">
+  return `<div class="ledger-chart" role="img" aria-label="${won?"월 손익 누적":"내 누적 수익률과 S&amp;P 500 누적 수익률"} 그래프">
     ${ticks.map(v=>`<i class="grid${v===0?" zero":""}" style="top:${top(v)};left:${x(0)}"></i><span class="axis" style="top:${top(v)}">${label(v)}</span>`).join("")}
     <svg viewBox="0 0 ${W} ${H+16}" aria-hidden="true"><defs><linearGradient id="ledgerChartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="fill-top"/><stop offset="1" class="fill-end"/></linearGradient></defs>
     <line x1="${px(end.m).toFixed(1)}" x2="${px(end.m).toFixed(1)}" y1="0" y2="${H}" class="guide"/>
     <path d="${path(mine)}L${px(end.m).toFixed(1)},${py(lo).toFixed(1)}L${px(c.from).toFixed(1)},${py(lo).toFixed(1)}Z" class="area"/>
     ${spLine.length?`<path d="${path(spLine)}" class="sp"/>`:""}<path d="${path(mine)}" class="me"/>
-    ${final!==end.v?`<line x1="${px(end.m).toFixed(1)}" x2="${px(end.m).toFixed(1)}" y1="${py(end.v).toFixed(1)}" y2="${py(final).toFixed(1)}" class="drop${final>end.v?" up":""}"/>`:""}
     ${(spLine.length?[spEnd].filter(Boolean):sp).map(p=>`<circle cx="${px(p.m).toFixed(1)}" cy="${py(p.v).toFixed(1)}" r="3" class="sp-dot"/>`).join("")}
-    ${final!==end.v?`<circle cx="${px(end.m).toFixed(1)}" cy="${py(end.v).toFixed(1)}" r="2.5" class="mid"/>`:""}<circle cx="${px(end.m).toFixed(1)}" cy="${py(final).toFixed(1)}" r="4" class="end"/>
+    <circle cx="${px(end.m).toFixed(1)}" cy="${py(end.v).toFixed(1)}" r="4" class="end"/>
     </svg>${Array.from({length:12},(_,i)=>`<span class="month${i+1===end.m?" on":""}" style="left:${x(i+1)}">${i+1}</span>`).join("")}</div>`;
 }
-// 맨 위: 연도 칩 한 줄(가로로 밀기, 끝에 연도 추가) + 카드(누적 수익률·S&P 500 비교 또는 실현손익 금액, 그래프, 월 손익 합 + 선물·옵션 = 누적, 요약 3칸).
+// 맨 위: 연도 칩 한 줄(가로로 밀기, 끝에 연도 추가) + 카드(누적 수익률·S&P 500 비교 또는 실현손익 금액, 그래프, 요약 2칸). 누적·실현손익은 선물·옵션 포함이며 따로 나눠 보이지 않는다.
 // 수익률/금액 선택은 화면 설정(ui.ledgerChart)이라 이 기기에만 기억하고 기록에 넣지 않는다.
 let ledgerChartWidth=0, ledgerResizeTimer=0;
 function ledgerTopHtml(y, ys, years, c){
@@ -45,15 +44,12 @@ function ledgerTopHtml(y, ys, years, c){
     :won?`실현손익 ${em(wonA(c.pnl),c.pnl>=0)}`
     :c.diff===null?`내 누적 ${em(pct2(c.total),c.total>=0)}`
     :Math.abs(c.diff)<.005?"S&amp;P 500과 같아요":`S&amp;P 500보다 ${em(`${pct2(Math.abs(c.diff),"%p").replace("+","")} ${c.diff>0?"높아요":"낮아요"}`,c.diff>0)}`;
-  const keys=!c.month||noRate?"":won?`<span class="ledger-key"><i></i>${c.futures!==null&&c.rest===null?"실현손익 + 선물·옵션 누적":"월 손익 누적"}</span>${c.rest!==null?`<span class="ledger-key"><i class="end"></i>선물·옵션 연 합계 포함</span>`:""}`
+  const keys=!c.month||noRate?"":won?`<span class="ledger-key"><i></i>월 손익 누적</span>`
     :`<span class="ledger-key"><i></i>내 누적<b>${pct2(c.total)}</b></span><span class="ledger-key"><i class="sp"></i>S&amp;P 500<b>${c.spAt!==null?pct2(c.spAt):Number(y.year)>new Date().getFullYear()?"—":"반영 전"}</b></span>`;
-  // 계산 줄: 실현손익만의 합 + 선물·옵션(월별 + 연 합계) = 누적. 수익률은 나눌 수 없는 달(총자산 빈 달)이 있으면 그리지 않는다.
-  const b=(v,t)=>`<b class="${v<0?"neg":""}">${t}</b>`, parts=won?[c.monthPnl,c.futures,c.pnl]:[c.monthRate,c.futuresRate,c.total];
-  const calc=c.month&&c.futures!==null&&parts.every(v=>v!==null)?`<div class="ledger-calc"><span>월 손익 합 ${b(parts[0],won?eok(parts[0]):pct2(parts[0]))}</span><span><i>+</i> 선물·옵션 ${b(parts[1],won?eok(parts[1]):pct2(parts[1],"%p"))}</span><span><i>=</i> ${won?"":"누적 "}${b(parts[2],won?eok(parts[2]):pct2(parts[2]))}</span></div>`:"";
   const info=!c.month?"달마다 실현손익과 계좌 잔액을 넣으면 누적 그래프를 그립니다."
     :noRate?"아래 표에서 그 달 계좌 잔액을 넣으면 그래프를 그립니다. ‘금액’에서는 실현손익 누적을 볼 수 있습니다."
-    :won?(c.rest!==null?"연도 설정의 선물·옵션(달을 모르는 금액)은 마지막 기록 달에 더합니다. 달마다 넣으면 그 달에 반영합니다.":"실현손익과 선물·옵션을 기록한 달에 더합니다.")
-    :`S&amp;P 500은 달러·배당 재투자, 내 수익률은 원화 실현손익 기준${c.sp.length&&c.sp[0].m!==1?" · 월말 값이 없는 해는 S&amp;P 500 연간 값만 점으로 표시":""}${c.rest!==null?" · 선물·옵션 연 합계는 마지막 기록 달에 더함":""}`;
+    :won?"달마다 실현손익(선물·옵션 포함)을 더한 누적입니다."
+    :`S&amp;P 500은 달러·배당 재투자, 내 수익률은 원화 실현손익(선물·옵션 포함) 기준${c.sp.length&&c.sp[0].m!==1?" · 월말 값이 없는 해는 S&amp;P 500 연간 값만 점으로 표시":""}`;
   const cell=(label,value,neg)=>`<div><span>${label}</span><b class="${neg?"neg":""}">${value}</b></div>`;
   return `<h1 class="sr-only">월별 손익</h1>
     <div class="ledger-years" role="group" aria-label="연도 선택">${years.map(x=>`<button class="chip${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}" aria-pressed="${x===y}">${escA(x.year)}</button>`).join("")}<button class="chip add" id="addYear" type="button" aria-label="연도 추가" title="연도 추가">＋</button></div>
@@ -61,9 +57,9 @@ function ledgerTopHtml(y, ys, years, c){
       <div class="ledger-card-head"><span>${escA(y.year)}년${span?` ${span}`:""} ${won?"누적 실현손익":"누적 수익률"}</span><div class="ledger-seg" role="group" aria-label="그래프 단위"><button type="button" data-ledger-chart="rate" aria-pressed="${!won}">수익률</button><button type="button" data-ledger-chart="won" aria-pressed="${won}">금액</button></div></div>
       <h2 class="${noRate?"warn":""}">${title}</h2>
       ${keys?`<div class="ledger-keys">${keys}</div>`:""}
-      ${noRate?"":ledgerChartHtml(c,won,ledgerChartWidth)}${calc}
+      ${noRate?"":ledgerChartHtml(c,won,ledgerChartWidth)}
       <p class="ledger-info">${info}</p>
-      <div class="ledger-cells">${cell("실현손익",c.month||ys.futures!==null?eok(ys.pnl):"—",ys.pnl<0)}${cell("선물·옵션",ys.futures!==null?eok(ys.futures):"—",ys.futures<0)}${cell(ys.last?`총자산 ${ys.last.m}월 말`:"총자산",ys.last?eok(ys.last.total):"—")}</div>
+      <div class="ledger-cells">${cell("실현손익",c.month||ys.futures!==null?eok(ys.pnl):"—",ys.pnl<0)}${cell(ys.last?`총자산 ${ys.last.m}월 말`:"총자산",ys.last?eok(ys.last.total):"—")}</div>
     </section>`;
 }
 // 화면 너비가 크게 바뀌면(가로 전환·창 크기) 그래프를 새 너비로 다시 그린다.

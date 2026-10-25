@@ -63,21 +63,23 @@ function sp500Comparison(years, today=new Date(), data=null){
 // 월별 손익 맨 위 카드의 누적 그래프 자료(연도 하나). 기록은 읽기만 한다.
 // 실현손익·월별 선물옵션(m.futures)을 기록한 달마다 rate = 월 수익률((실현손익 + 선물옵션) ÷ 그달 총자산, %) 누적, won = 그 손익 누적(원)을 [{m, v}]로 둔다.
 // 손익이 있는 달 중 총자산이 0 이하·빈 달(unrated)이 있으면 rate는 null(yearSummary.rate와 같은 조건). from = 첫 기록 달 − 1(0점), month = 마지막 기록 달.
-// 달을 모르는 선물옵션 연 합계(year.futures)는 rest(원)·restRate(마지막 총자산 기준 %p)로 따로 두며, 마지막 누적에 더하면 yearSummary의 pnl·rate가 된다.
-// 계산 줄용 나눔: monthPnl·monthRate = 실현손익만, futures·futuresRate = 월별 선물옵션 + 연 합계(monthRate + futuresRate = 연 수익률).
+// 달을 모르는 선물옵션 연 합계(year.futures)는 마지막 기록 달 값에 더한다(won은 원, rate는 마지막 총자산 기준 %p. 그 총자산이 없으면 rate에는 더하지 않는다).
+// 그래서 그래프 끝은 선물옵션을 포함한 누적, 곧 yearSummary의 pnl·rate와 같다. futures·futuresRate = 월별 선물옵션 + 연 합계(월별 표의 선물·옵션 줄).
 // sp = S&P 500 누적 [{m, v}]: 올해는 1월~month의 월말 누적, 지난해는 월말 값이 있는 달과 12월의 연간 수익률. 값이 없는 달은 넣지 않는다.
 // spAt = 비교할 S&P 500(올해는 month 말 누적, 지난해는 연간, 아직 오지 않은 해는 null) — sp500Comparison과 같은 기준. diff = 내 연 수익률 − spAt.
 function ledgerChartData(year, today=new Date(), data=null){
   const s=yearSummary(year), rate=[], won=[], unrated=[];
-  let r=0, w=0, monthRate=0, futRate=0;
+  let r=0, w=0, futRate=0;
   for(const m of (Array.isArray(year?.months)?year.months:[]).filter(m=>Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).sort((a,b)=>a.m-b.m)){
     const p=monthPnl(m), f=finite(m.futures), t=monthTotals(year,m).total;
     if(p===null&&f===null)continue;
     w+=(p||0)+(f||0);won.push({m:m.m,v:w});
-    if(t>0){r+=((p||0)+(f||0))/t*100;monthRate+=(p||0)/t*100;futRate+=(f||0)/t*100;rate.push({m:m.m,v:r});}else unrated.push(m.m);
+    if(t>0){r+=((p||0)+(f||0))/t*100;futRate+=(f||0)/t*100;rate.push({m:m.m,v:r});}else unrated.push(m.m);
   }
   const month=won.length?won[won.length-1].m:null, y=Number(year?.year), thisYear=today.getFullYear(), sp=[];
-  const rest=s.futuresYear, restRate=rest!==null&&s.last?.total>0?rest/s.last.total*100:null;
+  const rest=s.futuresYear, restRate=rest!==null&&s.last?.total>0?rest/s.last.total*100:null, rated=!unrated.length;
+  if(rest!==null&&won.length)won[won.length-1].v+=rest;
+  if(restRate!==null&&rated&&rate.length)rate[rate.length-1].v+=restRate;
   let spAt=null;
   if(month&&y===thisYear){
     for(let n=1;n<=month;n++){const v=sp500YtdAt(y,n,data);if(v!==null)sp.push({m:n,v});}
@@ -87,9 +89,7 @@ function ledgerChartData(year, today=new Date(), data=null){
     spAt=sp500YearReturn(y,data);
     if(spAt!==null&&!sp.some(p=>p.m===12))sp.push({m:12,v:spAt});
   }
-  const rated=!unrated.length;
-  return {rate:rated?rate:null, unrated, won, from:won.length?won[0].m-1:0, month, rest, restRate,
-    monthPnl:s.monthPnl, monthRate:rated?monthRate:null, futures:s.futures,
+  return {rate:rated?rate:null, unrated, won, from:won.length?won[0].m-1:0, month, futures:s.futures,
     futuresRate:s.futures===null||!rated||(rest!==null&&restRate===null)?null:futRate+(restRate||0), pnl:s.pnl, total:s.rate,
     sp, spAt, diff:s.rate!==null&&spAt!==null?s.rate-spAt:null};
 }
