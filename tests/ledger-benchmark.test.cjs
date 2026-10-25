@@ -190,7 +190,7 @@ test('월별 손익 맨 위 카드: 고른 연도의 누적 수익률(선물·�
   assert.equal((card.match(/<circle /g)||[]).length,3,'점은 S&P 500 8·9월과 내 누적 끝만');
   assert.equal((html.match(/class="month(?: on)?" style="left:/g)||[]).length,12,'월 글자 12개');assert.match(html,/class="month on" style="left:[\d.]+%">9</,'마지막 기록 달 강조');
   assert.match(html,/<div class="ledger-cells"><div><span>실현손익<\/span><b class="">7만원<\/b><\/div><div><span>총자산 9월 말<\/span><b class="">100만원<\/b><\/div><\/div>/);
-  assert.match(html,/<small>연환산 12%<\/small><small>선물·옵션 제외<\/small>/,'연환산은 합계 줄로');
+  assert.match(html,/<small>연환산 9.3%<\/small><\/span><\/div><\/section>/,'연환산은 합계 줄로, 선물·옵션 포함(7% × 12 ÷ 9)');
   const won=ledgerHtml(data,at,{ledgerChart:'won'});
   assert.match(won,/2026년 1~9월 누적 실현손익/);assert.match(won,/실현손익 <em class="up">70,000원<\/em>/);assert.doesNotMatch(won,/class="ledger-key"><i class="sp">/,'금액 보기에는 S&P 500 없음');
   assert.match(won,/<i><\/i>월 손익 누적<\/span>/);assert.match(won,/달마다 실현손익\(선물·옵션 포함\)을 더한 누적입니다/);assert.doesNotMatch(won.slice(0,won.indexOf('</section>')).replace('(선물·옵션 포함)',''),/선물·옵션|ledger-calc|class="(?:drop|mid)/,'금액 보기도 선물·옵션을 따로 나누지 않음');
