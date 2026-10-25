@@ -81,3 +81,15 @@ test('토큰을 쓰는 세 페이지는 같은 보안 정책(CSP)을 맨 앞에 
   }
   assert.equal(new Set(policies).size, 1, '세 페이지의 정책이 같다');
 });
+
+test('달러선물·시나리오의 음수 가능 칸은 \'-\'·\'.\' 키가 있는 키패드(inputmode=numeric)를 쓴다', () => {
+  // 삼성 키보드는 inputmode=decimal·type=number 키패드에 '-' 키가 없다. 자산 현황 칸은 ledger-benchmark·savings-ui 테스트가 확인한다.
+  const futures = fs.readFileSync(path.join(root, 'js/futures.js'), 'utf8');
+  for (const id of ['fpnl', 'frollSpread']) assert.match(futures, new RegExp(`<input id="${id}" type="text" inputmode="numeric" autocomplete="off" value=`), id);
+  const china = valuationHtml.match(/<input id="chinaFx" type="text" inputmode="numeric" autocomplete="off" pattern="([^"]+)" value="0">/);
+  assert.ok(china, '위안화 연 변화');
+  // 범위(−15~15%)와 0.5 단위는 pattern이 checkValidity로 검사한다(브라우저는 v 플래그로 전체 일치).
+  const pattern = new RegExp(`^(?:${china[1]})$`, 'v');
+  for (const v of ['0', '-15', '15', '-0.5', '3.5', '14.50', '-7']) assert.ok(pattern.test(v), v);
+  for (const v of ['-', '15.5', '-16', '0.3', 'abc', '1,5', '+1']) assert.ok(!pattern.test(v), v);
+});

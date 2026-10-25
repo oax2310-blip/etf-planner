@@ -32,17 +32,10 @@ document.addEventListener("input",e=>{
   while(pos<formatted.length&&count<before){if(formatted[pos]!==",")count++;pos++;}
   x.setSelectionRange(pos,pos);
 });
-// 손익처럼 음수가 될 수 있는 원 금액 칸. 삼성 키보드는 소수 키패드(decimal)에 '-' 키가 없고 정수 키패드(numeric)에는 있다. 원 단위라 소수점은 쓰지 않는다.
-const signedWonAttrs = moneyAttrs.replace('inputmode="decimal"','inputmode="numeric"');
-// 소수점이 필요한 음수 금액 칸(달러)은 소수 키패드에 '-' 키가 없어 부호 버튼을 붙인다.
-// 버튼은 입력 칸 포커스·키보드를 유지한 채 앞의 '-'를 넣거나 빼고 input 이벤트로 기존 쉼표 표시·저장 처리를 잇는다. 읽기 전용·비활성 칸은 바꾸지 않는다.
-const signedMoney = attrs => `<span class="sign-input"><input ${attrs} ${moneyAttrs}><button class="sign-toggle" type="button" tabindex="-1" data-sign-toggle aria-label="부호 바꾸기 (+/−)">+/−</button></span>`;
-document.addEventListener("mousedown",e=>{ if(e.target.closest?.("[data-sign-toggle]")) e.preventDefault(); });
-document.addEventListener("click",e=>{
-  const x=e.target.closest?.("[data-sign-toggle]")?.previousElementSibling;if(!x||x.readOnly||x.disabled)return;
-  const v=x.value.trim();x.value=v.startsWith("-")?v.slice(1):`-${v.replace(/^\+/,"")}`;
-  x.focus();x.setSelectionRange(x.value.length,x.value.length);x.dispatchEvent(new Event("input",{bubbles:true}));
-});
+// 음수가 될 수 있는 칸(손익·순자산·증가율 등)은 inputmode=numeric. 삼성 키보드는 소수 키패드(decimal)·type=number 키패드에 '-' 키가 없고, numeric 키패드에는 '-'와 '.'이 모두 있다(실기기 확인).
+const signedMoneyAttrs = moneyAttrs.replace('inputmode="decimal"','inputmode="numeric"');
+// 쉼표 없는 비율(%) 칸은 pattern으로 숫자가 아닌 값을 막아 type=number처럼 onChange가 저장하지 않게 한다.
+const signedNumAttrs = 'type="text" inputmode="numeric" autocomplete="off" pattern="-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)"';
 
 let doc=assetStore.doc, prices=assetStore.prices;
 // 고른 탭·연도·시나리오는 이 기기 etf-planner-assets-ui에만 저장하고 동기화하지 않는다.

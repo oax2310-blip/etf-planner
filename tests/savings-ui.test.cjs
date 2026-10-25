@@ -231,3 +231,20 @@ test('저축 연도별: 현재 연도가 계획 범위 밖이어도 기록·계�
   assert.deepEqual(h.state().map(x=>x[0]),[2025,2026]);
   assert.equal(h.storage.get(key),before);assert.equal(h.saves(),0);
 });
+
+test('저축·할부의 음수 가능 칸은 \'-\'·\'.\' 키가 있는 키패드(numeric)와 숫자 pattern을 쓴다',()=>{
+  // 삼성 키보드는 inputmode=decimal·type=number 키패드에 '-' 키가 없다. 가상 값.
+  const data=fixture();data.savings.scenarios[0].stages=[{age:40,growth:-1,returnRate:-2.5}];
+  const h=setup(data),html=h.html(),signed=/type="text" inputmode="numeric" autocomplete="off" pattern="([^"]+)"/;
+  for(const k of ['growth','returnRate'])assert.match(html,new RegExp(`data-param="${k}" ${signed.source}`),k);
+  assert.match(html,new RegExp(`data-stage="0" data-k="growth" ${signed.source} value="-1"`),'단계 증가율');
+  assert.match(html,new RegExp(`data-stage="0" data-k="returnRate" ${signed.source} value="-2.5"`),'단계 수익률');
+  assert.match(html,/data-param="giving" type="number" step="any" inputmode="decimal"/,'음수 없는 비율은 그대로');
+  const pattern=new RegExp(`^(?:${html.match(signed)[1]})$`,'v');
+  for(const v of ['-1.5','3','.5','-0.25','10.'])assert.ok(pattern.test(v),v);
+  for(const v of ['-','1.2.3','abc','1,000','+1'])assert.ok(!pattern.test(v),v);
+  vm.runInContext('renderInstallments()',h.ctx);const inst=h.node('installmentsView').innerHTML;
+  assert.match(inst,/data-installment="netAssets" type="text" inputmode="numeric" autocomplete="off" data-money/,'기준 순자산');
+  assert.match(inst,new RegExp(`data-installment="returnRate" ${signed.source}`),'예상 수익률');
+  assert.match(inst,/data-installment="discountRate"[^>]*type="number" inputmode="decimal" min="0" max="100"/,'할인율은 그대로');
+});

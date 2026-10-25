@@ -212,6 +212,7 @@ const batteryMoney=n=>num(Math.round(n))+"원";
 function renderBatteryEtfs(){
   const warn=el("batteryWeightsWarning");
   const allIds=[...batteryInputs,...companyInputIds,...groupInputIds];
+  // 위안화 연 변화(chinaFx)는 '-' 키가 있는 키패드를 쓰려고 text + inputmode=numeric 칸이며, 범위(−15~15%, 0.5 단위)는 HTML pattern을 checkValidity로 검사한다.
   const invalid=allIds.find(id=>!el(id).checkValidity()||el(id).value.trim()===""||!Number.isFinite(Number(el(id).value)));
   if(invalid){ warn.textContent="입력값의 범위를 확인하면 계산이 다시 표시됩니다: "+(el(invalid).getAttribute("aria-label")?.trim()||el(invalid).labels?.[0]?.textContent||invalid); return; }
   const read=id=>Number(el(id).value);

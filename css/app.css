@@ -15,7 +15,7 @@
 *{box-sizing:border-box} [hidden]{display:none!important} /* .btn·.item-trades 등 클래스의 display가 hidden 속성을 덮어 숨긴 버튼·칸이 보이지 않게 */
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.5;letter-spacing:-.005em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;-webkit-tap-highlight-color:transparent}
 button,input,select,textarea{font:inherit;letter-spacing:inherit} button{cursor:pointer} button:disabled{cursor:not-allowed;opacity:.5} ::selection{background:var(--accent-soft)}
-input[type=number]{font-variant-numeric:tabular-nums}
+input[type=number],input[inputmode=numeric]{font-variant-numeric:tabular-nums}
 /* 윗줄: 로고·탭·오른쪽 버튼 */
 .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px clamp(16px,4vw,48px);background:var(--top);border-bottom:1px solid var(--line);-webkit-backdrop-filter:saturate(1.6) blur(16px);backdrop-filter:saturate(1.6) blur(16px)}
 .brand{font-weight:700;font-size:17px;letter-spacing:-.03em;display:flex;align-items:center;gap:10px;white-space:nowrap}.brand b{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--accent);color:var(--on-accent)}.brand svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.brand svg rect{fill:currentColor;stroke:none}

@@ -14,13 +14,13 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0c10">
   <link rel="icon" href="push-icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <script src="js/theme.js?v=287"></script>
+  <script src="js/theme.js?v=288"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <title>AI 구독 · 삼성SDI · ETF · 환율 시나리오</title>
   <meta name="description" content="AI 구독사업, 삼성SDI, ETF의 장기 가치와 한미 GDP·M2로 계산한 원·달러 상대 통화압력을 살펴봅니다.">
-  <link rel="stylesheet" href="css/currency-pressure.css?v=287">
-  <link rel="stylesheet" href="css/valuation.css?v=287">
-  <script src="js/repo-security.js?v=287" defer></script>
+  <link rel="stylesheet" href="css/currency-pressure.css?v=288">
+  <link rel="stylesheet" href="css/valuation.css?v=288">
+  <script src="js/repo-security.js?v=288" defer></script>
 </head>
 <body>
 <header class="top">
@@ -230,7 +230,7 @@
     <details class="market-folder battery-advanced"><summary>ETF별 계산 과정과 근거 자료 <span>펼쳐보기</span></summary><div class="market-folder-body">
     <div class="battery-results">
       <div class="card"><h3>RISE · 국내 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="RISE 가치 구성"><tbody id="riseBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="riseBasePrice">계산 기준 ETF 종가</label><input id="riseBasePrice" type="number" min="1" max="1000000" step="1" value="11175"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 나머지에는 SK이노베이션(SK온의 모회사), 양극재·소재 기업도 들어갑니다.</p></div>
-      <div class="card"><h3>KODEX · 중국 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="KODEX 가치 구성"><tbody id="chinaBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="chinaFx">원화 대비 위안화 연 변화</label><input id="chinaFx" type="number" min="-15" max="15" step="0.5" value="0"><span class="unit">%</span></div><div class="battery-field"><label for="chinaBasePrice">계산 기준 ETF 종가</label><input id="chinaBasePrice" type="number" min="1" max="1000000" step="1" value="8335"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 합성 ETF라 실제 보유명세에 주식 대신 스왑이 표시됩니다. 위안화 상승은 원화 가격을 높이는 것으로 가정합니다.</p></div>
+      <div class="card"><h3>KODEX · 중국 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="KODEX 가치 구성"><tbody id="chinaBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="chinaFx">원화 대비 위안화 연 변화</label><input id="chinaFx" type="text" inputmode="numeric" autocomplete="off" pattern="-?(?:(?:1[0-4]|\d)(?:\.[05]0*)?|15(?:\.0+)?)" value="0"><span class="unit">%</span></div><div class="battery-field"><label for="chinaBasePrice">계산 기준 ETF 종가</label><input id="chinaBasePrice" type="number" min="1" max="1000000" step="1" value="8335"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 합성 ETF라 실제 보유명세에 주식 대신 스왑이 표시됩니다. 위안화 상승은 원화 가격을 높이는 것으로 가정합니다.</p></div>
     </div>
     <div class="card">
       <h3>계산 과정</h3><div class="equation" id="batteryEquation">세계 판매량 → 기업별 배터리 출하량 → 매출과 이익 → 기업가치 → ETF 조건부 가격.</div>
@@ -471,7 +471,7 @@
     <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다.</p>
   </div>
 </dialog>
-<script src="js/valuation.js?v=287" defer></script>
-<script src="js/currency-pressure.js?v=287" defer></script>
+<script src="js/valuation.js?v=288" defer></script>
+<script src="js/currency-pressure.js?v=288" defer></script>
 </body>
 </html>
