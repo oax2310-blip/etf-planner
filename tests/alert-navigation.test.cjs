@@ -97,7 +97,7 @@ function page(initial={},assets={}){
     assetStore:{doc:assets,subscribe:fn=>assetListeners.push(fn)},
     renderPlans:()=>calls.tabs.push('plans'),renderRebuy:()=>calls.tabs.push('rebuy'),renderFutures:()=>calls.tabs.push('futures'),
     purchasePlanner:{select:(id,...extra)=>calls.selectedBuys.push(extra.length?[id,...extra]:id),render:()=>calls.tabs.push('buys')},futureRebuyExpanded:false,priceData:null});
-  for(const file of ['js/ma-ladder.js','js/core.js','js/assets-calc.js','js/rebuy.js','js/alerts.js','js/alert-target.js','js/push.js'])vm.runInContext(source(file),ctx);
+  for(const file of ['js/ma-ladder.js','js/data-validation.js','js/core.js','js/assets-calc.js','js/rebuy.js','js/alerts.js','js/alert-target.js','js/push.js'])vm.runInContext(source(file),ctx);
   ctx.renderRebuy=()=>calls.tabs.push('rebuy');
   const state=()=>plain(vm.runInContext('state',ctx));
   const records=()=>{const s=state();return JSON.stringify({plans:s.plans,futures:s.futures,rebuy:s.rebuy,alerts:s.alerts});};

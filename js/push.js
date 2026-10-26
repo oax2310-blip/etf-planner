@@ -182,8 +182,7 @@ async function enablePhonePush(){
     if(sync.repo!==repo||!connected())throw Error("동기화 연결이 바뀌었습니다. 현재 저장소를 확인한 뒤 다시 연결해 주세요.");
     const subscriptions=pushDevices().filter(s=>s?.id!==pushDeviceId()&&s?.subscription?.endpoint!==subscription.endpoint);
     if(subscriptions.length>=20)throw Error("연결된 기기가 많습니다. 쓰지 않는 기기에서 알림을 해제해 주세요.");
-    state.alerts={...state.alerts,rules:state.alerts?.rules||[],subscriptions:[...subscriptions,{id:pushDeviceId(),subscription:subscription.toJSON()}]};
-    save();
+    if(save({...state,alerts:{...state.alerts,rules:state.alerts?.rules||[],subscriptions:[...subscriptions,{id:pushDeviceId(),subscription:subscription.toJSON()}]}})===false)throw Error("기기에 구독 기록을 저장하지 못했습니다.");
     await syncNow();
     pushMessage=sync.repo!==repo?"동기화 연결이 바뀌었습니다. 현재 저장소에서 알림 연결을 다시 확인해 주세요.":
       !pushIsSaved()?"동기화에서 다른 기록을 선택해 이 기기의 연결이 저장되지 않았습니다. 알림 받기를 다시 눌러 주세요.":
@@ -197,7 +196,7 @@ async function disablePhonePush(){
   try{
     if(pushSubscription)await pushSubscription.unsubscribe();
     pushSubscription=null;
-    if(state.alerts){state.alerts={...state.alerts,subscriptions:pushDevices().filter(s=>s?.id!==pushDeviceId()&&s?.subscription?.endpoint!==endpoint)};save();}
+    if(state.alerts&&save({...state,alerts:{...state.alerts,subscriptions:pushDevices().filter(s=>s?.id!==pushDeviceId()&&s?.subscription?.endpoint!==endpoint)}})===false)throw Error("기기에 구독 기록을 저장하지 못했습니다.");
     if(connected())await syncNow();
     pushMessage=pushRemoteHas(endpoint)?"이 기기 알림을 해제했습니다. 저장소에도 반영하려면 동기화를 완료해 주세요.":"이 기기 알림을 해제했습니다.";
   }catch{pushMessage="알림 해제를 완료하지 못했습니다. 브라우저의 사이트 설정에서도 알림을 차단할 수 있습니다.";}

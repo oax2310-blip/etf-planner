@@ -402,8 +402,47 @@ const presetControls={
   ai:{selector:"[data-ai-preset]",data:"aiPreset",label:"aiPresetLabel",names:aiPresetLabels}
 };
 const owns=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
-const readStored=(key,fallback)=>{ try { const raw=localStorage.getItem(key); return raw?JSON.parse(raw):fallback; } catch (_) { return fallback; } };
-const writeStored=(key,value)=>{ try { localStorage.setItem(key,JSON.stringify(value)); return true; } catch (_) { return false; } };
+const storedObject=value=>!!value&&typeof value==="object"&&!Array.isArray(value);
+const storedAssumptionsValid=value=>storedObject(value)
+  &&(value.values===undefined||storedObject(value.values)&&Object.values(value.values).every(number=>typeof number==="number"&&Number.isFinite(number)))
+  &&(value.presets===undefined||storedObject(value.presets)&&Object.values(value.presets).every(choice=>typeof choice==="string"))
+  &&(value.savedAt===undefined||typeof value.savedAt==="string");
+const storedScenarioValid=value=>storedAssumptionsValid(value)&&typeof value.id==="string"&&typeof value.name==="string";
+let scenarioStorageError="";
+// 손상·읽기 실패는 없는 키와 구별한다. 원문은 그대로 두고 이 페이지를 다시 열어 확인하기 전까지 모든 저장을 막는다.
+const readStored=(key,fallback)=>{
+  try {
+    const raw=localStorage.getItem(key);
+    if(raw===null) return fallback;
+    const value=JSON.parse(raw),valid=key===ASSUMPTION_KEY?storedAssumptionsValid(value):key===SCENARIO_LIST_KEY?Array.isArray(value)&&value.every(storedScenarioValid):storedObject(value)&&Object.values(value).every(at=>typeof at==="string");
+    if(!valid) throw Error("invalid stored scenario");
+    return value;
+  } catch (_) { scenarioStorageError="이 기기의 가정 기록을 불러오지 못했습니다. 기존 기록을 보호하기 위해 저장·동기화를 중단했습니다."; return fallback; }
+};
+function checkScenarioStorage(){
+  if(scenarioStorageError) return false;
+  readStored(ASSUMPTION_KEY,null); readStored(SCENARIO_LIST_KEY,[]); readStored(DELETED_KEY,{});
+  return !scenarioStorageError;
+}
+const writeStored=(key,value)=>{ if(!checkScenarioStorage()) return false; try { localStorage.setItem(key,JSON.stringify(value)); return true; } catch (_) { return false; } };
+// 목록·삭제표를 함께 바꿀 때 뒤의 쓰기가 실패하면 앞서 쓴 키를 되돌린다. localStorage 자체는 다중 키 트랜잭션을 제공하지 않는다.
+function writeStoredBatch(entries){
+  if(!checkScenarioStorage()) return false;
+  const written=[];
+  try {
+    const changes=entries.map(([key,value])=>({key,value:JSON.stringify(value),previous:localStorage.getItem(key)}));
+    for(const change of changes){
+      if(change.value===change.previous) continue;
+      localStorage.setItem(change.key,change.value); written.push(change);
+    }
+    return true;
+  } catch (_) {
+    for(const {key,previous} of written.reverse()){
+      try { if(previous===null) localStorage.removeItem(key); else localStorage.setItem(key,previous); } catch (_) {}
+    }
+    return false;
+  }
+}
 const validValues=values=>values&&typeof values==="object"&&!Array.isArray(values)?values:{};
 // 입력 중인 빈칸·범위 밖 값은 저장하지 않고 직전에 저장한 값을 유지한다.
 function collectAssumptions(previous){
@@ -457,14 +496,16 @@ function adoptAssumptions(saved){
 function showAssumptionState(){
   const values=validValues(currentAssumptions.values),count=changedCount(values);
   const sync={pending:" · 동기화 대기",busy:" · 동기화 중",typing:" · 입력 후 동기화",done:" · 동기화됨",error:" · 동기화 오류"}[scenarioSync.state]||(count?" · 자동 저장됨":"");
-  el("saveState").textContent=!assumptionStorageOk?"저장 안 됨":(count?"조정 "+count+"개":"기본값")+sync;
-  el("currentSummary").textContent=(assumptionStorageOk?"":"이 브라우저에 저장할 수 없습니다 · ")+describeAssumptions(values);
+  el("saveState").textContent=scenarioStorageError?"저장 중단":!assumptionStorageOk?"저장 안 됨":(count?"조정 "+count+"개":"기본값")+sync;
+  el("currentSummary").textContent=scenarioStorageError||((assumptionStorageOk?"":"이 브라우저에 저장할 수 없습니다 · ")+describeAssumptions(values));
 }
 function saveAssumptions(){
   clearTimeout(assumptionSaveTimer); assumptionSaveTimer=null;
+  if(!checkScenarioStorage()){ assumptionStorageOk=false; showAssumptionState(); return false; }
   const next=collectAssumptions(currentAssumptions.values);
-  if(assumptionKey(next)!==assumptionKey(currentAssumptions)){
-    currentAssumptions={...next,savedAt:new Date().toISOString()};
+  const changed=assumptionKey(next)!==assumptionKey(currentAssumptions);
+  if(changed||!assumptionStorageOk){
+    if(changed) currentAssumptions={...next,savedAt:new Date().toISOString()};
     assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions);
     scheduleScenarioSync(5000);
   }
@@ -477,6 +518,7 @@ document.addEventListener("click",event=>{ if(event.target.closest?.("[data-pres
 document.addEventListener("visibilitychange",()=>{ if(document.hidden&&assumptionSaveTimer) saveAssumptions(); });
 window.addEventListener("pagehide",()=>{ if(assumptionSaveTimer) saveAssumptions(); });
 const storedAssumptions=readStored(ASSUMPTION_KEY,null);
+checkScenarioStorage();
 if(storedAssumptions&&typeof storedAssumptions==="object"&&!Array.isArray(storedAssumptions)) adoptAssumptions(storedAssumptions);
 showAssumptionState();
 
@@ -506,7 +548,7 @@ function renderScenarioList(){
 }
 // 저장본에 없는 조정값을 덮어쓰기 전에 확인한다.
 function confirmReplaceCurrent(){
-  saveAssumptions();
+  if(saveAssumptions()===false) return false;
   const values=validValues(currentAssumptions.values);
   if(!changedCount(values)||readScenarios().some(item=>sameValues(validValues(item.values),values))) return true;
   return confirm("지금 조정한 가정은 저장한 목록에 없습니다. 계속하면 현재 조정값이 바뀝니다. 계속할까요?");
@@ -519,6 +561,7 @@ el("scenarioForm").addEventListener("submit",event=>{
   const name=el("scenarioName").value.trim().slice(0,40);
   if(!name){ setSavesStatus("저장할 이름을 입력하세요."); el("scenarioName").focus(); return; }
   saveAssumptions();
+  if(scenarioStorageError){ setSavesStatus(scenarioStorageError); return; }
   const list=readScenarios(),existing=list.findIndex(item=>item.name===name);
   if(existing>=0&&!confirm("'"+name+"' 저장본을 현재 가정으로 덮어쓸까요?")) return;
   const entry={id:existing>=0?list[existing].id:(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random()),name,savedAt:new Date().toISOString(),values:currentAssumptions.values,presets:currentAssumptions.presets};
@@ -541,7 +584,7 @@ el("scenarioList").addEventListener("click",event=>{
     el("savesDialog").close();
   } else {
     if(!confirm("'"+item.name+"' 저장본을 삭제할까요?")) return;
-    if(!writeStored(SCENARIO_LIST_KEY,list.filter(entry=>entry.id!==item.id))||!writeStored(DELETED_KEY,{...readDeleted(),[item.id]:new Date().toISOString()})){ setSavesStatus("삭제하지 못했습니다."); return; }
+    if(!writeStoredBatch([[SCENARIO_LIST_KEY,list.filter(entry=>entry.id!==item.id)],[DELETED_KEY,{...readDeleted(),[item.id]:new Date().toISOString()}]])){ setSavesStatus("삭제하지 못했습니다."); return; }
     renderScenarioList();
     setSavesStatus("'"+item.name+"'을(를) 삭제했습니다.");
     scheduleScenarioSync(300);
@@ -585,9 +628,11 @@ function readSyncConfig(){
     return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null;
   } catch (_) { return null; }
 }
+const sameScenarioConfig=config=>{ const current=readSyncConfig(); return !!current&&current.repo===config.repo&&current.token===config.token; };
 const toB64=text=>{ const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
 const fromB64=b64=>new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
 async function scenarioGh(config,path,options={}){
+  if(!sameScenarioConfig(config)) throw Error("동기화 연결이 바뀌었습니다.");
   repoSecurity.assertDataRepo(config.repo);
   const response=await fetch("https://api.github.com"+path,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:"Bearer "+config.token,...options.headers}});
   if(response.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
@@ -621,7 +666,7 @@ function setScenarioSyncState(state,message=""){
   const config=readSyncConfig();
   scenarioSync.state=state; scenarioSync.message=message;
   if(state==="done") scenarioSync.at=new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"});
-  el("scenarioSyncStatus").textContent={off:"연결 안 됨",pending:"잠시 후 동기화",busy:"동기화 중…",typing:"입력 중 · 끝나면 동기화",done:"동기화 완료 · "+scenarioSync.at,error:"동기화 오류 · 이 기기에는 저장됨"}[state];
+  el("scenarioSyncStatus").textContent={off:"연결 안 됨",pending:"잠시 후 동기화",busy:"동기화 중…",typing:"입력 중 · 끝나면 동기화",done:"동기화 완료 · "+scenarioSync.at,error:"동기화 오류"}[state];
   el("scenarioSyncError").textContent=message; el("scenarioSyncError").hidden=!message;
   el("scenarioSyncNow").hidden=!config; el("scenarioSyncOff").hidden=!!config; el("scenarioSyncOn").hidden=!config;
   el("scenarioSyncRepo").textContent=config?config.repo:"";
@@ -631,41 +676,68 @@ const remoteCurrentNewer=(merged,local)=>!!merged.current&&merged.current.savedA
 // 숫자 칸을 입력하는 중(빈칸·범위 밖 값은 저장하지 않고 직전 값을 유지)에는 다른 기기의 더 새 조정값으로 칸을 다시 쓰지 않는다.
 // 적용은 칸에서 나올 때까지 미루고 focusout에서 다시 동기화한다(js/sync.js holdForTyping과 같은 방식). 슬라이더·선택 칸은 바꾸는 즉시 저장되어 대상이 아니다.
 const typingAssumption=node=>!!node&&node.tagName==="INPUT"&&node.type!=="range"&&assumptionIdSet.has(node.id);
+function refreshStoredAssumptions(){
+  const stored=readStored(ASSUMPTION_KEY,null);
+  if(scenarioStorageError) throw Error(scenarioStorageError);
+  // 다른 탭에서 이미 저장한 현재값도 원격 병합의 로컬 입력이다. 오래된 메모리로 그 값을 덮어쓰지 않는다.
+  if(typeof stored?.savedAt==="string"&&stored.savedAt>currentAssumptions.savedAt){
+    if(typingAssumption(document.activeElement)){ scenarioSync.waitTyping=true; setScenarioSyncState("typing"); return false; }
+    adoptAssumptions(stored); assumptionStorageOk=true; showAssumptionState();
+  }
+  return true;
+}
 function adoptMergedScenarios(merged,local){
-  writeStored(SCENARIO_LIST_KEY,merged.scenarios); writeStored(DELETED_KEY,merged.deleted);
-  if(remoteCurrentNewer(merged,local)){ adoptAssumptions(merged.current); assumptionStorageOk=writeStored(ASSUMPTION_KEY,currentAssumptions); }
+  const previous=currentAssumptions,newer=remoteCurrentNewer(merged,local);
+  if(newer) adoptAssumptions(merged.current);
+  const entries=[[SCENARIO_LIST_KEY,merged.scenarios],[DELETED_KEY,merged.deleted]];
+  if(newer||!assumptionStorageOk) entries.push([ASSUMPTION_KEY,currentAssumptions]);
+  if(!writeStoredBatch(entries)){
+    if(newer){ applyAssumptions(previous); currentAssumptions=previous; }
+    throw Error("이 브라우저에 저장하지 못했습니다. 저장 공간을 확인한 뒤 다시 동기화하세요.");
+  }
+  if(newer||!assumptionStorageOk) assumptionStorageOk=true;
   if(el("savesDialog").open) renderScenarioList();
 }
 async function syncScenarios(){
   const config=readSyncConfig();
+  if(!checkScenarioStorage()){ assumptionStorageOk=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null; setScenarioSyncState("error",scenarioStorageError); return; }
   if(!config){ clearTimeout(scenarioSync.timer); scenarioSync.timer=null; setScenarioSyncState("off"); return; }
   if(scenarioSync.busy){ scenarioSync.again=true; return; }
   scenarioSync.busy=true; scenarioSync.again=false; scenarioSync.waitTyping=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null;
   setScenarioSyncState("busy");
   try {
-    if(scenarioSync.checked!==config.repo){ await checkScenarioRepo(config); scenarioSync.checked=config.repo; }
+    if(scenarioSync.checked!==config.repo){ await checkScenarioRepo(config); if(!sameScenarioConfig(config)) return; scenarioSync.checked=config.repo; }
     for(let attempt=1;;attempt++){
       const remote=await readRemoteScenarios(config);
+      if(!sameScenarioConfig(config)) return;
+      if(!checkScenarioStorage()) throw Error(scenarioStorageError);
       if(assumptionSaveTimer) saveAssumptions();
+      if(!refreshStoredAssumptions()) return;
       const local=localScenarioData(),merged=mergeScenarioData(local,remote.data||{current:null,scenarios:[],deleted:{}});
       if(remoteCurrentNewer(merged,local)&&typingAssumption(document.activeElement)){ scenarioSync.waitTyping=true; setScenarioSyncState("typing"); return; }
       adoptMergedScenarios(merged,local);
       const empty=!merged.current&&!merged.scenarios.length&&!Object.keys(merged.deleted).length;
       if(remote.data?JSON.stringify(merged)===JSON.stringify(remote.data):empty) break;
-      try { await writeRemoteScenarios(config,merged,remote.sha); break; }
+      try { await writeRemoteScenarios(config,merged,remote.sha); if(!sameScenarioConfig(config)) return; break; }
       catch (error) { if(!error.stale||attempt>=3) throw error; }
     }
     setScenarioSyncState(scenarioSync.timer?"pending":"done");
   } catch (error) {
+    if(!sameScenarioConfig(config)) return;
     setScenarioSyncState("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error));
   } finally {
     scenarioSync.busy=false;
+    if(!sameScenarioConfig(config)){
+      scenarioSync.checked="";
+      scenarioSync.again=!!readSyncConfig();
+      setScenarioSyncState(scenarioSync.again?"pending":"off");
+    }
     if(scenarioSync.again&&!scenarioSync.waitTyping) scheduleScenarioSync(300);
   }
 }
 document.addEventListener("focusout",event=>{ if(scenarioSync.waitTyping&&!typingAssumption(event.relatedTarget)){ scenarioSync.waitTyping=false; scheduleScenarioSync(300); } }); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 function scheduleScenarioSync(delay){
-  if(!readSyncConfig()) return;
+  if(scenarioStorageError||!readSyncConfig()) return;
   clearTimeout(scenarioSync.timer);
   scenarioSync.timer=setTimeout(()=>{ scenarioSync.timer=null; syncScenarios(); },delay);
   if(!scenarioSync.busy) setScenarioSyncState("pending");

@@ -10,7 +10,7 @@ function priceLine(message=assetStore.priceMessage){
 }
 function setAssetSync(){
   const cfg=assetConfig(),s=assetStore.status;
-  const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];
+  const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`저장·동기화 확인 필요 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];
   el("syncStatus").textContent=text;el("syncDialogStatus").textContent=text;el("syncBtn").title=text;
   el("syncBtn").className="btn mini sync-btn "+(!cfg?"off":s.state==="error"||s.state==="choose"?"warn":s.state==="busy"?"busy":"ok");
   el("syncOff").hidden=!!cfg;el("syncOn").hidden=!cfg;el("syncRepo").textContent=cfg?.repo||"";el("syncNowBtn").hidden=!cfg;
@@ -24,14 +24,15 @@ async function refreshAssetPrices(){await assetStore.refreshPrices();if(!assetCo
 el("refreshPricesBtn").onclick=refreshAssetPrices;
 el("refreshPricesDialogBtn").onclick=refreshAssetPrices;
 el("downloadRecovery").hidden=!assetStore.recovery().length;
-const downloadA = (value, name) => { const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}), a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
+const downloadAText = (text, name) => { const blob=new Blob([text],{type:"application/json"}), a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
+const downloadA = (value,name) => downloadAText(JSON.stringify(value,null,2),name);
 el("downloadRecovery").onclick=()=>downloadA(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
-el("exportBtn").onclick=()=>downloadA({...doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
+el("exportBtn").onclick=()=>{if(assetStore.loadError){if(assetStore.loadedRaw!==null)downloadAText(assetStore.loadedRaw,`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);else alert(assetStore.loadError);return;}downloadA({...doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);};
 el("importInput").onchange=async e=>{ const file=e.target.files?.[0]; if(!file) return;
   try{ const incoming=cleanAssets(externalData.assets(JSON.parse(await file.text()))); if(!incoming||assetsBlank(incoming)) throw Error("자산 현황 백업 형식이 아닙니다.");
     const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));
-    if(!confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.`)) return;
-    assetStore.restore(incoming); render(); alert("복원했습니다."); }
+    if(!confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? ${assetStore.loadError?"읽지 못한 기존 원문을 JSON 파일로 내려받습니다.":"지금 기록은 이 기기에 보관합니다."}`)) return;
+    assetStore.restore(incoming,text=>downloadAText(text,`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`)); render(); alert("복원했습니다."); }
   catch(err){ alert(`복원 실패: ${err.message}`); }
   e.target.value=""; };
 // 탭 전환은 모든 탭 파일을 불러온 뒤 연결한다(불러오는 중 누른 탭이 아직 없는 화면 함수를 부르지 않게).

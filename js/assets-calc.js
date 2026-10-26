@@ -17,7 +17,7 @@ function assetNumberText(value){
 // prices = {updatedAt, stocks:{종목 코드:{kind, asOf, close, stale}}, fx:{close, asOf}} (assets-store.js가 시세 파일에서 필요한 값만 남긴 것)
 function assetQuote(prices, ticker){
   const key=String(ticker||"").trim().toUpperCase(), e=key&&prices?.stocks?.[key];
-  if(!e||!(Number(e.close)>0)||!/^\d{4}-\d{2}-\d{2}$/.test(String(e.asOf)))return null;
+  if(!e||!plus(e.close)||!/^\d{4}-\d{2}-\d{2}$/.test(String(e.asOf)))return null;
   return {...e, close:Number(e.close), currency:e.kind==="해외"||e.kind==="코인"?"USD":"KRW"};
 }
 // 원/달러: 시세 파일의 현물 환율, 없으면 자산 배분에 직접 넣은 환율(cashFx)
@@ -454,8 +454,8 @@ function linkSummary(alloc, prices, ticker, ownId=null){
   const list=linkedItems(alloc,ticker,ownId);if(!list.length)return null;
   const s=allocationSummary(alloc,prices), rows=list.map(x=>({...x,value:s.items.get(x.it.id)?.value||0})), value=rows.reduce((n,r)=>n+r.value,0);
   const {target,scope}=linkedAllocationTarget(list,s);
-  const allShares=list.every(x=>finite(x.it.shares)!==null&&linkTicker(assetTradeTicker(x.it))===linkTicker(ticker)), step=linkStep(list[0].it);
-  return {rows, value, pct:s.pct(value), target, scope, gap:target!==null?target/100*s.base-value:null, shares:allShares?linkRound(list.reduce((n,x)=>n+finite(x.it.shares),0),step):null, base:s.base, fx:s.fx};
+  const allShares=list.every(x=>finite(x.it.shares)!==null&&linkTicker(assetTradeTicker(x.it))===linkTicker(ticker));
+  return {rows, value, pct:s.pct(value), target, scope, gap:target!==null?target/100*s.base-value:null, shares:allShares?Number(list.reduce((n,x)=>n+finite(x.it.shares),0).toFixed(8)):null, base:s.base, fx:s.fx};
 }
 // 체결 = {sign: -1 매도·손절, 1 매수, qty?: 수량, price?: 가격(계획 통화), currency: "KRW"|"USD", value?: 금액(만원)}. 모르는 값은 null.
 // 연결 종목마다 단위와 미리 채울 양(n, 양수 — 수량 종목은 수량, 금액 종목은 지금 평가액 기준 만원): 수량은 체결 수량, 없으면 금액 ÷ 체결 가격(없으면 지금 시세).
@@ -469,9 +469,10 @@ function tradeRows(alloc, prices, ticker, trade, ownId=null){
     return {g,it,unit,step,converted,value:r?.value||0,n:n===null?null:unit==="shares"?converted?Math.floor(n/step+1e-9)*step:linkRound(n,step):Math.round(n*10)/10};
   });
 }
-// 종목 칸(shares·amount)에 d를 더한다(0 아래로는 자름). 실제로 더한 양을 돌려준다(없으면 0).
-function bumpField(it, field, d, step){
-  const old=finite(it[field])||0, next=Math.max(0,linkRound(old+d,step)), done=linkRound(next-old,step);
+// 종목 칸(shares·amount)에 d를 더한다(0 아래로는 자름). 거래 단위 반올림은 호출부에서 새 체결량에만 적용한다.
+// 기존 잔고의 소수부와 부족한 잔고를 잘라 실제 반영한 양은 8자리까지 보존해 정정·취소 시 원래 값으로 돌아간다.
+function bumpField(it, field, d){
+  const old=finite(it[field])||0, next=Math.max(0,Number((old+d).toFixed(8))), done=Number((next-old).toFixed(8));
   if(done)it[field]=next;
   return done;
 }
@@ -482,10 +483,10 @@ function applyTrade(alloc, prices, key, trade, label, picks){
   for(const p of picks||[]){
     const it=allocItemById(alloc,p?.id), n=plus(p?.n);if(!it||!n)continue;
     if(p.unit==="shares"){
-      const fresh=finite(it.shares)===null, add=bumpField(it,"shares",sign*n,linkStep(it));
-      if(add)items.push({id:it.id,shares:add,...(fresh?{fresh:true}:{}),...(trade?.ticker&&linkTicker(trade.ticker)!==linkTicker(assetTradeTicker(it))?{converted:true}:{})});
+      const fresh=finite(it.shares)===null, want=linkRound(sign*n,linkStep(it)), add=bumpField(it,"shares",want);
+      if(add)items.push({id:it.id,shares:add,...(add!==want?{exact:want}:{}),...(fresh?{fresh:true}:{}),...(trade?.ticker&&linkTicker(trade.ticker)!==linkTicker(assetTradeTicker(it))?{converted:true}:{})});
     }else{
-      const was=finite(it.amount)||0, v=s.items.get(it.id)?.value||0, add=bumpField(it,"amount",sign*n*(was>0&&v>0?was/v:1),0.01);
+      const was=finite(it.amount)||0, v=s.items.get(it.id)?.value||0, add=bumpField(it,"amount",linkRound(sign*n*(was>0&&v>0?was/v:1),0.01));
       if(!add)continue;
       if(!(was>0)&&finite(it.shares)===null)resetBase(it,prices,alloc);
       items.push({id:it.id,amount:add});
@@ -501,8 +502,8 @@ function revertTrade(alloc, key){
   const rec=alloc?.trades?.[key];if(!rec)return null;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it)continue;
-    if(finite(e.shares)!==null){if(e.shares)bumpField(it,"shares",-e.shares,linkStep(it));if(e.fresh&&!(finite(it.shares)>0))delete it.shares;}
-    if(finite(e.amount))bumpField(it,"amount",-e.amount,0.01);
+    if(finite(e.shares)!==null){if(e.shares)bumpField(it,"shares",-e.shares);if(e.fresh&&!(finite(it.shares)>0))delete it.shares;}
+    if(finite(e.amount))bumpField(it,"amount",-e.amount);
   }
   delete alloc.trades[key];if(!Object.keys(alloc.trades).length)delete alloc.trades;
   return rec;
@@ -511,20 +512,22 @@ function revertTrade(alloc, key){
 // 반영한 양을 다시 맞춘다. 수량은 같은 최소 단위·방향의 계좌별 합계를 먼저 반올림하고, 남는 최소 단위는 소수부가 큰 계좌부터 배분한다(4주+4주를 7주로 고쳐도 합계 7주).
 // 반올림·내림 전 양은 items[].exact에 두고 다음 수정의 기준으로 쓴다(수량은 반영량과 다를 때, 금액은 0.01만원 아래라 0이 될 때만 저장).
 // 크게 줄여 반영량이 0이 된 계좌도 다시 고치면 같은 비율로 돌아오고, 추종 ETF 주수 내림이 고칠 때마다 쌓이지 않는다.
-// exact는 반영량과 방향이 같고 최소 단위 2개 안일 때만 읽는다(없거나 맞지 않으면 지금 반영량 — 반영량만 고친 옛 기록·다른 경로 호환).
+// exact는 반영량과 방향이 같고 최소 단위 2개 안일 때 읽는다(없거나 맞지 않으면 지금 반영량 — 반영량만 고친 옛 기록·다른 경로 호환).
+// 새 매도가 잔고에 잘렸으면 exact에 요청한 차감량을 남긴다. 큰 차이는 잔고가 0이거나 같은 코드의 출처 주수 이내일 때만 읽는다.
+// 정정 뒤에도 요청량과 실제 차감량을 비교해 exact를 유지한다. exact 없는 옛 부족 잔고 기록의 요청량은 추정하지 않는다.
 // 비율을 알 수 없거나(0·빈 값) 그대로면 바꾸지 않는다. 바뀐 기록(없으면 null).
 function rescaleTrade(alloc, key, trade){
   const rec=alloc?.trades?.[key];if(!rec)return null;
   const q=plus(trade?.qty), p=plus(trade?.price), v=plus(trade?.value), ratio=(a,b)=>a&&b?a/b:null;
   const rq=ratio(q,rec.qty), rpq=ratio(q&&p?q*p:null,rec.qty&&rec.price?rec.qty*rec.price:null), rv=ratio(v,rec.value);
   const fShares=rq??rv??rpq, fAmount=rv??rpq??rq;
-  const start=(e,field,step)=>{const n=finite(e[field]), x=finite(e.exact);return x&&(!n||Math.sign(x)===Math.sign(n))&&Math.abs(x-(n||0))<2*step?x:n;};
+  const start=(e,field,step,it)=>{const n=finite(e[field]), x=finite(e.exact), clipped=field==="shares"&&x<n&&n<0&&(finite(it.shares)===0||!e.converted&&Math.abs(x)<=(plus(rec.qty)||0));return x&&(!n||Math.sign(x)===Math.sign(n))&&(Math.abs(x-(n||0))<2*step||clipped)?x:n;};
   const keep=(e,exact,n,step)=>{if(exact&&Math.abs(exact-n)>step*1e-6)e.exact=Number(exact.toPrecision(12));else delete e.exact;};
   const targets=new Map(), groups=new Map();
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id);if(!it||finite(e.shares)===null)continue;
     const factor=e.converted?fAmount:fShares;if(!factor||factor===1)continue;
-    const step=linkStep(it), from=start(e,"shares",step);if(!from)continue;
+    const step=linkStep(it), from=start(e,"shares",step,it);if(!from)continue;
     const sign=from<0?-1:1, key=`${step}:${sign}:${!!e.converted}`, rows=groups.get(key)||[], scaled=Math.abs(from)/step*factor;
     rows.push({e,step,sign,scaled,base:Math.floor(scaled),fraction:scaled-Math.floor(scaled)});groups.set(key,rows);
   }
@@ -536,11 +539,11 @@ function rescaleTrade(alloc, key, trade){
   let changed=false;
   for(const e of Array.isArray(rec.items)?rec.items:[]){
     const it=allocItemById(alloc,e?.id), t=targets.get(e);if(!it)continue;
-    if(t){const step=linkStep(it), add=bumpField(it,"shares",t.n-e.shares,step);if(add){e.shares=linkRound(e.shares+add,step);changed=true;}keep(e,t.exact,t.n,step);}
+    if(t){const step=linkStep(it), add=bumpField(it,"shares",t.n-e.shares);if(add){e.shares=Number((e.shares+add).toFixed(8));changed=true;}keep(e,t.exact,e.shares,step);}
     else if(finite(e.shares)===null&&finite(e.amount)!==null&&fAmount&&fAmount!==1){
       const from=start(e,"amount",0.01);if(!from)continue;
-      const exact=from*fAmount, n=Math.round(exact*100)/100, add=bumpField(it,"amount",n-e.amount,0.01);
-      if(add){e.amount=linkRound(e.amount+add,0.01);changed=true;}
+      const exact=from*fAmount, n=Math.round(exact*100)/100, add=bumpField(it,"amount",n-e.amount);
+      if(add){e.amount=Number((e.amount+add).toFixed(8));changed=true;}
       keep(e,n?0:exact,n,0.01);
     }
   }

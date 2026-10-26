@@ -43,6 +43,11 @@ const ui = {tab:"alloc", year:null, scenario:null, ...readJson(A_UI_KEY, {})};
 const setUi = patch => { Object.assign(ui, patch); writeJson(A_UI_KEY, ui); };
 // 바꾼 구역의 savedAt을 새로 찍고 저장 → 잠시 뒤 동기화
 function saveSection(section){assetStore.saveSection(section);}
+// 동기화·복원으로 교체된 객체에 열린 입력창을 저장하면 수정이 사라지거나 옛 계좌 순서를 덮어쓴다. 초안은 남기고 최신 기록에서 다시 열도록 안내한다.
+const assetEditGuard = (section, opened) => () => {
+  if(doc[section]===opened)return true;
+  alert("입력창을 연 뒤 기록이 갱신되었습니다. 입력 내용을 확인한 뒤 창을 닫고 다시 열어 주세요.");return false;
+};
 
 // ---------- 탭 ----------
 const TABS = ["strategy","alloc","ledger","savings","installments"];
@@ -266,7 +271,7 @@ function renderAlloc(tab="alloc"){
     if(Number.isNaN(n)){totalInput.setCustomValidity("0 이상의 금액을 억·만원 단위로 입력하세요. 숫자만 넣으면 만원입니다.");totalInput.reportValidity();return;}
     const next=plus(n);if(next!==(doc.allocation.total??null)){doc.allocation.total=next;saveSection("allocation");}render();};
   totalInput.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();totalInput.blur();}if(e.key==="Escape"){e.preventDefault();render();}};
-  onChange("#allocMemo","allocation",v=>{a.memo=v;});
+  onChange("#allocMemo","allocation",v=>{if(!doc.allocation)return false;doc.allocation.memo=v;});
   onChange("[data-done]","allocation",(v,x)=>{const it=findItem(x.dataset.done)?.it;if(!it)return false;if(x.checked)it.done=true;else delete it.done;});
   // 검색 결과와 관계없이 모든 그룹의 점검완료만 해제하고, 바뀐 기록이 있을 때 한 번 저장한다.
   const clearDone=el("clearAllocDone");
@@ -333,6 +338,7 @@ function keepTargets(alloc, removed, moved, dry=false){
 }
 function openItem(id, groupId){
   const a=doc.allocation, found=id?findItem(id):null, it=found?.it||{}, f=el("itemForm");
+  const current=assetEditGuard("allocation",a);
   el("itemTitle").textContent=found?"종목 수정":"새 종목";
   f.group.innerHTML=a.groups.map(g=>`<option value="${escA(g.id)}">${escA(g.name)}</option>`).join("");
   f.group.value=found?.g.id||groupId||a.groups[0]?.id||"";
@@ -354,11 +360,12 @@ function openItem(id, groupId){
     return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{
+    if(!current())return;
     const removed=new Set([it]), keep=keepBuyPlans(a,removed,true), to=keep.moved[0]?.to, goal=keepTargets(a,removed,keep.moved,true)[0], code=linkTicker(it.ticker), twins=!!code&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code));
     const notes=[to?`분할매수 계획과 체결 기록은 같은 종목의 '${to.name}' 줄로 옮겨 유지합니다.`:"",goal?`목표 비중 ${pc(goal.target)}는 '${goal.to.name}' 줄로 옮깁니다.`:twins&&finite(it.target)!==null?`이 줄의 목표 비중 ${pc(it.target)}는 함께 지워집니다.`:""].filter(Boolean);
     if(!confirm(`'${it.name}' 종목${keep.lost.length?"과 분할매수 계획":""}을 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
     keepTargets(a,removed,keepBuyPlans(a,removed).moved); found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
+  f.onsubmit=e=>{ e.preventDefault(); if(!current())return;if(!a.groups.length){ alert("먼저 그룹을 추가하세요."); return; }
     const tradeTicker=f.tradeTicker.value.trim().toUpperCase(),sourceKind=purchaseQuoteKind(f.ticker.value),tradeKind=purchaseQuoteKind(tradeTicker);
     if(tradeTicker&&(!["국내","해외"].includes(sourceKind)||!["국내","해외"].includes(tradeKind))){alert("기준 티커와 실제 매수 ETF에 국내 종목 코드 또는 미국 심볼을 넣으세요.");f.tradeTicker.focus();return;}
     if(numIn(f.tradePrice.value)!==null&&!tradeTicker){alert("현재가를 직접 넣으려면 실제 매수 ETF 코드를 먼저 입력하세요.");f.tradeTicker.focus();return;}
@@ -378,6 +385,7 @@ function openItem(id, groupId){
 }
 function openGroup(id){
   const a=doc.allocation, g=id?a.groups.find(x=>x.id===id):null, f=el("groupForm");
+  const current=assetEditGuard("allocation",a);
   // 중국 분류가 없는 옛 기록에도 선택지를 보이되, 선택한 그룹을 저장할 때만 만든다.
   const classes=allocationClassList(a);
   if(!classes.some(c=>c.region==="해외"&&c.name==="중국")){
@@ -393,11 +401,12 @@ function openGroup(id){
   el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%)</span>${names.map((n,i)=>{const t=targets.section(g.id,n);return `<label class="sub-target">${escA(n)}${t.linked?" · 종목 합산":""}<input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${t.target??""}"${t.linked?" disabled":""}></label>`;}).join("")}`:"";
   el("groupDelete").hidden=!g;
   el("groupDelete").onclick=()=>{
+    if(!current())return;
     const removed=new Set(g.items), keep=keepBuyPlans(a,removed,true);
     const notes=[keep.moved.length?`분할매수 계획은 같은 종목의 다른 계좌 줄로 옮겨 유지합니다: ${keep.moved.map(m=>`${m.from.name} → ${m.to.name}`).join(", ")}`:"",keep.lost.length?`분할매수 계획도 함께 삭제됩니다: ${keep.lost.map(x=>x.name).join(", ")}`:""].filter(Boolean);
     if(!confirm(`'${g.name}' 그룹${g.items.length?`과 종목 ${g.items.length}개`:""}를 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
     keepBuyPlans(a,removed); a.groups=a.groups.filter(x=>x!==g); saveSection("allocation"); dlg("groupDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t=g||{id:newId(),items:[]};
+  f.onsubmit=e=>{ e.preventDefault();if(!current())return; const t=g||{id:newId(),items:[]};
     t.name=f.name.value.trim()||"이름 없음"; t.classId=f.classId.value; if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
     const c=classes.find(x=>x.id===t.classId), stored=a.classes.find(x=>x.id===t.classId);
     if(c){if(stored)Object.assign(stored,c);else a.classes.push(c);}
@@ -407,6 +416,7 @@ function openGroup(id){
 }
 function openClass(id){
   const a=doc.allocation, c=id?a.classes.find(x=>x.id===id):null, f=el("classForm");
+  const current=assetEditGuard("allocation",a);
   const classes=allocationClassList(a), display=classes.find(x=>x.id===id);
   el("classTitle").textContent=c?"큰 분류 수정":"새 큰 분류";
   el("regionList").innerHTML=[...new Set([...ASSET_REGIONS,...classes.map(x=>x.region).filter(Boolean)])].map(r=>`<option value="${escA(r)}">`).join("");
@@ -419,19 +429,20 @@ function openClass(id){
   el("classTargetHint").textContent=target.linked?"그룹 목표의 합계입니다. 종목별에서 수정하면 자동 반영됩니다.":"하위 목표가 없을 때만 직접 입력합니다. 기준 총자산 대비입니다.";
   const used=c?a.groups.filter(g=>g.classId===c.id).length:0;
   el("classDelete").hidden=!c;
-  el("classDelete").onclick=()=>{ if(used){ alert(`이 분류에 그룹 ${used}개가 있습니다. 그룹을 다른 분류로 옮기거나 지운 뒤 삭제하세요.`); return; } if(!confirm(`'${c.name}' 분류를 삭제할까요?`)) return; a.classes=a.classes.filter(x=>x!==c); saveSection("allocation"); dlg("classDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
+  el("classDelete").onclick=()=>{ if(!current())return;if(used){ alert(`이 분류에 그룹 ${used}개가 있습니다. 그룹을 다른 분류로 옮기거나 지운 뒤 삭제하세요.`); return; } if(!confirm(`'${c.name}' 분류를 삭제할까요?`)) return; a.classes=a.classes.filter(x=>x!==c); saveSection("allocation"); dlg("classDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault();if(!current())return; const t=c||{id:newId()};
     t.name=f.name.value.trim()||"이름 없음"; t.region=f.region.value.trim()||"기타"; if(!f.target.disabled)setNum(t,"target",f.target.value); if(f.cash.checked){ t.cash=true; a.classes.forEach(x=>{ if(x!==t) delete x.cash; }); } else delete t.cash;
     if(!c) a.classes.push(t); saveSection("allocation"); dlg("classDialog").close(); render(); };
   dlg("classDialog").showModal();
 }
 function openCash(id){
   const a=doc.allocation, c=id?a.cash.find(x=>x.id===id):null, f=el("cashForm");
+  const current=assetEditGuard("allocation",a);
   el("cashTitle").textContent=c?"현금 수정":"새 현금 항목";
   f.place.value=c?.place||""; f.name.value=c?.name||""; f.amount.value=c?.amount??""; f.currency.value=c?.currency||"KRW"; f.minus.checked=!!c?.minus;
   el("cashDelete").hidden=!c;
-  el("cashDelete").onclick=()=>{ if(!confirm(`'${c.name}' 항목을 삭제할까요?`)) return; a.cash=a.cash.filter(x=>x!==c); saveSection("allocation"); dlg("cashDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
+  el("cashDelete").onclick=()=>{ if(!current())return;if(!confirm(`'${c.name}' 항목을 삭제할까요?`)) return; a.cash=a.cash.filter(x=>x!==c); saveSection("allocation"); dlg("cashDialog").close(); render(); };
+  f.onsubmit=e=>{ e.preventDefault();if(!current())return; const t=c||{id:newId()};
     setText(t,"place",f.place.value); t.name=f.name.value.trim()||"이름 없음"; t.amount=numIn(f.amount.value)??0; t.currency=f.currency.value==="USD"?"USD":"KRW"; if(f.minus.checked) t.minus=true; else delete t.minus;
     if(!c) a.cash.push(t); saveSection("allocation"); dlg("cashDialog").close(); render(); };
   dlg("cashDialog").showModal();

@@ -8,7 +8,8 @@ const root=path.join(__dirname,'..'),key='etf-planner-assets-v1';
 const source=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n;\n');
 const fixture=()=>({version:1,savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000,note:'기존 필드'}],scenarios:[{id:'base',name:'기본',salary:100,giving:10,spending:50,spendingYear:2025,growth:2,returnRate:5,endAge:60,stages:[]},{id:'other',name:'비교',salary:100,giving:10,spending:50,spendingYear:2025,growth:2,returnRate:3,endAge:60,stages:[]}]}});
 function setup(data=fixture(),year=2026,shared){
-  let now=new Date(year,9,11).getTime(),buttons=[],scenarios=[],inputs=[],saves=0;
+  let now=new Date(year,9,11).getTime(),buttons=[],scenarios=[],inputs=[],saves=0,notify=()=>{};
+  const alerts=[];
   const nodes=new Map(),events=new Map(),intervals=[],storage=shared||new Map([[key,JSON.stringify(data)]]);
   class SystemDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
   function node(id){
@@ -33,14 +34,14 @@ function setup(data=fixture(),year=2026,shared){
     nodes.set(id,n);return n;
   }
   const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-savings-year]'?buttons:sel==='[data-scenario]'?scenarios:/^\[data-(stage|param|base|actual)\]$/.test(sel)?inputs.filter(x=>sel.slice(6,-1) in x.dataset):[],addEventListener:(name,fn)=>events.set(`document:${name}`,fn)};
-  const store={doc:data,prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){saves++;},
+  const store={doc:data,prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(fn){notify=fn;},start(){},saveSection(){saves++;},
     saveSavingsMilestone(record){data.savings.milestoneRecord={ym:record.ym,age:record.age};storage.set(key,JSON.stringify(data));saves++;return true;}};
   const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},
     addEventListener:(name,fn)=>events.set(`window:${name}`,fn),setInterval:(fn,ms)=>intervals.push({fn,ms}),setTimeout:fn=>{fn();return 1;},
-    location:{hash:'#savings'},history:{replaceState(){}},scrollTo(){}});
+    location:{hash:'#savings'},history:{replaceState(){}},scrollTo(){},alert:message=>alerts.push(message),confirm:()=>true});
   vm.runInContext(source,ctx);
-  return {ctx,document,storage,events,node,inputs:()=>inputs,html:()=>node('savingsView').innerHTML,saves:()=>saves,
+  return {ctx,document,storage,events,node,alerts,inputs:()=>inputs,html:()=>node('savingsView').innerHTML,saves:()=>saves,replace:next=>{store.doc=next;notify('change');},
     setYear:y=>now=new Date(y,0,1).getTime(),render:()=>ctx.renderSavings(),tick:()=>intervals.find(i=>i.ms===60000).fn(),
     click:y=>buttons.find(b=>Number(b.dataset.savingsYear)===y).onclick(),
     state:()=>buttons.map(b=>[Number(b.dataset.savingsYear),b.getAttribute('aria-expanded')==='true',!node(b.getAttribute('aria-controls')).hidden])};
@@ -48,6 +49,47 @@ function setup(data=fixture(),year=2026,shared){
 const openYears=h=>h.state().filter(x=>x[1]).map(x=>x[0]);
 const stageInput=(h,i,key)=>h.inputs().find(x=>x.dataset.stage===String(i)&&x.dataset.k===key);
 const editInput=(x,value)=>{x.value=value;x.onchange();};
+
+test('저축 입력 중 동기화: 현재 월 기록·시나리오 ID에 입력을 반영하고 새 필드를 보존한다',()=>{
+  for(const [kind,key,value]of [['actual','2025-12','2000'],['base','startAge','32'],['param','salary','200']]){
+    const data=fixture(),h=setup(data),input=h.inputs().find(x=>x.dataset[kind]===key);
+    h.document.activeElement={tagName:'INPUT',closest:()=>null};
+    const next=structuredClone(data);next.savings.actual[0].note='동기화 메모';next.savings.scenarios.reverse();next.savings.scenarios[1].note='새 시나리오 메모';
+    h.replace(next);editInput(input,value);
+    assert.equal(kind==='actual'?next.savings.actual[0].total:kind==='base'?next.savings.startAge:next.savings.scenarios.find(x=>x.id==='base').salary,Number(value),kind);
+    assert.equal(next.savings.actual[0].note,'동기화 메모');assert.equal(next.savings.scenarios.find(x=>x.id==='base').note,'새 시나리오 메모');assert.equal(h.saves(),1);
+    assert.equal(kind==='actual'?data.savings.actual[0].total:kind==='base'?data.savings.startAge:data.savings.scenarios[0].salary,kind==='actual'?1000:kind==='base'?31:100,'옛 객체에 쓰지 않는다');
+  }
+});
+
+test('저축 단계 입력 중 동기화: 같은 단계는 최신 객체에 반영하고 순서가 바뀐 단계는 건드리지 않는다',()=>{
+  for(const reorder of [false,true]){
+    const data=fixture();data.savings.scenarios[0].stages=[{age:35,salary:150},{age:40,salary:250}];
+    const h=setup(data),input=stageInput(h,0,'salary');h.document.activeElement={tagName:'INPUT',closest:()=>null};
+    const next=structuredClone(data);if(reorder)next.savings.scenarios[0].stages.reverse();h.replace(next);editInput(input,'300');
+    assert.equal(next.savings.scenarios[0].stages.find(x=>x.age===35).salary,reorder?150:300);
+    assert.equal(next.savings.scenarios[0].stages.find(x=>x.age===40).salary,250);
+    assert.equal(data.savings.scenarios[0].stages[0].salary,150);assert.equal(h.saves(),reorder?0:1);
+    assert.equal(h.alerts.length,reorder?1:0);
+  }
+});
+
+test('저축 입력 중 시나리오 삭제: 다른 시나리오를 수정하거나 삭제된 시나리오를 되살리지 않는다',()=>{
+  const data=fixture(),h=setup(data),input=h.inputs().find(x=>x.dataset.param==='salary');h.document.activeElement={tagName:'INPUT',closest:()=>null};
+  const next=structuredClone(data);next.savings.scenarios=next.savings.scenarios.slice(1);h.replace(next);editInput(input,'999');
+  assert.equal(next.savings.scenarios.length,1);assert.equal(next.savings.scenarios[0].salary,100);assert.equal(data.savings.scenarios[0].salary,100);assert.equal(h.saves(),0);
+});
+
+test('저축 입력 중 동기화: 복사·단계 추가·시나리오 삭제도 최신 기록에 반영한다',()=>{
+  for(const action of ['copyScenario','addStage','deleteScenario']){
+    const data=fixture(),h=setup(data),click=h.node(action).onclick;h.document.activeElement={tagName:'INPUT',closest:()=>null};
+    const next=structuredClone(data);next.savings.scenarios[0].salary=300;next.savings.scenarios[0].stages=[{age:40}];h.replace(next);click();
+    if(action==='copyScenario'){assert.equal(next.savings.scenarios.length,3);assert.equal(next.savings.scenarios[2].salary,300);}
+    if(action==='addStage')assert.deepEqual(next.savings.scenarios[0].stages.map(s=>s.age),[40,45]);
+    if(action==='deleteScenario')assert.deepEqual(next.savings.scenarios.map(s=>s.id),['other']);
+    assert.equal(data.savings.scenarios.length,2);assert.equal(data.savings.scenarios[0].stages.length,0);assert.equal(h.saves(),1);
+  }
+});
 
 test('나이별 빈칸은 계산에 적용되는 월급·누적 사용금액·비율을 표시하고 조회로 입력·저장·결과를 바꾸지 않는다',()=>{
   const data=fixture(),sc=data.savings.scenarios[0];

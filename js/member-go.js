@@ -3,7 +3,7 @@
 const memberGo = (()=>{
 let pending=null, frame=0, waitingLoad=false;
 // 분할매도·재매수: 주소의 id(없던 옛 항목은 '#순번')가 가리키는 목록 위치. 없으면 -1.
-const indexOf = (list, id) => id.startsWith("#") ? (Number(id.slice(1))<list.length ? Number(id.slice(1)) : -1) : list.findIndex(x=>x&&x.id===id);
+const indexOf = (list, id) => id.startsWith("#") ? (/^#\d+$/.test(id)&&Number.isSafeInteger(Number(id.slice(1)))&&Number(id.slice(1))<list.length ? Number(id.slice(1)) : -1) : list.findIndex(x=>x&&x.id===id);
 function select(t){
   if(t.tab==="plans"){const i=indexOf(state.plans,t.id);if(i<0)return false;state.selectedPlan=state.plans[i].id;return true;}
   if(t.tab==="rebuy"){

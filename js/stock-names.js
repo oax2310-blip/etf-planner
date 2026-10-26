@@ -37,14 +37,20 @@ function clashes(rows){
 // 규칙 ID 앞부분은 trade-alerts.js·assets-calc.js 규칙 ID, 수집 저장소 webpush_alerts.py alert_history_names와 같다.
 // 금액·수량·메모·토큰·구독은 넣지 않으며 이 기기 IndexedDB에만 둔다.
 function alertMap(){
+  const plans=planList(),rebuys=rebuyList(),items=allocItems(),names=new Map();
+  const addName=(ticker,name)=>{const c=code(ticker),n=text(name);if(c&&n&&!names.has(c))names.set(c,n);};
+  // 한 번의 이름표 생성에서만 인덱스를 공유한다. lookup과 같은 우선순위·첫 이름을 유지하며 다음 호출은 새 기록을 읽는다.
+  for(const it of items)addName(text(it.tradeTicker)||it.ticker,it.name);
+  for(const r of rebuys)addName(r.ticker,r.name);
+  for(const p of plans)addName(p.ticker,p.title);
+  const find=ticker=>names.get(code(ticker))||"";
   const rules={},codes={},put=(prefix,name,c)=>{name=text(name);if(name)rules[prefix]=[name.slice(0,200),code(c)];};
-  for(const p of planList())if(text(p.id))put(`trade:plan:${text(p.id)}:`,text(p.cardName)||planName(p),p.ticker);
-  rebuyList().forEach((r,i)=>put(`trade:rebuy:${text(r.id)||`legacy-${i}`}:`,text(r.name)||lookup(r.ticker),r.ticker));
-  const items=allocItems();
+  for(const p of plans)if(text(p.id))put(`trade:plan:${text(p.id)}:`,text(p.cardName)||text(p.title)||find(p.ticker)||text(p.ticker),p.ticker);
+  rebuys.forEach((r,i)=>put(`trade:rebuy:${text(r.id)||`legacy-${i}`}:`,text(r.name)||find(r.ticker),r.ticker));
   for(const it of items)if(obj(it.buyPlan)&&text(it.id))put(`trade:buy:${text(it.id)}:`,it.name,text(it.tradeTicker)||it.ticker);
   const lines=typeof alertRules==="function"?alertRules():[]; // 직접 추가한 기준선 알림(alerts.js)
-  for(const t of [...planList().map(p=>p.ticker),...rebuyList().map(r=>r.ticker),...items.flatMap(it=>[it.ticker,it.tradeTicker]),...lines.map(r=>r.ticker)]){
-    const c=code(t);if(c&&!(c in codes)){const name=lookup(c);if(name)codes[c]=name.slice(0,200);}
+  for(const t of [...plans.map(p=>p.ticker),...rebuys.map(r=>r.ticker),...items.flatMap(it=>[it.ticker,it.tradeTicker]),...lines.map(r=>r.ticker)]){
+    const c=code(t);if(c&&!(c in codes)){const name=find(c);if(name)codes[c]=name.slice(0,200);}
   }
   return {rules,codes};
 }

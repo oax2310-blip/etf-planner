@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const {quarterly,yoy,buildRows,direction,validate} = require('../js/currency-pressure.js');
 const {numberOrNull,parseFredCsv,parseEcosRows,validateEcosSpec,updateSeries,collectFred,collectEcos} = require('../scripts/collect-currency-pressure.cjs');
 const near = (actual,expected) => assert.ok(Math.abs(actual-expected)<1e-9,`${actual} != ${expected}`);
@@ -86,6 +87,27 @@ test('키 없는 FRED 공개 수집·키 없는 ECOS 대기와 메타데이터 �
   assert.equal(result.observations.length,2);assert.equal(result.releaseDate,null);assert.equal(result.sourceUpdatedAt,null);
   const spec={table:'161Y005',items:['BBHS00'],frequency:'M',definitionId:'bok-m2-2025-revision',basis:'period-average',seasonalAdjustment:'SA',verifiedAt:'2026-10-12'};
   await assert.rejects(collectEcos(spec,'krM2','2025',fetcher,{}),/key-missing/);
+});
+
+test('FRED 요청 계열과 응답 열이 다르거나 여러 계열이면 기존 자료를 대체하지 않는다',async()=>{
+  for(const csv of ['observation_date,OTHER\n2026-01-01,100\n','observation_date,GDPC1,OTHER\n2026-01-01,100,200\n']){
+    await assert.rejects(collectFred({code:'GDPC1',frequency:'Q'},'2025',async()=>({ok:true,text:async()=>csv}),{}),/wrong-series/);
+  }
+});
+
+test('공개 통계 조회 중 탭 복귀·수동 갱신이 겹쳐도 요청은 하나만 유지하고 실패 뒤 재시도한다',async()=>{
+  const nodes=new Map(),events={},make=()=>({value:'0',checked:false,disabled:false,clientWidth:720,dataset:{},classList:{toggle(){}},
+    setAttribute(){},replaceChildren(){},append(){},querySelectorAll:()=>[],addEventListener(type,fn){this[type]=fn;}});
+  const el=id=>{if(!nodes.has(id))nodes.set(id,make());return nodes.get(id);};
+  let calls=0,finish;
+  const context={document:{hidden:false,getElementById:el,createElement:make,createElementNS:make,addEventListener:(type,fn)=>events[type]=fn},
+    window:{addEventListener(){}},setInterval(){},AbortSignal,fetch:()=>{calls++;return new Promise(resolve=>{finish=resolve;});}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../js/currency-pressure.js'),'utf8'),context);
+  events.visibilitychange();events.visibilitychange();el('cpRefresh').click();
+  assert.equal(calls,1);
+  finish({ok:false});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(el('cpRefresh').disabled,false);
+  events.visibilitychange();assert.equal(calls,2);finish({ok:false});await new Promise(resolve=>setImmediate(resolve));
 });
 test('한국 실질 GDP는 ECOS 분기 날짜와 확인한 수준 계열을 사용한다',async()=>{
   const spec={table:'200Y104',items:['1400'],frequency:'Q',kind:'gdp',seasonalAdjustment:'SA',definitionId:'bok-real-gdp-sa',unit:'십억원',expectedItemName:'국내총생산(시장가격, GDP)'};

@@ -33,16 +33,20 @@ jobs:
       - name: 계산·자료 계약 확인
         run: node --test --experimental-test-isolation=none tests/currency-pressure.test.cjs
       - name: 공개 경제통계만 기록
+        id: commit
         run: |
           if ! git diff --quiet -- data/currency-pressure.json; then
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add data/currency-pressure.json
             git commit -m '공식 통화강도 통계 갱신'
+            git pull --rebase origin main
             git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       # GITHUB_TOKEN push는 Pages 빌드를 시작하지 않으므로 공식 Pages API로 요청.
       - name: GitHub Pages 자료 반영 요청
+        if: steps.commit.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"

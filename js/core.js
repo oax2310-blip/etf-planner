@@ -18,9 +18,18 @@ const onEdit = (sel, set, redraw) => $$(sel).forEach(el => el.onchange = () => {
 const id = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const defaultFutures = () => ({targetPrice:1480,baselinePnl:0,positions:[],levels:MA_LINES.map(name=>({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]})),note:""});
 const seeded = {plans:[],futures:defaultFutures(),actions:{},selectedPlan:null,tab:"plans"}; // actions는 옛 기록 호환용이며 새 기기는 {}만 둔다.
-const hadStoredState = localStorage.getItem(STORAGE_KEY) !== null;
-let state;
-try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") || seeded; } catch { state = seeded; }
+// 읽기·형식 오류는 새 기기의 빈 기록과 구별한다. sync.js는 이 오류가 풀리기 전 저장·동기화를 막고 원문 백업을 제공한다.
+let hadStoredState=false, plannerLoadedRaw=null, plannerLoadError="";
+let state=seeded;
+try {
+  plannerLoadedRaw=localStorage.getItem(STORAGE_KEY);
+  hadStoredState=plannerLoadedRaw!==null;
+  if(hadStoredState) state=externalData.planner(JSON.parse(plannerLoadedRaw));
+  normalize();
+} catch {
+  plannerLoadError="이 기기의 기록을 불러오지 못했습니다. 기존 기록을 보호하기 위해 저장·동기화를 중단했습니다.";
+  state=seeded; normalize();
+}
 // 새 입력 필드(rebuy·alerts·futures.rebuy·rollSpread·lossPrice 등)를 여기서 채우지 않는다.
 // 옛 재매수를 목록으로 바꾸면 기기별 id로 스냅샷이 달라진다(생성·이전은 각 모듈의 edit 함수).
 function normalize(target=state){
@@ -31,7 +40,6 @@ function normalize(target=state){
   if(!target.selectedPlan || !target.plans.some(p=>p.id===target.selectedPlan)) target.selectedPlan=target.plans[0]?.id||null;
   target.tab = target.tab || "plans";
 }
-normalize();
 function openTab(tab,redraw=true){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); if(redraw)render(); }
 function openPlannerLocation(){
   if(typeof openPushAlertFromHash==="function"&&openPushAlertFromHash())return;

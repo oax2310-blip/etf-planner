@@ -7,27 +7,48 @@ const A_PRICE_FORMAT=2; // 125개월 평균선을 버리던 옛 시세 캐시는
 const A_REPO_KEY="etf-planner-data-repo", A_TOKEN_KEY="etf-planner-github-token";
 const readJson=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||"null")??d;}catch{return d;}};
 const writeJson=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch{return false;}};
-let doc=cleanAssets(readJson(A_KEY,null))||{version:1}, prices=readJson(A_PRICE_KEY,null), priceMessage="", priceRefreshBusy=false, started=false;
+// 손상된 로컬 기록은 빈 기기로 취급하지 않는다. 원문을 보존하고 명시적 백업 복원까지 쓰기·동기화를 막는다.
+let loadedRaw=null,loadError="";
+function readLocalAssets(){
+  if(loadError)return null;
+  loadedRaw=null; // 읽기 자체가 실패하면 앞선 정상 원문을 현재 기록의 백업으로 오인하지 않는다.
+  try{loadedRaw=localStorage.getItem(A_KEY);if(loadedRaw===null)return null;const value=cleanAssets(externalData.assets(JSON.parse(loadedRaw)));if(!value)throw Error();return value;}
+  catch{loadError="이 기기의 자산 기록을 불러오지 못했습니다. 기존 기록을 보호하기 위해 저장·동기화를 중단했습니다.";return null;}
+}
+let doc=readLocalAssets()||{version:1}, prices=readJson(A_PRICE_KEY,null), priceMessage="", priceRefreshBusy=false, started=false;
 let lastLocal=JSON.parse(JSON.stringify(doc)); // 같은 브라우저의 다른 페이지가 바꾼 기록도 공통 기준으로 병합
 const listeners=new Set(), emit=type=>listeners.forEach(fn=>fn(type));
-function writeLocal(){writeJson(A_KEY,doc);lastLocal=JSON.parse(JSON.stringify(doc));}
+function writeLocal(next=doc,restoring=false){
+  if(loadError&&!restoring){setAssetSync("error",loadError);return false;}
+  if(!writeJson(A_KEY,next)){setAssetSync("error","이 기기에 기록을 저장하지 못했습니다. 브라우저 저장 공간을 확인하고 JSON 백업을 내려받아 주세요.");return false;}
+  doc=next;lastLocal=JSON.parse(JSON.stringify(doc));if(restoring){const blocked=!!loadError;loadError="";loadedRaw=null;if(blocked)setAssetSync(assetConfig()?"pending":"off");}return true;
+}
 function saveSection(section){
-  // 두 페이지에서 다른 구역을 고쳤으면 localStorage의 최신 구역도 함께 보존한다.
-  const latest=cleanAssets(readJson(A_KEY,null));
-  for(const s of ASSET_SECTIONS)if(s!==section&&latest?.[s]&&(!doc[s]||String(latest[s].savedAt||"")>String(doc[s].savedAt||"")))doc[s]=latest[s];
-  if(doc.savings){const record=earlierSavingsRecord(doc.savings.milestoneRecord,latest?.savings?.milestoneRecord);if(record)doc.savings.milestoneRecord=record;}
+  // storage 이벤트가 오기 전에도 같은 구역의 서로 다른 칸을 합친다. 충돌은 이번 입력을
+  // 우선하되 최신 원문을 복구본에 남긴 뒤 저장한다(구역 밖의 입력·저축 최단 기록도 보존).
+  const latest=readLocalAssets();if(loadError){setAssetSync("error",loadError);return false;}
+  if(!latest||JSON.stringify(latest)===JSON.stringify(lastLocal)){
+    if(section==="allocation"&&doc.allocation)syncPurchaseTargets(lastLocal.allocation,doc.allocation,prices);
+    if(doc[section])doc[section].savedAt=new Date().toISOString();
+    if(!writeLocal())return false;scheduleAssetSync(1500);emit("change");return true;
+  }
+  const next=JSON.parse(JSON.stringify(doc));
   // 자산 배분 목표가 바뀐 분할매수 계획은 같은 저장에서 옛 계획 목표·총 매수 금액을 맞춘다(assets-calc.js syncPurchaseTargets). 동기화·복원으로 받은 기록은 다시 계산하지 않는다.
-  if(section==="allocation"&&doc.allocation)syncPurchaseTargets(lastLocal.allocation,doc.allocation,prices);
-  if(doc[section])doc[section].savedAt=new Date().toISOString();writeLocal();scheduleAssetSync(1500);emit("change");
+  if(section==="allocation"&&next.allocation)syncPurchaseTargets(lastLocal.allocation,next.allocation,prices);
+  if(next[section])next[section].savedAt=new Date().toISOString();
+  const result=mergeAssets(next,latest,lastLocal);
+  if(!keepMerged(result)||!writeLocal(JSON.parse(JSON.stringify(result.doc))))return false;scheduleAssetSync(1500);emit("change");return true;
 }
 // 저장 버튼을 누를 때만 기록을 갱신한다. 다른 탭의 최신 입력·최단 기록을 먼저 합치고, 브라우저 저장 실패 시 기존 상태를 유지한다.
 function saveSavingsMilestone(record){
-  const n=ymNum(record?.ym), latest=cleanAssets(readJson(A_KEY,null)), best=earlierSavingsRecord(doc.savings?.milestoneRecord,latest?.savings?.milestoneRecord);
+  const n=ymNum(record?.ym), latest=readLocalAssets(), best=earlierSavingsRecord(doc.savings?.milestoneRecord,latest?.savings?.milestoneRecord);
+  if(loadError){setAssetSync("error",loadError);return false;}
   if(n===null||(best&&n>=ymNum(best.ym)))return false;
   const result=mergeAssets(doc,latest,lastLocal),merged=result.doc;if(!merged.savings)return false;
   const age=finite(record.age), next={...merged,savings:{...merged.savings,milestoneRecord:{ym:record.ym,...(age!==null?{age}:{})},savedAt:new Date().toISOString()}};
+  if(!keepMerged(result))return false;
   if(!writeJson(A_KEY,next)){setAssetSync("error","최단 기록을 이 기기에 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.");return false;}
-  doc=next;lastLocal=JSON.parse(JSON.stringify(doc));keepMerged(result);scheduleAssetSync(1500);emit("change");return true;
+  doc=next;lastLocal=JSON.parse(JSON.stringify(doc));scheduleAssetSync(1500);emit("change");return true;
 }
 const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", message:"", at:"", remote:null, choice:false};
 function assetConfig(){ try { const repo=(localStorage.getItem(A_REPO_KEY)||"").trim(), token=localStorage.getItem(A_TOKEN_KEY)||""; return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null; } catch { return null; } }
@@ -36,6 +57,7 @@ const toB64A = text => { const bytes=new TextEncoder().encode(text); let bin="";
 const fromB64A = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
 async function aGh(cfg, path, options={}){
   repoSecurity.assertDataRepo(cfg.repo);
+  if(!sameConfig(cfg))throw Error("연결 설정이 바뀌었습니다. 다시 동기화해 주세요.");
   const r=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${cfg.token}`,...options.headers}});
   if(r.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
   if(r.status===403) throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
@@ -44,13 +66,16 @@ async function aGh(cfg, path, options={}){
 async function readAssetRemote(cfg){
   const path=`/repos/${cfg.repo}/contents/${A_FILE}`, last=aSync.remote?.repo===cfg.repo?aSync.remote:null;
   const r=await aGh(cfg,path,{headers:last?.etag?{"If-None-Match":last.etag}:{}}); // 바뀌지 않았으면 304(요청 한도에 세지 않음)
+  if(!sameConfig(cfg))return null;
   if(r.status===304&&last) return last;
   if(r.status===404) return (aSync.remote={repo:cfg.repo,sha:"",doc:null,etag:""});
   if(!r.ok) throw Error(`기록 읽기 실패 (${r.status})`);
   const meta=await r.json(); let text=meta.encoding==="base64"&&meta.content?fromB64A(meta.content):null;
+  if(!sameConfig(cfg))return null;
   if(text===null){ const raw=await aGh(cfg,path,{headers:{Accept:"application/vnd.github.raw+json"}}); if(!raw.ok) throw Error(`기록 읽기 실패 (${raw.status})`); text=await raw.text(); }
   let data=null; try { data=cleanAssets(externalData.assets(JSON.parse(text))); } catch { data=null; }
   if(!data) throw Error(`저장소의 ${A_FILE} 형식을 확인할 수 없어 자동으로 덮어쓰지 않았습니다.`);
+  if(!sameConfig(cfg))return null;
   return (aSync.remote={repo:cfg.repo,sha:meta.sha,doc:data,etag:r.headers.get("ETag")||""});
 }
 async function writeAssetRemote(cfg, data, sha){
@@ -58,7 +83,7 @@ async function writeAssetRemote(cfg, data, sha){
   const r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_FILE}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   if(r.status===409||r.status===422){ const e=Error("다른 기기가 먼저 저장했습니다."); e.stale=true; throw e; }
   if(!r.ok) throw Error(`기록 저장 실패 (${r.status})`);
-  const res=await r.json(); aSync.remote={repo:cfg.repo,sha:res.content?.sha||"",doc:JSON.parse(JSON.stringify(data)),etag:""};
+  const res=await r.json(); if(sameConfig(cfg))aSync.remote={repo:cfg.repo,sha:res.content?.sha||"",doc:JSON.parse(JSON.stringify(data)),etag:""};
 }
 // 시세 파일은 ETag로 읽고 종가·환율만 이 기기에 둔다. 수동 조회(force)는 ETag 없이 다시 받으며 연결이 바뀐 뒤의 응답은 무시한다. 자산 종목은 kis_prices.py가 마감 후 하루 한 번 수집한다. 시세가 바뀌었으면 true.
 async function readAssetPrices(cfg,force=false){
@@ -119,12 +144,17 @@ function setAssetSync(state, message=""){
   emit("status");
 }
 function keepLost(lost){
-  if(!lost.length)return; const list=readJson(A_RECOVERY_KEY,[]);
-  lost.forEach(x=>list.push({...x,keptAt:new Date().toISOString()})); writeJson(A_RECOVERY_KEY,list.slice(-20)); emit("recovery");
+  if(!lost.length)return true;let list;
+  try{const raw=localStorage.getItem(A_RECOVERY_KEY);list=raw===null?[]:JSON.parse(raw);if(!Array.isArray(list)||list.some(value=>!value||typeof value!=="object"||Array.isArray(value)))throw Error();}
+  catch{setAssetSync("error","기존 충돌 복구 기록을 읽을 수 없어 덮어쓰지 않았습니다.");return false;}
+  lost.forEach(x=>list.push({...x,keptAt:new Date().toISOString()}));
+  if(!writeJson(A_RECOVERY_KEY,list.slice(-20))){setAssetSync("error","충돌 복구 기록을 이 기기에 저장하지 못했습니다. 기존 기록을 유지합니다.");return false;}
+  emit("recovery");return true;
 }
 function keepMerged({lost,conflicts}){
-  keepLost(lost);
+  if(!keepLost(lost))return false;
   if(conflicts){const prev=readJson(A_NOTICE_KEY,null);writeJson(A_NOTICE_KEY,{count:(prev?.count||0)+conflicts,at:new Date().toISOString()});emit("recovery");}
+  return true;
 }
 // 처음 맞추는 저장소(지난 동기화 기준 없음)에서 이 기기와 내용이 다른 구역(저장 시각은 빼고 비교). 이때는 합치지 않고 고를 때까지 기다린다(choose).
 const bareSection=v=>JSON.stringify({...v,savedAt:""});
@@ -135,8 +165,9 @@ function choose(side){
   const cfg=assetConfig(),remote=aSync.remote?.repo===cfg?.repo?aSync.remote.doc:null;
   if(!aSync.choice||!cfg||!remote||!["local","remote"].includes(side))return false;
   const other=side==="local"?remote:doc;
-  keepLost(differing(doc,remote).map(s=>({section:s,data:other[s]})));
-  writeJson(A_BASE_KEY+cfg.repo,other);aSync.choice=false;return syncAssets().then(()=>true);
+  if(!keepLost(differing(doc,remote).map(s=>({section:s,data:other[s]}))))return false;
+  try{writeAssetBase(cfg.repo,other);}catch(error){setAssetSync("error",error.message);return false;}
+  aSync.choice=false;return syncAssets().then(()=>aSync.state==="done"||aSync.state==="pending");
 }
 // 처음 연결 선택(choose)·겹친 칸 정리(merged) 안내. 두 화면(index.html·assets.html)이 같은 칸(#assetSyncNotice)에 쓰며, 글자는 숫자와 고정 문구뿐이다.
 function notice(){
@@ -153,39 +184,58 @@ function renderNotice(box,download){
     btn("저장소 기록 사용",()=>choose("remote")),btn("이 기기 기록 사용",()=>choose("local")));
   else show(`다른 기기와 같은 칸을 함께 고친 ${n.count}곳은 나중에 저장한 값을 썼습니다. 이전 값은 이 기기에 보관했습니다.`,btn("보관 기록 내려받기",download),btn("확인",()=>{localStorage.removeItem(A_NOTICE_KEY);emit("recovery");}));
 }
+function writeAssetBase(repo,snapshot){if(!writeJson(A_BASE_KEY+repo,snapshot))throw Error("동기화 기준을 이 기기에 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.");}
+// 다른 탭의 storage 이벤트보다 동기화 응답이 먼저 와도 최신 로컬 입력을 병합한다.
+function reconcileLocalAssets(){
+  const latest=readLocalAssets();if(loadError){setAssetSync("error",loadError);return false;}
+  const result=mergeAssets(doc,latest,lastLocal);if(!keepMerged(result))return false;
+  const next=JSON.parse(JSON.stringify(result.doc));
+  if(JSON.stringify(next)!==JSON.stringify(doc)||JSON.stringify(doc)!==JSON.stringify(lastLocal))return writeLocal(next);
+  return true;
+}
 async function syncAssets(beforePriceCollection=false){
+  readLocalAssets();
+  if(loadError){setAssetSync("error",loadError);return;}
   const cfg=assetConfig();
   if(!cfg){ clearTimeout(aSync.timer); aSync.timer=null; aSync.choice=false; setAssetSync("off"); return; }
   if(aSync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){ aSync.again=true; return; }
   aSync.busy=true; aSync.again=false; clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("busy");
   try{
-    if(aSync.checked!==cfg.repo){ const r=await aGh(cfg,`/repos/${cfg.repo}`); if(r.status===404) throw Error(`저장소 ${cfg.repo}를 찾을 수 없습니다.`); if(!r.ok) throw Error(`저장소 확인 실패 (${r.status})`); if(!(await r.json()).private) throw Error(`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`); aSync.checked=cfg.repo; }
+    if(!reconcileLocalAssets())return;
+    if(aSync.checked!==cfg.repo){ const r=await aGh(cfg,`/repos/${cfg.repo}`); if(r.status===404) throw Error(`저장소 ${cfg.repo}를 찾을 수 없습니다.`); if(!r.ok) throw Error(`저장소 확인 실패 (${r.status})`); if(!(await r.json()).private) throw Error(`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`); if(!sameConfig(cfg))return; aSync.checked=cfg.repo; }
     let redraw=await readAssetPrices(cfg);
+    if(!sameConfig(cfg))return;
     for(let attempt=1;;attempt++){
-      const remote=await readAssetRemote(cfg), base=cleanAssets(readJson(A_BASE_KEY+cfg.repo,null));
-      if(!base&&remote.doc&&differing(doc,remote.doc).length){ aSync.choice=true; if(redraw) emit("change"); setAssetSync("choose"); return; }
+      const remote=await readAssetRemote(cfg);if(!sameConfig(cfg))return;
+      if(!reconcileLocalAssets())return;
+      const base=cleanAssets(readJson(A_BASE_KEY+cfg.repo,null));
+      if(!base&&remote.doc&&differing(doc,remote.doc).length){aSync.choice=true;if(redraw)emit("change");setAssetSync("choose");return;}
       aSync.choice=false;
-      const result=mergeAssets(doc,remote.doc,base), merged=result.doc;
-      keepMerged(result);
-      if(JSON.stringify(merged)!==JSON.stringify(doc)){ doc=JSON.parse(JSON.stringify(merged)); writeLocal(); redraw=true; } // 복사: 화면에서 고칠 때 받아 둔 저장소 기록(aSync.remote)이 같이 바뀌지 않게
-      if(doc.allocation&&prices&&fillBases(doc.allocation,prices)){ doc.allocation.savedAt=new Date().toISOString(); writeLocal(); redraw=true; }
-      if(remote.doc?JSON.stringify(doc)===JSON.stringify(remote.doc):assetsBlank(doc)){ writeJson(A_BASE_KEY+cfg.repo,doc); break; }
-      try{ await writeAssetRemote(cfg,doc,remote.sha); writeJson(A_BASE_KEY+cfg.repo,doc); break; }
-      catch(error){ if(!error.stale||attempt>=3) throw error; aSync.remote=null; }
+      const result=mergeAssets(doc,remote.doc,base),merged=result.doc;
+      if(!keepMerged(result))return;
+      const next=JSON.parse(JSON.stringify(merged)); // 원격 캐시와 화면 입력 객체를 분리한다.
+      if(next.allocation&&prices&&fillBases(next.allocation,prices))next.allocation.savedAt=new Date().toISOString();
+      if(JSON.stringify(next)!==JSON.stringify(doc)){if(!writeLocal(next))return;redraw=true;}
+      if(remote.doc?JSON.stringify(doc)===JSON.stringify(remote.doc):assetsBlank(doc)){ writeAssetBase(cfg.repo,doc); break; }
+      // PUT 중 추가 입력은 다음 동기화에 남긴다. 기준·원격 캐시는 실제 보낸 스냅샷만 사용한다.
+      const uploaded=JSON.parse(JSON.stringify(doc));
+      try{ await writeAssetRemote(cfg,uploaded,remote.sha); if(!sameConfig(cfg))return; writeAssetBase(cfg.repo,uploaded); break; }
+      catch(error){ if(!sameConfig(cfg))return;if(!error.stale||attempt>=3) throw error; aSync.remote=null; }
     }
     if(redraw) emit("change");
     setAssetSync(aSync.timer?"pending":"done");
-  }catch(error){ setAssetSync("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error)); }
-  finally{ aSync.busy=false; if(aSync.again) scheduleAssetSync(300); }
+  }catch(error){ if(sameConfig(cfg))setAssetSync("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error)); }
+  finally{ aSync.busy=false; if(!sameConfig(cfg)){aSync.checked="";aSync.remote=null;setAssetSync(assetConfig()?"pending":"off");} if(aSync.again) scheduleAssetSync(300); }
 }
 function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync.timer); aSync.timer=setTimeout(()=>{ aSync.timer=null; syncAssets(); },delay); if(!aSync.busy&&!aSync.choice) setAssetSync("pending"); }
 
-function restore(incoming){
+function restore(incoming,backupRaw){
   const next=cleanAssets(externalData.assets(incoming));if(!next||assetsBlank(next))return false;
-  keepLost(ASSET_SECTIONS.filter(s=>next[s]&&doc[s]).map(s=>({section:s,data:doc[s]})));
-  const latest=cleanAssets(readJson(A_KEY,null)), now=new Date().toISOString();
-  for(const s of ASSET_SECTIONS)if(next[s]){const record=s==="savings"?earlierSavingsRecord(doc[s]?.milestoneRecord,latest?.[s]?.milestoneRecord,next[s].milestoneRecord):null;doc[s]={...next[s],...(record?{milestoneRecord:record}:{}),savedAt:now};}
-  writeLocal();scheduleAssetSync(300);emit("change");return true;
+  const latest=readLocalAssets(),now=new Date().toISOString();
+  if(loadError){if(loadedRaw===null||typeof backupRaw!=="function")throw Error("읽지 못한 기존 자산 원문을 백업할 수 없어 복원하지 않았습니다.");backupRaw(loadedRaw);}
+  const lost=ASSET_SECTIONS.filter(s=>next[s]&&doc[s]).map(s=>({section:s,data:doc[s]})), restored={...doc};
+  for(const s of ASSET_SECTIONS)if(next[s]){const record=s==="savings"?earlierSavingsRecord(doc[s]?.milestoneRecord,latest?.[s]?.milestoneRecord,next[s].milestoneRecord):null;restored[s]={...next[s],...(record?{milestoneRecord:record}:{}),savedAt:now};}
+  if(!keepLost(lost)||!writeLocal(restored,true))throw Error(aSync.message);scheduleAssetSync(300);emit("change");return true;
 }
 function refreshConfig(){aSync.checked="";aSync.remote=null;return syncAssets();}
 // UI와 독립적이며 start()를 부를 때만 주기적 동기화를 시작한다.
@@ -194,13 +244,13 @@ function start(){
   setInterval(()=>{if(!document.hidden&&!aSync.busy&&assetConfig())syncAssets();},45000);
   document.addEventListener("visibilitychange",()=>{if(assetConfig()&&(!document.hidden||aSync.timer))syncAssets();});
   addEventListener("storage",e=>{
-    if(e.key===A_KEY){const incoming=cleanAssets(readJson(A_KEY,null));if(incoming){const merged=mergeAssets(doc,incoming,lastLocal);keepMerged(merged);doc=JSON.parse(JSON.stringify(merged.doc));if(JSON.stringify(doc)!==JSON.stringify(incoming))writeLocal();else lastLocal=JSON.parse(JSON.stringify(doc));emit("change");}}
+    if(e.key===A_KEY){const incoming=readLocalAssets();if(loadError){setAssetSync("error",loadError);return;}if(incoming){const merged=mergeAssets(doc,incoming,lastLocal);if(!keepMerged(merged))return;const next=JSON.parse(JSON.stringify(merged.doc));if(JSON.stringify(next)!==JSON.stringify(incoming)){if(!writeLocal(next))return;}else{doc=next;lastLocal=JSON.parse(JSON.stringify(doc));}emit("change");}}
     if(e.key===null||e.key===A_REPO_KEY||e.key===A_TOKEN_KEY)refreshConfig();
   });
   if(doc.allocation&&prices&&fillBases(doc.allocation,prices))saveSection("allocation");
   syncAssets();
 }
-return {get doc(){return doc;},get prices(){return prices;},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
+return {get doc(){return doc;},get loadError(){return loadError;},get loadedRaw(){return loadedRaw;},get prices(){return prices;},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
   get notice(){return notice();},config:assetConfig,saveSection,saveSavingsMilestone,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,choose,renderNotice,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();

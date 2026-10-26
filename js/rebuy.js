@@ -1,6 +1,7 @@
 // ETF(종목별)·달러선물 손절/재매수 계산과 ETF 화면. 시세는 prices.js, 선물 화면은 futures.js, 체결 연동은 alloc-link.js.
 // 서버·DOM 없는 테스트에서도 읽으므로 함수 밖에서 화면을 건드리지 않는다.
 const defaultRebuy = () => ({name:"니프티50 ETF",lowPrice:0,amount:0,currentPrice:0,stepPct:1,sellPct:0.5,steps:30,cuts:[],stages:MA_LINES.map(name=>({name,price:0,done:false,execPrice:null,shares:null})),note:""});
+const REBUY_MAX_STEPS=10000; // data-validation.js의 기존 저장 범위와 동일. 입력·옛 로컬 값으로 과도한 배열을 만들지 않는다.
 // 손대지 않은 옛 기본 단계(25분봉·60분봉·240분봉·일봉·주봉)는 MA_LINES 기본으로 읽고 editRebuy 때만 저장.
 const untouchedOldStages = st => Array.isArray(st) && st.map(x=>x.name).join()==="25분봉,60분봉,240분봉,일봉,주봉" && st.every(x=>!x.done&&!(Number(x.price)>0));
 // 옛 단계 이름 'N분봉'은 60분봉 N이평선을 뜻했다 — 읽을 때 'N선'으로 보고, 처음 고칠 때 editRebuy·editFutureRebuy가 저장한다
@@ -28,11 +29,11 @@ function setHold(r, unit, text){
 // k회 가격=신저점×(1−k×stepPct%), 주수=round(이탈 전 주수×sellPct%×k)의 인접 차이(정수 균등 배분).
 // cuts[i]={shares,price} 체결은 기록량을 사용. 부분 체결만 partial·plannedShares로 잔량을 고정한다(입력 때 생성).
 // 체결량 수정은 다음 예정량을 바꾸지 않으며 남은 보유량이 한도. 옛 기록은 계속 완료로 읽는다.
-// 표시 회차에는 수치 상한을 두지 않는다. 신저점 대비 누적 하락이 100% 미만인 회차만 만들되, 이미 기록한 회차는 유지한다.
+// 표시 회차는 기존 저장 범위(1~10,000) 안에서 신저점 대비 누적 하락이 100% 미만인 회차만 만들되, 이미 기록한 회차는 유지한다.
 // 재매수를 시작한 뒤 마지막 기록 뒤의 회차는 run(rebuyCutRun)의 기준 보유로 같은 비율을 나누고 그 보유가 한도다.
 function cutPlan(r,run=rebuyCutRun(r)){
   const low=Number(r.lowPrice)||0, step=Number(r.stepPct)>0?Number(r.stepPct):1, pct=Math.min(Math.max(Number(r.sellPct)||0,0),100), cuts=Array.isArray(r.cuts)?r.cuts:[];
-  const lastDone=cuts.reduce((m,c,i)=>c?i+1:m,0), n=Math.max(1,lastDone,Math.min(Math.floor(Number(r.steps)||30),Math.ceil(100/step)-1));
+  const lastDone=cuts.reduce((m,c,i)=>c?i+1:m,0), n=Math.max(1,lastDone,Math.min(REBUY_MAX_STEPS,Math.floor(Number(r.steps)||30),Math.ceil(100/step)-1));
   const hold=holdShares(r), goal=(h,k)=>Math.round(h*pct*k/100); // k회까지 누적 예정 수량(정수 주)
   let left=hold, runLeft=run?.left??0;
   return Array.from({length:n},(_,i)=>{
@@ -601,20 +602,38 @@ function syncRebuyHold(r){
   return setHold(r,h.unit,String(value))!==false;
 }
 // 새 체결은 계좌 선택 흐름으로 반영하고, 누적량 수정은 같은 출처 키로 재계산한다. 0·체크 해제는 자산 반영까지 되돌린다.
+// 계좌 선택·편집 창을 기다리는 사이 종목/기록이 바뀌면 예전 계산으로 확정하지 않는다. 읽기만 하므로 옛 기록의 이전도 확정 때만 한다.
+function rebuyUnchanged(source,base){
+  if(source&&rebuyPick()===source&&JSON.stringify(source)===base)return true;
+  alert("동기화에서 종목·설정·체결 기록이 변경되었습니다. 닫고 다시 시도해 주세요.");return false;
+}
+// 동기 저장 실패는 해당 종목의 체결·입력 때 이전한 필드만 되돌린다. 다른 종목·자산 문서는 건드리지 않는다.
+function saveRebuyFill(source,write){
+  const before=JSON.parse(JSON.stringify(source)),root=state.rebuy,selected=state.selectedRebuy,hadSelected=Object.hasOwn(state,"selectedRebuy");let saved=false;
+  try{const key=write(editRebuy());if(key&&save()!==false){saved=true;return key;}return false;}
+  finally{if(!saved){
+    for(const field of ["id","cuts","stages","amount","shares","planned","plannedEndLine","resumeEndLine"]){if(Object.hasOwn(before,field))source[field]=before[field];else delete source[field];}
+    state.rebuy=root;if(hadSelected)state.selectedRebuy=selected;else delete state.selectedRebuy;
+  }}
+}
 function applyRebuyCut(i,rec){
   if(rec===false)return false;
-  const src=rebuyPick(),had=!!src?.cuts?.[i];if(!rec&&!had)return false;
-  const commit=()=>{const r=editRebuy();while(r.cuts.length<i)r.cuts.push(null);r.cuts[i]=rec;while(r.cuts.length&&!r.cuts.at(-1))r.cuts.pop();save();return `cut:${r.id}:${i}`;};
+  const src=rebuyPick(),had=!!src?.cuts?.[i];if(!src||!rec&&!had)return false;
+  const base=JSON.stringify(src);
+  const commit=()=>{if(!rebuyUnchanged(src,base))return false;return saveRebuyFill(src,r=>{while(r.cuts.length<i)r.cuts.push(null);r.cuts[i]=rec;while(r.cuts.length&&!r.cuts.at(-1))r.cuts.pop();return `cut:${r.id}:${i}`;});};
   if(rec&&!had)rebuyLink("check",{ticker:src.ticker,trade:rebuyFill(src,rec,-1),label:`${src.name||"재매수"} 손절 ${i+1}회`,prefer:[`cut:${src.id}:`],commit,redraw:renderRebuy});
-  else{const key=commit();rebuyLink(rec?"rescale":"uncheck",key,...(rec?[rebuyFill(src,rec,-1)]:[]));renderRebuy();}
+  else{const key=commit();if(key)rebuyLink(rec?"rescale":"uncheck",key,...(rec?[rebuyFill(src,rec,-1)]:[]));renderRebuy();}
   return false; // 저장은 commit에서 수행(계좌 선택 취소 때 저장하지 않음)
 }
 function applyRebuyBuy(i,t,rec){
   if(rec===false)return false;
-  const src=rebuyPick(),view=rebuySummary(src),stage=view.stages[i];if(!stage)return false;
+  const src=rebuyPick();if(!src)return false;
+  const view=rebuySummary(src),stage=view.stages[i];if(!stage)return false;
   const had=!!(stage.done||stage.buys?.[t]);if(!rec&&!had)return false;
+  const base=JSON.stringify(src);
   const commit=()=>{
-    const r=editRebuy(),st=r.stages[i];if(!st)return false;
+    if(!rebuyUnchanged(src,base))return false;
+    return saveRebuyFill(src,r=>{const st=r.stages[i];if(!st)return false;
     if(rec){
       // 재이탈 뒤 첫 재매수 때 이번 범위를 고정한다. 앞 재매수의 고정값(plannedEndLine)은 남겨 둔다.
       if(view.cycle){if(view.fixPlan){if(etfRangeOf(r))r.resumeEndLine=view.planKeys.at(-1)[0];else r.planned=view.planKeys;}}
@@ -627,10 +646,10 @@ function applyRebuyBuy(i,t,rec){
     }else if(st.done){Object.assign(st,{done:false,shares:null,execPrice:null});delete st.partial;delete st.plannedShares;}
     else if(Array.isArray(st.buys)){st.buys[t]=null;while(st.buys.length&&!st.buys.at(-1))st.buys.pop();if(!st.buys.length)delete st.buys;}
     if(!r.stages.some(stageTouched)){delete r.planned;delete r.plannedEndLine;delete r.resumeEndLine;}
-    save();return `rebuy:${r.id}:${st.name}:${t}`;
+    return `rebuy:${r.id}:${st.name}:${t}`;});
   };
   if(rec&&!had)rebuyLink("check",{ticker:src.ticker,trade:rebuyFill(src,rec,1),label:`${src.name||"재매수"} ${stage.name} ${t+1}차 재매수`,prefer:[`rebuy:${src.id}:`,`cut:${src.id}:`],commit,redraw:renderRebuy});
-  else{const key=commit();rebuyLink(rec?"rescale":"uncheck",key,...(rec?[rebuyFill(src,{shares:rec.shares,price:stage.done?rec.execPrice:rec.price},1)]:[]));renderRebuy();}
+  else{const key=commit();if(key)rebuyLink(rec?"rescale":"uncheck",key,...(rec?[rebuyFill(src,{shares:rec.shares,price:stage.done?rec.execPrice:rec.price},1)]:[]));renderRebuy();}
   return false;
 }
 // 상태 글자: [화면 '현재 상태', 목록 카드 오른쪽 짧은 글자]
@@ -678,6 +697,7 @@ function rebuyPicker(){
 }
 function openRebuyDialog(edit){
   const dialog=$("rebuyDialog"), form=$("rebuyForm"), f=form.elements;
+  const base=JSON.stringify(edit);
   form.reset();$("rebuyTitle").textContent=edit?`${String(edit.name||"").trim()||"종목"} 수정`:"새 재매수 종목";$("deleteRebuyBtn").classList.toggle("hidden",!edit);
   if(edit){f.name.value=edit.name||"";f.ticker.value=edit.ticker||"";}
   editRebuyTarget=edit||null;rebuyChoices=typeof assetStore==="object"?rebuyHoldingChoices(assetStore.doc?.allocation):[];
@@ -685,12 +705,13 @@ function openRebuyDialog(edit){
   const initial=same.length===1?same[0].it.id:"", picker=rebuyPicker();
   f.holding.value=initial;f.ticker.readOnly=!!initial;$("rebuyHoldingHint").textContent="";$("rebuyHoldingHint").hidden=true;picker.clear();picker.render();
   form.onsubmit=e=>{e.preventDefault();const name=f.name.value.trim().slice(0,40), ticker=f.ticker.value.trim().toUpperCase().slice(0,80);if(!name)return;
+    if(edit&&!rebuyUnchanged(edit,base))return;
     let r;if(edit)r=editRebuy();else{r={id:id(),...defaultRebuy()};editRebuyList().push(r);state.selectedRebuy=r.id;}
     const old=r.ticker||"";r.name=name;
     if(ticker!==old){if(ticker)r.ticker=ticker;else delete r.ticker;delete r.auto;if(old&&!rebuyRecorded(r)){delete r.amount;delete r.shares;}}
     syncRebuyHold(r);
     save();dialog.close();renderRebuy();};
-  $("deleteRebuyBtn").onclick=()=>{const r=rebuyPick();if(!r||!confirm(`${String(r.name||"").trim()||"이 종목"} 재매수 기록을 삭제할까요?\n손절·재매수 체크와 메모도 함께 지워집니다.`))return;
+  $("deleteRebuyBtn").onclick=()=>{const r=edit;if(!r||!rebuyUnchanged(r,base)||!confirm(`${String(r.name||"").trim()||"이 종목"} 재매수 기록을 삭제할까요?\n손절·재매수 체크와 메모도 함께 지워집니다.`))return;
     const gone=editRebuy();state.rebuy.items=state.rebuy.items.filter(x=>x!==gone);state.selectedRebuy=state.rebuy.items[0]?.id||null;save();dialog.close();renderRebuy();};
   dialog.querySelectorAll("[data-close-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
   dialog.showModal();
@@ -804,12 +825,12 @@ function openRebuyStages(index=null){
 
 // 손절 기준 창(openRebuyRuleDialog)에서 바꾼 칸 {키: 입력 글자}만 고른 종목에 저장한다. 하나라도 잘못되면 아무것도 바꾸지 않고 false.
 // 현재가(시세)·이탈 전 보유(자산 배분)는 읽기 전용이라 받지 않는다. 바꾼 칸이 없으면 기록을 만들지 않는다(editRebuy는 저장할 칸이 있을 때만).
-// 신저점은 0 이상(비우면 0), 하락 간격 0 초과~50%, 회당 손절 0 초과~100%, 표시 회차는 1 이상 정수(상한 없음, 소수는 내림).
+// 신저점은 유한한 0 이상(비우면 0), 하락 간격 0 초과~50%, 회당 손절 0 초과~100%, 표시 회차는 저장 범위인 1~10,000 정수(소수는 내림).
 const rebuyRuleParse = {
-  lowPrice:v=>v===""?0:Number(v)>=0?Number(v):undefined,
+  lowPrice:v=>v===""?0:Number.isFinite(Number(v))&&Number(v)>=0?Number(v):undefined,
   stepPct:v=>Number(v)>0&&Number(v)<=50?Number(v):undefined,
   sellPct:v=>Number(v)>0&&Number(v)<=100?Number(v):undefined,
-  steps:v=>Number(v)>=1&&Number.isSafeInteger(Math.floor(Number(v)))?Math.floor(Number(v)):undefined,
+  steps:v=>Number(v)>=1&&Number(v)<=REBUY_MAX_STEPS&&Number.isSafeInteger(Math.floor(Number(v)))?Math.floor(Number(v)):undefined,
 };
 function setRebuyRules(edits){
   const values=[];
@@ -859,17 +880,19 @@ function rebuyTrack(r,s,{hold,holdTitle="",cur,nextCut,nextTr,cutDue,buyDue,comp
 // 달러선물 손절 기준 창처럼 저장을 눌러야 바꾼 칸만 저장한다(setRebuyRules). 취소·닫기는 기록을 바꾸지 않는다.
 function openRebuyRuleDialog(v){
   const dialog=$("rebuyRuleDialog"),initial={lowPrice:v.opt(v.low),stepPct:shown(v.step),sellPct:shown(v.sellPct),steps:String(v.steps)};
+  const source=rebuyPick(),base=JSON.stringify(source);
   const field=(key,id,label,attrs,extra="")=>`<label class="field"><span${extra}>${label}</span><input id="${id}" name="${key}" type="number" ${attrs} value="${initial[key]}"></label>`;
   dialog.innerHTML=`<form id="rebuyRuleForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="rebuyRuleTitle">손절 기준 수정</h2><button class="btn ghost" type="button" data-close-rebuy-rule>닫기</button></div>
     <p class="hint">${v.usdMode?"가격은 미국 시세(달러)입니다.":"가격은 국내 상장 ETF 가격(원)입니다."} 신저점 대비 하락 간격마다 이탈 전 보유의 회당 손절 비율만큼 팝니다. 재매수 뒤 다시 내려가면 그때 보유(재매수 포함)의 같은 비율씩 이어서 손절하고, 그다음 재매수는 이미 산 회차의 다음부터 합니다.</p>
-    <div class="dialog-grid rebuy-rule-grid">${field("lowPrice","rLow",`신저점 가격 (${v.unitWord})`,'min="0" step="any" inputmode="decimal"')}<label class="field"><span>현재가 (${v.unitWord})${v.autoTag()}</span><input id="rCurrent" type="number" value="${v.opt(v.cur)}" placeholder="${v.ticker?"시세 대기":"종목 코드 필요"}" readonly tabindex="-1"></label>${field("stepPct","rStep","하락 간격 (%)",'min="0.1" max="50" step="any" inputmode="decimal"')}${field("sellPct","rSell","회당 손절 (%)",'min="0.1" max="100" step="any" inputmode="decimal" aria-label="회당 손절 비율 (이탈 전 보유 수량의 %)"',' title="이탈 전 보유 수량 기준"')}${field("steps","rSteps","표시 회차",'min="1" step="1" inputmode="numeric"')}<label class="field"><span>이탈 전 보유${v.holdTag}</span><input id="rHold" type="text" value="${v.holdText}" placeholder="자산 배분 보유 없음" readonly tabindex="-1"></label></div>
+    <div class="dialog-grid rebuy-rule-grid">${field("lowPrice","rLow",`신저점 가격 (${v.unitWord})`,'min="0" step="any" inputmode="decimal"')}<label class="field"><span>현재가 (${v.unitWord})${v.autoTag()}</span><input id="rCurrent" type="number" value="${v.opt(v.cur)}" placeholder="${v.ticker?"시세 대기":"종목 코드 필요"}" readonly tabindex="-1"></label>${field("stepPct","rStep","하락 간격 (%)",'min="0.1" max="50" step="any" inputmode="decimal"')}${field("sellPct","rSell","회당 손절 (%)",'min="0.1" max="100" step="any" inputmode="decimal" aria-label="회당 손절 비율 (이탈 전 보유 수량의 %)"',' title="이탈 전 보유 수량 기준"')}${field("steps","rSteps","표시 회차",'min="1" max="10000" step="1" inputmode="numeric"')}<label class="field"><span>이탈 전 보유${v.holdTag}</span><input id="rHold" type="text" value="${v.holdText}" placeholder="자산 배분 보유 없음" readonly tabindex="-1"></label></div>
     <p class="hint">${v.holdHint}${v.priceHint?`<br>${v.priceHint}`:""}</p>
     <p class="future-plan-error" id="rebuyRuleError" role="alert"></p><div class="dialog-foot"><button class="btn" type="button" data-close-rebuy-rule>취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   dialog.querySelectorAll("[data-close-rebuy-rule]").forEach(b=>b.onclick=()=>dialog.close());
   $("rebuyRuleForm").onsubmit=e=>{
     e.preventDefault();const f=$("rebuyRuleForm").elements,edits={};
     for(const key of Object.keys(rebuyRuleParse)){const value=f[key]?.value;if(value!=null&&value.trim()!==initial[key])edits[key]=value;}
-    if(setRebuyRules(edits)===false){$("rebuyRuleError").textContent="신저점은 0 이상, 하락 간격은 0 초과 50% 이하, 회당 손절은 0 초과 100% 이하, 표시 회차는 1 이상 정수로 입력하세요.";return;}
+    if(Object.keys(edits).length&&!rebuyUnchanged(source,base))return;
+    if(setRebuyRules(edits)===false){$("rebuyRuleError").textContent="신저점은 0 이상, 하락 간격은 0 초과 50% 이하, 회당 손절은 0 초과 100% 이하, 표시 회차는 1~10,000 정수로 입력하세요.";return;}
     if(Object.keys(edits).length)save();
     dialog.close();renderRebuy();
   };

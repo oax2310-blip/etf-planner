@@ -18,9 +18,10 @@ function numberOrNull(raw) {
   const value=Number(String(raw).replaceAll(',',''));
   return Number.isFinite(value) ? value : null;
 }
-function parseFredCsv(csv, frequency) {
+function parseFredCsv(csv, frequency, expectedCode) {
   const lines=csv.trim().split(/\r?\n/);
   if(!/^(observation_date|DATE),/i.test(lines[0] || '')) throw Error('invalid-response');
+  if(expectedCode && lines[0].split(',').slice(1).join(',')!==expectedCode) throw Error('wrong-series');
   const seen=new Set();
   return lines.slice(1).filter(Boolean).map(line=>{
     const [date,raw]=line.split(',');
@@ -50,7 +51,7 @@ async function fetchText(url, fetcher=fetch) {
 }
 async function collectFred(spec,start,fetcher=fetch,env=process.env) {
   const sourceUrl=`https://fred.stlouisfed.org/series/${spec.code}`;
-  const observations=parseFredCsv(await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${spec.code}&cosd=${start}-01-01`,fetcher),spec.frequency);
+  const observations=parseFredCsv(await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${spec.code}&cosd=${start}-01-01`,fetcher),spec.frequency,spec.code);
   if(!observations.some(o=>o.value!==null)) throw Error('empty-response');
   let sourceUpdatedAt=null;
   if(env.FRED_API_KEY) {

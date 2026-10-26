@@ -78,6 +78,20 @@ test('목록 카드의 같은 이름은 다른 코드일 때만 구분이 필요
   const clash=clashes([{name:'S&P500',code:'SPY'},{name:'S&P500 ',code:'360750'},{name:'나스닥',code:'QQQ'},{name:'나스닥',code:'qqq'},{name:'',code:'X'}]);
   assert.deepEqual(['S&P500','나스닥','없는 이름',''].map(clash),[true,false,false,false]);
 });
+test('이름표의 일괄 조회는 개별 조회와 같은 첫 이름·우선순위를 쓰며 다음 호출에 변경을 반영한다',()=>{
+  const ps=Array.from({length:120},(_,i)=>({id:'p'+i,ticker:'T'+i,title:i%3?'계획 '+i:'',cardName:i%7?'':'카드 '+i}));
+  const rs=ps.map((p,i)=>({id:'r'+i,ticker:p.ticker,name:i%2?'재매수 '+i:''}));
+  const its=ps.flatMap((p,i)=>[{id:'a'+i,ticker:'B'+i,tradeTicker:p.ticker,name:i%4?'자산 '+i:'',buyPlan:{}},{id:'b'+i,ticker:p.ticker,name:'두 번째 '+i}]);
+  const p=page({plans:ps,rebuy:{items:rs},groups:[{items:its}],rules:[{ticker:'MISSING'}]});
+  for(let round=0;round<2;round++){
+    const before=JSON.stringify(p.ctx.state)+JSON.stringify(p.ctx.assetStore),map=p.names.alertMap();
+    for(const plan of ps){assert.equal(map.codes[plan.ticker],p.names.lookup(plan.ticker));assert.equal(map.rules[`trade:plan:${plan.id}:`][0],plan.cardName||p.names.planName(plan));}
+    for(const r of rs)assert.equal(map.rules[`trade:rebuy:${r.id}:`][0],r.name||p.names.lookup(r.ticker));
+    for(const it of its)if(it.ticker.startsWith('B'))assert.equal(map.codes[it.ticker],undefined,'추종 기준 코드는 거래 종목 이름을 받지 않는다');
+    assert.equal(map.codes.MISSING,undefined);assert.equal(JSON.stringify(p.ctx.state)+JSON.stringify(p.ctx.assetStore),before);
+    for(const it of its)it.name='수정 '+it.id;
+  }
+});
 
 test('알림 종류는 규칙 ID의 메뉴(분할매수·분할매도·재매수·달러선물)로, 옛 알림은 기준선 글자로 구분한다',()=>{
   const {alertKind}=page().names;

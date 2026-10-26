@@ -31,8 +31,12 @@ function renderSavings(){
   const currentYear=syncSavingsCurrentYear();
   const S=doc.savings, view=el("savingsView");
   if(!S){ view.innerHTML=emptyCard("저축 계획 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startSavings" type="button">새로 시작</button>`);
-    el("startSavings").onclick=()=>{ const y=new Date().getFullYear(); doc.savings={savedAt:"",startYear:y,startAge:30,actual:[],scenarios:[{id:newId(),name:"기본",salary:0,giving:0,spending:0,spendingYear:y,growth:2,returnRate:5,endAge:60,stages:[]}]}; saveSection("savings"); render(); }; return; }
+    el("startSavings").onclick=()=>{ if(doc.savings){render();return;}const y=new Date().getFullYear(); doc.savings={savedAt:"",startYear:y,startAge:30,actual:[],scenarios:[{id:newId(),name:"기본",salary:0,giving:0,spending:0,spendingYear:y,growth:2,returnRate:5,endAge:60,stages:[]}]}; saveSection("savings"); render(); }; return; }
   const sc=S.scenarios.find(x=>x.id===ui.scenario)||S.scenarios[0], sim=sc?simulateSavings(S,sc):null;
+  // 입력 중 동기화는 화면 갱신만 미룬다. 저장 대상은 현재 기록의 ID로 다시 찾고, ID 없는 단계 목록이 바뀌면 이전 순번으로 다른 단계를 수정하지 않는다.
+  const currentScenario=()=>doc.savings?.scenarios.find(x=>x.id===sc?.id);
+  const currentStages=()=>{const current=currentScenario();if(!current)return null;
+    if(JSON.stringify(current.stages)!==JSON.stringify(sc.stages)){alert("나이별 변경 기록이 갱신되었습니다. 최신 단계를 확인한 뒤 다시 입력해 주세요.");return null;}return current;};
   if(ui.scenario&&!S.scenarios.some(x=>x.id===ui.scenario))setUi({scenario:sc?.id??null});
   const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:key==="growth"||key==="returnRate"?signedNumAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):escA(sc[key]??"")}" ${attrs}><em>${unit}</em></span>${unit==="원"&&finite(sc[key])?`<small class="field-hint">${eok(sc[key])}</small>`:""}</label>`;
   const stageRow=(st,i)=>{
@@ -89,7 +93,7 @@ function renderSavings(){
     <section class="card savings-years"><div class="savings-years-head"><span>연도</span><span>저축총액</span><span>투자수익</span><span title="월급 + 투자수익">기부금</span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</section>`;
   all("[data-scenario]").forEach(b=>b.onclick=()=>{ setUi({scenario:b.dataset.scenario}); renderSavings(); });
   if(el("saveSavingsMilestone"))el("saveSavingsMilestone").onclick=()=>{
-    const savings=doc.savings, scenario=savings.scenarios.find(x=>x.id===ui.scenario)||savings.scenarios[0];
+    const savings=doc.savings;if(!savings)return;const scenario=savings.scenarios.find(x=>x.id===ui.scenario)||savings.scenarios[0];
     const current=savingsMilestone(simulateSavings(savings,scenario));if(current)assetStore.saveSavingsMilestone(current);renderSavings();
   };
   if(el("toggleYears")) el("toggleYears").onclick=()=>{ savingsAllYears=!savingsAllYears; renderSavings(); };
@@ -97,9 +101,9 @@ function renderSavings(){
     const year=Number(b.dataset.savingsYear), open=!savingsOpenYears.has(year);if(open)savingsOpenYears.add(year);else savingsOpenYears.delete(year);
     el(b.getAttribute("aria-controls")).hidden=!open;b.setAttribute("aria-expanded",String(open));
   });
-  el("copyScenario").onclick=()=>{ const base=sc||{}; const copy=JSON.parse(JSON.stringify({...base,id:newId(),name:`${base.name||"시나리오"} 복사`})); S.scenarios.push(copy); setUi({scenario:copy.id}); saveSection("savings"); render(); };
-  onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null) return false; S[x.dataset.base]=Math.round(n); });
-  onChange("[data-actual]","savings",(v,x)=>setSavingsActual(S,x.dataset.actual,v));
+  el("copyScenario").onclick=()=>{ const savings=doc.savings,base=currentScenario();if(!savings||sc&&!base){render();return;}const copy=JSON.parse(JSON.stringify({...base,id:newId(),name:`${base?.name||"시나리오"} 복사`})); savings.scenarios.push(copy); setUi({scenario:copy.id}); saveSection("savings"); render(); };
+  onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null||!doc.savings) return false; doc.savings[x.dataset.base]=Math.round(n); });
+  onChange("[data-actual]","savings",(v,x)=>doc.savings?setSavingsActual(doc.savings,x.dataset.actual,v):false);
   if(!sc) return;
   el("toggleSavingsAssumptions").onclick=()=>{
     savingsAssumptionsOpen=!savingsAssumptionsOpen;
@@ -107,10 +111,10 @@ function renderSavings(){
     el("savingsAssumptionsBody").hidden=!savingsAssumptionsOpen;button.setAttribute("aria-expanded",String(savingsAssumptionsOpen));button.setAttribute("aria-label",`${sc.name} 가정 ${action}`);button.querySelector("[data-savings-assumptions-action]").textContent=action;
     el("deleteScenario").hidden=!savingsAssumptionsOpen||S.scenarios.length<2;
   };
-  onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
-    const n=numIn(v); if(n===null) return false; sc[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
-  onChange("[data-stage]","savings",(v,x)=>{ const st=sc.stages[Number(x.dataset.stage)]; if(x.dataset.k==="age"&&numIn(v)===null) return false; setNum(st,x.dataset.k,v); sc.stages.sort((a,b)=>a.age-b.age); });
-  all("[data-stage-del]").forEach(b=>b.onclick=()=>{ sc.stages.splice(Number(b.dataset.stageDel),1); saveSection("savings"); render(); });
-  el("addStage").onclick=()=>{ sc.stages=sc.stages||[]; const last=sc.stages[sc.stages.length-1]; sc.stages.push({age:(finite(last?.age)??(finite(S.startAge)||30))+5}); saveSection("savings"); render(); };
-  el("deleteScenario").onclick=()=>{ if(!confirm(`'${sc.name}' 시나리오를 삭제할까요?`)) return; S.scenarios=S.scenarios.filter(x=>x!==sc); setUi({scenario:S.scenarios[0]?.id||null}); saveSection("savings"); render(); };
+  onChange("[data-param]","savings",(v,x)=>{ const current=currentScenario();if(!current)return false;const k=x.dataset.param; if(k==="name"){ current.name=v.trim()||current.name; return; } if(k==="note"){ setText(current,"note",v); return; }
+    const n=numIn(v); if(n===null) return false; current[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
+  onChange("[data-stage]","savings",(v,x)=>{ const current=currentStages(),st=current?.stages[Number(x.dataset.stage)]; if(!st||x.dataset.k==="age"&&numIn(v)===null) return false; setNum(st,x.dataset.k,v); current.stages.sort((a,b)=>a.age-b.age); });
+  all("[data-stage-del]").forEach(b=>b.onclick=()=>{ const current=currentStages();if(!current){render();return;}current.stages.splice(Number(b.dataset.stageDel),1); saveSection("savings"); render(); });
+  el("addStage").onclick=()=>{ const current=currentScenario();if(!current){render();return;}current.stages=current.stages||[]; const last=current.stages[current.stages.length-1]; current.stages.push({age:(finite(last?.age)??(finite(doc.savings.startAge)||30))+5}); saveSection("savings"); render(); };
+  el("deleteScenario").onclick=()=>{ const savings=doc.savings,current=currentScenario();if(!current||savings.scenarios.length<2){render();return;}if(!confirm(`'${current.name}' 시나리오를 삭제할까요?`)) return; savings.scenarios=savings.scenarios.filter(x=>x!==current); setUi({scenario:savings.scenarios[0]?.id||null}); saveSection("savings"); render(); };
 }

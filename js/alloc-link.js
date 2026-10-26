@@ -6,6 +6,13 @@ const nf1=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}), nf2=new Intl
 const man=v=>`${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`, pc=v=>`${(Math.abs(v)<1?nf2:nf1).format(v)}%`;
 const qty=(n,it)=>`${nf8.format(n)}${linkStep(it)<1?" BTC":"주"}`;
 const sign=d=>d<0?"−":"+";
+// 저장 실패로 메모리에서만 바뀐 반영 기록은 같은 누적량을 다시 입력해도 저장을 재시도한다.
+// 동기화·복원으로 문서가 교체되면 옛 문서의 재시도 표시는 새 문서에 적용하지 않는다.
+let dirtyAllocation=null;
+function saveAllocation(){
+  const a=allocOf();if(assetStore.saveSection("allocation")===false){dirtyAllocation=a;return false;}
+  dirtyAllocation=null;return true;
+}
 function summary(ticker, ownId=null){const a=allocOf();return a?linkSummary(a,assetStore.prices,ticker,ownId):null;}
 // 계획 화면 한 줄: 현재 비중(연결 종목 합계) / 목표 비중 · 목표 도달(±0.5만원)·목표까지·목표 초과 금액. 분할매수 줄(purchases.js purchaseHeading)과 같은 글자이며 계좌별 금액은 title로만 보인다. 연결 종목이 없으면 빈 글자.
 // 목표는 자산 배분 목표(linkSummary — 분할매수와 같은 규칙)를 그릴 때마다 읽으며, 자산 배분이 바뀌면 분할매도·재매수 화면이 다시 그린다(assetStore.subscribe).
@@ -41,7 +48,7 @@ function describe(rec){
 function apply(key, o, picks){
   const a=allocOf();if(!a)return;
   const had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,{...o.trade,ticker:o.ticker},o.label,picks);
-  if(rec||had)assetStore.saveSection("allocation");
+  if((rec||had)&&!saveAllocation())return;
   if(rec)toast(`자산 배분 반영 · ${describe(rec)}`);
 }
 // ---------- 계좌 고르는 창 ----------
@@ -103,21 +110,22 @@ function check(o){
 }
 // 체크를 풀었을 때(출처 기록을 저장한 뒤): 반영한 양을 되돌린다.
 function uncheck(key){
-  const a=allocOf(), rec=a&&revertTrade(a,key);if(!rec)return;
-  assetStore.saveSection("allocation");toast(`자산 배분 되돌림 · ${rec.items.map(e=>allocItemById(a,e.id)?.name).filter(Boolean).slice(0,2).join(" · ")||rec.label}`);
+  const a=allocOf(), rec=a&&revertTrade(a,key);if(!rec){if(a&&dirtyAllocation===a)saveAllocation();return;}
+  if(!saveAllocation())return;toast(`자산 배분 되돌림 · ${rec.items.map(e=>allocItemById(a,e.id)?.name).filter(Boolean).slice(0,2).join(" · ")||rec.label}`);
 }
 // 체크 기록을 한꺼번에 지울 때(재매수 체크 기록 초기화 — 출처 기록을 저장한 뒤): 반영한 것이 있으면 되돌릴지 묻는다. 되돌리지 않으면 반영 기록만 지운다(자산 배분은 그대로).
 function forget(keys, label){
-  const a=allocOf(), hit=(keys||[]).filter(k=>a?.trades?.[k]);if(!hit.length)return;
-  if(confirm(`자산 배분에 반영한 ${label} ${hit.length}건도 되돌릴까요?\n취소하면 자산 배분 보유량은 지금 그대로 둡니다.`)){hit.forEach(k=>revertTrade(a,k));toast(`자산 배분 되돌림 · ${hit.length}건`);}
+  const a=allocOf(), hit=(keys||[]).filter(k=>a?.trades?.[k]);if(!hit.length){if(a&&dirtyAllocation===a)saveAllocation();return;}
+  const undo=confirm(`자산 배분에 반영한 ${label} ${hit.length}건도 되돌릴까요?\n취소하면 자산 배분 보유량은 지금 그대로 둡니다.`);
+  if(undo)hit.forEach(k=>revertTrade(a,k));
   else{hit.forEach(k=>delete a.trades[k]);if(!Object.keys(a.trades).length)delete a.trades;}
-  assetStore.saveSection("allocation");
+  if(!saveAllocation())return;if(undo)toast(`자산 배분 되돌림 · ${hit.length}건`);
 }
 // 체크 뒤 체결 수량·가격·금액을 고쳤을 때(trade = 새 {qty, price, value}): 반영한 양을 같은 비율로 맞춘다.
 function rescale(key, trade){
   const a=allocOf();if(!a?.trades?.[key])return;
   const before=JSON.stringify(a.trades[key]), rec=rescaleTrade(a,key,trade);
-  if(JSON.stringify(a.trades[key])!==before)assetStore.saveSection("allocation");
+  if((JSON.stringify(a.trades[key])!==before||dirtyAllocation===a)&&!saveAllocation())return;
   if(rec)toast(`자산 배분도 맞춤 · ${describe(rec)}`);
 }
 // 분할매수 기록 회차의 수량을 고치거나 취소할 때(출처 기록을 저장한 뒤): 바뀐 양만 지금 매수 1순위 계좌(targetId)에 더하거나 뺀다(이어 사기·되팔기 모두 1순위 기준).
@@ -131,15 +139,15 @@ function shift(o){
   if(row?.n){
     field=row.unit==="shares"?"shares":"amount";const step=field==="shares"?row.step:0.01, s=field==="amount"?allocationSummary(a,assetStore.prices):null;
     const was=finite(it.amount)||0, v=s?.items.get(it.id)?.value||0, want=field==="shares"?row.n:row.n*(was>0&&v>0?was/v:1);
-    const fresh=finite(it[field])===null;done=bumpField(it,field,dir*want,step);short=Math.abs(done)+step/2<want;
+    const fresh=finite(it[field])===null;done=bumpField(it,field,linkRound(dir*want,step));short=Math.abs(done)+step/2<want;
     if(done&&field==="amount"&&!(was>0)&&finite(it.shares)===null)resetBase(it,assetStore.prices,a);
     const e=done&&items.find(x=>x?.id===it.id&&finite(x[field])!==null&&!x.converted);
-    if(e){e[field]=linkRound(e[field]+done,step);delete e.exact;if(e.fresh&&field==="shares"&&!(finite(it.shares)>0))delete it.shares;}else if(done)items.push({id:it.id,[field]:done,...(fresh&&field==="shares"?{fresh:true}:{})});
+    if(e){e[field]=Number((e[field]+done).toFixed(8));delete e.exact;if(e.fresh&&field==="shares"&&!(finite(it.shares)>0))delete it.shares;}else if(done)items.push({id:it.id,[field]:done,...(fresh&&field==="shares"?{fresh:true}:{})});
     rec.items=items.filter(x=>finite(x?.shares)||finite(x?.amount)||finite(x?.exact)); // 0이 됐어도 반올림 전 양(exact, rescaleTrade)이 남은 계좌는 둔다
   }
   if(!plus(o.total?.qty)&&!plus(o.total?.value)){delete a.trades[o.key];if(!Object.keys(a.trades).length)delete a.trades;}
   else Object.assign(rec,{qty:plus(o.total.qty),value:plus(o.total.value)});
-  assetStore.saveSection("allocation");
+  if(!saveAllocation())return;
   if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}`);
   else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
 }

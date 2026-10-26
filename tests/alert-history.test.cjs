@@ -22,6 +22,47 @@ test('화면·빈 수신함 조회는 옛 기록에 알림내역이나 과거 �
   assert.equal(JSON.stringify(h.ctx.state),before);assert.equal(h.saves(),0);
   assert.match(h.nodes.get('alertHistoryList').innerHTML,/기능 적용 이후/);
 });
+test('저장 거부·저장 공간 오류 뒤에는 수신함과 기존 상태를 보존하고 성공한 재시도만 확인한다',async()=>{
+  for(const initial of [{plans:[]},{plans:[],alertHistory:{items:[],deletedIds:['old-deleted']}}])for(const fail of [()=>false,()=>{throw Error('synthetic quota');}]){
+    const h=load(initial),before=JSON.stringify(h.ctx.state),acknowledged=[],originalSave=h.ctx.save;
+    h.ctx.store.pending=async()=>[h.ctx.store.record(event())];
+    h.ctx.store.acknowledge=async ids=>acknowledged.push(...ids);
+    h.ctx.save=fail;
+    await h.ctx.collectAlertInbox();await h.ctx.collectAlertInbox();
+    assert.equal(JSON.stringify(h.ctx.state),before);
+    assert.deepEqual(acknowledged,[]);assert.equal(h.storage.has('test-state'),false);
+    h.ctx.save=originalSave;await h.ctx.collectAlertInbox();
+    assert.deepEqual(acknowledged,['event-1']);assert.equal(h.saves(),1);
+    assert.equal(JSON.parse(h.storage.get('test-state')).alertHistory.items[0].id,'event-1');
+  }
+});
+test('이미 메모리에 있는 수신함 항목도 저장이 성공해야 확인하고 빈 수신함은 저장하지 않는다',async()=>{
+  for(const fail of [()=>false,()=>{throw Error('synthetic quota');}]){
+    const h=load(),acknowledged=[],originalSave=h.ctx.save;
+    h.ctx.state.alertHistory=h.ctx.store.merge({items:[event()]});
+    h.ctx.store.pending=async()=>[h.ctx.store.record(event())];
+    h.ctx.store.acknowledge=async ids=>acknowledged.push(...ids);
+    h.ctx.save=fail;await h.ctx.collectAlertInbox();await h.ctx.collectAlertInbox();
+    assert.deepEqual(acknowledged,[]);assert.equal(h.storage.has('test-state'),false);
+    h.ctx.save=originalSave;await h.ctx.collectAlertInbox();
+    assert.deepEqual(acknowledged,['event-1']);assert.equal(h.saves(),1);
+    assert.equal(JSON.parse(h.storage.get('test-state')).alertHistory.items[0].id,'event-1');
+    h.ctx.store.pending=async()=>[];await h.ctx.collectAlertInbox();assert.equal(h.saves(),1);
+  }
+});
+test('다른 탭·동기화 이력 병합의 저장 실패는 저장하지 못한 내역을 메모리에 남기지 않는다',()=>{
+  for(const initial of [{plans:[]},{plans:[],alertHistory:{items:[],deletedIds:['old-deleted']}}]){
+    const h=load(initial),before=JSON.stringify(h.ctx.state),incoming=h.ctx.store.merge({items:[event()]});
+    for(const fail of [()=>false,()=>{throw Error('synthetic quota');}]){
+      h.ctx.save=fail;
+      assert.throws(()=>h.ctx.acceptAlertHistoryFromTab(incoming));
+      assert.equal(JSON.stringify(h.ctx.state),before);
+    }
+    h.ctx.localStorage.setItem=()=>{throw Error('synthetic quota');};
+    assert.throws(()=>h.ctx.alignAlertHistorySnapshots(before,JSON.stringify({plans:[],alertHistory:incoming}),null));
+    assert.equal(JSON.stringify(h.ctx.state),before);
+  }
+});
 test('당시 조건·소수 가격·기준값·발생 시각을 저장하고 최신순으로 표시한다',()=>{
   const h=load({plans:[{id:'original',ticker:'OTHER'}]});
   h.ctx.acceptAlertHistory([event('later',{occurredAt:'2026-10-14T01:03:00+00:00'}),event('earlier')]);
@@ -111,6 +152,29 @@ test('최초 알림이 없는 기기는 재알림으로 한 항목을 만들고 
   assert.deepEqual(items.map(item=>[item.id,item.reminderCount||0]).sort(),[[FIRST,1],[OTHER,1],['c'.repeat(64),0]]);
   const placeholder=items.find(item=>item.id===FIRST);assert.equal(placeholder.occurredAt,'2026-10-14T01:02:10.000Z');assert.equal(placeholder.readAt,undefined);
   h.ctx.acceptAlertHistory([event(FIRST)]);assert.equal(h.ctx.state.alertHistory.items.filter(item=>item.id===FIRST).length,1);
+});
+test('재알림을 먼저 받고 다시 열어도 최초 가격을 꾸미지 않고 나중에 받은 최초 스냅샷을 채운다',()=>{
+  const h=load(),first=event(FIRST),later=followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z',{ma:98,body:'후속 조건',gapPct:1});
+  h.ctx.acceptAlertHistory([later]);
+  const placeholder=h.ctx.state.alertHistory.items[0];
+  for(const field of ['price','ma','condition','trigger','gapPct','observedAt','asOf'])assert.equal(placeholder[field],undefined,field);
+  assert.match(h.ctx.alertHistoryCard(placeholder),/당시 가격 <strong>확인 불가<\/strong>/);
+  h.ctx.markAlertHistoryRead(FIRST);const readAt=h.ctx.state.alertHistory.items[0].readAt;
+  const reopened=load(JSON.parse(h.storage.get('test-state')));reopened.ctx.acceptAlertHistory([first,later]);
+  const item=reopened.ctx.state.alertHistory.items[0];
+  for(const field of ['price','ma','body','condition','trigger','gapPct'])assert.equal(item[field],first[field],field);
+  assert.equal(item.readAt,readAt);assert.equal(item.reminderCount,1);assert.equal(item.lastSentAt,'2026-10-15T00:45:00.000Z');
+  const merged=h.ctx.store.merge({items:[later]});
+  assert.deepEqual(plain(h.ctx.store.merge(merged,{items:[first]})),plain(h.ctx.store.merge({items:[first,later]})));
+});
+test('옛 클라이언트의 재알림 가격이 최초 ID에 남았어도 앞선 원본 관측으로 복구하고 읽음·재알림 집계는 유지한다',()=>{
+  const h=load(),first=event(FIRST),readAt='2026-10-15T02:00:00Z';
+  const legacy={...event(FIRST,{price:90,ma:95,body:'옛 재알림',observedAt:'2026-10-15T00:45:00Z'}),reminderCount:1,lastSentAt:'2026-10-15T00:45:00Z',readAt};
+  for(const groups of [[{items:[legacy]},{items:[first]}],[{items:[first]},{items:[legacy]}],[{items:[legacy,first,legacy,first]}]]){
+    const item=h.ctx.store.merge(...groups).items[0];
+    for(const field of ['price','ma','body','observedAt'])assert.equal(item[field],h.ctx.store.record(first)[field]);
+    assert.equal(item.reminderCount,1);assert.equal(item.readAt,'2026-10-15T02:00:00.000Z');assert.equal(item.lastSentAt,'2026-10-15T00:45:00.000Z');
+  }
 });
 test('예전 수신함이 alertKey 없이 저장한 재알림은 합치고 다시 나타나지 않는다',()=>{
   const h=load(),reminder='r'.repeat(64);
