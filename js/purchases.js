@@ -68,7 +68,7 @@ const lineEntry=it=>{const e=stockEntry(priceDoc(),it?.ticker);return e&&e.kind=
 const lineMarket=it=>["국내","해외"].includes(purchaseQuoteKind(it?.ticker)); // 이동평균(일봉·60분봉)은 국내·미국 종목만 수집(비트코인 제외)
 const waitEntry=it=>{const e=lineEntry(it)||quoteOf(it);return lineMarket(it)&&e?.kind===purchaseQuoteKind(it.ticker)?e:null;};
 const lineKnown=(lines,e)=>purchaseLineNames(lines).filter(n=>Number(e?.ma?.[n])>0);
-// 단계 묶음(창의 '단계' 선택). 목표 가격을 비우면 고른 마지막 선까지의 names만 저장해 수집 작업도 같은 선을 받는다.
+// 단계 묶음(창의 '단계' 선택). 마지막 목표로 평균선을 고르면 그 선까지의 names만 저장해 수집 작업도 같은 선을 받는다.
 const LINE_SETS={all:PURCHASE_LINES,hour:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="선"),day:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="일선"),week:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="주선"),month:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="개월선"),legacy:PURCHASE_LINES.filter(n=>["선","일선"].includes(movingLineUnit(n)))};
 const lineSetOf=(names,extend=false)=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k].join()===names.join())||["hour","day","week","month","legacy","all"].find(k=>{
   const range=purchaseLineRange(LINE_SETS[k],names[0]);
@@ -184,7 +184,7 @@ function renderPurchases(){
     const waitingStart=!!lines?.startLine&&!known.includes(purchaseLineName(lines.startLine));
     // 시세 대기·회차 간격 안내는 계획 진행 카드 아래쪽에 둔다(계산 요약 카드는 두지 않음).
     const waits=lines?[spaced?"예산에 맞춰 회차 간격을 넓혀 고르게 나눴습니다.":"",
-      waitingStart?`매수 시작 이동평균선 ${escA(startText(lines.startLine))}의 시세를 기다리는 중입니다. 시세가 채워지면 선택한 시작선부터 매수 회차를 계산합니다.`:waitingLast?`마지막 매수 평균선 ${escA(movingLineText(lastLine)||"선택한 선")}의 시세를 기다리는 중입니다. 시세가 채워지면 이 선의 도달 회차까지 매수 금액을 나눕니다.`:!known.length?"이동평균 시세를 기다리는 중입니다. 다음 수집 뒤 단계 회차가 보이고, 그 전에는 목표가 회차만 있습니다."
+      waitingStart?`매수 시작 이동평균선 ${escA(startText(lines.startLine))}의 시세를 기다리는 중입니다. 시세가 채워지면 선택한 시작선부터 매수 회차를 계산합니다.`:waitingLast?`마지막 목표 ${escA(startText(lastLine)||"선택한 선")}의 시세를 기다리는 중입니다. 시세가 채워지면 이 선의 도달 회차까지 매수 금액을 나눕니다.`:!known.length?"이동평균 시세를 기다리는 중입니다. 다음 수집 뒤 단계 회차가 보이고, 그 전에는 목표가 회차만 있습니다."
         :missing.length?`아직 시세가 없는 단계 ${escA(movingLineText(missing.join("·")))}는 건너뜁니다(60분봉 긴 선은 수집이 과거 봉을 받는 동안 며칠 걸릴 수 있음).`:""].filter(Boolean):[];
     const alertLine=alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
       :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
@@ -405,11 +405,13 @@ function targetNote(h){
   const own=h.rows.filter(r=>finite(r.it.target)!==null).length;
   return `${h.scope==="group"?"그룹 목표":h.scope==="section"?"소분류 목표":own>1?`연결 계좌 ${own}개 목표 합`:"종목 목표"} · ${link}에서 바꾸면 분할매도·재매수와 함께 바뀝니다.`;
 }
+// 마지막 목표: 시·일·주·월선을 고르면 그 선까지 names에 저장하고 end는 지운다. '직접 입력'(빈 값)이면 end에 목표 가격을 저장한다(비우면 저장 전에 막는다).
+const lineEndPriced=()=>form().lineLastUnit.value==="";
 function linesDraft(){
-  const f=form(),end=numIn(f.lineEnd.value),start=lineStartDraft(),names=draftLineNames(end===null?lineLastDraft():null),it=pickedItem()?.it;
+  const f=form(),priced=lineEndPriced(),end=priced?numIn(f.lineEnd.value):null,start=lineStartDraft(),names=draftLineNames(priced?null:lineLastDraft()),it=pickedItem()?.it;
   const explicit=!!purchaseDraft.lines?.startLine||!purchaseDraft.lines||start!==purchaseLineNames(purchaseDraft.lines)[0];
   const legacy=legacyTarget(),keep=legacy!==null&&!!it&&draftHolding(it).assetTarget===null;
-  return {names,...(explicit&&start?{startLine:start}:{}),...(end!==null?{end}:{}),budget:numIn(f.lineBudget.value),...(keep?{target:legacy}:{})};
+  return {names,...(explicit&&start?{startLine:start}:{}),...(priced?{end}:{}),budget:numIn(f.lineBudget.value),...(keep?{target:legacy}:{})};
 }
 function lineStartDraft(){
   const f=form(),n=numIn(f.lineStartPeriod.value);
@@ -426,12 +428,13 @@ const draftLineNames=(last=null)=>{
 };
 function renderLines(){
   const f=form(), picked=pickedItem(), it=picked?.it, q=quoteOf(it), cur=quoteOf(it)?.currency||"KRW", lines=mode()==="lines";
-  f.lineStartPeriod.disabled=f.lineStartUnit.disabled=!lines;
-  el("lineEndLineField").hidden=f.lineLastPeriod.disabled=f.lineLastUnit.disabled=!lines||numIn(f.lineEnd.value)!==null;
+  const priced=lineEndPriced(), last=priced?"":lineLastDraft(), lastMa=last&&it?plus(lineEntry(it)?.ma?.[last]):null;
+  f.lineStartPeriod.disabled=f.lineStartUnit.disabled=f.lineLastUnit.disabled=!lines;
+  f.lineLastPeriod.hidden=priced;f.lineLastPeriod.disabled=!lines||priced;
+  f.lineEnd.hidden=!priced;f.lineEnd.disabled=!lines||!priced;f.lineEnd.placeholder=`목표 가격 (${cur==="USD"?"$":"원"})`;
   el("manualCurrencyField").hidden=!picked||!!q;
-  all("[data-line-cur]").forEach(x=>x.textContent=cur==="USD"?"$":"원");
   const box=el("lineResult"), list=el("linePreview"), hint=t=>`<p class="hint">${t}</p>`;list.innerHTML="";
-  el("lineEndNote").textContent=q?`현재가 ${priceText(q.close,cur)} · ${q.asOf.slice(5)}`:"";
+  el("lineEndNote").textContent=q?`${lastMa?`${startText(last)} ${priceText(lastMa,cur)} · `:""}현재가 ${priceText(q.close,cur)} · ${q.asOf.slice(5)}`:"";
   const s=allocationSummary(doc.allocation,prices),holding=draftHolding(it,s);
   f.lineTarget.value=picked&&holding.target!==null?holding.target:"";el("lineTargetNote").innerHTML=picked?targetNote(holding):"종목을 고르면 자산 배분 목표를 표시합니다.";
   if(!lines)return;
@@ -445,9 +448,9 @@ function renderLines(){
   const draft=linesDraft(), entry=lineEntry(it), rows=purchaseLineRows({lines:draft,buys:purchaseDraft.buys},entry,{...lineOptions(it,purchaseDraft),currency:cur}), open=rows.filter(r=>!r.done), known=lineKnown(draft,entry);
   const out=[];
   if(!lineStartDraft())out.push(`<span class="ladder-error">시작선 기간은 1~400의 정수로 넣으세요.</span>`);
-  else if(draft.end!==undefined&&!(draft.end>0))out.push(`<span class="ladder-error">목표 가격은 0보다 크게 넣거나 비우세요.</span>`);
-  else if(draft.end===undefined&&!lineLastDraft())out.push(`<span class="ladder-error">마지막 매수 평균선 기간은 1~400의 정수로 넣으세요.</span>`);
-  else if(!draft.names.length)out.push(`<span class="ladder-error">마지막 매수 평균선은 시작선과 같거나 뒤에 있어야 합니다.</span>`);
+  else if(draft.end!==undefined&&!(draft.end>0))out.push(`<span class="ladder-error">마지막 목표 가격은 0보다 크게 넣으세요.</span>`);
+  else if(draft.end===undefined&&!lineLastDraft())out.push(`<span class="ladder-error">마지막 목표 평균선 기간은 1~400의 정수로 넣으세요.</span>`);
+  else if(!draft.names.length)out.push(`<span class="ladder-error">마지막 목표 평균선은 시작선과 같거나 뒤에 있어야 합니다.</span>`);
   else if(!(draft.budget>0))out.push(`<span class="ladder-error">${goal!==null&&goal<=value?"지금 평가액이 목표 이상이라 더 살 금액이 없습니다.":"총 매수 금액을 넣으세요."}</span>`);
   else{
     const rate=cur==="USD"?s.fx:1, now=q&&q.currency===cur?q.close:null;
@@ -457,7 +460,7 @@ function renderLines(){
     out.push(`<b>${open.length}회</b>${partial?` · 부분 체결 ${partial}회`:open.length?` · <b>${perRoundText(open)}</b>${cur==="USD"&&rate&&open.every(r=>r.amount===open[0].amount)?` <small>(약 ${priceText(open[0].amount*1e4/rate,"USD")})</small>`:""}`:""}${spent?` · 체결 ${man(spent)}`:""}`);
     if(open.length&&purchaseLineLevels(draft,entry).filter(r=>!purchaseBuys(purchaseDraft)[r.key]).length>rows.filter(r=>!purchaseBuys(purchaseDraft)[r.key]).length)out.push('<small>예산에 맞춰 회차 간격을 넓혀 고르게 나눴습니다.</small>');
     if(draft.startLine&&!known.includes(draft.startLine))out.push(`<small>시작 이동평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
-    else if(draft.end===undefined&&!known.includes(draft.names[draft.names.length-1]))out.push(`<small>마지막 매수 평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
+    else if(draft.end===undefined&&!known.includes(draft.names[draft.names.length-1]))out.push(`<small>마지막 목표 평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
     else if(!known.length)out.push(`<small>${escA(it.ticker)}의 이동평균 시세가 아직 없습니다. 저장하면 다음 수집(장중 30분마다)부터 이동평균을 받아 단계 회차가 채워지고, 그 전에는 목표가 회차만 있습니다.</small>`);
     const tradeTarget=targetsOf(it,purchaseDraft,s)[0]?.it||it;
     list.innerHTML=rows.map(r=>{const b=purchaseBuys(purchaseDraft)[r.key],fill=!r.done&&!b?purchaseTrackingFill(r,it,prices,s.fx,cur,tradeTarget):null,qty=r.plannedShares??fill?.shares,actualItem=b?recordedTarget(it,b,`buy:${it.id}:${r.key}`).tradeItem:tradeTarget;
@@ -499,7 +502,7 @@ function openPurchase(id){
   const start=purchaseLineName(lines?.startLine)||purchaseLineNames(lines)[0]||PURCHASE_LINES[0];
   f.lineStartPeriod.value=parseInt(start);f.lineStartUnit.value=movingLineUnit(start);
   const names=purchaseLineNames(lines),last=names[names.length-1]||start;
-  f.lineLastPeriod.value=parseInt(last);f.lineLastUnit.value=movingLineUnit(last);
+  f.lineLastPeriod.value=parseInt(last);f.lineLastUnit.value=plus(lines?.end)?"":movingLineUnit(last);
   f.manualCurrency.value=purchaseDraft.currency||"KRW";
   f.cardName.value=purchaseDraft.cardName||"";f.note.value=purchaseDraft.note||"";renderDraft();
   el("purchaseDelete").hidden=!found;
@@ -513,9 +516,9 @@ function openPurchase(id){
       const kind=purchaseQuoteKind(item.ticker),l=linesDraft();
       if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다.");return;}
       if(!lineStartDraft()){alert("시작선 기간은 1~400의 정수로 넣으세요.");f.lineStartPeriod.focus();return;}
-      if(l.end!==undefined&&!(l.end>0)){alert("목표 가격은 0보다 크게 넣거나 비우세요.");f.lineEnd.focus();return;}
-      if(l.end===undefined&&!lineLastDraft()){alert("마지막 매수 평균선 기간은 1~400의 정수로 넣으세요.");f.lineLastPeriod.focus();return;}
-      if(!l.names.length){alert("마지막 매수 평균선은 시작선과 같거나 뒤에 있어야 합니다.");f.lineLastPeriod.focus();return;}
+      if(l.end!==undefined&&!(l.end>0)){alert("마지막 목표 가격은 0보다 크게 넣으세요.");f.lineEnd.focus();return;}
+      if(l.end===undefined&&!lineLastDraft()){alert("마지막 목표 평균선 기간은 1~400의 정수로 넣으세요.");f.lineLastPeriod.focus();return;}
+      if(!l.names.length){alert("마지막 목표 평균선은 시작선과 같거나 뒤에 있어야 합니다.");f.lineLastPeriod.focus();return;}
       if(!(l.budget>0)){alert("총 매수 금액을 넣으세요(자산 배분에 목표 비중을 넣으면 계산합니다).");f.lineBudget.focus();return;}
       // 창을 연 뒤 다른 탭·기기에서 자산 배분 목표가 바뀌어 다시 계산된 총 매수 금액은, 금액 칸을 고치지 않았으면 옛 값으로 덮어쓰지 않는다.
       const stored=finite(item.buyPlan?.lines?.budget);if(!budgetAuto&&l.budget===openedBudget&&stored!==null)l.budget=stored;
