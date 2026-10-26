@@ -125,3 +125,100 @@ test('설정을 바꾸지 않고 저장하거나 계산·복원만 하면 선택
   const before=JSON.stringify(r),{ctx,saves}=editing(r);ctx.rebuySummary(r);assert.equal(ctx.saveRebuyStageDraft(),true);
   assert.equal(JSON.stringify(r),before);assert.equal(saves(),0);
 });
+
+test('계좌 선택 대기 중 선택 종목·원본·체결이 바뀌면 손절/재매수 지연 확정을 거절한다',()=>{
+  for(const buy of [false,true])for(const change of ['selection','replacement','record']){
+    const ctx=load(),r=fixture(9000),other={...fixture(9000),id:'other',ticker:'900002'},alerts=[];
+    let pending=null,saves=0;
+    Object.assign(ctx,{state:{rebuy:{items:[r,other]},selectedRebuy:r.id},save:()=>saves++,renderRebuy(){},alert:text=>alerts.push(text),allocLink:{holding:()=>null,check:o=>{pending=o;}}});
+    if(!buy)r.cuts=[];
+    const rec=buy?ctx.rebuyBuyRecord(r,0,0,'2'):ctx.rebuyCutRecord(r,0,'1');
+    assert.notEqual(rec,false);if(buy)ctx.applyRebuyBuy(0,0,rec);else ctx.applyRebuyCut(0,rec);
+    assert.ok(pending);assert.equal(saves,0);
+    if(change==='selection')ctx.state.selectedRebuy=other.id;
+    if(change==='replacement')ctx.state.rebuy.items[0]=plain(r);
+    if(change==='record')r.cuts.push({shares:3,price:9800});
+    const before=JSON.stringify(ctx.state);assert.equal(pending.commit(),false,`${buy}:${change}`);
+    assert.equal(JSON.stringify(ctx.state),before);assert.equal(saves,0);assert.match(alerts.at(-1),/변경.*다시/);
+  }
+});
+
+test('변경 없는 계좌 선택 지연 체결은 원래 종목에 한 번만 저장하고 재호출은 거절한다',()=>{
+  for(const buy of [false,true]){
+    const ctx=load(),r=fixture(9000);let pending=null,saves=0;
+    Object.assign(ctx,{state:{rebuy:{items:[r]},selectedRebuy:r.id},save:()=>saves++,renderRebuy(){},alert(){},allocLink:{holding:()=>null,check:o=>{pending=o;}}});
+    if(!buy)r.cuts=[];
+    const rec=buy?ctx.rebuyBuyRecord(r,0,0,'2'):ctx.rebuyCutRecord(r,0,'1');
+    if(buy)ctx.applyRebuyBuy(0,0,rec);else ctx.applyRebuyCut(0,rec);
+    assert.match(pending.commit(),new RegExp(`^${buy?'rebuy':'cut'}:qa:`));assert.equal(saves,1);
+    const before=JSON.stringify(r);assert.equal(pending.commit(),false);assert.equal(JSON.stringify(r),before);assert.equal(saves,1);
+  }
+});
+
+function itemDialog(){
+  const ctx=load(),r=fixture(),other={...fixture(),id:'other',ticker:'900002'},nodes={},alerts=[];let saves=0;
+  const node=id=>nodes[id]??={value:'',classList:{toggle(){}},querySelectorAll:()=>[],showModal(){this.open=true;},close(){this.open=false;},focus(){}};
+  const fields=Object.fromEntries(['name','ticker','holding'].map(key=>[key,node(key)]));
+  Object.assign(node('rebuyForm'),{elements:fields,reset(){for(const field of Object.values(fields))field.value='';}});
+  Object.assign(ctx,{state:{rebuy:{items:[r,other]},selectedRebuy:r.id},$:node,save:()=>saves++,renderRebuy(){},alert:text=>alerts.push(text),confirm:()=>true,rebuyPicker:()=>({clear(){},render(){}})});
+  return {ctx,r,other,node,fields,alerts,saves:()=>saves};
+}
+
+test('재매수 종목 수정·삭제 창은 선택 변경·동기화·동시 수정 뒤 다른 기록을 덮어쓰지 않는다',()=>{
+  for(const action of ['save','delete'])for(const change of ['selection','replacement','record']){
+    const x=itemDialog();x.ctx.openRebuyDialog(x.r);x.fields.name.value='열린 창의 이름';
+    if(change==='selection')x.ctx.state.selectedRebuy=x.other.id;
+    if(change==='replacement')x.ctx.state.rebuy.items[0]=plain(x.r);
+    if(change==='record')x.r.ticker='900003';
+    const before=JSON.stringify(x.ctx.state);
+    if(action==='save')x.node('rebuyForm').onsubmit({preventDefault(){}});else x.node('deleteRebuyBtn').onclick();
+    assert.equal(JSON.stringify(x.ctx.state),before,`${action}:${change}`);assert.equal(x.saves(),0);assert.equal(x.node('rebuyDialog').open,true);assert.match(x.alerts.at(-1),/변경.*다시/);
+  }
+});
+
+test('변경 없는 재매수 종목 수정·삭제 창은 원래 대상에 정상 적용된다',()=>{
+  for(const action of ['save','delete']){
+    const x=itemDialog();x.ctx.openRebuyDialog(x.r);x.fields.name.value='수정 이름';
+    if(action==='save'){x.ctx.syncRebuyHold=()=>true;x.node('rebuyForm').onsubmit({preventDefault(){}});assert.equal(x.r.name,'수정 이름');}
+    else{x.node('deleteRebuyBtn').onclick();assert.deepEqual(x.ctx.state.rebuy.items,[x.other]);}
+    assert.equal(x.saves(),1);assert.equal(x.node('rebuyDialog').open,false);
+  }
+});
+
+test('재매수 손절 기준 창은 선택 종목이 바뀐 뒤 설정을 다른 종목에 저장하지 않는다',()=>{
+  const x=itemDialog(),v={low:10000,step:1,sellPct:0.5,steps:30,opt:String,usdMode:false,unitWord:'원',autoTag:()=>'',cur:9800,ticker:'900001',holdTag:'',holdText:'200주',holdHint:''};
+  x.node('rebuyRuleForm').elements={lowPrice:{value:'9000'},stepPct:{value:'1'},sellPct:{value:'0.5'},steps:{value:'30'}};
+  x.ctx.shown=String;x.ctx.openRebuyRuleDialog(v);x.ctx.state.selectedRebuy=x.other.id;
+  const before=JSON.stringify(x.ctx.state);x.node('rebuyRuleForm').onsubmit({preventDefault(){}});
+  assert.equal(JSON.stringify(x.ctx.state),before);assert.equal(x.saves(),0);assert.match(x.alerts.at(-1),/변경.*다시/);
+});
+
+test('재매수 손절 입력은 저장 형식의 최대 회차·유한 가격을 지키며 거절할 때 원본을 보존한다',()=>{
+  const x=itemDialog(),before=JSON.stringify(x.ctx.state);
+  for(const edits of [{steps:'10001'},{steps:'1000000000000',stepPct:'0.000000001'},{lowPrice:'Infinity'},{lowPrice:'1e999'}]){
+    assert.equal(x.ctx.setRebuyRules(edits),false);assert.equal(JSON.stringify(x.ctx.state),before);
+  }
+  assert.equal(x.ctx.setRebuyRules({steps:'10000',stepPct:'0.0001'}),true);
+  assert.equal(x.r.steps,10000);assert.equal(x.ctx.cutPlan(x.r).length,10000);
+});
+
+test('저장 범위 밖의 옛 회차 값도 손절 조회가 무한 배열을 만들지 않으며 기록을 바꾸지 않는다',()=>{
+  const ctx=load(),r={...fixture(),steps:1e12,stepPct:1e-9,cuts:[]},before=JSON.stringify(r);
+  ctx.boundaryInput=r;
+  const result=vm.runInContext('cutPlan(boundaryInput)',ctx,{timeout:1000});
+  assert.equal(result.length,10000);assert.equal(JSON.stringify(r),before);assert.ok(result.every(x=>Number.isFinite(x.price)));
+});
+
+test('손절·재매수 체결 저장 실패는 자산 반영을 멈추고 옛 기록 이전까지 되돌려 재시도한다',()=>{
+  for(const failure of ['false','throw'])for(const buy of [false,true])for(const legacy of [false,true]){
+    const ctx=load(),r=fixture(9000);if(!buy)r.cuts=[];if(legacy)delete r.id;
+    let failed=true,linked=0;const error=Error('synthetic storage failure');
+    Object.assign(ctx,{state:legacy?{rebuy:r}:{rebuy:{items:[r]},selectedRebuy:r.id},id:()=> 'retry',save:()=>{if(failed&&failure==='throw')throw error;return !failed;},renderRebuy(){},alert(){},allocLink:{holding:()=>null,check:o=>{if(o.commit())linked++;},rescale:()=>linked++,uncheck:()=>linked++}});
+    const fill=amount=>{const current=vm.runInContext("rebuyPick()",ctx),rec=buy?ctx.rebuyBuyRecord(current,0,0,String(amount)):ctx.rebuyCutRecord(current,0,String(amount));assert.notEqual(rec,false);if(buy)ctx.applyRebuyBuy(0,0,rec);else ctx.applyRebuyCut(0,rec);};
+    for(const amount of [1,2,0]){
+      failed=true;const before=JSON.stringify(ctx.state),beforeLinked=linked;if(failure==='throw')assert.throws(()=>fill(amount),e=>e===error);else fill(amount);
+      assert.equal(JSON.stringify(ctx.state),before,`${buy}:${legacy}:${amount}`);assert.equal(linked,beforeLinked);
+      failed=false;fill(amount);assert.equal(linked,beforeLinked+1);
+    }
+  }
+});

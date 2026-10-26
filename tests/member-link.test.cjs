@@ -19,6 +19,20 @@ test('플래너 저장 키는 core.js와 같고 이동 주소는 탭·id만 담�
   for (const bad of ['#plans', '#go?tab=futures&id=1', '#go?tab=plans', '#go?tab=plans&id=', `#go?tab=plans&id=${'x'.repeat(201)}`, '#alert?ticker=SPY', null]) assert.equal(m.parse(bad), null, String(bad));
 });
 
+test('편입 이동 주소의 옛 순번은 정수·범위만 허용하고 잘못된 주소도 화면 시작을 막지 않는다',()=>{
+  const state={plans:[{id:'p0'},{id:'p1'}],selectedPlan:'p0'},opened=[];
+  const location={hash:''};
+  const go=vm.runInNewContext(`${read('js/member-go.js')};memberGo`,{state,location,memberLink:m,
+    rebuyItems:()=>[{id:'r0'},{id:'r1'}],history:{replaceState:()=>{}},openTab:tab=>opened.push(tab)});
+  for(const tab of ['plans','rebuy'])for(const id of ['#0.5','#1.5','#-1','#2','#NaN','#Infinity','#']){
+    location.hash=new URL(m.href(tab,id),'https://example.test').hash;
+    assert.doesNotThrow(()=>go.open());
+    assert.equal(state.selectedPlan,'p0');assert.equal(state.selectedRebuy,undefined);
+  }
+  location.hash=new URL(m.href('plans','#1'),'https://example.test').hash;
+  assert.equal(go.open(),true);assert.equal(state.selectedPlan,'p1');assert.equal(opened.at(-1),'plans');
+});
+
 test('종목 코드가 같으면(대소문자·국내 A 접두·비트코인·실제 매수 코드) 확정 연결이고 추정 목록에 넣지 않는다', () => {
   const items = [{id: 'a', name: '미국지수', ticker: 'spy', tradeTicker: '360750'}, {id: 'b', name: '코스피', ticker: '069500'}, {id: 'c', name: '코인', ticker: '비트코인'}, {id: 'd', name: '다른 종목', ticker: 'QQQ'}];
   const r = m.collect(alloc(items), null, {

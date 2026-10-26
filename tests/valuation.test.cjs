@@ -57,7 +57,7 @@ function control(id, {type = 'range', value, min = 0, max = 1000, options}) {
     set value(v) { current = type === 'range' ? String(Math.min(max, Math.max(min, Number(v)))) : String(v); }};
 }
 
-function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenStorage = false, server = null} = {}) {
+function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenStorage = false, storageFailure = () => false, server = null} = {}) {
   const controls = [
     control('robotM', {value: defaults.robotM ?? 80, max: 160}),
     control('evShare', {value: defaults.evShare ?? 5, max: 15}),
@@ -71,7 +71,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     control('aiFixed', {type: 'number', value: 5, max: 100})
   ];
   const elements = new Map(controls.map(c => [c.id, c]));
-  const listeners = {};
+  const listeners = {}, windowListeners = {};
   const on = target => (type, fn) => { (target.listeners[type] ||= []).push(fn); };
   const generic = id => {
     const node = {id, textContent: '', value: '', hidden: false, open: false, listeners: {}, children: [], dataset: {}, attributes: {},
@@ -102,7 +102,8 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     render() { renders.count++; }, renderHumn() {}, renderBatteryEtfs() {}, renderAiSubscription() {},
     localStorage: {
       getItem: key => { if (brokenStorage) throw Error('blocked'); return storage.get(key) ?? null; },
-      setItem: (key, value) => { if (brokenStorage) throw Error('blocked'); storage.set(key, String(value)); }
+      setItem: (key, value) => { if (brokenStorage || storageFailure(key)) throw Error('blocked'); storage.set(key, String(value)); },
+      removeItem: key => { if (brokenStorage || storageFailure(key)) throw Error('blocked'); storage.delete(key); }
     },
     document: {
       hidden: false,
@@ -111,7 +112,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
       querySelectorAll: sel => presetButtons[sel] || [],
       createElement: () => generic('')
     },
-    window: {addEventListener() {}},
+    window: {addEventListener(type, fn) { (windowListeners[type] ||= []).push(fn); }},
     confirm: message => { confirms.push(message); return confirmAnswer; },
     crypto: {randomUUID: (() => { let n = 0; return () => `id-${++n}`; })()},
     setTimeout: (fn, ms) => { timers.set(++timerId, {fn, ms}); return timerId; }, clearTimeout: id => { timers.delete(id); }, setInterval() {},
@@ -137,6 +138,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
   const saveFn = vm.runInContext('saveAssumptions', context);
   const settle = async () => { for (let i = 0; i < 100 && vm.runInContext('scenarioSync.busy', context); i++) await new Promise(r => setImmediate(r)); };
   return {context, el, storage, confirms, renders, adjust, clickPreset, submit, listAction, fire, presetButtons, timers,
+    fireWindow: (type, event) => (windowListeners[type] || []).forEach(fn => fn(event)),
     // 자동 저장 대기만 실행한다. 동기화 예약은 pendingSync로 확인하고 sync()로 직접 돌린다.
     flush: () => { for (const [id, t] of timers) if (t.fn === saveFn) { timers.delete(id); t.fn(); } },
     pendingSync: () => [...timers.values()].some(t => t.fn !== saveFn),
@@ -313,15 +315,18 @@ test('기본값으로 되돌리면 모든 조정과 프리셋 표시가 처음�
   assert.equal(h.el('saveState').textContent, '기본값');
 });
 
-test('저장 기록이 깨졌거나 저장소를 쓸 수 없어도 기본값으로 연다', () => {
-  const broken = page({storage: new Map([[CURRENT, '{bad'], [LIST, '"x"']])});
+test('저장 기록이 깨졌거나 읽을 수 없으면 기본값을 표시하고 기존 기록을 보호한다', () => {
+  const storage = new Map([[CURRENT, '{bad'], [LIST, '"x"']]);
+  const broken = page({storage});
   assert.equal(broken.el('robotM').value, '80');
-  assert.equal(broken.el('saveState').textContent, '기본값');
+  assert.equal(broken.el('saveState').textContent, '저장 중단');
+  broken.adjust('robotM', 120); broken.flush(); broken.submit('덮어쓰지 않음');
+  assert.equal(storage.get(CURRENT), '{bad'); assert.equal(storage.get(LIST), '"x"');
 
   const blocked = page({brokenStorage: true});
   blocked.adjust('robotM', 120); blocked.flush();
-  assert.equal(blocked.el('saveState').textContent, '저장 안 됨');
-  assert.match(blocked.el('currentSummary').textContent, /저장할 수 없습니다/);
+  assert.equal(blocked.el('saveState').textContent, '저장 중단');
+  assert.match(blocked.el('currentSummary').textContent, /기존 기록을 보호/);
 });
 
 // ── 기기 간 동기화 (메인 플래너에서 연결한 비공개 데이터 저장소의 etf-planner-scenarios.json) ──
@@ -329,6 +334,50 @@ const T1 = '2026-09-01T00:00:00.000Z', T2 = '2026-09-02T00:00:00.000Z', T3 = '20
 const saved = (values, savedAt, presets = {sdi: '', battery: 'base'}) => ({values, presets, savedAt});
 const scenario = (id, name, savedAt, values = {robotM: 10}) => ({id, name, savedAt, values, presets: {sdi: '', battery: 'base'}});
 const remoteFile = ({current = null, scenarios = [], deleted = {}} = {}) => ({version: 1, current, scenarios, deleted});
+
+for (const [key, raw] of [[CURRENT, '{bad'], [CURRENT, '{"values":[]}'], [LIST, '[null]'], [DELETED, '[]']]) {
+  test(`손상된 가정 기록 ${key}: ${raw}는 동기화와 새 저장으로 덮어쓰지 않는다`, async () => {
+    const storage = connectedStorage(); storage.set(key, raw);
+    const before = new Map(storage), server = githubServer({remote: remoteFile({current: saved({robotM: 40}, T2)})});
+    const h = page({storage, server}); await h.ready();
+    h.adjust('robotM', 120); h.flush(); h.submit('원문 보호'); await h.sync();
+    assert.deepEqual(storage, before); assert.equal(server.requests, 0); assert.equal(server.puts.length, 0);
+    assert.equal(h.el('saveState').textContent, '저장 중단');
+    assert.match(h.el('scenarioSyncError').textContent, /기존 기록을 보호/);
+  });
+}
+
+test('다른 탭에서 이미 저장한 더 새 현재값을 오래된 메모리와 원격값으로 덮어쓰지 않는다', async () => {
+  const storage = new Map([[CURRENT, JSON.stringify(saved({robotM: 120}, T1))]]);
+  const server = githubServer({remote: remoteFile({current: saved({robotM: 40}, T2)})});
+  const idle = page({storage, server}), writer = page({storage, server});
+  await idle.ready(); await writer.ready(); writer.adjust('robotM', 100); writer.flush();
+  const latest = storage.get(CURRENT); assert.ok(JSON.parse(latest).savedAt > T2);
+  storage.set('etf-planner-data-repo', REPO); storage.set('etf-planner-github-token', 'test-token');
+  await idle.sync();
+  assert.equal(storage.get(CURRENT), latest); assert.equal(idle.el('robotM').value, '100');
+  assert.equal(server.data().current.values.robotM, 100);
+});
+
+test('다른 탭의 더 새 현재값도 숫자 입력이 끝난 뒤 적용한다', async () => {
+  const storage = new Map([[CURRENT, JSON.stringify(saved({robotM: 120}, T1))]]), server = githubServer();
+  const h = page({storage, server}); await h.ready();
+  storage.set(CURRENT, JSON.stringify(saved({robotM: 40}, T2)));
+  storage.set('etf-planner-data-repo', REPO); storage.set('etf-planner-github-token', 'test-token');
+  h.context.document.activeElement = h.el('batCarM');
+  await h.sync(); assert.equal(h.el('robotM').value, '120'); assert.equal(server.puts.length, 0);
+  assert.match(h.el('scenarioSyncStatus').textContent, /입력 중/);
+  h.context.document.activeElement = null; h.fire('focusout', h.el('batCarM'));
+  await h.sync(); assert.equal(h.el('robotM').value, '40'); assert.equal(server.data().current.values.robotM, 40);
+});
+
+test('열린 뒤 다른 탭에서 손상된 기록을 쓰면 다음 동기화가 원문을 보호한다', async () => {
+  const storage = connectedStorage(), server = githubServer();
+  const h = page({storage, server}); await h.ready(); const requests = server.requests;
+  storage.set(LIST, '[null]'); await h.sync();
+  assert.equal(storage.get(LIST), '[null]'); assert.equal(server.requests, requests);
+  assert.equal(h.el('saveState').textContent, '저장 중단');
+});
 
 test('연결하지 않은 기기는 GitHub에 요청하지 않고 연결 방법을 안내한다', async () => {
   const h = page();
@@ -470,7 +519,7 @@ test('공개 저장소나 알 수 없는 파일에는 올리지 않고 이 기�
   const a = page({server: pub, storage: connectedStorage({[LIST]: [scenario('a', '낙관', T1)]})});
   await a.ready();
   assert.equal(pub.puts.length, 0);
-  assert.equal(a.el('scenarioSyncStatus').textContent, '동기화 오류 · 이 기기에는 저장됨');
+  assert.equal(a.el('scenarioSyncStatus').textContent, '동기화 오류');
   assert.match(a.el('scenarioSyncError').textContent, /공개 저장소/);
   assert.equal(a.el('saveState').textContent, '기본값 · 동기화 오류');
 
@@ -493,4 +542,115 @@ test('한글 이름이 저장소를 거쳐도 그대로 돌아온다', async () 
   await b.ready();
   assert.deepEqual(b.stored(LIST).map(s => s.name), ['로봇 1억 대 · 낙관 🚀']);
   assert.equal(b.el('robotM').value, '150');
+});
+
+test('현재 가정 저장이 실패한 뒤 같은 값으로 다시 저장하면 재시도한다', () => {
+  let blocked = true;
+  const h = page({storageFailure: key => blocked && key === CURRENT});
+  h.adjust('robotM', 120); h.flush();
+  assert.equal(h.storage.has(CURRENT), false);
+  assert.equal(h.el('saveState').textContent, '저장 안 됨');
+  const failedAt = vm.runInContext('currentAssumptions.savedAt', h.context);
+  blocked = false;
+  h.fire('change', h.el('robotM'));
+  assert.equal(h.stored(CURRENT).values.robotM, 120);
+  assert.equal(h.stored(CURRENT).savedAt, failedAt, '저장 재시도만으로 변경 시각을 바꾸지 않는다');
+  assert.equal(h.el('saveState').textContent, '조정 1개 · 자동 저장됨');
+});
+
+test('삭제표 저장이 실패하면 목록 삭제도 되돌려 다음 동기화에 되살아나지 않게 한다', () => {
+  const storage = new Map([[LIST, JSON.stringify([scenario('a', '보관', T1)])]]);
+  const before = storage.get(LIST);
+  const h = page({storage, storageFailure: key => key === DELETED});
+  h.el('openSaves').listeners.click[0]();
+  h.listAction('delete');
+  assert.equal(storage.get(LIST), before);
+  assert.equal(storage.has(DELETED), false);
+  assert.deepEqual(h.list(), ['보관']);
+  assert.equal(h.el('savesStatus').textContent, '삭제하지 못했습니다.');
+});
+
+for (const failedKey of [LIST, DELETED, CURRENT]) {
+  test(`동기화 병합 중 ${failedKey} 저장이 실패하면 기존 값을 보존하고 업로드하지 않는다`, async () => {
+    const storage = connectedStorage({[CURRENT]: saved({robotM: 120}, T1), [LIST]: [scenario('a', '보관', T1)]});
+    const before = new Map(storage);
+    const server = githubServer({remote: remoteFile({current: saved({robotM: 40}, T2), scenarios: [scenario('b', '다른 기기', T2)], deleted: {old: T1}})});
+    const h = page({storage, server, storageFailure: key => key === failedKey});
+    await h.ready();
+    assert.deepEqual(storage, before);
+    assert.equal(h.el('robotM').value, '120');
+    assert.equal(server.puts.length, 0);
+    assert.match(h.el('scenarioSyncStatus').textContent, /오류/);
+    assert.doesNotMatch(h.el('scenarioSyncStatus').textContent, /저장됨|완료/);
+  });
+}
+
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return {promise, resolve}; };
+for (const [label, switchConfig] of [
+  ['연결 해제', storage => storage.delete('etf-planner-github-token')],
+  ['저장소 변경', storage => storage.set('etf-planner-data-repo', 'me/other-data')],
+  ['토큰 변경', storage => storage.set('etf-planner-github-token', 'replacement-test-token')]
+]) {
+  test(`시나리오 GET 중 ${label} 뒤 이전 응답을 채택하거나 이전 연결에 쓰지 않는다`, async () => {
+    const entered = deferred(), release = deferred();
+    const server = githubServer({remote: remoteFile({current: saved({robotM: 40}, T2)})});
+    const originalFetch = server.fetch;
+    server.fetch = async (url, options) => {
+      const response = await originalFetch(url, options);
+      if (new URL(url).pathname === FILE && options.method !== 'PUT') { entered.resolve(); await release.promise; }
+      return response;
+    };
+    const storage = connectedStorage({[CURRENT]: saved({robotM: 120}, T1), [LIST]: [scenario('a', '보관', T1)]});
+    const h = page({storage, server});
+    await entered.promise;
+    switchConfig(storage);
+    h.fireWindow('storage', {key: 'etf-planner-github-token'});
+    release.resolve();
+    await h.ready();
+    assert.equal(h.el('robotM').value, '120');
+    assert.equal(h.stored(CURRENT).savedAt, T1);
+    assert.equal(server.puts.length, 0);
+    assert.doesNotMatch(h.el('scenarioSyncStatus').textContent, /완료/);
+    if (label === '연결 해제') assert.equal(h.el('scenarioSyncStatus').textContent, '연결 안 됨');
+    else assert.equal(h.pendingSync(), true);
+  });
+}
+
+test('저장소 비공개 확인 중 연결 해제하면 이전 연결의 파일을 읽지 않는다', async () => {
+  const entered = deferred(), release = deferred(), server = githubServer();
+  const originalFetch = server.fetch;
+  server.fetch = async (url, options) => {
+    const response = await originalFetch(url, options);
+    if (new URL(url).pathname === `/repos/${REPO}`) { entered.resolve(); await release.promise; }
+    return response;
+  };
+  const storage = connectedStorage({[LIST]: [scenario('a', '보관', T1)]});
+  const h = page({storage, server});
+  await entered.promise;
+  storage.delete('etf-planner-github-token');
+  h.fireWindow('storage', {key: 'etf-planner-github-token'});
+  release.resolve();
+  await h.ready();
+  assert.equal(server.requests, 1);
+  assert.equal(server.puts.length, 0);
+  assert.equal(h.el('scenarioSyncStatus').textContent, '연결 안 됨');
+});
+
+test('시나리오 PUT 응답 대기 중 연결 해제하면 완료로 표시하지 않는다', async () => {
+  const entered = deferred(), release = deferred(), server = githubServer();
+  const originalFetch = server.fetch;
+  server.fetch = async (url, options) => {
+    const response = await originalFetch(url, options);
+    if (options.method === 'PUT') { entered.resolve(); await release.promise; }
+    return response;
+  };
+  const storage = connectedStorage({[LIST]: [scenario('a', '보관', T1)]});
+  const h = page({storage, server});
+  await entered.promise;
+  storage.delete('etf-planner-github-token');
+  h.fireWindow('storage', {key: 'etf-planner-github-token'});
+  release.resolve();
+  await h.ready();
+  assert.equal(server.puts.length, 1, '연결 해제 전에 이미 보낸 요청은 취소했다고 주장하지 않는다');
+  assert.equal(h.el('scenarioSyncStatus').textContent, '연결 안 됨');
 });

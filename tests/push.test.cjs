@@ -41,7 +41,7 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     assetStore:{subscribe(){}},
     $:name=>nodes[name],id:()=> 'device-test',esc:value=>String(value),
     connected:()=>!!ctx.sync.token,
-    save:()=>{calls.save++;},
+    save:(next=ctx.state)=>{calls.save++;ctx.state=next;return true;},
     ...(pc?{matchMedia:query=>({matches:query==='(hover:hover) and (pointer:fine)'})}:{})
   });
   ctx.syncNow=async()=>{
@@ -175,4 +175,12 @@ test('휴대폰에서는 PC도 따로 연결할 수 있다고 안내한다',()=>
   ctx.renderPushSetup();
   assert.match(nodes.pushSetup.innerHTML,/이 휴대폰에서 알림 받기/);
   assert.match(nodes.pushSetup.innerHTML,/PC에서도 받으려면/);
+});
+
+for(const action of ['enablePhonePush','disablePhonePush'])for(const failure of ['false','throw'])test(`${action}: 로컬 저장 ${failure}는 구독 기록·원격 동기화·완료 표시를 갱신하지 않는다`,async()=>{
+  const initial={alerts:{rules:[],subscriptions:action==='disablePhonePush'?[{id:'device-test',subscription:{endpoint:'https://push.example.test/device'}}]:[]}};
+  const h=load({initial});await h.ctx.initializePush();const before=plain(h.ctx.state);let uploads=0;
+  h.ctx.save=()=>{if(failure==='throw')throw Error('synthetic quota');return false;};h.ctx.syncNow=async()=>{uploads++;};
+  await h.ctx[action]();assert.equal(uploads,0);assert.deepEqual(plain(h.ctx.state),before);
+  assert.match(h.message(),/완료하지 못/);assert.doesNotMatch(h.message(),/이 기기에는 저장|알림을 연결했습니다|^이 기기 알림을 해제했습니다/);
 });

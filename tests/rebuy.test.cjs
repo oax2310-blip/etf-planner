@@ -692,13 +692,13 @@ test('회차 상한 제거: 60회 이후의 부분 손절·수량 수정·완료
   assert.equal(ctx.cutPlan(r).length,100);assert.equal(JSON.stringify(r.cuts[99]),record);assert.equal(ctx.rebuySummary(r).sold,10);
 });
 
-test('회차 입력은 60회 상한 없이 저장하고 잘못된 숫자는 기존 기록을 유지한다', () => {
+test('회차 입력은 60회를 넘겨 저장하되 기존 저장 범위 1~10,000을 지킨다', () => {
   const r={id:'long-input',...plan(load(),{stepPct:0.8,sellPct:1})},{rules}=ui({rebuy:{items:[r]}});
-  for(const value of ['100','200','1000']){assert.equal(rules({steps:value}),true);assert.equal(r.steps,Number(value));}
+  for(const value of ['100','200','1000','10000']){assert.equal(rules({steps:value}),true);assert.equal(r.steps,Number(value));}
   const before=JSON.stringify(r);
-  for(const value of ['0','-1','Infinity','NaN','9007199254740992'])assert.equal(rules({steps:value}),false,value);
+  for(const value of ['0','-1','10001','Infinity','NaN','9007199254740992'])assert.equal(rules({steps:value}),false,value);
   assert.equal(JSON.stringify(r),before);
-  const input=rules().match(/<input id="rSteps"[^>]+>/)[0];assert.doesNotMatch(input,/\bmax=/);
+  const input=rules().match(/<input id="rSteps"[^>]+>/)[0];assert.match(input,/\bmin="1"/);assert.match(input,/\bmax="10000"/);
 });
 
 test('상한 없는 도달 회차 계산은 작은 주수·소수 비중에서도 실제 cutPlan 누적 배분과 일치한다', () => {

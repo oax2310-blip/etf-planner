@@ -27,6 +27,29 @@ function setup(initial,fetcher,shared){
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
+
+test('다른 탭의 storage 이벤트가 오기 전 같은 자산 구역의 서로 다른 칸을 저장해도 모두 보존한다',()=>{
+  const first=setup(fake()),second=setup(null,null,first.storage);
+  first.store.doc.allocation.groups[0].items[0].note='synthetic other tab';first.store.saveSection('allocation');
+  second.store.doc.allocation.groups[0].items[0].amount=150;assert.equal(second.store.saveSection('allocation'),true);
+  const item=JSON.parse(first.storage.get(KEY)).allocation.groups[0].items[0];assert.equal(item.note,'synthetic other tab');assert.equal(item.amount,150);
+});
+
+test('동기화도 다른 탭의 대기 중인 최신 로컬 입력을 원격 PUT 전에 읽어 합친다',async()=>{
+  const original=fake();let uploaded;const shared=new Map([[KEY,JSON.stringify(original)]]),first=setup(null,null,shared),second=setup(null,(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return json({},404);
+    if(options.method==='PUT'){uploaded=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'new'}});}
+    return contents(original);
+  },shared);
+  connect(shared);shared.set(BASE,JSON.stringify(original));first.store.doc.allocation.groups[0].items[0].amount=150;first.store.saveSection('allocation');
+  await second.store.sync();assert.equal(uploaded.allocation.groups[0].items[0].amount,150);assert.equal(JSON.parse(shared.get(KEY)).allocation.groups[0].items[0].amount,150);
+});
+
+test('필수 자산 복구본도 깨진 기존 복구 원문을 빈 목록으로 덮어쓰지 않는다',()=>{
+  const h=setup(fake()),key='etf-planner-assets-recovery',raw='{"broken":';h.storage.set(key,raw);
+  assert.equal(h.store.keepLost([{section:'allocation',data:fake().allocation}]),false);assert.equal(h.storage.get(key),raw);assert.equal(h.store.status.state,'error');
+});
 const milestoneDoc=()=>({...fake(),savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000}],scenarios:[{id:'base',name:'가상 계획',salary:100}],milestoneRecord:{ym:'2031-01',age:37}}});
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 const contents=doc=>json({sha:'remote-sha',encoding:'base64',content:Buffer.from(JSON.stringify(doc)).toString('base64')});
@@ -417,4 +440,114 @@ test('자산 수동 시세 조회 중 연결을 바꾸면 이전 시세·404·�
     assert.equal(storage.get('etf-planner-assets-prices'),cached);assert.equal(store.prices.stocks.AAA.close,100);
     assert.match(store.priceMessage,/연결 설정이 바뀌었습니다/);assert.equal(store.priceRefreshing,false);
   }
+});
+
+test('자산 PUT 대기 중 추가 입력은 업로드한 기준과 분리해 다음 동기화까지 보존한다',async()=>{
+  const original=fake();let remote=clone(original),release,uploads=0;
+  const h=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+    if(options.method==='PUT'){
+      remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());
+      if(++uploads===1)await new Promise(resolve=>release=resolve);
+      return json({content:{sha:'new-'+uploads}});
+    }
+    return contents(remote);
+  });
+  connect(h.storage);h.storage.set(BASE,JSON.stringify(original));
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');
+  const work=h.store.sync();for(let i=0;i<100&&!release;i++)await Promise.resolve();assert.ok(release);
+  h.store.doc.allocation.groups[0].items[0].target=30;h.store.saveSection('allocation');
+  release();await work;
+  assert.equal(JSON.parse(h.storage.get(BASE)).allocation.groups[0].items[0].target,20,'기준은 실제 업로드한 기록이어야 한다');
+  assert.equal(h.store.doc.allocation.groups[0].items[0].target,30);
+  await h.store.sync();assert.equal(remote.allocation.groups[0].items[0].target,30);assert.equal(uploads,2);
+  assert.equal(h.store.recovery().length,0,'동기화 중 정상 입력은 충돌·복구본으로 밀려나지 않는다');
+});
+
+for(const change of ['disconnect','repo','token'])test(`자산 기록 GET 대기 중 ${change} 이후 옛 응답은 병합하거나 저장하지 않는다`,async()=>{
+  const original=fake(),incoming=fake();incoming.allocation.savedAt='2099-01-01';incoming.allocation.groups[0].items[0].target=90;
+  let release,writes=0;
+  const h=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+    if(options.method==='PUT'){writes++;return json({content:{sha:'bad'}});}
+    await new Promise(resolve=>release=resolve);return contents(incoming);
+  });
+  connect(h.storage);h.storage.set(BASE,JSON.stringify(original));const before=h.storage.get(KEY),work=h.store.sync();
+  for(let i=0;i<100&&!release;i++)await Promise.resolve();assert.ok(release);
+  if(change==='disconnect')h.storage.delete('etf-planner-github-token');
+  else h.storage.set(change==='repo'?'etf-planner-data-repo':'etf-planner-github-token',change==='repo'?'example/other-private':'changed-fake-token');
+  release();await work;
+  assert.deepEqual(clone(h.store.doc),original);assert.equal(h.storage.get(KEY),before);assert.equal(h.storage.get(BASE),JSON.stringify(original));assert.equal(writes,0);
+  assert.notEqual(h.store.status.state,'done');
+});
+
+test('자산 일반 저장과 복원은 브라우저 저장 실패를 성공으로 처리하지 않는다',()=>{
+  const original=fake(),h=setup(original),before=h.storage.get(KEY);
+  h.context.localStorage.setItem=()=>{throw Error('synthetic quota');};
+  h.store.doc.allocation.groups[0].items[0].target=20;
+  assert.equal(h.store.saveSection('allocation'),false);assert.equal(h.store.status.state,'error');assert.match(h.store.status.message,/저장.*못/);
+  assert.equal(h.storage.get(KEY),before);const current=clone(h.store.doc);
+  assert.throws(()=>h.store.restore(fake()),/저장.*못/);assert.deepEqual(clone(h.store.doc),current);assert.equal(h.storage.get(KEY),before);
+});
+
+for(const action of ['sync','restore'])test(`자산 ${action}에서 충돌 복구본을 저장하지 못하면 기존 기록을 덮어쓰지 않는다`,async()=>{
+  const original=fake(),incoming=fake();incoming.allocation.savedAt='2099-01-01';incoming.allocation.groups[0].items[0].target=90;let writes=0;
+  const h=setup(original,(url,options)=>{if(url.endsWith('/repos/example/private-data'))return json({private:true});if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});if(options.method==='PUT'){writes++;return json({content:{sha:'new'}});}return contents(incoming);});
+  connect(h.storage);h.storage.set(BASE,JSON.stringify({...original,allocation:{...original.allocation,groups:[]}}));const before=h.storage.get(KEY),set=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key==='etf-planner-assets-recovery')throw Error('synthetic recovery quota');return set(key,value);};
+  if(action==='restore')assert.throws(()=>h.store.restore(incoming),/복구.*저장.*못/);else await h.store.sync();
+  assert.equal(h.store.status.state,'error');assert.deepEqual(clone(h.store.doc),original);assert.equal(h.storage.get(KEY),before);assert.equal(writes,0);
+});
+
+test('자산 동기화 기준 저장 실패는 완료로 표시하지 않고 다음 재시도에서 회복한다',async()=>{
+  const original=fake(),h=setup(original,url=>url.endsWith('/repos/example/private-data')?json({private:true}):url.endsWith('/contents/etf-planner-prices.json')?new Response(null,{status:404}):contents(original));
+  connect(h.storage);const set=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key===BASE)throw Error('synthetic base quota');return set(key,value);};
+  await h.store.sync();assert.equal(h.store.status.state,'error');assert.match(h.store.status.message,/기준.*저장.*못/);assert.equal(h.storage.has(BASE),false);
+  h.context.localStorage.setItem=set;await h.store.sync();assert.equal(h.store.status.state,'done');assert.deepEqual(JSON.parse(h.storage.get(BASE)),original);
+});
+
+test('자산 자동 재시도는 실패한 로컬 저장을 먼저 복구한 뒤에만 업로드한다',async()=>{
+  const original=fake();let remote=clone(original),writes=0;
+  const h=setup(original,(url,options)=>{if(url.endsWith('/repos/example/private-data'))return json({private:true});if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});if(options.method==='PUT'){writes++;remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64'));return json({content:{sha:'new'}});}return contents(remote);});
+  connect(h.storage);h.storage.set(BASE,JSON.stringify(original));const set=h.context.localStorage.setItem;
+  h.store.doc.allocation.groups[0].items[0].target=30;
+  h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw Error('synthetic quota');return set(key,value);};
+  assert.equal(h.store.saveSection('allocation'),false);await h.store.sync();assert.equal(writes,0);assert.equal(h.store.status.state,'error');
+  h.context.localStorage.setItem=set;await h.store.sync();assert.equal(writes,1);assert.deepEqual(JSON.parse(h.storage.get(KEY)),remote);
+});
+
+for(const raw of ['{"allocation":', 'null', JSON.stringify({version:1,allocation:{groups:[null]}})])test(`손상 자산 원문은 자동 저장·동기화에서 보호하고 백업 뒤 명시적 복원한다 (${raw.slice(0,24)})`,async()=>{
+  const storage=new Map([[KEY,raw]]),h=setup(null,url=>url.endsWith('/repos/example/private-data')?json({private:true}):url.endsWith('/contents/etf-planner-prices.json')?new Response(null,{status:404}):contents(fake()),storage);connect(storage);await h.store.sync();
+  assert.equal(storage.get(KEY),raw,'읽지 못한 원문을 원격 값으로 자동 교체하지 않는다');assert.match(h.store.loadError,/불러오지 못/);assert.equal(h.store.loadedRaw,raw);
+  h.store.doc.allocation=fake().allocation;assert.equal(h.store.saveSection('allocation'),false);assert.equal(storage.get(KEY),raw);
+  assert.throws(()=>h.store.restore(fake()),/원문.*백업/);assert.equal(storage.get(KEY),raw);
+  let backup;const set=h.context.localStorage.setItem;h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw Error('synthetic quota');return set(key,value);};
+  assert.throws(()=>h.store.restore(fake(),value=>{backup=value;}),/저장.*못/);assert.equal(backup,raw);assert.equal(storage.get(KEY),raw);assert.ok(h.store.loadError);
+  h.context.localStorage.setItem=set;backup=null;assert.equal(h.store.restore(fake(),value=>{backup=value;}),true);
+  assert.equal(backup,raw);assert.equal(h.store.loadError,'');assert.equal(h.store.loadedRaw,null);assert.deepEqual(JSON.parse(storage.get(KEY)).allocation.groups,fake().allocation.groups);
+});
+
+test('다른 탭의 손상 자산 기록 이벤트는 기존 화면을 보존하고 이후 자동 덮어쓰기를 막는다',async()=>{
+  const h=setup(fake());h.store.start();const before=clone(h.store.doc),raw='{"ledger":';h.storage.set(KEY,raw);
+  h.event();assert.deepEqual(clone(h.store.doc),before);
+  await h.store.sync();assert.equal(h.store.saveSection('allocation'),false);assert.equal(h.storage.get(KEY),raw);assert.equal(h.store.loadedRaw,raw);assert.equal(h.store.status.state,'error');
+});
+
+test('자산 localStorage 읽기 차단은 빈 기기로 쓰지 않고 원문을 확보하지 못한 복원을 거부한다',async()=>{
+  const storage=new Map([[KEY,JSON.stringify(fake())]]);storage.get=function(key){if(key===KEY)throw Error('synthetic blocked storage');return Map.prototype.get.call(this,key);};
+  const h=setup(null,null,storage);h.store.start();await h.store.sync();
+  assert.throws(()=>h.store.restore(fake(),()=>{throw Error('must not download invented data');}),/원문.*백업/);
+  assert.equal(Map.prototype.get.call(storage,KEY),JSON.stringify(fake()));assert.match(h.store.loadError,/불러오지 못/);assert.equal(h.store.loadedRaw,null);
+});
+
+test('정상 실행 뒤 자산 읽기가 차단되어도 이전 원문을 현재 백업으로 오인하지 않는다',async()=>{
+  const h=setup(fake()),changed=fake();changed.allocation.groups[0].items[0].target=77;
+  const raw=JSON.stringify(changed);h.storage.set(KEY,raw);
+  const get=h.context.localStorage.getItem;h.context.localStorage.getItem=key=>{if(key===KEY)throw Error('synthetic blocked storage');return get(key);};
+  await h.store.sync();assert.ok(h.store.loadError);assert.equal(h.store.loadedRaw,null);
+  assert.throws(()=>h.store.restore(fake(),()=>{throw Error('must not download stale data');}),/원문.*백업/);
+  assert.equal(h.storage.get(KEY),raw);
 });

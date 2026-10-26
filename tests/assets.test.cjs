@@ -886,7 +886,7 @@ test('체결 연동: 반영하면 보유 수량·금액을 바꾸고 기록하�
 test('체결 연동: 0 아래로 내려가지 않고, 다 판 종목은 수량 0(평가액 0), 새로 만든 수량 칸은 되돌리면 지운다', () => {
   const alloc = linkAlloc();
   const rec = c.applyTrade(alloc, lp, 'cut:r:0', {sign: -1, qty: 8, currency: 'KRW'}, '손절', [{id: 'b', unit: 'shares', n: 8}]);
-  assert.deepEqual(rec.items, [{id: 'b', shares: -5}], '실제로 뺀 양만 기록');
+  assert.deepEqual(rec.items, [{id: 'b', shares: -5, exact:-8}], '실제로 뺀 양과 부족한 잔고에 잘리기 전 요청량을 구분');
   assert.equal(byId(alloc, 'b').shares, 0);
   assert.deepEqual(c.itemValue({...byId(alloc, 'b'), amount: 30}, lp, 1000).value, 0, '수량 0은 금액 칸으로 돌아가지 않고 0');
   c.revertTrade(alloc, 'cut:r:0'); assert.equal(byId(alloc, 'b').shares, 5);
@@ -939,4 +939,89 @@ test('분할매수 quiet 계산은 알림을 끈 미완료 회차를 notify:fals
   assert.equal(JSON.stringify(assets),before,'quiet 계산도 기록을 바꾸지 않는다');
   lines.notify={stages:true};stages.stages[1].notify=true;
   assert.deepEqual(all.map(({notify,...r})=>r),c.purchaseAlertRules(assets,prices),'알림을 켜고 꺼도 같은 id·기준·이력');
+});
+
+test('체결·정정·취소는 기존 소수 보유량을 보존하며 잔고 부족 시 실제 차감량을 기록한다',()=>{
+  for(const ticker of ['AAA','BTC-USD'])for(const holding of [0.125,10.25,10.99999999])for(const sign of [-1,1]){
+    const it={id:'a',ticker,shares:holding},alloc={groups:[{id:'g',items:[it]}]},key='buy:a:test';
+    const rec=c.applyTrade(alloc,prices,key,{sign,qty:2,value:2},'모의 체결',[{id:it.id,unit:'shares',n:2}]);
+    const expected=Number(Math.max(0,holding+sign*2).toFixed(8));
+    assert.equal(it.shares,expected,`${ticker} ${holding} ${sign}: 기존 소수부 유지`);
+    assert.equal(rec.items[0].shares,Number((expected-holding).toFixed(8)),'체결 기록은 반올림한 예정량이 아니라 실제 변경량');
+    c.rescaleTrade(alloc,key,{qty:3,value:3});
+    assert.equal(it.shares,Number((holding+alloc.trades[key].items[0].shares).toFixed(8)),'정정 후에도 잔고 = 원래 보유 + 반영 기록');
+    c.revertTrade(alloc,key);assert.equal(it.shares,holding,'취소하면 원래 소수 보유량');
+  }
+});
+
+test('소수 잔고를 전량 차감한 새 체결 정정은 요청량을 기준으로 실제 차감량을 다시 계산한다',()=>{
+  for(const [holding,qty,nextQty,remaining] of [[0.4,1,2,0],[10.75,20,10,0.75]]){
+    const it={id:'a',ticker:'AAA',shares:holding},alloc={groups:[{id:'g',items:[it]}]},key='sell:a:0';
+    c.applyTrade(alloc,prices,key,{sign:-1,qty},'모의 매도',[{id:'a',unit:'shares',n:qty}]);
+    assert.equal(it.shares,0);
+    c.rescaleTrade(alloc,key,{qty:nextQty});
+    assert.equal(it.shares,remaining,'원래 요청한 20주를 10주로 고치면 보유 10.75주에서 실제로 10주만 차감');
+    assert.equal(alloc.trades[key].items[0].shares,Number((remaining-holding).toFixed(8)));
+    c.revertTrade(alloc,key);assert.equal(it.shares,holding);
+  }
+});
+
+test('잔고에 잘린 매도를 여러 번 정정해도 요청량과 실제 차감량을 보존하고 취소하면 소수 잔고가 돌아온다',()=>{
+  for(const [holding,initial,corrections] of [[10.25,11,[12,11]],[10.75,20,[30,20,10,20,10]]]){
+    const it={id:'a',ticker:'AAA',shares:holding},alloc={groups:[{id:'g',items:[it]}]},key='sell:a:0';
+    c.applyTrade(alloc,prices,key,{sign:-1,qty:initial},'모의 매도',[{id:'a',unit:'shares',n:initial}]);
+    assert.equal(it.shares,0);assert.equal(alloc.trades[key].items[0].exact,-initial);
+    for(const qty of corrections){
+      c.rescaleTrade(alloc,key,{qty});const expected=Math.max(0,holding-qty);
+      assert.equal(it.shares,expected,`${holding}주 보유에서 누적 ${qty}주 매도`);
+      assert.equal(alloc.trades[key].items[0].shares,expected-holding,'요청량과 별개로 실제 차감량만 기록');
+    }
+    c.revertTrade(alloc,key);assert.equal(it.shares,holding);assert.equal(alloc.trades,undefined);
+  }
+});
+
+test('연결 계좌의 소수 보유량 합과 고정 거래 단위는 서로 독립적이다',()=>{
+  const a={id:'a',ticker:'AAA',shares:10.25},b={id:'b',ticker:'AAA',shares:0.125},alloc={groups:[{id:'g',items:[a,b]}]};
+  assert.equal(c.linkSummary(alloc,prices,'AAA').shares,10.375,'실제 보유량은 정수 거래 단위로 반올림하지 않음');
+  assert.equal(c.purchaseFill({amount:100,price:50},'USD',1000).shares,20,'신규 주식 계획은 기존 정수 단위 유지');
+  c.applyTrade(alloc,prices,'sell:a:0',{sign:-1,qty:20},'모의 매도',[{id:'a',unit:'shares',n:20}]);
+  assert.equal(a.shares,0);assert.equal(alloc.trades['sell:a:0'].items[0].shares,-10.25);
+  c.applyTrade(alloc,prices,'sell:a:0',{sign:-1,qty:1},'모의 정정',[{id:'a',unit:'shares',n:1}]);
+  assert.equal(a.shares,9.25,'같은 키 재반영도 기존 소수부를 보존');
+  c.revertTrade(alloc,'sell:a:0');assert.equal(a.shares,10.25);
+});
+
+test('금액으로 관리하는 계좌도 반영 단위보다 작은 기존 금액을 취소까지 보존한다',()=>{
+  const it={id:'a',amount:10.125},alloc={groups:[{id:'g',items:[it]}]};
+  c.applyTrade(alloc,null,'buy:a:0',{sign:1,value:1},'모의 매수',[{id:'a',unit:'amount',n:1}]);
+  assert.equal(it.amount,11.125);assert.equal(alloc.trades['buy:a:0'].items[0].amount,1);
+  c.rescaleTrade(alloc,'buy:a:0',{value:2});assert.equal(it.amount,12.125);
+  c.revertTrade(alloc,'buy:a:0');assert.equal(it.amount,10.125);
+});
+
+test('소수 잔고와 exact 보정이 함께 있어도 0주 정정·반복 정정·취소 후 잔고를 보존한다',()=>{
+  for(const holding of [0.125,10.25,10.99999999]){
+    const it={id:'a',ticker:'AAA',tradeTicker:'111111',shares:holding},alloc={groups:[{id:'g',items:[it]}]};
+    c.applyTrade(alloc,prices,'r',{ticker:'AAA',sign:1,qty:2,price:50,value:10},'모의 환산',[{id:'a',unit:'shares',n:10}]);
+    for(const [value,applied] of [[0.5,0],[10,10],[7.5,7],[10,10],[0.5,0],[10,10]]){
+      c.rescaleTrade(alloc,'r',{qty:2,price:50,value});
+      assert.equal(it.shares,Number((holding+applied).toFixed(8)),'새 주수만 내리고 원래 소수 보유량은 유지');
+      assert.equal(alloc.trades.r.items[0].shares,applied,'현재 반영량과 exact 기준량을 구분');
+    }
+    c.revertTrade(alloc,'r');assert.equal(it.shares,holding);
+  }
+  const it={id:'a',amount:10.125},alloc={groups:[{id:'g',items:[it]}]};
+  c.applyTrade(alloc,null,'m',{sign:1,value:1},'모의 금액',[{id:'a',unit:'amount',n:1}]);
+  c.rescaleTrade(alloc,'m',{value:0.001});assert.equal(it.amount,10.125);assert.equal(alloc.trades.m.items[0].exact,0.001);
+  c.rescaleTrade(alloc,'m',{value:1});assert.equal(it.amount,11.125);
+  c.revertTrade(alloc,'m');assert.equal(it.amount,10.125);
+});
+
+test('유한하지 않은 자산 시세는 평가·매수 계산에 넣지 않고 직접 입력 금액을 보존한다',()=>{
+  for(const close of [Infinity,-Infinity,NaN,'Infinity','1e999']){
+    const prices={stocks:{AAA:{kind:'해외',close,asOf:'2026-01-02'}}},item={ticker:'AAA',shares:2,amount:15};
+    assert.equal(c.assetTradeQuote(prices,item),null);
+    const value=c.itemValue(item,prices,1000);assert.equal(value.value,15);assert.equal(value.how,'amount');
+  }
+  assert.equal(c.assetTradeQuote({stocks:{AAA:{kind:'해외',close:'50.25',asOf:'2026-01-02'}}},{ticker:'AAA'}).close,50.25);
 });

@@ -202,7 +202,7 @@ test('시세 파일에서 채우기·표시에 쓰는 값만 남기고, 형식�
   const ctx = load();
   const slim = plain(ctx.slimPrices({updatedAt: AT, columns: [], stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}, daily: [[1]], monthly: [[1]]},
     BAD: {error: '조회 실패'}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true, error: 'x'}}}));
-  assert.deepEqual(slim, {format: 4, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
+  assert.deepEqual(slim, {format: 5, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
   assert.equal(vm.runInContext('stockEntry', ctx)(slim, 'bad'), null, '기준일 없는 항목(조회만 실패)은 쓰지 않는다');
   assert.throws(() => ctx.slimPrices({plans: []}), /형식/);
 });
@@ -306,4 +306,43 @@ test('비트코인 분할매도의 새 주·개월선도 종가 캐시에서 계
   }}), p = {ticker: 'BTC-USD', currency: 'USD', startAuto: true, startLabel: '2주선', endLabel: '2개월선', startPrice: 1, endPrice: 1};
   assert.equal(ctx.fillPrices({plans: [p]}, doc), true);
   assert.deepEqual([p.startPrice, p.endPrice], [14, 25]);
+});
+test('잘못된 숫자·달력 날짜는 자동 가격에 넣지 않고 마지막 직접 입력을 보존한다', () => {
+  const ctx=load();
+  for(const value of [Infinity,'Infinity',NaN,true,[],[100],-1,0]){
+    assert.equal(ctx.maValue({ma:{'2일선':value,'25선':value}},'2일선'),null);
+    assert.equal(ctx.maValue({ma:{'25선':value}},'25선'),null);
+    assert.equal(ctx.maValue({ma:{},closes:{D:[100,value]}},'2일선'),null);
+    const doc=prices();doc.stocks.AAA.close=value;doc.stocks.AAA.ma={'2일선':value};
+    const data={rebuy:{ticker:'AAA',currentPrice:50,stages:[{name:'2일선',price:60}]}};
+    assert.equal(ctx.fillPrices(data,doc),false);assert.equal(data.rebuy.currentPrice,50);assert.equal(data.rebuy.stages[0].price,60);
+  }
+  assert.equal(ctx.maValue({ma:{},closes:{D:[1e308,1e308]}},'2일선'),null,'합산 오버플로는 기준가로 쓰지 않는다');
+  const huge=prices();huge.stocks.AAA.close=1e308;
+  const r={ticker:'AAA',currentPrice:50,stages:[]};assert.equal(ctx.fillPrices({rebuy:r},huge),false);assert.equal(r.currentPrice,50);
+  for(const asOf of ['2026-02-30','2026-13-01','2026-00-01','0000-01-01'])assert.equal(vm.runInContext('stockEntry',ctx)({stocks:{AAA:{asOf,ma:{},close:100}}},'AAA'),null);
+});
+test('봉 대체 계산은 서버와 같이 유효한 날짜별 마지막 종가를 오름차순으로 쓴다',()=>{
+  const ctx=load(),rows=[bar('2026-09-30',30),bar('2026-09-28',10),bar('2026-09-29',20),bar('2026-09-29',24),bar('2026-02-30',90),bar('bad',80),bar('2026-09-30',Infinity)];
+  const doc=ctx.slimPrices({stocks:{AAA:{asOf:'2026-09-30',ma:{},daily:rows,monthly:rows}}});
+  assert.deepEqual(plain(doc.stocks.AAA.closes),{D:[10,24,30],W:[30],M:[10,24,30]});
+  assert.equal(ctx.maValue(doc.stocks.AAA,'2일선'),27);
+  assert.deepEqual(plain(ctx.barCloses({daily:[bar('0001-01-07',10),bar('0001-01-08',20)]})),{D:[10,20],W:[10,20]});
+});
+test('현물 환율 표시도 숫자 아닌 양수 변환값을 거부한다',()=>{
+  const ctx=load(),entry=vm.runInContext('fxEntry',ctx);
+  for(const close of [true,[1300],{valueOf:()=>1300}]){
+    const doc=withFx();doc.fx.USDKRW.close=close;assert.equal(entry(doc),null);
+  }
+  const doc=withFx();doc.fx.USDKRW.close='1300.25';assert.equal(entry(doc).close,'1300.25');
+});
+test('달러선물 시세 월물은 0년을 무시하고 작은 연도도 달력·6자리 형식을 유지한다',()=>{
+  const ctx=load(),month=ctx.priceMonth,doc={updatedAt:'2026-10-01T00:00:00Z'};
+  const f={positions:[{month:'000001',contracts:1}],rebuy:{cuts:[{month:'202612'},{month:'000001'}]}};
+  assert.equal(month(f,doc),'202612');
+  assert.equal(month({rebuy:{cuts:[{month:'000001'}]}},doc),'');
+  assert.equal(month({rebuy:{cuts:[{month:'000101'}]}},doc),'000301','기존 24개월 상한과 앞자리 0을 보존한다');
+  assert.equal(month({rebuy:{cuts:[{month:'000101'}]}},{updatedAt:'0001-01-14T14:59:00Z'}),'000101');
+  assert.equal(month({rebuy:{cuts:[{month:'000101'}]}},{updatedAt:'0001-01-14T15:00:00Z'}),'000102','1901년으로 보정하지 않고 1년의 셋째 월요일부터 넘긴다');
+  assert.equal(month({rebuy:{cuts:[{month:'999912'}]}},{updatedAt:'9999-12-31T00:00:00Z'}),'','6자리 범위를 벗어나는 월물은 만들지 않는다');
 });

@@ -53,13 +53,19 @@ function planStageProgress(p,i){
   return {target,amount:amount||0,remaining,recorded:!!fill||!!p.checked?.[i],done:!!p.checked?.[i],byValue,
     qty:byValue?null:amount||0,trade:{...planned,price:fill?.price??planned.price,qty:byValue?null:amount||0,value:byValue?amount||0:null}};
 }
+// 체결 원본 저장이 실패하면 이번 회차만 되돌린다. 자산 반영은 저장 성공 뒤에만 진행한다.
+function savePlanFill(p,i,write){
+  const checked=p.checked[i],fills=p.fills&&{...p.fills};let saved=false;
+  try{write();saved=save()!==false;return saved;}
+  finally{if(!saved){p.checked[i]=checked;if(fills)p.fills=fills;else delete p.fills;}}
+}
 // 누적 체결 입력·전량 체크 공통. 추가 체결은 기존 반영 키를 rescale해 차이만 반영하고, 0이면 기존 자산 반영을 되돌린다.
 function recordPlanFill(p,i,n,redraw=renderPlans,quantity=null){
   const r=planStageProgress(p,i),key=`sell:${p.id}:${i}`;
   if(!Number.isFinite(n)||n<0||n>0&&!(r.trade.price>0)||!quantity&&n>(r.target||0)||!r.byValue&&n>0&&!hasPlanShares(p.ticker,n))return redraw();
-  if(n===0&&!quantity?.qty){p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}save();planLink("uncheck",key);return redraw();}
+  if(n===0&&!quantity?.qty){if(savePlanFill(p,i,()=>{p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}}))planLink("uncheck",key);return redraw();}
   const fill={price:r.trade.price,...(r.byValue?{plannedValue:r.target,value:n,...(quantity?{plannedQty:quantity.target,qty:quantity.qty}:{})}:{plannedQty:r.target,qty:n})},trade={...r.trade,...(r.byValue?{value:n,...(quantity?{qty:quantity.qty}:{})}:{qty:n})};
-  const commit=()=>{const q=state.plans.find(x=>x.id===p.id);if(q!==p||i>=q.stages)return false;q.fills={...(q.fills||{}),[i]:fill};q.checked[i]=quantity?quantity.qty>=quantity.target:n>=r.target;save();return key;};
+  const commit=()=>{const q=state.plans.find(x=>x.id===p.id);if(q!==p||i>=q.stages)return false;return savePlanFill(q,i,()=>{q.fills={...(q.fills||{}),[i]:fill};q.checked[i]=quantity?quantity.qty>=quantity.target:n>=r.target;})?key:false;};
   if(r.recorded){if(commit())planLink("rescale",key,trade);redraw();}
   else planLink("check",{ticker:planTicker(p.ticker),trade,label:`${p.title} ${i+1}회 매도`,prefer:[`sell:${p.id}:`],redraw,commit});
 }
@@ -150,7 +156,7 @@ function recordPlanGroupFill(p,i,changes,complete=false,redraw=renderPlans){
   const key=`sell:${p.id}:${i}`,rows=e.rows.map(row=>({...row,qty:changes?.has(row.targetId)?changes.get(row.targetId):row.qty}));
   if(rows.some(r=>!Number.isSafeInteger(r.qty)||r.qty<0||r.plannedQty===null||r.qty>r.plannedQty))return redraw();
   const qty=rows.reduce((n,r)=>n+r.qty,0);
-  if(!qty&&!complete){p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}save();planLink("uncheck",key);return redraw();}
+  if(!qty&&!complete){if(savePlanFill(p,i,()=>{p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}}))planLink("uncheck",key);return redraw();}
   const picks=[];let value=0;
   for(const row of rows){
     if(!row.qty)continue;
@@ -160,7 +166,7 @@ function recordPlanGroupFill(p,i,changes,complete=false,redraw=renderPlans){
   }
   const source=planStageProgress(p,i),ratio=e.plannedQty>0?qty/e.plannedQty:1;
   const fill={price:e.sourcePrice,...(source.byValue?{plannedValue:source.target,value:source.target*ratio}:{plannedQty:source.target,qty:(source.target||0)*ratio}),execution:{group:true,sourcePrice:e.sourcePrice,plannedQty:e.plannedQty,qty,rows:rows.map(({held,...row})=>row)}};
-  const commit=()=>{if(state.plans.find(x=>x.id===p.id)!==p)return false;p.fills={...(p.fills||{}),[i]:fill};p.checked[i]=rows.every(r=>r.qty>=r.plannedQty);save();return key;};
+  const commit=()=>{if(state.plans.find(x=>x.id===p.id)!==p)return false;return savePlanFill(p,i,()=>{p.fills={...(p.fills||{}),[i]:fill};p.checked[i]=rows.every(r=>r.qty>=r.plannedQty);})?key:false;};
   planLink("check",{trade:{sign:-1,qty:qty||null,value:value||null,currency:"KRW"},picks,label:`${p.title} ${i+1}회 통합 매도`,redraw,commit});
 }
 // 기존 자산 id에서 실제 ETF 코드·현재가를 읽고 기준 ETF 현재가×주수×환율을 실제 ETF 정수 주로 내림(보유량 한도).
@@ -190,11 +196,11 @@ function planQuantityProgress(p,i){
 function recordPlanExecution(p,i,n,redraw){
   const r=planQuantityProgress(p,i),e=r.execution,key=`sell:${p.id}:${i}`;
   if(!e||!Number.isSafeInteger(n)||n<0||n>0&&!(e.sourcePrice>0)||e.plannedQty===null||n>e.plannedQty)return redraw();
-  if(n===0){p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}save();planLink("uncheck",key);return redraw();}
+  if(n===0){if(savePlanFill(p,i,()=>{p.checked[i]=false;if(p.fills){delete p.fills[i];if(!Object.keys(p.fills).length)delete p.fills;}}))planLink("uncheck",key);return redraw();}
   if(!planSaleItems().some(x=>x.it.id===e.targetId))return redraw();
   const source=planStageProgress(p,i),rate=e.currency==="USD"?e.fx:1,trade={sign:-1,qty:n,price:e.price,currency:e.currency,value:Number((n*e.price*rate/1e4).toFixed(8))};
   const fill={price:e.sourcePrice,...(source.byValue?{plannedValue:source.target,value:source.target*n/e.plannedQty}:{plannedQty:e.sourceQty,qty:e.sourceQty*n/e.plannedQty}),execution:{...e,qty:n}};delete fill.execution.recorded;
-  const commit=()=>{if(state.plans.find(x=>x.id===p.id)!==p)return false;p.fills={...(p.fills||{}),[i]:fill};p.checked[i]=n>=e.plannedQty;save();return key;};
+  const commit=()=>{if(state.plans.find(x=>x.id===p.id)!==p)return false;return savePlanFill(p,i,()=>{p.fills={...(p.fills||{}),[i]:fill};p.checked[i]=n>=e.plannedQty;})?key:false;};
   if(e.recorded){if(commit())planLink("rescale",key,trade);redraw();}
   else planLink("check",{ticker:e.ticker,ownId:e.targetId,targetId:e.targetId,trade,label:`${p.title} ${i+1}회 매도`,redraw,commit});
 }
@@ -454,7 +460,7 @@ function renderPlans(){
     if(!el.checked)return recordPlanQuantity(p,i,0);
     const r=planQuantityProgress(p,i);if(!(r.trade.price>0))return renderPlans();if(r.execution?.group)return recordPlanGroupFill(p,i,new Map(r.execution.rows.map(row=>[row.targetId,row.plannedQty])),true);if(r.target>0)return recordPlanQuantity(p,i,r.target);if(r.target===null||r.execution||r.pendingAccount)return renderPlans();
     planLink("check",{ticker:planTicker(p.ticker),trade:{...planTrade(p,i),qty:0,value:null},label:`${p.title} ${i+1}회 매도`,prefer:[`sell:${pid}:`],redraw:renderPlans,
-      commit:()=>{const q=state.plans.find(x=>x.id===pid);if(!q||i>=q.checked.length)return false;q.checked[i]=true;save();return key;}});});
+      commit:()=>{const q=state.plans.find(x=>x.id===pid);if(!q||i>=q.checked.length)return false;return savePlanFill(q,i,()=>{q.checked[i]=true;})?key:false;}});});
   onEdit("#planMain [data-sale-filled]",(v,el)=>{recordPlanQuantity(p,Number(el.dataset.saleFilled),String(v).trim()===""?NaN:Number(v));return false;});
   onEdit("#planMain [data-sale-member]",(v,el)=>{recordPlanGroupFill(p,Number(el.dataset.saleStage),new Map([[el.dataset.saleMember,String(v).trim()===""?NaN:Number(v)]]));return false;});
   $$("#planMain [data-sale-partial]").forEach(el=>{el.indeterminate=true;});
@@ -462,7 +468,12 @@ function renderPlans(){
   if(typeof bindTradePlanAlerts==="function")bindTradePlanAlerts(p);
   fitNames();
 }
-const planDialog=$("planDialog"); let editingId=null, dialogBase={};
+const planDialog=$("planDialog"); let editingId=null, editingPlanState=null, dialogBase={};
+// 열어 둔 계획의 설정·체결이 바뀌거나 삭제되면 옛 입력으로 되살리거나 덮어쓰지 않는다.
+function planDialogUnchanged(){
+  if(!editingId||JSON.stringify(state.plans.find(p=>p.id===editingId))===editingPlanState)return true;
+  alert("동기화에서 계획·체결 기록이 변경되었습니다. 닫고 다시 열어 주세요.");return false;
+}
 // 자산 배분의 기준 종목을 코드별로 한 번씩 보여 준다. 추종 ETF는 기준 코드로 고르고 같은 코드의 모든 계좌를 합산한다.
 // 창을 열거나 종목을 고르는 동안 원본 자산·계획은 바꾸지 않고, 저장할 때 기존 계획 필드에만 반영한다.
 function planAllocOptions(){
@@ -568,7 +579,7 @@ function planLive(fill=[]){
 }
 $("planForm").addEventListener("input",e=>{if(e.target===planPicker().input)return;const n=e.target.name;if(n==="startUnit")startMode(e.target.form.elements,true);
   planLive(n==="ticker"||n==="currency"?["start","end"]:n==="startN"||n==="startUnit"?["start"]:n==="endN"||n==="endUnit"?["end"]:[]);});
-function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=form.elements;form.reset();planPicker().clear();planPick=p&&planAllocOptions().some(o=>o.ticker===linkTicker(p.ticker))?linkTicker(p.ticker):null;$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
+function openPlanDialog(p){editingId=p?.id||null;editingPlanState=JSON.stringify(p); const form=$("planForm"), f=form.elements;form.reset();planPicker().clear();planPick=p&&planAllocOptions().some(o=>o.ticker===linkTicker(p.ticker))?linkTicker(p.ticker):null;$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
   f.valueKrw.readOnly=false;f.valueKrw.dataset.typed="";
   if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,cardName:p.cardName??"",currency:p.currency,startLabel:p.startLabel,startPrice:p.startPrice??"",endPrice:p.endPrice??"",stages:p.stages,valueKrw:p.valueKrw??"",fx:p.fx})){if(f[k])f[k].value=v;}f.shares.value=p.holdings[0]?.shares||"";f.salePct.value=planSalePct(p);
     const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"개월선";if(planEndPct(p)){f.endN.value=planEndPct(p);f.endUnit.value="pct";}
@@ -577,7 +588,7 @@ function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=fo
   startMode(f);dialogBase={start:f.startPrice.value,end:f.endPrice.value};planLive();planDialog.showModal();
   if(!p&&typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches)planPicker().focus();} // 새 계획은 분할매수 창처럼 PC에서만 검색 칸에
 $("addPlanBtn").onclick=()=>openPlanDialog();
-$("deletePlanBtn").onclick=()=>{const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
+$("deletePlanBtn").onclick=()=>{if(!planDialogUnchanged())return;const p=state.plans.find(x=>x.id===editingId);if(!p||!confirm(`${p.ticker} 계획을 삭제할까요?`))return;state.plans=state.plans.filter(x=>x.id!==p.id);state.selectedPlan=state.plans[0]?.id||null;save();planDialog.close();render();};
 planDialog.querySelectorAll("[data-close-plan]").forEach(b=>b.onclick=()=>planDialog.close());
 const nameDialog=$("nameDialog"); let namingId=null,namingSave=null; // 카드 이름만 고치는 창(규칙은 renderPlans 위 주석). 분할매수는 저장 콜백으로 자기 계획만 수정하고 비웠을 때 보일 이름(name)을 넘긴다.
 function openNameDialog(pid,options=null){const p=options||state.plans.find(x=>x.id===pid);if(!p||nameDialog.open)return;namingId=pid;namingSave=typeof options?.onSave==="function"?options.onSave:null;const input=$("nameForm").elements.cardName,shownName=options?String(options.name||"").trim():planShownName(p);$("nameTitle").textContent=`${shownName} 카드 이름`;input.value=p.cardName??"";input.placeholder=shownName;nameDialog.showModal();input.focus();input.select();}
@@ -587,7 +598,7 @@ $("nameForm").addEventListener("submit",e=>{e.preventDefault();const p=state.pla
 // 평가액만 넣은 계획은 평가액·종목·통화를 바꿨거나 새 계획일 때만 valueBase를 지금 시세로 다시 둔다(시세가 없으면 delete). 수량을 넣거나 평가액을 비우면 delete.
 // 빈 자동 기준가는 저장하지 않고 다음 시세를 기다린다. 이전 auto 표시도 비워 같은 값의 시세가 다시 들어오면 채울 수 있게 한다.
 $("planForm").addEventListener("submit",e=>{
-  e.preventDefault();planLive();if(!e.target.reportValidity())return;
+  e.preventDefault();if(!planDialogUnchanged())return;planLive();if(!e.target.reportValidity())return;
   const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim(), ticker=planTicker(val("ticker")), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;
   const endPct=val("endUnit")==="pct"?Number(val("endN")):null, shares=Number(val("shares")), held=hasPlanShares(ticker,shares), endLabel=endPct?pctEndLabel(endPct):lineOf(e.target.elements,"end"), startAuto=!endPct&&!!val("startUnit"), startLabel=startAuto?lineOf(e.target.elements,"start"):val("startLabel"), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency||!!old.startAuto!==startAuto||startAuto&&old.startLabel!==startLabel);
   const valueKrw=held||val("valueKrw")===""?null:Number(val("valueKrw")), locked=old&&(old.checked.some(Boolean)||Object.keys(old.fills||{}).length>0);

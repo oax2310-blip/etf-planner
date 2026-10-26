@@ -13,7 +13,8 @@ const TOLERANCE=0.02; // %p, 공표치의 소수 둘째 자리 반올림 허용
 const META={schemaVersion:1,index:'S&P 500 Total Return',symbol:SYMBOL,currency:'USD',
   sourceName:'S&P Dow Jones Indices · Yahoo Finance',sourceUrl:'https://finance.yahoo.com/quote/%5ESP500TR/history/'};
 
-const dateIn=(seconds,timeZone)=>new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(seconds*1000));
+const dateFormatter=timeZone=>new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'});
+const dateIn=(seconds,timeZone)=>dateFormatter(timeZone).format(new Date(seconds*1000));
 // Yahoo chart 응답 → 날짜(거래소 시간대)별 종가(소수 둘째 자리). 같은 날이 겹치면 나중 값을 쓰고 빈 종가는 건너뛴다.
 function parseChart(payload){
   const result=payload?.chart?.result?.[0];
@@ -22,8 +23,8 @@ function parseChart(payload){
   const zone=/^[A-Za-z_]+\/[A-Za-z_]+$/.test(String(result.meta.exchangeTimezoneName||''))?result.meta.exchangeTimezoneName:'America/New_York';
   const times=result.timestamp, closes=result.indicators?.quote?.[0]?.close;
   if(!Array.isArray(times)||!Array.isArray(closes)||times.length!==closes.length||!times.length)throw Error('invalid-response');
-  const byDate=new Map();
-  times.forEach((t,i)=>{const v=closes[i];if(Number.isFinite(t)&&typeof v==='number'&&Number.isFinite(v)&&v>0)byDate.set(dateIn(t,zone),Math.round(v*100)/100);});
+  const byDate=new Map(), formatter=dateFormatter(zone);
+  times.forEach((t,i)=>{const v=closes[i];if(Number.isFinite(t)&&typeof v==='number'&&Number.isFinite(v)&&v>0)byDate.set(formatter.format(new Date(t*1000)),Math.round(v*100)/100);});
   return {zone,points:[...byDate].sort(([a],[b])=>a.localeCompare(b)).map(([date,close])=>({date,close}))};
 }
 const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
@@ -32,7 +33,7 @@ const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
 function summarize(points, today){
   const thisYear=Number(today.slice(0,4)), thisMonth=today.slice(0,7), last=new Map();
   for(const p of points){last.set(p.date.slice(0,4),p);last.set(p.date.slice(0,7),p);}
-  const complete=(p,y,m)=>Number(p.date.slice(8,10))>=lastDay(y,m)-4;
+  const complete=(p,y,m)=>p.date.startsWith(`${y}-${String(m).padStart(2,'0')}-`)&&Number(p.date.slice(8,10))>=lastDay(y,m)-4;
   const yearEnd=[], monthEnd=[];
   for(const [key,p] of last){
     if(key.length===4&&Number(key)<thisYear){if(!complete(p,Number(key),12))throw Error(`incomplete-year-${key}`);yearEnd.push({year:Number(key),...p});}

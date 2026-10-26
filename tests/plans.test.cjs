@@ -249,9 +249,9 @@ test('수정 창의 매도 비중은 100%면 저장하지 않고 아래면 저�
   fields.ticker.value='AAA';fields.shares.value='15';fields.salePct.value='50';api.planLive();
   assert.equal(node('saleNote').textContent,'7주 매도 · 8주 남김');
   submit();assert.equal(ctx.state.plans[0].salePct,50);
-  vm.runInContext('editingId=state.plans[0].id',ctx);fields.salePct.value='100';api.planLive();assert.equal(node('saleNote').textContent,'');
+  api.openPlanDialog(ctx.state.plans[0]);fields.salePct.value='100';api.planLive();assert.equal(node('saleNote').textContent,'');
   submit();assert.equal(ctx.state.plans.length,1);assert.equal('salePct' in ctx.state.plans[0],false,'100%는 필드를 지운다');
-  vm.runInContext('editingId=state.plans[0].id',ctx);fields.salePct.value='';submit();assert.equal('salePct' in ctx.state.plans[0],false,'비우면 전량');
+  api.openPlanDialog(ctx.state.plans[0]);fields.salePct.value='';submit();assert.equal('salePct' in ctx.state.plans[0],false,'비우면 전량');
 });
 
 test('매도 비중이 잘못됐거나 매도할 수량이 없으면 저장을 막는다',()=>{
@@ -284,7 +284,7 @@ function partialSale({bitcoin=false,valueOnly=false}={}){
     check(o){const key=o.commit();if(key)api.applyTrade(alloc,prices,key,o.trade,o.label,[{id:it.id,unit:valueOnly?'amount':'shares',n:valueOnly?o.trade.value:o.trade.qty}]);o.redraw?.();},
     rescale(key,trade){api.rescaleTrade(alloc,key,trade);},uncheck(key){api.revertTrade(alloc,key);}
   };
-  return {api,p,it,alloc,prices,fill:n=>api.recordPlanFill(p,0,n,()=>{}),fillQuantity:n=>api.recordPlanQuantity(p,0,n,()=>{})};
+  return {api,ctx,p,it,alloc,prices,fill:n=>api.recordPlanFill(p,0,n,()=>{}),fillQuantity:n=>api.recordPlanQuantity(p,0,n,()=>{})};
 }
 
 function accountSale(){
@@ -668,4 +668,34 @@ test('통합 매도 진행 카드는 여러 계좌의 회차 체결을 합쳐 �
   assert.match(card,new RegExp(`<p class="buy-track-note">1회 부분 체결 · 1주 매도, ${total-1}주 남음</p>`));
   assert.match(card,/aria-label="전체 계좌 계획 진행"/);
   assert.equal(JSON.stringify([r.p,r.alloc]),before,'카드를 그려도 체결·보유 기록은 그대로');
+});
+
+test('분할매도 수정 창은 삭제·동기화로 달라진 계획을 옛 입력으로 복구하거나 덮어쓰지 않는다',()=>{
+  for(const change of ['delete','replace','record']){
+    const x=load(),alerts=[];x.ctx.alert=text=>alerts.push(text);x.submit();const p=x.ctx.state.plans[0];x.api.openPlanDialog(p);x.fields.title.value='열어 둔 창';
+    if(change==='delete')x.ctx.state.plans=[];
+    if(change==='replace')x.ctx.state.plans[0]={...p,title:'다른 기기의 새 이름'};
+    if(change==='record')p.checked[0]=true;
+    const before=JSON.stringify(x.ctx.state);x.submit();
+    assert.equal(JSON.stringify(x.ctx.state),before,change);assert.match(alerts.at(-1),/변경.*다시/);
+  }
+});
+
+test('분할매도 삭제 창은 열린 뒤 변경된 계획의 체결 기록을 삭제하지 않는다',()=>{
+  const x=load(),alerts=[];x.ctx.alert=text=>alerts.push(text);x.ctx.confirm=()=>true;x.submit();const p=x.ctx.state.plans[0];x.api.openPlanDialog(p);p.checked[0]=true;
+  const before=JSON.stringify(x.ctx.state);x.node('deletePlanBtn').onclick();assert.equal(JSON.stringify(x.ctx.state),before);assert.match(alerts.at(-1),/변경.*다시/);
+});
+
+test('매도 체결 저장 실패는 자산 반영·취소를 멈추고 같은 입력을 재시도할 수 있다',()=>{
+  for(const failure of ['false','throw'])for(const kind of ['source','execution','group']){
+    const r=kind==='source'?partialSale():kind==='execution'?accountSale():groupSale();
+    const fill=n=>kind==='source'?r.fill(n):kind==='execution'?r.fill(0,n):r.member(0,r.isa.id,n);
+    let failed=true;const error=Error('synthetic storage failure');r.ctx.save=()=>{if(failed&&failure==='throw')throw error;return !failed;};
+    for(const amount of [2,3,0]){
+      failed=true;const before=JSON.stringify([r.p,r.alloc]);if(failure==='throw')assert.throws(()=>fill(amount),e=>e===error);else fill(amount);
+      assert.equal(JSON.stringify([r.p,r.alloc]),before,`${kind}:${amount} 실패는 체결·보유량 보존`);
+      failed=false;fill(amount);assert.notEqual(JSON.stringify([r.p,r.alloc]),before,`${kind}:${amount} 재시도 반영`);
+    }
+    assert.equal(r.p.fills,undefined);assert.equal(r.alloc.trades,undefined);
+  }
 });

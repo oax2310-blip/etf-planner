@@ -78,3 +78,8 @@ test('종가가 같으면 파일을 다시 쓰지 않고, 만든 자료는 화�
   assert.equal(fs.existsSync(OUT)?fs.readFileSync(OUT,'utf8'):null,before);
   assert.match(printed,/"dryRun": true/);assert.match(printed,/"period": "2026-09"/);
 });
+
+test('11·12월이 통째로 누락되면 10월 말 종가를 연말 기준으로 채택하지 않는다',()=>{
+  const points=parseChart(chart()).points.filter(p=>!/^2025-(11|12)-/.test(p.date));
+  assert.throws(()=>summarize(points,'2026-10-16'),/incomplete-year-2025/);
+});

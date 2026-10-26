@@ -286,20 +286,26 @@ function renderPurchases(){
   const keepShares=(key,b)=>{const qty=recordedShares(key,b),rec=doc.allocation?.trades?.[key];if(qty!==null){b.shares=qty;if(rec&&finite(rec.qty)===null)rec.qty=qty;}return qty;};
   const inputRow=(id,x)=>rowData.get(x.dataset.key!==undefined?`buy:${id}:${x.dataset.key}`:stageKey(id,x));
   const oldBuy=(plan,r)=>r.line?purchaseBuys(plan)[r.line.key]:r.stage;
+  // 체결 저장에 실패하면 해당 매수 계획과 옛 수량 보완만 원복해, 다음 입력을 새 체결로 재시도한다.
+  function fillRollback(plan,key){
+    const before=JSON.parse(JSON.stringify(plan)),trade=doc.allocation.trades?.[key],hadQty=trade&&Object.hasOwn(trade,"qty"),qty=trade?.qty;
+    return ()=>{for(const field of Object.keys(plan))delete plan[field];Object.assign(plan,before);if(trade){if(hadQty)trade.qty=qty;else delete trade.qty;}};
+  }
   // 누적 0·체크 해제는 체결과 자산 반영을 되돌린다. 추종 ETF 직접 입력은 sourceShares(원래 기준 티커 주수, null이면 원래 빈칸)를 복원한다.
   function clearFill(id,r){
     const found=findItem(id),plan=found?.it.buyPlan;if(!plan||!r)return;
-    const lead=leadOf(found.it,plan),back=followsLead(r,lead)?{key:r.key,ticker:assetTradeTicker(r.tradeItem),targetId:lead.id,trade:{...buyTrade(found.it,plan,oldBuy(plan,r)),sign:-1,qty:r.shares,value:r.actual},total:{qty:0,value:0}}:null;
+    const rollback=fillRollback(plan,r.key),lead=leadOf(found.it,plan),back=followsLead(r,lead)?{key:r.key,ticker:assetTradeTicker(r.tradeItem),targetId:lead.id,trade:{...buyTrade(found.it,plan,oldBuy(plan,r)),sign:-1,qty:r.shares,value:r.actual},total:{qty:0,value:0}}:null;
     if(r.line){const buys={...purchaseBuys(plan)};delete buys[r.line.key];if(Object.keys(buys).length)plan.buys=buys;else delete plan.buys;}
     else{const b=r.stage;if(Object.hasOwn(b,"sourceShares")){if(finite(b.sourceShares)!==null)b.shares=b.sourceShares;else delete b.shares;}else if(finite(b.plannedShares)!==null)b.shares=b.plannedShares;for(const key of ["plannedShares","sourceShares","done","partial","actual","tradeTicker","tradePrice","tradeCurrency","tradeTargetId"])delete b[key];}
-    saveSection("allocation");if(back)allocLink.shift(back);else allocLink.uncheck(r.key);render();
+    if(saveSection("allocation")===false){rollback();return render();}if(back)allocLink.shift(back);else allocLink.uncheck(r.key);render();
   }
   function writeFill(id,r,b,lead=null){
     const found=findItem(id),plan=found?.it.buyPlan;if(!plan)return render();
+    const rollback=fillRollback(plan,r.key);
     const commit=()=>{if(planOf(id)!==plan)return false;
       if(r.line)plan.buys={...purchaseBuys(plan),[r.line.key]:b};
       else{delete r.stage.done;delete r.stage.partial;Object.assign(r.stage,b);}
-      saveSection("allocation");return r.key;};
+      if(saveSection("allocation")===false){rollback();return false;}return r.key;};
     if(r.recorded){if(r.line||finite(b.plannedShares)!==null)keepShares(r.key,oldBuy(plan,r));
       if(commit()){const t=buyTrade(found.it,plan,b),dq=(finite(b.shares)||0)-r.shares,dv=(finite(b.actual)||0)-(r.actual||0);
         if(lead)allocLink.shift({key:r.key,ticker:assetTradeTicker(r.tradeItem),targetId:lead.id,trade:{...t,sign:dq<0||!dq&&dv<0?-1:1,qty:Math.abs(dq),value:Math.abs(dv)},total:{qty:t.qty,value:t.value}});
@@ -488,6 +494,12 @@ function openPurchase(id){
   const found=id?findItem(id):null,f=form(),d=dlg("purchaseDialog"),s=allocationSummary(doc.allocation,prices);
   if(!found&&purchaseItems().every(({it})=>linkedPlans(it,s).length)){alert("모든 종목에 분할매수 계획이 있습니다. 종목 이름 옆 연필로 기존 계획을 수정하세요.");return;}
   editing=found;
+  // 목표 연동으로 다시 계산한 예산만 별도로 병합한다. 체결·알림·메모·종목이 바뀐 계획은 옛 사본으로 덮어쓰지 않는다.
+  const sourceState=item=>{const plan=item?.buyPlan?JSON.parse(JSON.stringify(item.buyPlan)):null;if(plan?.lines)delete plan.lines.budget;return JSON.stringify({ticker:item?.ticker,tradeTicker:item?.tradeTicker,plan});};
+  const openedState=sourceState(found?.it),unchanged=item=>{
+    if(!found||item?.id===found.it.id&&sourceState(item)===openedState)return true;
+    alert("동기화에서 종목·계획·체결 기록이 변경되었습니다. 닫고 다시 열어 주세요.");return false;
+  };
   el("purchaseTitle").textContent=found?"분할매수 계획 수정":"새 분할매수 계획";
   f.item.value=found?.it.id||"";picker().clear();
   purchaseDraft=found?.it.buyPlan?JSON.parse(JSON.stringify(found.it.buyPlan)):{};
@@ -504,8 +516,9 @@ function openPurchase(id){
   f.cardName.value=purchaseDraft.cardName||"";f.note.value=purchaseDraft.note||"";renderDraft();
   el("purchaseDelete").hidden=!found;
   // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않는다.
-  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;saveSection("allocation");d.close();render();};
+  el("purchaseDelete").onclick=()=>{const item=found&&findItem(found.it.id)?.it;if(!found||!unchanged(item)||!confirm(`'${item.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete item.buyPlan;saveSection("allocation");d.close();render();};
   f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");picker().focus();return;}
+    if(!unchanged(item))return;
     if(!editing&&linkedPlans(item,allocationSummary(doc.allocation,prices)).length){alert("같은 종목의 다른 계좌 줄에 분할매수 계획이 있습니다. 기존 계획을 수정하세요.");return;}
     const draft=purchaseDraft;
     if(mode()!==originalMode&&(Object.keys(purchaseBuys(draft)).length||(draft.stages||[]).some(purchaseStageRecorded))){alert("체결 기록이 있어 방식을 바꿀 수 없습니다.");return;}
@@ -538,7 +551,7 @@ function openPurchase(id){
 }
 
 
-function statusText(){const s=assetStore.status;return {off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];}
+function statusText(){const s=assetStore.status;return {off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`저장·동기화 확인 필요 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];}
 function updateStatus(){
   const text=statusText();if(el("purchaseSaveStatus"))el("purchaseSaveStatus").textContent=text;
   el("purchaseSyncDialogStatus").textContent=`분할매수·자산: ${text}`;el("purchaseRecovery").hidden=!assetStore.recovery().length;
@@ -580,12 +593,12 @@ function initialize(){
   document.addEventListener("pointercancel",releasePriorityPointer);
   assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;updateStatus();if(type==="change")redrawIdle();});
   for(const key of ["connectRepo","syncNow","disconnectRepo"]){const button=el(key),previous=button.onclick;button.onclick=e=>{previous?.call(button,e);assetStore.refreshConfig();};}
-  el("purchaseExport").onclick=()=>downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
+  el("purchaseExport").onclick=()=>{if(assetStore.loadError){if(assetStore.loadedRaw!==null)downloadText(assetStore.loadedRaw,`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);else alert(assetStore.loadError);return;}downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);};
   el("purchaseRecovery").onclick=()=>downloadJson(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
   el("purchaseImport").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;
     try{const incoming=cleanAssets(JSON.parse(await file.text()));if(!incoming||assetsBlank(incoming))throw Error("분할매수·자산 백업 형식이 아닙니다.");
       const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"분할매수·자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));
-      if(confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.`)){assetStore.restore(incoming);alert("복원했습니다.");}}
+      if(confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? ${assetStore.loadError?"읽지 못한 기존 원문을 JSON 파일로 내려받습니다.":"지금 기록은 이 기기에 보관합니다."}`)){assetStore.restore(incoming,text=>downloadText(text,`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`));alert("복원했습니다.");}}
     catch(error){alert(`복원 실패: ${error.message}`);}e.target.value="";};
   updateStatus();assetStore.start();
 }

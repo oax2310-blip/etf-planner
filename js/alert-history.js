@@ -13,18 +13,29 @@ const alertHistoryReadStamp=item=>new Date(Math.max(Date.now(),Date.parse(item.l
 function alertHistoryApplyTaps(items){
   for(const item of items){const at=alertHistoryReadIds.get(item.id);if(at!==undefined&&alertHistoryUnread(item)&&(!item.lastSentAt||Date.parse(item.lastSentAt)<=at+30*60e3))item.readAt=alertHistoryReadStamp(item);}
 }
+function commitAlertHistory(next){
+  const hadHistory=Object.hasOwn(state,"alertHistory"),previous=state.alertHistory;
+  state.alertHistory=next;
+  try{if(save()===false)throw Error("알림내역 저장 실패");}
+  catch(error){if(hadHistory)state.alertHistory=previous;else delete state.alertHistory;throw error;}
+  renderAlertHistory();return true;
+}
 function acceptAlertHistory(items){
   const next=alertHistoryStore.merge(state.alertHistory,{items});
   alertHistoryApplyTaps(next.items);
   if(!next.items.length&&!state.alertHistory)return false;
   if(JSON.stringify(state.alertHistory)===JSON.stringify(next))return false;
-  state.alertHistory=next;save();renderAlertHistory();return true;
+  return commitAlertHistory(next);
 }
 // 수신·동기화가 겹쳐도 로컬 저장을 마친 이벤트만 수신함에서 제거한다.
 async function collectAlertInbox(){
   if(alertHistoryBusy){alertHistoryAgain=true;return;}
   alertHistoryBusy=true;
-  try{do{alertHistoryAgain=false;const items=await alertHistoryStore.pending();acceptAlertHistory(items);if(items.length)await alertHistoryStore.acknowledge(items.map(item=>item.id));}while(alertHistoryAgain);}
+  try{do{alertHistoryAgain=false;const items=await alertHistoryStore.pending(),changed=acceptAlertHistory(items);if(items.length){
+    // 같은 메모리 항목이어도 다른 저장 실패 뒤의 상태일 수 있다. 저장 성공을 확인한 뒤에만 수신함을 비운다.
+    if(!changed&&save()===false)throw Error("알림내역 저장 실패");
+    await alertHistoryStore.acknowledge(items.map(item=>item.id));
+  }}while(alertHistoryAgain);}
   catch{alertHistoryMessage="이 기기의 알림 수신함을 읽지 못했습니다. 알림내역을 다시 열어 주세요.";renderAlertHistory();}
   finally{alertHistoryBusy=false;}
 }
@@ -50,7 +61,7 @@ function alignAlertHistorySnapshots(local,remote,base){
   const merged=alertHistoryStore.merge(...sources);
   alertHistoryApplyTaps(merged.items);
   const apply=doc=>doc?JSON.stringify({...doc,alertHistory:merged}):null;
-  state.alertHistory=merged;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({...state,alertHistory:merged}));state.alertHistory=merged;renderAlertHistory();
   return {local:apply(docs[0]),remote:apply(docs[1]),base:apply(docs[2])};
 }
 // 달러선물 알림은 달러선물 화면(futures.js fmtPrice)과 같게 소수 첫째 자리, 나머지는 넷째 자리까지 보인다. 저장된 가격은 그대로 둔다.
@@ -133,5 +144,5 @@ function initializeAlertHistory(){
   renderAlertHistory();collectAlertInbox();
 }
 function acceptAlertHistoryFromTab(other){
-  const next=alertHistoryStore.merge(state.alertHistory,other);if(JSON.stringify(next)===JSON.stringify(state.alertHistory))return;state.alertHistory=next;save();renderAlertHistory();
+  const next=alertHistoryStore.merge(state.alertHistory,other);if(JSON.stringify(next)===JSON.stringify(state.alertHistory))return;commitAlertHistory(next);
 }

@@ -101,7 +101,7 @@
   const fmt = (value, unit='%', signed=true) => !finite(value) ? '—' : `${signed && value>0 ? '+' : ''}${value.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2})}${unit}`;
   const qLabel = q => q?.replace('-Q','년 ')+'분기';
   const dateLabel = date => !date ? '확인 안 됨' : date.includes('T') && Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(date)) : date.slice(0,10);
-  let dataset = null, rows = [], years = 10, selectedQuarter = null;
+  let dataset = null, rows = [], years = 10, selectedQuarter = null, refreshing = false;
   const svgNode = (tag, attrs={}) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg',tag);
     for (const [key,value] of Object.entries(attrs)) node.setAttribute(key,String(value));
@@ -194,6 +194,8 @@
     }
   }
   async function refresh() {
+    if(refreshing)return;
+    refreshing=true;
     const button=el('cpRefresh');button.disabled=true;el('cpLoadStatus').textContent='공개 자료 확인 중…';
     try {
       const response=await fetch('data/currency-pressure.json',{cache:'no-store',signal:AbortSignal.timeout(15000)});
@@ -205,7 +207,7 @@
       if(!dataset)selectedQuarter=null; // 첫 수집 완료 시에는 최신 공통 분기로 맞춘다.
       dataset=data;render();el('cpLoadStatus').textContent='';
     } catch (_) { el('cpLoadStatus').textContent=dataset?'자료 확인 실패 · 마지막으로 확인한 자료 유지':'자료를 불러오지 못했습니다. 다시 확인해 주세요.'; }
-    finally {button.disabled=false;}
+    finally {refreshing=false;button.disabled=false;}
   }
   el('cpRefresh').addEventListener('click',refresh);
   root.querySelectorAll('[data-cp-years]').forEach(button=>button.addEventListener('click',()=>{years=Number(button.dataset.cpYears);root.querySelectorAll('[data-cp-years]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});render();}));

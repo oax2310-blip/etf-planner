@@ -25,7 +25,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
-  const elements = new Map();
+  const elements = new Map(), events = new Map();
   let version = 1;
   const server = {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
@@ -37,7 +37,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const context = vm.createContext({
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
-    $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
+    $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})}, addEventListener:(name,fn)=>events.set(name,fn),
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,crypto:require('node:crypto').webcrypto,
     setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval() {},
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
@@ -82,7 +82,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../js/assets-calc.js'), 'utf8'), context); // 충돌 자동 병합(mergeThreeWay)
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
-  return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
+  return {context, server, items, elements, remoteData, event:key=>events.get('storage')?.({key}), restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 
@@ -556,7 +556,7 @@ test('이 기기에 둔 시세가 옛 형식(종가 없음)이면 ETag 없이 �
   await h.restored();
   assert.deepEqual(h.server.priceAsks, [null]);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [4, [130.5]]);
+  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [5, [130.5]]);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"'], '새 형식이면 다시 ETag로 묻는다');
   assert.equal(h.server.writes, 0);
@@ -577,11 +577,19 @@ test('현물 환율 도입으로 옛 시세 캐시를 다시 받고, 다른 기�
   assert.equal(statePlan(h).note, '이 기기 메모');
   assert.equal(h.server.writes, 1);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.fx.USDKRW], [4, spot]);
+  assert.deepEqual([cached.format, cached.fx.USDKRW], [5, spot]);
   assert.match(h.elements.get('priceStatus').textContent, /현물 환율 1388.46원/);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"']);
   assert.equal(h.server.writes, 1, '같은 현물 환율로 반복해서 저장하지 않는다');
+});
+
+test('정렬·중복 제거 전 형식 4 캐시는 ETag가 같아도 원본 봉을 다시 받아 교체한다',async()=>{
+  const local=withPlan(filledPlan()),old={...PRICES,format:4,etag:'"p1"',stocks:{AAA:{...PRICES.stocks.AAA,closes:{D:[1,2,2,3]}}}};
+  const h=harness({local,remote:local,base:snap(local),prices:PRICES,stored:{'etf-planner-prices':JSON.stringify(old)}});await h.restored();
+  assert.deepEqual(h.server.priceAsks,[null]);const cached=JSON.parse(h.items.get('etf-planner-prices'));
+  assert.equal(cached.format,5);assert.deepEqual(cached.stocks.AAA.closes.D,[130.5]);
+  await h.run();assert.deepEqual(h.server.priceAsks,[null,'"p1"']);
 });
 
 test('늦게 읽은 옛 시세로는 다른 기기가 채운 새 시세를 되돌리지 않는다', async () => {
@@ -725,4 +733,42 @@ test('60회 이후의 손절 설정·부분 체결 기록은 다른 기기로 �
   const local={...empty(),rebuy:{items:[{id:'long-rounds',name:'테스트 ETF',lowPrice:10000,shares:1000,stepPct:0.8,sellPct:1,steps:100,cuts,stages:[{name:'25선',price:2100}]}]}};
   const h=harness({local});await h.restored();assert.deepEqual(h.remoteData().rebuy,local.rebuy);
   const other=harness({remote:h.remoteData(),hadStoredState:false});await other.restored();assert.equal(other.server.writes,0);assert.deepEqual(JSON.parse(other.items.get('test-state')).rebuy,local.rebuy);
+});
+
+for(const change of ['disconnect','repo','token'])test(`다른 탭에서 ${change}하면 이전 연결의 대기 GET을 적용하거나 PUT하지 않는다`,async()=>{
+  const original=empty(),incoming={...empty(),plans:[{id:'remote',stages:2}]};
+  const h=harness({local:original,remote:original,base:snap(original)});await h.restored();
+  h.server.file.text=JSON.stringify(incoming);let release;
+  const fetch=h.context.fetch;h.context.fetch=async(url,options)=>{const result=await fetch(url,options);if(url.endsWith(FILE)&&options.method!=='PUT')await new Promise(resolve=>release=resolve);return result;};
+  const work=h.run();await waitFor(()=>release);assert.ok(release);
+  const key=change==='repo'?'etf-planner-data-repo':'etf-planner-github-token';
+  if(change==='disconnect')h.items.delete(key);else h.items.set(key,change==='repo'?'me/other':'changed-synthetic-token');
+  h.event(key);release();await work;
+  assert.deepEqual(h.context.state,original);assert.equal(h.server.writes,0);assert.equal(h.items.get('etf-planner-sync-base:'+REPO),snap(original));
+  assert.equal(vm.runInContext('sync.checked',h.context),false);assert.equal(vm.runInContext('sync.sha',h.context),'');
+  if(change==='disconnect'){const count=h.server.requests;await h.run();assert.equal(h.server.requests,count);}
+});
+
+test('플래너 직접 저장 실패와 원격 적용 실패는 기기에 저장됐다고 표시하지 않는다',async()=>{
+  const original=empty(),h=harness({local:original,remote:original,base:snap(original)});await h.restored();
+  h.context.localStorage.setItem=()=>{throw Error('synthetic quota');};h.context.state.plans.push({id:'local',stages:2});
+  assert.throws(()=>h.context.save(),/synthetic quota/);assert.match(h.status(),/저장.*실패|저장.*못/);assert.doesNotMatch(h.status(),/동기화 완료|이 기기 저장됨/);
+  h.context.state=structuredClone(original);h.server.file.text=JSON.stringify({...empty(),plans:[{id:'remote',stages:2}]});await h.run();
+  assert.doesNotMatch(h.status(),/이 기기 저장됨|동기화 완료/);assert.deepEqual(h.context.state,original);
+});
+
+test('플래너 동기화 기준 저장 실패는 메모리 기준과 완료 표시를 갱신하지 않는다',async()=>{
+  const original=empty(),h=harness({local:original,remote:original,base:snap(original)});await h.restored();
+  const before=vm.runInContext('sync.base',h.context),set=h.context.localStorage.setItem;
+  h.context.state.plans.push({id:'local',stages:2});h.context.save();
+  h.context.localStorage.setItem=(key,value)=>{if(key.startsWith('etf-planner-sync-base:'))throw Error('synthetic quota');return set(key,value);};
+  await h.run();assert.equal(vm.runInContext('sync.base',h.context),before);assert.doesNotMatch(h.status(),/이 기기 저장됨|동기화 완료/);
+});
+
+test('플래너 자동 재시도는 실패한 로컬 저장을 먼저 복구한 뒤에만 업로드한다',async()=>{
+  const original=empty(),h=harness({local:original,remote:original,base:snap(original)});await h.restored();
+  const set=h.context.localStorage.setItem;h.context.state.plans.push({id:'unsaved',stages:2});
+  h.context.localStorage.setItem=(key,value)=>{if(key==='test-state')throw Error('synthetic quota');return set(key,value);};
+  assert.throws(()=>h.context.save(),/synthetic quota/);await h.run();assert.equal(h.server.writes,0);assert.doesNotMatch(h.status(),/동기화 완료/);
+  h.context.localStorage.setItem=set;await h.run();assert.equal(h.server.writes,1);assert.deepEqual(JSON.parse(h.items.get('test-state')),h.remoteData());
 });

@@ -379,6 +379,45 @@ test('계획 창을 연 동안 다른 탭에서 목표가 바뀌면 고치지 �
   r.submit();assert.equal(r.item.buyPlan.lines.budget,205,'창에 남은 옛 금액으로 되돌리지 않음');
   r.edit();r.form.lineBudget.value='150';r.form.lineBudget.oninput();r.submit();assert.equal(r.item.buyPlan.lines.budget,150,'직접 고친 금액은 그대로 저장');
 });
+
+test('계획 창을 연 뒤 체결·알림·메모·종목·계획 삭제가 반영되면 이전 사본 저장을 거절한다',()=>{
+  for(const change of [
+    r=>r.change('[data-purchase-buy-shares]',2),
+    r=>{r.item.buyPlan.notify={stages:true};},
+    r=>{r.item.buyPlan.note='다른 기기의 새 메모';},
+    r=>{r.item.ticker='222222';},
+    r=>{delete r.item.buyPlan;},
+  ]){
+    const r=setup();r.edit();r.form.note.value='열어 둔 창의 메모';change(r);
+    const before=JSON.stringify(r.doc);r.submit();
+    assert.equal(JSON.stringify(r.doc),before,'동시에 바뀐 계획·체결·보유량을 덮어쓰지 않는다');
+    assert.equal(r.element('purchaseDialog').open,true);assert.match(r.alerts.at(-1),/변경.*다시 열어/);
+  }
+});
+
+test('계획 삭제는 동기화된 현재 종목에 적용하고 창을 연 뒤 변경된 계획은 지우지 않는다',()=>{
+  for(const changed of [false,true]){
+    const r=setup();r.initialize();r.edit();r.ctx.confirm=()=>true;
+    const replacement=JSON.parse(JSON.stringify(r.item));if(changed)replacement.buyPlan.note='다른 기기의 새 메모';
+    r.doc.allocation.groups[0].items[0]=replacement;r.emit();const before=JSON.stringify(r.doc);
+    r.element('purchaseDelete').onclick();
+    if(changed){assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts.at(-1),/변경.*다시 열어/);}
+    else assert.equal(replacement.buyPlan,undefined,'이미 대체된 옛 객체만 삭제해서 성공한 것처럼 보이지 않는다');
+  }
+});
+
+test('매수 체결 저장 실패는 자산 반영·취소를 멈추고 같은 입력을 재시도할 수 있다',()=>{
+  for(const manual of [false,true]){
+    const r=setup({manual}),selector=manual?'[data-purchase-shares]':'[data-purchase-buy-shares]';
+    let failed=true;r.ctx.assetStore.saveSection=()=>!failed;
+    for(const amount of [2,3,0]){
+      failed=true;const before=JSON.stringify(r.doc);r.change(selector,amount);
+      assert.equal(JSON.stringify(r.doc),before,`${manual}:${amount} 실패는 체결·보유량 보존`);
+      failed=false;r.change(selector,amount);assert.equal(r.item.shares,10+amount);
+    }
+    assert.equal(r.doc.allocation.trades,undefined);
+  }
+});
 test('시작선 150시선: 앞선 시선은 제외하고 선택한 시선부터 3등분·수량·도달 알림을 만든다',()=>{
   const names=['25선','32선','42선','60선','80선','125선','150선','25일선','32일선'];
   const r=setup({names,end:null,budget:100,price:9000,ma:{'25선':8000,'125선':9000,'150선':10000,'25일선':13000,'32일선':16000}});
