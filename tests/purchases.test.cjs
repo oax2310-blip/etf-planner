@@ -246,7 +246,7 @@ test('다른 투자 대상·중복·삭제된 우선순위 id는 제외하고 �
 
 test('매수대기에서도 계획 종목 순서를 바꿔 저장하고 돌파 계획으로 수정해도 그 대상과 기존 보유량을 유지한다',()=>{
   const r=setup({tracking:true,wait:'25일선',ma:{'25일선':10000}}),{other,move}=linkedAccounts(r);move('b',-1);assert.match(r.html(),/다른 계좌 ETF<\/strong><span class="sale-holding-tag">계획 종목/);assert.equal(r.inputs('[data-purchase-buy]').length,0);
-  r.edit();r.form.mode.value='lines';r.form.lineStartUnit.value='일선';r.form.lineSet.value='day';r.form.lineBudget.value='10';r.form.lineEnd.value='10000';r.submit();assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c']);assert.match(r.html(),/purchase-qty">5주</);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);
+  r.edit();r.form.mode.value='lines';r.form.lineStartUnit.value='일선';r.form.lineSet.value='day';r.form.lineBudget.value='10';r.form.lineLastUnit.value='';r.form.lineEnd.value='10000';r.submit();assert.equal(r.alerts.length,0);assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c']);assert.match(r.html(),/purchase-qty">5주</);assert.equal(other.shares,5);assert.equal(r.item.shares,10);assert.equal(r.doc.allocation.trades,undefined);
 });
 
 test('연결 보유 목록은 추종 ETF·실제 코드 보유 계좌 모두를 보여 주고 보유량·체결·시세 변경도 그대로 읽는다',()=>{
@@ -473,7 +473,7 @@ test('종료선 변경: 완료·부분 체결·잔량·자산·다른 종목 기
   const before=JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other});
   r.edit();r.form.lineLastPeriod.value='40';r.submit();
   assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other}),before);
-  assert.match(r.html(),/마지막 매수 평균선 40일선의 시세를 기다리는 중/);assert.match(r.html(),/부분 체결/);
+  assert.match(r.html(),/마지막 목표 40일선의 시세를 기다리는 중/);assert.match(r.html(),/부분 체결/);
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','32일선:0']);
   r.prices.stocks['111111'].ma['40일선']=15000;r.render();assert.ok(r.inputs('[data-purchase-buy]').some(x=>x.dataset.key==='40일선:0'));
   r.edit();r.form.lineLastPeriod.value='25';r.submit();
@@ -481,10 +481,10 @@ test('종료선 변경: 완료·부분 체결·잔량·자산·다른 종목 기
   assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선']);
 });
 
-test('잘못된 종료선 기간·시작선보다 앞선 종료선은 저장하지 않으며 목표 가격 방식에서는 종료선 입력을 쓰지 않는다',()=>{
+test('잘못된 종료선 기간·시작선보다 앞선 종료선은 저장하지 않으며 마지막 목표가 직접 입력이면 종료선 입력을 쓰지 않는다',()=>{
   for(const value of ['', '0','401','1.5']){
     const r=setup({names:['25일선','32일선'],end:null}),before=JSON.stringify(r.doc);r.edit();r.form.lineLastPeriod.value=value;r.submit();
-    assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts[0],/마지막 매수 평균선 기간은 1~400/);
+    assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts[0],/마지막 목표 평균선 기간은 1~400/);
   }
   for(const [period,unit] of [['20','일선'],['400','선']]){
     const r=setup({names:['25일선','32일선'],end:null}),before=JSON.stringify(r.doc);r.edit();r.form.lineLastPeriod.value=period;r.form.lineLastUnit.value=unit;r.submit();
@@ -596,12 +596,32 @@ test('분할매수 설정: 목표 가격을 비우면 필드를 지우고 종료
   assert.equal(JSON.stringify(r.item.buyPlan.buys),record);assert.equal(r.item.shares,17);assert.match(r.html(),/<small>남은 3주<\/small>/);
 });
 
-test('분할매수 설정: 목표 가격 없는 계획을 다시 열어 종료선을 늘리거나 목표 가격을 넣을 수 있다',()=>{
+test('분할매수 설정: 목표 가격 없는 계획을 다시 열어 종료선을 늘리거나 마지막 목표를 직접 입력 가격으로 바꿀 수 있다',()=>{
   const r=setup({end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':13000,'42일선':16000}}),before=JSON.stringify(r.item.buyPlan);
   r.edit();assert.equal(r.form.lineEnd.value,'');assert.equal(r.form.lineLastPeriod.value,32);assert.equal(r.form.lineLastUnit.value,'일선');assert.equal(r.form.lineSet.value,'day');
   assert.equal(JSON.stringify(r.item.buyPlan),before);
   r.form.lineLastPeriod.value='42';r.form.lineLastUnit.value='일선';r.submit();assert.deepEqual(Array.from(r.item.buyPlan.lines.names),['25일선','32일선','42일선']);
-  r.edit();r.form.lineEnd.value='18000';r.submit();assert.equal(r.item.buyPlan.lines.end,18000);assert.match(r.html(),/목표가/);
+  r.edit();r.form.lineLastUnit.value='';r.form.lineEnd.value='18000';r.submit();assert.equal(r.item.buyPlan.lines.end,18000);assert.match(r.html(),/목표가/);
+});
+
+test('마지막 목표: 직접 입력 가격 계획도 단위 선택을 숨기지 않아 주선으로 바꾸고, 평균선 계획은 직접 입력 가격으로 되돌린다',()=>{
+  const day=['25일선','32일선','42일선','60일선','80일선','125일선','150일선'];
+  const r=setup({names:day,end:20000,budget:100,price:9000,ma:{'25일선':10000,'32일선':11000,'42일선':12000,'60일선':13000,'80일선':14000,'125일선':15000,'150일선':16000,'60주선':18000}});
+  r.initialize();r.change('[data-purchase-buy-shares]',7);
+  const record=()=>JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares}),kept=record();
+  r.edit();assert.equal(r.form.lineLastUnit.value,'');assert.equal(r.form.lineEnd.value,20000);
+  assert.equal(r.form.lineEnd.hidden,false);assert.equal(r.form.lineLastPeriod.hidden,true);assert.equal(r.form.lineLastPeriod.disabled,true);assert.equal(r.form.lineLastUnit.disabled,false,'목표 가격이 있어도 마지막 목표 단위를 고를 수 있음');
+  r.form.lineLastPeriod.value='60';r.form.lineLastUnit.value='주선';r.form.lineLastUnit.onchange();
+  assert.equal(r.form.lineLastPeriod.hidden,false);assert.equal(r.form.lineEnd.hidden,true);assert.equal(r.form.lineEnd.disabled,true);
+  assert.equal(r.element('lineEndNote').textContent,'60주선 ₩18000 · 현재가 ₩9000 · 01-02');
+  r.submit();assert.equal(r.alerts.length,0);
+  assert.equal(Object.hasOwn(r.item.buyPlan.lines,'end'),false);assert.deepEqual(Array.from(r.item.buyPlan.lines.names),[...day,'60주선']);
+  assert.equal(record(),kept,'기존 부분 체결·자산 반영은 그대로');assert.equal(r.inputs('[data-purchase-buy]').at(-1).dataset.key,'60주선:0');assert.doesNotMatch(r.html(),/목표가/);
+  r.edit();assert.equal(r.form.lineLastPeriod.value,60);assert.equal(r.form.lineLastUnit.value,'주선');assert.equal(r.form.lineEnd.value,'');
+  const before=JSON.stringify(r.item.buyPlan);r.form.lineLastUnit.value='';r.form.lineLastUnit.onchange();assert.equal(r.form.lineEnd.hidden,false);
+  r.submit();assert.match(r.alerts[0],/마지막 목표 가격은 0보다 크게/);assert.equal(JSON.stringify(r.item.buyPlan),before,'가격을 비운 직접 입력은 저장하지 않음');
+  r.form.lineEnd.value='15500';r.submit();assert.equal(r.item.buyPlan.lines.end,15500);assert.deepEqual(Array.from(r.item.buyPlan.lines.names),day);
+  assert.equal(record(),kept);assert.match(r.html(),/목표가/);
 });
 
 test('목표 가격 없는 분할매수: 마지막 평균선까지 표시하고 순차 체결·추가·취소를 자산에 반영한다',()=>{
@@ -622,7 +642,7 @@ test('목표 가격 없는 분할매수: 마지막 평균선까지 표시하고 
 
 test('목표 가격 없는 분할매수: 마지막 선의 시세를 기다리는 동안 목표가나 체결 회차를 만들지 않는다',()=>{
   const r=setup({end:null,budget:40,names:['25일선','32일선'],ma:{'25일선':10000}});
-  assert.match(r.html(),/마지막 매수 평균선 32일선의 시세를 기다리는 중/);
+  assert.match(r.html(),/마지막 목표 32일선의 시세를 기다리는 중/);
   assert.doesNotMatch(r.html(),/목표가|NaN|남은 0주/);assert.equal(r.inputs('[data-purchase-buy]').length,0);
   assert.equal(r.item.buyPlan.lines.end,undefined);assert.equal(r.item.shares,10);
   r.prices.stocks['111111'].ma['32일선']=13000;r.render();assert.equal(r.inputs('[data-purchase-buy]').length,4);

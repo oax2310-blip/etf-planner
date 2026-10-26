@@ -15,11 +15,11 @@
   <title>매매 플래너 (독립형)</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=292"></script>
+  <script src="js/theme.js?v=293"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=292" />
-  <link rel="stylesheet" href="css/purchases.css?v=292" />
-  <script src="js/repo-security.js?v=292" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=293" />
+  <link rel="stylesheet" href="css/purchases.css?v=293" />
+  <script src="js/repo-security.js?v=293" defer></script>
 </head>
 <body>
   <header class="top">
@@ -75,18 +75,17 @@
     <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-line-bounds">
         <label class="field"><span id="lineStartLabel">매수 시작 이동평균선</span><div class="hold-input"><input name="lineStartPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-labelledby="lineStartLabel" placeholder="기간 (1~400)" /><select name="lineStartUnit" aria-label="매수 시작 이동평균선 시간 단위"><option value="선">시선 · 60분봉</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option></select></div><small class="field-hint">선택한 선부터 매수합니다. 변경해도 기존 체결 기록과 부분 체결 잔량은 유지합니다.</small></label>
-        <label class="field" id="lineEndLineField"><span id="lineLastLabel">마지막 매수 평균선</span><div class="hold-input"><input name="lineLastPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-labelledby="lineLastLabel" placeholder="기간 (1~400)" /><select name="lineLastUnit" aria-label="마지막 매수 평균선 시간 단위"><option value="선">시선 · 60분봉</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option></select></div><small class="field-hint">직접 입력한 선의 도달 회차까지 목표 금액을 나눠 삽니다.</small></label>
+        <div class="field"><span id="lineLastLabel">마지막 목표</span><div class="hold-input"><input name="lineLastPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-labelledby="lineLastLabel" placeholder="기간 (1~400)" /><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineLastLabel" placeholder="목표 가격" hidden disabled /><select name="lineLastUnit" aria-label="마지막 목표 기준"><option value="선">시선 · 60분봉</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option><option value="">직접 입력</option></select></div><small class="field-hint" id="lineEndNote"></small></div>
       </div>
       <datalist id="purchasePeriods"><option value="25"></option><option value="32"></option><option value="42"></option><option value="60"></option><option value="80"></option><option value="125"></option><option value="150"></option></datalist>
       <div class="purchase-ladder-grid">
         <label class="field purchase-line-set"><span>단계</span><select name="lineSet"><option value="all">시선 + 일선 + 주선 + 월선</option><option value="hour">시선 · 60분봉만</option><option value="day">일선만</option><option value="week">주선만</option><option value="month">월선만</option><option value="legacy">시선 + 일선</option><option value="custom">기존 선택 유지</option></select></label>
-        <label class="field"><span>목표 비중 (%)<small class="auto-tag">(자산 배분)</small></span><input name="lineTarget" type="number" readonly tabindex="-1" placeholder="목표 없음" aria-describedby="lineTargetNote" /><small class="field-hint" id="lineTargetNote"></small></label>
-        <label class="field"><span>목표 가격 (<i data-line-cur>원</i> · 선택)</span><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" placeholder="선택 입력" /><small class="field-hint" id="lineEndNote"></small></label>
+        <label class="field purchase-line-target"><span>목표 비중 (%)<small class="auto-tag">(자산 배분)</small></span><input name="lineTarget" type="number" readonly tabindex="-1" placeholder="목표 없음" aria-describedby="lineTargetNote" /><small class="field-hint" id="lineTargetNote"></small></label>
         <div class="field purchase-line-budget"><span class="purchase-field-heading"><label id="lineBudgetLabel" for="lineBudgetInput">총 매수 금액 (만원)</label><button class="text-link" type="button" id="lineBudgetReset">다시 계산</button></span><input id="lineBudgetInput" name="lineBudget" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineBudgetLabel" /><small class="field-hint" id="lineBudgetNote"></small></div>
       </div>
       <div id="lineResult" class="purchase-ladder-result" aria-live="polite"></div>
       <div id="linePreview" class="purchase-line-preview"></div>
-      <p class="purchase-ladder-foot"><small>단계마다 다음 단계 가격까지 3번(단계 가격·⅓·⅔) 나눕니다. 목표 가격을 비우면 마지막 매수 평균선의 도달 회차까지, 가격을 넣으면 그보다 낮은 회차와 마지막 목표가 회차에 같은 금액씩 삽니다. 회차 가격은 이동평균을 따라 움직이고, 현재가가 회차 가격 이상이면 도달입니다.</small></p>
+      <p class="purchase-ladder-foot"><small>단계마다 다음 단계 가격까지 3번(단계 가격·⅓·⅔) 나눕니다. 마지막 목표로 평균선을 고르면 그 선의 도달 회차까지, 직접 입력한 가격이면 그보다 낮은 회차와 목표가 회차에 같은 금액씩 삽니다. 회차 가격은 이동평균을 따라 움직이고, 현재가가 회차 가격 이상이면 도달입니다.</small></p>
     </section>
     <section class="purchase-ladder" id="purchaseWait" hidden>
       <div class="purchase-wait-grid">
@@ -268,31 +267,31 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=292" defer></script>
-  <script src="js/data-validation.js?v=292" defer></script>
-  <script src="js/core.js?v=292" defer></script>
-  <script src="js/price-collection.js?v=292" defer></script>
-  <script src="js/sync.js?v=292" defer></script>
-  <script src="js/prices.js?v=292" defer></script>
-  <script src="js/assets-calc.js?v=292" defer></script>
-  <script src="js/assets-store.js?v=292" defer></script>
-  <script src="js/alloc-link.js?v=292" defer></script>
-  <script src="js/stock-names.js?v=292" defer></script>
-  <script src="js/item-search.js?v=292" defer></script>
-  <script src="js/purchases.js?v=292" defer></script>
-  <script src="js/trade-alerts.js?v=292" defer></script>
-  <script src="js/plans.js?v=292" defer></script>
-  <script src="js/futures.js?v=292" defer></script>
-  <script src="js/futures-plan.js?v=292" defer></script>
-  <script src="js/futures-rebuy.js?v=292" defer></script>
-  <script src="js/rebuy.js?v=292" defer></script>
-  <script src="js/alerts.js?v=292" defer></script>
-  <script src="js/alert-target.js?v=292" defer></script>
-  <script src="js/alert-history-store.js?v=292" defer></script>
-  <script src="js/alert-history.js?v=292" defer></script>
-  <script src="js/push.js?v=292" defer></script>
-  <script src="js/member-link.js?v=292" defer></script>
-  <script src="js/member-go.js?v=292" defer></script>
-  <script src="js/start.js?v=292" defer></script>
+  <script src="js/ma-ladder.js?v=293" defer></script>
+  <script src="js/data-validation.js?v=293" defer></script>
+  <script src="js/core.js?v=293" defer></script>
+  <script src="js/price-collection.js?v=293" defer></script>
+  <script src="js/sync.js?v=293" defer></script>
+  <script src="js/prices.js?v=293" defer></script>
+  <script src="js/assets-calc.js?v=293" defer></script>
+  <script src="js/assets-store.js?v=293" defer></script>
+  <script src="js/alloc-link.js?v=293" defer></script>
+  <script src="js/stock-names.js?v=293" defer></script>
+  <script src="js/item-search.js?v=293" defer></script>
+  <script src="js/purchases.js?v=293" defer></script>
+  <script src="js/trade-alerts.js?v=293" defer></script>
+  <script src="js/plans.js?v=293" defer></script>
+  <script src="js/futures.js?v=293" defer></script>
+  <script src="js/futures-plan.js?v=293" defer></script>
+  <script src="js/futures-rebuy.js?v=293" defer></script>
+  <script src="js/rebuy.js?v=293" defer></script>
+  <script src="js/alerts.js?v=293" defer></script>
+  <script src="js/alert-target.js?v=293" defer></script>
+  <script src="js/alert-history-store.js?v=293" defer></script>
+  <script src="js/alert-history.js?v=293" defer></script>
+  <script src="js/push.js?v=293" defer></script>
+  <script src="js/member-link.js?v=293" defer></script>
+  <script src="js/member-go.js?v=293" defer></script>
+  <script src="js/start.js?v=293" defer></script>
 </body>
 </html>
