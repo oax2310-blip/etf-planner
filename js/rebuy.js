@@ -345,7 +345,8 @@ function futureRebuyStageIndices(r,stages){
 // 시작·종료선 중 시세가 없는 선은 추정하거나 이전 기준으로 대체하지 않고 배분·판정·알림을 기다린다.
 // 계약보다 회차가 많으면 체결한 계획 회차까지 포함해 첫·끝을 포함해 순서상 고르게 고른다(1계약이면 종료가격, 아래 배분 주석). 기존 체결은 범위 밖이어도 보존한다.
 // 시작선 이전 체결은 수량·가격·월물과 함께 유지하며 신규 배분만 제외한다. 실제 시작선 시세가 없으면 배분·판정·알림 대기.
-// 범위 변경 때 미체결 고정 계획을 다시 계산한다. 시세 변동은 고정 회차를 유지하되 지정 종료가격 밖으로는 배분하지 않는다. 재매수 시작 후 손절 중단; 보유/정산손익은 건드리지 않음.
+// 범위 변경 때 미체결 고정 계획을 다시 계산한다. 시세 변동은 고정 회차를 유지하되 지정 종료가격 밖으로는 배분하지 않는다.
+// 재매수 시작 뒤에도 남은 손절은 기존 목표·회차 환율로 이어 가고, 추가로 판 계약은 남은 재매수에 더한다. 보유/정산손익은 건드리지 않음.
 function futureRebuySummary(f){
   const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
   const raw=futureRebuyStages(r),endLine=movingLineName(r.endLine),hasEnd=!!r.endLine||Number(r.endPrice)>0;
@@ -430,7 +431,7 @@ function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(st
 function futureRebuyLocked(f){const r=futureRebuyOf(f);return (Array.isArray(r.cuts)?r.cuts:[]).some(Boolean)||futureRebuyBought(f);}
 // 손절 기준(신저점·하단·하단선·이탈 전 계약 수·비중·분할 횟수)은 ETF 재매수처럼 손절 체결 뒤에도 바꿀 수 있다:
 // 체결 기록(계약 수·회차 환율 targetPrice)은 그대로 두고 예정 회차만 새 기준으로 다시 나눈다(futureCutPlan).
-// 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에는 남은 손절이 멈추므로 현재 환율만 바꾼다.
+// 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에도 손절은 이어 가되 기준은 고정하고 현재 환율만 바꾼다.
 // 비중을 비우면 필드를 지워 기본 50%로 돌아간다; 이 경우에도 이미 판 수량보다 목표가 작아지면 거절한다.
 // 하단선(floorLine, futureFloorLine)을 고르거나 바꾸면 floorPrice와 자동 채움 표시(auto.floorPrice)를 지워 다음 시세 채우기를 기다리고,
 // 빈 글자로 끄면 마지막 floorPrice를 직접 하단으로 남긴다. 직접 하단(floorPrice)을 넣으면 하단선을 끈다.
@@ -454,14 +455,14 @@ function setFutureRebuyField(f,key,text){
 // 체크: 기록 없는 회차는 배정 계약, 부분 체결 회차는 계획 계약까지 채워 완료한다(setFutureCutQty). 해제는 그 회차 기록을 지운다.
 function setFutureCutDone(f,i,on){
   const s=futureRebuySummary(f),c=s.cuts[i];if(!c)return false;
-  if(on)return s.started||c.done?false:setFutureCutQty(f,i,String(c.recorded?c.plannedQty:c.qty));
+  if(on)return c.done?false:setFutureCutQty(f,i,String(c.recorded?c.plannedQty:c.qty));
   if(!c.recorded||s.sold-c.qty<s.rebought)return false;editFutureRebuy(f).cuts[i]=null;
 }
 // 누적 체결 계약(1 이상 정수)을 기록한다. 회차 계획보다 적으면 partial·plannedQty로 남은 계약을 그 회차에 두고, 계획 이상이면 완료로 둔다.
-// 새 기록은 회차 환율을 체결 환율로 남기고, 재매수를 시작한 뒤에는 새 회차를 기록하지 않는다(기록한 회차의 수정은 가능). 손절 합계는 손절 목표 이하·재매수 이상.
+// 새 기록은 회차 환율을 체결 환율로 남기며 재매수 시작 뒤에도 기록할 수 있다. 손절 합계는 손절 목표 이하·재매수 이상.
 function setFutureCutQty(f,i,text){
   const qty=Number(text),s=futureRebuySummary(f),c=s.cuts[i],had=c?.recorded?c.qty:0;
-  if(!c||String(text).trim()===""||!Number.isInteger(qty)||qty<1||!c.recorded&&(s.started||c.qty<1)||s.sold-had+qty>s.goal||s.sold-had+qty<s.rebought)return false;
+  if(!c||String(text).trim()===""||!Number.isInteger(qty)||qty<1||!c.recorded&&c.qty<1||s.sold-had+qty>s.goal||s.sold-had+qty<s.rebought)return false;
   const planned=c.recorded?c.plannedQty:c.qty,r=editFutureRebuy(f),rec=r.cuts[i]||(r.cuts[i]={contracts:qty,price:c.price,targetPrice:c.price});
   rec.contracts=qty;delete rec.partial;delete rec.plannedQty;if(qty<planned)Object.assign(rec,{partial:true,plannedQty:planned});
 }

@@ -172,6 +172,31 @@ test('분할 손절 표의 손절 시점은 현재 환율이 다음 손절 회�
   assert.equal(ctx.futureCutDue(ctx.futureRebuySummary(futures({floorPrice:1400})),1200),null,'기준 미입력');
 });
 
+test('재매수 뒤 부분 손절을 채우고 새 회차를 손절해도 기존 체결을 보존하고 보유·정산손익을 반영한다',()=>{
+  const ctx=load(),f=futures({contracts:8,steps:2,stages:[{name:'25선',price:1390}]});
+  f.positions[0].contracts=8;
+  assert.notEqual(ctx.setFutureCutCount(f,0,'1'),false);
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true);
+  const buy=JSON.stringify(f.rebuy.stages),avg=f.positions[0].settlementPrice,pnl=f.baselinePnl;
+  let s=ctx.futureRebuySummary(f);assert.equal(s.started,true);assert.equal(s.rest,0);
+  assert.equal(ctx.futureCutDue(s,1400.1),null);assert.equal(ctx.futureCutDue(s,1400)?.k,1,'부분 체결 잔량도 계속 손절한다');
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true,'재매수 뒤 부분 손절도 체크로 완료');
+  assert.equal(held(f),7);assert.equal(f.baselinePnl,pnl+Math.round((1400-avg)*10000));
+  s=ctx.futureRebuySummary(f);assert.equal(s.cuts[0].done,true);
+  assert.equal(ctx.futureCutDue(s,1300.1),null);assert.equal(ctx.futureCutDue(s,1300)?.k,2);
+  assert.notEqual(ctx.setFutureCutCount(f,1,'1'),false,'재매수 뒤 새 회차의 부분 손절도 기록');
+  s=ctx.futureRebuySummary(f);assert.deepEqual([s.cuts[1].partial,s.cuts[1].qty,s.cuts[1].plannedQty],[true,1,2]);
+  assert.equal(ctx.setFutureCutChecked(f,1,true),true);
+  s=ctx.futureRebuySummary(f);assert.deepEqual([s.sold,s.rebought,s.rest,s.held],[4,1,3,5]);
+  assert.equal(held(f),5);assert.equal(f.baselinePnl,pnl+Math.round((1400-avg)*10000)+Math.round((1300-avg)*2*10000));
+  assert.equal(f.rebuy.cuts[1].month,'202612');assert.equal(JSON.stringify(f.rebuy.stages),buy);
+  assert.equal(ctx.futureCutDue(s,1200),null,'모든 손절을 마치면 더 팔지 않는다');
+  assert.equal(ctx.setFutureCutCount(f,1,'3'),false,'손절 목표를 넘기는 입력은 거부');
+  assert.equal(ctx.setFutureCutCount(f,0,'0'),undefined);
+  const snapshot=JSON.stringify(f),restored=JSON.parse(snapshot);
+  assert.equal(ctx.futureRebuySummary(restored).rest,1);assert.equal(JSON.stringify(restored),snapshot,'불러오기 계산은 기록을 바꾸지 않는다');
+});
+
 test('반등 단계별 재매수 표의 재매수 시점은 판 계약이 있고 현재 환율이 재매수 회차 환율 이상일 때만이다',()=>{
   const ctx=load(),f=futures({currentPrice:1330,stages:[{name:'25일선',price:1340},{name:'60일선',price:1380}]});
   const due=cur=>(x=>x&&`${x.i}:${x.t}`)(ctx.futureBuyDue(ctx.futureRebuySummary(f),cur));
@@ -277,6 +302,27 @@ test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·�
   assert.deepEqual(JSON.parse(JSON.stringify(f.rebuy.cuts[0].legs)),[{month:'202609',contracts:1,settlementPrice:1445},{month:'202612',contracts:1,settlementPrice:1450}],'채운 1계약만 지금 월물에서 뺀다');
   assert.deepEqual(html.match(/future-row-warn">[^<]*/g),['future-row-warn">202609 보유 없음'],'처음 판 202609 계약은 그대로 보유 없음으로 남는다');
   assert.match(html,/completed-fold-empty">모든 회차의 손절이 완료되었습니다/);
+});
+
+test('재매수 뒤에도 남은 손절 표·입력·도달 표시를 유지하고 보유 카드와 접힌 줄에 재손절을 안내한다',()=>{
+  const ctx=load(),els={};
+  const el=id=>els[id]||(els[id]={innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
+  Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){}});
+  const f=futures({contracts:8,steps:2,currentPrice:1401,stages:[{name:'25선',price:1390}]});f.positions[0].contracts=8;
+  ctx.setFutureCutCount(f,0,'1');ctx.setFutureBuyChecked(f,0,0,true);
+  const draw=cur=>{f.rebuy.currentPrice=cur;vm.runInContext('futureRebuyExpanded=true',ctx);const before=JSON.stringify(f);ctx.renderFutureRebuy(f);assert.equal(JSON.stringify(f),before);return els.futureRebuyPanel.innerHTML;};
+  let html=draw(1401),cuts=html.slice(html.indexOf('id="frCuts"'),html.indexOf('id="frBuys"'));
+  assert.match(cuts,/data-fcut="0"[^>]*aria-checked="mixed"/);assert.match(cuts,/data-fcut="1"/);
+  assert.doesNotMatch(cuts,/<input[^>]*disabled/,'부분 손절과 새 회차 모두 입력 가능');
+  assert.match(cuts,/재매수 후에도 회차 환율 이하로 다시 내려오면 남은 손절을 이어갑니다/);
+  assert.doesNotMatch(html,/남은 손절 멈춤|남은 손절 회차는 멈췄습니다/);
+  assert.match(html,/buy-track-chip muted">손절 대기/);assert.match(html,/다시 1,400원 이하면 손절 1회/);
+  let s=ctx.futureRebuySummary(f);
+  assert.match(ctx.futureRebuyFoldLine(f.rebuy,s,1401,true,null,null).text,/손절 대기 · 1,400원 이하/);
+  html=draw(1400);assert.match(html,/buy-track-chip warn">손절 시점/,'재매수 복원이 끝나도 손절 도달을 우선 표시');
+  assert.match(html,/<details[^>]*id="frCuts" open>/);
+  assert.match(html,/손절 시점 · 1회 <b>1,400원<\/b> 1계약/);
+  s=ctx.futureRebuySummary(f);assert.match(ctx.futureRebuyFoldLine(f.rebuy,s,1400,true,ctx.futureCutDue(s,1400),ctx.futureBuyDue(s,1400)).text,/^<b>손절 시점<\/b>/);
 });
 
 test('반등 단계별 재매수 표도 회차마다 한 줄로 그리고, 배분 없는 단계는 다른 단계 띠로 접는다',()=>{
