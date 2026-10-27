@@ -55,7 +55,13 @@ const externalData = (()=>{
     numbers(v,["endPrice"],path,0);
     // month: 달러선물 손절·재매수를 반영한 보유 월물, manual: 보유를 직접 고친 기록(futures-rebuy.js). 손절의 partial·plannedQty(부분 체결)는 trade에서 검사한다(rebuy.js futureCutPlan).
     // 손절 legs: 여러 월물에서 판 손절의 월물별 계약·판 시점 단순평균가(futures-rebuy.js futureCutLegs).
-    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);records(x.legs,`${p}.legs`,(l,q)=>{trade(l,q);strings(l,["month"],q);});},true);stages(v.stages,`${path}.stages`,["month"],["manual","rebuyEnd"]);
+    records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);records(x.legs,`${p}.legs`,(l,q)=>{trade(l,q);strings(l,["month"],q);});},true);stages(v.stages,`${path}.stages`,["month"],["manual","rebuyEnd","directRebuy"]);
+    records(v.stages,`${path}.stages`,(x,p)=>numbers(x,["directRound"],p,1,60,true));
+    child(v,"directPlan",path,(d,p)=>{
+      numbers(d,["startPrice","endPrice"],p,0.01);numbers(d,["rounds"],p,1,60,true);numbers(d,["contracts"],p,1,10000,true);strings(d,["condition"],p);
+      if(!["up","down"].includes(d.condition))fail(`${p}.condition`);
+      if(!Array.isArray(d.names)||d.names.length>60)fail(`${p}.names`);list(d.names,`${p}.names`,(x,k)=>{if(typeof x!=="string")fail(k);});
+    });
     child(v,"notify",path);child(v,"auto",path);
   }
   function planner(data){

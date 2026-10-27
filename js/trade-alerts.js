@@ -135,8 +135,10 @@ function buildTradeAlertRules(data,priceDoc,quiet=false){
       if(!s.started&&futureRebuyAlertEnabled(f,"breakdown"))addF("breakdown","달러선물 신저점 손절 시작",r.lowPrice,"down",[r.lowPrice]);
       for(const c of s.cuts)if(futureCutRest(c)>0)addF(`cut:${c.k-1}`,`달러선물 손절 ${c.k}회`,c.price,"down",[r.lowPrice,maKey(r.floorLine)||r.floorPrice,s.cuts.length,c.k],futureRebuyAlertEnabled(f,"cuts",c.k-1));
     }
-    for(const x of tradeTranchesToSend(s))
-      addF(`buy:stage:${x.i}${x.t?`:${x.t+1}`:""}`,`달러선물 재매수 ${s.stages[x.i].rebuyEnd?"종료가격":tradeStageName(s.stages[x.i].name,x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,"up",tradeTrancheBasis(r,s,x),futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`));
+    for(const x of tradeTranchesToSend(s)){
+      const stage=s.stages[x.i],basis=tradeTrancheBasis(r,s,x),condition=futureRebuyCondition(x);
+      addF(`buy:stage:${x.i}${x.t?`:${x.t+1}`:""}`,`달러선물 재매수 ${stage.rebuyEnd?"종료가격":tradeStageName(stage.name,stage.directRebuy?stage.directRound-1:x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,condition,s.direct?[...basis,condition]:basis,futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`));
+    }
   }
   for(const [ri,r] of rebuyItems(d).entries()){
     const ticker=String(r.ticker||"").trim().toUpperCase(),q=stockEntry(prices,ticker),kind=usTicker(ticker)?"해외":"국내"; // 미국 종목은 달러 시세로

@@ -285,3 +285,6 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
 #futureRebuyStartLimit{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
 
 #futureRebuyStartDialog .future-auto-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+/* 직접 분할: 모바일에서도 환율·수량 입력 두 칸씩, 매수 조건은 한 줄로 선택한다. */
+#futureRebuyStartDialog .future-direct-condition{grid-column:1/-1}#futureRebuyStartDialog .future-direct-basis{margin:0;color:var(--text-2);font-variant-numeric:tabular-nums}#futureRebuyStartDialog .future-direct-basis b{color:var(--text)}#futureRebuyStartDialog .dialog-inner>.field{flex:none}#futureRebuyStartDialog .future-direct-due{padding:0 10px;color:var(--warn)}
