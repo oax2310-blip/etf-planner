@@ -175,6 +175,13 @@ test('달러선물 기준가 시세가 없어도 직접 입력한 회차 매수�
   assert.deepEqual(rules.map(r=>[r.id,r.targetPrice]),[['trade:future:0:manual:1415',1415]]);
   l.tranches[1].completed=true;assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[]);
 });
+test('달러선물 직접 추가한 기준선도 회차에서 고친 가격을 사용하고 빈 옛 가격만 기준가를 따른다',()=>{
+  const ctx=load(),f=futurePlan({notify:{levels:true}}),l=f.levels[0];l.days=0;l.unit='';l.label='가상 직접 매수';
+  l.tranches=[{price:1400},{price:1415},{}];
+  const get=()=>plain(ctx.buildTradeAlertRules({futures:f},null));
+  assert.deepEqual(get().map(r=>[r.id,r.targetPrice,r.condition]),[['trade:future:0',1400,'down'],['trade:future:0:manual:1415',1415,'down']]);
+  l.tranches[1].price=0;assert.deepEqual(get().map(r=>r.targetPrice),[1400]);
+});
 test('달러선물 전체 ON·OFF는 회차 예외를 지우고 체결·가격·다른 알림을 보존한다',()=>{
   const ctx=load(),f=futurePlan({notify:{levels:false,other:true}}),l=f.levels[0];
   l.notify=false;l.tranches[0].notify=false;l.tranches[1].notify=true;
