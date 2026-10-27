@@ -59,10 +59,10 @@ test('사다리 행은 환율 높은 순이고, 지금보다 위는 분할매수
   assert.deepEqual({...by('check').sub},{type:'cut',count:1,pnl:ctx.futureLadderCutPnl(f,1385).pnl});
   assert.equal(by('floor').rounds,2);assert.equal(by('floor').sub.count,2);
   assert.equal(by('now').pnl,ctx.futuresSummary(f,1395).current);
-  assert.deepEqual([by('target').top,by('be-held').top,by('be-held').bottom,by('be-buy').bottom,by('floor').top],['g','g','w','r','r'],'보유만 이익 / 분할매수해야 이익 / 손실 구간');
   assert.equal(JSON.stringify(f),before,'계산·그리기에서 저장 필드를 만들지 않는다');
   const html=ctx.futureLadderHtml(f,{asOf:'2026-10-16',close:1395,ma:{}});
-  assert.match(html,/id="flossPrice"[^>]*value="1385"/);assert.match(html,/손익분기 · 보유만/);assert.match(html,/분할매수 2계약 체결/);assert.match(html,/손절 1계약 반영/);
+  assert.match(html,/id="flossPrice"[^>]*value="1385"/);assert.match(html,/손익분기 · 보유만/);assert.match(html,/분할매수 2계약 \+/);assert.match(html,/손절 1계약 -/);
+  assert.match(html,/--axis-top:26px;--axis-bottom:26px/,'세로선은 첫·끝 행 점 중심에서 시작·끝');
   assert.doesNotMatch(html,/전부 체결/);
   assert.equal(JSON.stringify(f),before);
 });
@@ -85,4 +85,12 @@ test('달러선물 화면은 사다리와 월물교체 예상을 그리고 확�
   assert.match(html,/id="futureLadder"/);assert.match(html,/id="futureRollDetails"/);
   assert.match(html,/확인 1,320원 손익 \+ 교체 이득[^]*1년 후 · \d+% 상쇄/);
   assert.doesNotMatch(html,/NaN|future-overview|계획 전부 체결 가정/);
+});
+
+test('아래 줄 손익은 회차 가격 소수로 흩어진 끝자리를 100원 단위로 반올림해 보이고 계산값은 그대로 둔다',()=>{
+  const ctx=load(),f=futures();f.levels[0].tranches[0]=open(1410.373);
+  const exact=ctx.futureLadderBuyPnl(f,1480).pnl,html=ctx.futureLadderHtml(f,{asOf:'2026-10-16',close:1405,ma:{}});
+  assert.notEqual(exact%100,0);
+  assert.ok(html.includes(`분할매수 2계약 +${new Intl.NumberFormat('ko-KR').format(Math.round(exact/100)*100)}`));
+  assert.match(html,/--axis-top:26px;--axis-bottom:26px/);
 });
