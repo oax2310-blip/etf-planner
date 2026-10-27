@@ -48,13 +48,28 @@ function apply(key, o, picks){
 let pending=null; // 창에서 고르는 중인 체크 {o, rows}
 const dialog=()=>$("linkDialog");
 // 처음 고른 계좌: 같은 출처(prefer 키 앞부분 순서)의 가장 최근 반영 계좌 → 계획이 붙은 종목(ownId) → 지금 평가액이 가장 큰 계좌
-function preferred(rows, o){
+// by = 고른 근거(맞은 prefer 순번, 'own', 'value'). 재매수 화면의 손절·재매수 계좌 줄(account)도 같은 결과를 보인다.
+function preferredPick(rows, o){
   const trades=Object.entries(allocOf()?.trades||{});
-  for(const prefix of o.prefer||[]){
+  for(const [by,prefix] of (o.prefer||[]).entries()){
     const hit=trades.filter(([k,t])=>k.startsWith(prefix)&&Array.isArray(t?.items)).sort((x,y)=>String(y[1].at).localeCompare(String(x[1].at)))[0];
-    const r=hit&&rows.filter(r=>hit[1].items.some(e=>e.id===r.it.id)).sort((x,y)=>y.value-x.value)[0];if(r)return r;
+    const r=hit&&rows.filter(r=>hit[1].items.some(e=>e.id===r.it.id)).sort((x,y)=>y.value-x.value)[0];if(r)return {row:r,by};
   }
-  return rows.find(r=>r.it.id===o.ownId)||[...rows].sort((x,y)=>y.value-x.value)[0];
+  const own=rows.find(r=>r.it.id===o.ownId);
+  return own?{row:own,by:"own"}:{row:[...rows].sort((x,y)=>y.value-x.value)[0],by:"value"};
+}
+const preferred=(rows,o)=>preferredPick(rows,o).row;
+// 체크하면 계좌 고르는 창이 먼저 고를 계좌(o = check의 {ticker, ownId?, prefer?}): {g, it, value(만원), by, count(연결 계좌 수)}. 연결 종목이 없으면 null. 읽기만 한다.
+function account(o){
+  const s=summary(o?.ticker,o?.ownId);if(!s)return null;
+  const {row,by}=preferredPick(s.rows,o);return {g:row.g,it:row.it,value:row.value,by,count:s.rows.length};
+}
+// 체크한 회차를 반영한 자산 항목들 [{g, it, shares?, amount?}](지금 없는 항목은 뺌). 반영 기록이 없으면(반영 안 함·연동 전 체크) 빈 배열, 자산 배분이 없으면 null.
+function reflected(key){
+  const a=allocOf();if(!a)return null;
+  const rec=a.trades?.[key];if(!Array.isArray(rec?.items))return [];
+  const where=new Map((a.groups||[]).flatMap(g=>(g.items||[]).map(it=>[it.id,{g,it}])));
+  return rec.items.map(e=>where.has(e?.id)?{...where.get(e.id),shares:finite(e.shares),amount:finite(e.amount)}:null).filter(Boolean);
 }
 function openDialog(o, rows){
   const d=dialog(), first=preferred(rows,o), buy=o.trade.sign>0, t=o.trade, rate=t.currency==="USD"?(summary(o.ticker,o.ownId)?.fx||0):1;
@@ -143,5 +158,5 @@ function shift(o){
   if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}`);
   else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
 }
-return {line,holding,check,uncheck,forget,rescale,shift,initialize};
+return {line,holding,account,reflected,check,uncheck,forget,rescale,shift,initialize};
 })();

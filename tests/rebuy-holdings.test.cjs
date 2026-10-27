@@ -22,7 +22,8 @@ const allocation = () => ({groups: [
   {id: 'g2', name: '가상계좌B', items: [{id: 'i7', name: '가상국내ETF(B)', ticker: '900001', shares: 30}]},
 ]});
 
-function ui(state = {}, {alloc = allocation(), link = true} = {}) {
+// real: 가짜 allocLink 대신 실제 alloc-link.js(계좌 고르는 창·손절/재매수 계좌)를 함께 실행한다.
+function ui(state = {}, {alloc = allocation(), link = true, real = false, prices = null} = {}) {
   const els = {}, listeners = [];
   const el = id => els[id] ||= {id, value: '', textContent: '', innerHTML: '', hidden: undefined, focus() {}, reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
     classList: {toggle() {}}, querySelectorAll: () => [], append() {}, setAttribute() {}, dataset: {}};
@@ -32,16 +33,16 @@ function ui(state = {}, {alloc = allocation(), link = true} = {}) {
   // 검색 칸(item-search.js)이 만든 요소도 id로 찾는다.
   const document = {activeElement: null, createElement() { const e = {value: '', dataset: {}, setAttribute() {}, append() {}, focus() {}}; Object.defineProperty(e, 'id', {get: () => e._id, set(v) { e._id = v; els[v] = e; }}); return e; }};
   let n = 0, stored = null;
-  const assetStore = {doc: {allocation: alloc}, prices: null, subscribe: fn => { listeners.push(fn); return () => {}; }};
+  const assetStore = {doc: {allocation: alloc}, prices, subscribe: fn => { listeners.push(fn); return () => {}; }};
   const ctx = vm.createContext({
     state, save() {}, $: el, $$: () => [], onEdit() {}, id: () => `id-${++n}`, PENCIL: '', confirm: () => true, document,
     esc: v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])),
     money: v => `${v}원`, priceText: (v, c) => c === 'USD' ? `$${v}` : `${v}원`,
     usd: new Intl.NumberFormat('en-US'), won: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 8}), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
     shown: v => String(v), memoCount: () => '', stockEntry: () => null, priceData: null, priceStamp: () => '', priceWarning: () => '', assetStore,
-    ...(link ? {allocLink: {holding: ticker => { const s = linkSummaryOf(ctx, assetStore, ticker); return s; }, line: () => '', check() {}, uncheck() {}, forget() {}, rescale() {}}} : {}),
+    ...(link && !real ? {allocLink: {holding: ticker => { const s = linkSummaryOf(ctx, assetStore, ticker); return s; }, line: () => '', check() {}, uncheck() {}, forget() {}, rescale() {}}} : {}),
   });
-  vm.runInContext(source, ctx);
+  vm.runInContext(real ? `${read('alloc-link.js')}\n;\n${source}` : source, ctx);
   ctx.renderRebuy();
   // 목록 행·'변경' 누르기: 가짜 요소의 onclick에 closest가 그 속성을 찾는 대상을 넘긴다.
   const click = (node, attr, dataset = {}) => node.onclick({target: {closest: sel => sel.split(',').includes(`[${attr}]`) ? {dataset} : null}});
@@ -221,4 +222,73 @@ test('가져오기 변환: 수량 합이 없으면 평가액(미국은 환율로
   assert.equal(conv({shares: null, value: 0, fx: 1400}, false), null);
   assert.equal(conv(null, false), null);
   assert.equal(conv({shares: null, value: 100, fx: 0}, true), null, '환율이 없으면 달러 환산 불가');
+});
+
+// 가상 계좌 두 곳(가상계좌A 120주·가상계좌B 30주)에 같은 코드(900001)를 둔 재매수 종목. 손절 1회는 자산 배분 미반영, 2회는 B 계좌에 반영(보유 수량은 고정한 가상 값).
+const accountFixture = () => {
+  const alloc = allocation();
+  alloc.trades = {'cut:a:1': {label: '가상국내ETF 손절 2회', at: '2026-01-02T00:00:00.000Z', qty: 3, price: 9800, value: null, items: [{id: 'i7', shares: -3}]}};
+  const state = {tab: 'rebuy', rebuy: {items: [{id: 'a', name: '가상국내ETF', ticker: '900001', lowPrice: 10000, shares: 150, stepPct: 1, sellPct: 1, cuts: [{shares: 2, price: 9900}, {shares: 3, price: 9800}]}]}};
+  return {alloc, state, prices: {stocks: {'900001': {kind: '국내', close: 10000, asOf: '2026-01-02'}}}};
+};
+const accountLine = (html, kind) => (html.match(new RegExp(`<div class="purchase-buy-target rebuy-account" data-rebuy-account="${kind}"[^>]*>.*?</div></div>`)) || [''])[0];
+
+test('손절·재매수 계좌: 1·2 표 위에 체크할 때 먼저 고를 계좌와 근거를, 회차 아래에 다른 계좌·미반영 기록을 보인다 (읽기만)', () => {
+  const {alloc, state, prices} = accountFixture(), before = JSON.stringify([state, alloc]);
+  const {els, ctx} = ui(state, {alloc, prices, real: true}), html = els.rebuyMain.innerHTML;
+  const cut = accountLine(html, 'cut'), buy = accountLine(html, 'buy');
+  assert.match(cut, /<span>손절 계좌<\/span><div><b>가상국내ETF\(B\)<\/b><small>가상계좌B · 30주 보유 · 최근 손절 계좌<\/small>/, '최근 손절을 반영한 계좌');
+  assert.match(cut, /title="같은 종목 코드 계좌 2개 중 체크하면 이 계좌가 먼저 선택됩니다"/);
+  assert.match(buy, /<span>재매수 계좌<\/span><div><b>가상국내ETF\(B\)<\/b><small>가상계좌B · 30주 보유 · 손절한 계좌<\/small>/, '재매수 기록이 없으면 손절한 계좌');
+  assert.ok(html.indexOf(cut) < html.indexOf('id="rebuyCutRows"') && html.indexOf('id="rebuyBuyTable"') < html.indexOf(buy), '각 표 위');
+  const rows = html.split('<div class="purchase-row').slice(1);
+  assert.match(rows[0], /data-cut="0"[\s\S]*<div class="purchase-sub">자산 배분 미반영<\/div><\/div>/, '반영 기록이 없는 손절 회차');
+  assert.doesNotMatch(rows[1], /purchase-sub/, '표 위 계좌와 같은 계좌에 반영한 회차는 반복하지 않는다');
+  assert.doesNotMatch(rows[2], /purchase-sub/, '아직 체결하지 않은 회차에는 계좌 줄이 없다');
+  assert.equal(JSON.stringify([state, alloc]), before, '그리기만 해서는 재매수·자산 기록을 바꾸지 않는다');
+
+  // 체크하면 계좌 고르는 창도 같은 계좌를 먼저 고른다.
+  vm.runInContext('applyRebuyCut(2,{shares:1,price:9700})', ctx);
+  assert.equal(els.linkDialog.open, true);
+  assert.match(els.linkRows.innerHTML, /<div class="link-row picked"><button[^>]*><strong>가상국내ETF\(B\)<\/strong>/);
+  assert.doesNotMatch(els.linkRows.innerHTML, /<div class="link-row picked"><button[^>]*><strong>가상국내ETF<\/strong>/);
+});
+
+test('손절·재매수 계좌: 반영 기록이 없으면 평가액이 가장 큰 계좌, 재매수 기록이 있으면 그 계좌이며 다른 계좌에 반영한 회차는 계좌를 적는다', () => {
+  const {alloc, state, prices} = accountFixture();
+  delete alloc.trades;
+  let t = ui(state, {alloc, prices, real: true});
+  assert.match(accountLine(t.els.rebuyMain.innerHTML, 'cut'), /<b>가상국내ETF<\/b><small>가상계좌A · 120주 보유 · 평가액이 가장 큰 계좌<\/small>/);
+  assert.equal((t.els.rebuyMain.innerHTML.match(/자산 배분 미반영/g) || []).length, 2, '두 손절 모두 미반영');
+
+  alloc.trades = {'cut:a:0': {label: '손절 1회', at: '2026-01-01T00:00:00.000Z', qty: 2, price: 9900, items: [{id: 'i1', shares: -2}]},
+    'cut:a:1': {label: '손절 2회', at: '2026-01-02T00:00:00.000Z', qty: 3, price: 9800, items: [{id: 'i7', shares: -3}]}};
+  t = ui(state, {alloc, prices, real: true});
+  const rows = t.els.rebuyMain.innerHTML.split('<div class="purchase-row').slice(1);
+  assert.match(rows[0], /<div class="purchase-sub">가상국내ETF 2주<\/div>/, '표 위 계좌(B)와 다른 계좌(A)에 반영한 회차');
+  const prefer = kind => vm.runInContext(`rebuyPrefer({id:'a'},'${kind}')`, t.ctx);
+  const account = prefer => plain(vm.runInContext(`(()=>{const a=allocLink.account({ticker:'900001',prefer:${JSON.stringify(prefer)}});return a&&{id:a.it.id,by:a.by,count:a.count};})()`, t.ctx));
+  assert.deepEqual(account(prefer('buy')), {id: 'i7', by: 1, count: 2});
+  alloc.trades['rebuy:a:25선:0'] = {label: '25선 1차 재매수', at: '2026-01-03T00:00:00.000Z', qty: 1, price: 10100, items: [{id: 'i1', shares: 1}]};
+  assert.deepEqual(account(prefer('buy')), {id: 'i1', by: 0, count: 2}, '최근 재매수 계좌');
+  assert.deepEqual(account(prefer('cut')), {id: 'i7', by: 0, count: 2}, '손절은 재매수 기록과 무관하게 최근 손절 계좌');
+  assert.equal(plain(vm.runInContext(`allocLink.account({ticker:'900099',prefer:[]})`, t.ctx)), null, '연결 계좌가 없으면 null');
+  assert.deepEqual(plain(vm.runInContext(`allocLink.reflected('cut:a:9')`, t.ctx)), [], '반영 기록 없음');
+  assert.deepEqual(plain(vm.runInContext(`allocLink.reflected('cut:a:1').map(x=>[x.g.name,x.it.id,x.shares])`, t.ctx)), [['가상계좌B', 'i7', -3]]);
+});
+
+test('손절·재매수 계좌: 자산 배분에 연결 계좌가 없으면 계좌 줄·미반영 표시를 하지 않고, 수정 창은 같은 코드 계좌들을 안내한다', () => {
+  const {alloc, state, prices} = accountFixture();
+  state.rebuy.items[0].ticker = '900099';
+  const t = ui(state, {alloc, prices, real: true});
+  assert.doesNotMatch(t.els.rebuyMain.innerHTML, /rebuy-account|자산 배분 미반영/);
+
+  const {alloc: a2, state: s2} = accountFixture();
+  const u = ui(s2, {alloc: a2, prices, real: true});
+  u.els.rEdit.onclick();
+  assert.equal(u.form.elements.holding.value, '');
+  assert.equal(u.els.rebuyHoldingHint.hidden, false);
+  assert.match(u.els.rebuyHoldingHint.textContent, /같은 종목 코드의 자산 배분 계좌 2개\(가상국내ETF, 가상국내ETF\(B\)\)의 보유를 함께 봅니다/);
+  u.pick('i1');
+  assert.match(u.els.rebuyHoldingHint.textContent, /자산 배분 보유 \(같은 코드 계좌 2개 합계\) 150주를/);
 });
