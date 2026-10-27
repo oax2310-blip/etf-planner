@@ -333,7 +333,7 @@ const futureRebuyLineRank = name => MA_UNITS.indexOf(movingLineUnit(name))*500+p
 // 시작선이 없던 옛 기록은 기존 순서 그대로. 선택한 선이 아직 없으면 앞 단계로 되돌아가지 않고 대기한다.
 function futureRebuyStageIndices(r,stages){
   const start=movingLineName(r.startLine),last=movingLineName(r.endLine),rank=futureRebuyLineRank;
-  if(!r.startLine)return stages.map((_,i)=>i).filter(i=>!stages[i].rebuyEnd&&(!last||movingLineName(stages[i].name)&&rank(stages[i].name)<=rank(last)));
+  if(!r.startLine)return stages.map((_,i)=>i).filter(i=>!stages[i].rebuyEnd&&!stages[i].directRebuy&&(!last||movingLineName(stages[i].name)&&rank(stages[i].name)<=rank(last)));
   if(!start||!stages.some(x=>movingLineName(x.name)===start))return [];
   return stages.map((x,i)=>({i,name:movingLineName(x.name)})).filter(x=>x.name&&rank(x.name)>=rank(start)&&(!last||rank(x.name)<=rank(last)))
     .sort((a,b)=>rank(a.name)-rank(b.name)||a.i-b.i).map(x=>x.i);
@@ -352,7 +352,7 @@ function futureRebuySummary(f){
   const raw=futureRebuyStages(r),endLine=movingLineName(r.endLine),hasEnd=!!r.endLine||Number(r.endPrice)>0;
   const endIndex=endLine?raw.findIndex(x=>movingLineName(x.name)===endLine):hasEnd?raw.findLastIndex(x=>x.rebuyEnd===true):-1;
   const endPrice=endLine?(Number(raw[endIndex]?.price)>0?Number(raw[endIndex].price):null):Number(r.endPrice)>0?Number(r.endPrice):null;
-  const stages=!endLine&&endIndex>=0?raw.map((x,i)=>i===endIndex?{...x,price:endPrice}:x):raw,fills=stages.map(x=>stageFills(x,"contracts").map(y=>!x.done&&x.buys[y.t]?.partial===true?{...y,partial:true,plannedQty:futureRebuyQty(x.buys[y.t].plannedQty)}:y)),all=fills.flat(),started=all.length>0;
+  const stages=!endLine&&endIndex>=0?raw.map((x,i)=>i===endIndex?{...x,price:endPrice}:x):raw,fills=stages.map(x=>stageFills(x,"contracts").map(y=>!x.directRebuy&&!x.done&&x.buys[y.t]?.partial===true?{...y,partial:true,plannedQty:futureRebuyQty(x.buys[y.t].plannedQty)}:y)),all=fills.flat(),started=all.length>0;
   const sold=filled.reduce((n,c)=>n+c.qty,0),rebought=all.reduce((n,x)=>n+x.qty,0),rest=Math.max(0,sold-rebought);
   const sellAvg=sold?filled.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)/sold:null;
   const base=futureRebuyStageIndices(r,stages),active=[...base.filter(i=>i!==endIndex),...(endIndex>=0?[endIndex]:[])],history=stages.map((_,i)=>i).filter(i=>!active.includes(i)&&fills[i].length),stageOrder=[...history,...active];
@@ -388,8 +388,50 @@ function futureRebuySummary(f){
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});
-  return {hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
+  const summary={hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
+  return r.directPlan?futureDirectRebuySummary(r,summary):summary;
+}
+// 직접 분할은 평균 손절가와 무관하게 시작·종료 환율을 포함해 rounds회로 나눈다(1회는 시작 환율).
+// 상승 도달은 시작≤종료, 하락 도달은 시작≥종료. 가격은 소수 둘째 자리로 고정하고 수량은 splitWhole.
+// directPlan.names가 이번 계획의 단계다. 각 단계는 1회만 사용하며 기존 stages 인덱스·체결·알림 키는 옮기지 않는다.
+// 이번 계획의 계약 수에서 그 계획의 체결만 빼고, 전체 미복원 계약 수 안에서 잔량을 배정한다. 새 손절은 이번 계획의 한도를 늘리지 않는다.
+// 이전 계획의 체결(부분 체결 포함)은 실제 체결만 완료 내역으로 남기고 미체결 잔량은 새 계획으로만 배분한다. 읽기는 원본을 바꾸지 않는다.
+function futureDirectRebuySummary(r,s){
+  const p=r.directPlan,active=Array.isArray(p?.names)?p.names.map(name=>s.stages.findIndex(x=>x.name===name)):[];
+  const valid=p&&["up","down"].includes(p.condition)&&Number.isInteger(p.rounds)&&p.rounds>=1&&p.rounds<=60&&Number.isInteger(p.contracts)&&p.contracts>=p.rounds&&p.contracts<=10000
+    &&Number.isFinite(p.startPrice)&&p.startPrice>0&&Number.isFinite(p.endPrice)&&p.endPrice>0&&(p.condition==="down"?p.startPrice>=p.endPrice:p.startPrice<=p.endPrice)
+    &&active.length===p.rounds&&new Set(active).size===active.length&&active.every((i,k)=>i>=0&&s.stages[i].directRebuy===true&&s.stages[i].directRound===k+1&&Number.isFinite(s.stages[i].price)&&s.stages[i].price>0);
+  const fills=s.stages.map(x=>stageFills(x,"contracts")),indices=valid?active:[],bought=indices.reduce((n,i)=>n+fills[i].reduce((m,x)=>m+x.qty,0),0);
+  const target=valid?splitWhole(p.contracts,p.rounds):[];let left=valid?Math.min(s.rest,Math.max(0,p.contracts-bought)):0;
+  const history=s.stages.map((_,i)=>i).filter(i=>!indices.includes(i)&&fills[i].length),tranches=history.flatMap(i=>fills[i].map(x=>({i,t:x.t,price:Number(s.stages[i].price)||x.price,est:false,step:false,done:true,qty:x.qty,execPrice:x.price,amount:x.qty})));
+  indices.forEach((i,k)=>{
+    const rec=fills[i].find(x=>x.t===0),qty=rec?.qty||0,amount=Math.min(left,Math.max(0,target[k]-qty));left-=amount;
+    tranches.push({i,t:0,price:Number(s.stages[i].price)||0,condition:p.condition,est:false,step:false,done:!!rec&&!amount,qty,execPrice:rec?.price??null,amount:rec&&!amount?qty:amount,...(rec&&amount?{partial:true,plannedQty:qty+amount}:{})});
+  });
+  const directRest=tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0),plan=s.stages.map((_,i)=>tranches.filter(x=>x.i===i).reduce((n,x)=>n+x.amount,0));
+  return {...s,direct:true,directBought:bought,directRest,unplannedRest:Math.max(0,s.rest-directRest),active:indices,stageOrder:[...history,...indices],tranches,plan,skipped:[],planKeys:indices.map(i=>[s.stages[i].name,0]),waitingStart:false,waitingEnd:false,endLine:"",endPrice:null,endIndex:-1,hasEnd:false,
+    rangeError:valid?"":"직접 분할 설정을 확인하세요.",doneTranches:tranches.filter(x=>x.done).length};
+}
+// 직접 분할 도달 조건은 화면·미리보기·서버 알림이 함께 사용한다. 이동평균 방식은 기존 상승 도달을 유지한다.
+const futureRebuyCondition = x => x?.condition==="down"?"down":"up";
+const futureRebuyReached = (x,cur) => !x.done&&x.amount>0&&!x.est&&cur>0&&x.price>0&&(futureRebuyCondition(x)==="down"?cur<=x.price:cur>=x.price);
+// 입력 때만 직접 계획과 고정 환율 단계를 만든다. 계약 수는 현재 미복원 수량 이하, 회차 수는 계약 수 이하·최대 60회다.
+// 계획 변경은 체결 없는 직접 단계를 재사용하고, 이미 체결한 단계·월물·정산손익은 그대로 둔 채 새 미체결 계획을 만든다(총 80단계 한도).
+function futureRebuyWithDirect(f,values){
+  const startPrice=Number(values.startPrice),endPrice=Number(values.endPrice),rounds=Number(values.rounds),contracts=Number(values.contracts),condition=values.condition,s=futureRebuySummary(f);
+  if(![startPrice,endPrice].every(x=>Number.isFinite(x)&&x>0)||![rounds,contracts].every(Number.isInteger)||rounds<1||rounds>60||contracts<rounds||contracts>s.rest||contracts>10000
+    ||!["up","down"].includes(condition)||(condition==="down"?startPrice<endPrice:startPrice>endPrice))return null;
+  const g=JSON.parse(JSON.stringify(f)),r=editFutureRebuy(g),slots=r.stages.map((x,i)=>x.directRebuy&&!stageTouched(x)?i:-1).filter(i=>i>=0),names=[];
+  if(r.stages.length+Math.max(0,rounds-slots.length)>80)return null;
+  for(let k=0;k<rounds;k++){
+    const price=Math.round((rounds===1?startPrice:startPrice+(endPrice-startPrice)*k/(rounds-1))*100)/100;if(!(price>0))return null;
+    let stage=r.stages[slots[k]];
+    if(!stage){let n=1;while(r.stages.some(x=>x.name===`직접 재매수 ${n}`))n++;stage={name:`직접 재매수 ${n}`};r.stages.push(stage);}
+    Object.assign(stage,{directRebuy:true,directRound:k+1,price});names.push(stage.name);
+  }
+  r.directPlan={startPrice,endPrice,rounds,contracts,condition,names};
+  return g;
 }
 // futures.rebuy는 최초 입력 때만 생성하고 이탈 전 계약 수를 고정(읽기/normalize는 생성·이전 안 함).
 function editFutureRebuy(f){
@@ -407,7 +449,8 @@ function futureRebuyWithStart(f,name,entry=null,endText=futureRebuyOf(f).endLine
   const line=movingLineName(name);if(!line)return null;
   const text=String(endText??"").trim(),endLine=movingLineName(text),endPrice=!text||endLine?null:Number(text);
   if(text&&!endLine&&(!Number.isFinite(endPrice)||endPrice<=0)||endLine&&futureRebuyLineRank(endLine)<futureRebuyLineRank(line))return null;
-  const g=JSON.parse(JSON.stringify(f)),old=futureRebuyOf(f),r=editFutureRebuy(g),changed=line!==movingLineName(old.startLine)||endLine!==movingLineName(old.endLine)||endPrice!==(Number(old.endPrice)>0?Number(old.endPrice):null);
+  const g=JSON.parse(JSON.stringify(f)),old=futureRebuyOf(f),r=editFutureRebuy(g),changed=!!old.directPlan||line!==movingLineName(old.startLine)||endLine!==movingLineName(old.endLine)||endPrice!==(Number(old.endPrice)>0?Number(old.endPrice):null);
+  delete r.directPlan;
   const ensureLine=name=>{let stage=r.stages.find(x=>x.name===name);if(!stage){if(r.stages.length>=80)return null;stage={name,price:0,done:false,execPrice:null,contracts:null};r.stages.push(stage);}const price=maValue(entry,name);if(!(Number(stage.price)>0)&&price>0)stage.price=priceRound(price,2);return stage;};
   const stage=ensureLine(line);if(!stage)return null;
   r.startLine=line;
@@ -490,7 +533,7 @@ function setFutureBuyDone(f,i,t,on){
 // partial·plannedQty로 남은 계약을 그 회차에 두고(입력 때 생성, 손절 setFutureCutQty와 같음), 계획 이상이면 완료로 둔다. 옛 통째 기록은 계약 수만 고친다.
 function setFutureBuyQty(f,i,t,text){
   const qty=Number(text),s=futureRebuySummary(f),tr=s.tranches.find(y=>y.i===i&&y.t===t);
-  if(!(tr?.done||tr?.partial)||text.trim()===""||!Number.isInteger(qty)||qty<1||s.rebought-tr.qty+qty>s.sold)return false;
+  if(!(tr?.done||tr?.partial)||text.trim()===""||!Number.isInteger(qty)||qty<1||s.rebought-tr.qty+qty>s.sold||s.direct&&s.active.includes(i)&&s.directBought-tr.qty+qty>futureRebuyOf(f).directPlan.contracts)return false;
   const [rec,key]=futureFillRec(f,i,t),planned=rec.partial===true?futureRebuyQty(rec.plannedQty):futureRebuyQty(rec.contracts);
   rec.contracts=qty;if(key!=="price")return;
   delete rec.partial;delete rec.plannedQty;if(qty<planned)Object.assign(rec,{partial:true,plannedQty:planned});
