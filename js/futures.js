@@ -136,10 +136,72 @@ function lossCheck(f){
   return {price,pnl,held,contracts,invested:s.invested,avg:contracts?s.invested/(contracts*contractSize):null,rate:s.invested>0?held/s.invested:null,
     years:rollEstimate(f,contracts,pnl).years.map(y=>({...y,offset:pnl<0&&y.gain>0?y.gain/-pnl:null}))};
 }
+// 상단 환율 사다리 계산(화면 전용). futuresSummary·알림·수집 계산에 더하지 않고 저장 필드도 만들지 않는다.
+// 미매수 분할매수 = 가격 있는 미체결 회차(가격은 futuresSummary와 같음). 체결 방향은 알림(trade-alerts.js)과 같다:
+// 이동평균 종료 계획은 모든 회차, 그 밖은 이동평균선·종료가 회차가 환율 이상(up), 직접 입력 회차는 이하에서 체결.
+function futureLadderBuys(f){
+  return (f.levels||[]).flatMap((l,li)=>{const up=!!(f.buyPlan?.endLine||futureLineName(l)||l.planEnd);
+    return (l.tranches||[]).map((t,ti)=>t.completed?null:{up,price:f.buyPlan?.endLine?Number(t.price)||0:futureTranchePrice(f.levels,li,t,ti)});}).filter(x=>x&&x.price>0);
+}
+// 남은 손절 = rebuy.js futureCutPlan 회차의 남은 계약(futureCutRest). 신저점 손절 기준이 없으면 빈 목록.
+function futureLadderCuts(f){
+  return typeof futureCutPlan==="function"?futureCutPlan(f).map(c=>({price:Number(c.price),qty:futureCutRest(c)})).filter(c=>c.qty>0&&c.price>0):[];
+}
+// 분할매수 반영 손익: 환율 price까지 가는 동안 도달하는 미매수 회차를 각 회차 가격에 1계약씩 산다고 본다(일괄 매수 아님).
+// pnl = 그 환율의 기대손익(futuresSummary current) + Σ(price − 회차 가격) × 1만 달러, count = 체결 계약.
+function futureLadderBuyPnl(f,price,buys=futureLadderBuys(f)){
+  const hit=buys.filter(x=>x.up?price>=x.price:price<=x.price);
+  return {pnl:futuresSummary(f,price).current+hit.reduce((s,x)=>s+(price-x.price)*contractSize,0),count:hit.length};
+}
+// 손절 반영 손익: 환율 price까지 내리는 동안 도달하는 손절 회차를 회차 환율에 청산한다고 본다. 실현손익은 누적 정산손익으로 옮겨질 뿐이라
+// pnl = 기대손익 + Σ(회차 환율 − price) × 계약 × 1만 달러(손절 체크와 같은 계산), count = 손절 계약.
+function futureLadderCutPnl(f,price,cuts=futureLadderCuts(f)){
+  const hit=cuts.filter(c=>price<=c.price);
+  return {pnl:futuresSummary(f,price).current+hit.reduce((s,c)=>s+(c.price-price)*c.qty*contractSize,0),count:hit.reduce((n,c)=>n+c.qty,0)};
+}
+// 손익분기: pnlAt(환율)이 0원 이상(반올림)이 되는 가장 낮은 환율을 0.1원 단위로 올린다. 위 손익은 환율이 오를수록 줄지 않으므로
+// (보유·up 회차는 늘고, down 회차는 도달 전까지 0으로 이어짐) 0.1원~hi를 이분법으로 찾는다. hi에서도 손실이거나 0.1원에서 이미 이익이면 null.
+function futureLadderBreakeven(pnlAt,hi){
+  const ok=p=>pnlAt(p)>=-0.5;if(!ok(hi)||ok(0.1))return null;
+  let lo=0.1;for(let i=0;i<60;i++){const m=(lo+hi)/2;if(ok(m))hi=m;else lo=m;}
+  const p=Math.ceil(hi*10-1e-6)/10;return ok(p)?p:Math.round(p*10+1)/10;
+}
+// 사다리 행: 목표 환율·보유 평균·지금(now)·확인 환율(lossPrice)·손절 하단(남은 손절 중 가장 낮은 회차)과 손익분기 표시(보유만·분할매수)를 환율 높은 순으로.
+// pnl = 그 환율의 기대손익. sub = 지금보다 높은 행은 분할매수 반영, 낮은 행은 손절 반영 손익(체결 계약 0이면 없음). 지금 행·손익분기는 sub 없음.
+// 시세가 없으면 보유 평균을 기준으로 나누고, 그것도 없으면 체결이 있는 쪽을 쓴다.
+// zone(축·점 색) = 보유만·분할매수 손익이 모두 0 이상 g, 하나만 w, 둘 다 손실 r. 손익분기 표시는 위(top)·아래(bottom) 색을 따로 둔다.
+function futureLadder(f,now=null){
+  const s=futuresSummary(f),contracts=s.posContracts+s.legacyCount,avg=contracts?s.invested/(contracts*contractSize):null,buys=futureLadderBuys(f),cuts=futureLadderCuts(f);
+  const held=p=>futuresSummary(f,p).current,buy=p=>futureLadderBuyPnl(f,p,buys),cut=p=>futureLadderCutPnl(f,p,cuts),ref=now>0?now:avg;
+  const zone=p=>{const a=held(p)>=-0.5,b=buy(p).pnl>=-0.5;return a&&b?"g":a||b?"w":"r";};
+  const hi=Math.max(Number(f.targetPrice)||0,now||0,avg||0,...buys.map(x=>x.price))*2+1000,beHeld=contracts?futureLadderBreakeven(held,hi):null,beBuy=buys.length?futureLadderBreakeven(p=>buy(p).pnl,hi):null;
+  const subOf=p=>{const b=buy(p),c=cut(p),dir=ref>0?p>ref?"buy":p<ref?"cut":"":b.count?"buy":"cut";
+    return dir==="buy"&&b.count?{type:"buy",count:b.count,pnl:b.pnl}:dir==="cut"&&c.count?{type:"cut",count:c.count,pnl:c.pnl}:null;};
+  const order=["target","be-held","be-buy","avg","now","check","floor"];
+  const rows=[{kind:"target",price:Number(f.targetPrice)},...(avg?[{kind:"avg",price:avg,contracts}]:[]),...(now>0?[{kind:"now",price:now}]:[]),{kind:"check",price:lossPriceOf(f)},
+    ...(cuts.length?[{kind:"floor",price:Math.min(...cuts.map(c=>c.price)),rounds:cuts.length}]:[])].map(r=>({...r,pnl:held(r.price),sub:r.kind==="now"?null:subOf(r.price),top:zone(r.price),bottom:zone(r.price)}));
+  const marks=[...(beHeld!=null?[{kind:"be-held",price:beHeld}]:[]),...(beBuy!=null&&beBuy!==beHeld?[{kind:"be-buy",price:beBuy}]:[])].map(m=>({...m,top:zone(m.price),bottom:zone(m.price-0.1)}));
+  return {rows:[...rows,...marks].sort((a,b)=>b.price-a.price||order.indexOf(a.kind)-order.indexOf(b.kind)),beHeld,beBuy,unpriced:s.unpriced};
+}
+// 상단 환율 사다리 화면: 축·점으로 행을 그리고, 손익분기는 점선 표시(지금과의 거리), 지금 행은 시세 시각(futureQuoteTime, 수집 날짜·시각은 위 '최근 수집'에 있음).
+// 지금 = prices.js priceMonth 월물(보유 근월물, 손절로 보유를 모두 팔았으면 마지막 손절 월물 또는 그 다음 월물)의 달러선물 시세. 현물 환율(fx.USDKRW)은 쓰지 않고 월물 이름은 툴팁에만 둔다.
+// 확인 환율은 점선 가격을 눌러 그 자리에서 고친다(#flossPrice 저장은 renderFutures). 시세가 없으면 지금 행 대신 futureQuote 안내를 보인다.
+function futureLadderHtml(f,fe){
+  const now=Number(fe?.close)>0?Number(fe.close):null,{rows,unpriced}=futureLadder(f,now),zone={g:"var(--good)",w:"var(--warn)",r:"var(--danger)"};
+  const sign=v=>`${Math.round(v)>0?"+":""}${won.format(Math.round(v))}`,axis=r=>` style="--top:${zone[r.top]};--bottom:${zone[r.bottom]}"`;
+  const nowText=()=>{const prices=typeof priceData==="object"?priceData:null,q=futureQuoteTime(fe,prices?.updatedAt),text=esc(q.text.replace(/^\d{1,2}\/\d{1,2} \d{2}:\d{2} 수집 · /,"")).replace("지연",'<b class="future-ladder-late">지연</b>');
+    return `<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(priceMonth(f,prices))} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다.">지금 · ${text}</span>`;};
+  const label=r=>r.kind==="now"?nowText():esc({target:"목표 환율",avg:`보유 평균 · ${r.contracts}계약`,check:"확인 환율",floor:`손절 하단 · ${r.rounds}회`}[r.kind]);
+  const price=r=>r.kind==="check"?`<label class="future-tap-price future-ladder-edit" title="확인 환율 수정"><span class="price" aria-hidden="true">${fmtPrice(r.price)}원</span>${PENCIL}<input id="flossPrice" type="number" min="0" step="any" inputmode="decimal" value="${shown(r.price)}" aria-label="손익을 확인할 환율 (원)"></label>`:`${fmtPrice(r.price)}원`;
+  const sub=x=>x?`<small>${x.type==="buy"?`분할매수 ${x.count}계약 체결`:`손절 ${x.count}계약 반영`} ${sign(x.pnl)}</small>`:"";
+  const row=r=>r.kind.startsWith("be-")?`<div class="future-ladder-mark is-${r.kind}"${axis(r)}><i></i><span><b>${fmtPrice(r.price)}원</b> 손익분기 · ${r.kind==="be-held"?"보유만":"분할매수"}${now?` <em>${r.price>now?"+":""}${(r.price-now).toFixed(1)}원</em>`:""}</span></div>`
+    :`<div class="future-ladder-row is-${r.kind}"${axis(r)}><i></i><div class="future-ladder-l"><b>${price(r)}</b><small>${label(r)}</small></div><div class="future-ladder-r"><strong${Math.round(r.pnl)<0?' class="neg"':""}>${sign(r.pnl)}원</strong>${sub(r.sub)}</div></div>`;
+  return `<section class="card future-ladder" id="futureLadder" aria-label="환율별 총손익"><div class="future-ladder-head"><span>환율 · 기준</span><span>총손익 · 누적 정산 포함</span></div>${futureQuote(f,fe)}<div class="future-ladder-rows">${rows.map(row).join("")}</div>${unpriced?`<p class="future-ladder-hint">가격 미입력 ${unpriced}계약은 분할매수 계산에서 뺍니다.</p>`:""}</section>`;
+}
 // 매수 완료 접기는 화면 상태만 유지하며 저장·동기화하지 않는다.
 let futureCompletedOpen=false;
 
-// 상단 현재가 줄의 시세 시각(화면 전용, 시세 조회 없음). 시세 파일에는 체결 시각이 없어 파일 수집 시각(updatedAt)을 한국 시간으로 쓴다.
+// 환율 사다리 '지금' 행의 시세 시각(화면 전용, 시세 조회 없음). 시세 파일에는 체결 시각이 없어 파일 수집 시각(updatedAt)을 한국 시간으로 쓴다.
 // 조회 실패(stale)면 기준일의 마지막 값, 기준일이 수집일보다 앞서면(휴장 등) 그날 종가로 표시한다.
 // 실시간 시세가 아니므로 수집 후 FUTURE_QUOTE_DELAY_MIN분이 지나면 '지연'을 붙인다. old = 경고색(조회 실패·기준일 PRICE_STALE_DAYS일 초과).
 const FUTURE_QUOTE_DELAY_MIN = 60;
@@ -151,14 +213,10 @@ function futureQuoteTime(fe, updatedAt, now=new Date()){
   const min=Math.max(0,Math.floor((now-at)/6e4)),delayed=min>=FUTURE_QUOTE_DELAY_MIN,ago=min<1?"방금":min<60?`${min}분 전`:min<1440?`${Math.floor(min/60)}시간 전`:`${Math.floor(min/1440)}일 전`;
   return {text:`${md(kst)} ${kst.slice(11)} 수집 · ${ago}${delayed?" · 지연":""}`,old,delayed};
 }
-// 제목 아래 현재가: prices.js priceMonth 월물(보유 근월물, 손절로 보유를 모두 팔았으면 마지막 손절 월물 또는 그 다음 월물)의 달러선물 시세.
-// 현물 환율(fx.USDKRW)은 쓰지 않는다. 월물 이름은 보유·계산 기준 줄에 있으므로 가격 줄에는 붙이지 않고 시각 툴팁에만 둔다.
+// 환율 사다리의 시세 안내: 보유 월물이 없거나 그 월물 시세가 없을 때만 문구를 돌려준다(있으면 "" — 사다리 '지금' 행이 현재가를 보인다).
 function futureQuote(f,fe){
-  const near=priceMonth(f,typeof priceData==="object"?priceData:null);
-  if(!near)return tradeQuoteLine({round:"보유 월물을 입력하면 현재가를 표시합니다."});
-  if(!fe||!(Number(fe.close)>0))return tradeQuoteLine({round:"시세 없음 · 시세를 불러오면 표시합니다."});
-  const q=futureQuoteTime(fe,priceData?.updatedAt);
-  return tradeQuoteLine({now:`${fmtPrice(fe.close)}원`,round:`<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(near)} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다.">${q.text}</span>`});
+  if(!priceMonth(f,typeof priceData==="object"?priceData:null))return tradeQuoteLine({round:"보유 월물을 입력하면 현재가를 표시합니다."});
+  return !fe||!(Number(fe.close)>0)?tradeQuoteLine({round:"시세 없음 · 시세를 불러오면 표시합니다."}):"";
 }
 
 function futureBuyTable(f){
@@ -186,14 +244,16 @@ function futureBuyTable(f){
 function renderFutures(){
   const f=state.futures;refreshFutureBuyPrices(f);const s=futuresSummary(f),target=decimal.format(f.targetPrice),near=nearestMonth(f),months=[...new Set(f.positions.map(p=>String(p.month)).filter(monthOk))].sort();
   const open=id=>$(id)?.open?' open':"",positionOpen=open("futurePositions");
-  // 마우스 PC에서만 접기 없는 섹션을 쓰고, 터치 기기의 기존 표시·펼침 상태는 유지한다(theme.js와 같은 기기 구분).
+  // 월물교체 장기 예상: 마우스 PC에서만 접기 없는 카드, 터치 기기는 접어 두고 펼침 상태를 유지한다(theme.js와 같은 기기 구분).
+  // 목표 환율 기대수익(rollEstimate)과 확인 환율 손익(lossCheck, 손실 상쇄 비율)에 교체 이득을 더한 총손익을 연도별로 보인다.
   const desktop=typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches;
-  const estimate=(id,title,body)=>desktop?`<section class="future-estimate" id="${id}"><h3>${title}</h3>${body}</section>`:`<details class="future-estimate" id="${id}"${open(id)}><summary>${title}</summary>${body}</details>`;
-  const roll=rollEstimate(f,s.posContracts+s.legacyCount,s.current),fe=futuresEntry(priceData,f),loss=lossCheck(f),pct=v=>`${v>0?"+":""}${(v*100).toFixed(2)}%`,offsetText=o=>o==null?"":` · ${o>=1?"손실 전부 상쇄":`${Math.round(o*100)}% 상쇄`}`,extraText=y=>y.investedExtra==null?"":` · +${(y.investedExtra*100).toFixed(1)}%`;
-  const lossCard=`<div class="metric"><label class="loss-head">환율<input id="flossPrice" type="number" step="1" min="0" value="${shown(loss.price)}" title="손익을 확인할 환율 (원)">원 도달 시 손익</label><strong class="${loss.pnl<0?"neg":""}">${money(loss.pnl)}</strong><small>${loss.contracts?`보유 ${loss.contracts}계약 · 평균 ${decimal.format(loss.avg)}원 대비 <b class="loss-rate${loss.rate<0?" neg":""}">${loss.rate==null?"—":pct(loss.rate)}</b>`:"보유 계약 없음"}</small>${estimate("futureLossRollDetails","월물교체로 상쇄 · 총 손익",`<div class="roll-est"><div class="roll-est-head"><span>스프레드 ${shown(roll.spread)}원 기준</span></div><div class="roll-est-years">${loss.years.map(y=>`<div><small>${y.years}년 후${offsetText(y.offset)}</small><strong>${money(y.total)}</strong></div>`).join("")}</div></div>`)}</div>`;
-  const rollEst=estimate("futureRollDetails","월물교체 장기 예상",`<div class="roll-est"><div class="roll-est-head"><label>스프레드<input id="frollSpread" type="text" inputmode="numeric" autocomplete="off" value="${shown(roll.spread)}" title="원월물 − 근월물 (원)">원</label></div><div class="roll-est-years">${roll.years.map(y=>`<div><small>${y.years}년 후${extraText(y)}</small><strong>${money(y.total)}</strong></div>`).join("")}</div></div>`);
+  const roll=rollEstimate(f,s.posContracts+s.legacyCount,s.current),fe=futuresEntry(priceData,f),loss=lossCheck(f),offsetText=o=>o==null?"":` · ${o>=1?"손실 전부 상쇄":`${Math.round(o*100)}% 상쇄`}`,extraText=y=>y.investedExtra==null?"":` · +${(y.investedExtra*100).toFixed(1)}%`;
+  const years=(title,list,extra)=>`<p class="future-roll-title">${title}</p><div class="roll-est-years">${list.map(y=>`<div><small>${y.years}년 후${extra(y)}</small><strong>${money(y.total)}</strong></div>`).join("")}</div>`;
+  const rollBody=`<div class="roll-est"><div class="roll-est-head"><label>스프레드<input id="frollSpread" type="text" inputmode="numeric" autocomplete="off" value="${shown(roll.spread)}" title="원월물 − 근월물 (원)">원</label><span>원월물 − 근월물</span></div>${years(`목표 ${target}원 기대수익 + 교체 이득`,roll.years,extraText)}${years(`확인 ${decimal.format(loss.price)}원 손익 + 교체 이득`,loss.years,y=>offsetText(y.offset))}</div>`;
+  const rollHead=`<strong>월물교체 장기 예상</strong><span>스프레드 ${shown(roll.spread)}원 · 1년 ${roll.years[0].gain>0?"+":""}${money(roll.years[0].gain)}</span>`;
+  const rollCard=desktop?`<section class="card future-roll" id="futureRollDetails"><div class="future-roll-head">${rollHead}</div>${rollBody}</section>`:`<details class="card future-roll" id="futureRollDetails"${open("futureRollDetails")}><summary class="future-roll-head">${rollHead}</summary>${rollBody}</details>`;
   const positions=`<details class="card future-position-settings" id="futurePositions"${positionOpen}><summary><strong>보유·계산 기준</strong><span>${s.posContracts}계약${near?` · 근월물 ${esc(near)}`:""}</span></summary><div class="panel future-panel"><div class="inline-fields"><label class="field"><span>목표 환율</span><input id="ftarget" type="number" step="0.1" value="${esc(f.targetPrice)}"></label><label class="field"><span>누적 정산손익 (원)</span><input id="fpnl" type="text" inputmode="numeric" autocomplete="off" value="${esc(f.baselinePnl)}"></label></div><div class="future-panel-head" style="margin-top:18px"><h2>보유 월물</h2><button class="btn mini" id="addPosition" type="button">＋ 월물 추가</button></div><div class="positions">${f.positions.map((p,i)=>`<div class="position-row"><label>월물<input data-pos="${i}" data-key="month" value="${esc(p.month)}" inputmode="numeric" maxlength="6" required aria-describedby="futurePositionError${i}month"></label><label>계약 수<input data-pos="${i}" data-key="contracts" type="number" min="0" step="1" inputmode="numeric" required value="${esc(p.contracts)}" aria-describedby="futurePositionError${i}contracts"></label><label>단순평균가<input data-pos="${i}" data-key="settlementPrice" type="number" min="0" step="any" inputmode="decimal" required value="${futureShown(p.settlementPrice)}" aria-describedby="futurePositionError${i}settlementPrice"></label><button class="remove" data-remove-pos="${i}" type="button" aria-label="${esc(p.month)} 보유 월물 삭제">삭제</button>${["month","contracts","settlementPrice"].map(key=>`<p class="future-position-error" id="futurePositionError${i}${key}" role="alert"></p>`).join("")}</div>`).join("")}</div></div></details>`;
-  $("futuresView").innerHTML=`<div class="heading"><div><div class="eyebrow">USD/KRW FUTURES · 로컬 저장</div><h1>달러선물 매매 계획</h1>${futureQuote(f,fe)}</div></div><div class="metrics card future-overview"><div class="metric"><label>환율 ${target}원 기대수익</label><strong>${money(s.current)}</strong><small>보유 ${s.posContracts}계약 + 누적 정산손익${s.legacyCount?` + 월물 밖 매수 ${s.legacyCount}계약`:""}</small>${rollEst}</div>${lossCard}<div class="metric"><label>계획 전부 체결 가정</label><strong>${money(s.projected)}</strong><small>현재 + 미매수 계획 ${s.openCount}계약${s.unpriced?` (가격 미입력 ${s.unpriced}계약 제외)`:""} · 계획 평균 ${s.avg?decimal.format(s.avg):"—"}원</small></div></div>${futurePositionUndoNotice(f)}${positions}<div id="futureRebuyPanel" class="rebuy"></div>${s.legacyCount?`<div class="warning">월물 밖 매수 ${s.legacyCount}계약이 있습니다. 완료 회차를 펼쳐 체크를 풀고 월물을 지정한 뒤 다시 체크하면 보유 월물에 편입합니다. 이미 보유 월물에 직접 입력한 계약은 중복되지 않았는지 확인하세요.</div>`:""}${fe?priceWarning(fe,`달러선물 ${esc(near)}`):""}<datalist id="posMonths">${months.map(m=>`<option value="${m}">`).join("")}</datalist>${futureBuyTable(f)}<section class="card panel memo"><div class="memo-head"><h2>달러선물 메모</h2><span class="memo-count">${memoCount(f.note)}</span><button class="btn mini" id="fSave" type="button">저장</button></div><textarea id="fNote" maxlength="4000" aria-label="달러선물 메모">${esc(f.note||"")}</textarea></section>`;
+  $("futuresView").innerHTML=`<div class="future-top">${futureLadderHtml(f,fe)}${rollCard}</div>${futurePositionUndoNotice(f)}${positions}<div id="futureRebuyPanel" class="rebuy"></div>${s.legacyCount?`<div class="warning">월물 밖 매수 ${s.legacyCount}계약이 있습니다. 완료 회차를 펼쳐 체크를 풀고 월물을 지정한 뒤 다시 체크하면 보유 월물에 편입합니다. 이미 보유 월물에 직접 입력한 계약은 중복되지 않았는지 확인하세요.</div>`:""}${fe?priceWarning(fe,`달러선물 ${esc(near)}`):""}<datalist id="posMonths">${months.map(m=>`<option value="${m}">`).join("")}</datalist>${futureBuyTable(f)}<section class="card panel memo"><div class="memo-head"><h2>달러선물 메모</h2><span class="memo-count">${memoCount(f.note)}</span><button class="btn mini" id="fSave" type="button">저장</button></div><textarea id="fNote" maxlength="4000" aria-label="달러선물 메모">${esc(f.note||"")}</textarea></section>`;
   if(typeof bindTradeFuturesAlerts==="function")bindTradeFuturesAlerts(f);
   $("editFuturePlan").onclick=openFuturePlanDialog;if($("startFuturePlan"))$("startFuturePlan").onclick=openFuturePlanDialog;
   const completedToggle=$("toggleCompletedFutureBuys");if(completedToggle)completedToggle.onclick=()=>{futureCompletedOpen=!futureCompletedOpen;$("futureBuyTable").classList.toggle("hide-completed",!futureCompletedOpen);completedToggle.setAttribute("aria-expanded",String(futureCompletedOpen));completedToggle.querySelector("[data-completed-action]").textContent=futureCompletedOpen?"접기":"펼치기";};

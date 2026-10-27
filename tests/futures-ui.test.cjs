@@ -89,7 +89,7 @@ test('기준선 전체 알림을 직접 선택하면 같은 기본값도 회차 
   assert.equal(ctx.applyFuturePlanEdits(f,base,invalid,[0]),false);assert.equal(JSON.stringify(f),before);
 });
 
-test('제목 아래 현재가는 보유 근월물 선물 시세와 수집 시각·지연·조회 실패를 구분한다',()=>{
+test('환율 사다리 지금 행은 보유 근월물 선물 시세와 수집 시각·지연·조회 실패를 구분한다',()=>{
   const ctx=vm.createContext({contractSize:10000,esc:v=>String(v)});
   vm.runInContext(['prices.js','ma-ladder.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n'),ctx);
   const at='2026-10-16T01:40:00Z',now=new Date('2026-10-16T02:05:00Z'),fe={kind:'선물',asOf:'2026-10-16',close:1385.2,ma:{}};
@@ -100,11 +100,15 @@ test('제목 아래 현재가는 보유 근월물 선물 시세와 수집 시각
   assert.equal(ctx.futureQuoteTime(fe,'',now).text,'10/16 기준');
   // 시세 파일의 현물 환율이 있어도 선물 월물 시세만 쓰고, 보유 월물이 없으면 안내만 한다.
   ctx.priceData={updatedAt:at,stocks:{},fx:{USDKRW:{kind:'현물환율',asOf:'2026-10-16',close:1370,ma:{}}},futures:{'202611':fe}};
-  const f={positions:[{month:'202612',contracts:0,settlementPrice:1},{month:'202611',contracts:2,settlementPrice:1380}]};
-  const html=ctx.futureQuote(f,ctx.priceData.futures[ctx.priceMonth(f)]);
-  assert.match(html,/quote-now">1,385\.2원<.*10\/16 10:40 수집/);assert.doesNotMatch(html,/근월물/);assert.match(html,/title="[^"]*202611/);assert.doesNotMatch(html,/1,370/);
+  Object.assign(ctx,{won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),shown:v=>String(v),PENCIL:''});
+  const f={targetPrice:1480,baselinePnl:0,levels:[],positions:[{month:'202612',contracts:0,settlementPrice:1},{month:'202611',contracts:2,settlementPrice:1380}]};
+  const html=ctx.futureLadderHtml(f,ctx.priceData.futures[ctx.priceMonth(f)]);
+  assert.match(html,/<b>1,385\.2원<\/b><small><span class="future-quote-time( old)?" title="[^"]*202611[^"]*">지금 · \d+(분|시간|일) 전/);
+  assert.doesNotMatch(html,/근월물|1,370|10\/16 10:40 수집/,'수집 날짜·시각은 위 최근 수집 줄에만 두고 현물 환율은 쓰지 않는다');
+  assert.equal(ctx.futureQuote(f,ctx.priceData.futures['202611']),'','시세가 있으면 안내 없이 사다리 지금 행으로 보인다');
   assert.match(ctx.futureQuote({positions:[]},null),/보유 월물을 입력하면/);
   assert.match(ctx.futureQuote(f,null),/시세 없음/);
+  assert.match(ctx.futureLadderHtml(f,null),/시세 없음[^]*1,480원/,'시세가 없으면 지금 행 대신 안내를 보이고 나머지 행은 그린다');
 });
 
 test('달러선물 가격 글자·입력칸은 소수 첫째 자리까지만 보이고 기록한 가격은 그대로 둔다',()=>{
