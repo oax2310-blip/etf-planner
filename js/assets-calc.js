@@ -267,6 +267,9 @@ function purchaseQuoteKind(ticker){
 }
 // 분할매수 회차 휴대폰 알림 규칙(js/trade-alerts.js buildTradeAlertRules와 같은 모양): 종목 코드가 있고 가격이 있는 미완료 회차 중 알림을 켠 것.
 // quiet=true(수집 작업만)면 알림을 끈 미완료 회차도 notify:false로 더한다(도달 알림 없이 미체결 재알림만). 체결이 없는 매수대기는 켤 때만.
+// 매수 회차는 계획 순서대로 바로 앞 미완료 회차의 id를 after에 넣는다(완료 회차·이동평균선 돌파의 실제 매수 수량 0인 회차는 제외, 알림 OFF는 포함).
+// 수집기는 선행 회차의 가격 도달을 기억한 뒤 후행 최초·재도달·재알림을 허용한다. 전량 체결을 기다리지 않으며 한 시세에서 여러 회차 도달도 가능하다.
+// 도달 후 가격이 되돌아가도 순서 해제 이력은 유지한다. 가격 없는 미완료 회차는 후행을 막으며 매수대기에는 순서 제한을 두지 않는다.
 // 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다.
 // 이동평균선 돌파 회차는 지금 이동평균 가격으로(이력은 단계 이름·회차로 이어져 이평선이 움직여도 다시 알리지 않음), 직접 입력 회차는 가격·방향을 바꾸면 이력이 새로.
 // 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py가 이동평균선 돌파·매수대기 종목(purchase_line_plans)은 선택한 선의 전체 시세·60분봉을,
@@ -277,7 +280,10 @@ function purchaseAlertRules(assets, prices, quiet=false){
   for(const g of Array.isArray(assets?.allocation?.groups)?assets.allocation.groups:[])for(const it of Array.isArray(g?.items)?g.items:[]){
     const plan=it?.buyPlan, ticker=String(it?.ticker||"").trim().toUpperCase(), kind=purchaseQuoteKind(ticker);
     if(!plan||!kind||!it.id||(plan.currency||assetQuote(prices,ticker)?.currency||"KRW")!==(kind==="국내"?"KRW":"USD"))continue;
-    const add=(key,label,price,condition,revision,on=true)=>rules.push({id:`trade:buy:${it.id}:${key}`,kind:"trade",ticker,label,targetPrice:price,condition,quoteGroup:"stocks",quoteKey:ticker,quoteKind:kind,enabled:true,revision:JSON.stringify(revision),...(on?{}:{notify:false})});
+    const ruleId=key=>`trade:buy:${it.id}:${key}`;
+    const add=(key,label,price,condition,revision,on=true,after=null)=>rules.push({id:ruleId(key),kind:"trade",ticker,label,targetPrice:price,condition,quoteGroup:"stocks",quoteKey:ticker,quoteKind:kind,enabled:true,revision:JSON.stringify(revision),...(on?{}:{notify:false}),...(after?{after}:{})});
+    let after=null;
+    const addRound=(key,label,price,condition,revision,on)=>{if(price&&(on||quiet))add(key,label,price,condition,revision,on,after);after=ruleId(key);};
     if(plan.wait){
       const entry=prices?.stocks?.[ticker], info=purchaseWaitInfo(plan,entry?.kind===kind?entry:null);
       if(["국내","해외"].includes(kind)&&info.price&&purchaseAlertOn(plan,{key:"wait"}))
@@ -287,17 +293,18 @@ function purchaseAlertRules(assets, prices, quiet=false){
     if(plan.lines){
       const entry=prices?.stocks?.[ticker];
       const trade={item:it,target:purchaseTargets(assets?.allocation,prices,it,plan)[0]?.it||it,allocation:assets?.allocation,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
-      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade)){const on=purchaseAlertOn(plan,r);
-        if(!r.done&&r.price&&(on||quiet)&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency,trade.target)?.shares!==0))
-          add(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next],on);}
+      for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade)){
+        if(!r.done&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency,trade.target)?.shares!==0))
+          addRound(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next],purchaseAlertOn(plan,r));}
       continue;
     }
     const condition=purchaseDirection(plan);
-    (Array.isArray(plan.stages)?plan.stages:[]).forEach((s,i)=>{
-      const price=plus(s?.price);
-      const on=purchaseAlertOn(plan,s);
-      if(price&&!s.done&&s.id&&(on||quiet))add(s.id,`분할매수 ${i+1}차`,price,condition,[price,condition],on);
-    });
+    for(const [i,s] of (Array.isArray(plan.stages)?plan.stages:[]).entries()){
+      if(s?.done)continue;
+      if(!s?.id)break;
+      const price=plus(s.price);
+      addRound(s.id,`분할매수 ${i+1}차`,price,condition,[price,condition],purchaseAlertOn(plan,s));
+    }
   }
   return rules;
 }
