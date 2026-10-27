@@ -118,14 +118,21 @@ function buildTradeAlertRules(data,priceDoc,quiet=false){
     }
     const basisOf=level=>{const name=futureLineName(level),mark=Number(f.auto?.[name]);return name?[name,Number(level.price)>0&&(!(mark>0)||Number(level.price)!==mark)?Number(level.price):null]:[Number(level.price)];};
     const prices=line?futureBuyPrices(f.levels,i):[Number(l.price)];
-    for(const [t,price] of prices.entries()){
-      // 같은 가격 회차에 여러 계약이 있으면 알림을 켠 미완료 계약이 하나라도 있을 때 기존 회차 id로 한 번 알린다(모두 껐으면 quiet 규칙).
-      // 계약 수가 없는 기준선의 옛 알림 설정은 그대로 유지한다.
-      const open=tr.filter((x,ti)=>!x.completed&&(prices.length===1||futureTrancheSlot(l,x,ti)===t));
-      const on=Number(l.contracts)>0?open.some(x=>tradeFutureTrancheEnabled(f,l,x)):tradeLevelEnabled(f,l);
-      if(!on&&!(Number(l.contracts)>0&&open.length))continue;
-      const basis=[direction,...basisOf(l),...(t?[t,...basisOf(next.level)]:[])];
-      add(`trade:future:${i}${t?`:${t+1}`:""}`,month,`달러선물 ${name}${t?` ${t+1}차`:""}`,price,direction,basis,"futures","달러선물",on);
+    for(const [t,price] of (prices.length?prices:[0]).entries()){
+      // 같은 회차·실효 매수가별로 묶어 ON 계약이 하나라도 있으면 한 번 알린다(OFF만 남으면 quiet 규칙).
+      // 직접 수정가만 별도 id·이력을 쓰며, 기본가와 겹치면 기존 회차 알림에 합친다. 계약 수 없는 옛 기준선 알림은 유지한다.
+      const groups=new Map();
+      if(Number(l.contracts)>0)tr.forEach((x,ti)=>{
+        if(x.completed||prices.length>1&&futureTrancheSlot(l,x,ti)!==t)return;
+        const value=line?futureTranchePrice(f.levels,i,x,ti):price,manual=!!line&&Number(x.priceOverride)>0,on=tradeFutureTrancheEnabled(f,l,x),group=groups.get(value);
+        if(group){group.on||=on;group.manual&&=manual;}
+        else groups.set(value,{on,manual});
+      });
+      else if(tradeLevelEnabled(f,l))groups.set(price,{on:true,manual:false});
+      for(const [value,group] of groups){
+        const basis=group.manual?[direction,name,t,"manual",value]:[direction,...basisOf(l),...(t?[t,...basisOf(next.level)]:[])];
+        add(`trade:future:${i}${t?`:${t+1}`:""}${group.manual?`:manual:${value}`:""}`,month,`달러선물 ${name}${t?` ${t+1}차`:""}`,value,direction,basis,"futures","달러선물",group.on);
+      }
     }
   }
   if(f?.rebuy&&month){
