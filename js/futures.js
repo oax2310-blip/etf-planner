@@ -169,34 +169,34 @@ function futureLadderBreakeven(pnlAt,hi){
 // 사다리 행: 목표 환율·보유 평균·지금(now)·확인 환율(lossPrice)·손절 하단(남은 손절 중 가장 낮은 회차)과 손익분기 표시(보유만·분할매수)를 환율 높은 순으로.
 // pnl = 그 환율의 기대손익. sub = 지금보다 높은 행은 분할매수 반영, 낮은 행은 손절 반영 손익(체결 계약 0이면 없음). 지금 행·손익분기는 sub 없음.
 // 시세가 없으면 보유 평균을 기준으로 나누고, 그것도 없으면 체결이 있는 쪽을 쓴다.
-// zone(축·점 색) = 보유만·분할매수 손익이 모두 0 이상 g, 하나만 w, 둘 다 손실 r. 손익분기 표시는 위(top)·아래(bottom) 색을 따로 둔다.
 function futureLadder(f,now=null){
   const s=futuresSummary(f),contracts=s.posContracts+s.legacyCount,avg=contracts?s.invested/(contracts*contractSize):null,buys=futureLadderBuys(f),cuts=futureLadderCuts(f);
   const held=p=>futuresSummary(f,p).current,buy=p=>futureLadderBuyPnl(f,p,buys),cut=p=>futureLadderCutPnl(f,p,cuts),ref=now>0?now:avg;
-  const zone=p=>{const a=held(p)>=-0.5,b=buy(p).pnl>=-0.5;return a&&b?"g":a||b?"w":"r";};
   const hi=Math.max(Number(f.targetPrice)||0,now||0,avg||0,...buys.map(x=>x.price))*2+1000,beHeld=contracts?futureLadderBreakeven(held,hi):null,beBuy=buys.length?futureLadderBreakeven(p=>buy(p).pnl,hi):null;
   const subOf=p=>{const b=buy(p),c=cut(p),dir=ref>0?p>ref?"buy":p<ref?"cut":"":b.count?"buy":"cut";
     return dir==="buy"&&b.count?{type:"buy",count:b.count,pnl:b.pnl}:dir==="cut"&&c.count?{type:"cut",count:c.count,pnl:c.pnl}:null;};
   const order=["target","be-held","be-buy","avg","now","check","floor"];
   const rows=[{kind:"target",price:Number(f.targetPrice)},...(avg?[{kind:"avg",price:avg,contracts}]:[]),...(now>0?[{kind:"now",price:now}]:[]),{kind:"check",price:lossPriceOf(f)},
-    ...(cuts.length?[{kind:"floor",price:Math.min(...cuts.map(c=>c.price)),rounds:cuts.length}]:[])].map(r=>({...r,pnl:held(r.price),sub:r.kind==="now"?null:subOf(r.price),top:zone(r.price),bottom:zone(r.price)}));
-  const marks=[...(beHeld!=null?[{kind:"be-held",price:beHeld}]:[]),...(beBuy!=null&&beBuy!==beHeld?[{kind:"be-buy",price:beBuy}]:[])].map(m=>({...m,top:zone(m.price),bottom:zone(m.price-0.1)}));
+    ...(cuts.length?[{kind:"floor",price:Math.min(...cuts.map(c=>c.price)),rounds:cuts.length}]:[])].map(r=>({...r,pnl:held(r.price),sub:r.kind==="now"?null:subOf(r.price)}));
+  const marks=[...(beHeld!=null?[{kind:"be-held",price:beHeld}]:[]),...(beBuy!=null&&beBuy!==beHeld?[{kind:"be-buy",price:beBuy}]:[])];
   return {rows:[...rows,...marks].sort((a,b)=>b.price-a.price||order.indexOf(a.kind)-order.indexOf(b.kind)),beHeld,beBuy,unpriced:s.unpriced};
 }
-// 상단 환율 사다리 화면: 축·점으로 행을 그리고, 손익분기는 점선 표시(지금과의 거리), 지금 행은 시세 시각(futureQuoteTime, 수집 날짜·시각은 위 '최근 수집'에 있음).
+// 상단 환율 사다리 화면: 가는 세로선 하나에 작은 점으로 행을 놓고, 손익분기는 마름모 한 줄(지금과의 거리), 지금 행은 시세 시각(futureQuoteTime, 수집 날짜·시각은 위 '최근 수집'에 있음).
 // 지금 = prices.js priceMonth 월물(보유 근월물, 손절로 보유를 모두 팔았으면 마지막 손절 월물 또는 그 다음 월물)의 달러선물 시세. 현물 환율(fx.USDKRW)은 쓰지 않고 월물 이름은 툴팁에만 둔다.
-// 확인 환율은 점선 가격을 눌러 그 자리에서 고친다(#flossPrice 저장은 renderFutures). 시세가 없으면 지금 행 대신 futureQuote 안내를 보인다.
+// 아래 줄 손익은 회차 가격의 소수 때문에 끝자리가 흩어져 100원 단위로 반올림해 보인다(큰 숫자는 그대로).
+// 확인 환율은 가격을 눌러 그 자리에서 고친다(#flossPrice 저장은 renderFutures). 시세가 없으면 지금 행 대신 futureQuote 안내를 보인다.
+// 세로선은 목록 전체에 한 줄로 긋고, 첫·끝 행 점 중심(행 종류별 높이의 절반, CSS와 맞춤)에서 시작·끝낸다.
 function futureLadderHtml(f,fe){
-  const now=Number(fe?.close)>0?Number(fe.close):null,{rows,unpriced}=futureLadder(f,now),zone={g:"var(--good)",w:"var(--warn)",r:"var(--danger)"};
-  const sign=v=>`${Math.round(v)>0?"+":""}${won.format(Math.round(v))}`,axis=r=>` style="--top:${zone[r.top]};--bottom:${zone[r.bottom]}"`;
+  const now=Number(fe?.close)>0?Number(fe.close):null,{rows,unpriced}=futureLadder(f,now);
+  const sign=v=>`${Math.round(v)>0?"+":""}${won.format(Math.round(v))}`,half=r=>r?r.kind.startsWith("be-")?15:r.kind==="now"?30:26:0;
   const nowText=()=>{const prices=typeof priceData==="object"?priceData:null,q=futureQuoteTime(fe,prices?.updatedAt),text=esc(q.text.replace(/^\d{1,2}\/\d{1,2} \d{2}:\d{2} 수집 · /,"")).replace("지연",'<b class="future-ladder-late">지연</b>');
     return `<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(priceMonth(f,prices))} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다.">지금 · ${text}</span>`;};
   const label=r=>r.kind==="now"?nowText():esc({target:"목표 환율",avg:`보유 평균 · ${r.contracts}계약`,check:"확인 환율",floor:`손절 하단 · ${r.rounds}회`}[r.kind]);
   const price=r=>r.kind==="check"?`<label class="future-tap-price future-ladder-edit" title="확인 환율 수정"><span class="price" aria-hidden="true">${fmtPrice(r.price)}원</span>${PENCIL}<input id="flossPrice" type="number" min="0" step="any" inputmode="decimal" value="${shown(r.price)}" aria-label="손익을 확인할 환율 (원)"></label>`:`${fmtPrice(r.price)}원`;
-  const sub=x=>x?`<small>${x.type==="buy"?`분할매수 ${x.count}계약 체결`:`손절 ${x.count}계약 반영`} ${sign(x.pnl)}</small>`:"";
-  const row=r=>r.kind.startsWith("be-")?`<div class="future-ladder-mark is-${r.kind}"${axis(r)}><i></i><span><b>${fmtPrice(r.price)}원</b> 손익분기 · ${r.kind==="be-held"?"보유만":"분할매수"}${now?` <em>${r.price>now?"+":""}${(r.price-now).toFixed(1)}원</em>`:""}</span></div>`
-    :`<div class="future-ladder-row is-${r.kind}"${axis(r)}><i></i><div class="future-ladder-l"><b>${price(r)}</b><small>${label(r)}</small></div><div class="future-ladder-r"><strong${Math.round(r.pnl)<0?' class="neg"':""}>${sign(r.pnl)}원</strong>${sub(r.sub)}</div></div>`;
-  return `<section class="card future-ladder" id="futureLadder" aria-label="환율별 총손익"><div class="future-ladder-head"><span>환율 · 기준</span><span>총손익 · 누적 정산 포함</span></div>${futureQuote(f,fe)}<div class="future-ladder-rows">${rows.map(row).join("")}</div>${unpriced?`<p class="future-ladder-hint">가격 미입력 ${unpriced}계약은 분할매수 계산에서 뺍니다.</p>`:""}</section>`;
+  const sub=x=>x?`<small>${x.type==="buy"?"분할매수":"손절"} ${x.count}계약 ${sign(Math.round(x.pnl/100)*100)}</small>`:"";
+  const row=r=>r.kind.startsWith("be-")?`<div class="future-ladder-mark is-${r.kind}"><i></i><span><b>${fmtPrice(r.price)}원</b>손익분기 · ${r.kind==="be-held"?"보유만":"분할매수"}</span>${now?`<em>${r.price>now?"+":""}${(r.price-now).toFixed(1)}원</em>`:""}</div>`
+    :`<div class="future-ladder-row is-${r.kind}"><i></i><div class="future-ladder-l"><b>${price(r)}</b><small>${label(r)}</small></div><div class="future-ladder-r"><strong${Math.round(r.pnl)<0?' class="neg"':""}>${sign(r.pnl)}원</strong>${sub(r.sub)}</div></div>`;
+  return `<section class="card future-ladder" id="futureLadder"><div class="future-ladder-head"><h2>환율별 총손익</h2><span>누적 정산 포함</span></div>${futureQuote(f,fe)}<div class="future-ladder-rows" style="--axis-top:${half(rows[0])}px;--axis-bottom:${half(rows.at(-1))}px">${rows.map(row).join("")}</div>${unpriced?`<p class="future-ladder-hint">가격 미입력 ${unpriced}계약은 분할매수 계산에서 뺍니다.</p>`:""}</section>`;
 }
 // 매수 완료 접기는 화면 상태만 유지하며 저장·동기화하지 않는다.
 let futureCompletedOpen=false;
