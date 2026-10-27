@@ -124,7 +124,7 @@ function buildTradeAlertRules(data,priceDoc,quiet=false){
       const groups=new Map();
       if(Number(l.contracts)>0)tr.forEach((x,ti)=>{
         if(x.completed||prices.length>1&&futureTrancheSlot(l,x,ti)!==t)return;
-        const value=line?futureTranchePrice(f.levels,i,x,ti):price,manual=!!line&&Number(x.priceOverride)>0,on=tradeFutureTrancheEnabled(f,l,x),group=groups.get(value);
+        const value=line?futureTranchePrice(f.levels,i,x,ti):x.price==null?price:Number(x.price),manual=line?Number(x.priceOverride)>0:value!==price,on=tradeFutureTrancheEnabled(f,l,x),group=groups.get(value);
         if(group){group.on||=on;group.manual&&=manual;}
         else groups.set(value,{on,manual});
       });
