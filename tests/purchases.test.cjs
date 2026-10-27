@@ -266,6 +266,19 @@ test('연결 보유 목록은 금액 보유를 주수로 오인하지 않고 0�
   const before=JSON.stringify(r.doc);r.render();assert.match(r.html(),/금액으로 보유 관리/);assert.match(r.html(),/보유 0주/);assert.match(r.html(),/보유 3주 · 시세 대기/);assert.match(r.html(),/보유 0\.125주 · 시세 대기/);assert.match(r.html(),/평가 대기/);assert.match(r.html(),/전체 계좌 4개 항목 · 현재 7%/);
   assert.doesNotMatch(r.html(),/보유 7주|NaN|undefined|data-purchase-buy=/);assert.equal(JSON.stringify(r.doc),before);
 });
+test('계획을 지우면 반영 기록도 지우고, 같은 종목의 새 계획에서 같은 회차를 체크해도 이전 체결 수량을 빼지 않는다',()=>{
+  const r=setup();r.ctx.confirm=()=>true;const box=()=>r.input('[data-purchase-buy]');
+  assert.equal(box().dataset.key,'end');box().checked=true;box().onchange();assert.equal(r.item.shares,18);assert.ok(r.doc.allocation.trades['buy:a:end']);
+  r.edit();r.element('purchaseDelete').onclick();assert.equal(r.item.buyPlan,undefined);assert.equal(r.item.shares,18,'삭제는 보유량을 되돌리지 않음');assert.equal(r.doc.allocation.trades,undefined);
+  r.item.buyPlan={lines:{names:['25선'],end:10000,budget:8.9}};r.render();
+  box().checked=true;box().onchange();assert.equal(r.item.shares,26);assert.equal(JSON.stringify(r.doc.allocation.trades['buy:a:end'].items.map(e=>[e.id,e.shares])),'[["a",8]]');
+  box().checked=false;box().onchange();assert.equal(r.item.shares,18,'새 체결 취소는 새로 더한 양만 되돌림');
+  // 이미 남아 있는 지운 계획의 기록(체결 기록이 없는 회차)은 되돌리지 않고 새 기록으로 바꾼다
+  r.doc.allocation.trades={'buy:a:end':{label:'지운 계획',at:'2026-01-01',qty:8,items:[{id:'a',shares:8}]},'buy:a:25선:0':{label:'지운 계획',at:'2026-01-01',qty:3,items:[{id:'a',shares:3}]}};r.render();
+  const fill=r.input('[data-purchase-buy-shares]');fill.value='5';fill.onchange();
+  assert.equal(r.item.shares,23);assert.equal(r.doc.allocation.trades['buy:a:end'].qty,5);assert.ok(r.doc.allocation.trades['buy:a:25선:0'],'다른 회차 기록은 그 회차를 체크할 때까지 그대로');
+  const more=r.input('[data-purchase-buy-shares]');more.value='8';more.onchange();assert.equal(r.item.shares,26,'이어 사기는 차이만 더함');
+});
 test('분할매도와 같은 메모 저장은 현재 계획만 수정하고 체결·보유량을 보존하며 비운 필드는 삭제한다',()=>{
   const r=setup({tracking:true});r.change('[data-purchase-buy-shares]',3);
   const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),shares=r.item.shares;

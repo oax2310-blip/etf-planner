@@ -810,6 +810,25 @@ test('기기 간 병합: 두 기기가 다른 종목·칸을 고치면 둘 다 �
   assert.equal(doc.allocation.groups[0].items.find(x => x.id === 'z').amount, 333); assert.equal(conflicts, 1);
 });
 
+test('기기 간 병합: 두 기기가 각각 체크한 체결로 같은 종목 보유량이 바뀌면 반영 기록의 증감을 합친다(가짜 기록)', () => {
+  const doc = (shares, trades, savedAt) => ({version: 1, allocation: {savedAt, classes: [], cash: [], groups: [{id: 'g', name: '가상 계좌', items: [{id: 'x', name: '가상 ETF', ticker: '111111', shares}, {id: 'y', name: '가상 금액', amount: 100}]}], ...(trades ? {trades} : {})}});
+  const trade = (key, n, field = 'shares', id = 'x') => ({[key]: {label: key, at: 'T', qty: n, items: [{id, [field]: n}]}});
+  const base = doc(900, null, 'T1'), shares = r => r.doc.allocation.groups[0].items[0].shares;
+  const local = doc(918, trade('buy:x:25일선:0', 18), 'T3'), remote = doc(918, trade('buy:x:end', 18), 'T2'), before = JSON.stringify([base, local, remote]);
+  let r = c.mergeAssets(local, remote, base);
+  assert.equal(shares(r), 936, '같은 수량을 따로 체크해 두 값이 같아도 둘 다 더함');assert.deepEqual(Object.keys(r.doc.allocation.trades), ['buy:x:25일선:0', 'buy:x:end']);
+  assert.deepEqual([r.conflicts, r.lost], [0, []]);assert.equal(JSON.stringify([base, local, remote]), before, '원본은 바꾸지 않음');
+  r = c.mergeAssets(doc(910, trade('buy:x:25일선:0', 10), 'T3'), remote, base);assert.deepEqual([shares(r), r.conflicts], [928, 0], '다른 수량도 합치고 겹친 칸으로 세지 않음');
+  r = c.mergeAssets(doc(918, trade('buy:x:end', 18), 'T3'), remote, base);assert.equal(shares(r), 918, '같은 회차를 두 기기에서 체크하면 한 번만');
+  r = c.mergeAssets(doc(880, trade('sell:p:0', -20), 'T3'), remote, base);assert.equal(shares(r), 898, '매도 반영(음수)도 증감으로 합침');
+  r = c.mergeAssets(doc(944, null, 'T3'), remote, base);assert.deepEqual([shares(r), r.conflicts], [944, 1], '직접 고친 보유량은 기존 규칙(늦은 저장)');
+  r = c.mergeAssets(doc(944, null, 'T1'), remote, base);assert.equal(shares(r), 918);
+  const money = (amount, trades, savedAt) => {const d = doc(900, trades, savedAt);d.allocation.groups[0].items[1].amount = amount;return d;};
+  r = c.mergeAssets(money(110.5, trade('buy:y:end', 10.5, 'amount', 'y'), 'T3'), money(103, trade('buy:y:25선:0', 3, 'amount', 'y'), 'T2'), base);
+  assert.equal(r.doc.allocation.groups[0].items[1].amount, 113.5, '금액 종목도 같은 방식');
+  r = c.mergeAssets(local, remote, null);assert.equal(shares(r), 918, '지난 동기화 기준이 없으면 합치지 않음');
+});
+
 test('기기 간 병합: 월별 손익은 연·월, 저축 실적은 연월로 합치고 키 없는 목록은 한 칸으로 본다(가짜 기록)', () => {
   const month = (m, pnl, balances = [1, 2]) => ({m, pnl, balances});
   const base = {version: 1, ledger: {savedAt: 'T1', years: [{year: 2026, accounts: [{name: '가상 계좌'}], months: [month(1, 10), month(2, 20)]}]},

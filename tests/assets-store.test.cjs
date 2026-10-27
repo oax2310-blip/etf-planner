@@ -24,7 +24,7 @@ function setup(initial,fetcher,shared){
     }};
   const code=['js/repo-security.js','js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
-  return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY})};
+  return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY}),pageshow:persisted=>listeners.get('pageshow')?.({persisted})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
 const milestoneDoc=()=>({...fake(),savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000}],scenarios:[{id:'base',name:'가상 계획',salary:100}],milestoneRecord:{ym:'2031-01',age:37}}});
@@ -188,6 +188,17 @@ test('플래너와 자산 페이지의 변경을 같은 기록에서 맞추고 �
   assert.equal(JSON.parse(first.storage.get(KEY)).ledger.years[0].year,2099,'다른 구역의 더 최신 기록도 보존');
 });
 
+test('뒤로 가기로 복원한 페이지는 놓친 다른 페이지의 체결·보유량을 합친 뒤 저장해 되돌리지 않는다',()=>{
+  const original=fake();original.allocation.groups[0].items[0].shares=900;
+  const assets=setup(original),planner=setup(null,null,assets.storage);assets.store.start();planner.store.start();
+  planner.store.doc.allocation.groups[0].items[0].shares=918;planner.store.saveSection('allocation'); // 자산 페이지는 storage 알림을 받지 못함(뒤로 가기 캐시)
+  assert.equal(assets.store.doc.allocation.groups[0].items[0].shares,900);
+  const stored=assets.storage.get(KEY);assets.pageshow(false);assert.equal(assets.store.doc.allocation.groups[0].items[0].shares,900,'새로 연 페이지(persisted 아님)는 그대로');
+  assets.pageshow(true);assert.equal(assets.store.doc.allocation.groups[0].items[0].shares,918);assert.equal(assets.storage.get(KEY),stored,'합친 결과가 저장 기록과 같으면 다시 쓰지 않음');
+  assets.store.doc.allocation.groups[0].items[0].target=12;assets.store.saveSection('allocation');
+  const saved=JSON.parse(assets.storage.get(KEY)).allocation.groups[0].items[0];assert.deepEqual([saved.shares,saved.target],[918,12]);
+  assets.pageshow(true);assert.equal(assets.store.recovery().length,0,'바뀐 것이 없으면 아무것도 하지 않음');
+});
 test('분할매수 저장도 공개 데이터 저장소에는 업로드하지 않는다',async()=>{
   let writes=0;const original=fake(),{store,storage}=setup(original,async(url,options)=>{if(options.method==='PUT')writes++;return json({private:false});});
   connect(storage);store.doc.allocation.groups[0].items[0].buyPlan.stages[0].done=true;store.saveSection('allocation');await store.sync();

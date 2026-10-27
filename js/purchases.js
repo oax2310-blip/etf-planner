@@ -14,6 +14,9 @@ let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=fa
 const openCompletedPurchases=new Set();
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
 const render=()=>renderPurchases(),saveSection=section=>assetStore.saveSection(section);
+// 반영 키는 계획이 아니라 종목 id로 만든다('buy:종목 id:회차 키'). 계획을 지우거나 새 계획의 회차를 처음 체크할 때 그 키로 남은 이전 계획의 기록은 자산 배분을 되돌리지 않고 지운다(실제 체결은 보유량에 남김).
+// 남겨 두면 같은 회차(예: 목표가 'end')를 새 계획에서 체크할 때 applyTrade가 이전 계획의 체결 수량을 먼저 빼서 보유량이 줄어든다.
+const dropTrades=match=>{const a=doc.allocation,t=a?.trades;if(!t||typeof t!=="object")return;for(const k of Object.keys(t))if(match(k))delete t[k];if(!Object.keys(t).length)delete a.trades;};
 const onChange=(sel,section,set)=>all(sel).forEach(x=>x.onchange=()=>{if(set(x.value,x)!==false)saveSection(section);render();});
 const emptyCard=(title,text,button)=>`<div class="card empty purchase-empty"><h2>${title}</h2><p>${text}</p>${button}</div>`;
 // 회차 가격·수량(선택): 통화는 계획에 저장한 currency(달러일 때만 저장) → 종목 시세 통화 → 원화. 비트코인(BTC-USD)은 0.00000001 단위, 나머지는 1주.
@@ -297,6 +300,7 @@ function renderPurchases(){
   function writeFill(id,r,b,lead=null){
     const found=findItem(id),plan=found?.it.buyPlan;if(!plan)return render();
     const commit=()=>{if(planOf(id)!==plan)return false;
+      if(!r.recorded)dropTrades(k=>k===r.key); // 체결 기록이 없는 회차의 반영 기록은 지운 계획의 것(dropTrades 주석)
       if(r.line)plan.buys={...purchaseBuys(plan),[r.line.key]:b};
       else{delete r.stage.done;delete r.stage.partial;Object.assign(r.stage,b);}
       saveSection("allocation");return r.key;};
@@ -506,8 +510,8 @@ function openPurchase(id){
   f.manualCurrency.value=purchaseDraft.currency||"KRW";
   f.cardName.value=purchaseDraft.cardName||"";f.note.value=purchaseDraft.note||"";renderDraft();
   el("purchaseDelete").hidden=!found;
-  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않는다.
-  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;saveSection("allocation");d.close();render();};
+  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않고, 그 계획의 반영 기록만 함께 지운다(dropTrades).
+  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;dropTrades(k=>k.startsWith(`buy:${found.it.id}:`));saveSection("allocation");d.close();render();};
   f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");picker().focus();return;}
     if(!editing&&linkedPlans(item,allocationSummary(doc.allocation,prices)).length){alert("같은 종목의 다른 계좌 줄에 분할매수 계획이 있습니다. 기존 계획을 수정하세요.");return;}
     const draft=purchaseDraft;
