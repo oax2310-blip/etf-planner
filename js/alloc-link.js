@@ -56,6 +56,28 @@ function preferred(rows, o){
   }
   return rows.find(r=>r.it.id===o.ownId)||[...rows].sort((x,y)=>y.value-x.value)[0];
 }
+const accountName = r => [...new Set([r.g?.name,r.it?.name].filter(Boolean))].join(" · ");
+// 다음 체결 창에 처음 선택될 계좌. 실제 반영 기록과 구분하며, 창과 같은 preferred를 읽기만 한다(0주 보유도 매수 후보).
+function accountChoice(o){
+  const rows=summary(o.ticker,o.ownId)?.rows;if(!rows?.length)return null;
+  return {name:accountName(preferred(rows,o)),count:rows.length};
+}
+// 회차에 실제 반영한 모든 계좌·양. 이름은 현재 자산 배분에서 읽고, 없는 기록·삭제된 자산은 추정하지 않는다.
+// 옛 단계 이름 등 키가 여러 개면 첫 번째로 존재하는 기록을 쓴다. 반환은 일반 글자이며 HTML을 만드는 호출부에서 이스케이프한다.
+function accountRecord(key){
+  const a=allocOf(), rec=(Array.isArray(key)?key:[key]).map(k=>a?.trades?.[k]).find(Boolean);let s=null;
+  const list=(Array.isArray(rec?.items)?rec.items:[]).map(e=>{
+    if(!e||typeof e!=="object")return null;
+    const it=allocItemById(a,e?.id);if(!it)return "삭제된 계좌·자산";
+    const g=a.groups.find(g=>(g.items||[]).includes(it)), name=accountName({g,it});
+    if(finite(e.shares)!==null)return `${name} ${sign(e.shares)}${qty(Math.abs(e.shares),it)}`;
+    if(finite(e.amount)===null)return null;
+    s??=allocationSummary(a,assetStore.prices);
+    const v=s.items.get(it.id)?.value||0, amt=finite(it.amount)||0, eq=Math.abs(e.amount)*(amt>0&&v>0?v/amt:1);
+    return `${name} ${sign(e.amount)}${man(eq)}`;
+  }).filter(Boolean);
+  return list.join(" · ")||"자산 배분 반영 기록 없음";
+}
 function openDialog(o, rows){
   const d=dialog(), first=preferred(rows,o), buy=o.trade.sign>0, t=o.trade, rate=t.currency==="USD"?(summary(o.ticker,o.ownId)?.fx||0):1;
   const value=finite(t.value)??(finite(t.qty)&&finite(t.price)&&rate?t.qty*t.price*rate/1e4:null);
@@ -143,5 +165,5 @@ function shift(o){
   if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}`);
   else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
 }
-return {line,holding,check,uncheck,forget,rescale,shift,initialize};
+return {line,holding,accountChoice,accountRecord,check,uncheck,forget,rescale,shift,initialize};
 })();

@@ -123,6 +123,9 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
    보유 주수 카드는 1칸 = 손절 1회. .mix는 부분 손절·부분 재매수 칸(아래부터 초록 --g, 파랑 --b까지, 나머지는 빈 칸), .z는 배정 주수가 없는 회차.
    절반·전액 매도는 카드 아래 얇은 두 줄(.rebuy-milestones), 단계 기준가 옆 (자동)은 점선 가격 뒤 작은 글자. */
 #rebuyMain .rebuy-flow{margin-bottom:18px}.rebuy-price-hint{margin:-4px 2px 12px;font-size:12px;word-break:keep-all}
+/* 다음 체결의 기본 계좌와 체결별 실제 반영 계좌. 같은 ETF도 그룹(계좌) 이름을 함께 보여 준다. */
+.rebuy-accounts{margin:0 0 14px;padding:0 14px}.rebuy-accounts>div{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;align-items:baseline;padding:11px 0}.rebuy-accounts>div+div{border-top:1px solid var(--line)}.rebuy-accounts dt{font-size:12px;font-weight:600;color:var(--text-2)}.rebuy-accounts dd{min-width:0;margin:0}.rebuy-accounts dd b{display:block;font-size:13px;font-weight:600;overflow-wrap:anywhere}.rebuy-accounts dd small{display:block;margin-top:3px;font-size:11px;line-height:1.4;color:var(--text-3)}
+.rebuy-row-account{grid-column:1/-1;min-width:0;font-size:11px;line-height:1.5;color:var(--text-2);overflow-wrap:anywhere}
 /* 손절 기준 한 줄 버튼(신저점 · 하락 간격마다 회당 손절 + 연필): 누르면 손절 기준 창. 따로 제목 줄을 두지 않는다. */
 .rebuy-rule{display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;min-height:34px;margin:0 0 12px;padding:6px 11px 6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--text-2);font:inherit;font-size:13px;font-weight:500;line-height:1.35;text-align:left;font-variant-numeric:tabular-nums;word-break:keep-all;transition:background .12s,border-color .12s}
 .rebuy-rule b{color:var(--text);font-weight:700}.rebuy-rule svg{flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--text-3)}

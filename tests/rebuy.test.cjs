@@ -497,6 +497,50 @@ test('화면은 평균 손절가를 표시하고 그보다 높은 후속 회차�
 
 const fillFixture = () => ({id:'fill-test',name:'테스트 ETF',lowPrice:10000,shares:100,stepPct:1,sellPct:10,steps:2,cuts:[],stages:[{name:'25선',price:9900,done:false,shares:null,execPrice:null}]});
 
+test('손절·재매수 기본 계좌와 회차별 실제 반영 계좌를 구분하고 계좌 이름을 이스케이프한다', () => {
+  const r={...fillFixture(),ticker:'900001',cuts:[{shares:10,price:9900}],stages:[{name:'25선',price:9900,buys:[{shares:2,price:9900,partial:true,plannedShares:10}]}]},before=JSON.stringify(r),choices=[],keys=[];
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const {ctx,els}=ui({rebuy:{items:[r]}},{esc,allocLink:{
+    accountChoice:o=>{choices.push(plain(o));return {name:o.prefer.length===1?'가상 ISA · <ETF>':'가상 연금 · <ETF>',count:2};},
+    accountRecord:key=>{keys.push(plain(key));return typeof key==='string'?'가상 ISA · <ETF> −10주':'가상 연금 · <ETF> +2주';}
+  }});
+  let html=els.rebuyMain.innerHTML;
+  assert.match(html,/<dt>손절계좌<\/dt><dd><b>가상 ISA · &lt;ETF&gt;<\/b><small>다음 체결 기본 선택 · 체결 시 변경 가능/);
+  assert.match(html,/<dt>재매수계좌<\/dt><dd><b>가상 연금 · &lt;ETF&gt;/);
+  assert.deepEqual(choices.map(o=>o.prefer),[['cut:fill-test:'],['rebuy:fill-test:','cut:fill-test:']]);
+  assert.deepEqual(keys,['cut:fill-test:0',['rebuy:fill-test:25선:0','rebuy:fill-test:25분봉:0']]);
+  assert.match(html,/반영 계좌 · 가상 ISA · &lt;ETF&gt; −10주/);
+  assert.match(html,/반영 계좌 · 가상 연금 · &lt;ETF&gt; \+2주/,'부분 체결도 실제 반영 계좌를 보여 준다');
+  assert.doesNotMatch(html,/<ETF>/);
+  assert.equal(JSON.stringify(r),before,'계좌 표시로 투자 기록을 바꾸지 않는다');
+  ctx.renderRebuy();html=els.rebuyMain.innerHTML;
+  assert.equal((html.match(/반영 계좌 ·/g)||[]).length,2,'대기 회차에는 반영 계좌를 붙이지 않는다');
+});
+
+test('계좌 연결이 없거나 옛 체결의 반영 기록이 없으면 확인할 수 있는 상태만 표시한다', () => {
+  const r={...fillFixture(),cuts:[{shares:10,price:9900}]},before=JSON.stringify(r);
+  const {els}=ui({rebuy:{items:[r]}});
+  assert.equal((els.rebuyMain.innerHTML.match(/연결 계좌 없음/g)||[]).length,2);
+  assert.match(els.rebuyMain.innerHTML,/자산 배분 반영 없이 체결만 기록/);
+  assert.match(els.rebuyMain.innerHTML,/반영 계좌 · 자산 배분 반영 기록 없음/);
+  assert.equal(JSON.stringify(r),before);
+  const single=ui({rebuy:{items:[r]}},{allocLink:{accountChoice:()=>({name:'가상 단일계좌',count:1})}});
+  assert.match(single.els.rebuyMain.innerHTML,/다음 체결 시 자동 반영/);
+});
+
+test('옛 단계 이름의 실제 반영 키를 먼저 읽고 ID 없는 체결의 계좌는 추정하지 않는다', () => {
+  const r={...fillFixture(),cuts:[{shares:10,price:9900}],stages:[{name:'25분봉',price:9900,done:true,shares:2,execPrice:9900}]},before=JSON.stringify(r),keys=[];
+  const {ctx}=ui({rebuy:{items:[r]}},{allocLink:{accountRecord:key=>{keys.push(plain(key));return '';}}});
+  assert.deepEqual(keys,['cut:fill-test:0',['rebuy:fill-test:25분봉:0','rebuy:fill-test:25선:0']]);
+  assert.equal(JSON.stringify(r),before);
+  ctx.editRebuy();keys.length=0;ctx.renderRebuy();
+  assert.equal(r.stages[0].name,'25선');
+  assert.deepEqual(keys,['cut:fill-test:0',['rebuy:fill-test:25선:0','rebuy:fill-test:25분봉:0']],'입력으로 단계명이 바뀌어도 옛 반영 키를 계속 읽는다');
+  delete r.id;keys.length=0;
+  ui({rebuy:r},{allocLink:{accountRecord:key=>{keys.push(key);return '';}}});
+  assert.deepEqual(keys,[null,null]);
+});
+
 test('손절 카드: 대기 계획 금액과 실제 누적 수량을 구분하고 기존 기록·알림 설정을 유지한다', () => {
   const r={...fillFixture(),currentPrice:10000,notify:{cuts:true,cutsOverrides:{1:false}}},before=structuredClone(r);
   const {ctx,els}=ui({rebuy:{items:[r]}});
