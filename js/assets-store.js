@@ -193,10 +193,14 @@ function start(){
   if(started)return;started=true;
   setInterval(()=>{if(!document.hidden&&!aSync.busy&&assetConfig())syncAssets();},45000);
   document.addEventListener("visibilitychange",()=>{if(assetConfig()&&(!document.hidden||aSync.timer))syncAssets();});
+  // 같은 브라우저의 다른 페이지가 저장한 기록을 합친다. 뒤로 가기로 복원한 페이지(pageshow persisted)는 떠나 있는 동안의 storage 알림을 받지 못했을 수 있어 같은 병합을 한 번 더 한다.
+  // 합치지 않은 옛 기록으로 동기화하면 지난 동기화 기준과 비교해 다른 페이지의 체결·보유량 변경을 되돌린다. 복원 때는 마지막으로 읽은 기록과 같으면 아무것도 하지 않는다.
+  const absorbLocal=()=>{const incoming=cleanAssets(readJson(A_KEY,null));if(!incoming)return;const merged=mergeAssets(doc,incoming,lastLocal);keepMerged(merged);doc=JSON.parse(JSON.stringify(merged.doc));if(JSON.stringify(doc)!==JSON.stringify(incoming))writeLocal();else lastLocal=JSON.parse(JSON.stringify(doc));emit("change");};
   addEventListener("storage",e=>{
-    if(e.key===A_KEY){const incoming=cleanAssets(readJson(A_KEY,null));if(incoming){const merged=mergeAssets(doc,incoming,lastLocal);keepMerged(merged);doc=JSON.parse(JSON.stringify(merged.doc));if(JSON.stringify(doc)!==JSON.stringify(incoming))writeLocal();else lastLocal=JSON.parse(JSON.stringify(doc));emit("change");}}
+    if(e.key===A_KEY)absorbLocal();
     if(e.key===null||e.key===A_REPO_KEY||e.key===A_TOKEN_KEY)refreshConfig();
   });
+  addEventListener("pageshow",e=>{if(!e.persisted)return;let raw=null;try{raw=localStorage.getItem(A_KEY);}catch{}if(raw!==null&&raw!==JSON.stringify(lastLocal))absorbLocal();});
   if(doc.allocation&&prices&&fillBases(doc.allocation,prices))saveSection("allocation");
   syncAssets();
 }

@@ -807,7 +807,25 @@ function mergeThreeWay(local, remote, base, preferLocal=true){
   };
   return {value:merge(local,remote,base,[]),conflicts};
 }
-// 자산 기록 구역마다: 한쪽에만 있는 구역은 그쪽, 그 밖에는 mergeThreeWay(겹친 칸은 구역 savedAt이 늦은 쪽, 같으면 이 기기).
+// 자산 배분 보유량(shares·amount)을 두 기기가 함께 바꾼 종목: 양쪽 변화가 각자 반영 기록(allocation.trades)의 증감과 같으면(플래너 체크로만 바뀜)
+// 한쪽 값을 고르지 않고 지난 동기화 보유량 + 병합한 반영 기록의 증감으로 맞춘다. 예: 900주에서 휴대폰이 18주, PC가 다른 회차 18주를 체크하면 둘 다 918주여도 936주.
+// 같은 회차를 두 기기에서 체크했으면 병합한 기록 하나만 센다. 보유량을 직접 고친 쪽이 있으면 기존 규칙(늦게 저장한 쪽)이다. 맞춘 칸은 겹친 칸에서 빼고, 원본은 바꾸지 않는다.
+function mergeHoldings(m, section, local, remote, base){
+  if(section!=="allocation"||!base)return m;
+  const items=a=>new Map((Array.isArray(a?.groups)?a.groups:[]).flatMap(g=>Array.isArray(g?.items)?g.items:[]).filter(it=>typeof it?.id==="string").map(it=>[it.id,it]));
+  const moved=(a,id,field)=>Object.values(a?.trades&&typeof a.trades==="object"?a.trades:{}).reduce((n,t)=>n+(Array.isArray(t?.items)?t.items:[]).reduce((s,e)=>s+(e?.id===id?finite(e[field])||0:0),0),0);
+  const [L,R,B]=[local,remote,base].map(items), fixes=[];
+  for(const [id,it] of items(m.value))for(const field of ["shares","amount"]){
+    const [l,r,b]=[L,R,B].map(x=>finite(x.get(id)?.[field])), step=field==="shares"?linkStep(it):0.01, near=(x,y)=>Math.abs(x-y)<step/2, was=moved(base,id,field);
+    if(l===null||r===null||b===null||l===b||r===b||!near(l-b,moved(local,id,field)-was)||!near(r-b,moved(remote,id,field)-was))continue;
+    fixes.push({id,field,value:Math.max(0,linkRound(b+moved(m.value,id,field)-was,step))});
+  }
+  if(!fixes.length)return m;
+  const value=JSON.parse(JSON.stringify(m.value)), out=items(value);
+  fixes.forEach(f=>{out.get(f.id)[f.field]=f.value;});
+  return {value,conflicts:m.conflicts.filter(p=>!(p.length===5&&p[0]==="groups"&&p[2]==="items"&&fixes.some(f=>p[3]===f.id&&p[4]===f.field)))};
+}
+// 자산 기록 구역마다: 한쪽에만 있는 구역은 그쪽, 그 밖에는 mergeThreeWay(겹친 칸은 구역 savedAt이 늦은 쪽, 같으면 이 기기 — 보유량은 mergeHoldings).
 // 칸이 겹친 구역은 다른 쪽 기록 전체를 lost로 돌려줘 이 기기에 보관하고, conflicts는 겹친 칸 수다.
 // 저축 최단 기록만은 양쪽·지난 동기화의 가장 빠른 연월을 보존해, 가정 변경이나 옛 기기의 저장으로 늦어지거나 지워지지 않게 한다.
 function mergeAssets(local, remote, base){
@@ -815,7 +833,7 @@ function mergeAssets(local, remote, base){
   let conflicts=0;
   for(const s of ASSET_SECTIONS){
     const L=local?.[s], R=remote?.[s], B=base?.[s], newer=String(L?.savedAt||"")>=String(R?.savedAt||"");
-    const m=L&&R?mergeThreeWay(L,R,B,newer):null, pick=m?m.value:L||R;
+    const m=L&&R?mergeHoldings(mergeThreeWay(L,R,B,newer),s,L,R,B):null, pick=m?m.value:L||R;
     if(m?.conflicts.length){conflicts+=m.conflicts.length;lost.push({section:s,data:newer?R:L});}
     if(pick){const record=s==="savings"?earlierSavingsRecord(L?.milestoneRecord,R?.milestoneRecord,B?.milestoneRecord):null;doc[s]=record?{...pick,milestoneRecord:record}:pick;}
   }
