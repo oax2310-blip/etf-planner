@@ -137,6 +137,44 @@ test('달러선물 같은 가격의 여러 계약은 켠 미완료 계약이 있
   l.days=0;l.label='가상 추가';
   assert.deepEqual(get().map(r=>[r.id,r.label,r.condition]),[['trade:future:0','달러선물 추가 1','down']]);
 });
+test('달러선물 회차별 직접 수정가는 알림 가격·이력에 반영하고 다른 회차는 유지한다',()=>{
+  const ctx=load(),f=futurePlan({notify:{levels:true}}),l=f.levels[0],get=()=>plain(ctx.buildTradeAlertRules({futures:f},null));
+  const before=get();Object.assign(l.tranches[1],{price:1415,priceOverride:1415});
+  const snapshot=JSON.stringify(f),rules=get(),manual=rules.find(r=>r.targetPrice===1415);
+  assert.deepEqual(rules.map(r=>r.targetPrice),[1400,1415,1420]);
+  assert.equal(manual.label,'달러선물 25일선 2차');assert.equal(manual.condition,'up');
+  assert.equal(manual.id,'trade:future:0:2:manual:1415');
+  assert.deepEqual([rules[0],rules[2]],[before[0],before[2]]);
+  assert.equal(JSON.stringify(f),snapshot,'알림을 계산해도 저장 기록은 바뀌지 않는다');
+  Object.assign(l.tranches[1],{price:1416,priceOverride:1416});
+  const changed=get().find(r=>r.targetPrice===1416);assert.notEqual(changed.revision,manual.revision);
+  l.tranches[1].completed=true;assert.deepEqual(get(),[before[0],before[2]]);
+});
+test('달러선물 같은 회차의 기본가·수정가를 나누고 같은 가격은 ON 우선으로 한 번만 알린다',()=>{
+  const ctx=load(),f=futurePlan(),l=f.levels[0];l.contracts=5;
+  l.tranches=[{slot:1,notify:true},{slot:1,price:1415,priceOverride:1415,notify:false},{slot:1,price:1415,priceOverride:1415,notify:true},{slot:1,price:1410,priceOverride:1410,notify:true},{slot:1,price:1416,priceOverride:1416,notify:false}];
+  const get=quiet=>plain(ctx.buildTradeAlertRules({futures:f},null,quiet));
+  assert.deepEqual(get(false).map(r=>[r.id,r.targetPrice]),[['trade:future:0:2',1410],['trade:future:0:2:manual:1415',1415]]);
+  assert.deepEqual(get(true).map(r=>[r.targetPrice,r.notify]),[[1410,undefined],[1415,undefined],[1416,false]]);
+  l.tranches[2].completed=true;
+  assert.deepEqual(get(false).map(r=>r.targetPrice),[1410]);
+  assert.deepEqual(get(true).map(r=>[r.targetPrice,r.notify]),[[1410,undefined],[1415,false],[1416,false]]);
+});
+test('달러선물 다음 기준가가 없으면 기본 회차는 합치되 직접 수정가는 유지한다',()=>{
+  const ctx=load(),f=futurePlan({notify:{levels:true}}),l=f.levels[0];f.levels[1].price=0;
+  Object.assign(l.tranches[1],{price:1415,priceOverride:1415});
+  const rules=plain(ctx.buildTradeAlertRules({futures:f},null));
+  assert.deepEqual(rules.map(r=>[r.id,r.targetPrice]),[['trade:future:0',1400],['trade:future:0:manual:1415',1415]]);
+  l.tranches[1].priceOverride=0;
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)).map(r=>[r.id,r.targetPrice]),[['trade:future:0',1400]]);
+});
+test('달러선물 기준가 시세가 없어도 직접 입력한 회차 매수가로 알린다',()=>{
+  const ctx=load(),f=futurePlan({notify:{levels:true}}),l=f.levels[0];l.price=0;
+  Object.assign(l.tranches[1],{price:1415,priceOverride:1415});
+  const rules=plain(ctx.buildTradeAlertRules({futures:f},null));
+  assert.deepEqual(rules.map(r=>[r.id,r.targetPrice]),[['trade:future:0:manual:1415',1415]]);
+  l.tranches[1].completed=true;assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null)),[]);
+});
 test('달러선물 전체 ON·OFF는 회차 예외를 지우고 체결·가격·다른 알림을 보존한다',()=>{
   const ctx=load(),f=futurePlan({notify:{levels:false,other:true}}),l=f.levels[0];
   l.notify=false;l.tranches[0].notify=false;l.tranches[1].notify=true;
