@@ -131,9 +131,9 @@ function buildTradeAlertRules(data,priceDoc,quiet=false){
   if(f?.rebuy&&month){
     const r=futureRebuyOf(f),s=futureRebuySummary(f),addF=(key,label,price,condition,basis,on=true)=>add(`trade:future-rebuy:${key}`,month,label,price,condition,basis,"futures","달러선물",on);
     // 손절 회차 기준: 신저점·하단·회차 수·회차. 하단선(floorLine)은 선 이름이라 시세로 하단만 움직이면 같은 알림 이력이다.
-    if(s.ready&&!s.started){
-      if(futureRebuyAlertEnabled(f,"breakdown"))addF("breakdown","달러선물 신저점 손절 시작",r.lowPrice,"down",[r.lowPrice]);
-      for(const c of s.cuts)if(!c.done&&c.qty>0)addF(`cut:${c.k-1}`,`달러선물 손절 ${c.k}회`,c.price,"down",[r.lowPrice,maKey(r.floorLine)||r.floorPrice,s.cuts.length,c.k],futureRebuyAlertEnabled(f,"cuts",c.k-1));
+    if(s.ready){
+      if(!s.started&&futureRebuyAlertEnabled(f,"breakdown"))addF("breakdown","달러선물 신저점 손절 시작",r.lowPrice,"down",[r.lowPrice]);
+      for(const c of s.cuts)if(futureCutRest(c)>0)addF(`cut:${c.k-1}`,`달러선물 손절 ${c.k}회`,c.price,"down",[r.lowPrice,maKey(r.floorLine)||r.floorPrice,s.cuts.length,c.k],futureRebuyAlertEnabled(f,"cuts",c.k-1));
     }
     for(const x of tradeTranchesToSend(s))
       addF(`buy:stage:${x.i}${x.t?`:${x.t+1}`:""}`,`달러선물 재매수 ${s.stages[x.i].rebuyEnd?"종료가격":tradeStageName(s.stages[x.i].name,x.i)}${x.t?` ${x.t+1}차`:""}`,x.price,"up",tradeTrancheBasis(r,s,x),futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`));
@@ -158,7 +158,7 @@ function renderTradeAlertSummary(){
   const target=$("tradeAlertsSummary");if(!target)return;
   const plans=state.plans||[],f=state.futures,items=rebuyItems(state);
   const saleCount=plans.reduce((n,p)=>n+Array.from({length:Number(p.stages)||0},(_,i)=>p.checked?.[i]!==true&&tradePlanEnabled(p,i)?1:0).reduce((a,b)=>a+b,0),0);
-  const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(!fs.started?fs.cuts.filter(c=>!c.done&&c.qty>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+tradeTranchesToSend(fs).filter(x=>futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`)).length:0;
+  const fs=futureRebuySummary(f),futureCount=f?.rebuy?(!fs.started&&fs.ready&&futureRebuyAlertEnabled(f,"breakdown")?1:0)+(fs.ready?fs.cuts.filter(c=>futureCutRest(c)>0&&futureRebuyAlertEnabled(f,"cuts",c.k-1)).length:0)+tradeTranchesToSend(fs).filter(x=>futureRebuyAlertEnabled(f,"buys",`stage:${x.i}`)).length:0;
   const levelCount=buildTradeAlertRules({futures:{...f,rebuy:undefined}},priceData).length+futureCount;
   const rebuyCount=items.reduce((n,r)=>{const s=rebuySummary(r);return n+(!s.started&&tradeRebuyEnabled(r,"breakdown")?1:0)+s.cuts.filter(c=>!c.done&&c.qty>0&&tradeRebuyEnabled(r,"cuts",c.k-1)).length+tradeTranchesToSend(s).filter(x=>tradeRebuyEnabled(r,"buys",x.i)).length;},0);
   const buyCount=typeof purchasePlanner==="object"?purchasePlanner.alertCount():0; // 분할매수는 자산 기록(assets-calc.js purchaseAlertRules)

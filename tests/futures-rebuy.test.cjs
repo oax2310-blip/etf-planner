@@ -167,15 +167,19 @@ test('손절 체크 뒤에도 재매수 전에는 신저점·하단·이탈 전 
   assert.equal(JSON.stringify(f),started);assert.notEqual(ctx.setFutureRebuyField(f,'currentPrice','1260'),false);
 });
 
-test('반등 단계는 싼 환율에서도 판 계약 수만 복원하고 재매수 시작 뒤 손절을 멈춘다',()=>{
+test('반등 단계는 판 계약 수만 복원하고 재매수 완료 뒤에도 남은 손절을 이어 간다',()=>{
   const ctx=load(),f=futures({currentPrice:1250,stages:[{name:'25분봉',price:1260},{name:'25일선',price:1270}]});
   ctx.setFutureCutDone(f,0,true);ctx.setFutureCutDone(f,1,true);
   let s=ctx.futureRebuySummary(f);const sold=s.sold;
   assert.equal(s.tranches.reduce((a,x)=>a+x.amount,0),sold);
   for(const x of s.tranches)assert.notEqual(ctx.setFutureBuyDone(f,x.i,x.t,true),false);
-  assert.equal(ctx.setFutureCutDone(f,2,true),false);
   assert.equal(ctx.setFutureBuyQty(f,0,0,String(sold+1)),false);
   s=ctx.futureRebuySummary(f);assert.equal(s.rest,0);assert.equal(s.rebought,s.sold);assert.equal(s.held,20);
+  const fills=JSON.stringify(f.rebuy.stages),next=s.cuts[2].qty;
+  assert.notEqual(ctx.setFutureCutDone(f,2,true),false,'재매수를 마쳐도 남은 회차의 손절을 기록한다');
+  s=ctx.futureRebuySummary(f);assert.equal(s.sold,s.goal);assert.equal(s.rest,next);assert.equal(s.held,20-next);
+  assert.equal(JSON.stringify(f.rebuy.stages),fills,'기존 재매수 체결은 그대로');
+  assert.equal(ctx.setFutureCutQty(f,2,String(next+1)),false,'기존 손절 목표는 넘지 않는다');
   assert.equal(f.positions[0].contracts,20);assert.equal(f.baselinePnl,0,'체크가 실제 계좌의 정산손익을 추정해서 바꾸지 않는다');
 });
 test('반등 배분은 평균 손절 환율 이하 회차에만 나누고 비운 기준가에서 끊으며 계약은 회차에 고르게 흩는다',()=>{
@@ -232,7 +236,7 @@ test('손절 시작·회차·반등 단계 회차 알림은 보유 근월물과 
   assert.deepEqual(rules.filter(x=>x.condition==='up').map(x=>[x.id,x.label,x.targetPrice]),[['trade:future-rebuy:buy:stage:0','달러선물 재매수 25선',1380],['trade:future-rebuy:buy:stage:0:2','달러선물 재매수 25선 2차',1390]],'25선→25일선 회차 중 평균 손절 환율 1,399.7원 이하만(3차 1,400원 제외), 기한 알림은 없다');
   ctx.setFutureBuyDone(f,0,0,true);assert.deepEqual(plain(f.rebuy.stages[0].buys),[{contracts:2,price:1380}],'3계약을 2회에 2·1');
   rules=plain(ctx.buildTradeAlertRules(data,quote()));
-  assert.deepEqual(rules.map(x=>x.id),['trade:future-rebuy:buy:stage:0:2'],'산 회차와 재매수 시작 뒤 손절은 제외');
+  assert.deepEqual(rules.map(x=>x.id),['trade:future-rebuy:cut:1','trade:future-rebuy:cut:2','trade:future-rebuy:buy:stage:0:2'],'산 회차와 신저점 손절 시작은 제외하고 남은 손절은 유지');
   assert.ok(!JSON.stringify(rules).includes('contracts'),'발송 규칙에 보유·거래 수량을 담지 않는다');
 });
 test('회차 알림은 비운 기준가의 추정 환율을 쓰지 않고 다 복원하면 끈다',()=>{

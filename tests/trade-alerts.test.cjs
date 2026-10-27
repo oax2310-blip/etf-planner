@@ -265,6 +265,24 @@ test('quiet 계산은 재매수 손절·재매수 회차만 더하고 체결로 
   ctx.setTradeRebuyAll(r,'cuts',true);ctx.setTradeRebuyAll(r,'buys',true);
   assert.deepEqual(all.map(({notify,...x})=>x),plain(ctx.buildTradeAlertRules(data,null)).filter(x=>!x.label.includes('이탈')));
 });
+test('달러선물 재매수 뒤에도 부분·새 손절 알림과 OFF 회차 재알림을 유지하고 요약에 센다',()=>{
+  const ctx=load(),f={positions:[{month:'202612',contracts:8}],levels:[],rebuy:{lowPrice:1400,floorPrice:1300,contracts:8,steps:2,stages:[{name:'25선',price:1390}],notify:{breakdown:true,cuts:true,cutsOverrides:{1:false}}}},data={futures:f};
+  ctx.setFutureCutQty(f,0,'1');
+  const before=plain(ctx.buildTradeAlertRules(data,null)).find(x=>x.id==='trade:future-rebuy:cut:0');
+  assert.notEqual(ctx.setFutureBuyDone(f,0,0,true),false);
+  const snapshot=JSON.stringify(data),rules=plain(ctx.buildTradeAlertRules(data,null));
+  assert.deepEqual(rules,[before],'신저점 시작만 끄고 미완료 회차의 id·환율·이력은 유지');
+  const quiet=plain(ctx.buildTradeAlertRules(data,null,true));
+  assert.deepEqual(quiet.map(x=>[x.id,x.notify]),[['trade:future-rebuy:cut:0',undefined],['trade:future-rebuy:cut:1',false]]);
+  const target={innerHTML:''};Object.assign(ctx,{state:data,priceData:null,$:()=>target});ctx.renderTradeAlertSummary();
+  assert.match(target.innerHTML,/달러선물 <b>1<\/b>/,'켜 둔 남은 손절을 요약 수에 포함');
+  assert.equal(JSON.stringify(data),snapshot,'알림과 요약 계산은 저장 기록을 바꾸지 않는다');
+  ctx.setFutureCutDone(f,0,true);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules(data,null)),[],'완료 손절은 제외하고 OFF 선택을 지킨다');
+  assert.deepEqual(plain(ctx.buildTradeAlertRules(data,null,true)).map(x=>x.id),['trade:future-rebuy:cut:1']);
+  ctx.setFutureCutDone(f,1,true);assert.deepEqual(plain(ctx.buildTradeAlertRules(data,null,true)),[]);
+});
+
 test('quiet 계산은 달러선물 계약 회차만 더하고 같은 가격에 켠 계약이 있으면 켠 규칙 하나로 둔다',()=>{
   const ctx=load(),f=futurePlan(),l=f.levels[0],get=()=>plain(ctx.buildTradeAlertRules({futures:f},null,true));
   assert.deepEqual(get().map(r=>[r.targetPrice,r.notify]),[[1400,false],[1410,false],[1420,false]],'계약 수 없는 옛 기준선은 quiet에 넣지 않는다');
