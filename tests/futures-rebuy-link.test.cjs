@@ -68,7 +68,7 @@ test('보유 월물이 없으면 손절 기록만 하고 반영하지 않는다'
 
 test('재매수 체크는 근월물에 체결 환율로 편입하고 수정·해제는 가중평균을 되돌린다',()=>{
   const ctx=load(),f=futures({currentPrice:1420});
-  f.rebuy.stages=[{name:'25일선',price:1380},{name:'60일선',price:1420},{name:'120일선',price:1500}];
+  f.rebuy.stages=[{name:'25일선',price:1340},{name:'60일선',price:1420},{name:'120일선',price:1500}]; // 평균 손절 1,350원 이하 회차만 재매수
   ctx.setFutureCutChecked(f,0,true);ctx.setFutureCutChecked(f,1,true);
   assert.equal(held(f),2);
   const s=ctx.futureRebuySummary(f),tr=s.tranches.find(x=>x.amount>0);
@@ -115,7 +115,7 @@ test('직접 반영함은 미반영 기록에 manual만 남겨 안내·반영에
 
 test('맨 위 보유 카드는 손절하면 오른쪽 칸을 비우고 재매수하면 빈 칸을 다시 채우며 기록을 바꾸지 않는다',()=>{
   const ctx=load();ctx.decimal=new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1});
-  const f=futures({stages:[{name:'25선',price:1390,done:false,execPrice:null}]}),tr=x=>`${x.i}:${x.t}`;
+  const f=futures({floorPrice:1380,stages:[{name:'25선',price:1390,done:false,execPrice:null}]}),tr=x=>`${x.i}:${x.t}`; // 평균 손절 1,390원
   const card=(cur=0)=>{const before=JSON.stringify(f),html=ctx.futureRebuyTrack(f.rebuy,ctx.futureRebuySummary(f),cur,'<i>알림</i>',tr);assert.equal(JSON.stringify(f),before,'카드는 기록을 바꾸지 않는다');return html;};
   const strip=html=>html.match(/<div class="fr-cells[^>]*>(.*?)<\/div>/)[1],cells=html=>[...strip(html).matchAll(/<i class="([^"]+)"/g)].map(m=>m[1]);
   const next=html=>(m=>m&&[m[1],Number(m[2]),[...m[3].matchAll(/<i /g)].length])(strip(html).match(/<span class="fr-next([^"]*)" style="flex:(\d+)">(.*?)<\/span>/));
@@ -127,7 +127,7 @@ test('맨 위 보유 카드는 손절하면 오른쪽 칸을 비우고 재매수
   // 1회 손절 뒤 현재가가 2회 환율 이하면 그 칸이 주황(손절 시점)
   assert.equal(ctx.setFutureCutChecked(f,0,true),true);
   html=card(1290);
-  assert.deepEqual(cells(html),['h keep','h keep','h due','s']);assert.deepEqual(next(html),[' due',1,1]);assert.match(html,/buy-track-chip warn">손절 시점/);assert.match(html,/손절 시점 · 2회 <b>1,300원<\/b> 1계약/);
+  assert.deepEqual(cells(html),['h keep','h keep','h due','s']);assert.deepEqual(next(html),[' due',1,1]);assert.match(html,/buy-track-chip warn">손절 시점/);assert.match(html,/손절 시점 · 2회 <b>1,380원<\/b> 1계약/);
   assert.match(html,/<p class="fr-note">재매수: 0:0 <b>1,390원<\/b> 이상 1계약 <span class="fr-gap up">\+7\.8%<\/span><\/p>/,'손절 중 안내는 다음 재매수 회차를 한 줄로');
   // 손절 목표를 다 팔면 다음 재매수 칸(점선)을 가리킨다
   assert.equal(ctx.setFutureCutChecked(f,1,true),true);
@@ -210,13 +210,13 @@ test('반등 단계별 재매수 표의 재매수 시점은 판 계약이 있고
 
 test('접힌 한 줄은 실행 전·손절 진행·재매수 대기·완료 상태와 다음 환율·보유 계약만 보여 주며 기록을 바꾸지 않는다',()=>{
   const ctx=load();ctx.decimal=new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1});
-  const f=futures({stages:[{name:'25선',price:1390,done:false,execPrice:null}]});
+  const f=futures({floorPrice:1380,stages:[{name:'25선',price:1390,done:false,execPrice:null}]}); // 평균 손절 1,390원
   const fold=cur=>{const before=JSON.stringify(f),s=ctx.futureRebuySummary(f),out=ctx.futureRebuyFoldLine(f.rebuy,s,cur,ctx.futureRebuyLocked(f),ctx.futureCutDue(s,cur),ctx.futureBuyDue(s,cur));assert.equal(JSON.stringify(f),before);return [out.text,out.due];};
-  assert.deepEqual(fold(1410),['실행 전 · 1,400원 → 1,300원 · 최대 2계약',false],'폰 한 줄에 들도록 회차·계약 수·현재 환율은 뺀다');
+  assert.deepEqual(fold(1410),['실행 전 · 1,400원 → 1,380원 · 최대 2계약',false],'폰 한 줄에 들도록 회차·계약 수·현재 환율은 뺀다');
   assert.deepEqual(fold(1400),['<b>손절 시점</b> · 1,400원 이하',true]);
   assert.equal(ctx.setFutureCutChecked(f,0,true),true);
-  assert.deepEqual(fold(1350),['손절 진행 중 · 1,300원 이하 · 보유 3/4',false],'실행 뒤에도 접히고 보유 계약을 덧붙인다');
-  assert.deepEqual(fold(1300),['<b>손절 시점</b> · 1,300원 이하 · 보유 3/4',true]);
+  assert.deepEqual(fold(1385),['손절 진행 중 · 1,380원 이하 · 보유 3/4',false],'실행 뒤에도 접히고 보유 계약을 덧붙인다');
+  assert.deepEqual(fold(1380),['<b>손절 시점</b> · 1,380원 이하 · 보유 3/4',true]);
   assert.equal(ctx.setFutureCutChecked(f,1,true),true);
   assert.deepEqual(fold(1350),['재매수 대기 · 1,390원 이상 · 보유 2/4',false]);
   assert.deepEqual(fold(1395),['<b>재매수 시점</b> · 1,390원 이상 · 보유 2/4',true]);
@@ -330,7 +330,7 @@ test('반등 단계별 재매수 표도 회차마다 한 줄로 그리고, 배�
   const el=id=>els[id]||(els[id]={id,innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
   Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){},confirm:()=>true,alert:msg=>{throw Error(msg);}});
   vm.runInContext('futureRebuyExpanded=true',ctx);
-  const f=futures({contracts:4,sellPct:100,steps:2,currentPrice:1385,stages:[{name:'25선',price:1380},{name:'32선',price:1390},{name:'42선',price:1500}]});
+  const f=futures({contracts:4,sellPct:100,steps:2,floorPrice:1380,currentPrice:1385,stages:[{name:'25선',price:1380},{name:'32선',price:1390},{name:'42선',price:1500}]}); // 평균 손절 1,390원
   ctx.setFutureCutChecked(f,0,true);ctx.setFutureCutChecked(f,1,true);
   const section=()=>{ctx.renderFutureRebuy(f);const html=els.futureRebuyPanel.innerHTML;return html.slice(html.indexOf('id="frBuys"'));};
   let html=section();
@@ -432,7 +432,7 @@ test('여러 월물에서 판 손절은 줄이면 마지막에 판 월물부터,
 test('달러선물 재매수 체결 수를 줄이면 부분 체결로 남은 계약을 그 회차에 두고 보유도 체결한 계약만큼만 반영한다',()=>{
   const ctx=load(),plain=v=>JSON.parse(JSON.stringify(v)),r=v=>Math.round(v*10)/10;
   const stages=vm.runInContext('MA_LINES',ctx).map(name=>({name,price:{'25선':1330,'32선':1340}[name]||0,done:false,execPrice:null,shares:null}));
-  let f=futures({contracts:8,sellPct:50,steps:1,stages,currentPrice:1325,notify:{buys:true}});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}];
+  let f=futures({contracts:8,sellPct:50,steps:1,floorPrice:1340,stages,currentPrice:1325,notify:{buys:true}});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}]; // 평균 손절 1,340원
   assert.equal(ctx.setFutureCutChecked(f,0,true),true);
   f=ctx.futureRebuyWithStart(f,'25선',null,'1335');
   const held=()=>f.positions.reduce((n,p)=>n+p.contracts,0),open=()=>plain(ctx.futureRebuySummary(f).tranches.filter(x=>!x.done&&x.amount>0).map(x=>[r(x.price),x.amount,!!x.partial]));
@@ -460,7 +460,7 @@ test('재매수 표의 부분 체결 회차는 손절 표처럼 체크 −·남�
   Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){},confirm:()=>true,alert:msg=>{throw Error(msg);}});
   vm.runInContext('futureRebuyExpanded=true',ctx);
   const stages=vm.runInContext('MA_LINES',ctx).map(name=>({name,price:{'25선':1330,'32선':1340}[name]||0,done:false,execPrice:null,shares:null}));
-  let f=futures({contracts:8,sellPct:50,steps:1,stages,currentPrice:1325});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}];
+  let f=futures({contracts:8,sellPct:50,steps:1,floorPrice:1340,stages,currentPrice:1325});f.positions=[{month:'202612',contracts:8,settlementPrice:1450}]; // 평균 손절 1,340원
   ctx.setFutureCutChecked(f,0,true);f=ctx.futureRebuyWithStart(f,'25선',null,'1335');
   const x=ctx.futureRebuySummary(f).tranches.find(y=>Math.round(y.price*10)===13333);
   ctx.setFutureBuyChecked(f,x.i,x.t,true);ctx.setFutureBuyCount(f,x.i,x.t,'1');

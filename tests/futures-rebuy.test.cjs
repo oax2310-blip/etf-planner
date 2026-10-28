@@ -192,6 +192,17 @@ test('반등 배분은 평균 손절 환율 이하 회차에만 나누고 비운
   assert.deepEqual(plain(s.skipped).map(x=>[x.i,x.t]),[[1,2]]);assert.deepEqual(plain(s.plan),[2,1,0]);
   f.rebuy.currentPrice=1450;assert.deepEqual(plain(ctx.futureRebuySummary(f).plan),[2,1,0],'손절 환율 위로 와도 기한 없이 회차 신호를 기다린다');
 });
+
+test('평균 손절 환율 이하 회차가 없으면 첫 단계도 사지 않고 판 계약을 미복원으로 둔다',()=>{
+  const ctx=load(),f=futures({currentPrice:1450,notify:{buys:true},stages:[{name:'25선',price:1410},{name:'32선',price:1420},{name:'25일선',price:1500}]});
+  ctx.setFutureCutDone(f,0,true);
+  const s=ctx.futureRebuySummary(f),first=s.tranches.find(x=>x.i===0&&x.t===0);
+  assert.equal(s.sellAvg,1400);assert.deepEqual([first.price,first.amount,first.above],[1410,0,true],'예전에는 첫 단계 1차에 모두 배분');
+  assert.deepEqual([s.rest,s.above],[3,3]);assert.equal(s.tranches.some(x=>x.amount>0),false);
+  assert.equal(ctx.buildTradeAlertRules({futures:f},null).some(x=>x.id.includes(':buy:')),false,'재매수 알림 없음');
+  f.rebuy.stages[0].price=1390;const t=ctx.futureRebuySummary(f);
+  assert.deepEqual([t.above,t.tranches.filter(x=>x.amount>0).reduce((n,x)=>n+x.amount,0)],[0,3],'평균 손절 환율 아래로 내려온 선은 다시 배분');
+});
 test('회차를 체크하면 회차 환율로 기록하고 첫 재매수 때 회차 계획을 고정하며 체크를 모두 풀면 지운다',()=>{
   const ctx=load(),f=futures({currentPrice:1320,stages:[{name:'25분봉',price:1320},{name:'32분봉',price:1330},{name:'25일선',price:1380}]});
   ctx.setFutureCutDone(f,0,true);ctx.setFutureCutDone(f,1,true);
@@ -339,7 +350,7 @@ test('손절로 보유를 모두 팔아도 마지막 손절 월물로 시세·�
   const ctx=load(),f=futures({contracts:4,sellPct:100,steps:1,notify:{buys:true},cuts:[{contracts:4,price:1300,targetPrice:1300,month:'202611',settlementPrice:1450}],
     stages:vm.runInContext('MA_LINES',ctx).map(name=>({name,price:0,done:false,execPrice:null,shares:null}))});
   f.positions=[];
-  const doc=(at,month)=>({updatedAt:at,stocks:{},futures:{[month]:{kind:'달러선물',asOf:'2026-11-13',close:1320,ma:{'25선':1330}}}});
+  const doc=(at,month)=>({updatedAt:at,stocks:{},futures:{[month]:{kind:'달러선물',asOf:'2026-11-13',close:1320,ma:{'25선':1290}}}}); // 평균 손절 1,300원 이하
   // 11월물 최종거래일은 셋째 월요일 2026-11-16(KST). 그 전날까지는 손절한 11월물.
   let d=doc('2026-11-15T14:59:00Z','202611');
   assert.equal(ctx.priceMonth(f,d),'202611');

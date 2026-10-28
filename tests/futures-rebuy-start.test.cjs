@@ -125,10 +125,16 @@ test('직접 지정한 종료가격을 마지막 회차로 두고 범위 안에�
   assert.equal(c.buildTradeAlertRules({futures:g},quote()).filter(x=>x.condition==='up').length,0);
 });
 
-test('종료가격은 평균 손절 환율보다 높게도 설정하며 같은 가격의 평균선 도달과 중복하지 않는다',()=>{
+test('종료가격을 평균 손절 환율보다 높게 저장해도 그 위 회차는 배분·알림에서 빼고 같은 가격의 평균선 도달과 중복하지 않는다',()=>{
   const c=load(),f=fixture(),entry={ma:{'50선':1350}};
-  const g=c.futureRebuyWithStart(f,'50선',entry,'1450'),s=c.futureRebuySummary(g);
-  assert.ok(open(s).some(x=>x.price>1400));assert.equal(open(s).at(-1).price,1450);
+  const g=c.futureRebuyWithStart(f,'50선',entry,'1450'),s=c.futureRebuySummary(g),above=s.tranches.filter(x=>x.above);
+  assert.equal(g.rebuy.endPrice,1450);assert.equal(s.sellAvg,1400);
+  assert.ok(open(s).length>0&&open(s).every(x=>x.price<=1400),'평균 손절 환율 이하 회차만 배분');
+  assert.ok(above.some(x=>x.price===1450&&s.stages[x.i].rebuyEnd)&&above.every(x=>x.price>1400&&x.amount===0&&!x.done),'종료 회차도 평균 손절 환율 위면 제외');
+  assert.equal(s.above+open(s).reduce((n,x)=>n+x.amount,0),s.rest,'뺀 계약은 다른 회차에 다시 나누지 않고 미복원으로 둔다');
+  assert.equal(c.futureBuyDue({tranches:above},1500),null,'제외 회차는 재매수 시점이 되지 않는다');
+  const rules=plain(c.buildTradeAlertRules({futures:g},quote({'50선':1350}))).filter(x=>x.condition==='up');
+  assert.ok(rules.length>0&&rules.every(x=>x.targetPrice<=1400));
   const h=c.futureRebuyWithStart(f,'50선',entry,'1360'),t=c.futureRebuySummary(h);
   assert.equal(open(t).filter(x=>x.price===1360).length,1);assert.equal(t.stages[open(t).at(-1).i].rebuyEnd,true);
 });
@@ -147,9 +153,9 @@ test('종료가격 범위에서 계약이 적어도 마지막 가격을 배분�
 test('종료 회차 체결 뒤 범위 변경은 새 회차를 만들고 이전 체결·가격·알림 인덱스는 보존한다',()=>{
   const c=load(),f=fixture(),g=c.futureRebuyWithStart(f,'50선',{ma:{'50선':1350}},'1375'),s=c.futureRebuySummary(g),end=open(s).at(-1);
   assert.notEqual(c.setFutureBuyDone(g,end.i,0,true),false);const recorded=JSON.stringify(g.rebuy.stages[end.i]),before=JSON.stringify(g.rebuy.stages);
-  const h=c.futureRebuyWithStart(g,'50선',null,'1450'),t=c.futureRebuySummary(h);
+  const h=c.futureRebuyWithStart(g,'50선',null,'1395'),t=c.futureRebuySummary(h);
   assert.equal(JSON.stringify(h.rebuy.stages[end.i]),recorded);assert.notEqual(h.rebuy.stages[t.endIndex].name,g.rebuy.stages[end.i].name);
-  assert.equal(open(t).at(-1).price,1450);assert.equal(open(t).reduce((n,x)=>n+x.amount,0),t.sold-t.rebought);
+  assert.equal(open(t).at(-1).price,1395);assert.equal(open(t).reduce((n,x)=>n+x.amount,0),t.sold-t.rebought);
   const loaded=JSON.parse(JSON.stringify(h));assert.deepEqual(plain(c.futureRebuySummary(loaded).planKeys),plain(t.planKeys));
   const cleared=c.futureRebuyWithStart(g,'50선',null,'');assert.equal(Object.hasOwn(cleared.rebuy,'endPrice'),false);
   assert.equal(JSON.stringify(cleared.rebuy.stages),before);assert.equal(c.futureRebuySummary(cleared).rebought,s.sold-c.futureRebuySummary(g).rest);
@@ -197,8 +203,8 @@ test('종료선 시세가 비면 중간 단계나 자동 기준으로 대체하�
   const before=JSON.stringify(g),s=c.futureRebuySummary(g);assert.equal(s.waitingEnd,true);assert.equal(s.endPrice,null);assert.equal(open(s).length,0);
   assert.equal(c.futureBuyDue(s,1500),null);assert.equal(c.setFutureBuyDone(g,s.endIndex,0,true),false);
   assert.equal(c.buildTradeAlertRules({futures:g},quote()).filter(x=>x.condition==='up').length,0);assert.equal(JSON.stringify(g),before);
-  c.fillPrices({futures:g},quote({'70일선':1450}));const ready=c.futureRebuySummary(g);
-  assert.equal(ready.waitingEnd,false);assert.equal(ready.endPrice,1450);assert.equal(ready.stages[open(ready).at(-1).i].name,'70일선');
+  c.fillPrices({futures:g},quote({'70일선':1390}));const ready=c.futureRebuySummary(g);
+  assert.equal(ready.waitingEnd,false);assert.equal(ready.endPrice,1390);assert.equal(ready.stages[open(ready).at(-1).i].name,'70일선');
 });
 
 test('같은 시작·종료선은 도달 1회이며 역순 종료선은 거절하고 종료선 뒤의 싼 평균선도 제외한다',()=>{
