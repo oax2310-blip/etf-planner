@@ -130,7 +130,7 @@ function trancheLevels(stages,est,i){
 }
 // 단계 i에서 살 수 있는 회차 [{t, price, est, step}]: 1회차와 나눌 구간이 있는 2·3회차. 옛 통째 기록 단계는 1회차만.
 const stageCandidates = (stages,est,i) => trancheLevels(stages,est,i).map((x,t)=>({t,...x})).filter(x=>x.t===0||x.step&&!stages[i].done);
-// 달러선물 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 실제 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 1차 하나.
+// 달러선물 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 실제 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 1차 하나(평균 손절가 위면 futureRebuyAboveAvg가 제외).
 function rebuyPlanned(stages,est,avg){
   if(!stages.length)return [];
   const out=[],n=rebuySplits(stages,avg);
@@ -347,6 +347,7 @@ function futureRebuyStageIndices(r,stages){
 // 시작선 이전 체결은 수량·가격·월물과 함께 유지하며 신규 배분만 제외한다. 실제 시작선 시세가 없으면 배분·판정·알림 대기.
 // 범위 변경 때 미체결 고정 계획을 다시 계산한다. 시세 변동은 고정 회차를 유지하되 지정 종료가격 밖으로는 배분하지 않는다.
 // 재매수 시작 뒤에도 남은 손절은 기존 목표·회차 환율로 이어 가고, 추가로 판 계약은 남은 재매수에 더한다. 보유/정산손익은 건드리지 않음.
+// 어느 방식이든 평균 손절가 위 회차는 배분한 뒤 제외한다(futureRebuyAboveAvg, above = 뺀 계약 수).
 function futureRebuySummary(f){
   const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
   const raw=futureRebuyStages(r),endLine=movingLineName(r.endLine),hasEnd=!!r.endLine||Number(r.endPrice)>0;
@@ -385,14 +386,26 @@ function futureRebuySummary(f){
     for(const x of open){if(diff>=0)break;const cut=Math.min(x.amount,-diff);x.amount-=cut;diff+=cut;}
     if(diff>0)splitWhole(diff,open.length).forEach((v,k)=>{open[k].amount+=v;});
   }else open.forEach(x=>{x.amount=0;});
+  const above=futureRebuyAboveAvg(tranches,sellAvg);
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});
-  const summary={hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
+  const summary={hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,rebought,rest,above,sellAvg,started,held:Math.max(0,hold-sold+rebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
   return r.directPlan?futureDirectRebuySummary(r,summary):summary;
 }
-// 직접 분할은 평균 손절가와 무관하게 시작·종료 환율을 포함해 rounds회로 나눈다(1회는 시작 환율).
+// 평균 손절가(avg) 위 회차는 사지 않는다: 안 산 회차는 배분을 0으로 두고 above로 표시해 도달·알림(amount > 0만)에서 빼고, 부분 체결 회차는 체결분만 완료로 읽는다.
+// 뺀 계약은 다른 회차에 다시 나누지 않고 미복원으로 둔다(환율 사다리 손익분기처럼 분할매수 계획만 반영). 기록은 바꾸지 않으며 뺀 계약 수를 돌려준다.
+function futureRebuyAboveAvg(tranches,avg){
+  let out=0;
+  if(avg>0)for(const x of tranches){
+    if(x.done||!(Number(x.price)>avg))continue;
+    out+=x.amount;
+    if(x.partial){x.done=true;delete x.partial;x.amount=x.qty;}else{x.amount=0;x.above=true;}
+  }
+  return out;
+}
+// 직접 분할은 시작·종료 환율을 포함해 rounds회로 나누고, 평균 손절가 위 회차는 저장해도 제외한다(futureRebuyAboveAvg, 1회는 시작 환율).
 // 상승 도달은 시작≤종료, 하락 도달은 시작≥종료. 가격은 소수 둘째 자리로 고정하고 수량은 splitWhole.
 // directPlan.names가 이번 계획의 단계다. 각 단계는 1회만 사용하며 기존 stages 인덱스·체결·알림 키는 옮기지 않는다.
 // 이번 계획의 계약 수에서 그 계획의 체결만 빼고, 전체 미복원 계약 수 안에서 잔량을 배정한다. 새 손절은 이번 계획의 한도를 늘리지 않는다.
@@ -409,8 +422,8 @@ function futureDirectRebuySummary(r,s){
     const rec=fills[i].find(x=>x.t===0),qty=rec?.qty||0,amount=Math.min(left,Math.max(0,target[k]-qty));left-=amount;
     tranches.push({i,t:0,price:Number(s.stages[i].price)||0,condition:p.condition,est:false,step:false,done:!!rec&&!amount,qty,execPrice:rec?.price??null,amount:rec&&!amount?qty:amount,...(rec&&amount?{partial:true,plannedQty:qty+amount}:{})});
   });
-  const directRest=tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0),plan=s.stages.map((_,i)=>tranches.filter(x=>x.i===i).reduce((n,x)=>n+x.amount,0));
-  return {...s,direct:true,directBought:bought,directRest,unplannedRest:Math.max(0,s.rest-directRest),active:indices,stageOrder:[...history,...indices],tranches,plan,skipped:[],planKeys:indices.map(i=>[s.stages[i].name,0]),waitingStart:false,waitingEnd:false,endLine:"",endPrice:null,endIndex:-1,hasEnd:false,
+  const above=futureRebuyAboveAvg(tranches,s.sellAvg),directRest=tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0),plan=s.stages.map((_,i)=>tranches.filter(x=>x.i===i).reduce((n,x)=>n+x.amount,0));
+  return {...s,direct:true,directBought:bought,directRest,above,unplannedRest:Math.max(0,s.rest-directRest-above),active:indices,stageOrder:[...history,...indices],tranches,plan,skipped:[],planKeys:indices.map(i=>[s.stages[i].name,0]),waitingStart:false,waitingEnd:false,endLine:"",endPrice:null,endIndex:-1,hasEnd:false,
     rangeError:valid?"":"직접 분할 설정을 확인하세요.",doneTranches:tranches.filter(x=>x.done).length};
 }
 // 직접 분할 도달 조건은 화면·미리보기·서버 알림이 함께 사용한다. 이동평균 방식은 기존 상승 도달을 유지한다.
