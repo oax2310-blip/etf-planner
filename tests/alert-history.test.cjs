@@ -99,8 +99,40 @@ test('여러 기기·수신함·발송 이력의 재알림은 순서와 중복�
   assert.deepEqual(results[0],results[1]);assert.deepEqual(results[0],results[2]);
   assert.deepEqual(results[0].items.map(item=>[item.id,item.reminderCount]),[[FIRST,2]]);
   const again=plain(h.ctx.store.merge(results[0],{items:[one]}));assert.deepEqual(again,results[0]);
-  const deleted=plain(h.ctx.store.merge(results[0],{deletedIds:[FIRST]},{items:[followUp('t'.repeat(64),3,'2026-10-17T00:45:00Z')]}));
-  assert.deepEqual(deleted.items,[]);assert.deepEqual(deleted.deletedIds,[FIRST]);
+  const deleted=plain(h.ctx.store.merge(results[0],{deletedIds:h.ctx.store.removal(results[0].items[0])},{items:[one,two]}));
+  assert.deepEqual(deleted.items,[]);assert.deepEqual(deleted.deletedIds,[FIRST,`${FIRST}:2`]);
+});
+test('회차 항목을 지운 뒤 온 재알림은 새 항목으로 보이고, 지울 때까지 받은 재알림은 다시 나타나지 않는다',()=>{
+  const h=load(),isUnread=unreadOf(h),one=followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z'),SECOND='s'.repeat(64),THIRD='t'.repeat(64);
+  h.ctx.acceptAlertHistory([event(FIRST),one]);assert.equal(h.ctx.removeAlertHistory(FIRST),true);
+  assert.deepEqual(plain(h.ctx.state.alertHistory),{items:[],deletedIds:[FIRST,`${FIRST}:1`]});
+  h.ctx.acceptAlertHistory([one]);assert.deepEqual(plain(h.ctx.state.alertHistory.items),[],'다른 기기 수신함·발송 이력의 지운 재알림');
+  const two=followUp(SECOND,2,'2099-01-01T00:45:00Z',{price:98,receivedAt:'2099-01-01T00:45:05Z'});
+  h.ctx.acceptAlertHistory([two]);
+  let items=plain(h.ctx.state.alertHistory.items);assert.equal(items.length,1);
+  assert.deepEqual([items[0].id,items[0].alertKey,items[0].reminderCount,items[0].occurredAt,items[0].lastSentAt,items[0].price],[SECOND,FIRST,2,'2099-01-01T00:45:00.000Z','2099-01-01T00:45:00.000Z',98]);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),true);
+  const card=h.ctx.alertHistoryCard(items[0]);
+  assert.match(card,/data-open-history="s{64}"/);assert.match(card,/재알림 2회/);assert.match(card,new RegExp(`최초 알림 ${h.ctx.alertHistoryTime('2026-10-14T01:02:10Z')}`));
+  h.ctx.noteAlertHistoryRead(FIRST); // 재알림 푸시는 최초 알림 ID로 연다.
+  assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),false);
+  assert.deepEqual(plain(h.ctx.store.merge(h.ctx.state.alertHistory)),plain(h.ctx.state.alertHistory),'다시 합쳐도 같은 항목');
+  const reopened=load(JSON.parse(h.storage.get('test-state')));assert.deepEqual(plain(reopened.ctx.state.alertHistory),plain(h.ctx.state.alertHistory));
+  const three=followUp(THIRD,3,'2099-01-02T00:45:00Z');h.ctx.acceptAlertHistory([three,two]);
+  items=plain(h.ctx.state.alertHistory.items);
+  assert.deepEqual(items.map(item=>[item.id,item.reminderCount,item.lastSentAt,item.price]),[[SECOND,3,'2099-01-02T00:45:00.000Z',98]]);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),true,'읽은 뒤 온 재알림');
+  const raw=[{deletedIds:[FIRST,`${FIRST}:1`]},{items:[one]},{items:[three]},{items:[two]}];
+  assert.deepEqual(plain(h.ctx.store.merge(...raw)),plain(h.ctx.store.merge(...raw.reverse())),'기기·순서와 관계없이 같은 항목');
+  assert.equal(h.ctx.removeAlertHistory(SECOND),true);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.deletedIds),[FIRST,`${FIRST}:1`,`${FIRST}:3`,SECOND]);
+  h.ctx.acceptAlertHistory([two,three]);assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+  h.ctx.acceptAlertHistory([followUp('u'.repeat(64),4,'2099-01-03T00:45:00Z')]);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(item=>[item.id,item.reminderCount])),[['u'.repeat(64),4]]);
+  // 표시 없이 지운 옛 삭제 ID는 0회까지 덮는다. 지금 기기에 남은 기록처럼 최초 항목만 지운 회차도 새 재알림을 보인다.
+  const legacy=plain(h.ctx.store.merge({deletedIds:[FIRST]},{items:[followUp(THIRD,3,'2026-10-17T00:45:00Z')]}));
+  assert.deepEqual(legacy.items.map(item=>[item.id,item.reminderCount]),[[THIRD,3]]);assert.deepEqual(legacy.deletedIds,[FIRST]);
+  assert.deepEqual(plain(h.ctx.store.removal(h.ctx.store.record(event('plain')))),['plain']);
 });
 test('최초 알림이 없는 기기는 재알림으로 한 항목을 만들고 서로 다른 회차·매수매도는 따로 둔다',()=>{
   const h=load();
