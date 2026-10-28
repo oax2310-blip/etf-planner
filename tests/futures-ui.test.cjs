@@ -126,3 +126,93 @@ test('달러선물 가격 글자·입력칸은 소수 첫째 자리까지만 보
   assert.doesNotMatch(html,/\d\.\d{2}/,'둘째 자리 이상 숫자를 보이지 않는다');
   assert.equal(f.levels[0].tranches[1].price,1370+5/3);
 });
+
+const buyTableContext=()=>{
+  const ctx=load();
+  Object.assign(ctx,{esc:v=>String(v),PENCIL:'',decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),money:v=>`${Math.round(v)}원`});
+  return ctx;
+};
+const buyTableFutures=levels=>({targetPrice:1480,positions:[{month:'202612',contracts:2,settlementPrice:1370}],levels});
+const buyTableQuote=close=>({stocks:{},updatedAt:'2026-10-28T01:00:00Z',futures:{'202612':{kind:'달러선물',asOf:'2026-10-28',close,ma:{}}}});
+const buyTableRow=(html,key)=>{
+  const row=[...html.matchAll(/<div class="future-buy-row([^"]*)">([\s\S]*?)(?=<div class="future-buy-row|$)/g)].find(m=>m[2].includes(`data-tranche-check="${key}"`));
+  assert.ok(row,`${key} 회차를 찾는다`);
+  return {classes:row[1].trim().split(/\s+/),html:row[2]};
+};
+const assertBuyTableDue=(html,key,due,note='')=>{
+  const row=buyTableRow(html,key);
+  assert.equal(row.classes.includes('due'),due,`${key} 회차 도달 강조${note?` · ${note}`:''}`);
+  assert.equal(/<small class="future-buy-due">도달<\/small>/.test(row.html),due,`${key} 회차 도달 글자${note?` · ${note}`:''}`);
+};
+
+test('분할매수 도달은 평균선·종료가 이상과 직접 매수가 이하를 포함하며 알림 선택·완료와 구분한다',()=>{
+  const ctx=buyTableContext(),manual=price=>({label:'가상 직접 매수',price,contracts:1,tranches:[{price,completed:false}]}),f=buyTableFutures([
+    level(25,1360,1),level(32,1365,1),level(42,1370,1),level(60,1380,1),manual(1360),manual(1380),manual(1370),{...manual(1370),planEnd:true}
+  ]);
+  Object.assign(f.levels[0].tranches[0],{completed:true,executionPrice:1360,mergedMonth:'202612'});
+  f.levels[1].notify=false;f.levels[2].tranches[0].notify=false;
+  ctx.priceData=buyTableQuote(1370);
+  const before=JSON.stringify(f),html=ctx.futureBuyTable(f);
+  [false,true,true,false,false,true,true,true].forEach((due,i)=>assertBuyTableDue(html,`${i}:0`,due));
+  assert.match(buyTableRow(html,'1:0').html,/class="future-buy-round"/,'도달 글자는 기준선·회차 아래에 둔다');
+  assert.equal(JSON.stringify(f),before,'도달 표시는 완료·알림·보유 기록을 바꾸지 않는다');
+});
+
+test('분할매수 도달은 화면의 보유 근월물 시세를 쓰고 편입 월물·현물 환율을 대신 쓰지 않는다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1370,1)]);
+  f.levels[0].tranches[0].month='202701';
+  ctx.priceData=buyTableQuote(1360);
+  ctx.priceData.futures['202701']={kind:'달러선물',asOf:'2026-10-28',close:1500,ma:{}};
+  ctx.priceData.fx={USDKRW:{kind:'현물환율',asOf:'2026-10-28',close:1500,ma:{}}};
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
+  ctx.priceData.futures['202612'].close=1380;ctx.priceData.futures['202701'].close=1300;ctx.priceData.fx.USDKRW.close=1300;
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',true);
+  delete ctx.priceData.futures['202612'];
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false,'다른 월물이 있어도 보유 근월물 시세 없음을 도달로 보지 않는다');
+});
+
+test('분할매수 도달은 시세·가격이 없거나 유효하지 않으면 표시하지 않는다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1370,1)]);
+  for(const doc of [undefined,null,{},buyTableQuote(undefined),buyTableQuote(null),buyTableQuote(''),buyTableQuote(0),buyTableQuote(-1),buyTableQuote(NaN),buyTableQuote(Infinity),buyTableQuote('가격 없음')]){
+    ctx.priceData=doc;assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
+  }
+  ctx.priceData=buyTableQuote(1380);delete ctx.priceData.futures['202612'].asOf;
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false,'유효한 시세 형식을 확인한다');
+  ctx.priceData=buyTableQuote(1380);
+  for(const price of [0,-1,NaN,Infinity]){
+    f.levels[0].tranches[0].price=price;assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
+  }
+  f.levels[0].tranches[0].price=1370;ctx.priceData=buyTableQuote('1370');
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',true,'숫자로 저장된 시세도 같은 값으로 비교한다');
+});
+
+test('분할매수 도달은 소수 첫째 자리 표시 반올림 대신 실제 저장 가격을 비교한다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1371.649,1)]);
+  ctx.priceData=buyTableQuote(1371.6);
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false,'같은 1,371.6원 표시여도 아직 실제 매수가 미만이다');
+  ctx.priceData.futures['202612'].close=1371.649;
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',true);
+  const direct={label:'가상 직접 매수',price:1369.951,contracts:1,tranches:[{price:1369.951,completed:false}]};
+  f.levels=[direct];ctx.priceData.futures['202612'].close=1370;
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false,'하락 매수도 표시 반올림으로 먼저 도달 처리하지 않는다');
+  ctx.priceData.futures['202612'].close=1369.951;
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',true);
+});
+
+test('종료 이동평균 계획이 오류·추가 배분 대기이면 보존한 옛 미매수 회차를 도달로 표시하지 않는다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,1),level(42,1450,0)]);
+  f.buyPlan={startLine:'25일선',endLine:'42일선',endPrice:1450,contracts:1,units:['일선']};
+  ctx.priceData=buyTableQuote(1500);
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',true,'유효한 계획의 매수 회차는 표시한다');
+  f.buyPlan.endPrice=1390;assert.ok(ctx.futureAutoBuyPlan(f).error);
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
+  f.buyPlan.endPrice=1450;f.levels[0].price=0;assert.ok(ctx.futureAutoBuyPlan(f).error);
+  assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
+  f.levels=[level(25,1400,1),level(32,1300,1),level(42,1450,0),{planEnd:true,label:'종료가',price:1450,contracts:1,tranches:[{price:1450,completed:true,executionPrice:1450,mergedMonth:'202612'}]}];
+  Object.assign(f.levels[0].tranches[0],{completed:true,executionPrice:1400,mergedMonth:'202612'});
+  f.levels[1].tranches[0].price=1410;f.buyPlan.contracts=3;
+  assert.ok(ctx.futureAutoBuyPlan(f).waiting,'남은 계약을 배분할 새 기준선이 없다');
+  const before=JSON.stringify(f),html=ctx.futureBuyTable(f);
+  assertBuyTableDue(html,'1:0',false);
+  assert.equal(JSON.stringify(f),before,'대기 중 보존한 회차도 표시만 하고 기록을 바꾸지 않는다');
+});
