@@ -130,7 +130,7 @@ function trancheLevels(stages,est,i){
 }
 // 단계 i에서 살 수 있는 회차 [{t, price, est, step}]: 1회차와 나눌 구간이 있는 2·3회차. 옛 통째 기록 단계는 1회차만.
 const stageCandidates = (stages,est,i) => trancheLevels(stages,est,i).map((x,t)=>({t,...x})).filter(x=>x.t===0||x.step&&!stages[i].done);
-// 달러선물 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 실제 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 1차 하나(평균 손절가 위면 futureRebuyAboveAvg가 제외).
+// 달러선물 회차 계획 [[i, t]…]: 대상 단계(rebuySplits)의 실제 회차 가격이 평균 손절가 이하인 회차. 없으면 첫 단계 1차 하나(평균 손절가 위면 rebuyAboveAvg가 제외).
 function rebuyPlanned(stages,est,avg){
   if(!stages.length)return [];
   const out=[],n=rebuySplits(stages,avg);
@@ -162,7 +162,7 @@ function storedPlan(r,stages){
 // n회로 나누기: 금액은 똑같이, 계약은 누적 반올림 차이로 고르게 흩는다(3계약 5회면 1·0·1·0·1 — 앞 회차에만 몰리지 않게).
 const splitValue = (v,n) => Array(n).fill(v/n);
 const splitWhole = (v,n) => Array.from({length:n},(_,k)=>Math.round(v*(k+1)/n)-Math.round(v*k/n));
-// ETF는 평균 손절가로 실제 마지막 평균선을 고르되, 같은 평균선의 후속 회차는 손절가로 자르지 않는다.
+// ETF는 평균 손절가로 실제 마지막 평균선을 고르고 그 선의 지정 회차까지 계획한다. 배분 뒤 평균 손절가 위 회차는 rebuySummary가 제외한다(rebuyAboveAvg).
 // rounds(1~3)를 직접 고르면 그 회차까지 유지하며, prices[t]는 해당 회차의 직접 기준가(1차는 단계 price).
 // 다음 선을 모르는 직접 설정 회차는 가격 입력 대기; 추정가로 매수·알림을 실행하지 않는다.
 const etfRebuyRounds = x => Number.isInteger(x?.rounds)&&x.rounds>=1&&x.rounds<=TRANCHES?x.rounds:null;
@@ -247,7 +247,7 @@ function etfTrancheLevels(stages,est,i){
   });
 }
 const etfStageCandidates = (stages,est,i) => etfTrancheLevels(stages,est,i).map((x,t)=>({t,...x})).filter(x=>stages[i].done?x.t===0:etfRebuyRounds(stages[i])?x.t<stages[i].rounds:x.t===0||x.step);
-// 최대 범위 안에서 평균 손절가로 고른 실제 마지막 선의 lastRound까지 배분한다. 그 선의 후속 회차는 손절가와 무관하게 유지한다.
+// 최대 범위 안에서 평균 손절가로 고른 실제 마지막 선의 lastRound까지 계획한다(평균 손절가 위 회차의 배분 제외는 rebuySummary).
 // 다음 평균선의 도달 회차는 별도 단계이므로 포함하지 않는다. 조회 때 단계·기록을 삭제하거나 저장하지 않는다.
 function etfRebuyPlanned(stages,est,avg=Infinity,range=null,lastLine=null,from=null,round=0){
   const out=[];
@@ -347,7 +347,7 @@ function futureRebuyStageIndices(r,stages){
 // 시작선 이전 체결은 수량·가격·월물과 함께 유지하며 신규 배분만 제외한다. 실제 시작선 시세가 없으면 배분·판정·알림 대기.
 // 범위 변경 때 미체결 고정 계획을 다시 계산한다. 시세 변동은 고정 회차를 유지하되 지정 종료가격 밖으로는 배분하지 않는다.
 // 재매수 시작 뒤에도 남은 손절은 기존 목표·회차 환율로 이어 가고, 추가로 판 계약은 남은 재매수에 더한다. 보유/정산손익은 건드리지 않음.
-// 어느 방식이든 평균 손절가 위 회차는 배분한 뒤 제외한다(futureRebuyAboveAvg, above = 뺀 계약 수).
+// 어느 방식이든 평균 손절가 위 회차는 배분한 뒤 제외한다(rebuyAboveAvg, above = 뺀 계약 수).
 function futureRebuySummary(f){
   const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
   const raw=futureRebuyStages(r),endLine=movingLineName(r.endLine),hasEnd=!!r.endLine||Number(r.endPrice)>0;
@@ -386,7 +386,7 @@ function futureRebuySummary(f){
     for(const x of open){if(diff>=0)break;const cut=Math.min(x.amount,-diff);x.amount-=cut;diff+=cut;}
     if(diff>0)splitWhole(diff,open.length).forEach((v,k)=>{open[k].amount+=v;});
   }else open.forEach(x=>{x.amount=0;});
-  const above=futureRebuyAboveAvg(tranches,sellAvg);
+  const above=rebuyAboveAvg(tranches,sellAvg);
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});
@@ -394,18 +394,19 @@ function futureRebuySummary(f){
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:sold>goal,overBought:rebought>sold};
   return r.directPlan?futureDirectRebuySummary(r,summary):summary;
 }
-// 평균 손절가(avg) 위 회차는 사지 않는다: 안 산 회차는 배분을 0으로 두고 above로 표시해 도달·알림(amount > 0만)에서 빼고, 부분 체결 회차는 체결분만 완료로 읽는다.
-// 뺀 계약은 다른 회차에 다시 나누지 않고 미복원으로 둔다(환율 사다리 손익분기처럼 분할매수 계획만 반영). 기록은 바꾸지 않으며 뺀 계약 수를 돌려준다.
-function futureRebuyAboveAvg(tranches,avg){
+// 평균 손절가(avg) 위 회차는 사지 않는다(달러선물·ETF 공통): 안 산 회차는 배분을 0으로 두고 above로 표시해 도달·알림(amount > 0만)에서 빼고,
+// 부분 체결 회차는 체결분만 완료로 읽는다(done: 체결분의 배분 — 선물은 계약 수, ETF는 금액). 뺀 몫은 다른 회차에 다시 나누지 않고 미복원으로 둔다
+// (달러선물 환율 사다리 손익분기처럼 분할매수 계획만 반영). 기록은 바꾸지 않으며 뺀 몫(선물 계약·ETF 금액)을 돌려준다.
+function rebuyAboveAvg(tranches,avg,done=x=>x.qty){
   let out=0;
   if(avg>0)for(const x of tranches){
     if(x.done||!(Number(x.price)>avg))continue;
     out+=x.amount;
-    if(x.partial){x.done=true;delete x.partial;x.amount=x.qty;}else{x.amount=0;x.above=true;}
+    if(x.partial){x.done=true;delete x.partial;x.amount=done(x);}else{x.amount=0;x.above=true;}
   }
   return out;
 }
-// 직접 분할은 시작·종료 환율을 포함해 rounds회로 나누고, 평균 손절가 위 회차는 저장해도 제외한다(futureRebuyAboveAvg, 1회는 시작 환율).
+// 직접 분할은 시작·종료 환율을 포함해 rounds회로 나누고, 평균 손절가 위 회차는 저장해도 제외한다(rebuyAboveAvg, 1회는 시작 환율).
 // 상승 도달은 시작≤종료, 하락 도달은 시작≥종료. 가격은 소수 둘째 자리로 고정하고 수량은 splitWhole.
 // directPlan.names가 이번 계획의 단계다. 각 단계는 1회만 사용하며 기존 stages 인덱스·체결·알림 키는 옮기지 않는다.
 // 이번 계획의 계약 수에서 그 계획의 체결만 빼고, 전체 미복원 계약 수 안에서 잔량을 배정한다. 새 손절은 이번 계획의 한도를 늘리지 않는다.
@@ -422,7 +423,7 @@ function futureDirectRebuySummary(r,s){
     const rec=fills[i].find(x=>x.t===0),qty=rec?.qty||0,amount=Math.min(left,Math.max(0,target[k]-qty));left-=amount;
     tranches.push({i,t:0,price:Number(s.stages[i].price)||0,condition:p.condition,est:false,step:false,done:!!rec&&!amount,qty,execPrice:rec?.price??null,amount:rec&&!amount?qty:amount,...(rec&&amount?{partial:true,plannedQty:qty+amount}:{})});
   });
-  const above=futureRebuyAboveAvg(tranches,s.sellAvg),directRest=tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0),plan=s.stages.map((_,i)=>tranches.filter(x=>x.i===i).reduce((n,x)=>n+x.amount,0));
+  const above=rebuyAboveAvg(tranches,s.sellAvg),directRest=tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0),plan=s.stages.map((_,i)=>tranches.filter(x=>x.i===i).reduce((n,x)=>n+x.amount,0));
   return {...s,direct:true,directBought:bought,directRest,above,unplannedRest:Math.max(0,s.rest-directRest-above),active:indices,stageOrder:[...history,...indices],tranches,plan,skipped:[],planKeys:indices.map(i=>[s.stages[i].name,0]),waitingStart:false,waitingEnd:false,endLine:"",endPrice:null,endIndex:-1,hasEnd:false,
     rangeError:valid?"":"직접 분할 설정을 확인하세요.",doneTranches:tranches.filter(x=>x.done).length};
 }
@@ -554,7 +555,7 @@ function setFutureBuyQty(f,i,t,text){
 function setFutureBuyPrice(f,i,t,text){
   const n=Number(text),rec=futureFillRec(f,i,t);if(!rec||!Number.isFinite(n)||n<=0)return false;rec[0][rec[1]]=n;
 }
-// 손절 금액(수량×실제 체결가, 없으면 계획가)만 복원; 평균 손절가=금액÷주수(실제 마지막 평균선 선택용, 같은 선의 회차 가격 상한 아님).
+// 손절 금액(수량×실제 체결가, 없으면 계획가)만 복원; 평균 손절가=금액÷주수(실제 마지막 평균선 선택과 회차 가격 상한 — 위 회차는 배분 뒤 제외, above = 뺀 금액).
 // ETF 배분·회차·조건은 etfRebuyPlan·etfTrancheLevels·weightEtfRebuyTranches. 재매수를 시작해도 남은 손절 회차는 유지한다(재이탈 — etfRebuyResume).
 // cycle: 재이탈 정보(없으면 null). fixPlan: 다음 재매수 체결 때 이번 재이탈 범위를 고정해야 함(applyRebuyBuy). skipped[].passed: 재이탈로 건너뛴 앞 회차.
 // cutBase: 재매수 뒤 남은 손절의 기준 보유(rebuyCutRun, 재매수 전이면 null).
@@ -570,13 +571,15 @@ function rebuySummary(r){
   const planned=etfRebuyPlan(r,stages,est,started,sellAvg);
   const tranches=rebuyTranches(stages,est,fills,planned,rest,splitValue,etfTrancheLevels,false); // 범위 다음 단계로 남은 금액을 자동 배정하지 않는다.
   weightEtfRebuyTranches(stages,planned,tranches);
-  tranches.forEach(x=>{if(x.done)x.amount=x.qty*(x.execPrice>0?x.execPrice:sellAvg||0);}); // 산 회차는 체결가(없으면 손절 평균가)로
+  const doneValue=x=>x.qty*(x.execPrice>0?x.execPrice:sellAvg||0);
+  tranches.forEach(x=>{if(x.done)x.amount=doneValue(x);}); // 산 회차는 체결가(없으면 손절 평균가)로
+  const above=rebuyAboveAvg(tranches,sellAvg,doneValue);
   const plan=stages.map((x,i)=>tranches.reduce((a,y)=>y.i===i?a+y.amount:a,0)); // 단계별 금액(원)
   const cycle=etfRebuyResume(r,stages),range=etfRangeOf(r),rank=i=>etfRebuyRank(stages,i,range);
   const passed=(i,t)=>!!cycle&&(rank(i)<rank(cycle.at)||i===cycle.at&&(!cycle.round||t<cycle.round));
   const skipped=stages.flatMap((st,i)=>stageTouched(st)||planned.some(([j])=>j===i)?etfStageCandidates(stages,est,i).filter(x=>!tranches.some(y=>y.i===i&&y.t===x.t)).map(x=>({i,...x,...(passed(i,x.t)?{passed:true}:{})})):[]);
   const planKeys=planned.map(([i,t])=>[stages[i].name,t]),fixPlan=!!cycle&&planKeys.length>0&&(!cycle.bought||(range?r.resumeEndLine!==planKeys.at(-1)[0]:!(storedPlan(r,stages)||[]).some(([i,t])=>etfResumeAfter(cycle,i,t))));
-  return {cuts,stages,plan,est,tranches,skipped,planKeys,cycle,fixPlan,cutBase:run,sold,rebought,sellValue,buyTarget,buyValue,rest,sellAvg,buyAvg,started,doneCuts:cuts.filter(c=>c.done).length,filledCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,held:Math.max(0,holdShares(r)-sold+rebought)};
+  return {cuts,stages,plan,est,tranches,skipped,planKeys,cycle,fixPlan,cutBase:run,sold,rebought,sellValue,buyTarget,buyValue,rest,above,sellAvg,buyAvg,started,doneCuts:cuts.filter(c=>c.done).length,filledCuts:done.length,doneTranches:tranches.filter(x=>x.done).length,held:Math.max(0,holdShares(r)-sold+rebought)};
 }
 // 실제 누적 체결: 수량 입력은 정수 주만, 0이면 기록 삭제. 체크는 고정 잔량까지 완료한다.
 // 기존 완료 기록에는 partial을 만들지 않는다. 수량을 고친 회차만 예정량을 고정하며 조회·복원에서는 저장하지 않는다.
@@ -841,9 +844,9 @@ function renderRebuyStageDraft(){
   const resume=etfResumeName(s);
   $("rebuyRangeBudget").innerHTML=movingLineText(`<p><b>최대 ${esc(range.startLine)} → ${esc(range.lastLine)} · ${s.cycle?resume?`재이탈 ${esc(resume)}부터 `:"재이탈 · 다음 선 없음 · ":""}실제 ${esc(draft.lastLine)} ${(s.planKeys.at(-1)?.[1]??range.lastRound-1)+1}회차까지</b></p><p>목표 ${P(s.buyTarget)} · 남은 ${P(s.rest)} · ${s.planKeys.length}회</p>`);
   const rows=s.tranches.filter(x=>range.names.includes(s.stages[x.i].name)||x.i===s.cycle?.from);
-  $("rebuyRangePreview").innerHTML=rows.map(x=>`<span${x.done?' class="done"':''}><b>${esc(movingLineText(s.stages[x.i].name))} ${x.t+1}회차</b> ${x.price>0?P(x.price):"가격 대기"} · ${x.done?`체결 ${won.format(x.qty)}주`:x.amount>0?`배분 ${P(x.amount)}`:"손절 후 계산"}</span>`).join("");
+  $("rebuyRangePreview").innerHTML=rows.map(x=>`<span${x.done?' class="done"':''}><b>${esc(movingLineText(s.stages[x.i].name))} ${x.t+1}회차</b> ${x.price>0?P(x.price):"가격 대기"} · ${x.done?`체결 ${won.format(x.qty)}주`:x.amount>0?`배분 ${P(x.amount)}`:x.above?"평균 손절가 위 제외":"손절 후 계산"}</span>`).join("");
   $("rebuyRangeHint").textContent=movingLineText(s.cycle?resume?`재이탈: ${etfSkipText(s.cycle.after,s.cycle.round)} ${s.cycle.round||range.names.includes(resume)?`${resume}부터 평균 손절가 기준 ${draft.lastLine}까지`:`범위 밖 다음 선 ${resume}에만`} 배분합니다.`:`재이탈: ${s.cycle.after} 다음 평균선이 없어 새 매수 수량을 배정하지 않습니다.`
-    :`평균 손절가 기준 ${draft.lastLine}까지 배분합니다. 이후 평균선에는 새 매수 수량을 배정하지 않습니다.`);
+    :`평균 손절가 기준 ${draft.lastLine}까지 배분합니다. 이후 평균선에는 새 매수 수량을 배정하지 않습니다.`)+(s.above>0?" 평균 손절가 위 회차는 사지 않습니다.":"");
 }
 function openRebuyStages(index=null){
   const src=rebuyPick();if(!src)return;
@@ -989,15 +992,16 @@ function renderRebuy(){
   const buyIf=x=>etfRebuyCondition(s.stages[x.i])==="down"?"이하":"이상", trAt=x=>x.price>0?` · ${x.est?"≈":""}${P(x.price)} ${buyIf(x)}`:"";
   const buyHit=x=>!x.skip&&!x.done&&!x.est&&x.amount>0&&cur>0&&x.price>0&&(etfRebuyCondition(s.stages[x.i])==="down"?cur<=x.price:cur>=x.price);
   const cutDue=!complete&&nextCut&&cur>0&&cur<=nextCut.price?nextCut:null, buyDue=s.tranches.find(buyHit)||null;
-  // 분할 안내: 평균 손절가로 선택한 평균선의 지정 회차까지. 같은 선의 회차 가격은 손절가로 제한하지 않는다.
+  // 분할 안내: 평균 손절가로 선택한 평균선의 지정 회차까지. 그중 평균 손절가 위 회차(s.above)는 사지 않는다.
   // 재매수 뒤에도 남은 손절은 이어진다(재이탈). 재이탈 손절을 기록하면 이미 산 회차 다음(resumeName)부터 다시 배분한다.
   const cutTail=s.started&&nextCut?` · 다시 ${P(nextCut.price)} 이하면 손절 ${nextCut.k}회`:"", resumeName=etfResumeName(s), gapChip=p=>{if(!(cur>0&&p>0))return "";const g=(p/cur-1)*100;return ` <span class="fr-gap${p>cur?" up":""}">${g>0?"+":""}${new Intl.NumberFormat("ko-KR",{maximumFractionDigits:Math.abs(g)<1?2:1}).format(g)}%</span>`;};
   // 보유 주수 카드 안내 한 줄: 다음 손절은 말풍선에 있으므로 재매수 쪽(시작 조건·다음 회차·재이탈)과 완료 요약만 적는다.
   const trackNote=!ready?`신저점 가격을 넣고 자산 배분에 이 종목 보유가 있으면 손절 회차가 계산됩니다. ${holdHint}`
     :complete?`재매수 완료 · 손절 ${P(s.sellValue)} → 재매수 ${P(s.buyValue)} (${won.format(s.sold)}주 → ${won.format(s.rebought)}주)${s.rest>0?` · 잔액 ${P(s.rest)}`:""}${cutTail}`
-    :!s.started?(s.sold?`재매수: ${nextTr?`${trName(nextTr)}${nextTr.price>0?` <b>${nextTr.est?"≈":""}${P(nextTr.price)}</b> ${buyIf(nextTr)}`:" 기준가 입력 대기"} 약 ${wonShort(nextTr.amount)}${gapChip(nextTr.price)}`:"배분할 재매수 회차가 없습니다"}`:"손절하면 칸이 오른쪽부터 비고, 재매수하면 빈 칸이 다시 채워집니다.")
-    :nextTr?`${s.cycle?`재이탈 · ${L(etfSkipText(s.cycle.after,s.cycle.round,true))} · `:""}다음 재매수 <b>${trName(nextTr)}${trAt(nextTr)}에서 약 ${wonShort(nextTr.amount)}</b> · 남은 약 ${wonShort(s.rest)}${cutTail}`
+    :!s.started?(s.sold?`재매수: ${nextTr?`${trName(nextTr)}${nextTr.price>0?` <b>${nextTr.est?"≈":""}${P(nextTr.price)}</b> ${buyIf(nextTr)}`:" 기준가 입력 대기"} 약 ${wonShort(nextTr.amount)}${gapChip(nextTr.price)}`:s.above?`평균 손절가 ${P(s.sellAvg)} 위 회차는 사지 않습니다`:"배분할 재매수 회차가 없습니다"}`:"손절하면 칸이 오른쪽부터 비고, 재매수하면 빈 칸이 다시 채워집니다.")
+    :nextTr?`${s.cycle?`재이탈 · ${L(etfSkipText(s.cycle.after,s.cycle.round,true))} · `:""}다음 재매수 <b>${trName(nextTr)}${trAt(nextTr)}에서 약 ${wonShort(nextTr.amount)}</b> · 남은 약 ${wonShort(s.rest)}${s.above?` · 평균 손절가 위 약 ${wonShort(s.above)} 제외`:""}${cutTail}`
     :s.cycle&&!resumeName?`재이탈 · ${L(s.cycle.after)} 다음 평균선이 없어 남은 약 ${wonShort(s.rest)}을 배정하지 않습니다${cutTail}`
+    :s.above?`평균 손절가 ${P(s.sellAvg)} 위 회차는 사지 않습니다 · 남은 약 ${wonShort(s.rest)}${cutTail}`
     :`선택 범위의 재매수를 마쳤습니다 · 남은 약 ${wonShort(s.rest)}은 다음 평균선에 자동 배정하지 않습니다${cutTail}`;
   const alerts=typeof tradeAlertToggle==="function", toggle=(...a)=>alerts?tradeAlertToggle(...a):"", alertOn=(...a)=>alerts&&tradeRebuyEnabled(...a); // 알림 스위치는 trade-alerts.js가 있을 때만(서버·테스트는 없음)
   // 점선 가격(눌러서 그 자리에서 수정, 달러선물 .future-tap-price와 같음): attrs = 입력칸 data 속성, value = 기록한 값(빈 칸이면 글자 text만 보임)
@@ -1031,7 +1035,7 @@ function renderRebuy(){
     +(far.length?`<button class="completed-fold-bar future-stage-bar" id="toggleRebuyCutRest" type="button" aria-expanded="${fold.rest}" aria-controls="rebuyCutRest"><span>남은 손절 <b>${far.length}회</b> · ${P(far[0].price)} 이하</span><span class="completed-fold-action">${fold.rest?"접기":"펼치기"}</span></button><div id="rebuyCutRest"${fold.rest?"":" hidden"}>${far.map(cutRow).join("")}</div>`:"");
   // 반등 단계별 재매수 표(달러선물 '2. 반등 단계별 재매수'와 같은 회차표): 회차 · 재매수가 · 계획 주수 · 누적 체결 주수 · 알림(단계 첫 줄) · 상태(PC만).
   // 배분한(또는 산) 회차가 있는 단계만 표에 두고, 단계 첫 회차 줄의 가격(점선)이 그 단계 기준가다. 산 회차의 가격 칸은 실제 체결가(점선).
-  // 실제 기준가가 없는 추정 회차·재이탈로 건너뛴 회차·계획 밖 회차는 흐린 '제외' 줄. 배분 없는 단계와 첫 회차를 산 단계의 기준가·알림은 맨 아래 '다른 단계' 띠(fold.others)를 펼쳐 고친다.
+  // 실제 기준가가 없는 추정 회차·재이탈로 건너뛴 회차·계획 밖 회차·평균 손절가 위 회차(above)는 흐린 '제외' 줄. 평균 손절가 위 회차만 있는 단계는 알림 스위치를 두지 않는다. 배분 없는 단계와 첫 회차를 산 단계의 기준가·알림은 맨 아래 '다른 단계' 띠(fold.others)를 펼쳐 고친다.
   const basePx=i=>{const px=Number(s.stages[i].price)||0;return px>0?P(px):s.est[i]?`≈${P(s.est[i])}`:"—";};
   const baseInput=i=>`${tapPrice(basePx(i),`data-stage-price="${i}"`,opt(s.stages[i].price),`${L(s.stages[i].name)} 기준가`,s.est[i]?`≈${usdMode?usd.format(s.est[i]):won.format(Math.round(s.est[i]))}`:"선택")}${autoTag(s.stages[i].name)?`<span class="rebuy-base-label">${autoTag(s.stages[i].name)}</span>`:""}`;
   const stageAlert=(i,own)=>toggle(alertOn(r,"buys",i),`data-rebuy-alert="buys" data-alert-index="${i}"`,movingLineText(`${s.stages[i].name} 재매수`),own.length>0&&own.every(x=>x.done));
@@ -1039,8 +1043,8 @@ function renderRebuy(){
   const used=groups.filter(g=>g.own.length),others=groups.filter(g=>!g.own.length||g.rows[0]?.done);
   const buyRow=(g,x,k)=>{
     const i=g.i,st=s.stages[i],due=buyHit(x),nextUp=x===nextTr,ref=x.price||cur;
-    if(x.skip){const why=x.passed?"재이탈로 건너뜀":x.est?"추정 가격이라 제외":"계획 밖";
-      return `<div class="purchase-row future-buy-dim" title="${why}"><label class="check"><input type="checkbox" disabled aria-label="${trText(x)} ${why}"><span class="purchase-round"><b>${trName(x)}</b><small class="future-buy-skip">제외</small></span></label><div class="stage-price">${k===0?baseInput(i):`<span class="price">${x.price>0?`${x.est?"≈":""}${P(x.price)}`:"—"}</span>`}<span class="krw">${why}</span></div><div class="purchase-qty">—</div><div class="purchase-fill"></div>${alerts?`<div class="purchase-alert">${k===0?stageAlert(i,g.own):""}</div>`:""}<div class="status">${x.passed?"건너뜀":"가격 대기"}</div></div>`;}
+    if(x.skip||x.above){const why=x.above?"평균 손절가 위":x.passed?"재이탈로 건너뜀":x.est?"추정 가격이라 제외":"계획 밖";
+      return `<div class="purchase-row future-buy-dim" title="${why}"><label class="check"><input type="checkbox" disabled aria-label="${trText(x)} ${why}"><span class="purchase-round"><b>${trName(x)}</b><small class="future-buy-skip">제외</small></span></label><div class="stage-price">${k===0?baseInput(i):`<span class="price">${x.price>0?`${x.est?"≈":""}${P(x.price)}`:"—"}</span>`}<span class="krw">${why}</span></div><div class="purchase-qty">—</div><div class="purchase-fill"></div>${alerts?`<div class="purchase-alert">${k===0&&!g.own.every(y=>y.above)?stageAlert(i,g.own):""}</div>`:""}<div class="status">${x.passed?"건너뜀":x.above?"안 삼":"가격 대기"}</div></div>`;}
     const planned=x.partial?x.plannedQty:x.done?x.qty:ref>0&&x.amount>0?rebuyPendingShares(x.amount,ref):0,filled=x.done||x.partial,remaining=Math.max(0,planned-x.qty),blocked=!filled&&(!(s.sold>0&&planned>0&&ref>0)||!!(etfRangeOf(r)||etfRebuyRounds(st))&&x.est);
     const price=filled?tapPrice(P(x.execPrice||x.price||s.sellAvg),`data-tranche-exec="${i}:${x.t}"`,opt(x.execPrice),`${trText(x)} 재매수 체결가`,"체결가"):k===0?baseInput(i):`<span class="price">${x.price>0?`${x.est?"≈":""}${P(x.price)}`:"—"}</span>`;
     const sub=filled?amt(x.qty,x.execPrice||s.sellAvg):x.amount>0?`약 ${wonShort(x.amount)}`:"손절 후 계산";
@@ -1051,7 +1055,7 @@ function renderRebuy(){
   };
   const otherRow=g=>`<div class="purchase-row future-buy-dim"><label class="check"><input type="checkbox" disabled aria-label="${L(s.stages[g.i].name)} ${g.own.length?"진행 중":"배분 없음"}"><span class="purchase-round"><b><span class="tr-name">${L(s.stages[g.i].name)}</span></b></span></label><div class="stage-price">${baseInput(g.i)}</div><div class="purchase-qty">—</div><div class="purchase-fill"></div>${alerts?`<div class="purchase-alert">${stageAlert(g.i,g.own)}</div>`:""}<div class="status">${g.own.length?"진행 중":"범위 밖"}</div></div>`;
   const buyRows=used.map(g=>g.rows.map((x,k)=>buyRow(g,x,k)).join("")).join("")||`<div class="empty">${s.sold?"재매수할 회차가 없습니다.":"손절하면 판 금액만큼 재매수 회차를 나눕니다."}</div>`;
-  const range=etfRangeOf(r),rangeBar=`<div class="future-rebuy-start">${range?`<span>시작 기준선 <b>${L(range.startLine)}</b></span><span>마지막 <b>${L(range.lastLine)}${range.lastRound?` ${range.lastRound}회차`:""}</b></span>`:"<span>단계 순서대로</span>"}${used.some(g=>g.rows.some(x=>x.est))?"<span>비운 기준가는 추정(배분 제외)</span>":""}</div>`;
+  const range=etfRangeOf(r),rangeBar=`<div class="future-rebuy-start">${range?`<span>시작 기준선 <b>${L(range.startLine)}</b></span><span>마지막 <b>${L(range.lastLine)}${range.lastRound?` ${range.lastRound}회차`:""}</b></span>`:"<span>단계 순서대로</span>"}${used.some(g=>g.rows.some(x=>x.est))?"<span>비운 기준가는 추정(배분 제외)</span>":""}${s.above>0?`<span>평균 손절가 위 제외 <b>약 ${wonShort(s.above)}</b></span>`:""}</div>`;
   const cutKey=cutDue?String(cutDue.k):"",buyKey=buyDue?`${buyDue.i}:${buyDue.t}`:"",cutsOpen=rebuyTableOpen(fold.tables.cuts,cutKey),buysOpen=rebuyTableOpen(fold.tables.buys,buyKey);
   const milestones=cutMilestones(r),mBase=milestones.base?`${milestones.base.cont?"재이탈 직전":"지금"} 보유 ${won.format(milestones.base.hold)}주 기준`:"계획 기준";
   // 손절 도달 기준(절반·전액 매도) 두 줄: 회차만 보이고 표시 회차 밖인지는 따로 적지 않는다('1. 분할 손절' 제목 줄의 'N / 표시 회차'와 회차로 알 수 있음). 이미 넘긴 기준만 '도달'.

@@ -11,7 +11,17 @@ const fixture=(price=10100)=>({id:'qa',name:'테스트 ETF',ticker:'900001',lowP
   stages:[{name:'80선',price,rounds:3,prices:[null,price+100,price+200]}]});
 const near=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-7,`${actual} != ${expected}`);
 
-for(const price of [10100,9000])test(`평균 손절가 ${price>9900?'위':'아래'}의 80선은 1~3회차 완료·저장·복원까지 진행한다`,()=>{
+test('평균 손절가 위의 80선은 1~3회차를 계획에 보이되 배분·체결 기록·알림은 하지 않는다',()=>{
+  const ctx=load(),r=fixture(10100),before=JSON.stringify(r);r.notify={buys:true};
+  const s=ctx.rebuySummary(r);
+  assert.equal(s.sellAvg,9900);assert.deepEqual(plain(s.tranches).map(x=>[x.t,x.price,x.amount,x.above]),[[0,10100,0,true],[1,10200,0,true],[2,10300,0,true]]);
+  near(s.above,990000);near(s.rest,990000);
+  for(let t=0;t<3;t++)assert.equal(ctx.rebuyBuyRecord(r,0,t,'10',true),false,`${t+1}회차는 새로 기록하지 않는다`);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).filter(x=>x.id.includes(':buy:')),[]);
+  assert.notEqual(ctx.rebuyStatus(r,s)[0],'재매수 완료');delete r.notify;assert.equal(JSON.stringify(r),before);
+});
+
+for(const price of [9000])test(`평균 손절가 아래의 80선은 1~3회차 완료·저장·복원까지 진행한다`,()=>{
   const ctx=load(),r=fixture(price),cuts=JSON.stringify(r.cuts);
   for(let t=0;t<3;t++){
     const s=ctx.rebuySummary(r),tr=s.tranches.find(x=>x.t===t);
@@ -26,22 +36,22 @@ for(const price of [10100,9000])test(`평균 손절가 ${price>9900?'위':'아�
   assert.equal(ctx.rebuyStatus(r,final)[0],'재매수 완료');assert.equal(JSON.stringify(r.cuts),cuts);
 });
 
-test('옛 고정 계획에서 손절가 때문에 제외됐던 같은 평균선 후속 회차를 기록 수정 없이 복구한다',()=>{
-  const ctx=load(),r=fixture();delete r.stages[0].rounds;delete r.stages[0].prices;
-  r.stages.push({name:'125선',price:10400});r.stages[0].buys=[{shares:20,price:10100}];r.planned=[['80선',0]];
+test('옛 고정 계획에서 빠졌던 같은 평균선 후속 회차를 기록 수정 없이 복구하되 평균 손절가 위 회차는 사지 않는다',()=>{
+  const ctx=load(),r=fixture(9500);delete r.stages[0].rounds;delete r.stages[0].prices;
+  r.stages.push({name:'125선',price:10400});r.stages[0].buys=[{shares:20,price:9500}];r.planned=[['80선',0]];
   const before=JSON.stringify(r),s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.planKeys),[['80선',0],['80선',1],['80선',2]]);
-  assert.deepEqual(plain(s.tranches).map(x=>[x.t,x.done]),[[0,true],[1,false],[2,false]]);
-  assert.ok(s.tranches.slice(1).every(x=>x.amount>0&&x.price>s.sellAvg));
+  assert.deepEqual(plain(s.tranches).map(x=>[x.t,x.done,!!x.above,Math.round(x.price)]),[[0,true,false,9500],[1,false,false,9800],[2,false,true,10100]]);
+  assert.ok(s.tranches[1].amount>0,'평균 손절가 9,900원 이하 2회차는 산다');assert.equal(s.tranches[2].amount,0,'3회차 10,100원은 평균 손절가 위');
   assert.equal(JSON.stringify(r),before);
 });
 
 test('명시한 회차 가격을 기다리는 동안 단계·배분은 유지하고 추정가 체결·알림은 실행하지 않는다',()=>{
-  const ctx=load(),r=fixture();delete r.stages[0].prices;r.notify={buys:true};
+  const ctx=load(),r=fixture(9500);delete r.stages[0].prices;r.notify={buys:true}; // 평균 손절 9,900원 이하
   const s=ctx.rebuySummary(r);assert.equal(s.tranches.length,3);
   assert.ok(s.tranches.every(x=>x.amount>0));assert.equal(s.tranches[2].price,null);
   assert.equal(ctx.rebuyBuyRecord(r,0,2,'1',true),false);
-  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.targetPrice),[10100]);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.targetPrice),[9500]);
 });
 
 test('단계 비중은 남은 금액을 회차에 배분하고 완료·부분 체결량과 예약 잔량은 보존한다',()=>{
@@ -62,12 +72,13 @@ test('회차를 줄여도 체결한 마지막 회차와 옛 통째 완료 기록
   const before=JSON.stringify(r);s=ctx.rebuySummary(r);assert.equal(s.tranches.filter(x=>x.i===0).length,1);assert.equal(s.buyValue,50250);assert.equal(JSON.stringify(r),before);
 });
 
-test('매수 조건과 직접 회차 가격은 평균 손절가 위에서도 알림 방향·기준 변경에 반영한다',()=>{
-  const ctx=load(),r=fixture();r.notify={buys:true};r.stages[0].buyCondition='down';
+test('매수 조건과 직접 회차 가격은 알림 방향·기준 변경에 반영하고 평균 손절가 위로 고친 회차는 알리지 않는다',()=>{
+  const ctx=load(),r=fixture(9500);r.notify={buys:true};r.stages[0].buyCondition='down'; // 평균 손절 9,900원
   const rules=()=>plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null));let result=rules();
-  assert.deepEqual(result.map(x=>[x.targetPrice,x.condition]),[[10100,'down'],[10200,'down'],[10300,'down']]);
-  const revision=result[2].revision;r.stages[0].prices[2]=10350;assert.notEqual(rules()[2].revision,revision);
-  r.stages[0].buys=[{shares:2,price:10100}];assert.equal(rules().length,2);
+  assert.deepEqual(result.map(x=>[x.targetPrice,x.condition]),[[9500,'down'],[9600,'down'],[9700,'down']]);
+  const revision=result[2].revision;r.stages[0].prices[2]=9750;assert.notEqual(rules()[2].revision,revision);
+  r.stages[0].prices[2]=9950;assert.deepEqual(rules().map(x=>x.targetPrice),[9500,9600],'평균 손절가 위로 고친 3회차는 알리지 않는다');
+  r.stages[0].prices[2]=9750;r.stages[0].buys=[{shares:2,price:9500}];assert.equal(rules().length,2);
 });
 
 test('편집 필드 검증은 기존 기록을 바꾸지 않고 비운 선택 설정은 삭제한다',()=>{
