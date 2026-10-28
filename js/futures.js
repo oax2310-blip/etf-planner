@@ -97,6 +97,19 @@ function removeFromPosition(f, month, qty, price){
   else { pos.settlementPrice=(Number(pos.settlementPrice)*c-price*qty)/(c-qty); pos.contracts=c-qty; }
   return true;
 }
+// 산 분할매수 회차의 체결가 수정(재매수 체결 환율 수정과 같은 계산): 편입한 월물에서 옛 체결가 1계약을 새 체결가로 바꿔 단순평균가를 맞춘다.
+// 계획가(price)·편입 월물·알림은 그대로 두고 executionPrice만 고친다. 월물 밖 옛 매수는 기록만 고친다(손익은 futuresSummary가 체결가로 계산).
+// false = 잘못된 값·산 회차 아님, "no-month" = 편입 월물이 보유에 없음(월물교체 뒤는 보유를 직접 수정). 두 경우 모두 기록을 바꾸지 않는다.
+function setFutureTrancheExec(f, li, ti, text){
+  const t=f.levels?.[li]?.tranches?.[ti], raw=String(text??"").trim(), n=Number(raw);
+  if(!t?.completed||!raw||!Number.isFinite(n)||n<=0) return false;
+  if(t.mergedMonth){
+    const pos=f.positions.find(p=>String(p.month)===t.mergedMonth), c=Number(pos?.contracts)||0;
+    if(c<1) return "no-month";
+    pos.settlementPrice=(Number(pos.settlementPrice)*c-Number(t.executionPrice??t.price)+n)/c;
+  }
+  t.executionPrice=n;
+}
 // 현재 기대손익 = (price−단순평균가)×계약×1만 + baselinePnl(누적 정산손익: 직접 입력 + 손절 체크 실현손익, futures-rebuy.js) + 월물 밖 옛 매수.
 // 편입 매수는 월물에 이미 포함; 미매수 유효 가격만 projected에 추가. price 기본은 목표 환율, invested는 보유 매수금액.
 function futuresSummary(f, price=f.targetPrice){
@@ -230,7 +243,9 @@ function futureBuyTable(f){
     const line=futureLineName(l),name=movingLineText(line||l.label||`추가 ${li+1}`),slot=futureTrancheSlot(l,t,ti),part=line?futureBuyPrices(f.levels,li).length>1?slot:0:ti,key=`${li}:${ti}`,price=Number(t.completed?(t.executionPrice??t.price):t.price),title=`${name} ${part+1}회차 ${ti+1}번째 계약`;
     const due=!t.completed&&!(f.buyPlan?.endLine&&(auto?.error||auto?.waiting))&&Number.isFinite(current)&&current>0&&Number.isFinite(price)&&price>0&&(f.buyPlan?.endLine||line||l.planEnd?current>=price:current<=price);
     const tag=`<span class="future-buy-name">${esc(name)}</span><span class="tr-no">${part+1}</span>`,priceText=price>0?`${fmtPrice(price)}원`:"—";
-    const pricePart=t.completed||auto?`<strong>${priceText}<span class="future-buy-qty"> · 1계약</span></strong>`:`<label class="future-buy-price"><input data-tranche-price="${key}" type="number" min="0" step="any" inputmode="decimal" value="${futureShown(price)}" aria-label="${esc(title)} 매수가">원<span class="future-buy-qty"> · 1계약</span></label>`;
+    // 산 회차의 매수가는 체결가(점선)라 눌러서 그 자리에서 고친다(setFutureTrancheExec). 자동 배분의 미매수 회차는 계획 창에서 정한다.
+    const execPart=`<label class="future-tap-price" title="${esc(title)} 체결가 수정"><span class="price" aria-hidden="true">${priceText}</span><input data-future-exec="${key}" type="number" min="0" step="any" inputmode="decimal" value="${futureShown(price)}" aria-label="${esc(title)} 체결가"></label>`;
+    const pricePart=t.completed?`<strong>${execPart}<span class="future-buy-qty"> · 1계약</span></strong>`:auto?`<strong>${priceText}<span class="future-buy-qty"> · 1계약</span></strong>`:`<label class="future-buy-price"><input data-tranche-price="${key}" type="number" min="0" step="any" inputmode="decimal" value="${futureShown(price)}" aria-label="${esc(title)} 매수가">원<span class="future-buy-qty"> · 1계약</span></label>`;
     const monthPart=t.completed?t.mergedMonth?`<span class="future-buy-month-state" title="${esc(t.mergedMonth)} 보유 월물에 편입">${esc(t.mergedMonth)}</span>`:'<span class="future-buy-month-state outside" title="보유 월물 밖에서 따로 계산하는 예전 매수">월물 밖</span>':`<label class="future-buy-month"><input data-tranche-month="${key}" list="posMonths" inputmode="numeric" maxlength="6" placeholder="YYYYMM" title="합칠 보유 월물" value="${esc(t.month||near)}" aria-label="${esc(title)} 편입 월물"></label>`;
     const alert=!t.completed&&typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeFutureTrancheEnabled(f,l,t),`data-tranche-alert="${key}"`,`${title} 매수`):"";
     return `<div class="future-buy-row${t.completed?" done":due?" due":""}"><label class="check"><input type="checkbox" data-tranche-check="${key}"${t.completed?" checked":f.buyPlan?.endLine&&(auto?.error||auto?.waiting)?" disabled":""} aria-label="${esc(title)} 매수 완료"><span class="future-buy-round"><b class="tr-name" title="${esc(title)}">${tag}</b>${due?'<small class="future-buy-due">도달</small>':""}</span></label><div class="future-buy-condition">${pricePart}<small>기대손익 ${price>0?money((f.targetPrice-price)*contractSize):"—"}</small></div>${monthPart}<div class="future-buy-alert">${alert}</div></div>`;
@@ -266,6 +281,9 @@ function renderFutures(){
   $("addPosition").onclick=()=>{f.positions.push({month:nextFuturePositionMonth(f),contracts:0,settlementPrice:1});save();renderFutures();};
   bindFuturePositions();
   onEdit("[data-tranche-price]",(v,el)=>{const price=Number(v);if(!Number.isFinite(price)||price<0)return false;const [li,ti]=el.dataset.tranchePrice.split(":").map(Number),t=f.levels[li].tranches[ti];t.price=price;if(futureLineName(f.levels[li]))t.priceOverride=t.price;},renderFutures);
+  onEdit("[data-future-exec]",(v,el)=>{const [li,ti]=el.dataset.futureExec.split(":").map(Number),t=f.levels[li].tranches[ti],done=setFutureTrancheExec(f,li,ti,v);
+    if(done==="no-month"){alert(`${t.mergedMonth} 보유 월물이 없어 체결가를 고치지 않았습니다. 월물을 교체했다면 보유·계산 기준에서 단순평균가를 직접 고치세요.`);return false;}
+    return done;},renderFutures);
   const monthOf=key=>(document.querySelector(`[data-tranche-month="${key}"]`)?.value||"").trim();
   onEdit("[data-tranche-month]",(v,el)=>{const [li,ti]=el.dataset.trancheMonth.split(":").map(Number);f.levels[li].tranches[ti].month=v.trim();});
   $$("[data-tranche-check]").forEach(input=>input.onchange=()=>{const key=input.dataset.trancheCheck,[li,ti]=key.split(":").map(Number),t=f.levels[li].tranches[ti];

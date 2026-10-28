@@ -216,3 +216,40 @@ test('종료 이동평균 계획이 오류·추가 배분 대기이면 보존한
   assertBuyTableDue(html,'1:0',false);
   assert.equal(JSON.stringify(f),before,'대기 중 보존한 회차도 표시만 하고 기록을 바꾸지 않는다');
 });
+
+test('산 분할매수 회차의 체결가를 고치면 편입 월물 단순평균가를 맞추고 체크를 풀면 새 체결가로 되돌린다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0],near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} ≈ ${b}`);
+  ctx.addToPosition(f,'202612',1,1400);Object.assign(t,{completed:true,executionPrice:1400,mergedMonth:'202612',month:'202612'});
+  near(f.positions[0].settlementPrice,1380);
+  assert.notEqual(ctx.setFutureTrancheExec(f,0,0,'1395.5'),false);
+  assert.equal(t.executionPrice,1395.5);assert.equal(t.price,1400,'계획가는 그대로');assert.equal(f.positions[0].contracts,3);
+  near(f.positions[0].settlementPrice,(1370*2+1395.5)/3);
+  assert.equal(ctx.futuresSummary(f).avg,(1395.5+1400)/2,'평균 매수가도 체결가 기준');
+  assert.equal(ctx.removeFromPosition(f,'202612',1,t.executionPrice),true);near(f.positions[0].settlementPrice,1370);
+});
+
+test('체결가 수정은 잘못된 값·미매수 회차·보유에 없는 편입 월물이면 기록을 바꾸지 않고 월물 밖 옛 매수는 기록만 고친다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0];
+  Object.assign(t,{completed:true,executionPrice:1400,mergedMonth:'202612'});f.positions[0].contracts=3;f.positions[0].settlementPrice=1380;
+  const before=JSON.stringify(f);
+  for(const text of ['','0','-1','abc','Infinity'])assert.equal(ctx.setFutureTrancheExec(f,0,0,text),false,text);
+  assert.equal(ctx.setFutureTrancheExec(f,0,1,'1390'),false,'안 산 회차');assert.equal(ctx.setFutureTrancheExec(f,3,0,'1390'),false);
+  t.mergedMonth='202609';const moved=JSON.stringify(f);assert.equal(ctx.setFutureTrancheExec(f,0,0,'1390'),'no-month');assert.equal(JSON.stringify(f),moved);
+  t.mergedMonth='202612';assert.equal(JSON.stringify(f),before);
+  const old=f.levels[0].tranches[1];Object.assign(old,{completed:true,executionPrice:1410});
+  const positions=JSON.stringify(f.positions),gain=p=>ctx.futuresSummary(f,p).current;
+  assert.notEqual(ctx.setFutureTrancheExec(f,0,1,'1405'),false);assert.equal(old.executionPrice,1405);assert.equal(JSON.stringify(f.positions),positions);
+  assert.equal(gain(1480)-gain(1470),(3+1)*10*10000,'월물 밖 매수는 체결가로 손익 계산');assert.equal(ctx.futuresSummary(f,1405).legacyCount,1);
+});
+
+test('분할매수 표의 산 회차는 체결가를 점선으로 보이고 그 자리에서 고치며 자동 배분 미매수 회차는 글자로 둔다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]);
+  Object.assign(f.levels[0].tranches[0],{completed:true,executionPrice:1396.25,mergedMonth:'202612'});
+  let html=ctx.futureBuyTable(f),done=buyTableRow(html,'0:0').html,open=buyTableRow(html,'0:1').html;
+  assert.match(done,/<label class="future-tap-price" title="[^"]*체결가 수정"><span class="price" aria-hidden="true">1,396\.3원<\/span><input data-future-exec="0:0"[^>]*value="1396\.3"/);
+  assert.doesNotMatch(done,/data-tranche-price/);assert.match(open,/data-tranche-price="0:1"/);assert.doesNotMatch(open,/data-future-exec/);
+  f.buyPlan={startLine:'25일선',endPrice:1450,contracts:2,units:['일선']};
+  html=ctx.futureBuyTable(f);open=buyTableRow(html,'0:1').html;
+  assert.match(buyTableRow(html,'0:0').html,/data-future-exec="0:0"/,'자동 배분에서도 산 회차 체결가는 고친다');
+  assert.doesNotMatch(open,/data-tranche-price|data-future-exec/,'자동 배분 미매수 회차는 계획 창에서 정한다');
+});
