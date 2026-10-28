@@ -224,7 +224,8 @@ test('재매수 시작 뒤 이탈은 멈추고 남은 손절은 유지하며 완
   r.range={startLine:'25선',lastLine:'25일선',lastRound:3,names:['25선','25일선'],targetPct:100};
   const bounded=ctx.buildTradeAlertRules({rebuy:{items:[r]}},null);
   assert.ok(!bounded.some(x=>x.label==='재매수 25일선'),'최대 범위 안이어도 손절가 위의 다음 평균선은 알리지 않는다');
-  assert.ok(bounded.some(x=>x.label==='재매수 25선 3차'&&x.targetPrice>9900),'실제 마지막 선의 후속 회차는 손절가 위에서도 알린다');
+  assert.ok(bounded.some(x=>x.label==='재매수 25선'),'평균 손절가 이하 1회차는 알린다');
+  assert.ok(!bounded.some(x=>x.id.includes(':buy:')&&x.targetPrice>9900),'실제 마지막 선의 후속 회차도 평균 손절가 위면 알리지 않는다');
   r.stages[1].price=9800;
   assert.ok(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).some(x=>x.label==='재매수 25일선'),'손절가 이하의 일반적인 다음 평균선은 정상 배분·알림한다');
 });

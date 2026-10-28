@@ -84,15 +84,17 @@ test('재매수: 기본 단계는 60분봉 이평선 7개 + 일선 7개, 기준�
   assert.equal(s.held, 983);
 });
 
-test('기본 재매수는 마지막 선택 단계의 모든 회차를 유지하고 다음 평균선에는 배분하지 않는다', () => {
+test('기본 재매수는 마지막 선택 단계까지 계획하되 평균 손절가 위 회차는 사지 않고 다음 평균선에는 배분하지 않는다', () => {
   const ctx=load(),r=plan(ctx,{cuts:[{shares:10,price:10000},{shares:10,price:9800}]}),keys=s=>plain(s.tranches).map(x=>[x.i,x.t]);
   const prices=list=>r.stages.forEach((st,i)=>{st.price=list[i]||0;});
   prices([9700,9850,9900,9950,9600]);let s=ctx.rebuySummary(r);
   near(s.sellAvg,9900);
   assert.deepEqual(keys(s),[[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]]);
-  s.tranches.forEach(x=>near(x.amount,198000/9));assert.deepEqual(plain(s.skipped),[]);
+  assert.deepEqual(plain(s.tranches.filter(x=>x.above)).map(x=>[x.i,x.t]),[[2,1],[2,2]],'마지막 선의 2·3회차는 평균 손절가 위라 사지 않는다');
+  s.tranches.forEach(x=>near(x.amount,x.above?0:198000/9));near(s.above,2*198000/9);assert.deepEqual(plain(s.skipped),[]);
   prices([10000,10100]);s=ctx.rebuySummary(r);
-  assert.deepEqual(keys(s),[[0,0],[0,1],[0,2]],'첫 단계가 평균 손절가보다 높아도 그 단계의 세 회차는 유지하며 다음 단계는 제외한다');
+  assert.deepEqual(keys(s),[[0,0],[0,1],[0,2]],'첫 단계가 평균 손절가보다 높으면 그 단계만 계획하고 다음 단계는 제외한다');
+  assert.ok(s.tranches.every(x=>x.above&&x.amount===0),'평균 손절가 위라 사지 않는다');near(s.above,198000);
   prices(Array(14).fill(9000));s=ctx.rebuySummary(r);
   assert.equal(s.tranches.length,14);nearAll(s.plan,Array(14).fill(198000/14));
 });
@@ -132,24 +134,25 @@ test('재매수: 옛 통째 기록 뒤 남은 금액은 고정한 계획의 안 
   nearAll(s.plan, [76000, 61000, 61000, ...Array(11).fill(0)]);
 });
 
-test('ETF 재매수의 0·⅓·⅔ 회차 가격은 평균 손절가를 넘어도 마지막 회차까지 유지한다', () => {
+test('ETF 재매수의 0·⅓·⅔ 회차 중 평균 손절가를 넘는 회차는 계획에 남기되 사지 않는다', () => {
   const ctx=load(),r=plan(ctx,{currentPrice:10050,cuts:[{shares:10,price:10000},{shares:10,price:9800},{shares:10,price:9700}]});
   r.stages[0].price=10100;r.stages[1].price=10160;let s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.tranches).map(x=>[x.i,x.t,x.price]),[[0,0,10100],[0,1,10120],[0,2,10140]]);
-  s.tranches.forEach(x=>near(x.amount,295000/3));assert.deepEqual(plain(s.skipped),[]);
+  assert.ok(s.tranches.every(x=>x.above&&x.amount===0));near(s.above,295000);assert.deepEqual(plain(s.skipped),[]);
   assert.deepEqual(plain(ctx.rebuyStatus(r,s)),['손절 3회 진행','손절 3회']);
   r.stages[0].price=9700;r.stages[1].price=9790;r.stages[2].price=9910;s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.tranches).map(x=>[x.i,x.t,Math.round(x.price)]),[[0,0,9700],[0,1,9730],[0,2,9760],[1,0,9790],[1,1,9830],[1,2,9870]]);
-  s.tranches.forEach(x=>near(x.amount,295000/6));assert.deepEqual(plain(s.skipped),[]);
+  assert.deepEqual(plain(s.tranches.filter(x=>x.above)).map(x=>[x.i,x.t]),[[1,2]],'평균 손절가 9,833원 위 9,870원 회차만 뺀다');
+  s.tranches.forEach(x=>near(x.amount,x.above?0:295000/6));assert.deepEqual(plain(s.skipped),[]);
 });
 
 test('자동 회차는 다음 평균선 가격이 비면 추정 표시만 하고 다음 선이 더 낮으면 1회로 계산한다', () => {
-  const ctx=load(),r=plan(ctx,{currentPrice:9500,cuts:[{shares:10,price:9580}]});
+  const ctx=load(),r=plan(ctx,{currentPrice:9500,cuts:[{shares:10,price:9620}]}); // 평균 손절 9,620원 이하 회차
   r.stages[0].price=9600;r.stages[13].price=11000;let s=ctx.rebuySummary(r);
-  assert.deepEqual(plain(s.tranches).map(x=>[x.i,x.t,x.est,x.amount]),[[0,0,false,95800]]);
+  assert.deepEqual(plain(s.tranches).map(x=>[x.i,x.t,x.est,x.amount]),[[0,0,false,96200]]);
   assert.deepEqual(plain(s.skipped).map(x=>[x.i,x.t,x.est]),[[0,1,true],[0,2,true]]);
   r.stages[1].price=9550;s=ctx.rebuySummary(r);
-  assert.deepEqual(plain(s.tranches).map(x=>[x.i,x.t,x.price]),[[0,0,9600]]);
+  assert.deepEqual(plain(s.tranches.filter(x=>x.i===0)).map(x=>[x.i,x.t,x.price]),[[0,0,9600]],'다음 선이 더 낮으면 25선은 1회');
   assert.ok(!s.skipped.some(x=>x.i===0));
 });
 
@@ -477,18 +480,21 @@ test('재매수 체크: 옛 기록(단계 통째로 done)은 그 단계를 한 �
   input.onchange();
   assert.deepEqual([r.stages[0].done, r.stages[0].shares, r.stages[0].execPrice], [false, null, null]);
 });
-test('화면은 평균 손절가를 표시하고 그보다 높은 후속 회차를 활성 상태로 보여 준다', () => {
+test('화면은 평균 손절가를 표시하고 그보다 높은 회차는 사지 않는 제외 줄로 보여 준다', () => {
   const stages=plain(vm.runInContext('defaultRebuy().stages',load()));
   const view=(extra={})=>ui({rebuy:{items:[{id:'a',name:'테스트 ETF',lowPrice:10000,shares:1000,currentPrice:9950,cuts:[{shares:10,price:9900}],stages,...extra}]}}).els;
   stages[0].price=10100;stages[1].price=10160;
   let els=view(),html=els.rebuyMain.innerHTML;
   assert.match(html,/0 \/ 3회<\/span>/);assert.match(html,/평균 9900원/);
-  assert.doesNotMatch(html,/평균 손절가 위|안 삼|기한/);
-  for(const key of ['0:0','0:1','0:2'])assert.match(html,new RegExp(`<input type="checkbox" data-tranche-done="${key}" (?![^>]*disabled)[^>]*>`));
+  assert.doesNotMatch(html,/기한/);assert.doesNotMatch(html,/data-tranche-done="0:\d"/,'평균 손절가 위 회차는 체크할 수 없다');
+  assert.equal((html.match(/<div class="purchase-row future-buy-dim" title="평균 손절가 위">/g)||[]).length,3);
+  assert.match(html,/<div class="status">안 삼<\/div>/);assert.match(html,/평균 손절가 9900원 위 회차는 사지 않습니다/);
+  assert.match(html,/평균 손절가 위 제외 <b>약 /);
   assert.match(html,/id="rStages"/);
   assert.doesNotMatch(html,/aria-label="[^\"]*</);
   stages[0].price=9800;stages[1].price=9850;stages[2].price=9950;html=view().rebuyMain.innerHTML;
-  assert.match(html,/0 \/ 6회<\/span>/);assert.match(html,/data-tranche-done="1:2" (?![^>]*disabled)[^>]*>/);
+  assert.match(html,/0 \/ 6회<\/span>/);assert.match(html,/data-tranche-done="1:1" (?![^>]*disabled)[^>]*>/);
+  assert.doesNotMatch(html,/data-tranche-done="1:2"/,'32선 3회차 9,917원은 평균 손절가 9,900원 위');
   stages[2].price=0;stages[0].buys=[{shares:2,price:9800}];
   els=view({planned:[['25선',0],['25선',1],['25선',2],['32선',0]]});
   assert.match(els.rebuyMain.innerHTML,/다음 재매수.*2\.6만원/);
@@ -736,8 +742,9 @@ test('재이탈 화면: 재매수 중에도 남은 손절을 보이고, 다시 �
 });
 
 // 화면(달러선물 재매수와 같은 구조): 보유 주수 카드 · 절반·전액 매도 두 줄 · 접는 1·2 표 · 손절 기준 창. 모두 가상 종목·수량.
-const flowFixture = extra => ({id:'flow',name:'테스트 ETF',ticker:'900001',lowPrice:10000,shares:1000,stepPct:1,sellPct:1,steps:10,currentPrice:10050,cuts:[{shares:10,price:9900},{shares:4,price:9800,partial:true,plannedShares:10}],
-  stages:[{name:'25선',price:10100},{name:'32선',price:10200},{name:'42선',price:10300}],range:{startLine:'25선',lastLine:'25선',names:['25선'],lastRound:3,targetPct:100},...extra});
+// 재매수 선은 평균 손절가(9,871원) 아래, 현재가는 다음 손절(9,800원)과 첫 재매수(9,850원) 사이.
+const flowFixture = extra => ({id:'flow',name:'테스트 ETF',ticker:'900001',lowPrice:10000,shares:1000,stepPct:1,sellPct:1,steps:10,currentPrice:9820,cuts:[{shares:10,price:9900},{shares:4,price:9800,partial:true,plannedShares:10}],
+  stages:[{name:'25선',price:9850},{name:'32선',price:9880},{name:'42선',price:9950}],range:{startLine:'25선',lastLine:'25선',names:['25선'],lastRound:3,targetPct:100},...extra});
 
 test('0주 손절 회차는 띠·표·진행 집계에서 건너뛰고 다음 손절의 원래 번호와 입력 인덱스를 유지한다', () => {
   const r=flowFixture({shares:100,sellPct:.5,steps:14,cuts:[{shares:1,price:9900}]}),before=JSON.stringify(r),{ctx,els}=ui({rebuy:{items:[r]}});
@@ -755,7 +762,7 @@ test('0주 손절 회차는 띠·표·진행 집계에서 건너뛰고 다음 �
 });
 
 test('0주 회차를 숨겨도 재매수로 채운 칸·다음 재매수 위치와 부분 손절 기록은 유지한다', () => {
-  const r=flowFixture({shares:100,sellPct:.5,steps:14,cuts:[{shares:1,price:9900},{shares:1,price:9800}],stages:[{name:'25선',price:10100,buys:[{shares:1,price:10100}]},{name:'32선',price:10200},{name:'42선',price:10300}],planned:[['25선',0],['25선',1],['25선',2]]});
+  const r=flowFixture({shares:100,sellPct:.5,steps:14,currentPrice:9805,cuts:[{shares:1,price:9900},{shares:1,price:9800}],stages:[{name:'25선',price:9800,buys:[{shares:1,price:9800}]},{name:'32선',price:9840},{name:'42선',price:9950}],planned:[['25선',0],['25선',1],['25선',2]]}); // 평균 손절 9,850원 이하, 2회차(9,813원) 전
   let html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
   const strip=html.match(/<div class="fr-cells rebuy-cells[^"]*"[^>]*>(.*?)<\/div>/)[1];
   assert.doesNotMatch(strip,/class="z"/);
@@ -788,18 +795,18 @@ test('보유 주수 카드: 1칸 = 손절 1회(표시 회차), 1회 칸이 오�
   assert.doesNotMatch(html,/buy-track-chip/,'진행 상태는 제목 아래 상태 칩(손절 1회 진행)과 같아 카드에 다시 적지 않는다');
   assert.match(html,/<span class="quote-state">손절 1회 진행 · 부분 체결<\/span>/);
   assert.match(html,/<div class="fr-track-foot"><span>손절 평균가 <b>[\d.]+원<\/b>[^<]*<\/span><label class="trade-alert-toggle"[^>]*><input type="checkbox" data-rebuy-alert="breakdown"/,'아래 줄에 손절 평균가와 신저점 이탈 알림');
-  assert.match(html,/재매수: <span class="tr-name">25선<span class="tr-no">1<\/span><\/span> <b>10100원<\/b> 이상 약 /,'안내 줄은 재매수 시작 조건');
+  assert.match(html,/재매수: <span class="tr-name">25선<span class="tr-no">1<\/span><\/span> <b>9850원<\/b> 이상 약 /,'안내 줄은 재매수 시작 조건');
   assert.equal(JSON.stringify(r),before,'그리기만 해서는 기록을 바꾸지 않는다');
 });
 
 test('보유 주수 카드: 재매수 주수는 가장 최근에 비운 칸부터 파랑으로 다시 채우고, 손절가에 닿으면 주황으로 바뀐다', () => {
-  const r=flowFixture({cuts:[{shares:10,price:9900},{shares:10,price:9800}],stages:[{name:'25선',price:10100,buys:[{shares:12,price:10100}]},{name:'32선',price:10200},{name:'42선',price:10300}],planned:[['25선',0],['25선',1],['25선',2]]});
+  const r=flowFixture({currentPrice:9805,cuts:[{shares:10,price:9900},{shares:10,price:9800}],stages:[{name:'25선',price:9800,buys:[{shares:12,price:9800}]},{name:'32선',price:9840},{name:'42선',price:9950}],planned:[['25선',0],['25선',1],['25선',2]]}); // 평균 손절 9,850원 이하, 2회차(9,813원) 전
   let html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
   const cells=()=>[...html.match(/<div class="fr-cells rebuy-cells[^"]*"[^>]*>(.*?)<\/div>/)[1].matchAll(/<i class="([^" ]+)/g)].map(m=>m[1]);
   assert.deepEqual(cells().slice(-2),['r','mix'],'2회 칸(10주)은 다 채우고 1회 칸은 남은 2주만');
   assert.doesNotMatch(html,/buy-track-chip/,'재매수 진행 중도 제목 아래 상태 칩만');
   assert.match(html,/<span class="fr-next buy">/,'재매수 시작 뒤에는 다음 재매수가 채울 칸을 점선으로');
-  assert.match(html,/재매수 <b>12<\/b>/);assert.match(html,/손절 <b>[\d.]+원<\/b> → 재매수 <b>10100원<\/b>/);
+  assert.match(html,/재매수 <b>12<\/b>/);assert.match(html,/손절 <b>[\d.]+원<\/b> → 재매수 <b>9800원<\/b>/);
   r.currentPrice=9690;html=ui({rebuy:{items:[r]}}).els.rebuyMain.innerHTML;
   assert.match(html,/<span class="buy-track-chip warn">손절 시점<\/span>/);
   assert.match(html,/<span class="fr-bub due">손절 시점 · 3회 <b>9700원<\/b>/);
@@ -815,7 +822,8 @@ test('1·2 표는 기본으로 펼치고, 사용자가 접은 상태는 다시 �
   els.rCuts.open=false;els.rCuts.ontoggle();ctx.renderRebuy();assert.equal(open('rCuts'),false,'같은 시점에서 다시 접으면 유지');
   r.currentPrice=10050;ctx.renderRebuy();assert.equal(open('rCuts'),false,'시점이 지나도 접은 상태 유지');
   els.rCuts.open=true;els.rCuts.ontoggle();ctx.renderRebuy();assert.equal(open('rCuts'),true,'다시 열면 기본(펼침)');
-  r.cuts[1]={shares:10,price:9800};r.stages[0].buys=[{shares:2,price:10100}];r.planned=[['25선',0],['25선',1],['25선',2]];r.currentPrice=10140;ctx.renderRebuy();
+  r.cuts[1]={shares:10,price:9800};r.stages=[{name:'25선',price:9800,buys:[{shares:2,price:9800}]},{name:'32선',price:9840},{name:'42선',price:9950}];r.planned=[['25선',0],['25선',1],['25선',2]];r.currentPrice=9815;ctx.renderRebuy();
+  assert.match(els.rebuyMain.innerHTML,/재매수 시점/,'평균 손절가 이하 2회차에 닿았다');
   assert.equal(open('rBuys'),true,'재매수 시점이면 접어 둔 재매수 표도 펼친다');
 });
 

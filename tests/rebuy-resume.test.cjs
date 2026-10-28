@@ -27,6 +27,9 @@ const buyOpen=(ctx,pick=()=>true)=>{for(;;){const s=ctx.rebuySummary(ctx.rebuyPi
 const labels=(ctx,r,kind)=>plain(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.label).filter(x=>kind==='cut'?x.includes('손절'):kind==='buy'?!x.includes('손절')&&!x.includes('이탈'):true));
 const open=s=>plain(s.tranches.filter(x=>!x.done).map(x=>[s.stages[x.i].name,x.t]));
 const cutLabels=(from,to)=>Array.from({length:to-from+1},(_,k)=>`재매수 손절 ${from+k}회`);
+// 재이탈하면 평균 손절가가 내려가므로(약 9,650원) 처음에 평균 손절가 위라 빠진 60선은 그대로면 사지 않는다.
+// 시간이 지나 60선이 평균 손절가 아래로 내려온 상황(80선은 위)을 만들어 재개 흐름을 검증한다.
+const maDown=r=>{r.stages[3].price=9450;if(r.stages[4])r.stages[4].price=9700;};
 
 test('재이탈: 25·32·42선까지 산 뒤 다시 손절하면 남은 손절은 이어지고 재매수는 60선부터 다시 배분한다',()=>{
   const ctx=load(),r=use(ctx,fixture());
@@ -47,7 +50,11 @@ test('재이탈: 25·32·42선까지 산 뒤 다시 손절하면 남은 손절�
   s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.cycle),{after:'42선',at:2,round:0,from:3,start:5,bought:false});
   assert.equal(Object.hasOwn(r.cuts[5],'afterRound'),false,'42선을 다 샀으면 다음 선부터');
-  assert.deepEqual(plain(s.planKeys),[['60선',0],['60선',1],['60선',2]],'60선이 평균 손절가 위여도 최소 한 선은 배분한다');
+  assert.deepEqual(plain(s.planKeys),[['60선',0],['60선',1],['60선',2]],'다음 선 60선을 계획한다');
+  assert.ok(s.tranches.filter(x=>!x.done).every(x=>x.above&&x.amount===0),'60선이 평균 손절가 위면 사지 않는다');
+  assert.deepEqual(labels(ctx,r,'buy'),[]);
+  maDown(r);s=ctx.rebuySummary(r);
+  assert.deepEqual(plain(s.planKeys),[['60선',0],['60선',1],['60선',2]],'80선은 아직 평균 손절가 위라 60선까지');
   assert.deepEqual(open(s),[['60선',0],['60선',1],['60선',2]],'25·32·42선은 가격이 다시 와도 새로 사지 않는다');
   assert.ok(s.rest>180000&&Math.abs(s.tranches.filter(x=>!x.done).reduce((n,x)=>n+x.amount,0)-s.rest)<1e-6,'재이탈 손절 금액을 60선 회차에 모두 배분');
   assert.equal(s.fixPlan,true);
@@ -83,7 +90,8 @@ test('재이탈: 한 선을 일부만 산 뒤 다시 손절하면 그 선의 다
   assert.deepEqual(plain(s.cycle),{after:'32선',at:1,round:1,from:1,start:5,bought:false});
   assert.deepEqual(open(s),[['32선',1],['32선',2],['42선',0],['42선',1],['42선',2]],'32선 2회차부터 평균 손절가 9,650원 이하인 42선까지');
   assert.deepEqual(plain(s.skipped.filter(x=>x.passed)),[]);
-  assert.deepEqual(labels(ctx,r,'buy'),['재매수 32선 2차','재매수 32선 3차','재매수 42선','재매수 42선 2차','재매수 42선 3차']);
+  assert.deepEqual(plain(s.tranches.filter(x=>x.above).map(x=>[s.stages[x.i].name,x.t])),[['42선',2]],'42선 3회차 9,700원은 평균 손절가 위');
+  assert.deepEqual(labels(ctx,r,'buy'),['재매수 32선 2차','재매수 32선 3차','재매수 42선','재매수 42선 2차']);
   buy(ctx,1,1);
   assert.equal(r.resumeEndLine,'42선');
   cut(ctx,6);
@@ -134,10 +142,10 @@ test('재이탈: 범위 상한까지 다 샀으면 범위 밖 다음 평균선 �
   buyOpen(ctx);
   let s=ctx.rebuySummary(r);
   assert.deepEqual(open(s),[]);assert.equal(r.plannedEndLine,'42선');
-  cut(ctx,5);
+  cut(ctx,5);maDown(r);
   s=ctx.rebuySummary(r);
   assert.deepEqual(open(s),[['60선',0],['60선',1]],'상한 밖 60선 하나에 지정 회차(2회차)까지');
-  assert.deepEqual(plain(s.tranches.filter(x=>!x.done).map(x=>Math.round(x.price*100)/100)),[9800,9833.33],'60선 회차 가격은 다음 평균선 80선으로 나눈다');
+  assert.deepEqual(plain(s.tranches.filter(x=>!x.done).map(x=>Math.round(x.price*100)/100)),[9450,9533.33],'60선 회차 가격은 다음 평균선 80선으로 나눈다');
   assert.ok(!s.skipped.some(x=>s.stages[x.i].name==='42선'),'앞 재매수의 마지막 선 회차 수는 그대로');
   assert.deepEqual(labels(ctx,r,'buy'),['재매수 60선','재매수 60선 2차']);
 });
@@ -147,7 +155,7 @@ test('재이탈: 범위 없는 옛 기록은 저장 순서의 다음 단계부�
   for(let i=0;i<5;i++)cut(ctx,i);
   buyOpen(ctx);
   assert.deepEqual([...new Set(r.planned.map(x=>x[0]))],['25선','32선','42선']);
-  cut(ctx,5);
+  cut(ctx,5);maDown(r);
   let s=ctx.rebuySummary(r);
   assert.deepEqual([s.cycle.from,plain(s.planKeys),s.fixPlan],[3,[['60선',0]],true],'옛 고정 계획의 앞 선은 쓰지 않는다');
   buy(ctx,3,0);
@@ -192,7 +200,7 @@ test('재이탈: 지난 손절 회차를 다시 체크하는 정정은 재이탈
   ctx.applyRebuyCut(2,null);cut(ctx,2);
   assert.equal(Object.hasOwn(r.cuts[2],'afterLine'),false,'기록된 손절보다 얕은 회차');
   assert.equal(ctx.rebuySummary(r).cycle,null);
-  buyOpen(ctx);cut(ctx,5);buy(ctx,3,0);cut(ctx,6);
+  buyOpen(ctx);cut(ctx,5);maDown(r);buy(ctx,3,0);cut(ctx,6);
   assert.deepEqual([r.cuts[5].afterLine,r.cuts[6].afterLine],['42선','60선']);
   ctx.applyRebuyBuy(3,0,null);
   const s=ctx.rebuySummary(r);

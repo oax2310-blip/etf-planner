@@ -10,32 +10,28 @@ const fixture=(price=10000,unit='선')=>({id:'range-test',name:'가상 ETF',tick
   stages:[{name:`60${unit}`,price:9000},{name:`80${unit}`,price},{name:`125${unit}`,price:price+3000}],
   range:{startLine:`80${unit}`,lastLine:`80${unit}`,names:[`80${unit}`],lastRound:3,targetPct:100}});
 
-for(const rounds of [1,2,3])test(`25선~150주선 범위라도 시작선이 손절가 위면 25선의 지정 ${rounds}회차에만 전액 배분한다`,()=>{
+for(const rounds of [1,2,3])test(`25선~150주선 범위라도 시작선이 손절가 위면 25선의 지정 ${rounds}회차만 계획하고 평균 손절가 위라 사지 않는다`,()=>{
   const ctx=load(),r=fixture(),names=plain(vm.runInContext('MA_LINES.filter(n=>movingLineUnit(n)!=="개월선")',ctx));
   r.stages=names.map((name,i)=>({name,price:11000+i*300}));
   r.range={startLine:'25선',lastLine:'150주선',names,lastRound:rounds,targetPct:100};
   const before=JSON.stringify(r),s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.planKeys),Array.from({length:rounds},(_,t)=>['25선',t]));
-  assert.ok(s.tranches.every(x=>x.i===0&&Math.abs(x.amount-s.sellValue/rounds)<1e-6));
-  assert.ok(s.plan.slice(1).every(x=>x===0));assert.equal(s.tranches.reduce((n,x)=>n+x.amount,0),s.sellValue);
-  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.targetPrice),Array.from({length:rounds},(_,t)=>11000+t*100));
+  assert.ok(s.tranches.every(x=>x.i===0&&x.above&&x.amount===0),'예전에는 시작선에 전액 배분');
+  assert.ok(s.plan.every(x=>x===0));assert.ok(Math.abs(s.above-s.sellValue)<1e-6);assert.equal(s.rest,s.sellValue);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)),[]);
+  for(let t=0;t<rounds;t++)assert.equal(ctx.rebuyBuyRecord(r,0,t,'1',true),false);
   assert.equal(ctx.rebuyBuyRecord(r,1,0,'1',true),false);assert.equal(JSON.stringify(r),before);
-  for(let t=0;t<rounds;t++){
-    const view=ctx.rebuySummary(r),tr=view.tranches.find(x=>x.t===t),record=ctx.rebuyBuyRecord(r,0,t,String(ctx.rebuyPendingShares(tr.amount,tr.price)),true);
-    assert.notEqual(record,false);r.planned=plain(view.planKeys);(r.stages[0].buys??=[])[t]=plain(record);
-    assert.deepEqual(plain(ctx.rebuySummary(JSON.parse(JSON.stringify(r))).planKeys),Array.from({length:rounds},(_,t)=>['25선',t]));
-  }
-  const final=ctx.rebuySummary(r);assert.equal(final.doneTranches,rounds);assert.equal(final.tranches.length,rounds);
-  assert.equal(ctx.rebuyStatus(r,final)[0],'재매수 완료');assert.equal(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null).length,0);
+  assert.notEqual(ctx.rebuyStatus(r,s)[0],'재매수 완료');
   assert.equal(r.range.lastLine,'150주선');assert.equal(r.stages.length,names.length);
 });
 
-test('넓은 범위의 실제 종료선은 손절가 이하 마지막 선이며 그 선의 후속 회차는 손절가 위에서도 유지한다',()=>{
+test('넓은 범위의 실제 종료선은 손절가 이하 마지막 선이며 그 선의 후속 회차가 손절가 위면 사지 않는다',()=>{
   const ctx=load(),r=fixture();r.stages.push({name:'25주선',price:9500},{name:'150주선',price:10000});
   r.range={startLine:'60선',lastLine:'150주선',names:r.stages.map(x=>x.name),lastRound:3,targetPct:100};
   const before=JSON.stringify(r),s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.planKeys),[['60선',0],['60선',1],['60선',2],['80선',0],['80선',1],['80선',2]]);
-  assert.ok(s.tranches.filter(x=>x.i===1).slice(1).every(x=>x.price>s.sellAvg&&x.amount>0));
+  assert.ok(s.tranches.filter(x=>x.i===1).slice(1).every(x=>x.price>s.sellAvg&&x.above&&x.amount===0));
+  assert.ok(s.tranches.filter(x=>!x.above).every(x=>x.price<=s.sellAvg&&x.amount>0));
   assert.ok(s.plan.slice(2).every(x=>x===0),'손절가 위 125선 뒤 가격이 다시 낮아져도 범위를 재개하지 않는다');
   assert.equal(JSON.stringify(r),before);
 });
@@ -59,7 +55,7 @@ test('비운 기준가에서 범위를 멈추고 추정 가격 뒤의 알려진 
   assert.equal(JSON.stringify(r),before);
 });
 
-test('이전 넓은 계획과 범위 밖 실제·부분 체결은 보존하되 새 회차는 시작선에만 배분한다',()=>{
+test('이전 넓은 계획과 범위 밖 실제·부분 체결은 보존하되 새 회차는 시작선에만 계획하고 평균 손절가 위면 사지 않는다',()=>{
   const ctx=load(),r=fixture(12000);r.stages[0]={name:'25선',price:11000,buys:[{shares:3,price:11000}]};
   r.stages[1].buys=[{shares:2,price:12000,partial:true,plannedShares:5}];
   r.stages[2].buys=[{shares:1,price:15000}];
@@ -67,12 +63,14 @@ test('이전 넓은 계획과 범위 밖 실제·부분 체결은 보존하되 �
   r.planned=r.stages.flatMap(st=>[0,1,2].map(t=>[st.name,t]));
   const before=JSON.stringify(r),s=ctx.rebuySummary(r);
   assert.deepEqual(plain(s.planKeys),[['25선',0],['25선',1],['25선',2]]);
-  assert.ok(s.tranches.filter(x=>!x.done&&!x.partial).every(x=>x.i===0));
-  const partial=s.tranches.find(x=>x.i===1);assert.equal(partial.qty,2);assert.equal(partial.plannedQty,5);assert.equal(partial.amount,36000);
+  assert.ok(s.tranches.filter(x=>!x.done&&!x.partial).every(x=>x.i===0&&x.above&&x.amount===0),'시작선 11,000원대 회차는 평균 손절가 10,100원 위');
+  const partial=s.tranches.find(x=>x.i===1);assert.equal(partial.qty,2);assert.equal(partial.plannedQty,5);
+  assert.ok(partial.done&&!partial.partial,'평균 손절가 위 부분 체결은 남은 3주를 사지 않고 체결분만 완료로 읽는다');assert.equal(partial.amount,24000);
+  assert.equal(r.stages[1].buys[0].partial,true,'기록은 그대로');
   assert.equal(s.tranches.find(x=>x.i===2).qty,1);assert.equal(s.sellAvg,10100);assert.equal(JSON.stringify(r),before);
 });
 
-test('실제 매수 입력 때 고정한 종료선은 시세가 움직여도 후속 회차를 유지하고 마지막 체결 취소 때만 지운다',()=>{
+test('실제 매수 입력 때 고정한 종료선은 시세가 움직여도 후속 회차를 계획에 유지하고(평균 손절가 위면 사지 않음) 마지막 체결 취소 때만 지운다',()=>{
   const ctx=load(),r=fixture();r.range={startLine:'60선',lastLine:'125선',names:r.stages.map(x=>x.name),lastRound:3,targetPct:100};
   Object.assign(ctx,{state:{rebuy:{items:[r]},selectedRebuy:r.id},save(){},renderRebuy(){}});
   const before=JSON.stringify(r);ctx.rebuySummary(r);assert.equal(JSON.stringify(r),before);assert.equal(r.plannedEndLine,undefined);
@@ -81,18 +79,22 @@ test('실제 매수 입력 때 고정한 종료선은 시세가 움직여도 후
   r.stages[1].price=11000;r.stages[1].prices=[null,11600,12200];r.stages[2].price=9500;
   const saved=JSON.stringify(r),restored=JSON.parse(saved),s=ctx.rebuySummary(restored);
   assert.deepEqual(plain(s.planKeys).filter(([name])=>name==='80선'),[['80선',0],['80선',1],['80선',2]]);
-  assert.ok(s.tranches.filter(x=>x.i===1&&!x.done).every(x=>x.amount>0&&x.price>s.sellAvg));assert.equal(s.plan[2],0);
+  assert.ok(s.tranches.filter(x=>x.i===1&&!x.done).every(x=>x.above&&x.amount===0&&x.price>s.sellAvg));assert.equal(s.plan[2],0);
+  r.stages[1].prices=[null,10050,10100];const lower=ctx.rebuySummary(JSON.parse(JSON.stringify(r)));
+  assert.ok(lower.tranches.filter(x=>x.i===1&&!x.done).every(x=>!x.above&&x.amount>0),'평균 손절가 이하로 고친 후속 회차는 다시 산다');
+  r.stages[1].prices=[null,11600,12200];
   assert.equal(JSON.stringify(restored),saved);ctx.applyRebuyBuy(1,0,null);
   assert.equal(Object.hasOwn(r,'plannedEndLine'),false);assert.equal(Object.hasOwn(r,'planned'),false);
 });
 
-for(const price of [10000,11000])test(`80선 1회차가 손절가 ${price>10100?'위':'아래'}여도 3회차까지 배분하고 125선은 계산에만 쓴다`,()=>{
-  const ctx=load(),r=fixture(price),before=JSON.stringify(r),s=ctx.rebuySummary(r);
+for(const price of [10000,11000])test(`80선 1회차가 손절가 ${price>10100?'위':'아래'}여도 3회차까지 계획하되 평균 손절가 위 회차는 사지 않고 125선은 계산에만 쓴다`,()=>{
+  const ctx=load(),r=fixture(price),before=JSON.stringify(r),s=ctx.rebuySummary(r),bought=[price,price+1000,price+2000].filter(p=>p<=10100);
   assert.equal(s.sellAvg,10100);assert.deepEqual(plain(s.planKeys),[['80선',0],['80선',1],['80선',2]]);
   assert.deepEqual(plain(s.tranches).map(x=>x.price),[price,price+1000,price+2000]);
-  assert.ok(s.tranches.every(x=>x.amount>0));assert.equal(s.plan[0],0);assert.equal(s.plan[2],0);
+  assert.deepEqual(plain(s.tranches).map(x=>[x.amount>0,!!x.above]),[price,price+1000,price+2000].map(p=>[p<=10100,p>10100]));
+  assert.equal(s.plan[0],0);assert.equal(s.plan[2],0);
   assert.ok(s.tranches[2].price>s.sellAvg);assert.equal(ctx.rebuyBuyRecord(r,2,0,'1',true),false);
-  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.targetPrice),[price,price+1000,price+2000]);
+  assert.deepEqual(plain(ctx.buildTradeAlertRules({rebuy:{items:[r]}},null)).map(x=>x.targetPrice),bought);
   assert.equal(JSON.stringify(r),before,'조회·알림은 범위 밖 평균선 가격과 기록을 지우거나 저장하지 않는다');
 });
 
@@ -143,7 +145,7 @@ test('한 주보다 작은 배분에 1주를 강제 생성하지 않고 기존 �
 test('재매수 비중은 손절 금액에만 적용하고 평균 손절가·체결·손절 기록은 변경하지 않는다',()=>{
   const ctx=load(),r=fixture();r.range.targetPct=50;const before=JSON.stringify(r),s=ctx.rebuySummary(r);
   assert.equal(s.sellValue,1010000);assert.equal(s.buyTarget,505000);assert.equal(s.rest,505000);assert.equal(s.sellAvg,10100);
-  assert.ok(Math.abs(s.tranches.reduce((n,x)=>n+x.amount,0)-505000)<1e-6);assert.equal(JSON.stringify(r),before);
+  assert.ok(Math.abs(s.tranches.reduce((n,x)=>n+x.amount,0)+s.above-505000)<1e-6,'평균 손절가 위로 뺀 금액까지 합하면 목표 금액');assert.ok(s.above>0);assert.equal(JSON.stringify(r),before);
 });
 
 test('범위 입력은 역전·잘못된 기간·회차·비중을 거절한다',()=>{
