@@ -2,6 +2,8 @@
 // 예시는 화면에서만 사용한다. 조건 입력만 installments에 저장하며 실제 자산·저축 기록은 바꾸지 않는다.
 const INSTALLMENT_EXAMPLE = {price:3600000,returnRate:3,years:3,firstMonth:1};
 const installmentOpenDetails = new Set();
+// 편집창은 열린 동안 DOM을 유지하고, 결과 영역만 갱신해 입력 초점·스크롤을 보존한다.
+const installmentSettingsPanelId = "installment-settings-panel";
 let installmentSchedule = "m36";
 const installmentNumber = v => nf0.format(Math.abs(v)<.5?0:Math.round(v));
 const installmentSigned = v => `${Math.abs(v)<.5?"":v>0?"+":"−"}${nf0.format(Math.abs(Math.round(v)))}`;
@@ -25,6 +27,7 @@ function downloadInstallments(result){
 }
 function renderInstallments(){
   const settings=doc.installments||INSTALLMENT_EXAMPLE, terms=installmentTerms(settings), reference=installmentAssetReference(doc), result=calculateInstallments(settings,reference.amount), view=el("installmentsView");
+  const activeEditor=el(installmentSettingsPanelId), keepEditor=activeEditor?.open===true;
   const field=(key,label,unit,method="",hint="")=>{
     const source=method?settings.methods?.[method]||{}:settings, money=unit==="원", attrs=money?(key==="netAssets"?signedMoneyAttrs:moneyAttrs):key==="months"?`type="number" inputmode="numeric" min="1" max="${INSTALLMENT_MAX_MONTHS}" step="1" required list="installmentMonths"`:key==="returnRate"?signedNumAttrs:'type="number" inputmode="decimal" min="0" max="100" step="any"'; // 기준 순자산·예상 수익률은 음수 가능('-' 키 있는 numeric)
     const value=source[key]??(key==="months"?INSTALLMENT_TERMS.find(t=>t.id===method).months:key==="discountRate"||key==="discountCap"?0:""), hintId=`installment-${method||"common"}-${key}-hint`, disabled=method&&(key==="discountRate"||key==="discountCap")&&source.discountEnabled!==true;
@@ -53,7 +56,7 @@ function renderInstallments(){
     const firstPayment=result.firstMonth?"한 달 뒤":"지금", baseline=result.plans[0];
     const discountNote=discountEnabled?`일시불 할인 ${installmentNumber(baseline.discount)}원`:"일시불 할인 없음";
     const comparisonStatus=result.tied?"현재 가정에서 세 방식의 예상 차이가 같습니다.":`${result.winners.map(p=>p.id==="once"?"일시불":`비교안 ${p.id==="m12"?"A":"B"}`).join(" · ")}의 예상 차이가 가장 큽니다.`;
-    overview=`<section class="card installment-overview" aria-label="현재 비교 조건"><div class="installment-overview-metrics"><div><span>구매금액</span><strong>${compactAmount(result.price)}</strong></div><div><span>세후 연 예상 수익률</span><strong>${pc(result.annualRate)}</strong></div></div><button class="btn mini installment-overview-edit" type="button" data-open-installment="settings" aria-controls="installment-settings-panel" aria-expanded="${installmentOpenDetails.has("settings")}">조건 수정</button></section>`;
+    overview=`<section class="card installment-overview" aria-label="현재 비교 조건"><div class="installment-overview-metrics"><div><span>구매금액</span><strong>${compactAmount(result.price)}</strong></div><div><span>세후 연 예상 수익률</span><strong>${pc(result.annualRate)}</strong></div></div><button class="btn mini installment-overview-edit" type="button" data-open-installment="settings" aria-controls="installment-settings-panel" aria-haspopup="dialog">조건 수정</button></section>`;
     abComparison=`<section class="installment-ab-comparison" aria-labelledby="installment-comparison-title"><div class="installment-compare-head"><h2 id="installment-comparison-title">결제 방법 비교</h2><span>가정 기준 예상값</span></div><div class="installment-years" role="group" aria-label="장기 비교 시점">${[3,5,10].map(y=>`<button type="button" data-installment-years="${y}" aria-pressed="${y===result.years}">${y}년 뒤</button>`).join("")}</div><div aria-live="polite" aria-atomic="true"><div class="installment-plan-grid">${result.plans.slice(1).map((p,index)=>{
       const payoffTime=p.payoff.ym||(p.payoff.month?`${p.payoff.month}개월 뒤`:"지금"), signClass=v=>v<-.5?"neg":v>.5?"installment-positive":"";
       return `<article class="card installment-plan-card${winning(p)?" is-best":""}" aria-labelledby="installment-plan-${p.id}"><span class="installment-plan-label">비교안 ${index?"B":"A"}</span><h3 class="installment-plan-title" id="installment-plan-${p.id}">${p.months}<span>개월</span></h3><p class="installment-plan-kind">무이자 할부</p><div class="installment-plan-monthly"><span>월 납부액</span><strong>${compactAmount(p.monthly)}</strong>${p.lastPayment!==p.monthly?`<small class="installment-plan-last">마지막 ${installmentNumber(p.lastPayment)}원</small>`:""}</div><div class="installment-plan-advantage"><span>${result.years}년 뒤 일시불 대비</span><strong class="${signClass(p.advantage)}">${installmentSigned(p.advantage)}<em>원</em></strong></div><div class="installment-plan-payoff"><span>${payoffTime} · 납부 종료</span><strong class="${signClass(p.payoff.advantage)}">${installmentSigned(p.payoff.advantage)}<em>원</em></strong></div>${p.fee?`<p class="installment-plan-last">첫 납부에 이전 비용 ${installmentNumber(p.fee)}원 별도</p>`:""}${p.discount?`<p class="installment-plan-last">이전 할인 ${installmentNumber(p.discount)}원 반영</p>`:""}</article>`;
@@ -62,19 +65,54 @@ function renderInstallments(){
   const referenceNote=reference.amount===null?"저축계획에 실제 자산 기록이 없습니다. 기준 순자산을 입력하면 예상 순자산도 표시합니다.":`${reference.ym} 마지막 실제 기록을 참조합니다. 필요하면 시뮬레이션용 금액을 직접 조정해 주세요.`;
   const dateStatus=settings.startYm?escA(settings.startYm):"날짜 없이 계산 중";
   const referenceStatus=settings.netAssets!==undefined&&settings.netAssets!==null&&settings.netAssets!==""?"직접 입력":reference.amount===null?"미입력":"저축계획 참조";
-  if(!result)installmentOpenDetails.add("settings");
-  const settingsForm=`<div class="installment-inputs"><div class="installment-input-body"><div class="installment-input-head"><h2>결제 조건</h2><span class="installment-save-state">${doc.installments?"조건 변경 시 자동 저장":"예시 · 조건을 바꾸면 자동 저장"}</span></div><div class="installment-input-grid">${field("price","구매금액","원")}${field("returnRate","세후 연 예상 수익률","%","","남은 구매대금에만 적용 · −100~100%")}<label class="field"><span>장기 비교 시점</span><select data-installment="years">${[3,5,10].map(y=>`<option value="${y}"${(settings.years||3)===y?" selected":""}>${y}년 뒤</option>`).join("")}</select></label></div><div class="installment-term-grid">${field("months","비교안 A · 무이자 기간","개월","m12","1~120개월 직접 입력")}${field("months","비교안 B · 무이자 기간","개월","m36","1~120개월 직접 입력")}</div><datalist id="installmentMonths">${[3,6,12,18,24,36,48].map(m=>`<option value="${m}"></option>`).join("")}</datalist><p class="hint installment-budget">수익률을 적용하는 자금은 구매금액 ${finite(settings.price)>0?`${installmentNumber(settings.price)}원`:""} 중 남은 잔액입니다. 나머지 자산과 저축계획에는 적용하지 않습니다.</p></div>${details("dates",`<strong>결제 연월 · 선택</strong><span>${dateStatus}</span>`,`<div class="installment-date-input"><label class="field"><span>결제 연월</span><input type="month" data-installment="startYm" min="0001-01" max="9989-12" value="${escA(settings.startYm??"")}" aria-describedby="installment-date-hint"><small class="field-hint" id="installment-date-hint">선택사항 · 비워 두어도 계산 가능하며, 입력하면 납부표에 연월을 표시합니다.</small></label></div>`,true)}${details("reference",`<strong>순자산 참조</strong><span>${referenceStatus}</span>`,`<div class="installment-reference-grid"><div class="installment-reference"><span>저축계획 순자산 참조</span><strong>${reference.amount===null?"참조할 수 없음":`${installmentNumber(reference.amount)}원`}</strong><small>${referenceNote}</small></div>${field("netAssets","기준 순자산 · 선택","원","","비워 두면 저축계획 기록 사용 · 시뮬레이션에만 저장")}</div>`,true)}${details("discounts",`<strong>할인 조건 · 선택</strong><span>${discountEnabled?`일시불 ${pc(finite(once.discountRate)||0)} · 한도 ${installmentNumber(finite(once.discountCap)||0)}원`:"할인 없음"}</span>`,`${discountForm}<p class="hint installment-detail-note">일시불 할인액은 구매금액 × 카드 청구할인율이며, 할인한도까지만 적용합니다. 한도가 0원이면 할인되지 않습니다.</p>${legacyCosts}`,true)}</div>`;
-  view.innerHTML=`<div class="heading installment-heading"><div><h1>할부 계산${!doc.installments?'<span class="installment-example">예시</span>':""}</h1><p>월 납부액과 예상 차이를 한눈에 확인하세요.</p></div></div>${overview}${abComparison}${!result?'<div class="card empty" role="status">구매금액과 유효한 계산 조건을 입력하면 결과가 표시됩니다.</div>':""}${details("settings",'<strong>비교 조건 수정</strong><span>금액·기간·수익률</span>',settingsForm,false,"installment-settings")}${result?details("future",'<strong>할부 종료 시 순자산 비교</strong><span>같은 시점의 순자산 차이</span>',future):""}${result?details("amounts",'<strong>상세 금액 비교</strong><span>월 납부액·수익·할인</span>',summary+comparison):""}${result?details("longterm",'<strong>장기 비교 상세</strong><span>3·5·10년 뒤</span>',longTerm):""}${result?details("schedule",'<strong>월별 납부·자산 차이</strong><span>납부액·부채·운용수익·순자산</span>',schedule):""}${details("assumptions",'<strong>계산 기준</strong><span>납부 시점과 수익 계산</span>',`<div class="installment-assumptions"><label class="field"><span>첫 납부 시점 · 세 방식 공통</span><select data-installment="firstMonth"><option value="1"${settings.firstMonth!==0?" selected":""}>한 달 뒤</option><option value="0"${settings.firstMonth===0?" selected":""}>지금</option></select></label><p>구매대금을 처음부터 갖고 있다고 가정합니다. 매월 남은 양수 잔액에 수익을 반영한 뒤 납부하며, 월 수익률은 연 예상 수익률을 월복리로 환산합니다. 선택 할인은 구매 시 원금에서 차감하고, 이전 비용은 첫 납부 때 한 번 반영합니다. 마지막 납부액에는 원 단위 분할의 나머지를 더합니다.</p><p>예상 순자산 = 기준 순자산 − 구매금액 + 보유잔액 − 미납 원금. 구매대금은 기준 순자산에 이미 포함되어 있으므로 다시 더하지 않습니다. 다른 자산은 그대로 두고, 구매한 물건의 자산 가치는 포함하지 않습니다. 수익률 0%이고 할인·비용 차이가 없으면 두 방식의 차이는 0원입니다.</p></div>`)}<p class="footnote installment-footnote">시뮬레이션 조건만 별도로 저장합니다. 계산 결과는 실제 자산현황·월별 기록·저축계획에 반영하지 않습니다.</p>`;
+  const firstPaymentField=`<label class="field installment-first-payment"><span>첫 납부 시점</span><select data-installment="firstMonth"><option value="1"${settings.firstMonth!==0?" selected":""}>한 달 뒤</option><option value="0"${settings.firstMonth===0?" selected":""}>지금</option></select><small class="field-hint">일시불과 두 할부에 공통 적용</small></label>`;
+  const discountStatus=discountEnabled?`일시불 ${pc(finite(once.discountRate)||0)} · 한도 ${installmentNumber(finite(once.discountCap)||0)}원`:"할인 없음";
+  const settingsForm=`<div class="installment-inputs"><div class="installment-input-body">${field("price","구매금액","원")}<div class="installment-term-grid">${field("months","비교안 A · 무이자 기간","개월","m12","1~120개월 직접 입력")}${field("months","비교안 B · 무이자 기간","개월","m36","1~120개월 직접 입력")}</div><div class="installment-input-grid">${field("returnRate","세후 연 예상 수익률","%","","−100~100% 직접 입력")}<label class="field"><span>장기 비교 시점</span><select data-installment="years">${[3,5,10].map(y=>`<option value="${y}"${(settings.years||3)===y?" selected":""}>${y}년 뒤</option>`).join("")}</select></label></div>${firstPaymentField}<datalist id="installmentMonths">${[3,6,12,18,24,36,48].map(m=>`<option value="${m}"></option>`).join("")}</datalist><p class="hint installment-budget">가정 수익률은 남은 구매대금에만 적용합니다.</p></div>${details("dates",`<strong>결제 연월 · 선택</strong><span>${dateStatus}</span>`,`<div class="installment-date-input"><label class="field"><span>결제 연월</span><input type="month" data-installment="startYm" min="0001-01" max="9989-12" value="${escA(settings.startYm??"")}" aria-describedby="installment-date-hint"><small class="field-hint" id="installment-date-hint">선택사항 · 비워 두어도 계산 가능하며, 입력하면 납부표에 연월을 표시합니다.</small></label></div>`,true)}${details("reference",`<strong>순자산 참조</strong><span>${referenceStatus}</span>`,`<div class="installment-reference-grid"><div class="installment-reference"><span>저축계획 순자산 참조</span><strong>${reference.amount===null?"참조할 수 없음":`${installmentNumber(reference.amount)}원`}</strong><small>${referenceNote}</small></div>${field("netAssets","기준 순자산 · 선택","원","","비워 두면 저축계획 기록 사용 · 시뮬레이션에만 저장")}</div>`,true)}${details("discounts",`<strong>할인 조건 · 선택</strong><span>${discountStatus}</span>`,`${discountForm}<p class="hint installment-detail-note">일시불 할인액은 구매금액 × 카드 청구할인율이며, 할인한도까지만 적용합니다. 한도가 0원이면 할인되지 않습니다.</p><div class="installment-legacy-list">${legacyCosts}</div>`,true)}</div>`;
+  const editorMarkup=`<dialog id="installment-settings-panel" class="installment-settings" aria-labelledby="installment-settings-title"><form method="dialog" class="installment-settings-form" novalidate><div class="installment-settings-head"><h2 id="installment-settings-title">비교 조건 수정</h2><button class="btn ghost installment-settings-close" type="button" data-close-installment-settings aria-label="비교 조건 닫기" autofocus>×</button></div><div class="installment-settings-body">${settingsForm}</div><div class="installment-settings-foot"><span class="installment-save-state" role="status">${doc.installments?"이 기기에 저장됨":"예시 · 변경하면 자동 저장"}</span><button class="btn primary" type="submit" data-done-installment-settings>완료</button></div></form></dialog>`;
+  const contentMarkup=`<div class="heading installment-heading"><div><h1>할부 계산${!doc.installments?'<span class="installment-example">예시</span>':""}</h1><p>월 납부액과 예상 차이를 한눈에 확인하세요.</p></div>${!result?'<button class="btn mini installment-overview-edit" type="button" data-open-installment="settings" aria-controls="installment-settings-panel" aria-haspopup="dialog">조건 수정</button>':""}</div>${overview}${abComparison}${!result?'<div class="card empty" role="status">구매금액과 유효한 계산 조건을 입력하면 결과가 표시됩니다.</div>':""}${result?details("future",'<strong>할부 종료 시 순자산 비교</strong><span>같은 시점의 순자산 차이</span>',future):""}${result?details("amounts",'<strong>상세 금액 비교</strong><span>월 납부액·수익·할인</span>',summary+comparison):""}${result?details("longterm",'<strong>장기 비교 상세</strong><span>3·5·10년 뒤</span>',longTerm):""}${result?details("schedule",'<strong>월별 납부·자산 차이</strong><span>납부액·부채·운용수익·순자산</span>',schedule):""}${details("assumptions",'<strong>계산 기준</strong><span>납부 시점과 수익 계산</span>',`<div class="installment-assumptions"><p>구매대금을 처음부터 갖고 있다고 가정합니다. 매월 남은 양수 잔액에 수익을 반영한 뒤 납부하며, 월 수익률은 연 예상 수익률을 월복리로 환산합니다. 선택 할인은 구매 시 원금에서 차감하고, 이전 비용은 첫 납부 때 한 번 반영합니다. 마지막 납부액에는 원 단위 분할의 나머지를 더합니다.</p><p>예상 순자산 = 기준 순자산 − 구매금액 + 보유잔액 − 미납 원금. 구매대금은 기준 순자산에 이미 포함되어 있으므로 다시 더하지 않습니다. 다른 자산은 그대로 두고, 구매한 물건의 자산 가치는 포함하지 않습니다. 수익률 0%이고 할인·비용 차이가 없으면 두 방식의 차이는 0원입니다.</p></div>`)}<p class="footnote installment-footnote">시뮬레이션 조건만 별도로 저장합니다. 계산 결과는 실제 자산현황·월별 기록·저축계획에 반영하지 않습니다.</p>`;
+  if(keepEditor){
+    el("installment-content").innerHTML=contentMarkup;
+    activeEditor.querySelectorAll("[data-installment]").forEach(x=>{
+      if(x===document.activeElement)return;
+      const key=x.dataset.installment, method=x.dataset.method, source=method?settings.methods?.[method]||{}:settings;
+      const value=source[key]??(key==="months"?INSTALLMENT_TERMS.find(t=>t.id===method).months:key==="years"?3:key==="firstMonth"?1:key==="discountRate"||key==="discountCap"?0:"");
+      if(x.type==="checkbox")x.checked=source[key]===true;
+      else x.value=x.hasAttribute("data-money")?assetNumberText(value):String(value);
+      if(method&&(key==="discountRate"||key==="discountCap"))x.disabled=source.discountEnabled!==true;
+    });
+    for(const [key,status] of [["dates",dateStatus],["reference",referenceStatus],["discounts",discountStatus]])activeEditor.querySelector(`[data-installment-details="${key}"]>summary>span`).textContent=status;
+    activeEditor.querySelector(".installment-legacy-list").innerHTML=legacyCosts;
+    activeEditor.querySelector(".installment-save-state").textContent=doc.installments?"이 기기에 저장됨":"예시 · 변경하면 자동 저장";
+  }else view.innerHTML=`<div id="installment-content">${contentMarkup}</div>${editorMarkup}`;
+  const editor=el(installmentSettingsPanelId);
+  editor.onclose=()=>el("installmentsView").querySelector('[data-open-installment="settings"]')?.focus({preventScroll:true});
+  editor.onclick=e=>{
+    if(e.target!==editor)return;
+    const r=editor.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)editor.close();
+  };
+  all("[data-close-installment-settings]").forEach(b=>b.onclick=()=>editor.close());
+  const editorForm=editor.querySelector("form");
+  editorForm.onsubmit=e=>{
+    e.preventDefault();
+    const invalid=[...editor.querySelectorAll("[data-installment]")].find(x=>!x.disabled&&x.oninput&&!x.oninput());
+    if(invalid){let d=invalid.closest("details");while(d){d.open=true;d=d.parentElement.closest("details");}invalid.reportValidity();return;}
+    const active=document.activeElement;
+    if(active?.matches("[data-installment]")&&editor.contains(active))active.onchange();
+    editor.close();
+  };
   all("[data-installment-details]").forEach(d=>d.ontoggle=()=>{
     if(d.open)installmentOpenDetails.add(d.dataset.installmentDetails);else installmentOpenDetails.delete(d.dataset.installmentDetails);
     all("[data-open-installment]").forEach(b=>{if(b.dataset.openInstallment===d.dataset.installmentDetails)b.setAttribute("aria-expanded",String(d.open));});
   });
   all("[data-open-installment]").forEach(b=>b.onclick=()=>{
     const panel=el(`installment-${b.dataset.openInstallment}-panel`);if(!panel)return;
+    if(b.dataset.openInstallment==="settings"){
+      renderInstallments();const dialog=el(installmentSettingsPanelId);
+      el("installmentsView").querySelector('[data-open-installment="settings"]')?.focus({preventScroll:true});
+      dialog.showModal();dialog.querySelector("[data-close-installment-settings]").focus({preventScroll:true});return;
+    }
     installmentOpenDetails.add(b.dataset.openInstallment);panel.open=true;b.setAttribute("aria-expanded","true");
-    panel.scrollIntoView({block:"start",behavior:"auto"});
-    if(b.dataset.openInstallment==="settings")panel.querySelector('[data-installment="price"]')?.focus({preventScroll:true});
-    else panel.querySelector("summary")?.focus({preventScroll:true});
+    panel.scrollIntoView({block:"start",behavior:"auto"});panel.querySelector("summary")?.focus({preventScroll:true});
   });
   all("[data-installment-years]").forEach(b=>b.onclick=()=>{
     const years=Number(b.dataset.installmentYears);if(![3,5,10].includes(years)||result?.years===years)return;
@@ -100,12 +138,13 @@ function renderInstallments(){
       }else if(x.value.trim()&&(n===null||n<(key==="returnRate"?-100:0)||n>100))x.setCustomValidity(key==="returnRate"?"−100~100%의 예상 수익률을 입력해 주세요.":"0~100%의 할인율을 입력해 주세요.");
       return x.validity.valid;
     };
-    x.addEventListener("input",validate);
+    x.oninput=validate;
     x.onchange=()=>{
       if(!validate()){x.reportValidity();return;}
-      const next=doc.installments||JSON.parse(JSON.stringify(INSTALLMENT_EXAMPLE)), key=x.dataset.installment;
+      const before=JSON.stringify(doc.installments||null), next=doc.installments||JSON.parse(JSON.stringify(INSTALLMENT_EXAMPLE)), key=x.dataset.installment;
       let target=next;if(x.dataset.method){next.methods=next.methods||{};target=next.methods[x.dataset.method]=next.methods[x.dataset.method]||{};}
       if(x.type==="checkbox")target[key]=x.checked;else if(key==="startYm"){if(x.value)target[key]=x.value;else delete target[key];}else{const n=numIn(x.value);if(n===null)delete target[key];else target[key]=n;}
+      if(doc.installments&&before===JSON.stringify(next))return;
       doc.installments=next;saveSection("installments");renderInstallments();
     };
   });
