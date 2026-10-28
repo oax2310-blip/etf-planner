@@ -11,7 +11,7 @@ const alertHistoryReadStamp=item=>new Date(Math.max(Date.now(),Date.parse(item.l
 // 푸시를 눌러 연 알림은 뒤늦게 수신함·동기화로 들어와도 읽음으로 둔다. 누른 뒤 30분 넘어 보낸 재알림(다음 시간대)은
 // 새로 온 알림이라 그대로 둔다(30분은 기기·서버 시계 차이 여유).
 function alertHistoryApplyTaps(items){
-  for(const item of items){const at=alertHistoryReadIds.get(item.id);if(at!==undefined&&alertHistoryUnread(item)&&(!item.lastSentAt||Date.parse(item.lastSentAt)<=at+30*60e3))item.readAt=alertHistoryReadStamp(item);}
+  for(const item of items){const at=alertHistoryReadIds.get(item.id)??alertHistoryReadIds.get(item.alertKey);if(at!==undefined&&alertHistoryUnread(item)&&(!item.lastSentAt||Date.parse(item.lastSentAt)<=at+30*60e3))item.readAt=alertHistoryReadStamp(item);}
 }
 function acceptAlertHistory(items){
   const next=alertHistoryStore.merge(state.alertHistory,{items});
@@ -82,12 +82,13 @@ function alertHistoryCard(item,names=null){
       <span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span>
       <span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span>
       ${item.krOpenReminder&&item.observedAt?`<span class="alert-history-note">미국 신호 ${esc(alertHistoryTime(item.observedAt))}${item.asOf?` · 시세 기준일 ${esc(item.asOf)}`:""}</span>`:""}
-      ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}
+      ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.firstOccurredAt||item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}
     </button><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(name)} 알림 삭제">삭제</button></div>
   </article>`;
 }
+// 재알림 푸시는 최초 알림 ID(alertKey)로 온다. 최초 항목을 지운 뒤 새로 만든 회차 항목은 alertKey로 찾는다.
 function markAlertHistoryRead(eventId){
-  const item=state.alertHistory?.items?.find(item=>item.id===eventId);if(!item||!alertHistoryUnread(item))return false;
+  const item=state.alertHistory?.items?.find(item=>item.id===eventId||item.alertKey===eventId);if(!item||!alertHistoryUnread(item))return false;
   item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();return true;
 }
 function noteAlertHistoryRead(eventId){
@@ -95,8 +96,8 @@ function noteAlertHistoryRead(eventId){
   alertHistoryReadIds.set(eventId,Date.now());markAlertHistoryRead(eventId);
 }
 function removeAlertHistory(eventId){
-  if(!alertHistoryItems().some(item=>item.id===eventId))return false;
-  state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:[eventId]});save();renderAlertHistory();return true;
+  const item=alertHistoryItems().find(item=>item.id===eventId);if(!item)return false;
+  state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:alertHistoryStore.removal(item)});save();renderAlertHistory();return true;
 }
 function renderAlertHistory(){
   const list=$("alertHistoryList");if(!list)return;
@@ -126,7 +127,7 @@ function initializeAlertHistory(){
   $("openAlertSettings").onclick=()=>{$("alertHistoryDialog").close();openAlertSettings();};
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
   $("readAllHistory").onclick=()=>{for(const item of state.alertHistory?.items||[])if(alertHistoryUnread(item))item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();};
-  $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:items.map(item=>item.id)});save();renderAlertHistory();};
+  $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:items.flatMap(alertHistoryStore.removal)});save();renderAlertHistory();};
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
   addEventListener("storage",event=>{if(event.key!==STORAGE_KEY||!event.newValue)return;try{const other=JSON.parse(event.newValue).alertHistory;if(other)acceptAlertHistoryFromTab(other);}catch{}});
