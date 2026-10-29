@@ -56,17 +56,22 @@ document.addEventListener("focusout",()=>setTimeout(()=>{ if(redrawLater) redraw
 const onChange = (sel, section, set) => all(sel).forEach(x=>x.onchange=()=>{ if(!x.validity.valid)return; if(set(x.value,x)!==false) saveSection(section); render(); });
 function emptyCard(title, text, button){ return `<div class="card empty assets-empty"><h2>${title}</h2><p>${text}</p>${button}</div>`; }
 const priceDays = asOf => { const [y,m,d]=String(asOf).split("-").map(Number), n=new Date(); return Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(y,m-1,d))/864e5); };
-function quoteText(q,current=false){
+function quoteText(q){
   if(!q)return "";
   const days=q.asOf?priceDays(q.asOf):NaN, status=q.stale?"갱신 실패":!Number.isFinite(days)||days>A_STALE_DAYS?"갱신 필요":"";
   const detail=q.stale?"시세 갱신에 실패해 이전 가격을 표시합니다.":Number.isFinite(days)?`시세가 ${A_STALE_DAYS}일 넘게 갱신되지 않았습니다.`:"시세 기준일을 확인할 수 없습니다.";
-  return `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)}${current?'<span class="quote-label">(현재가)</span>':""}${q.manual?' <span class="quote-source">직접 입력</span>':""}${status?` <span class="quote-status" title="${escA(detail+(q.asOf?` 마지막 시세: ${q.asOf}`:""))}"><span aria-hidden="true">!</span> ${status}</span>`:""}`;
+  return `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)}${q.manual?' <span class="quote-source">직접 입력</span>':""}${status?` <span class="quote-status" title="${escA(detail+(q.asOf?` 마지막 시세: ${q.asOf}`:""))}"><span aria-hidden="true">!</span> ${status}</span>`:""}`;
 }
 const profitColorA = value => value>0?"profit-gain":value<0?"profit-loss":"";
 const profitMoneyA = (value,currency,signed=false) => value===null?"—":`${signed&&value>0?"+":value<0?"−":""}${currency==="USD"?`$${nf2.format(Math.abs(value))}`:currency==="KRW"?wonA(Math.abs(value)):nfShares.format(Math.abs(value))}`;
 const profitRateA = value => value===null?"—":`${value>0?"+":value<0?"−":""}${nf2.format(Math.abs(value))}%`;
 function profitResultA(p){
   return `<span>평가손익 <b class="${profitColorA(p.profit)}">${p.profit===null?p.shares===null?"수량 미입력":"시세 대기":profitMoneyA(p.profit,p.currency,true)}</b></span><span>손익률 <b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></span>`;
+}
+// 자산 배분 종목 줄의 짧은 손익: '손익 −$1,746.36 −11.42%'(평가손익·손익률). 계산할 수 없으면 수량 미입력·시세 대기만 보인다.
+function profitLineA(p){
+  if(p.profit===null)return `<span class="asset-profit-result">${p.shares===null?"수량 미입력":"시세 대기"}</span>`;
+  return `<span class="asset-profit-result" title="평가손익 · 손익률">손익 <b class="${profitColorA(p.profit)}">${profitMoneyA(p.profit,p.currency,true)}</b><b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></span>`;
 }
 
 // ---------- 자산 배분 ----------
@@ -157,10 +162,10 @@ function renderAlloc(tab="alloc"){
   // 분할매수·분할매도·재매수 편입 표시(읽기 전용, member-link.js). 계산이 실패해도 자산 배분 화면은 그대로 그린다.
   const members=strategy?null:memberInfo(a);
   const memberChips=it=>{
-    const m=members?.items.get(it.id);if(!m)return "";
+    const m=members?.items.get(it.id);if(!m||memberLink.TABS.every(({key})=>!m[key].length))return "";
     return `<span class="alloc-links" role="group" aria-label="${escA(it.name)} 플래너 편입 상태">${memberLink.TABS.map(({key,name})=>{
       const list=m[key];
-      if(!list.length)return `<span class="alloc-chip off" role="img" aria-label="${name} 미편입"><span aria-hidden="true">–</span>${name}</span>`;
+      if(!list.length)return "";
       const guess=list.some(x=>x.how==="name"||x.how==="fuzzy"), many=list.length>1;
       const tip=`${name} 탭 · ${list.map(x=>x.label).join(" · ")}${many?" (눌러서 첫 번째로 이동)":" (눌러서 이동)"}${guess?" · 이름이 비슷해 같은 종목으로 추정했습니다. 확인하세요.":""}`;
       return `<a class="alloc-chip on${guess?" guess":""}" href="${escA(memberLink.href(key,list[0].id))}" title="${escA(tip)}" aria-label="${escA(`${name} 편입됨${many?` ${list.length}개`:""}${guess?" 추정":""}, 누르면 ${name} 탭으로 이동`)}"><span aria-hidden="true">✓</span>${name}${many?`<b class="chip-count">${list.length}</b>`:""}${guess?'<i class="chip-guess">추정</i>':""}</a>`;
@@ -190,18 +195,22 @@ function renderAlloc(tab="alloc"){
     const g=linked?allocTargetGap(link.pct,link.target,trading):allocTargetGap(cur,t,trading);
     const html=t===null?"":linked?`<span class="gap-line"><small>합계 ${pc(link.pct)}</small>${gapHtml(g,{basis:`연결 계좌 ${link.rows.length}개 합계 ${pc(link.pct)} − 목표 ${pc(link.target)}`})}</span>`:gapHtml(g);
     const out={html,gray:g?g.state==="":trading||allocTargetGap(cur,0).d===0};itemGaps.set(it.id,out);return out; };
+  // 종목 줄(위에서 아래로): 이름·평가액 → 코드·보유(수량 × 현재가)·현재/목표 비중 → 편입 칩·메모·목표 대비 → 평균매수가·손익(평균매수가를 넣은 종목만).
+  // 플래너에 편입된 탭 칩만 보이고 미편입은 위 '플래너 편입 점검'에서 확인한다.
   const itemRow=it=>{ const r=s.items.get(it.id), p=profits.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)], trade=tradeOf(it);
-    const how=r.how==="shares"?`<small class="how holding">${nfShares.format(it.shares)}주${r.q?` × <span class="holding-price">${quoteText(r.q,true)}</span>`:""}</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?stock?.error?'<small class="how quote-status"><span aria-hidden="true">!</span> 시세 조회 실패</small>':'<small class="how">시세 대기</small>':"";
+    const code=tracksETF(it)?`<span title="${escA(`기준 ${String(it.ticker).toUpperCase()} → 매수 ${assetTradeTicker(it)}`)}">기준 ${escA(String(it.ticker).toUpperCase())} → ${escA(assetTradeTicker(it))}</span>`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"";
+    const hold=r.how==="shares"?`<span class="how holding">${nfShares.format(it.shares)}주${r.q?` × ${quoteText(r.q)}`:""}</span>`:[quoteText(r.q),finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:"",r.how==="ratio"?`<span class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</span>`:it.ticker&&prices?stock?.error?'<span class="how quote-status"><span aria-hidden="true">!</span> 시세 조회 실패</span>':'<span class="how">시세 대기</span>':""].filter(Boolean).join(" · ");
+    const meta=[code,hold].filter(Boolean).join(" · "), chips=memberChips(it);
     return `<div class="asset-row${it.done?" done":""}" data-alloc-item="${escA(it.id)}"><label class="check" title="점검완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 점검완료 (직접 표시)"></label>
-      <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}${tradeBadge(trade.buy,"buy","매수중","분할매수")}${tradeBadge(trade.sell,"sell","매도중","분할매도")}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",r.how!=="shares"?quoteText(r.q):"",r.how!=="shares"&&finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:""].filter(Boolean).join(" · ")}</small></button>
-      <span class="asset-figures"><span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>${itemGap(it).html}`:""}</span></span>
-      ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}${memberChips(it)}
-      <div class="asset-profit"><span class="average-price-value">평균매수가 ${p.averagePrice===null?"미입력":profitMoneyA(p.averagePrice,p.currency)}</span>${p.averagePrice===null?"":profitResultA(p)}</div></div>`; };
+      <div class="asset-body"><button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}${tradeBadge(trade.buy,"buy","매수중","분할매수")}${tradeBadge(trade.sell,"sell","매도중","분할매도")}</strong></button>
+      <span class="asset-val">${man(r.value)}</span>${meta?`<small class="asset-meta">${meta}</small>`:""}<span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>${itemGap(it).html}`:""}</span>
+      ${chips||it.note?`<div class="asset-extra">${chips}${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}</div>`:""}
+      ${p.averagePrice===null?"":`<div class="asset-profit"><span class="average-price-value">평균매수가 ${profitMoneyA(p.averagePrice,p.currency)}</span>${profitLineA(p)}</div>`}</div></div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
     const key=`group:${g.id}`,bodyId=`allocGroup-${encodeURIComponent(g.id)}`;
     return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${foldButton(key,bodyId,`${g.name} 상세`,`<span>${escA(g.name)}</span>`)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
-      <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} (${man(t/100*s.base)})${target.linked?" · 하위 합산":""} · <span class="group-gap">목표 대비 ${gapHtml(allocTargetGap(s.pct(v),t,g.items.length>0&&g.items.every(it=>itemGap(it).gray)),{why:"종목마다 1.0%p 이내이거나 매수중·매도중이라"})}</span>`:""}</p></div>
+      <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} · <span class="group-gap">목표 대비 ${gapHtml(allocTargetGap(s.pct(v),t,g.items.length>0&&g.items.every(it=>itemGap(it).gray)),{why:"종목마다 1.0%p 이내이거나 매수중·매도중이라"})}</span>`:""}</p>${t!==null?`<small class="group-target">목표 금액 ${man(t/100*s.base)}${target.linked?" · 하위 합산":""}</small>`:""}</div>
       <div class="alloc-fold-body" id="${escA(bodyId)}"${allocOpenCards.has(key)?"":" hidden"}>
       ${g.note?`<p class="group-note" title="${escA(g.note)}"><span class="alloc-note-label">메모</span>${noteLineA(g.note)}</p>`:""}
       ${plain.map(itemRow).join("")}${names.map(n=>`<div class="asset-section">${sec(n)}${g.items.filter(it=>it.section===n).map(itemRow).join("")}</div>`).join("")}
@@ -243,19 +252,20 @@ function renderAlloc(tab="alloc"){
     <section class="card panel memo assets-memo"><div class="memo-head"><h2>${strategy?'<label for="allocMemo">배분 메모</label>':foldButton("memo","allocMemoBody","배분 메모","<span>배분 메모</span>")}</h2></div><div class="alloc-fold-body" id="allocMemoBody"${strategy||allocOpenCards.has("memo")?"":" hidden"}><textarea id="allocMemo" aria-label="배분 메모" maxlength="4000">${escA(a.memo||"")}</textarea></div></section>`;
   view.querySelectorAll("[data-alloc-fold]").forEach(button=>{
     // 입력 저장으로 화면이 다시 그려져 클릭이 사라지지 않게, 접힘을 먼저 바꾼 뒤 포커스를 옮긴다.
+    // 터치·마우스(e.detail>0)로 누르면 초점을 옮기지 않는다. 옮기면 키보드 초점 테두리가 남는다.
     button.onpointerdown=e=>{if(e.button===0)e.preventDefault();};
-    button.onclick=()=>{
+    button.onclick=e=>{
       const open=button.getAttribute("aria-expanded")!=="true",key=button.dataset.allocFold;
       if(open)allocOpenCards.add(key);else allocOpenCards.delete(key);
       setAllocCardOpen(button,open);
       updateAllocFoldAll();
       if(document.activeElement!==button)document.activeElement?.blur();
-      [...view.querySelectorAll("[data-alloc-fold]")].find(b=>b.dataset.allocFold===key)?.focus({preventScroll:true});
+      if(!e?.detail)[...view.querySelectorAll("[data-alloc-fold]")].find(b=>b.dataset.allocFold===key)?.focus({preventScroll:true});
     };
   });
   view.querySelectorAll("[data-alloc-fold-all]").forEach(toggleAll=>{
     toggleAll.onpointerdown=e=>{if(e.button===0)e.preventDefault();};
-    toggleAll.onclick=()=>{
+    toggleAll.onclick=e=>{
       const folds=[...view.querySelectorAll("[data-alloc-fold]")];
       const open=!folds.every(b=>b.getAttribute("aria-expanded")==="true");
       folds.forEach(button=>{
@@ -265,7 +275,7 @@ function renderAlloc(tab="alloc"){
       });
       updateAllocFoldAll();
       if(document.activeElement!==toggleAll)document.activeElement?.blur();
-      el(toggleAll.id)?.focus({preventScroll:true});
+      if(!e?.detail)el(toggleAll.id)?.focus({preventScroll:true});
     };
   });
   const totalInput=el("allocTotal");

@@ -56,8 +56,8 @@ function page(data=fixture(),quotes=quoteFixture()){
 
 test('평균매수가 미입력 종목에는 손익을 표시하지 않으며 조회·취소는 저장하지 않는다',()=>{
   const data=fixture(),before=JSON.stringify(data),h=page(data);
-  assert.match(h.row('a'),/평균매수가 미입력/);assert.doesNotMatch(h.row('a'),/평가손익|손익률/);
-  assert.match(h.row('b'),/profit-loss[^>]*">−\$120/);assert.match(h.row('domestic'),/profit-gain[^>]*">\+8,000원/);
+  assert.doesNotMatch(h.row('a'),/평균매수가|평가손익|손익률|asset-profit/,'미입력 안내 줄도 두지 않는다');
+  assert.match(h.row('b'),/평균매수가 \$100<\/span><span class="asset-profit-result" title="평가손익 · 손익률">손익 <b class="profit-loss">−\$120<\/b><b class="profit-loss">−40%<\/b>/);assert.match(h.row('domestic'),/profit-gain[^>]*">\+8,000원/);
   h.open('a');assert.equal(h.node('itemDialog').open,true);assert.equal(h.input.value,'');
   assert.match(h.node('averagePriceLabel').textContent,/달러 \(USD\)/);assert.match(h.node('averagePriceHolding').innerHTML,/보유 수량 <b>2주/);
   h.edit('50');assert.match(h.node('averagePricePreview').innerHTML,/\+\$20/);assert.match(h.node('averagePricePreview').innerHTML,/\+20%/);
