@@ -54,7 +54,7 @@
       <label class="field"><span>이름</span><input name="name" required maxlength="60" autocomplete="off" /></label>
       <label class="field"><span>그룹</span><select name="group"></select></label>
       <label class="field"><span>소분류 (선택)</span><input name="section" maxlength="30" list="sectionList" autocomplete="off" placeholder="예: 커버드콜" /><datalist id="sectionList"></datalist></label>
-      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 소분류·그룹·분류 목표에 자동 합산 · 플래너 분할매수(총 매수 금액)·분할매도·재매수에 바로 반영</small></label>
+      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 상위 목표에 합산 · 플래너에 자동 반영</small></label>
       <label class="field"><span>기준 티커 / 시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
       <label class="field"><span>실제 매수 ETF 코드 (추종할 때)</span><input name="tradeTicker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼" /></label>
       <label class="field"><span>보유 수량 (선택)</span><input name="shares" type="number" min="0" step="any" inputmode="decimal" placeholder="넣으면 수량 × 현재가" /></label>
@@ -68,7 +68,7 @@
       <label class="field dialog-wide"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
       <div class="dialog-wide item-trades" id="itemTrades" hidden></div>
       <p class="hint dialog-wide" id="itemPurchaseTarget" hidden></p>
-      <p class="hint dialog-wide" id="itemHint">이미 보유한 추종 ETF라면 해당 계좌·그룹의 기존 종목을 수정하세요. 기준 티커에 미국 ETF, 실제 매수 ETF 코드에 거래할 ETF를 넣습니다. 보유 수량은 실제 ETF 주수이며, 분할매수 체결분은 이 종목의 기존 보유량에 더합니다. 분할매수에 회차별 권장 주수·예상 금액·잔액이 표시됩니다. 평가액과 현재가는 자동 조회·계산합니다.</p>
+      <details class="dialog-wide dialog-help"><summary>추종 ETF 입력 안내</summary><p class="hint" id="itemHint">이미 보유한 추종 ETF라면 해당 계좌·그룹의 기존 종목을 수정하세요. 기준 티커에 미국 ETF, 실제 매수 ETF 코드에 거래할 ETF를 넣습니다. 보유 수량은 실제 ETF 주수이며, 분할매수 체결분은 이 종목의 기존 보유량에 더합니다. 분할매수에 회차별 권장 주수·예상 금액·잔액이 표시됩니다. 평가액과 현재가는 자동 조회·계산합니다.</p></details>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="itemDelete">종목 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
