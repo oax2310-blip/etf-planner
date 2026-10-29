@@ -80,7 +80,7 @@ function renderSavings(){
   const percent=progress===null?"—":`${nf1.format(progress)}%`, activeTab=sc?savingsTab:"records";
   const tabs=[["overview","Overview","개요"],["assumptions","Assumptions","가정"],["records","Records","기록"]];
   const setting=(key,label,icon)=>`<button class="savings-setting" type="button" data-savings-setting="${key}">${savingsIcon(icon)}<span>${label}</span><small>설정</small><i aria-hidden="true"></i></button>`;
-  view.innerHTML=`<div class="savings-heading"><h1>저축 계획</h1><details class="savings-menu"><summary aria-label="다른 화면과 동기화 메뉴">${savingsIcon('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>')}</summary><nav aria-label="자산 화면 메뉴"><a href="#strategy">투자구성</a><a href="#alloc">자산 배분</a><a href="#ledger">월별 손익</a><a href="#installments">할부 계산</a><button type="button" id="savingsSync">동기화·백업</button><button type="button" id="savingsRefresh">시세 불러오기</button></nav></details></div>
+  view.innerHTML=`<div class="savings-heading"><h1>저축 계획</h1></div>
     <section class="card savings-summary" aria-label="저축 요약">
       <div class="savings-summary-head">${sc?`<select id="savingsScenarioSelect" aria-label="저축 시나리오">${S.scenarios.map(x=>`<option value="${escA(x.id)}"${x===sc?" selected":""}>${escA(x.name)} 계획</option>`).join("")}</select>`:'<span>저축 기록</span>'}<button class="btn icon-btn" id="copyScenario" type="button" aria-label="시나리오 복사" title="시나리오 복사">${savingsIcon('<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>')}</button></div>
       <div class="savings-balance"><span>최근 기록 자산</span><strong title="${sim?wonA(sim.last.total):"실제 기록 없음"}">${sim?savingsCompactWon(sim.last.total):"—"}</strong><small>${sim?`${sim.last.ym.replace("-",".")} 실제 기록`:"기록 탭에서 실제 저축액을 입력하세요"}</small></div>
@@ -109,8 +109,7 @@ function renderSavings(){
       <details data-savings-detail="method"${savingsOpenDetails.has("method")?" open":""}><summary>계산 방식<i aria-hidden="true"></i></summary><p>매달 월급 − 기부 − 사용금액을 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></details>
     </div>
     <div class="card savings-milestone-record"><span>과거 최단 기록</span><div><b>${best?savingsMilestoneHtml(best):"저장된 기록 없음"}</b><small>이전 계산 결과</small></div>${canSave?'<button class="btn mini" id="saveSavingsMilestone" type="button">최단 기록 저장</button>':""}</div>
-    ${sc?`<button class="btn savings-edit" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"가정 접기":"가정 수정하기"}</span></button>`:""}
-    <nav class="savings-bottom-nav" aria-label="주요 화면"><a href="index.html">${savingsIcon('<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>')}<span>홈</span></a><a href="#savings" aria-current="page">${savingsIcon('<path d="M4 20V12h3v8M10 20V7h3v13M16 20V3h3v17"/>')}<span>저축 계획</span></a><a href="#alloc">${savingsIcon('<circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0Z"/>')}<span>내 자산</span></a></nav>`;
+    ${sc?`<button class="btn savings-edit" type="button" id="toggleSavingsAssumptions" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}"><span data-savings-assumptions-action>${savingsAssumptionsOpen?"가정 접기":"가정 수정하기"}</span></button>`:""}`;
   const select=el("savingsScenarioSelect");if(sc)select.onchange=()=>{setUi({scenario:select.value});renderSavings();};
   const showTab=(key,focus=false)=>{
     savingsTab=key;
@@ -124,7 +123,6 @@ function renderSavings(){
     button.onkeydown=e=>{let next;if(e.key==="ArrowRight")next=(index+1)%tabs.length;else if(e.key==="ArrowLeft")next=(index+tabs.length-1)%tabs.length;else if(e.key==="Home")next=0;else if(e.key==="End")next=tabs.length-1;else return;e.preventDefault();showTab(tabs[next][0],true);};
   });
   all("[data-savings-detail]").forEach(detail=>detail.ontoggle=()=>{if(detail.open)savingsOpenDetails.add(detail.dataset.savingsDetail);else savingsOpenDetails.delete(detail.dataset.savingsDetail);});
-  el("savingsSync").onclick=()=>el("syncBtn").click();el("savingsRefresh").onclick=()=>el("refreshPricesBtn").click();
   if(el("saveSavingsMilestone"))el("saveSavingsMilestone").onclick=()=>{
     const savings=doc.savings, scenario=savings.scenarios.find(x=>x.id===ui.scenario)||savings.scenarios[0];
     const current=savingsMilestone(simulateSavings(savings,scenario));if(current)assetStore.saveSavingsMilestone(current);renderSavings();
