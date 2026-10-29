@@ -16,11 +16,11 @@
   <title>자산 현황</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=314"></script>
+  <script src="js/theme.js?v=315"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=314" />
-  <link rel="stylesheet" href="css/assets.css?v=314" />
-  <script src="js/repo-security.js?v=314" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=315" />
+  <link rel="stylesheet" href="css/assets.css?v=315" />
+  <script src="js/repo-security.js?v=315" defer></script>
 </head>
 <body class="assets-page">
   <header class="top">
@@ -67,6 +67,16 @@
       <p class="hint dialog-wide" id="itemHint">이미 보유한 추종 ETF라면 해당 계좌·그룹의 기존 종목을 수정하세요. 기준 티커에 미국 ETF, 실제 매수 ETF 코드에 거래할 ETF를 넣습니다. 보유 수량은 실제 ETF 주수이며, 분할매수 체결분은 이 종목의 기존 보유량에 더합니다. 분할매수에 회차별 권장 주수·예상 금액·잔액이 표시됩니다. 금액만 넣으면 입력 때부터 해당 시세 변동을 따라갑니다.</p>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="itemDelete">종목 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
+  </form></dialog>
+
+  <dialog id="averagePriceDialog"><form method="dialog" class="dialog-inner" id="averagePriceForm">
+    <div class="dialog-head"><h2>평균매수가</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
+    <p class="average-price-item" id="averagePriceItem"></p>
+    <div class="average-price-holding" id="averagePriceHolding"></div>
+    <label class="field"><span id="averagePriceLabel">평균매수가 (1주 기준)</span><input name="averagePrice" type="number" min="0" max="9007199254740991" step="any" inputmode="decimal" autocomplete="off" aria-describedby="averagePriceHint" placeholder="미입력" /><small class="field-hint" id="averagePriceHint">선택한 계좌의 평균매수가만 저장합니다. 해외 종목은 현지 통화로 입력하세요. 비우고 저장하면 삭제됩니다.</small></label>
+    <div class="profit-result average-price-preview" id="averagePricePreview" role="status" aria-live="polite"></div>
+    <div class="average-price-total" id="averagePriceTotal" hidden></div>
+    <div class="dialog-foot"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
   <dialog id="groupDialog"><form method="dialog" class="dialog-inner" id="groupForm">
@@ -131,17 +141,17 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=314" defer></script>
-  <script src="js/data-validation.js?v=314" defer></script>
-  <script src="js/assets-calc.js?v=314" defer></script>
-  <script src="js/price-collection.js?v=314" defer></script>
-  <script src="js/assets-store.js?v=314" defer></script>
-  <script src="js/member-link.js?v=314" defer></script>
-  <script src="js/ledger-benchmark.js?v=314" defer></script>
-  <script src="js/assets.js?v=314" defer></script>
-  <script src="js/assets-ledger.js?v=314" defer></script>
-  <script src="js/assets-savings.js?v=314" defer></script>
-  <script src="js/assets-installments.js?v=314" defer></script>
-  <script src="js/assets-start.js?v=314" defer></script>
+  <script src="js/ma-ladder.js?v=315" defer></script>
+  <script src="js/data-validation.js?v=315" defer></script>
+  <script src="js/assets-calc.js?v=315" defer></script>
+  <script src="js/price-collection.js?v=315" defer></script>
+  <script src="js/assets-store.js?v=315" defer></script>
+  <script src="js/member-link.js?v=315" defer></script>
+  <script src="js/ledger-benchmark.js?v=315" defer></script>
+  <script src="js/assets.js?v=315" defer></script>
+  <script src="js/assets-ledger.js?v=315" defer></script>
+  <script src="js/assets-savings.js?v=315" defer></script>
+  <script src="js/assets-installments.js?v=315" defer></script>
+  <script src="js/assets-start.js?v=315" defer></script>
 </body>
 </html>
