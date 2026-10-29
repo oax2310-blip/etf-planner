@@ -340,7 +340,7 @@ function futureRebuyTrack(r,s,cur,toggle,trText,fe=null){
   return `<section class="card fr-track" aria-label="보유 계약"><div class="fr-track-body"><div class="fr-track-top"><div><strong>보유 계약</strong><span class="buy-track-chip${chipCls?` ${chipCls}`:""}">${chipText}</span></div><div class="fr-count"><b>${s.held}</b><span>/ ${hold}계약</span></div></div>${track}<p class="fr-note">${hold?note:"이탈 전 계약 수를 넣으면 보유 계약 칸이 생깁니다."}</p></div>
     <div class="fr-track-foot"><span>손절 평균가 <b>${sellAvg||"—"}</b></span>${toggle}</div></section>`;
 }
-// 하단선 기간이 보유 근월물(fe)의 그 단위 봉 수보다 길어 계산할 수 없으면 {have 봉 수, max 고를 수 있는 가장 긴 선(화면 글자)}, 알 수 없으면 null.
+// 손절 하단선·분할매수 종료선(futures-plan.js futureEndLineShort)의 기간이 보유 근월물(fe)의 그 단위 봉 수보다 길어 계산할 수 없으면 {have 봉 수, max 고를 수 있는 가장 긴 선(화면 글자)}, 알 수 없으면 null.
 // 수집기가 그 단위의 더 긴 선을 요청하고도(ma 이름) 봉이 그보다 적게 왔을 때만 상장 기간 한계로 본다(아직 덜 받은 봉을 한계로 오해하지 않게).
 function futureFloorShort(fe,line){
   const unit=movingLineUnit(line),n=parseInt(line),c=fe?.closes?.[{일선:"D",주선:"W",개월선:"M"}[unit]];
