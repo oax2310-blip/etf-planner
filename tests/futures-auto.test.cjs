@@ -137,6 +137,42 @@ test('종료 이동평균은 네 시간축·임의 기간의 기존 시세를 �
   for(const endLine of ['401일선','0일선','잘못된 선'])assert.ok(ctx.futureAutoBuyPlan(futures(),config({endLine})).error);
 });
 
+test('보유 근월물 봉보다 긴 종료선은 계산할 수 있는 가장 긴 선을 알리고 기록은 바꾸지 않는다',()=>{
+  const ctx=load();
+  // 수집기가 150월선까지 요청하고도 월봉이 12개만 온 월물(상장 후 기간 한계)
+  const entry={asOf:'2026-10-20',ma:{'32일선':1320,'150개월선':null},closes:{D:Array(200).fill(1371),M:Array(12).fill(1373)}};
+  const f=futures(),before=JSON.stringify(f),source=ctx.futureAutoSource(f,config({endLine:'25개월선'}),entry);
+  assert.match(ctx.futureAutoBuyPlan(source).error,/종료 이동평균선의 기간/,'계산 규칙의 오류는 그대로');
+  assert.deepEqual({...ctx.futureEndLineShort(entry,source.buyPlan)},{short:'25월선 계산 불가 · 12월선까지',
+    long:'보유 근월물은 월봉이 12개뿐이라 종료 25월선을 계산할 수 없습니다. 12월선 이하로 고르거나 종료가격을 직접 입력하세요.'});
+  assert.equal(JSON.stringify(f),before);
+  const ok=ctx.futureAutoSource(futures(),config({endLine:'12개월선'}),entry);
+  assert.equal(ok.buyPlan.endPrice,1373);assert.equal(ctx.futureEndLineShort(entry,ok.buyPlan),null,'계산되는 선');
+  assert.equal(ctx.futureEndLineShort(entry,config()),null,'직접 입력 종료가');
+  assert.equal(ctx.futureEndLineShort(null,source.buyPlan),null,'시세 파일 전은 기존 문구');
+  assert.equal(ctx.futureEndLineShort({...entry,ma:{'12개월선':1373}},source.buyPlan),null,'덜 받은 봉은 한계로 보지 않는다');
+});
+
+test('보유 근월물 월봉이 모자란 종료 N월선은 현물 환율 월봉으로 계산하고 현물로 표시한다',()=>{
+  const ctx=load();
+  const entry={kind:'달러선물',asOf:'2026-10-20',close:1340,ma:{'32일선':1320,'150개월선':null},closes:{D:Array(200).fill(1371),M:Array(12).fill(1373)}};
+  const prices={format:5,updatedAt:'2026-10-20T06:00:00Z',stocks:{},futures:{'202612':entry},fx:{USDKRW:{kind:'현물환율',asOf:'2026-10-20',close:1430,ma:{},closes:{M:Array(125).fill(1430)}}}};
+  const f=futures(),before=JSON.stringify(f),source=ctx.futureAutoSource(f,config({endLine:'25개월선'}),entry,prices.updatedAt,prices),plan=ctx.futureAutoBuyPlan(source);
+  assert.equal(source.buyPlan.endPrice,1430);assert.equal(plan.error,undefined);assert.equal(plan.rows.at(-1).price,1430);
+  assert.equal(ctx.futureEndSpot(prices,entry,source.buyPlan),true);assert.equal(ctx.futureEndLineShort(entry,source.buyPlan,prices),null);
+  assert.equal(JSON.stringify(f),before,'미리보기는 기록을 바꾸지 않는다');
+  const own=ctx.futureAutoSource(futures(),config({endLine:'12개월선'}),entry,prices.updatedAt,prices);
+  assert.equal(own.buyPlan.endPrice,1373);assert.equal(ctx.futureEndSpot(prices,entry,own.buyPlan),false,'선물로 계산되면 현물 표시 없음');
+  assert.equal(ctx.futureEndSpot(prices,entry,config()),false,'직접 입력 종료가');
+  // 현물 월봉보다 긴 선은 둘 중 긴 쪽까지 고를 수 있다고 알린다
+  const long=ctx.futureAutoSource(futures(),config({endLine:'130개월선'}),entry,prices.updatedAt,prices);
+  assert.deepEqual({...ctx.futureEndLineShort(entry,long.buyPlan,prices)},{short:'130월선 계산 불가 · 125월선까지',
+    long:'보유 근월물 월봉 12개와 현물 환율 월봉 125개로는 종료 130월선을 계산할 수 없습니다. 125월선 이하로 고르거나 종료가격을 직접 입력하세요.'});
+  // 이 기기 시세가 기록의 마지막 채움보다 오래됐으면 현물도 쓰지 않는다
+  const newer={...futures(),auto:{at:'2026-10-21T00:00:00Z'}};
+  assert.equal(ctx.futureAutoSource(newer,config({endLine:'25개월선'}),entry,prices.updatedAt,prices).buyPlan.endPrice,0);
+});
+
 test('종료선만 바뀐 시세도 미매수 계약만 배분하고 수동 가격·월물·알림·완료 내역을 유지한다',()=>{
   const ctx=load(),f=futures();ctx.applyFutureAutoBuyPlan(f,config({endLine:'19일선',manualEndPrice:1390,customSetting:'보존'}));
   const record=f.levels[0].tranches[0];Object.assign(record,{completed:true,executionPrice:1319.8,mergedMonth:'202612',month:'202612',notify:false});

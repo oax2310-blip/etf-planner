@@ -202,7 +202,7 @@ test('시세 파일에서 채우기·표시에 쓰는 값만 남기고, 형식�
   const ctx = load();
   const slim = plain(ctx.slimPrices({updatedAt: AT, columns: [], stocks: {AAA: {kind: '해외', market: 'NAS', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}, daily: [[1]], monthly: [[1]]},
     BAD: {error: '조회 실패'}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true, error: 'x'}}}));
-  assert.deepEqual(slim, {format: 4, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
+  assert.deepEqual(slim, {format: 5, updatedAt: AT, stocks: {AAA: {kind: '해외', asOf: '2026-09-29', close: 1, ma: {'60일선': 1}}, BAD: {}, OLD: {kind: '국내', asOf: '2026-09-01', close: 2, ma: {}, stale: true}}, futures: {}, fx: {}});
   assert.equal(vm.runInContext('stockEntry', ctx)(slim, 'bad'), null, '기준일 없는 항목(조회만 실패)은 쓰지 않는다');
   assert.throws(() => ctx.slimPrices({plans: []}), /형식/);
 });
@@ -213,6 +213,48 @@ test('현물 환율은 기준일·가격·조회 실패 표시를 캐시에 보�
   const slim = plain(ctx.slimPrices(doc));
   assert.deepEqual(slim.fx.USDKRW, {kind: '현물환율', asOf: '2026-09-30', close: 1388.456, ma: {}, stale: true});
   assert.equal(vm.runInContext('fxEntry', ctx)(slim).close, 1388.456);
+});
+
+// 현물 환율 월봉(수집기 배당용 연속 월봉): 지난 달은 월초 날짜, 이번 달은 기준일 날짜. 값은 모두 가짜.
+const fxMonths = (n, endYear, endMonth, close = i => 1400 + i) => Array.from({length: n}, (_, i) => {
+  const k = endYear * 12 + endMonth - 1 - (n - 1 - i), y = Math.floor(k / 12), m = k % 12 + 1;
+  return [`${y}-${String(m).padStart(2, '0')}-01`, null, null, null, close(i), null];
+});
+
+test('현물 환율 월봉은 기준일 달에서 끝나는 연속 월봉 종가만 남기고 이번 달은 현재가로 맞춘다', () => {
+  const ctx = load(), slimFx = fx => plain(ctx.slimPrices({updatedAt: AT, columns: COLUMNS, stocks: {}, fx: {USDKRW: fx}})).fx.USDKRW;
+  const base = {kind: '현물환율', asOf: '2026-09-30', close: 1388.5, ma: {'125개월선': 1350}};
+  const monthly = fxMonths(30, 2026, 9);
+  assert.deepEqual(slimFx({...base, monthly, maAsOf: '2026-09-30'}).closes.M, [...monthly.slice(0, -1).map(b => b[4]), 1388.5]);
+  assert.equal(slimFx({...base, monthly: fxMonths(30, 2026, 8), maStale: true}).closes, undefined, '월봉 조회 실패로 지난 달에서 끝나면 버린다');
+  const gap = monthly.filter((_, i) => i !== 20);
+  assert.equal(slimFx({...base, monthly: gap}).closes.M.length, 9, '빈 달 뒤의 연속 월봉만');
+  assert.equal(slimFx({...base, monthly: [...monthly.slice(0, -1), ['2026-09-30', null, null, null, 'x', null]]}).closes, undefined, '이번 달 봉이 잘못되면 쓰지 않는다');
+  assert.equal(slimFx(base).closes, undefined);
+});
+
+test('분할매수 이동평균 종료선은 보유 근월물 값을 먼저 쓰고, 봉이 모자란 N개월선만 현물 환율 월봉으로 채운다', () => {
+  const ctx = load(), value = vm.runInContext('futureEndLineValue', ctx);
+  const raw = {updatedAt: AT, columns: COLUMNS, stocks: {}, futures: {'202612': {kind: '달러선물', asOf: '2026-09-30', close: 1398.2, ma: ma(),
+    monthly: fxMonths(12, 2026, 9, () => 1300)}}, fx: {USDKRW: {kind: '현물환율', asOf: '2026-09-30', close: 1450, ma: {}, monthly: fxMonths(125, 2026, 9, i => 1300 + i)}}};
+  const q = ctx.slimPrices(raw), fe = q.futures['202612'];
+  const spot25 = Math.round(([...Array(24)].reduce((n, _, i) => n + 1300 + 100 + i, 0) + 1450) / 25 * 1e4) / 1e4;
+  assert.deepEqual(plain(value(q, fe, '25개월선')), {value: spot25, spot: true});
+  assert.deepEqual(plain(value(q, fe, '12개월선')), {value: 1300, spot: false}, '보유 근월물로 계산되면 선물 값');
+  assert.deepEqual(plain(value(q, fe, '25일선')), {value: 1401.234, spot: false});
+  assert.equal(value(q, fe, '60주선'), null, '일선·주선은 현물로 채우지 않는다');
+  assert.equal(value(q, fe, '126개월선'), null, '현물 월봉도 모자라면 없음');
+  assert.equal(value(q, null, '25개월선'), null, '보유 월물 시세가 없으면 현물만으로 채우지 않는다');
+  assert.equal(value({...q, fx: {}}, fe, '25개월선'), null);
+  // 서버(buildTradeAlertRules)처럼 원본 시세를 줄인 뒤 채워도 같은 종료가로 남은 계약을 배분한다.
+  const f = {positions: [{month: '202612', contracts: 1, settlementPrice: 1390}], levels: [{days: 25, unit: '일선', price: 0, contracts: 0, tranches: []}],
+    buyPlan: {startLine: '25일선', endLine: '25개월선', endPrice: 0, contracts: 3, units: ['일선']}};
+  assert.equal(ctx.fillPrices({futures: f}, q), true);
+  assert.equal(f.buyPlan.endPrice, Math.round(spot25 * 100) / 100);
+  assert.equal(f.auto['buyPlanEnd:25개월선'], f.buyPlan.endPrice);
+  assert.equal(f.levels.find(l => l.planEnd).price, f.buyPlan.endPrice);
+  assert.equal(f.levels.reduce((n, l) => n + l.tranches.length, 0), 3);
+  assert.equal(ctx.fillPrices({futures: f}, q), false, '같은 시세로 다시 채우지 않는다');
 });
 
 // 봉: 시세 파일 columns(date·open·high·low·close·volume) 순서. 9/14·9/21·9/28이 있는 주(월~일)로 주봉을 만든다.
