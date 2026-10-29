@@ -520,28 +520,46 @@ test('월별 손익: 옛 대출 계좌는 계산에서 빼고 월·연도·연�
   assert.deepEqual(c.monthTotals({accounts: [{name: 'A'}]}, {m: 1, balances: [10]}), {total: 10, noLoan: 10});
   const y = c.yearSummary(year);
   assert.equal(y.pnl, 2000, '실현손익 3,000 + 선물옵션 −1,000'); assert.equal(y.monthPnl, 3000); assert.equal(y.months, 2);
-  near(y.rate, 2000 / 100000 * 100 + 1000 / 200000 * 100 - 1000 / 200000 * 100, '월 수익률 합 + 선물옵션 ÷ 마지막 달(4월) 총자산');
-  near(y.annual, (2000 / 100000 + 1000 / 200000 - 1000 / 200000) * 100 * 12 / 2, '연환산은 선물옵션을 포함한 연 수익률을 기록한 달 수로');
+  const growth=(1+2000/100000)*(1+1000/200000)*(1-1000/200000);
+  near(y.rate, (growth-1)*100, '월 복리 누적에 마지막 달(4월) 총자산 기준 연 합계 인수 반영');
+  near(y.annual, (growth**(12/2)-1)*100, '손익을 기록한 2개월 기준 복리 연환산');
   assert.equal(y.interest, -50); assert.deepEqual(y.last, {m: 4, total: 200000, noLoan: 200000});
-  near(y.rateNoLoan, 2000 / 100000 * 100 + 1000 / 200000 * 100 - 1000 / 200000 * 100, '대출 제외: 대출 계좌를 뺀 총자산으로 같은 방식');
-  near(y.annualNoLoan,(2000/100000+1000/200000-1000/200000)*100*12/2,'대출 제외 연환산도 같은 분모를 사용');
-  assert.equal(c.yearSummary({accounts: [{name: 'A'}], months: [{m: 1, pnl: 1, balances: [10]}]}).rateNoLoan, 10, '대출 계좌가 없는 해도 동일 자산 기준으로 수익률 표시');
+  near(y.rateNoLoan, (growth-1)*100, '대출 제외: 대출 계좌를 뺀 총자산으로 같은 방식');
+  near(y.annualNoLoan,(growth**(12/2)-1)*100,'대출 제외 연환산도 같은 분모를 사용');
+  near(c.yearSummary({accounts: [{name: 'A'}], months: [{m: 1, pnl: 1, balances: [10]}]}).rateNoLoan, (1+1/10-1)*100, '대출 계좌가 없는 해도 동일 자산 기준으로 수익률 표시');
   assert.equal(c.yearSummary({accounts: [], months: []}).annual, null);
 });
 
-test('월별 선물옵션은 그 달 총자산으로, 달을 모르는 연 합계는 마지막 총자산으로 나눠 연 수익률·연환산에 더한다',()=>{
+test('월별 선물옵션은 그 달 총자산으로, 달을 모르는 연 합계는 마지막 총자산으로 나눠 월 복리·연환산에 반영한다',()=>{
   const year={accounts:[],futures:-1000,months:[{m:1,pnl:1000,futures:-500,total:100000},{m:2,futures:2000,total:200000},{m:3,pnl:3000,total:300000}]},before=JSON.stringify(year);
   const y=c.yearSummary(year);
   assert.deepEqual([y.futures,y.futuresYear,y.monthPnl,y.pnl,y.months],[500,-1000,4000,4500,2],'선물옵션 = 월별 1,500 + 연 합계 −1,000');
-  near(y.rate,1+1-0.5+1-1000/300000*100,'실현손익 1%+1%, 월별 선물옵션 −0.5%+1%, 연 합계 ÷ 3월 총자산');
-  near(y.annual,(1+1-0.5+1-1000/300000*100)*12/3,'연환산은 선물옵션 포함 연 수익률 × 12 ÷ 실현손익이나 선물옵션을 기록한 3개월');
+  const growth=(1+(1000-500)/100000)*(1+2000/200000)*(1+3000/300000)*(1-1000/300000);
+  near(y.rate,(growth-1)*100,'그달 실현손익·선물옵션을 합한 뒤 월 복리 누적하고 연 합계 인수 반영');
+  near(y.annual,(growth**(12/3)-1)*100,'실현손익이나 선물옵션을 기록한 3개월 기준 복리 연환산');
   const only=c.yearSummary({accounts:[],months:[{m:1,futures:300,total:1000}]});
-  assert.deepEqual([only.futures,only.futuresYear,only.pnl,only.months],[300,null,300,0]);near(only.rate,30,'선물옵션만 있는 해');near(only.annual,360,'선물옵션만 기록한 달도 연환산 개월 수에 센다');
+  assert.deepEqual([only.futures,only.futuresYear,only.pnl,only.months],[300,null,300,0]);near(only.rate,30,'선물옵션만 있는 해');near(only.annual,((1+300/1000)**12-1)*100,'선물옵션만 기록한 달도 연환산 개월 수에 센다');
   assert.equal(c.yearSummary({accounts:[],futures:100,months:[{m:1,total:1000}]}).annual,null,'달을 모르는 연 합계만 있는 해는 연환산하지 않는다');
   assert.equal(c.yearSummary({accounts:[],months:[{m:1,pnl:10,total:1000},{m:2,futures:5}]}).rate,null,'선물옵션을 넣은 달의 총자산이 없으면 연 수익률을 계산하지 않는다');
   assert.equal(c.yearSummary({accounts:[],months:[{m:1,pnl:10,total:1000},{m:2,futures:5}]}).annual,null,'연 수익률이 없으면 연환산도 없다');
   assert.equal(c.yearSummary({accounts:[],months:[{m:1,pnl:10,total:1000}]}).futures,null,'선물옵션 기록이 없으면 null');
   assert.equal(JSON.stringify(year),before,'계산만으로 기록을 바꾸지 않는다');
+});
+
+test('월 복리 인수가 하나라도 0 이하면 수익률·연환산과 호환 별칭은 null이며 금액·원본은 유지한다',()=>{
+  for(const loss of [-1000,-1200])for(const kind of ['pnl','futures','year']){
+    const year={accounts:[],months:[{m:2,total:1000,[kind==='pnl'?'pnl':'futures']:loss},{m:1,pnl:100,total:1000}]};
+    if(kind==='year'){delete year.months[0].futures;year.futures=loss;}
+    const before=JSON.stringify(year),s=c.yearSummary(year);
+    assert.deepEqual([s.rate,s.annual,s.rateNoLoan,s.annualNoLoan],[null,null,null,null],`${kind}: ${loss}`);
+    assert.equal(s.pnl,100+loss,'금액은 덧셈');
+    assert.equal(JSON.stringify(year),before,'정렬·계산만으로 기록이나 필드를 바꾸지 않는다');
+  }
+  const offset=c.yearSummary({accounts:[],months:[{m:1,pnl:-1200,futures:300,total:1000},{m:2,pnl:0,total:1000}]});
+  near(offset.rate,((1+(-1200+300)/1000)*(1+0/1000)-1)*100,'인수는 같은 달 실현손익·선물옵션을 합한 뒤 판단');
+  near(offset.annual,((1+offset.rate/100)**(12/2)-1)*100,'0원 손익도 기록한 개월 수에 포함');
+  const twice=c.yearSummary({accounts:[],months:[{m:1,pnl:-1200,total:1000},{m:2,pnl:-1200,total:1000}]});
+  assert.deepEqual([twice.rate,twice.annual],[null,null],'음수 인수 두 개의 곱이 양수여도 계산하지 않는다');
 });
 
 test('달러 배당은 적용 환율로 반올림하고 저장된 환산액과 과거 환율을 유지한다',()=>{
@@ -574,7 +592,7 @@ test('옛 대출 계좌를 숨겨도 남은 계좌와 잔액의 원래 위치를
   const before=JSON.stringify(year), rows=c.ledgerAccounts(year);
   assert.deepEqual(rows.map(r=>[r.index,r.account.name]),[[1,'A'],[3,'B']]);
   assert.equal(c.monthTotals(year,year.months[0]).total,6000);
-  assert.equal(c.yearSummary(year).rate,1);
+  near(c.yearSummary(year).rate,(1+60/6000-1)*100);
   assert.equal(JSON.stringify(year),before,'기존 계좌와 잔액 배열을 정규화하거나 삭제하지 않는다');
 });
 
@@ -586,7 +604,7 @@ test('손익 상세: 원화와 달러 입금액을 한 번씩 합산하고 월·
     {broker:'B증권',label:'배당입금내역',amount:4,currency:'USD',krw:5200}],balances:[100000,50000]};
   const year={accounts:[{name:'자산'},{name:'대출',loan:true}],months:[month],futures:500},before=JSON.stringify(year);
   assert.equal(c.monthPnl(month),-1500);assert.equal(c.pnlEntriesTotal(month.pnlEntries),-1500);
-  assert.equal(c.yearSummary(year).pnl,-1000);near(c.yearSummary(year).rateNoLoan,-1,'월 손익과 선물 모두 대출 제외 기준');
+  assert.equal(c.yearSummary(year).pnl,-1000);near(c.yearSummary(year).rateNoLoan,((1-1500/100000)*(1+500/100000)-1)*100,'월 손익과 선물 모두 대출 제외 기준');
   assert.equal(JSON.stringify(year),before,'표시·계산 중 저장된 합계나 상세 필드를 바꾸지 않는다');
   assert.equal(c.monthPnl({m:1,pnl:0}),0);assert.equal(c.monthPnl({m:1,pnl:123,pnlEntries:[]}),123);
   assert.equal(c.pnlEntriesTotal([{amount:0,currency:'USD',krw:0}]),0);
@@ -602,7 +620,7 @@ test('연평균: 대출 제외 연 수익률의 산술평균에 0% 해는 포함
     {accounts:[],months:[]},
     {accounts:[],months:[{m:1,pnl:100}]}];
   const before=JSON.stringify(years);
-  near(c.averageYearReturn(years).rate,(12-4+0)/3,'선물 포함, 총자산의 대출 포함 수익률을 평균내지 않는다');
+  near(c.averageYearReturn(years).rate,(((1+100/1000)*(1+20/1000)-1)*100-4+0)/3,'선물 포함, 총자산의 대출 포함 수익률을 평균내지 않는다');
   assert.equal(c.averageYearReturn(years).years,3);assert.deepEqual(c.averageYearReturn([]),{rate:null,years:0});
   assert.equal(JSON.stringify(years),before);
 });
