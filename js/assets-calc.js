@@ -78,6 +78,36 @@ function itemValue(item, prices, fx){
   if(amount>0&&p&&plus(item?.base))return {value:amount*p/Number(item.base), how:"ratio", q};
   return {value:amount, how:"amount", q};
 }
+// 평균매수가는 사용자가 실제 거래 종목의 통화로 직접 넣은 averagePrice만 쓴다(금액·base·거래 내역에서 역산하지 않음).
+// 손익률은 (현재가 ÷ 평균매수가 − 1) × 100. 평가손익은 (현재가 − 평균매수가) × 명시된 보유 수량이며 환율을 적용하지 않는다.
+// 수량이 없으면 금액은 null, 가격 둘이 있으면 손익률은 표시할 수 있다. 수량 0은 금액 0이며 합산에서는 제외한다.
+function itemProfit(item, prices){
+  const averagePrice=plus(item?.averagePrice), quantity=finite(item?.shares), shares=quantity!==null&&quantity>=0?quantity:null;
+  const quote=assetTradeQuote(prices,item), q=plus(quote?.close)?quote:null, kind=purchaseQuoteKind(assetTradeTicker(item));
+  const currency=q?.currency||(kind==="국내"?"KRW":kind==="해외"||kind==="코인"?"USD":null);
+  const cost=averagePrice!==null&&shares!==null?averagePrice*shares:null, value=q&&shares!==null?q.close*shares:null;
+  const profit=q&&averagePrice!==null&&shares!==null?(q.close-averagePrice)*shares:null;
+  const rate=q&&averagePrice!==null?finite((q.close/averagePrice-1)*100):null;
+  return {averagePrice,shares,q,currency,cost,value,profit,rate};
+}
+// 같은 실제 종목의 계좌별 평균매수가·수량을 각각 계산한 뒤 통화별·실제 코드별로 합친다. 합산 수익률은 평가손익 합계 ÷ 매입금액 합계 × 100.
+// 통화끼리 섞거나 환산하지 않는다. 수량·평균매수가·현재가가 모두 있는 양수 보유만 합산하며 count는 전체 보유 항목, eligible은 합산 가능한 항목 수다.
+// 금액만 있는 보유는 count에만 포함하고 수량을 추정하지 않는다. 결과의 모든 금액은 만원이 아닌 해당 통화의 원래 단위다. 입력 기록은 변경하지 않는다.
+function allocationProfitSummary(alloc, prices){
+  const items=new Map(), currencies=new Map(), tickers=new Map();let eligible=0,count=0;
+  const add=(map,key,p)=>{
+    const row=map.get(key)||{currency:p.currency,cost:0,value:0,profit:0,rate:null,count:0};
+    row.cost+=p.cost;row.value+=p.value;row.profit+=p.profit;row.count++;row.rate=row.cost>0?row.profit/row.cost*100:null;map.set(key,row);
+  };
+  for(const g of alloc?.groups||[])for(const it of g.items||[]){
+    const p=itemProfit(it,prices);items.set(it.id,p);
+    if(!(p.shares>0||p.shares===null&&plus(it.amount)))continue;
+    count++;
+    if(!(p.shares>0&&p.cost>0&&p.profit!==null))continue;
+    eligible++;add(currencies,p.currency,p);add(tickers,linkTicker(assetTradeTicker(it)),p);
+  }
+  return {items,currencies,tickers,eligible,count};
+}
 // 금액만 넣은 종목에 기준 가격(base)이 없으면 지금 시세로 정한다(그 뒤로 금액이 시세를 따라감). 바꾼 종목이 있으면 true.
 function fillBases(alloc, prices){
   const fx=assetFx(prices,alloc);let changed=false;

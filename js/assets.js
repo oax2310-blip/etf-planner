@@ -62,6 +62,12 @@ function quoteText(q,current=false){
   const detail=q.stale?"시세 갱신에 실패해 이전 가격을 표시합니다.":Number.isFinite(days)?`시세가 ${A_STALE_DAYS}일 넘게 갱신되지 않았습니다.`:"시세 기준일을 확인할 수 없습니다.";
   return `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)}${current?'<span class="quote-label">(현재가)</span>':""}${q.manual?' <span class="quote-source">직접 입력</span>':""}${status?` <span class="quote-status" title="${escA(detail+(q.asOf?` 마지막 시세: ${q.asOf}`:""))}"><span aria-hidden="true">!</span> ${status}</span>`:""}`;
 }
+const profitColorA = value => value>0?"profit-gain":value<0?"profit-loss":"";
+const profitMoneyA = (value,currency,signed=false) => value===null?"—":`${signed&&value>0?"+":value<0?"−":""}${currency==="USD"?`$${nf2.format(Math.abs(value))}`:currency==="KRW"?wonA(Math.abs(value)):nfShares.format(Math.abs(value))}`;
+const profitRateA = value => value===null?"—":`${value>0?"+":value<0?"−":""}${nf2.format(Math.abs(value))}%`;
+function profitResultA(p){
+  return `<span>평가손익 <b class="${profitColorA(p.profit)}">${p.profit===null?p.shares===null?"수량 미입력":"시세 대기":profitMoneyA(p.profit,p.currency,true)}</b></span><span>손익률 <b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></span>`;
+}
 
 // ---------- 자산 배분 ----------
 // 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 화면 목록만 거른다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하며 기록·합계는 바꾸지 않는다.
@@ -134,7 +140,7 @@ function renderAlloc(tab="alloc"){
   el((strategy?"alloc":"strategy")+"View").innerHTML=""; // 같은 입력칸 id가 두 화면에 남지 않게
   if(!a){ view.innerHTML=emptyCard("자산 배분 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다. 동기화 창의 JSON 복원으로 넣거나 새로 시작할 수 있습니다.",`<button class="btn primary" id="startAlloc" type="button">새로 시작</button>`);
     el("startAlloc").onclick=()=>{ doc.allocation={savedAt:"",total:null,cashFx:null,memo:"",classes:[{id:newId(),region:"미국",name:"주식"},{id:newId(),region:"국내",name:"주식"},{id:newId(),region:"해외",name:"중국"},{id:newId(),region:"현금",name:"현금",cash:true}],groups:[],cash:[]}; saveSection("allocation"); render(); }; return; }
-  const s=allocationSummary(a,prices), rows=[...s.items.values()], live=rows.filter(r=>r.how!=="amount").length, count=rows.length, reviewed=a.groups.some(g=>g.items.some(it=>it.done));
+  const s=allocationSummary(a,prices), profits=allocationProfitSummary(a,prices), rows=[...s.items.values()], live=rows.filter(r=>r.how!=="amount").length, count=rows.length, reviewed=a.groups.some(g=>g.items.some(it=>it.done));
   const cashPct=pc(s.pct(s.cash));
   const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
   const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
@@ -184,12 +190,13 @@ function renderAlloc(tab="alloc"){
     const g=linked?allocTargetGap(link.pct,link.target,trading):allocTargetGap(cur,t,trading);
     const html=t===null?"":linked?`<span class="gap-line"><small>합계 ${pc(link.pct)}</small>${gapHtml(g,{basis:`연결 계좌 ${link.rows.length}개 합계 ${pc(link.pct)} − 목표 ${pc(link.target)}`})}</span>`:gapHtml(g);
     const out={html,gray:g?g.state==="":trading||allocTargetGap(cur,0).d===0};itemGaps.set(it.id,out);return out; };
-  const itemRow=it=>{ const r=s.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)], trade=tradeOf(it);
+  const itemRow=it=>{ const r=s.items.get(it.id), p=profits.items.get(it.id), cur=s.pct(r.value), t=finite(it.target), stock=prices?.stocks?.[assetTradeTicker(it)], trade=tradeOf(it);
     const how=r.how==="shares"?`<small class="how holding">${nfShares.format(it.shares)}주${r.q?` × <span class="holding-price">${quoteText(r.q,true)}</span>`:""}</small>`:r.how==="ratio"?`<small class="how live">입력 ${man(it.amount)} ${r.value>=it.amount?"+":"−"}${pc(Math.abs(r.value/it.amount-1)*100)}</small>`:it.ticker&&prices?stock?.error?'<small class="how quote-status"><span aria-hidden="true">!</span> 시세 조회 실패</small>':'<small class="how">시세 대기</small>':"";
     return `<div class="asset-row${it.done?" done":""}" data-alloc-item="${escA(it.id)}"><label class="check" title="점검완료 · 직접 표시, 계산에 영향 없음"><input type="checkbox" data-done="${escA(it.id)}"${it.done?" checked":""} aria-label="${escA(it.name)} 점검완료 (직접 표시)"></label>
       <button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}${tradeBadge(trade.buy,"buy","매수중","분할매수")}${tradeBadge(trade.sell,"sell","매도중","분할매도")}</strong><small>${[tracksETF(it)?`기준 ${escA(String(it.ticker).toUpperCase())} → 매수 ${escA(assetTradeTicker(it))}`:it.ticker&&String(it.ticker).toUpperCase()!==String(it.name).trim().toUpperCase()?escA(String(it.ticker).toUpperCase()):"",r.how!=="shares"?quoteText(r.q):"",r.how!=="shares"&&finite(it.shares)!==null?`${nfShares.format(it.shares)}주`:""].filter(Boolean).join(" · ")}</small></button>
       <span class="asset-figures"><span class="asset-val">${man(r.value)}${how}</span><span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>${itemGap(it).html}`:""}</span></span>
-      ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}${memberChips(it)}</div>`; };
+      ${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}${memberChips(it)}
+      <div class="asset-profit"><button class="average-price-edit" type="button" data-average-price="${escA(it.id)}" aria-label="${escA(it.name)} 평균매수가 입력·수정"><span>평균매수가 ${p.averagePrice===null?"입력":profitMoneyA(p.averagePrice,p.currency)}</span>${PEN}</button>${p.averagePrice===null?"":profitResultA(p)}</div></div>`; };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
     const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
     const key=`group:${g.id}`,bodyId=`allocGroup-${encodeURIComponent(g.id)}`;
@@ -223,6 +230,7 @@ function renderAlloc(tab="alloc"){
     <div class="card metrics"><div class="metric"><label for="allocTotal">기준 총자산 (비중 기준)</label><label class="metric-edit"><input id="allocTotal" type="text" enterkeyhint="done" autocomplete="off" spellcheck="false" value="${totalText}" placeholder="${totalPlaceholder}" aria-describedby="allocTotalHint" style="width:${totalWidth(totalText||totalPlaceholder)}">${PEN}</label><small id="allocTotalHint">억·만원으로 입력 · 숫자만 넣으면 만원</small><small>종목 + 현금 합계 ${man(s.grand)}${plus(a.total)?` · 차이 ${s.grand>=a.total?"+":"−"}${man(Math.abs(s.grand-a.total))}`:" · 비우면 합계 기준"}</small></div>
       <div class="metric"><label>투자 평가액</label><strong>${man(s.invest)}</strong><small>시세 반영 ${live} / ${count}개 종목${prices?.updatedAt?` · 시세 파일 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}</small></div>
       <div class="metric"><label>현금</label><strong class="cash-value"><span>${man(s.cash)}</span><span class="cash-pct" title="기준 총자산 대비 비중">(${cashPct})</span></strong><small>${usd?`달러 $${nf2.format(usd)} · `:""}${fxNote}</small></div></div>
+    ${strategy?"":`<section class="card alloc-profit" aria-label="보유 평가손익 합계"><div class="alloc-profit-head"><h2>보유 평가손익</h2><span>현지 통화 기준 · 환율 변동 제외</span></div><div class="alloc-profit-totals">${[...profits.currencies.values()].map(p=>`<div><span>${p.currency==="USD"?"달러 (USD)":"원화 (KRW)"}</span><strong class="${profitColorA(p.profit)}">${profitMoneyA(p.profit,p.currency,true)}</strong><b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></div>`).join("")||'<p class="hint">종목별 평균매수가와 보유 수량을 입력하면 합산 손익을 확인할 수 있습니다.</p>'}</div><p class="hint">계산 가능 ${profits.eligible} / 보유 ${profits.count}개 · 평균매수가·수량·현재가가 있는 항목만 합산</p></section>`}
     ${strategy?`<div class="section-heading"><h2>배분 개요</h2><span>지역별 합계와 목표 · 목표 합계 ${pc(s.regions.some(r=>r.target!==null)?s.regions.reduce((n,r)=>n+(r.target??0),0):null)}</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
     <p class="footnote">모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
@@ -276,6 +284,7 @@ function renderAlloc(tab="alloc"){
     if(changed){saveSection("allocation");render();}
   };
   all("[data-item]").forEach(b=>b.onclick=()=>openItem(b.dataset.item));
+  all("[data-average-price]").forEach(b=>b.onclick=()=>openAveragePrice(b.dataset.averagePrice));
   all("[data-add-item]").forEach(b=>b.onclick=()=>openItem(null,b.dataset.addItem));
   all("[data-group]").forEach(b=>b.onclick=()=>openGroup(b.dataset.group));
   all("[data-class]").forEach(b=>b.onclick=()=>openClass(b.dataset.class));
@@ -292,6 +301,39 @@ function renderAlloc(tab="alloc"){
   }
 }
 function findItem(id){ for(const g of doc.allocation?.groups||[]){ const it=g.items.find(x=>x.id===id); if(it) return {g,it}; } return null; }
+// 평균매수가 저장은 선택한 항목의 필드 하나만 수정한다. 다른 계좌·보유량·평가 기준가·계획에는 손대지 않으며 빈칸은 delete로 동기화한다.
+function openAveragePrice(id){
+  const found=findItem(id);if(!found)return;
+  const f=el("averagePriceForm"), input=f.elements.averagePrice;
+  el("averagePriceItem").textContent=`${found.g.name} · ${found.it.name}`;
+  input.value=plus(found.it.averagePrice)??"";input.setCustomValidity("");
+  const preview=()=>{
+    const current=findItem(id);if(!current)return;
+    const value=numIn(input.value), invalid=input.value!==""&&(!plus(value)||value>Number.MAX_SAFE_INTEGER);
+    const invalidMessage=value>Number.MAX_SAFE_INTEGER?"평균매수가가 입력 가능한 범위를 초과했습니다.":"평균매수가를 0보다 큰 숫자로 입력하세요.";
+    input.setCustomValidity(invalid?invalidMessage:"");
+    const draft={...current.it};if(value===null)delete draft.averagePrice;else draft.averagePrice=value;
+    const p=itemProfit(draft,prices), currency=p.currency==="USD"?"달러 (USD)":p.currency==="KRW"?"원 (KRW)":"종목 통화";
+    el("averagePriceLabel").textContent=`평균매수가 (${currency} · 1주 기준)`;
+    el("averagePriceHolding").innerHTML=`<span>보유 수량 <b>${p.shares===null?"미입력":`${nfShares.format(p.shares)}주`}</b></span><span>현재가 <b>${p.q?quoteText(p.q):"시세 대기"}</b></span>`;
+    el("averagePricePreview").innerHTML=invalid?`<p class="hint">${invalidMessage}</p>`:p.averagePrice===null?'<p class="hint">평균매수가를 입력하면 손익을 계산합니다. 비우고 저장하면 삭제됩니다.</p>':profitResultA(p);
+    const groups=doc.allocation.groups.map(g=>({...g,items:g.items.map(it=>it.id===id?draft:it)})), total=allocationProfitSummary({groups},prices).tickers.get(linkTicker(assetTradeTicker(draft)));
+    const same=groups.flatMap(g=>g.items).filter(it=>linkTicker(assetTradeTicker(it))===linkTicker(assetTradeTicker(draft))&&(plus(it.shares)||finite(it.shares)===null&&plus(it.amount))).length;
+    const totalNode=el("averagePriceTotal");totalNode.hidden=!(total&&same>1);
+    totalNode.innerHTML=total&&same>1?`<span>같은 종목 전체 계좌 · 계산 가능 ${total.count} / ${same}개</span><div class="profit-result">${profitResultA(total)}</div>`:"";
+  };
+  input.oninput=preview;preview();
+  f.onsubmit=e=>{
+    e.preventDefault();preview();if(!input.checkValidity()){input.reportValidity();return;}
+    const current=findItem(id);if(!current){alert("이 보유 항목이 삭제되어 저장하지 않았습니다.");dlg("averagePriceDialog").close();return;}
+    const value=numIn(input.value);if(value!==finite(current.it.averagePrice)){
+      if(value===null)delete current.it.averagePrice;else current.it.averagePrice=value;
+      saveSection("allocation");
+    }
+    dlg("averagePriceDialog").close();render();
+  };
+  dlg("averagePriceDialog").showModal();input.focus();
+}
 const dlg = id => el(id);
 all("dialog [data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
 const setNum = (obj, key, v) => { const n=numIn(v); if(n===null) delete obj[key]; else obj[key]=n; };
