@@ -77,9 +77,11 @@ test('자산 배분 종목·그룹은 금액 대신 %p 차이를 표시하고 �
   assert.deepEqual(gapOf('bought'), [' under', '-5.0%']);assert.doesNotMatch(row('bought'), /trade-state/);assert.match(row('bought'), /alloc-chip on[^>]*>.*분할매수/);
   assert.deepEqual(gapOf('sold'), [' over', '+5.0%']);assert.doesNotMatch(row('sold'), /trade-state/);assert.match(row('sold'), /alloc-chip on[^>]*>.*분할매도/);
   assert.equal(gapOf('notarget'), undefined, '목표가 없으면 차이를 표시하지 않는다');
+  // 편입 칩은 편입된 탭만 보이고, 어느 탭에도 없으면 칩 묶음을 두지 않는다(미편입은 '플래너 편입 점검'에서 확인).
+  assert.match(row('over'), /alloc-chip on[^>]*>.*재매수/);assert.doesNotMatch(row('over'), /미편입|alloc-chip off|>분할매수</);assert.doesNotMatch(row('notarget'), /alloc-links|alloc-chip/);
   assert.match(row('xss'), /&lt;b&gt;이름&lt;\/b&gt;<span class="trade-state sell" title="분할매도 진행 중 · &lt;img src=x onerror=1&gt;">매도중/);assert.doesNotMatch(html, /<img|<b>이름<\/b>/);
   // 그룹: 합계 1,345만원(134.5%) / 종목 목표 합 131.54% → +3.0%p. 그룹은 매수중·매도중 종목이 있어도 경고 색.
-  assert.match(html, /<p><b>1,345만원<\/b> · 134\.5% \/ 목표 131\.5% \(1,315\.4만원\) · 하위 합산 · <span class="group-gap">목표 대비 <b class="target-gap over"[^>]*>\+3\.0%<\/b><\/span><\/p>/);
+  assert.match(html, /<p><b>1,345만원<\/b> · 134\.5% \/ 목표 131\.5% · <span class="group-gap">목표 대비 <b class="target-gap over"[^>]*>\+3\.0%<\/b><\/span><\/p><small class="group-target">목표 금액 1,315\.4만원 · 하위 합산<\/small>/);
   assert.doesNotMatch(html, /목표까지|목표 초과 [\d,.]+만원|목표 도달|class="gap /, '자산 배분 탭에는 금액 차이를 표시하지 않는다');
   assert.equal(JSON.stringify(data), before, '자산 배분 계산·기록을 바꾸지 않는다');assert.equal(JSON.stringify(planner), plannerRaw);
 });
