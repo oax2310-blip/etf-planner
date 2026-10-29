@@ -556,7 +556,7 @@ test('이 기기에 둔 시세가 옛 형식(종가 없음)이면 ETag 없이 �
   await h.restored();
   assert.deepEqual(h.server.priceAsks, [null]);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [4, [130.5]]);
+  assert.deepEqual([cached.format, cached.stocks.AAA.closes.D], [5, [130.5]]);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"'], '새 형식이면 다시 ETag로 묻는다');
   assert.equal(h.server.writes, 0);
@@ -577,7 +577,7 @@ test('현물 환율 도입으로 옛 시세 캐시를 다시 받고, 다른 기�
   assert.equal(statePlan(h).note, '이 기기 메모');
   assert.equal(h.server.writes, 1);
   const cached = JSON.parse(h.items.get('etf-planner-prices'));
-  assert.deepEqual([cached.format, cached.fx.USDKRW], [4, spot]);
+  assert.deepEqual([cached.format, cached.fx.USDKRW], [5, spot]);
   assert.match(h.elements.get('priceStatus').textContent, /현물 환율 1388.46원/);
   await h.run();
   assert.deepEqual(h.server.priceAsks, [null, '"p1"']);

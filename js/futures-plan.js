@@ -55,22 +55,31 @@ function openFuturePlanDialog(){
 }
 
 // 새 시작선에는 확인된 이동평균 시세만 채운다. 미리보기·저장 준비는 원본 기록을 바꾸지 않는다.
-function futureAutoSource(f,config,entry,at=""){
-  if(at&&(Date.parse(f.auto?.at)||0)>(Date.parse(at)||0))entry=null;
+// 이동평균 종료가는 futureEndLineValue(prices를 주면 모자란 N개월선은 현물 환율 월봉), 없으면 같은 종료선의 마지막 저장값.
+function futureAutoSource(f,config,entry,at="",prices=null){
+  if(at&&(Date.parse(f.auto?.at)||0)>(Date.parse(at)||0)){entry=null;prices=null;}
   const levels=JSON.parse(JSON.stringify(f.levels)),name=movingLineName(config.startLine);
   if(name&&!levels.some(l=>futureLineName(l)===name))levels.push({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]});
   const start=levels.find(l=>futureLineName(l)===name),price=maValue(entry,name);
   if(start&&!(Number(start.price)>0)&&price>0)start.price=priceRound(price,2);
   const buyPlan={...config};
-  if(config.endLine)buyPlan.endPrice=priceRound(maValue(entry,config.endLine),2)??(f.buyPlan?.endLine===config.endLine?f.buyPlan.endPrice:0);
+  if(config.endLine)buyPlan.endPrice=priceRound(futureEndLineValue(prices,entry,config.endLine)?.value,2)??(f.buyPlan?.endLine===config.endLine?f.buyPlan.endPrice:0);
   return {...f,levels,buyPlan};
 }
+// 화면 표시용: 이동평균 종료가가 지금 시세의 현물 환율 월봉 값이면 true('현물' 표시). 기록은 바꾸지 않는다.
+function futureEndSpot(prices,fe,buyPlan){
+  const v=buyPlan?.endLine?futureEndLineValue(prices,fe,buyPlan.endLine):null;
+  return !!v?.spot&&priceRound(v.value,2)===Number(buyPlan.endPrice);
+}
 // 이동평균 종료선 값이 비었고 보유 근월물(fe)의 봉이 그 기간보다 모자라 계산할 수 없으면 {short 창 아래 글자, long 안내 문장}.
-// 판정은 손절 하단선과 같은 futureFloorShort(덜 받은 봉·시세 전은 null이라 기존 문구 유지). 화면 글자만 만들고 기록은 바꾸지 않는다.
-function futureEndLineShort(fe,buyPlan){
+// 판정은 손절 하단선과 같은 futureFloorShort(덜 받은 봉·시세 전은 null이라 기존 문구 유지). N개월선은 현물 환율 월봉(prices)이 더 길면 그 길이까지 알린다.
+// 화면 글자만 만들고 기록은 바꾸지 않는다.
+function futureEndLineShort(fe,buyPlan,prices=null){
   const name=movingLineName(buyPlan?.endLine),short=name&&!(Number(buyPlan.endPrice)>0)&&futureFloorShort(fe,name);
   if(!short)return null;
-  const text=movingLineText(name),bar={일선:"일봉",주선:"주봉",개월선:"월봉"}[movingLineUnit(name)];
+  const text=movingLineText(name),unit=movingLineUnit(name),bar={일선:"일봉",주선:"주봉",개월선:"월봉"}[unit];
+  const spot=unit==="개월선"?fxEntry(prices)?.closes?.M?.length||0:0,max=movingLineText(`${spot}개월선`);
+  if(spot>short.have)return {short:`${text} 계산 불가 · ${max}까지`,long:`보유 근월물 월봉 ${short.have}개와 현물 환율 월봉 ${spot}개로는 종료 ${text}을 계산할 수 없습니다. ${max} 이하로 고르거나 종료가격을 직접 입력하세요.`};
   return {short:`${text} 계산 불가 · ${short.max}까지`,long:`보유 근월물은 ${bar}이 ${short.have}개뿐이라 종료 ${text}을 계산할 수 없습니다. ${short.max} 이하로 고르거나 종료가격을 직접 입력하세요.`};
 }
 
@@ -114,9 +123,9 @@ function renderFuturePlanDialog(){
     </div>
     </div><p class="future-plan-error" id="futurePlanError" role="alert"></p><div class="dialog-foot"><button class="btn" id="cancelFuturePlan" type="button">취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   const updateAutoPreview=()=>{
-    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe,priceData?.updatedAt),plan=futureAutoBuyPlan(source),endShort=futureEndLineShort(fe,source.buyPlan);
+    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe,priceData?.updatedAt,priceData),plan=futureAutoBuyPlan(source),endShort=futureEndLineShort(fe,source.buyPlan,priceData);
     $("futureAutoStartPrice").textContent=plan.startPrice>0?`시작 기준가 ${fmtPrice(plan.startPrice)}원`:"시작 기준선 시세 대기";
-    $("futureAutoEndPrice").textContent=source.buyPlan.endPrice>0?`종료 기준가 ${fmtPrice(source.buyPlan.endPrice)}원`:endShort?endShort.short:"종료 기준선 시세 없음";
+    $("futureAutoEndPrice").textContent=source.buyPlan.endPrice>0?`종료 기준가 ${fmtPrice(source.buyPlan.endPrice)}원${futureEndSpot(priceData,fe,source.buyPlan)?" · 현물 기준":""}`:endShort?endShort.short:"종료 기준선 시세 없음";
     $("futureAutoEndPrice").classList.toggle("warn",!!endShort);
     if(plan.error){$("futureAutoPreview").innerHTML=`<p class="hint" role="alert">${esc((draft.endMode==="price"&&draft.auto.endPrice===""||draft.auto.contracts==="")?"종료가격과 총 계약 수를 입력하면 자동 배분 결과를 보여 줍니다.":endShort?.long||plan.error)}</p>`;return;}
     const used=new Set(plan.rows.map(r=>r.key));
@@ -171,8 +180,8 @@ function renderFuturePlanDialog(){
     const latest=state.futures,next=JSON.parse(JSON.stringify(latest));
     if(futurePlanConfigKey(latest.buyPlan)!==draft.basePlan||!applyFuturePlanEdits(next,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
     if(draft.autoEnabled&&(!latest.buyPlan||draft.autoDirty||JSON.stringify(draft.levels)!==JSON.stringify(draft.base))){
-      const entry=futuresEntry(priceData,latest),source=futureAutoSource(next,draft.auto,entry,priceData?.updatedAt),plan=futureAutoBuyPlan(source);
-      if(plan.error||plan.startPrice>plan.config.endPrice){$("futurePlanError").textContent=futureEndLineShort(entry,source.buyPlan)?.long||plan.error||"종료가격은 시작 기준가 이상으로 입력하세요.";return;}
+      const entry=futuresEntry(priceData,latest),source=futureAutoSource(next,draft.auto,entry,priceData?.updatedAt,priceData),plan=futureAutoBuyPlan(source);
+      if(plan.error||plan.startPrice>plan.config.endPrice){$("futurePlanError").textContent=futureEndLineShort(entry,source.buyPlan,priceData)?.long||plan.error||"종료가격은 시작 기준가 이상으로 입력하세요.";return;}
       if(source.levels.length+(source.levels.some(l=>l.planEnd)?0:1)>80){$("futurePlanError").textContent="종료가를 포함해 기준선은 80개까지 설정할 수 있습니다.";return;}
       applyFutureAutoBuyPlan(source);next.levels=source.levels;next.buyPlan=source.buyPlan;
     }

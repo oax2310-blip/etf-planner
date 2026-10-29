@@ -2,7 +2,7 @@
 // 대상/기준선 변경은 데이터 저장소 scripts/kis_prices.py도 수정(plans[].ticker·rebuy.items[].ticker/옛 rebuy.ticker·보유 월물 수집).
 // 화면 없는 계산/테스트에서도 읽으므로 함수 밖에서 DOM을 건드리지 않는다.
 const PRICE_STALE_DAYS = 3; // 시세 기준일이 이보다 오래되면 경고
-const PRICE_FORMAT = 4; // slimPrices 형식을 바꾸면 증가; 옛 캐시는 ETag 없이 다시 받는다(sync.js readPrices).
+const PRICE_FORMAT = 5; // slimPrices 형식을 바꾸면 증가; 옛 캐시는 ETag 없이 다시 받는다(sync.js readPrices). 5: 현물 환율 월봉 종가(fx closes.M)
 // 기준선 이름 → 시세 파일 ma 이름. 데이터 저장소 scripts/kis_prices.py의 LABEL_RE·ma_name과 같게("60 일선"→"60일선", "12달선"→"12개월선")
 function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|월|달)\s*선/.exec(String(label||"")); return m&&Number(m[1])>=1?`${Number(m[1])}${{일:"일선",주:"주선",개월:"개월선",월:"개월선",달:"개월선"}[m[2]]}`:""; }
 // 60분봉 종가 N개 평균('N선', 옛 'N분봉') → ma['N선']; scripts/kis_prices.py HOUR_RE와 같은 이름.
@@ -62,12 +62,22 @@ function barCloses(e, cols){
   if(monthly.length)out.M=monthly.map(b=>Number(b[ci]));
   return Object.keys(out).length?out:null;
 }
-// 채우기·표시 값만 남김(종목/선물 D·W·M 종가는 closes, 원본 봉은 버림). 형식이 다르면 오류.
+// 현물 환율 월봉 종가 {M}(수집기 kis_prices.py fill_fx_monthly_ma가 배당 환산용으로 받는 연속 125개월, 이번 달 봉 = 최신 현물). 기준일(asOf) 달에서 끝나는 연속 월봉만 거꾸로 모으고
+// 이번 달 종가는 현재가로 맞춘다. 월봉 조회가 실패해 지난 달에서 끝나면 버린다(한 달 밀린 평균을 만들지 않게).
+function fxMonthCloses(e, cols){
+  const at=(name,i)=>Array.isArray(cols)&&cols.includes(name)?cols.indexOf(name):i, ci=at("close",4), di=at("date",0);
+  const month=s=>{const m=/^(\d{4})-(\d{2})-\d{2}$/.exec(String(s));return m?Number(m[1])*12+Number(m[2]):NaN;};
+  const rows=Array.isArray(e.monthly)?e.monthly:[], out=[];let want=month(e.asOf);
+  for(let i=rows.length-1;i>=0;i--){const b=rows[i];if(!Array.isArray(b)||month(b[di])!==want||!(Number(b[ci])>0))break;out.unshift(Number(b[ci]));want--;}
+  if(out.length&&Number(e.close)>0)out[out.length-1]=Number(e.close);
+  return out.length?{M:out}:null;
+}
+// 채우기·표시 값만 남김(종목/선물 D·W·M 종가와 현물 환율 월봉 종가는 closes, 원본 봉은 버림). 형식이 다르면 오류.
 function slimPrices(doc){
   if(!doc||typeof doc!=="object"||!doc.stocks||typeof doc.stocks!=="object")throw Error("시세 파일 형식을 확인할 수 없습니다.");
   const pick=(group,bars)=>Object.fromEntries(Object.entries(group&&typeof group==="object"?group:{}).filter(([,e])=>e&&typeof e==="object")
-    .map(([k,e])=>{const closes=bars&&barCloses(e,doc.columns);return [k,{kind:e.kind,asOf:e.asOf,close:e.close,ma:e.ma,...(closes?{closes}:{}),...(e.stale?{stale:true}:{})}];}));
-  return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,true),futures:pick(doc.futures,true),fx:pick(doc.fx,false)};
+    .map(([k,e])=>{const closes=bars&&bars(e,doc.columns);return [k,{kind:e.kind,asOf:e.asOf,close:e.close,ma:e.ma,...(closes?{closes}:{}),...(e.stale?{stale:true}:{})}];}));
+  return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,barCloses),futures:pick(doc.futures,barCloses),fx:pick(doc.fx,fxMonthCloses)};
 }
 // N일·N주·N개월선: ma 우선, 없으면 closes 단순평균(진행 중 주·월 봉 포함, 스크립트처럼 소수 넷째 자리). 봉 부족은 null.
 // N선(60분봉)은 시세 파일 ma 값만(이 기기에는 60분봉을 두지 않음).
@@ -79,6 +89,14 @@ function maValue(e, label){
   if(!Array.isArray(c)||c.length<n)return null;
   let sum=0;for(const v of c.slice(-n))sum+=Number(v);
   return sum>0?Math.round(sum/n*1e4)/1e4:null;
+}
+// 달러선물 분할매수 이동평균 종료선 값 {value, spot}: 보유 근월물(fe) 이동평균이 먼저이고, 그 월물의 봉이 모자라 비는 N개월선만
+// 현물 환율 월봉(fxMonthCloses) N개 평균으로 채운다(spot=true, 화면에 '현물'로 표시). 시세 조회·수집은 늘리지 않는다. 둘 다 없으면 null.
+// 매수 기준선·손절 하단선 등 다른 선물 선은 쓰지 않는다(보유 월물 기준 유지).
+function futureEndLineValue(prices, fe, line){
+  const own=maValue(fe,line);if(own>0)return {value:own,spot:false};
+  const key=maKey(line),spot=fe&&key.endsWith("개월선")?maValue(fxEntry(prices),key):null;
+  return spot>0?{value:spot,spot:true}:null;
 }
 const priceRound = (v, digits) => Number(v)>0 ? Math.round(Number(v)*10**digits)/10**digits : null;
 // rows = [auto 키, 값, 넣기]. null·지난 자동값과 같은 시세는 건너뛰고 새 시세만 직접 입력값을 덮어쓴다.
@@ -94,7 +112,7 @@ function fillMarked(obj, at, rows){
 // data = {plans,futures,rebuy}(state/원격 기록); 바꾼 칸이 있으면 true. 채우기 대상:
 // plans: 통화에 맞는 stocks 종료 MA; 시작 MA는 startAuto=true만('직접'/옛 auto.startPrice는 안 씀).
 // 달러 계획 환율은 보유 선물과 무관한 fx.USDKRW 현물; 없으면 기존 값 유지.
-// futures: 보유 근월물 MA 구간 + 미매수 가격. buyPlan.endLine은 같은 캐시의 ma·closes만 사용한다(추가 수집 없음).
+// futures: 보유 근월물 MA 구간 + 미매수 가격. buyPlan.endLine은 같은 캐시의 ma·closes만 사용한다(추가 수집 없음, 모자란 N개월선은 현물 환율 월봉: futureEndLineValue).
 // 이동평균 종료가가 잘못되면 이전 회차·직접 수정값은 유지하며 화면·알림에서 추가 매수를 막는다.
 // futures.rebuy가 있을 때만 현재가·자동 단계도 같은 월물로 채움. 손절 하단선(floorLine: N일선·N주선·N개월선)을 고른 기록만 floorPrice도 채운다.
 // 선물 재매수 신저점·이탈 전 계약 수와 하단선이 없는 하단은 직접 입력. ETF rebuy.items(옛 단일 종목도)은 국내 원/해외 달러만.
@@ -113,7 +131,7 @@ function fillPrices(data, prices){
     const rows=names.map(name=>[name,priceRound(maValue(fe,name),2),v=>{
       updated.push(name);f.levels.forEach(l=>{if(futureLineName(l)===name)l.price=v;});
     }]);
-    if(f.buyPlan?.endLine)rows.push([`buyPlanEnd:${f.buyPlan.endLine}`,priceRound(maValue(fe,f.buyPlan.endLine),2),v=>f.buyPlan.endPrice=v]);
+    if(f.buyPlan?.endLine)rows.push([`buyPlanEnd:${f.buyPlan.endLine}`,priceRound(futureEndLineValue(prices,fe,f.buyPlan.endLine)?.value,2),v=>f.buyPlan.endPrice=v]);
     const filled=fillMarked(f,at,rows);
     if(filled){refreshFutureBuyPrices(f,updated);if(f.buyPlan)applyFutureAutoBuyPlan(f);}
     changed=filled||changed;
