@@ -65,6 +65,14 @@ function futureAutoSource(f,config,entry,at=""){
   if(config.endLine)buyPlan.endPrice=priceRound(maValue(entry,config.endLine),2)??(f.buyPlan?.endLine===config.endLine?f.buyPlan.endPrice:0);
   return {...f,levels,buyPlan};
 }
+// 이동평균 종료선 값이 비었고 보유 근월물(fe)의 봉이 그 기간보다 모자라 계산할 수 없으면 {short 창 아래 글자, long 안내 문장}.
+// 판정은 손절 하단선과 같은 futureFloorShort(덜 받은 봉·시세 전은 null이라 기존 문구 유지). 화면 글자만 만들고 기록은 바꾸지 않는다.
+function futureEndLineShort(fe,buyPlan){
+  const name=movingLineName(buyPlan?.endLine),short=name&&!(Number(buyPlan.endPrice)>0)&&futureFloorShort(fe,name);
+  if(!short)return null;
+  const text=movingLineText(name),bar={일선:"일봉",주선:"주봉",개월선:"월봉"}[movingLineUnit(name)];
+  return {short:`${text} 계산 불가 · ${short.max}까지`,long:`보유 근월물은 ${bar}이 ${short.have}개뿐이라 종료 ${text}을 계산할 수 없습니다. ${short.max} 이하로 고르거나 종료가격을 직접 입력하세요.`};
+}
 
 function futureAutoBreakdown(f){
   const groups=new Map();
@@ -106,10 +114,11 @@ function renderFuturePlanDialog(){
     </div>
     </div><p class="future-plan-error" id="futurePlanError" role="alert"></p><div class="dialog-foot"><button class="btn" id="cancelFuturePlan" type="button">취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   const updateAutoPreview=()=>{
-    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe,priceData?.updatedAt),plan=futureAutoBuyPlan(source);
+    const source=futureAutoSource({...f,levels:draft.levels},draft.auto,fe,priceData?.updatedAt),plan=futureAutoBuyPlan(source),endShort=futureEndLineShort(fe,source.buyPlan);
     $("futureAutoStartPrice").textContent=plan.startPrice>0?`시작 기준가 ${fmtPrice(plan.startPrice)}원`:"시작 기준선 시세 대기";
-    $("futureAutoEndPrice").textContent=source.buyPlan.endPrice>0?`종료 기준가 ${fmtPrice(source.buyPlan.endPrice)}원`:"종료 기준선 시세 없음";
-    if(plan.error){$("futureAutoPreview").innerHTML=`<p class="hint" role="alert">${esc((draft.endMode==="price"&&draft.auto.endPrice===""||draft.auto.contracts==="")?"종료가격과 총 계약 수를 입력하면 자동 배분 결과를 보여 줍니다.":plan.error)}</p>`;return;}
+    $("futureAutoEndPrice").textContent=source.buyPlan.endPrice>0?`종료 기준가 ${fmtPrice(source.buyPlan.endPrice)}원`:endShort?endShort.short:"종료 기준선 시세 없음";
+    $("futureAutoEndPrice").classList.toggle("warn",!!endShort);
+    if(plan.error){$("futureAutoPreview").innerHTML=`<p class="hint" role="alert">${esc((draft.endMode==="price"&&draft.auto.endPrice===""||draft.auto.contracts==="")?"종료가격과 총 계약 수를 입력하면 자동 배분 결과를 보여 줍니다.":endShort?.long||plan.error)}</p>`;return;}
     const used=new Set(plan.rows.map(r=>r.key));
     const body=plan.rows.map(r=>`<div class="future-auto-preview-row"><span>${esc(movingLineText(r.line))}${r.fixed?" · 직접 수정":""}${r.key==="end"?"":` <small>${r.slot+1}차</small>`}</span><span>${fmtPrice(r.price)}원</span><strong>${r.contracts}계약</strong></div>`).join("");
     const arranged=JSON.parse(JSON.stringify(source));applyFutureAutoBuyPlan(arranged);
@@ -162,8 +171,8 @@ function renderFuturePlanDialog(){
     const latest=state.futures,next=JSON.parse(JSON.stringify(latest));
     if(futurePlanConfigKey(latest.buyPlan)!==draft.basePlan||!applyFuturePlanEdits(next,draft.base,draft.levels,[...draft.alertEdits])){$("futurePlanError").textContent="완료한 계약 수와 중복 기준선을 확인하세요. 기록이 갱신됐다면 창을 다시 열어 주세요.";return;}
     if(draft.autoEnabled&&(!latest.buyPlan||draft.autoDirty||JSON.stringify(draft.levels)!==JSON.stringify(draft.base))){
-      const source=futureAutoSource(next,draft.auto,futuresEntry(priceData,latest),priceData?.updatedAt),plan=futureAutoBuyPlan(source);
-      if(plan.error||plan.startPrice>plan.config.endPrice){$("futurePlanError").textContent=plan.error||"종료가격은 시작 기준가 이상으로 입력하세요.";return;}
+      const entry=futuresEntry(priceData,latest),source=futureAutoSource(next,draft.auto,entry,priceData?.updatedAt),plan=futureAutoBuyPlan(source);
+      if(plan.error||plan.startPrice>plan.config.endPrice){$("futurePlanError").textContent=futureEndLineShort(entry,source.buyPlan)?.long||plan.error||"종료가격은 시작 기준가 이상으로 입력하세요.";return;}
       if(source.levels.length+(source.levels.some(l=>l.planEnd)?0:1)>80){$("futurePlanError").textContent="종료가를 포함해 기준선은 80개까지 설정할 수 있습니다.";return;}
       applyFutureAutoBuyPlan(source);next.levels=source.levels;next.buyPlan=source.buyPlan;
     }
