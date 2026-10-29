@@ -16,11 +16,11 @@
   <title>자산 현황</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=315"></script>
+  <script src="js/theme.js?v=316"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=315" />
-  <link rel="stylesheet" href="css/assets.css?v=315" />
-  <script src="js/repo-security.js?v=315" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=316" />
+  <link rel="stylesheet" href="css/assets.css?v=316" />
+  <script src="js/repo-security.js?v=316" defer></script>
 </head>
 <body class="assets-page">
   <header class="top">
@@ -54,29 +54,23 @@
       <label class="field"><span>이름</span><input name="name" required maxlength="60" autocomplete="off" /></label>
       <label class="field"><span>그룹</span><select name="group"></select></label>
       <label class="field"><span>소분류 (선택)</span><input name="section" maxlength="30" list="sectionList" autocomplete="off" placeholder="예: 커버드콜" /><datalist id="sectionList"></datalist></label>
-      <label class="field"><span>금액 (만원)</span><input name="amount" type="number" step="any" inputmode="decimal" /></label>
+      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 상위 목표에 합산 · 플래너에 자동 반영</small></label>
       <label class="field"><span>기준 티커 / 시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
       <label class="field"><span>실제 매수 ETF 코드 (추종할 때)</span><input name="tradeTicker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼" /></label>
-      <label class="field"><span id="itemTradePriceLabel">매수 ETF 현재가 (원 · 시세 없을 때)</span><input name="tradePrice" type="number" min="0" step="any" inputmode="decimal" placeholder="자동 시세가 없을 때 직접 입력" /><small class="field-hint" id="itemTradePriceNote">자동 시세를 우선 사용하며, 분할매수 주수와 보유 평가액에 반영합니다.</small></label>
       <label class="field"><span>보유 수량 (선택)</span><input name="shares" type="number" min="0" step="any" inputmode="decimal" placeholder="넣으면 수량 × 현재가" /></label>
-      <label class="field"><span>목표 비중 (%)</span><input name="target" type="number" min="0" max="100" step="any" inputmode="decimal" /><small class="field-hint">기준 총자산 대비 · 소분류·그룹·분류 목표에 자동 합산 · 플래너 분할매수(총 매수 금액)·분할매도·재매수에 바로 반영</small></label>
-      <label class="field check-field"><span>점검 기록</span><span class="check"><input name="done" type="checkbox" /> 점검완료</span></label>
+      <label class="field"><span id="averagePriceLabel">평균매수가 (1주 기준)</span><input name="averagePrice" type="number" min="0" max="9007199254740991" step="any" inputmode="decimal" autocomplete="off" aria-describedby="averagePriceHint" placeholder="미입력" /><small class="field-hint" id="averagePriceHint">실제 보유 종목의 통화로 입력하세요. 비우고 저장하면 삭제됩니다.</small></label>
+      <div class="dialog-wide item-profit-preview">
+        <div class="average-price-holding" id="averagePriceHolding"></div>
+        <div class="profit-result average-price-preview" id="averagePricePreview" role="status" aria-live="polite"></div>
+        <div class="average-price-total" id="averagePriceTotal" hidden></div>
+      </div>
+      <label class="field check-field dialog-wide"><span>점검 기록</span><span class="check"><input name="done" type="checkbox" /> 점검완료</span></label>
       <label class="field dialog-wide"><span>메모</span><textarea name="note" maxlength="2000"></textarea></label>
       <div class="dialog-wide item-trades" id="itemTrades" hidden></div>
       <p class="hint dialog-wide" id="itemPurchaseTarget" hidden></p>
-      <p class="hint dialog-wide" id="itemHint">이미 보유한 추종 ETF라면 해당 계좌·그룹의 기존 종목을 수정하세요. 기준 티커에 미국 ETF, 실제 매수 ETF 코드에 거래할 ETF를 넣습니다. 보유 수량은 실제 ETF 주수이며, 분할매수 체결분은 이 종목의 기존 보유량에 더합니다. 분할매수에 회차별 권장 주수·예상 금액·잔액이 표시됩니다. 금액만 넣으면 입력 때부터 해당 시세 변동을 따라갑니다.</p>
+      <details class="dialog-wide dialog-help"><summary>추종 ETF 입력 안내</summary><p class="hint" id="itemHint">이미 보유한 추종 ETF라면 해당 계좌·그룹의 기존 종목을 수정하세요. 기준 티커에 미국 ETF, 실제 매수 ETF 코드에 거래할 ETF를 넣습니다. 보유 수량은 실제 ETF 주수이며, 분할매수 체결분은 이 종목의 기존 보유량에 더합니다. 분할매수에 회차별 권장 주수·예상 금액·잔액이 표시됩니다. 평가액과 현재가는 자동 조회·계산합니다.</p></details>
     </div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="itemDelete">종목 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
-  </form></dialog>
-
-  <dialog id="averagePriceDialog"><form method="dialog" class="dialog-inner" id="averagePriceForm">
-    <div class="dialog-head"><h2>평균매수가</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
-    <p class="average-price-item" id="averagePriceItem"></p>
-    <div class="average-price-holding" id="averagePriceHolding"></div>
-    <label class="field"><span id="averagePriceLabel">평균매수가 (1주 기준)</span><input name="averagePrice" type="number" min="0" max="9007199254740991" step="any" inputmode="decimal" autocomplete="off" aria-describedby="averagePriceHint" placeholder="미입력" /><small class="field-hint" id="averagePriceHint">선택한 계좌의 평균매수가만 저장합니다. 해외 종목은 현지 통화로 입력하세요. 비우고 저장하면 삭제됩니다.</small></label>
-    <div class="profit-result average-price-preview" id="averagePricePreview" role="status" aria-live="polite"></div>
-    <div class="average-price-total" id="averagePriceTotal" hidden></div>
-    <div class="dialog-foot"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
   <dialog id="groupDialog"><form method="dialog" class="dialog-inner" id="groupForm">
@@ -141,17 +135,17 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=315" defer></script>
-  <script src="js/data-validation.js?v=315" defer></script>
-  <script src="js/assets-calc.js?v=315" defer></script>
-  <script src="js/price-collection.js?v=315" defer></script>
-  <script src="js/assets-store.js?v=315" defer></script>
-  <script src="js/member-link.js?v=315" defer></script>
-  <script src="js/ledger-benchmark.js?v=315" defer></script>
-  <script src="js/assets.js?v=315" defer></script>
-  <script src="js/assets-ledger.js?v=315" defer></script>
-  <script src="js/assets-savings.js?v=315" defer></script>
-  <script src="js/assets-installments.js?v=315" defer></script>
-  <script src="js/assets-start.js?v=315" defer></script>
+  <script src="js/ma-ladder.js?v=316" defer></script>
+  <script src="js/data-validation.js?v=316" defer></script>
+  <script src="js/assets-calc.js?v=316" defer></script>
+  <script src="js/price-collection.js?v=316" defer></script>
+  <script src="js/assets-store.js?v=316" defer></script>
+  <script src="js/member-link.js?v=316" defer></script>
+  <script src="js/ledger-benchmark.js?v=316" defer></script>
+  <script src="js/assets.js?v=316" defer></script>
+  <script src="js/assets-ledger.js?v=316" defer></script>
+  <script src="js/assets-savings.js?v=316" defer></script>
+  <script src="js/assets-installments.js?v=316" defer></script>
+  <script src="js/assets-start.js?v=316" defer></script>
 </body>
 </html>
