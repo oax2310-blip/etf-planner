@@ -28,6 +28,7 @@
 .class-label{margin:18px 4px 8px;font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.01em}.class-label:first-of-type{margin-top:0}
 .alloc-class+.alloc-class .class-label{margin-top:18px}
 .group-card{margin-bottom:12px;overflow:hidden}.group-head{padding:14px 16px 10px}.group-head h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.02em;word-break:keep-all;overflow-wrap:anywhere}.group-head .title-row{justify-content:space-between}.group-head p{margin:4px 0 0;font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums}.group-head p b{color:var(--text)}
+.group-head .group-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:5px 16px;margin-top:8px}.group-summary .group-value{font-size:22px;line-height:1.3;letter-spacing:-.03em;overflow-wrap:anywhere}.group-current{text-align:right;white-space:nowrap}.group-target{min-width:0;font-size:12px;word-break:keep-all;overflow-wrap:anywhere}.group-target small{font-size:11px;color:var(--text-3)}.group-summary .group-gap{text-align:right;font-size:12px}
 /* 접힌 카드도 제목·합계·비중은 남긴다. 상세는 키보드와 터치로 각각 펼칠 수 있다. */
 .group-head h3,.assets-memo .memo-head h2{flex:1;min-width:0}
 .alloc-fold{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left}.alloc-fold>span:first-child{min-width:0;overflow-wrap:anywhere}.alloc-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
@@ -48,6 +49,7 @@
   .asset-row:has(.asset-note) .asset-val{grid-area:value}.asset-row:has(.asset-note) .asset-pct{grid-area:pct}.asset-row:has(.asset-note)>.asset-note{grid-area:note}
 }
 .asset-figures{display:contents}.asset-val{display:grid;justify-items:end;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}.asset-pct{display:flex;justify-content:flex-end;justify-self:end;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:11px;font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;text-align:right}.asset-pct>span,.asset-pct small{white-space:nowrap}.asset-pct small,.how{font-size:11px;font-weight:500;color:var(--text-3)}.how.live{color:var(--accent)}
+.asset-amount{font:inherit}.asset-name:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}.asset-row .average-price-value{min-height:0}
 .how.holding{color:var(--text-2)}.holding-price{font-size:10.5px;font-weight:400}.holding-price .quote-label,.holding-price .quote-source{font-size:9px;color:var(--text-3)}.quote-source{margin-left:5px;color:var(--text-3)}
 .quote-status{display:inline-flex;align-items:center;gap:3px;margin-left:5px;padding:1px 5px;border:1px solid var(--warn-line);border-radius:5px;background:var(--warn-soft);color:var(--warn);font-size:10px;font-weight:600;line-height:1.4;white-space:nowrap;vertical-align:middle}.quote-status>span{font-weight:800}.asset-val .quote-status{display:flex;width:max-content;margin:3px 0 0 auto}
 .group-empty{margin:0;padding:12px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--text-3)}.group-foot{padding:6px 10px;border-top:1px solid var(--line)}
@@ -175,8 +177,12 @@
   #allocView>.section-heading{margin-inline:0}
   .alloc-actions>.btn{min-height:28px;padding:4px 8px;font-size:12px}
   .region-card{padding:12px 10px 6px}.class-row{gap:2px 8px;padding:9px 4px}.class-pct{min-width:54px}
-  /* 첫 줄에 체크박스·종목명·평가액, 둘째 줄에 메모·현재/목표를 함께 표시한다. */
-  .group-head{padding:12px 12px 8px}.group-note{margin:0 12px 8px}.sub-head{padding:7px 12px 5px}.asset-row{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;padding:9px 12px}.asset-figures{display:grid;grid-column:3;grid-row:1/3;align-self:start;justify-items:end;row-gap:1px}.asset-pct{flex-wrap:nowrap}.asset-row>.check{grid-row:1;align-self:start;padding-top:2px}.asset-name{grid-row:1;align-self:start;padding:0}.asset-note{grid-column:1/3;grid-row:2;align-self:baseline}
+  /* 종목명은 첫 줄 전체 너비, 평가액·비중은 그 아래. 메모·손익·플래너 링크는 독립된 줄로 둔다. */
+  .group-head{padding:12px 14px 14px}.group-head .group-summary{gap:6px 10px}.group-summary .group-value{font-size:21px}.group-target small{display:block;margin-top:2px}.group-note{margin:0 14px 10px}.sub-head{padding:8px 14px 6px}
+  .asset-row{grid-template-columns:20px minmax(0,1fr);gap:8px;padding:14px}.asset-row>.check{grid-column:1;grid-row:1;align-self:start;display:flex;align-items:center;justify-content:center;min-height:24px;position:relative}.asset-row>.check::after{content:"";position:absolute;inset:-10px -6px}.asset-row>.check input[type=checkbox]{width:19px;height:19px}
+  .asset-name{grid-column:2;grid-row:1;align-self:start;padding:0;gap:3px;min-height:24px}.asset-name strong{font-size:14px;line-height:1.65}.asset-name small:empty{display:none}.asset-name:hover strong{color:inherit}
+  .asset-figures{display:grid;grid-column:1/-1;grid-row:auto;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px 12px;margin-top:1px;padding:10px 0 0}.asset-val{justify-items:start;min-width:0;text-align:left;gap:3px}.asset-amount{font-size:18px;line-height:1.3;letter-spacing:-.025em;overflow-wrap:anywhere}.asset-val .how{font-size:11px;line-height:1.5;font-weight:400}.asset-val .quote-status{margin-left:0}.asset-pct{max-width:100%;justify-content:flex-end;flex-wrap:wrap;gap:3px 8px;font-size:12px;line-height:1.5}.asset-pct>.gap-line{flex-basis:100%;justify-content:flex-end}.asset-pct>.target-gap{flex-basis:100%}.asset-pct .target-gap::before{content:"차이 ";font-size:10px;font-weight:400;color:var(--text-3)}
+  .asset-note{grid-column:1/-1;grid-row:auto;align-self:auto;font-size:11.5px}.asset-profit{grid-column:1/-1;gap:5px 12px;font-size:11px}.asset-row .average-price-value{color:var(--text-3)}
   .cash-row{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 12px}.cash-place{grid-column:1/-1}.cash-amt{grid-column:1;grid-row:3}.cash-row b{grid-column:2;grid-row:2/4;align-self:center}
   .ledger-row{grid-template-columns:40px minmax(0,1.25fr) minmax(0,.7fr) minmax(0,1.4fr);gap:6px;padding:9px 12px;font-size:12px}
   #editFutures>:first-child{font-size:11px;word-break:keep-all;overflow-wrap:normal}.year-average{padding:12px}.benchmark{padding:12px}.benchmark-grid{gap:6px}.benchmark-grid>div{padding:8px 9px}.benchmark-grid span{font-size:11px}.benchmark-grid strong{font-size:17px}.benchmark-grid small{font-size:10px}.benchmark-ytd-head small{display:block;margin:2px 0 0}.benchmark-ytd-cells{gap:6px}.benchmark-ytd-cells>span{padding:0 9px}.benchmark-ytd-cells b{font-size:14px}.pnl-broker-grid{grid-template-columns:1fr}.pnl-broker{padding:12px}.pnl-entry{padding:10px}.pnl-entry-grid{gap:8px}
@@ -260,9 +266,10 @@ a.alloc-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(hover:hover) and (pointer:fine){a.alloc-chip.on:hover{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}a.alloc-chip.on:hover .chip-count{background:var(--on-accent);color:var(--accent)}}
 a.alloc-chip.on:active{background:var(--accent-line)}
 @media(pointer:coarse){a.alloc-chip::after{content:"";position:absolute;inset:-6px -2px}}
-@media(max-width:700px){.asset-row:not(:has(.asset-note))>.alloc-links{grid-column:2/3;grid-row:2;align-self:center;margin-top:0}
-  /* 폰에서는 목표 대비를 현재·목표 아래 줄 오른쪽에 둬 종목명·편입 칩 칸을 줄이지 않는다. */
-  .asset-pct:has(>.target-gap,>.gap-line){display:grid;grid-template-columns:auto auto;column-gap:6px;justify-items:end}.asset-pct>.target-gap,.asset-pct>.gap-line{grid-column:1/-1}.asset-pct .target-gap{min-width:0}}
+@media(max-width:700px){
+  .asset-row>.alloc-links{grid-column:1/-1;grid-row:auto;gap:8px;margin-top:2px;padding-top:8px;border-top:1px solid var(--line)}
+  .asset-row .alloc-chip{min-height:30px;padding:3px 9px;border-radius:7px;font-size:10.5px;gap:4px}.asset-row .alloc-chip.off{border-color:transparent;border-style:solid;opacity:1}
+  .asset-pct:has(>.target-gap,>.gap-line){display:grid;grid-template-columns:auto auto;column-gap:8px;justify-items:end}.asset-pct>.target-gap,.asset-pct>.gap-line{grid-column:1/-1}.asset-pct .target-gap{min-width:0}}
 .alloc-members{margin:0 0 12px;padding:0}
 .alloc-members>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;min-height:44px;padding:11px 16px;cursor:pointer;list-style:none}.alloc-members>summary::-webkit-details-marker{display:none}
 .alloc-members>summary b{font-size:13px}.alloc-members>summary span{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
