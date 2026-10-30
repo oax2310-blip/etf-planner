@@ -1,16 +1,16 @@
-// GLDM 월말 자료 수집기를 네트워크 없이 검증한다. 종가는 LBMA 비율에 맞춘 가짜 ETF 가격이며 개인 기록을 쓰지 않는다.
+// GLDM 월말 자료 수집기를 네트워크 없이 검증한다. 종가는 확인한 GLDM 연말 상수에 맞춘 가짜 일별 가격이며 개인 기록을 쓰지 않는다.
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {parseChart,summarize,rangeStart,fetchChart,nextFile,main}=require('../scripts/collect-gold.cjs');
-const {GOLD_LBMA_YEAR_END,cleanGoldData}=require('../js/ledger-benchmark.js');
+const {GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END,cleanGoldData}=require('../js/ledger-benchmark.js');
 const SCRIPT=path.join(__dirname,'../scripts/collect-gold.cjs'),OUT=path.join(__dirname,'../data/gold-etf.json');
 const round=v=>Math.round(v*100)/100,pct=(a,b)=>(a/b-1)*100;
 const existing=()=>fs.existsSync(OUT)?fs.readFileSync(OUT,'utf8'):null;
 const now=new Date('2026-10-16T22:50:00Z');
-const level=date=>Number(date.slice(0,4))<=2025?(GOLD_LBMA_YEAR_END[date.slice(0,4)]??1500)/100:round(GOLD_LBMA_YEAR_END[2025]/100)*(1+Number(date.slice(5,7))/100);
+const level=date=>Number(date.slice(0,4))<=2025?(GOLD_ETF_YEAR_END[date.slice(0,4)]??30):GOLD_ETF_YEAR_END[2025]*(1+Number(date.slice(5,7))/100);
 function chart(from='2020-12-01',to='2026-10-15',edit=x=>x){
   const timestamp=[],close=[];
   for(let t=Date.parse(`${from}T21:00:00Z`);t<=Date.parse(`${to}T21:00:00Z`);t+=864e5){
@@ -37,27 +37,43 @@ test('2020~지난해 연말과 올해 끝난 월말만 추출하고 2021~2025 �
   assert.deepEqual(s.yearEnd.map(p=>p.year),[2020,2021,2022,2023,2024,2025]);
   assert.deepEqual(s.yearEnd.map(p=>p.date),['2020-12-31','2021-12-31','2022-12-30','2023-12-29','2024-12-31','2025-12-31']);
   assert.deepEqual(s.monthEnd.map(p=>p.ym),Array.from({length:9},(_,i)=>`2026-${String(i+1).padStart(2,'0')}`));
-  assert.deepEqual(s.monthEnd.at(-1),{ym:'2026-09',date:'2026-09-30',close:round(round(4367.8/100)*1.09)});
+  assert.deepEqual(s.monthEnd.at(-1),{ym:'2026-09',date:'2026-09-30',close:round(GOLD_ETF_YEAR_END[2025]*1.09)});
   assert.deepEqual(s.verified.map(v=>v.period),['2021','2022','2023','2024','2025']);
   for(const v of s.verified){
-    const y=Number(v.period),etfPct=pct(round(GOLD_LBMA_YEAR_END[y]/100),round(GOLD_LBMA_YEAR_END[y-1]/100)),lbmaPct=pct(GOLD_LBMA_YEAR_END[y],GOLD_LBMA_YEAR_END[y-1]);
+    const y=Number(v.period),etfPct=pct(GOLD_ETF_YEAR_END[y],GOLD_ETF_YEAR_END[y-1]),lbmaPct=pct(GOLD_LBMA_YEAR_END[y],GOLD_LBMA_YEAR_END[y-1]);
     assert.deepEqual(v,{period:String(y),etfPct,lbmaPct,diff:etfPct-lbmaPct});assert.ok(Math.abs(v.diff)<=5);
   }
   assert.equal(summarize(points,'2026-10-01').monthEnd.length,9);assert.equal(summarize(points,'2026-09-15').monthEnd.length,8);
   assert.equal(summarize(points,'2026-01-01').monthEnd.length,0);assert.deepEqual(points,before);
 });
 
+// 정확 대조를 통과하는 가상 GLDM 상수를 주입해 LBMA 교차 확인을 독립적으로 검증한다. 실제 상수는 바꾸지 않는다.
+function collectorWithGold(etf){
+  const refs={...require('../js/ledger-benchmark.js'),GOLD_ETF_YEAR_END:etf},fakeRequire=name=>name.startsWith('node:')?require(name):refs;
+  const ctx=vm.createContext({require:fakeRequire,module:{exports:{}},__dirname:path.dirname(SCRIPT)});
+  vm.runInContext(fs.readFileSync(SCRIPT,'utf8'),ctx);return ctx.module.exports;
+}
+
+test('GLDM 연말 종가는 모든 상수와 양방향 ±0.02달러 안만 통과한다',()=>{
+  const points=parseChart(chart()).points,ends=summarize(points,'2026-10-16').yearEnd;
+  for(const end of ends)for(const delta of [-.02,.02,-.03,.03]){
+    const changed=points.map(p=>p.date===end.date?{...p,close:GOLD_ETF_YEAR_END[end.year]+delta}:p);
+    if(Math.abs(delta)<=.02)assert.doesNotThrow(()=>summarize(changed,'2026-10-16'),`${end.year}: ${delta}`);
+    else assert.throws(()=>summarize(changed,'2026-10-16'),new RegExp(`official-mismatch-close-${end.year}`));
+  }
+});
+
 test('GLDM과 LBMA 연간 차이는 양방향 ±5%p로 교차 확인하고 어느 해든 초과하면 수치를 남겨 차단한다',()=>{
   const points=parseChart(chart()).points;
   for(const delta of [-4.9,4.9,-5.1,5.1]){
-    const lbmaPct=pct(4367.8,2609.1),end=round(2609.1/100)*(1+(lbmaPct+delta)/100);
-    const changed=points.map(p=>p.date==='2025-12-31'?{...p,close:end}:p);
-    if(Math.abs(delta)<5)assert.doesNotThrow(()=>summarize(changed,'2026-10-16'));
-    else assert.throws(()=>summarize(changed,'2026-10-16'),e=>/official-mismatch-2025/.test(e.message)&&e.message.includes('"etfPct"')&&e.message.includes('"lbmaPct"')&&e.message.includes('"diff"'));
+    const lbmaPct=pct(GOLD_LBMA_YEAR_END[2025],GOLD_LBMA_YEAR_END[2024]),end=GOLD_ETF_YEAR_END[2024]*(1+(lbmaPct+delta)/100);
+    const changed=points.map(p=>p.date==='2025-12-31'?{...p,close:end}:p),c=collectorWithGold({...GOLD_ETF_YEAR_END,2025:end});
+    if(Math.abs(delta)<5)assert.doesNotThrow(()=>c.summarize(changed,'2026-10-16'));
+    else assert.throws(()=>c.summarize(changed,'2026-10-16'),e=>/official-mismatch-2025/.test(e.message)&&e.message.includes('"etfPct"')&&e.message.includes('"lbmaPct"')&&e.message.includes('"diff"'));
   }
   for(let year=2021;year<=2025;year++){
-    const changed=points.map(p=>p.date.startsWith(`${year}-`)?{...p,close:p.close*1.1}:p);
-    assert.throws(()=>summarize(changed,'2026-10-16'),e=>e.message.startsWith('official-mismatch-')&&e.message.includes(`"period":"${year}"`));
+    const changed=points.map(p=>p.date.startsWith(`${year}-`)?{...p,close:p.close*1.1}:p),c=collectorWithGold({...GOLD_ETF_YEAR_END,[year]:GOLD_ETF_YEAR_END[year]*1.1});
+    assert.throws(()=>c.summarize(changed,'2026-10-16'),e=>e.message.startsWith('official-mismatch-')&&e.message.includes(`"period":"${year}"`)&&e.message.includes('"etfPct"'));
   }
 });
 
@@ -95,7 +111,7 @@ test('생성 파일은 정해진 키·GLDM 계열의 요약만 담고 cleanGoldD
   assert.equal(nextFile(JSON.parse(JSON.stringify(file)),s,'2026-10-17T22:50:00Z'),null);
   const changed=structuredClone(s);changed.monthEnd.at(-1).close+=1;assert.ok(nextFile(file,changed,'2026-10-17T22:50:00Z'));
   const clean=cleanGoldData(JSON.parse(JSON.stringify(file)));assert.deepEqual(Object.keys(clean.yearEnd),['2020','2021','2022','2023','2024','2025']);
-  assert.equal(clean.monthEnd['2026-09'].close,round(round(4367.8/100)*1.09));assert.deepEqual(s,before);
+  assert.equal(clean.monthEnd['2026-09'].close,round(GOLD_ETF_YEAR_END[2025]*1.09));assert.deepEqual(s,before);
   assert.ok(!('chart' in file)&&!('points' in file)&&!('timestamp' in file),'일별 원자료 전체를 저장하지 않는다');
 });
 
@@ -109,7 +125,7 @@ test('dry-run은 파일을 바꾸지 않고 실제 응답 대신 가짜 자료�
 test('HTTP·종목·검증 실패는 기존 자료를 보존하고 CLI는 exitCode 1로 끝난다',async()=>{
   const before=existing();await assert.rejects(main([],now,async()=>({ok:false,status:403})),/http-403/);
   await assert.rejects(main([],now,async()=>({ok:true,json:async()=>chart(undefined,undefined,p=>{p.chart.result[0].meta.symbol='GLD';return p;})})),/unexpected-series/);
-  await assert.rejects(main([],now,async()=>({ok:true,json:async()=>chart(undefined,undefined,p=>{const r=p.chart.result[0];r.indicators.quote[0].close=r.indicators.quote[0].close.map(v=>v===GOLD_LBMA_YEAR_END[2025]/100?v*2:v);return p;})})),/official-mismatch-2025/);
+  await assert.rejects(main([],now,async()=>({ok:true,json:async()=>chart(undefined,undefined,p=>{const r=p.chart.result[0];r.indicators.quote[0].close=r.indicators.quote[0].close.map(v=>v===GOLD_ETF_YEAR_END[2025]?v*2:v);return p;})})),/official-mismatch-close-2025/);
   const mod={exports:{}},proc={argv:[]};let error='';const fakeRequire=name=>name==='node:fs'?fs:name==='node:path'?path:require('../js/ledger-benchmark.js');fakeRequire.main=mod;
   const context=vm.createContext({require:fakeRequire,module:mod,__dirname:path.dirname(SCRIPT),process:proc,AbortSignal,Date,Intl,
     fetch:async()=>({ok:false,status:403}),console:{error:x=>{error+=x;}}});
@@ -129,5 +145,5 @@ test('새 파일은 검증 후에만 교체하고 쓰기 실패·같은 값·dry
   const update=async()=>({ok:true,json:async()=>updated});await run(['--dry-run'],now,update);assert.equal(writes.length,0);
   fail=true;await assert.rejects(run([],now,update),/disk-full/);assert.equal(files.get(OUT),original);assert.equal(files.has(`${OUT}.tmp`),false);
   fail=false;await run([],now,update);assert.deepEqual(writes,[`${OUT}.tmp`,`${OUT}.tmp`]);assert.equal(files.has(`${OUT}.tmp`),false);
-  assert.equal(JSON.parse(files.get(OUT)).monthEnd.at(-1).close,round(round(4367.8/100)*1.09+1));assert.ok(cleanGoldData(JSON.parse(files.get(OUT))));
+  assert.equal(JSON.parse(files.get(OUT)).monthEnd.at(-1).close,round(GOLD_ETF_YEAR_END[2025]*1.09+1));assert.ok(cleanGoldData(JSON.parse(files.get(OUT))));
 });

@@ -13,11 +13,17 @@ const SP500_TR_YTD = Object.freeze({"2026-08":13.14, "2026-09":12.75});
 const SP500_COMPARE_FROM = 2021; // 투자 기록을 시작한 해
 
 // 각 해 마지막 LBMA Gold Price PM(미국 달러/트로이온스). 12/31에 오후 가격이 없으면 그해 마지막 PM 날짜의 값이다.
+// 수집기의 느슨한 교차 확인에만 쓰며 금 수익률 계산·화면에는 사용하지 않는다. 마지막 런던 PM 날짜는 뉴욕의 연말 거래일과 다를 수 있다.
 // 출처(2차 자료): Wheaton Precious Metals 2022·2025 Annual Information Form의 Gold Prices, Closing.
 // 2020~2022: https://s203.q4cdn.com/976005377/files/doc_financials/2022/ar/56f9e1a4-3f7d-4aec-b08f-217f7f63241b.pdf (PDF 122쪽)
 // 2023~2025: https://s203.q4cdn.com/976005377/files/doc_financials/2025/ar/AIF-for-the-year-ended-December-31-2025-FINAL.pdf (PDF 120쪽)
 // 2026-10-30 조회. 2차 자료로 확인한 값이며, GLDM 수집 수익률과의 차이는 scripts/collect-gold.cjs의 summarize에서 검증한다.
 const GOLD_LBMA_YEAR_END = Object.freeze({2020:1887.60, 2021:1805.85, 2022:1813.75, 2023:2078.40, 2024:2609.10, 2025:4367.80});
+
+// GLDM(SPDR Gold MiniShares, USD/주)의 각 해 12월 마지막 거래일 뉴욕 종가. 보수 0.10%가 반영된 ETF 가격이며 S&P 500과 같은 연말 시점이다.
+// 출처: Yahoo Finance GLDM https://finance.yahoo.com/quote/GLDM/history/ — 2026-10-30 조회, collect-gold.cjs와 같은 소수 둘째 자리.
+// 실제 수집 확인: https://github.com/oax2310-blip/etf-planner/actions/runs/41021554521/job/123949805083 의 yearEnd.
+const GOLD_ETF_YEAR_END = Object.freeze({2020:37.88, 2021:36.36, 2022:36.19, 2023:40.91, 2024:51.99, 2025:85.37});
 
 // 공개 비교 자료의 schemaVersion·지수·통화와 날짜·양수 종가를 확인한다. 형식이 틀리면 null, 연말은 200개·월말은 240개까지 사본에 남긴다.
 // 연말은 해당 연도 12월, 월말은 해당 YYYY-MM의 날짜만 받으며 입력 자료는 바꾸지 않는다.
@@ -44,19 +50,16 @@ function sp500YtdAt(year, month, data=null){
 // 연간: 연간 공표치, 12월 말 누적 공표치, 수집한 연말 종가 비율 순. 모두 없으면 null.
 const sp500YearReturn = (year, data=null) => finite(SP500_TR_RETURNS[year]) ?? finite(SP500_TR_YTD[`${year}-12`]) ?? sp500Ratio(data?.yearEnd?.[year], data?.yearEnd?.[year-1]);
 
-// 2025년까지 연간은 LBMA PM 연말 상수, 올해 누적과 상수가 없는 해는 GLDM 종가(보수 0.10%·뉴욕 종가 기준이라 금값과 조금 다름)를 쓴다.
-// 금 연간 수익률(%): (그해 연말 ÷ 전년 연말 − 1) × 100. 두 연말 상수가 모두 있으면 LBMA 비율, 아니면 수집한 두 연말이 모두 있을 때만 GLDM 비율.
-// GLDM은 1주 가격이라 LBMA의 달러/온스 상수와 단위가 다르므로 한 비율에 섞지 않는다. 같은 계열의 두 값이 없으면 null.
+// 금 연간 수익률(%): (그해 GLDM 연말 ÷ 전년 GLDM 연말 − 1) × 100. 양쪽 연말 각각 GOLD_ETF_YEAR_END 우선, 없으면 수집한 GLDM 종가를 쓴다.
+// 상수·수집값 모두 같은 GLDM 달러/주라 함께 쓸 수 있다. 한쪽이라도 없으면 null. LBMA 상수는 이 계산에 쓰지 않는다.
 function goldYearReturn(year, data=null){
-  const end=finite(GOLD_LBMA_YEAR_END[year]), start=finite(GOLD_LBMA_YEAR_END[year-1]);
-  if(end!==null&&start!==null)return (end/start-1)*100;
-  const etfEnd=data?.yearEnd?.[year]?.close, etfStart=data?.yearEnd?.[year-1]?.close;
-  return etfEnd&&etfStart?(etfEnd/etfStart-1)*100:null;
+  const end=finite(GOLD_ETF_YEAR_END[year])??data?.yearEnd?.[year]?.close, start=finite(GOLD_ETF_YEAR_END[year-1])??data?.yearEnd?.[year-1]?.close;
+  return end&&start?(end/start-1)*100:null;
 }
-// 금 월말 누적(%): (해당 GLDM 월말 수집 종가 ÷ GLDM 전년 연말 수집 종가 − 1) × 100. LBMA 상수를 분모로 쓰지 않는다.
-// 해당 월말이나 수집한 전년 말이 없으면 null이며 앞달로 대체하지 않는다.
+// 금 월말 누적(%): (해당 GLDM 월말 뉴욕 종가 ÷ 전년 GLDM 연말 − 1) × 100. 전년 말은 GOLD_ETF_YEAR_END 우선, 없으면 수집값.
+// 해당 월말이나 전년 말이 없으면 null이며 앞달로 대체하지 않는다. 보수 0.10%가 반영된 같은 ETF 가격만 쓰며 LBMA 상수는 쓰지 않는다.
 function goldYtdAt(year, month, data=null){
-  const key=`${year}-${String(month).padStart(2,"0")}`, end=data?.monthEnd?.[key]?.close, start=data?.yearEnd?.[year-1]?.close;
+  const key=`${year}-${String(month).padStart(2,"0")}`, end=data?.monthEnd?.[key]?.close, start=finite(GOLD_ETF_YEAR_END[year-1])??data?.yearEnd?.[year-1]?.close;
   return end&&start?(end/start-1)*100:null;
 }
 
@@ -168,4 +171,4 @@ function ledgerChartData(year, today=new Date(), data=null, goldData=null){
     sp, spAt, diff:s.rate!==null&&spAt!==null?s.rate-spAt:null,
     gold, goldAt, goldDiff:s.rate!==null&&goldAt!==null?s.rate-goldAt:null};
 }
-if(typeof module!=="undefined"&&module.exports)module.exports={SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,GOLD_LBMA_YEAR_END,cleanGoldData};
+if(typeof module!=="undefined"&&module.exports)module.exports={SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END,cleanGoldData};

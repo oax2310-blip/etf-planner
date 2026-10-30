@@ -2,11 +2,12 @@
 // 개인 기록·토큰·Secrets를 읽지 않는다. 사용: node scripts/collect-gold.cjs [--dry-run]
 const fs=require('node:fs');
 const path=require('node:path');
-const {GOLD_LBMA_YEAR_END}=require('../js/ledger-benchmark.js');
+const {GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END}=require('../js/ledger-benchmark.js');
 
 const OUT=path.join(__dirname,'../data/gold-etf.json');
 const SYMBOL='GLDM';
 const TOLERANCE=5; // %p
+const CLOSE_TOLERANCE=0.02; // USD/주
 const META={schemaVersion:1,index:'SPDR Gold MiniShares (GLDM)',symbol:SYMBOL,currency:'USD',
   sourceName:'Yahoo Finance',sourceUrl:'https://finance.yahoo.com/quote/GLDM/history/'};
 
@@ -26,6 +27,7 @@ function parseChart(payload){
 const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
 // 2020~지난해 연말과 올해 끝난 달의 마지막 종가만 남긴다. 마지막 날짜가 해당 월말에서 4일보다 더 이르면 incomplete로 멈춘다.
 // 올해 월말의 기준이 될 전년 말이 없으면 missing-base다. 연말은 반드시 해당 해 12월의 값이어야 한다.
+// 정확 대조: GOLD_ETF_YEAR_END가 있는 해는 수집 종가가 해당 GLDM 상수의 ±0.02달러 안이어야 한다. 벗어나면 official-mismatch로 기록하지 않는다.
 // verified: LBMA 상수로 연간 수익률을 계산할 수 있는 모든 완료 연도(2021~2025)를 같은 해 GLDM 수익률과 비교한다.
 // etfPct·lbmaPct = (그해 말 ÷ 전년 말 − 1) × 100, diff = etfPct − lbmaPct(%p). 반올림 전 차이가 ±5%p를 넘으면 official-mismatch로 기록하지 않는다.
 // LBMA와의 대조는 다른 종목·단위 오류를 막는 느슨한 교차 확인이다. 보수 0.10%와 마지막 런던 PM·뉴욕 종가의 서로 다른 연말 시점은 허용한다.
@@ -41,6 +43,8 @@ function summarize(points, today){
   }
   yearEnd.sort((a,b)=>a.year-b.year);monthEnd.sort((a,b)=>a.ym.localeCompare(b.ym));
   if(!yearEnd.some(y=>y.year===thisYear-1))throw Error('missing-base');
+  const wrongClose=yearEnd.filter(p=>Object.hasOwn(GOLD_ETF_YEAR_END,p.year)&&(p.close<GOLD_ETF_YEAR_END[p.year]-CLOSE_TOLERANCE||p.close>GOLD_ETF_YEAR_END[p.year]+CLOSE_TOLERANCE));
+  if(wrongClose.length)throw Error(`official-mismatch-close-${wrongClose.map(p=>p.year).join(',')}: ${JSON.stringify(wrongClose.map(p=>({year:p.year,close:p.close,official:GOLD_ETF_YEAR_END[p.year]})))}`);
   const close=year=>yearEnd.find(y=>y.year===year)?.close, pct=(a,b)=>(a/b-1)*100, verified=[];
   for(const year of Object.keys(GOLD_LBMA_YEAR_END).map(Number).filter(y=>y<thisYear&&GOLD_LBMA_YEAR_END[y-1])){
     if(!close(year)||!close(year-1))throw Error(`no-verification-${year}`);
