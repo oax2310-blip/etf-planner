@@ -364,3 +364,152 @@ test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 
   assert.doesNotMatch(html+rows,/sign-toggle|data-sign/,'부호 버튼 없음');
   assert.match(read('assets.html'),/<input name="futures" type="text" inputmode="numeric" autocomplete="off" data-money aria-describedby="yearFuturesHint" \/>/,'연도 설정 선물·옵션');
 });
+
+// 금 비교도 같은 가상 기록으로 검증한다. 아래 수집 자료는 실제 시세가 아닌 검증용 종가다.
+const goldCalc=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
+return {GOLD_LBMA_YEAR_END,cleanGoldData,goldYearReturn,goldYtdAt,goldComparison,bestBenchmark,ledgerChartData};})()`);
+const goldCollected=()=>({schemaVersion:1,symbol:'LBMA-GOLD-PM',currency:'USD',
+  yearEnd:[{year:2025,date:'2025-12-30',close:4367.8},{year:2026,date:'2026-12-30',close:4367.8*1.12},{year:2027,date:'2027-12-30',close:4367.8*1.12*1.05}],
+  monthEnd:[{ym:'2026-08',date:'2026-08-28',close:4367.8*1.08},{ym:'2026-09',date:'2026-09-30',close:4367.8*1.1}]});
+const goldCompound=((4367.8/1887.6)**(1/5)-1)*100;
+
+test('금 연말 상수는 2020년부터 이어지는 마지막 LBMA PM 달러 가격이며 frozen이고 DOM 없이 내보낸다',()=>{
+  const prices=[1887.60,1805.85,1813.75,2078.40,2609.10,4367.80],years=Object.keys(goldCalc.GOLD_LBMA_YEAR_END).map(Number);
+  assert.deepEqual(years,prices.map((_,i)=>2020+i));assert.deepEqual(Object.values(goldCalc.GOLD_LBMA_YEAR_END),prices);
+  assert.ok(Object.isFrozen(goldCalc.GOLD_LBMA_YEAR_END));
+  [-4.33,.44,14.59,25.53,67.41].forEach((rounded,i)=>{
+    const rate=goldCalc.goldYearReturn(2021+i);
+    near(rate,(prices[i+1]/prices[i]-1)*100,`${2021+i}년 연말 비율`);
+    assert.ok(Math.abs(rate-rounded)<=.01,`${2021+i}년 공표 연간 수익률 근사`);
+  });
+  const exported=require('../js/ledger-benchmark.js');
+  assert.deepEqual(exported.GOLD_LBMA_YEAR_END,goldCalc.GOLD_LBMA_YEAR_END);assert.ok(Object.isFrozen(exported.GOLD_LBMA_YEAR_END));
+  assert.deepEqual(exported.cleanGoldData(goldCollected()),goldCalc.cleanGoldData(goldCollected()));
+});
+
+test('금 수집 자료는 형식·지수·통화를 확인하고 S&P 500과 같은 날짜·양수 종가 검증을 적용한다',()=>{
+  for(const bad of [null,[],{},'gold',...['schemaVersion','symbol','currency'].map(key=>{const raw=goldCollected();delete raw[key];return raw;}),
+    {...goldCollected(),schemaVersion:2},{...goldCollected(),schemaVersion:'1'},{...goldCollected(),symbol:'^SP500TR'},
+    {...goldCollected(),symbol:'LBMA-GOLD-AM'},{...goldCollected(),currency:'KRW'}])assert.equal(goldCalc.cleanGoldData(bad),null);
+  const raw=goldCollected();raw.yearEnd[0].extra='제외';raw.monthEnd[0].extra='제외';
+  raw.yearEnd.push(null,{year:2024,date:'2024-11-29',close:1},{year:'2023',date:'2023-12-29',close:1},
+    {year:2022,date:'2022-12-30',close:-1},{year:2021,date:'2021-12-30',close:0},{year:2020,date:'2020-12-30',close:Infinity});
+  raw.monthEnd.push(null,{ym:'2026-13',date:'2026-13-01',close:1},{ym:'2026-07',date:'2026-06-30',close:1},
+    {ym:'2026-06',date:'2026-06-30',close:'1'},{ym:'2026-05',date:'2026-05-29',close:NaN},{ym:'__proto__',date:'x',close:1});
+  const before=structuredClone(raw),data=goldCalc.cleanGoldData(raw);
+  assert.deepEqual(data,c.cleanSp500Data({...raw,symbol:'^SP500TR'}));
+  assert.deepEqual(Object.keys(data.yearEnd),['2025','2026','2027']);assert.deepEqual(Object.keys(data.monthEnd),['2026-08','2026-09']);
+  assert.deepEqual(data.yearEnd[2025],{date:'2025-12-30',close:4367.8});assert.deepEqual(data.monthEnd['2026-08'],{date:'2026-08-28',close:4367.8*1.08});
+  assert.deepEqual(raw,before,'검증은 원본을 바꾸지 않는다');assert.notEqual(data.yearEnd[2025],raw.yearEnd[0]);
+  assert.deepEqual(goldCalc.cleanGoldData({...goldCollected(),yearEnd:{},monthEnd:null}),{yearEnd:{},monthEnd:{}});
+});
+
+test('금 수집 자료도 연말 200개·월말 240개까지만 읽는다',()=>{
+  const raw={...goldCollected(),yearEnd:Array.from({length:201},(_,i)=>({year:1900+i,date:`${1900+i}-12-30`,close:1})),
+    monthEnd:Array.from({length:241},(_,i)=>{const ym=`${2000+Math.floor(i/12)}-${String(i%12+1).padStart(2,'0')}`;return {ym,date:`${ym}-28`,close:1};})};
+  const data=goldCalc.cleanGoldData(raw);
+  assert.equal(Object.keys(data.yearEnd).length,200);assert.equal(Object.keys(data.monthEnd).length,240);
+  assert.equal(data.yearEnd[2100],undefined);assert.equal(data.monthEnd['2020-01'],undefined);
+  assert.deepEqual(data,c.cleanSp500Data({...raw,symbol:'^SP500TR'}));
+});
+
+test('금 연간 수익률은 양쪽 연말 상수 우선이고 없을 때만 수집 종가를 쓰며 월말은 해당 달만 쓴다',()=>{
+  const raw=goldCollected();raw.yearEnd[0].close=1;raw.yearEnd.push({year:2024,date:'2024-12-30',close:2},{year:2019,date:'2019-12-30',close:1500});
+  const data=goldCalc.cleanGoldData(raw);
+  near(goldCalc.goldYearReturn(2025,data),(4367.8/2609.1-1)*100,'양쪽 상수가 수집값보다 우선');
+  near(goldCalc.goldYearReturn(2026,data),(4367.8*1.12/4367.8-1)*100,'수집한 그해 말 ÷ 상수 전년 말');
+  near(goldCalc.goldYearReturn(2020,data),(1887.6/1500-1)*100,'상수 그해 말 ÷ 수집한 전년 말');
+  near(goldCalc.goldYearReturn(2027,data),(4367.8*1.12*1.05/(4367.8*1.12)-1)*100,'두 해 모두 수집 종가');
+  for(const year of [2019,2020,2026,2028])assert.equal(goldCalc.goldYearReturn(year),null);
+  assert.equal(goldCalc.goldYearReturn(2028,data),null);
+  near(goldCalc.goldYtdAt(2026,9,data),(4367.8*1.1/4367.8-1)*100,'전년 말 상수 우선');
+  const next={...data,monthEnd:{'2027-03':{date:'2027-03-31',close:4367.8*1.12*.97}}};
+  near(goldCalc.goldYtdAt(2027,3,next),(.97-1)*100,'전년 말 상수가 없으면 수집값');
+  assert.equal(goldCalc.goldYtdAt(2026,10,data),null,'9월 값으로 대신하지 않는다');
+  assert.equal(goldCalc.goldYtdAt(2026,9),null);assert.equal(goldCalc.goldYtdAt(2027,3,{monthEnd:next.monthEnd}),null,'전년 말 기준값 없음');
+});
+
+test('금 비교는 같은 완료 5개 연도의 연복리와 반올림 전 차이를 반환하고 금을 최상위 지수로 고른다',()=>{
+  const years=fixture(),today=new Date(2026,9,16),data=goldCalc.cleanGoldData(goldCollected()),r=goldCalc.goldComparison(years,today,data),sp=c.sp500Comparison(years,today);
+  assert.deepEqual(Object.keys(r),Object.keys(sp).map(k=>k==='sp'?'gold':k));
+  assert.deepEqual(r.rows.map(x=>x.year),[2021,2022,2023,2024,2025]);assert.deepEqual([r.from,r.to,r.end,r.years,r.missing,r.pending],[2021,2025,2025,5,[],[]]);
+  r.rows.forEach((row,i)=>{assert.deepEqual(Object.keys(row),['year','mine','gold']);near(row.mine,fixtureRates[i]);near(row.gold,goldCalc.goldYearReturn(row.year));});
+  near(r.mine,completedCompound,'내 연복리');near(r.gold,goldCompound,'금 연복리');near(r.diff,completedCompound-goldCompound,'내 − 금');
+  assert.equal(r.diff,r.mine-r.gold);assert.equal(goldCalc.bestBenchmark(sp,r),'gold');
+  assert.deepEqual({...r.current,rate:null,gold:null,diff:null},{year:2026,rate:null,months:9,month:9,gold:null,diff:null});
+  near(r.current.rate,(1.01**9-1)*100);near(r.current.gold,(1.1-1)*100);near(r.current.diff,(1.01**9-1)*100-(1.1-1)*100);
+  assert.equal(goldCalc.goldComparison(years,today).current.gold,null,'월 수집값은 연말 상수로 대체하지 않는다');
+});
+
+test('금 비교도 기록 없는 해와 지수 대기 연도를 제외하고 올해 마지막 손익 달만 비교한다',()=>{
+  const years=fixture();years[1].months[3].balances=[];years.splice(3,1);
+  const r=goldCalc.goldComparison(years,new Date(2027,0,5));
+  assert.deepEqual([r.missing,r.pending,r.current,r.rows.map(x=>x.year)],[[2022,2024],[2026],null,[2021,2023,2025]]);
+  near(r.mine,((1.02**12*1.015**12*1.05*1.01**12)**(1/3)-1)*100);
+  near(r.gold,((1805.85/1887.6*2078.4/1813.75*4367.8/2609.1)**(1/3)-1)*100);
+  const data=goldCalc.cleanGoldData(goldCollected()),next=goldCalc.goldComparison(fixture(),new Date(2027,0,5),data);
+  assert.deepEqual([next.to,next.years,next.pending],[2026,6,[]]);near(next.gold,((4367.8*1.12/1887.6)**(1/6)-1)*100);
+  const current=yearOf(2026,Array(9).fill(1));current.months.push({m:10,futures:0,balances:[1000000]},{m:11,balances:[1000000]});
+  const now=goldCalc.goldComparison([current],new Date(2026,10,3),data);
+  assert.deepEqual([now.years,now.mine,now.gold,now.diff,now.from,now.to],[0,null,null,null,null,null]);
+  assert.deepEqual([now.current.month,now.current.gold,now.current.diff],[10,null,null],'선물옵션 0원도 기록 달이며 잔액만 있는 달은 제외');
+  const empty=goldCalc.goldComparison(null,new Date(2026,9,16));assert.equal(empty.years,0);assert.equal(empty.current,null);
+  assert.equal(goldCalc.goldComparison([{...yearOf(2021,[1]),year:'2021'}],new Date(2026,9,16)).years,1);
+});
+
+test('금 비교도 0 이하인 연복리 인수는 해당 값과 차이만 null로 둔다',()=>{
+  for(const rate of [-100,-120]){
+    const boundary=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
+      yearSummary=()=>({rate:${rate}});return goldComparison;})()`);
+    const r=boundary([yearOf(2024,[1]),yearOf(2025,[1])],new Date(2026,9,16));
+    assert.deepEqual([r.years,r.mine,r.diff],[2,null,null]);near(r.gold,((4367.8/2078.4)**(1/2)-1)*100);
+  }
+  const r=goldCalc.goldComparison([yearOf(2027,[1])],new Date(2028,0,1),{yearEnd:{2026:{close:1e300},2027:{close:1e-300}}});
+  assert.equal(r.rows[0].gold,-100);assert.equal(r.gold,null);assert.equal(r.diff,null);near(r.mine,(1.01-1)*100);
+});
+
+test('최상위 지수는 공통 연도의 수익률로 연복리를 다시 계산하며 사전 집계값이나 산술평균을 쓰지 않는다',()=>{
+  const sp={sp:1000,rows:[{year:2021,sp:1000},{year:2022,sp:5}]},gold={gold:-99,rows:[{year:2022,gold:10},{year:2023,gold:-99}]};
+  const before=structuredClone({sp,gold});
+  assert.equal(goldCalc.bestBenchmark(sp,gold),'gold','겹치지 않는 연도와 사전 집계값 제외');
+  assert.equal(goldCalc.bestBenchmark({rows:[{year:2022,sp:10}]},{rows:[{year:2021,gold:1000},{year:2022,gold:5}]}),'sp500');
+  assert.equal(goldCalc.bestBenchmark({rows:[{year:2021,sp:100},{year:2022,sp:-50}]},{rows:[{year:2022,gold:10},{year:2021,gold:10}]}),'gold','같은 해를 맞춰 복리로 계산');
+  assert.deepEqual({sp,gold},before,'조회 중 rows를 정렬하거나 바꾸지 않는다');
+});
+
+test('최상위 지수는 동점·빈 비교에 S&P 500을 쓰고 한쪽에만 rows가 있으면 그쪽을 고른다',()=>{
+  const sp={rows:[{year:2021,sp:10},{year:2022,sp:20}]},gold={rows:[{year:2022,gold:20},{year:2021,gold:10}]};
+  assert.equal(goldCalc.bestBenchmark(sp,gold),'sp500');assert.equal(goldCalc.bestBenchmark({rows:[]},gold),'gold');
+  assert.equal(goldCalc.bestBenchmark(sp,{rows:[]}),'sp500');assert.equal(goldCalc.bestBenchmark({rows:[]},{rows:[]}),'sp500');
+  assert.equal(goldCalc.bestBenchmark(null,gold),'gold');assert.equal(goldCalc.bestBenchmark(null,null),'sp500');
+  assert.equal(goldCalc.bestBenchmark({rows:[{year:2021,sp:1}]},{rows:[{year:2022,gold:20}]}),'sp500','양쪽 rows가 있지만 공통 연도 없음');
+});
+
+test('금 그래프는 올해 해당 월말과 지난해 연간을 비교하며 기존 그래프 필드와 S&P 500 값은 유지한다',()=>{
+  const today=new Date(2026,9,16),data=goldCalc.cleanGoldData(goldCollected()),spData=c.cleanSp500Data(collected()),year=yearOf(2026,Array(9).fill(1));
+  const chart=goldCalc.ledgerChartData(year,today,spData,data),strip=({gold,goldAt,goldDiff,...rest})=>rest;
+  assert.deepEqual(strip(chart),strip(c.ledgerChartData(year,today,spData)));
+  assert.deepEqual(chart.gold.map(p=>p.m),[8,9]);near(chart.gold[0].v,(1.08-1)*100);near(chart.gold[1].v,(1.1-1)*100);
+  near(chart.goldAt,(1.1-1)*100);near(chart.goldDiff,(1.01**9-1)*100-(1.1-1)*100);
+  const missing=goldCalc.ledgerChartData(yearOf(2026,Array(10).fill(1)),today,spData,data);
+  assert.deepEqual(missing.gold,chart.gold);assert.equal(missing.goldAt,null);assert.equal(missing.goldDiff,null,'앞달 값으로 대체하지 않는다');
+  const past=goldCalc.ledgerChartData(yearOf(2025,[1]),today,null,{...data,monthEnd:{'2025-06':{date:'2025-06-30',close:2609.1*1.1}}});
+  assert.deepEqual(past.gold.map(p=>p.m),[6,12]);near(past.gold[0].v,(1.1-1)*100);near(past.gold[1].v,(4367.8/2609.1-1)*100);
+  near(past.goldAt,(4367.8/2609.1-1)*100);near(past.goldDiff,(1.01-1)*100-(4367.8/2609.1-1)*100);
+  const december=goldCalc.ledgerChartData(yearOf(2025,[1]),today,null,{...data,monthEnd:{'2025-12':{date:'2025-12-30',close:4367.8}}});
+  assert.equal(december.gold.length,1,'12월 점을 중복 추가하지 않는다');near(december.gold[0].v,(4367.8/2609.1-1)*100);
+  for(const y of [yearOf(2027,[1]),yearOf(2026,[])]){
+    const r=goldCalc.ledgerChartData(y,today,spData,data);assert.deepEqual([r.gold,r.goldAt,r.goldDiff],[[],null,null]);
+  }
+  year.months[3].balances=[];const gap=goldCalc.ledgerChartData(year,today,spData,data);
+  assert.equal(gap.rate,null);assert.equal(gap.goldDiff,null);near(gap.goldAt,(1.1-1)*100,'내 수익률이 없어도 금 월말은 유지');
+});
+
+test('금 비교·지수 선택·그래프 조회만으로 기록과 수집 자료 및 저장 필드를 바꾸지 않는다',()=>{
+  const years=fixture().reverse(),raw=goldCollected(),data=goldCalc.cleanGoldData(raw),spData=c.cleanSp500Data(collected()),today=new Date(2026,9,16);
+  years[0].months.reverse();years[0].months[0].futures=0;
+  const before=structuredClone({years,raw,data,spData}),sp=c.sp500Comparison(years,today,spData),gold=goldCalc.goldComparison(years,today,data);
+  goldCalc.bestBenchmark(sp,gold);
+  for(const year of years){goldCalc.goldYearReturn(year.year,data);goldCalc.goldYtdAt(year.year,9,data);goldCalc.ledgerChartData(year,today,spData,data);}
+  assert.deepEqual({years,raw,data,spData},before);
+});
