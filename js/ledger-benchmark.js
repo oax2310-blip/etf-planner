@@ -33,11 +33,34 @@ function sp500YtdAt(year, month, data=null){
 // 연간: 연간 공표치, 12월 말 누적 공표치, 수집한 연말 종가 비율 순. 모두 없으면 null.
 const sp500YearReturn = (year, data=null) => finite(SP500_TR_RETURNS[year]) ?? finite(SP500_TR_YTD[`${year}-12`]) ?? sp500Ratio(data?.yearEnd?.[year], data?.yearEnd?.[year-1]);
 
+// 연도별 요약의 연복리: yearSummary.rate가 있는 해만 곱셈·기간에 넣고, 기록은 읽기만 한다.
+// 지난해까지는 시작한 달과 관계없이 해마다 1년, 올해(today 연도 이상)는 실현손익·월별 선물옵션을 기록한 마지막 달 m/12년으로 센다.
+// 올해에 기록한 달이 없으면 제외한다(잔액·달을 모르는 연 합계만 있는 올해도 제외). 0원 손익은 기록한 달이다.
+// rate = ((∏(1+r/100))^(1/period) − 1) × 100. 인수가 하나라도 0 이하이거나 계산할 해가 없으면 null.
+// 완료 연도 없이 올해 한 해만 있으면 partial=true, 연환산하지 않고 그해 rate를 그대로 둔다.
+// years는 포함한 해 수, period는 합산한 기간, from·to는 첫·마지막 해, month는 마지막 해가 올해 이상일 때 기록한 마지막 달(그 외 null).
+function compoundYearReturn(years, today=new Date()){
+  const thisYear=today.getFullYear(), rows=[];
+  for(const y of Array.isArray(years)?years:[]){
+    const rate=yearSummary(y).rate;if(rate===null)continue;
+    const year=Number(y.year), current=year>=thisYear;
+    const month=current?Math.max(0,...(Array.isArray(y.months)?y.months:[]).filter(m=>(monthPnl(m)!==null||finite(m?.futures)!==null)&&Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).map(m=>m.m))||null:null;
+    if(current&&!month)continue;
+    rows.push({year,rate,month,period:current?month/12:1});
+  }
+  rows.sort((a,b)=>a.year-b.year);
+  const period=rows.reduce((sum,r)=>sum+r.period,0), first=rows[0], last=rows[rows.length-1], partial=rows.length===1&&first.year>=thisYear;
+  const valid=rows.every(r=>1+r.rate/100>0), growth=rows.reduce((g,r)=>g*(1+r.rate/100),1);
+  const rate=rows.length&&valid?(partial?first.rate:(growth**(1/period)-1)*100):null;
+  return {rate,years:rows.length,period,from:first?.year??null,to:last?.year??null,month:last?.month??null,partial};
+}
+
 // 비교 기간은 2021년부터 오늘 기준 지난해(완료 연도)까지이며 해가 바뀌면 자동으로 늘어난다.
-// 내 연 수익률(yearSummary.rate, 선물·옵션 포함)과 S&P 500 연간 수익률이 모두 있는 해만 같은 연도끼리 평균한다.
-// 두 평균은 기존 ‘연평균 수익률’과 같은 연 수익률 산술평균이다(연복리 CAGR 아님). diff = 내 평균 − S&P 500 평균(%p, 반올림 전 값).
-// missing: 내 연 수익률이 없는 완료 연도(기록 없음·분모 부족), pending: S&P 500 값이 아직 없는 완료 연도. 둘 다 평균에서 뺀다.
-// 진행 중인 올해는 평균에 넣지 않고 current에 월 단위로 따로 비교한다. month = 올해 실현손익·선물옵션을 기록한 마지막 달,
+// 내 연 수익률(yearSummary.rate, 선물·옵션 포함)과 S&P 500 연간 수익률이 모두 있는 해만 같은 rows에 넣는다.
+// mine·sp는 각각 ((∏(1+r/100))^(1/n) − 1) × 100인 연복리(n = rows 수). 인수가 하나라도 0 이하이거나 rows가 없으면 그 값은 null.
+// diff = 내 연복리 − S&P 500 연복리(%p, 반올림 전 값). 어느 한쪽이 null이면 diff도 null이다.
+// missing: 내 연 수익률이 없는 완료 연도(기록 없음·분모 부족), pending: S&P 500 값이 아직 없는 완료 연도. 둘 다 연복리에서 뺀다.
+// 진행 중인 올해는 연복리에 넣지 않고 current에 월 단위로 따로 비교한다. month = 올해 실현손익·선물옵션을 기록한 마지막 달,
 // rate = 내 누적 연 수익률(연도별 요약 값), sp = 그달 말 S&P 500 누적 수익률(값이 아직 없으면 null), diff = rate − sp.
 function sp500Comparison(years, today=new Date(), data=null){
   const list=Array.isArray(years)?years:[], thisYear=today.getFullYear(), end=thisYear-1;
@@ -49,8 +72,8 @@ function sp500Comparison(years, today=new Date(), data=null){
     else if(mine===null)missing.push(year);
     else rows.push({year,mine,sp});
   }
-  const mean=key=>rows.length?rows.reduce((sum,r)=>sum+r[key],0)/rows.length:null;
-  const mine=mean("mine"), sp=mean("sp"), record=recordOf(thisYear), now=record?yearSummary(record):null;
+  const compound=key=>rows.length&&rows.every(r=>1+r[key]/100>0)?(rows.reduce((g,r)=>g*(1+r[key]/100),1)**(1/rows.length)-1)*100:null;
+  const mine=compound("mine"), sp=compound("sp"), record=recordOf(thisYear), now=record?yearSummary(record):null;
   let current=null;
   if(now){
     const month=Math.max(0,...(Array.isArray(record.months)?record.months:[]).filter(m=>(monthPnl(m)!==null||finite(m?.futures)!==null)&&Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).map(m=>m.m))||null;

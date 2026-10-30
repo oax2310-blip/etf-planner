@@ -69,7 +69,9 @@ function renderLedger(){
   if(!L||!L.years.length){ view.innerHTML=emptyCard("월별 손익 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startLedger" type="button">올해부터 시작</button>`);
     el("startLedger").onclick=()=>{ doc.ledger={savedAt:"",years:[{year:new Date().getFullYear(),accounts:[],months:[]}]}; saveSection("ledger"); render(); }; return; }
   const years=[...L.years].sort((a,b)=>a.year-b.year), y=years.find(x=>x.year===ui.year)||years[years.length-1], ys=yearSummary(y);
-  const accounts=ledgerAccounts(y), avg=averageYearReturn(years);
+  const accounts=ledgerAccounts(y), compound=compoundYearReturn(years);
+  const compoundHint=compound.partial?`올해 1~${compound.month}월 누적 · 1년 미만은 연환산하지 않음`
+    :compound.years?`${compound.from}~${compound.to}년${compound.month?` ${compound.month}월`:""} · ${nf2.format(compound.period)}년`:"계산할 수 있는 연도가 없습니다";
   // 잔액이 전달과 똑같은 달(엑셀에서 전달 값을 그대로 둔 것일 수 있음)은 작게 표시
   const sameAsPrev=m=>{ const prev=y.months.find(x=>x.m===m.m-1), values=r=>accounts.map(x=>finite(r?.balances?.[x.index]));return Array.isArray(m.balances)&&values(m).some(v=>v!==null)&&JSON.stringify(values(m))===JSON.stringify(values(prev)); };
   // 달 줄의 실현손익·수익률은 그달 선물·옵션을 더한 값이다(맨 위 그래프의 달 값과 같다). 입력 창에서는 따로 넣는다.
@@ -88,7 +90,7 @@ function renderLedger(){
       <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}<small>월 복리</small></span><span>${ys.annual!==null?`<small>연환산 ${pc(ys.annual)}</small>`:""}</span></div></section>
     ${y.note?`<p class="footnote">${escA(y.note)}</p>`:""}
     <div class="section-heading"><h2>연도별 요약</h2><span>연 수익률(월 복리) · 선물·옵션 포함</span></div>
-    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연평균 수익률 <small>${avg.years}개 연도의 연 수익률 평균${years.some(x=>Number(x.year)===new Date().getFullYear()&&yearSummary(x).rate!==null)?" · 올해 포함":""}</small></span><strong class="${avg.rate<0?"neg":""}">${pc(avg.rate)}</strong></div>${sp500Block(years)}</section>`;
+    <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연복리 수익률 <small>${compoundHint}</small></span><strong class="${compound.rate<0?"neg":""}">${pc(compound.rate)}</strong></div>${sp500Block(years)}</section>`;
   all("[data-pick-year]").forEach(b=>b.onclick=()=>{ setUi({year:Number(b.dataset.pickYear)}); renderLedger(); });
   all("[data-ledger-chart]").forEach(b=>b.onclick=()=>{ setUi({ledgerChart:b.dataset.ledgerChart}); renderLedger(); });
   // 고른 연도 칩이 가운데(끝 연도면 연도 추가까지) 보이게 연도 줄을 가로로 민다(세로 스크롤은 건드리지 않는다).
@@ -101,8 +103,8 @@ function renderLedger(){
     if(!confirm(`${next}년을 추가할까요? 계좌 목록은 ${last.year}년과 같게 시작합니다.`)) return;
     L.years.push({year:next,accounts:ledgerAccounts(last).map(x=>({...x.account})),months:[]}); setUi({year:next}); saveSection("ledger"); render(); };
 }
-// 연도별 요약 아래 S&P 500 연평균 비교(완료 연도의 연 수익률 산술평균끼리). 계산 기준은 ledger-benchmark.js sp500Comparison 주석.
-// 세 값은 S&P 500 공표치와 같은 소수 둘째 자리로 고정해 차이(%p)가 표시된 두 평균의 차와 맞게 한다.
+// 연도별 요약 아래 S&P 500 연복리 비교. 계산 기준은 ledger-benchmark.js sp500Comparison 주석.
+// 세 값은 S&P 500 공표치와 같은 소수 둘째 자리로 표시한다.
 const nfFixed2 = new Intl.NumberFormat("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct2 = (v, unit="%") => v===null||v===undefined||!Number.isFinite(Number(v)) ? "—" : `${unit==="%p"&&v>0?"+":""}${nfFixed2.format(Number(v))}${unit}`;
 // S&P 500 연말·월말 종가(공개 data/sp500-tr.json, 매월 자동 수집: scripts/collect-sp500.cjs). 페이지마다 한 번 읽고, 못 읽으면 공표치만으로 비교한다.
@@ -117,15 +119,15 @@ function sp500Block(years){
   if(c.missing.length)notes.push(`${c.missing.join("·")}년은 내 연 수익률이 없어 제외`);
   if(c.pending.length)notes.push(`${c.pending.join("·")}년 S&amp;P 500 값 반영 전`);
   const cell=(label,value,cls,hint)=>`<div><span>${label}</span><strong class="${cls?"neg":""}">${value}</strong><small>${hint}</small></div>`;
-  return `<div class="benchmark"><div class="benchmark-head"><b>S&amp;P 500 비교</b><small>${c.years?`${c.from}~${c.to}년 완료 ${c.years}개 연도 · `:""}연 수익률 산술평균${notes.length?` · ${notes.join(" · ")}`:""}</small></div>
-    ${c.years?`<div class="benchmark-grid">${cell("내 연평균",pct2(c.mine),c.mine<0,"원화 · 실현손익")}${cell("S&amp;P 500 연평균",pct2(c.sp),c.sp<0,"달러 · 배당 재투자")}${cell("차이",pct2(c.diff,"%p"),c.diff<0,"내 연평균 − S&amp;P 500")}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
+  return `<div class="benchmark"><div class="benchmark-head"><b>S&amp;P 500 비교</b><small>${c.years?`${c.from}~${c.to}년 완료 ${c.years}개 연도 · `:""}같은 연도 연복리${notes.length?` · ${notes.join(" · ")}`:""}</small></div>
+    ${c.years?`<div class="benchmark-grid">${cell("내 연복리",pct2(c.mine),c.mine<0,"원화 · 실현손익")}${cell("S&amp;P 500 연복리",pct2(c.sp),c.sp<0,"달러 · 배당 재투자")}${cell("차이",pct2(c.diff,"%p"),c.diff<0,"내 연복리 − S&amp;P 500")}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
     ${now&&now.rate!==null&&now.month?sp500YtdRow(now):""}
     <p class="benchmark-note">S&amp;P 500은 S&amp;P Dow Jones Indices의 Total Return 지수(배당 재투자) 달러 수익률이라 원·달러 환율 변동이 빠져 있고, 내 수익률은 원화 실현손익 기준이라 평가손익이 빠져 있습니다.</p></div>`;
 }
 // 올해는 기록한 마지막 달 말까지 월 단위로 같은 기간을 비교한다. 위 세 칸과 같은 열에 맞춘다.
 function sp500YtdRow(now){
   const span=now.month>1?`1~${now.month}월`:"1월", item=(label,value,neg)=>`<span><small>${label}</small><b class="${neg?"neg":""}">${value}</b></span>`;
-  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${now.sp!==null?`S&amp;P 500은 ${now.month}월 말 기준`:`S&amp;P 500 ${now.month}월 말 값 반영 전`} · 연간 확정 후 평균에 포함</small></div>
+  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${now.sp!==null?`S&amp;P 500은 ${now.month}월 말 기준`:`S&amp;P 500 ${now.month}월 말 값 반영 전`} · 연간 확정 후 연복리에 포함</small></div>
     <div class="benchmark-ytd-cells">${item("내 누적",pct2(now.rate),now.rate<0)}${item("S&amp;P 500 누적",pct2(now.sp),now.sp<0)}${item("차이",pct2(now.diff,"%p"),now.diff<0)}</div></div>`;
 }
 // 자주 적는 손익 항목은 빈 전용 칸으로 보여 준다. 실제 금액을 넣은 항목만 pnlEntries에 저장하고, 열기만 해서는 기록을 만들지 않는다.

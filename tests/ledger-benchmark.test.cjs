@@ -1,4 +1,4 @@
-// 가상 월별 손익 기록으로 S&P 500 연평균·올해 누적 비교만 검증한다. 실제 자산·손익 기록은 사용하지 않는다.
+// 가상 월별 손익 기록으로 연복리·S&P 500·올해 누적을 검증한다. 실제 자산·손익 기록은 사용하지 않는다.
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const root=path.join(__dirname,'..');
 const read=f=>fs.readFileSync(path.join(root,f),'utf8');
 const c=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
-return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,sp500YtdAt,sp500YearReturn,sp500Comparison,ledgerChartData,yearSummary,averageYearReturn};})()`);
+return {SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,sp500YtdAt,sp500YearReturn,compoundYearReturn,sp500Comparison,ledgerChartData,yearSummary,averageYearReturn};})()`);
 const near=(a,b,msg)=>assert.ok(Math.abs(a-b)<1e-9,`${msg}: ${a} ≠ ${b}`);
 // 월 수익률 r%를 기록한 가상 연도(총자산 1,000,000원, 월 손익 = r% × 총자산).
 const yearOf=(year,rates,extra={})=>({year,accounts:[{name:'가상 계좌'}],months:rates.map((r,i)=>({m:i+1,pnl:r*10000,balances:[1000000]})),...extra});
@@ -15,8 +15,71 @@ const fixture=()=>[yearOf(2021,Array(12).fill(2)),yearOf(2022,Array(12).fill(-1)
   yearOf(2024,Array(12).fill(2.5)),yearOf(2025,Array(12).fill(1)),yearOf(2026,Array(9).fill(1))];
 const SP=[28.71,-18.11,26.29,25.02,17.88]; // S&P DJI 공표 S&P 500 Total Return 2021~2025(%)
 const fixtureRates=[(1.02**12-1)*100,(.99**12-1)*100,(1.015**12*1.05-1)*100,(1.025**12-1)*100,(1.01**12-1)*100,(1.01**9-1)*100];
-const completedMean=fixtureRates.slice(0,5).reduce((sum,r)=>sum+r,0)/5,spMean=SP.reduce((sum,r)=>sum+r,0)/SP.length;
+const fixtureGrowth=1.02**12*.99**12*1.015**12*1.05*1.025**12*1.01**12;
+const completedCompound=(fixtureGrowth**(1/5)-1)*100,spCompound=(SP.reduce((g,r)=>g*(1+r/100),1)**(1/SP.length)-1)*100;
 const includes=(html,text,msg)=>assert.ok(html.includes(text),msg||text);
+
+test('연복리 요약은 완료 5년과 올해 마지막 기록 9월을 5.75년으로 계산하고 원본을 바꾸지 않는다',()=>{
+  const years=fixture().reverse(),before=JSON.stringify(years),r=c.compoundYearReturn(years,new Date(2026,9,16));
+  assert.deepEqual({...r,rate:null},{rate:null,years:6,period:5+9/12,from:2021,to:2026,month:9,partial:false});
+  near(r.rate,((fixtureGrowth*1.01**9)**(1/(5+9/12))-1)*100,'올해 포함 연복리');
+  const next=c.compoundYearReturn(years,new Date(2027,0,1));
+  assert.deepEqual([next.years,next.period,next.from,next.to,next.month,next.partial],[6,6,2021,2026,null,false]);
+  near(next.rate,((fixtureGrowth*1.01**9)**(1/6)-1)*100,'해가 바뀌면 지난해는 1년으로 센다');
+  assert.equal(JSON.stringify(years),before,'정렬·조회만으로 기록이나 저장 필드를 바꾸지 않는다');
+});
+
+test('완료 연도 없이 올해만 있으면 partial로 원래 누적을 그대로 두고 마지막 월을 기간으로 센다',()=>{
+  const year=yearOf(2026,Array(9).fill(1)),r=c.compoundYearReturn([year],new Date(2026,9,16));
+  assert.deepEqual({...r,rate:null},{rate:null,years:1,period:9/12,from:2026,to:2026,month:9,partial:true});
+  assert.equal(r.rate,c.yearSummary(year).rate,'올해 rate를 그대로 반환');
+  near(r.rate,(1.01**9-1)*100,'올해 누적을 연환산하지 않는다');
+  const sparse=yearOf(2026,[1]);sparse.months[0].m=9;sparse.months.push({m:12,balances:[1000000]});
+  const only=c.compoundYearReturn([sparse],new Date(2026,9,16));
+  assert.deepEqual([only.period,only.month,only.partial],[9/12,9,true],'입력 건수·잔액만 있는 달 대신 손익을 기록한 마지막 월');
+  assert.equal(only.rate,c.yearSummary(sparse).rate);
+});
+
+test('연복리 기간은 늦게 시작한 완료 연도도 1년이고 올해 이후 월별 선물옵션 0원도 기록한 달이다',()=>{
+  const past=yearOf('2025',[10]);past.months[0].m=7;
+  for(const year of [2026,2027]){
+    const current={year,accounts:[],months:[{m:4,pnl:10,total:1000},{m:9,futures:0,total:1000},{m:12,total:1000}]};
+    const years=[current,past],before=JSON.stringify(years),r=c.compoundYearReturn(years,new Date(2026,9,16));
+    assert.deepEqual([r.years,r.period,r.from,r.to,r.month,r.partial],[2,1+9/12,2025,year,9,false]);
+    near(r.rate,((1.1*1.01)**(1/(1+9/12))-1)*100,'시작한 달에 상관없이 완료 연도는 1년');
+    assert.equal(JSON.stringify(years),before);
+  }
+});
+
+test('올해 기록한 달이 없거나 연 수익률이 없는 해는 연복리 곱과 기간에서 모두 제외한다',()=>{
+  const today=new Date(2026,9,16),past=yearOf(2021,[10]);
+  const current={year:2026,accounts:[],futures:100,months:[{m:9,total:1000}]};
+  assert.notEqual(c.yearSummary(current).rate,null,'달을 모르는 연 합계만 있는 올해도 제외할 수 있어야 한다');
+  const empty=yearOf(2022,[]),missing={year:2024,accounts:[],months:[{m:1,pnl:100}]};
+  const years=[current,missing,empty,past],before=JSON.stringify(years),r=c.compoundYearReturn(years,today);
+  assert.deepEqual([r.years,r.period,r.from,r.to,r.month,r.partial],[1,1,2021,2021,null,false]);
+  near(r.rate,(1.1-1)*100,'기록 없는 중간 해는 기간에 넣지 않는다');
+  for(const input of [null,[],[current],[empty,missing]])assert.deepEqual(c.compoundYearReturn(input,today),{rate:null,years:0,period:0,from:null,to:null,month:null,partial:false});
+  assert.equal(JSON.stringify(years),before);
+});
+
+test('연복리 인수가 0 이하이면 해당 수익률과 비교 차이를 null로 두되 같은 rows와 기간은 유지한다',()=>{
+  const today=new Date(2026,9,16),years=[yearOf(2024,[1]),yearOf(2025,[1])];
+  // 연 요약의 경계 반환값을 주입해 이 단계의 인수 검사를 독립적으로 검증한다.
+  for(const rate of [-100,-120]){
+    const boundary=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
+      yearSummary=()=>({rate:${rate}});return {compoundYearReturn,sp500Comparison};})()`);
+    const r=boundary.compoundYearReturn(years,today),comparison=boundary.sp500Comparison(years,today);
+    assert.deepEqual([r.rate,r.years,r.period,r.from,r.to],[null,2,2,2024,2025],'음수 인수 두 개의 곱이 양수여도 null');
+    assert.deepEqual(comparison.rows.map(r=>r.year),[2024,2025]);assert.equal(comparison.mine,null);assert.equal(comparison.diff,null);
+    near(comparison.sp,((1.2502*1.1788)**(1/2)-1)*100,'다른 쪽 연복리는 유지');
+    const partial=boundary.compoundYearReturn([yearOf(2026,[1])],today);assert.equal(partial.rate,null);assert.equal(partial.partial,true);
+  }
+  const data={yearEnd:{2025:{close:1e300},2026:{close:1e-300}}};
+  const comparison=c.sp500Comparison([yearOf(2026,[1])],new Date(2027,0,1),data);
+  assert.equal(comparison.rows[0].sp,-100,'양수 지수 종가 비율이 반올림되어 인수가 0인 경계');
+  assert.equal(comparison.sp,null);assert.equal(comparison.diff,null);near(comparison.mine,(1.01-1)*100);
+});
 
 test('S&P 500 자료는 2021년부터 연속된 Total Return 확정치만 담고 바꿀 수 없다',()=>{
   const years=Object.keys(c.SP500_TR_RETURNS).map(Number);
@@ -36,16 +99,15 @@ test('월말 누적 수익률은 연-월 키의 같은 지수 값이며 S&P DJI 
   assert.equal(c.sp500YearReturn(2025),17.88);assert.equal(c.sp500YearReturn(2026),null,'12월 말 값이 없으면 연간 수익률도 없다');
 });
 
-test('완료 연도(2021~지난해)의 내 연 수익률과 S&P 500을 같은 연 수익률 산술평균으로 비교하고 올해는 누적만 따로 둔다',()=>{
+test('완료 연도(2021~지난해)의 내 연 수익률과 S&P 500을 같은 연도 연복리로 비교하고 올해는 누적만 따로 둔다',()=>{
   const years=fixture(),before=JSON.stringify(years),r=c.sp500Comparison(years,new Date(2026,9,16));
   assert.deepEqual(r.rows.map(x=>x.year),[2021,2022,2023,2024,2025]);
   r.rows.forEach((x,i)=>near(x.mine,fixtureRates[i],`${x.year}년 월 복리`));
   assert.deepEqual([r.from,r.to,r.end,r.years],[2021,2025,2025,5]);
-  near(r.mine,completedMean,'내 연평균');
-  near(r.sp,79.79/5,'S&P 500 연평균 = (28.71 − 18.11 + 26.29 + 25.02 + 17.88) ÷ 5');
-  near(r.diff,completedMean-spMean,'차이는 반올림 전 평균끼리');
-  const cagr=(SP.reduce((p,v)=>p*(1+v/100),1)**(1/5)-1)*100;
-  assert.ok(Math.abs(r.sp-cagr)>1,`연복리(${cagr.toFixed(2)}%)와 산술평균을 섞지 않는다`);
+  near(r.mine,completedCompound,'내 연복리');
+  near(r.sp,spCompound,'S&P 500은 같은 5개 완료 연도의 연복리');
+  near(r.diff,completedCompound-spCompound,'차이는 반올림 전 연복리끼리');
+  assert.equal(r.diff,r.mine-r.sp,'화면의 반올림한 숫자를 빼지 않는다');
   for(const x of r.rows)near(x.mine,c.yearSummary(years.find(y=>y.year===x.year)).rate,`${x.year}년은 연도별 요약 수익률 그대로`);
   assert.deepEqual({...r.current,rate:null,diff:null},{year:2026,rate:null,months:9,month:9,sp:12.75,diff:null});near(r.current.rate,(1.01**9-1)*100,'올해 누적');near(r.current.diff,(1.01**9-1)*100-12.75,'올해 차이는 같은 9월 말까지');
   near(c.averageYearReturn(years).rate,fixtureRates.reduce((sum,r)=>sum+r,0)/6,'기존 연평균(올해 포함) 계산은 그대로');
@@ -53,10 +115,10 @@ test('완료 연도(2021~지난해)의 내 연 수익률과 S&P 500을 같은 �
   assert.equal(JSON.stringify(years),before,'조회만으로 기록을 바꾸지 않는다');
 });
 
-test('해가 바뀌면 지난해가 비교 기간에 들어가고, S&P 500 확정치가 없으면 그해를 양쪽 평균에서 함께 뺀다',()=>{
+test('해가 바뀌면 지난해가 비교 기간에 들어가고, S&P 500 확정치가 없으면 그해를 양쪽 연복리에서 함께 뺀다',()=>{
   const years=fixture(),next=c.sp500Comparison(years,new Date(2027,0,5));
   assert.equal(next.end,2026);assert.deepEqual(next.pending,[2026],'2026년 확정치를 넣기 전');
-  assert.deepEqual([next.from,next.to,next.years],[2021,2025,5]);near(next.mine,completedMean,'내 평균도 같은 연도만');
+  assert.deepEqual([next.from,next.to,next.years],[2021,2025,5]);near(next.mine,completedCompound,'내 연복리도 같은 연도만');
   assert.equal(next.current,null,'2027년 기록이 없으면 올해 누적을 표시하지 않는다');
   const newYear=c.sp500Comparison(years,new Date(2026,0,1));assert.equal(newYear.end,2025);assert.equal(newYear.years,5);
   const early=c.sp500Comparison(years,new Date(2022,5,1));assert.deepEqual([early.from,early.to,early.years],[2021,2021,1]);near(early.diff,(1.02**12-1)*100-28.71,'2022년 중에는 2021년만');
@@ -67,8 +129,8 @@ test('내 연 수익률이 없는 완료 연도는 S&P 500 쪽에서도 빼고, 
   years.splice(3,1);// 2024년 기록 없음
   const r=c.sp500Comparison(years,new Date(2026,9,16));
   assert.deepEqual(r.missing,[2022,2024]);assert.deepEqual(r.rows.map(x=>x.year),[2021,2023,2025]);
-  near(r.mine,(fixtureRates[0]+fixtureRates[2]+fixtureRates[4])/3,'내 평균');
-  near(c.sp500Comparison(fixture().map(y=>y.year===2026?yearOf(2026,Array(8).fill(1)):y),new Date(2026,9,16)).current.sp,13.14,'8월까지 기록했으면 8월 말 S&P 500과 비교');near(r.sp,(28.71+26.29+17.88)/3,'같은 연도의 S&P 500 평균');
+  near(r.mine,((1.02**12*1.015**12*1.05*1.01**12)**(1/3)-1)*100,'내 연복리');
+  near(c.sp500Comparison(fixture().map(y=>y.year===2026?yearOf(2026,Array(8).fill(1)):y),new Date(2026,9,16)).current.sp,13.14,'8월까지 기록했으면 8월 말 S&P 500과 비교');near(r.sp,((1.2871*1.2629*1.1788)**(1/3)-1)*100,'같은 연도의 S&P 500 연복리');
   const none=c.sp500Comparison([yearOf(2026,[1])],new Date(2026,9,16));
   assert.deepEqual([none.years,none.mine,none.sp,none.diff,none.from,none.to],[0,null,null,null,null,null]);
   assert.deepEqual([none.current.months,none.current.month,none.current.sp,none.current.diff],[1,1,null,null],'1월 말 값이 없으면 S&P 500 누적은 비운다');
@@ -114,26 +176,34 @@ function ledgerHtml(data,now,ui=null){
   return node('ledgerView').innerHTML;
 }
 
-test('연도별 요약 아래에 내 연평균·S&P 500 연평균·차이(%p)와 기준을 표시하고 기존 요약은 유지한다',()=>{
+test('연도별 요약 아래에 올해 포함 연복리와 내 연복리·S&P 500 연복리·차이(%p)의 기간을 표시한다',()=>{
   const data={version:1,ledger:{savedAt:'2026-01-01',years:fixture()}},before=JSON.stringify(data);
   const html=ledgerHtml(data,new Date(2026,9,16).getTime()),block=html.slice(html.indexOf('class="benchmark"'));
-  includes(html,`연평균 수익률 <small>6개 연도의 연 수익률 평균 · 올해 포함</small></span><strong class="">${(fixtureRates.reduce((sum,r)=>sum+r,0)/6).toFixed(1)}%</strong>`,'기존 연평균 줄 유지');
+  includes(html,`연복리 수익률 <small>2021~2026년 9월 · 5.75년</small></span><strong class="">${(((fixtureGrowth*1.01**9)**(1/(5+9/12))-1)*100).toFixed(1)}%</strong>`,'올해를 마지막 기록 달까지 기간에 포함');
   assert.match(html,/연 수익률\(월 복리\) · 선물·옵션 포함/);
-  assert.match(block,/S&amp;P 500 비교<\/b><small>2021~2025년 완료 5개 연도 · 연 수익률 산술평균<\/small>/);
-  includes(block,`<span>내 연평균</span><strong class="">${completedMean.toFixed(2)}%</strong><small>원화 · 실현손익</small>`);
-  assert.match(block,/<span>S&amp;P 500 연평균<\/span><strong class="">15.96%<\/strong><small>달러 · 배당 재투자<\/small>/);
-  includes(block,`<span>차이</span><strong class="">+${(completedMean-spMean).toFixed(2)}%p</strong>`);
-  assert.match(block,/올해 2026년 1~9월 누적<small>S&amp;P 500은 9월 말 기준 · 연간 확정 후 평균에 포함<\/small>/);
+  assert.match(block,/S&amp;P 500 비교<\/b><small>2021~2025년 완료 5개 연도 · 같은 연도 연복리<\/small>/);
+  includes(block,`<span>내 연복리</span><strong class="">${completedCompound.toFixed(2)}%</strong><small>원화 · 실현손익</small>`);
+  includes(block,`<span>S&amp;P 500 연복리</span><strong class="">${spCompound.toFixed(2)}%</strong><small>달러 · 배당 재투자</small>`);
+  includes(block,`<span>차이</span><strong class="">+${(completedCompound-spCompound).toFixed(2)}%p</strong>`);
+  assert.match(block,/올해 2026년 1~9월 누적<small>S&amp;P 500은 9월 말 기준 · 연간 확정 후 연복리에 포함<\/small>/);
+  assert.doesNotMatch(html,/연평균|산술평균/);
   includes(block,`<span><small>내 누적</small><b class="">${((1.01**9-1)*100).toFixed(2)}%</b></span><span><small>S&amp;P 500 누적</small><b class="">12.75%</b></span><span><small>차이</small><b class="neg">${((1.01**9-1)*100-12.75).toFixed(2)}%p</b></span>`);
   assert.match(block,/Total Return 지수\(배당 재투자\) 달러 수익률.*원·달러 환율 변동.*원화 실현손익 기준이라 평가손익/);
   assert.equal(JSON.stringify(data),before);
   const pending=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture()}},new Date(2027,0,5).getTime());
-  assert.match(pending,/2021~2025년 완료 5개 연도 · 연 수익률 산술평균 · 2026년 S&amp;P 500 값 반영 전/);
+  assert.match(pending,/2021~2025년 완료 5개 연도 · 같은 연도 연복리 · 2026년 S&amp;P 500 값 반영 전/);
   assert.doesNotMatch(pending,/올해 2027년/);
   const october=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture().map(y=>y.year===2026?yearOf(2026,Array(10).fill(1)):y)}},new Date(2026,10,3).getTime());
   assert.match(october,/올해 2026년 1~10월 누적<small>S&amp;P 500 10월 말 값 반영 전/);assert.match(october,/<small>S&amp;P 500 누적<\/small><b class="">—<\/b>/);
   const empty=ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,[1])]}},new Date(2026,9,16).getTime());
   assert.match(empty,/비교할 완료 연도가 아직 없습니다/);assert.doesNotMatch(empty,/benchmark-grid/);assert.match(empty,/올해 2026년 1월 누적/);
+});
+
+test('연복리 표시 줄은 올해만 있으면 누적 안내, 완료 연도만 있으면 정수 기간, 계산할 해가 없으면 빈 값이다',()=>{
+  const today=new Date(2026,9,16).getTime(),render=years=>ledgerHtml({version:1,ledger:{savedAt:'',years}},today);
+  includes(render([yearOf(2026,Array(9).fill(1))]),`연복리 수익률 <small>올해 1~9월 누적 · 1년 미만은 연환산하지 않음</small></span><strong class="">${((1.01**9-1)*100).toFixed(1)}%</strong>`);
+  includes(render(fixture().slice(0,5)),`연복리 수익률 <small>2021~2025년 · 5년</small></span><strong class="">${completedCompound.toFixed(1)}%</strong>`);
+  includes(render([yearOf(2026,[])]),'연복리 수익률 <small>계산할 수 있는 연도가 없습니다</small></span><strong class="">—</strong>');
 });
 
 test('월별 손익: 앞뒤 달에는 잔액이 있는데 그달만 빈 계좌는 표시만 하고, 아직 없던·해지한 계좌는 표시하지 않는다',()=>{
