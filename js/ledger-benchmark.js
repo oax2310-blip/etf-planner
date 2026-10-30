@@ -131,6 +131,12 @@ function bestBenchmark(spCmp, goldCmp){
   const sp=compound(common.map(r=>r.sp)), gold=compound(common.map(r=>goldByYear.get(Number(r.year))));
   return gold!==null&&(sp===null||gold>sp)?"gold":"sp500";
 }
+// 같은 기간의 지수 수익률을 비교한다. 둘 다 유한수면 높은 쪽, 동점은 sp500이며 한쪽만 유한수면 그쪽을 고른다.
+// 둘 다 유한수가 아니면 fallback(기본 sp500)을 그대로 쓴다. null·문자열을 숫자로 바꾸지 않는다.
+function periodBenchmark(spValue, goldValue, fallback="sp500"){
+  if(Number.isFinite(spValue))return Number.isFinite(goldValue)&&goldValue>spValue?"gold":"sp500";
+  return Number.isFinite(goldValue)?"gold":fallback;
+}
 // 월별 손익 맨 위 카드의 누적 그래프 자료(연도 하나). 기록은 읽기만 한다.
 // 실현손익·월별 선물옵션(m.futures)을 기록한 달마다 r_m = ((실현손익||0) + (선물옵션||0)) ÷ 그달 총자산, g(초기 1) *= 1+r_m으로 월 복리 누적한다.
 // rate = [{m, v:(g−1)×100}], won = 그 손익을 더한 누적(원). 총자산이 0 이하·빈 달(unrated), 0 이하인 인수 등 yearSummary.rate가 null인 기록은 rate도 null이다.
@@ -171,4 +177,4 @@ function ledgerChartData(year, today=new Date(), data=null, goldData=null){
     sp, spAt, diff:s.rate!==null&&spAt!==null?s.rate-spAt:null,
     gold, goldAt, goldDiff:s.rate!==null&&goldAt!==null?s.rate-goldAt:null};
 }
-if(typeof module!=="undefined"&&module.exports)module.exports={SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END,cleanGoldData};
+if(typeof module!=="undefined"&&module.exports)module.exports={SP500_TR_RETURNS,SP500_TR_YTD,SP500_COMPARE_FROM,cleanSp500Data,GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END,cleanGoldData,periodBenchmark};
