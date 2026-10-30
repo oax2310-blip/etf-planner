@@ -1,0 +1,76 @@
+name: LBMA Gold Price PM 월말 자료 갱신
+# 금 비교용 연말·월말 PM 달러 값만 공개 자료로 기록한다(scripts/collect-gold.cjs). Secrets·개인 기록을 쓰지 않는다.
+on:
+  schedule:
+    # 매월 1~7일 UTC 22:50(한국시간 다음날 07:50). 지난달 말 값이 처음 잡힐 때만 커밋하고 나머지 날은 그대로 둔다.
+    - cron: '50 22 1-7 * *'
+  push:
+    branches: [main]
+    paths:
+      - scripts/collect-gold.cjs
+      - js/ledger-benchmark.js
+      - .github/workflows/gold-lbma.yml
+  # PR에서는 실제 수집과 연말 상수 확인만 하고 기록하지 않는다(읽기 권한).
+  pull_request:
+    paths:
+      - scripts/collect-gold.cjs
+      - js/ledger-benchmark.js
+      - .github/workflows/gold-lbma.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: public-gold-lbma-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (태그 이동에 영향받지 않게 커밋 고정)
+        with:
+          persist-credentials: false # PR 시험은 기록하지 않으므로 토큰을 남기지 않는다
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: 수집 시험(기록 없음)
+        run: node scripts/collect-gold.cjs --dry-run
+      - name: 계산·자료 계약 확인
+        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/gold-collect.test.cjs
+  collect:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (태그 이동에 영향받지 않게 커밋 고정)
+        with:
+          ref: main
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: LBMA Gold Price PM 수집
+        run: node scripts/collect-gold.cjs
+      - name: 계산·자료 계약 확인
+        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/gold-collect.test.cjs
+      - name: 공개 금 자료만 기록
+        id: commit
+        run: |
+          if [ -n "$(git status --porcelain -- data/gold-lbma.json)" ]; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add data/gold-lbma.json
+            git commit -m 'LBMA Gold Price PM 월말 값 갱신'
+            git pull --rebase origin main
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # GITHUB_TOKEN push는 Pages 빌드를 시작하지 않으므로 공식 Pages API로 요청.
+      - name: GitHub Pages 자료 반영 요청
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"
