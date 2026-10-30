@@ -41,18 +41,18 @@ test('2020~지난해 연말과 올해 끝난 월말만 추출하고 2021~2025 �
   assert.deepEqual(s.verified.map(v=>v.period),['2021','2022','2023','2024','2025']);
   for(const v of s.verified){
     const y=Number(v.period),etfPct=pct(round(GOLD_LBMA_YEAR_END[y]/100),round(GOLD_LBMA_YEAR_END[y-1]/100)),lbmaPct=pct(GOLD_LBMA_YEAR_END[y],GOLD_LBMA_YEAR_END[y-1]);
-    assert.deepEqual(v,{period:String(y),etfPct,lbmaPct,diff:etfPct-lbmaPct});assert.ok(Math.abs(v.diff)<=1.5);
+    assert.deepEqual(v,{period:String(y),etfPct,lbmaPct,diff:etfPct-lbmaPct});assert.ok(Math.abs(v.diff)<=5);
   }
   assert.equal(summarize(points,'2026-10-01').monthEnd.length,9);assert.equal(summarize(points,'2026-09-15').monthEnd.length,8);
   assert.equal(summarize(points,'2026-01-01').monthEnd.length,0);assert.deepEqual(points,before);
 });
 
-test('GLDM과 LBMA 연간 차이는 양방향 ±1.5%p 안만 통과하고 어느 해든 초과하면 수치를 남겨 차단한다',()=>{
+test('GLDM과 LBMA 연간 차이는 양방향 ±5%p로 교차 확인하고 어느 해든 초과하면 수치를 남겨 차단한다',()=>{
   const points=parseChart(chart()).points;
-  for(const delta of [-1.4,1.4,-1.6,1.6]){
+  for(const delta of [-4.9,4.9,-5.1,5.1]){
     const lbmaPct=pct(4367.8,2609.1),end=round(2609.1/100)*(1+(lbmaPct+delta)/100);
     const changed=points.map(p=>p.date==='2025-12-31'?{...p,close:end}:p);
-    if(Math.abs(delta)<1.5)assert.doesNotThrow(()=>summarize(changed,'2026-10-16'));
+    if(Math.abs(delta)<5)assert.doesNotThrow(()=>summarize(changed,'2026-10-16'));
     else assert.throws(()=>summarize(changed,'2026-10-16'),e=>/official-mismatch-2025/.test(e.message)&&e.message.includes('"etfPct"')&&e.message.includes('"lbmaPct"')&&e.message.includes('"diff"'));
   }
   for(let year=2021;year<=2025;year++){

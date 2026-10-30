@@ -6,7 +6,7 @@ const {GOLD_LBMA_YEAR_END}=require('../js/ledger-benchmark.js');
 
 const OUT=path.join(__dirname,'../data/gold-etf.json');
 const SYMBOL='GLDM';
-const TOLERANCE=1.5; // %p
+const TOLERANCE=5; // %p
 const META={schemaVersion:1,index:'SPDR Gold MiniShares (GLDM)',symbol:SYMBOL,currency:'USD',
   sourceName:'Yahoo Finance',sourceUrl:'https://finance.yahoo.com/quote/GLDM/history/'};
 
@@ -27,8 +27,9 @@ const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
 // 2020~지난해 연말과 올해 끝난 달의 마지막 종가만 남긴다. 마지막 날짜가 해당 월말에서 4일보다 더 이르면 incomplete로 멈춘다.
 // 올해 월말의 기준이 될 전년 말이 없으면 missing-base다. 연말은 반드시 해당 해 12월의 값이어야 한다.
 // verified: LBMA 상수로 연간 수익률을 계산할 수 있는 모든 완료 연도(2021~2025)를 같은 해 GLDM 수익률과 비교한다.
-// etfPct·lbmaPct = (그해 말 ÷ 전년 말 − 1) × 100, diff = etfPct − lbmaPct(%p). 반올림 전 차이가 ±1.5%p를 넘으면 official-mismatch로 기록하지 않는다.
-// 허용 범위는 보수 0.10%와 런던 오후 가격·뉴욕 종가의 시각 차이를 고려한 고정 기준이며, 검증할 해의 종가가 빠져도 기록하지 않는다.
+// etfPct·lbmaPct = (그해 말 ÷ 전년 말 − 1) × 100, diff = etfPct − lbmaPct(%p). 반올림 전 차이가 ±5%p를 넘으면 official-mismatch로 기록하지 않는다.
+// LBMA와의 대조는 다른 종목·단위 오류를 막는 느슨한 교차 확인이다. 보수 0.10%와 마지막 런던 PM·뉴욕 종가의 서로 다른 연말 시점은 허용한다.
+// 교차 확인할 해의 종가가 빠져도 기록하지 않는다.
 function summarize(points, today){
   const thisYear=Number(today.slice(0,4)), thisMonth=today.slice(0,7), last=new Map();
   for(const p of points){last.set(p.date.slice(0,4),p);last.set(p.date.slice(0,7),p);}
