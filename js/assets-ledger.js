@@ -34,11 +34,12 @@ function ledgerChartHtml(c, won, width, benchmarks=[]){
 }
 // 맨 위: 연도 칩 한 줄(가로로 밀기, 끝에 연도 추가) + 카드(선택한 지수 비교 또는 실현손익 금액, 그래프, 요약 2칸). 누적·실현손익은 선물·옵션 포함이며 따로 나눠 보이지 않는다.
 // 수익률/금액 선택은 화면 설정(ui.ledgerChart)이라 이 기기에만 기억하고 기록에 넣지 않는다.
-// 제목의 비교 대상은 선택한 연도와 관계없이 연도별 요약과 같은 bestBenchmark 결과다. 둘 다에서도 제목은 이 대상을 유지한다.
+// 제목과 높은 쪽의 비교 대상은 그해 수익률(올해는 기록한 마지막 달 말 누적)으로 고른다. 둘 다에서도 제목은 같은 기간의 높은 지수를 쓴다.
+// 그 기간의 두 지수 값이 모두 없을 때만 연도별 요약의 bestBenchmark 결과를 쓴다.
 let ledgerChartWidth=0, ledgerResizeTimer=0;
 function ledgerTopHtml(y, ys, years, c){
   const won=ui.ledgerChart==="won", view=el("ledgerView");
-  const today=new Date(), winner=bestBenchmark(sp500Comparison(years,today,sp500Data),goldComparison(years,today,goldData));
+  const today=new Date(), winner=periodBenchmark(c.spAt,c.goldAt,bestBenchmark(sp500Comparison(years,today,sp500Data),goldComparison(years,today,goldData)));
   const benchmarks=[{key:"sp",id:"sp500",name:"S&amp;P 500",points:c.sp,at:c.spAt,diff:c.diff},{key:"gold",id:"gold",name:"금",points:c.gold,at:c.goldAt,diff:c.goldDiff}];
   const picked=benchmarks.find(b=>b.id===winner), both=ui.ledgerBench==="both", shown=won?[]:both?benchmarks:[picked];
   ledgerChartWidth=Math.round(Math.min(1000,Math.max(280,(Number(view.clientWidth)||361)-34)));
@@ -53,7 +54,7 @@ function ledgerTopHtml(y, ys, years, c){
   const info=!c.month?"달마다 실현손익과 계좌 잔액을 넣으면 누적 그래프를 그립니다."
     :noRate?(c.unrated.length?"아래 표에서 그 달 계좌 잔액을 넣으면 그래프를 그립니다. ‘금액’에서는 실현손익 누적을 볼 수 있습니다.":"아래 표의 실현손익·선물·옵션과 총자산을 확인해 주세요. ‘금액’에서는 실현손익 누적을 볼 수 있습니다.")
     :won?"달마다 실현손익(선물·옵션 포함)을 더한 누적입니다."
-    :`${shown.some(b=>b.key==="sp")?"S&amp;P 500은 달러·배당 재투자, ":""}${shown.some(b=>b.key==="gold")?"금은 금 ETF GLDM 종가 기준(달러·보수 0.10%), ":""}내 수익률은 원화 실현손익(선물·옵션 포함) 기준 월 복리 누적${shown.some(b=>b.points.length&&b.points[0].m!==1)?" · 1월부터 이어지지 않는 지수 값은 점으로 표시":""}`;
+    :`${shown.some(b=>b.key==="sp")?"S&amp;P 500은 달러·배당 재투자, ":""}${shown.some(b=>b.key==="gold")?"금은 금 ETF GLDM 종가 기준(달러·보수 0.10%), ":""}내 수익률은 원화 실현손익(선물·옵션 포함) 기준 월 복리 누적${!both?` · ${Number(y.year)===today.getFullYear()?`올해는 ${c.month}월 말까지`:"그해"} 수익률이 더 높은 지수 표시`:""}${shown.some(b=>b.points.length&&b.points[0].m!==1)?" · 1월부터 이어지지 않는 지수 값은 점으로 표시":""}`;
   const cell=(label,value,neg)=>`<div><span>${label}</span><b class="${neg?"neg":""}">${value}</b></div>`;
   return `<h1 class="sr-only">월별 손익</h1>
     <div class="ledger-years" role="group" aria-label="연도 선택">${years.map(x=>`<button class="chip${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}" aria-pressed="${x===y}">${escA(x.year)}</button>`).join("")}<button class="chip add" id="addYear" type="button" aria-label="연도 추가" title="연도 추가">＋</button></div>
@@ -145,9 +146,10 @@ function sp500Block(years){
   const grid=cell("내 연복리",pct2(c.mine),c.mine<0,"원화 · 실현손익")+(both?display.map(indexCell).join(""):
     cell(`${picked.name} 연복리`,pct2(c[picked.key]),c[picked.key]<0,picked.id==="gold"?"달러 · GLDM 종가":"달러 · 배당 재투자")+cell("차이",pct2(c.diff,"%p"),c.diff<0,`내 연복리 − ${picked.name}`));
   const hint=`${c.years?`${period(c)} · `:""}같은 연도 연복리${!both?` · 연복리가 더 높은 ${picked.name} 표시 · ${other.name} ${pct2(other.c[other.key])}`:""}${notes.length?` · ${notes.join(" · ")}`:""}`;
+  const currentPicked=choices.find(x=>x.id===periodBenchmark(sp.current?.sp,gold.current?.gold,winner));
   return `<div class="benchmark"><div class="benchmark-head"><b>지수 비교</b><div class="ledger-seg" role="group" aria-label="지수 비교 표시"><button type="button" data-ledger-bench="best" aria-pressed="${!both}">높은 쪽</button><button type="button" data-ledger-bench="both" aria-pressed="${both}">둘 다</button></div><small>${hint}</small></div>
     ${c.years?`<div class="benchmark-grid">${grid}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
-    ${c.current&&c.current.rate!==null&&c.current.month?ledgerBenchmarkYtdRow(choices,picked,both):""}
+    ${c.current&&c.current.rate!==null&&c.current.month?ledgerBenchmarkYtdRow(choices,currentPicked,both):""}
     <p class="benchmark-note">S&amp;P 500은 S&amp;P Dow Jones Indices의 Total Return 지수(배당 재투자) 달러 수익률이라 원·달러 환율 변동이 빠져 있고, 내 수익률은 원화 실현손익 기준이라 평가손익이 빠져 있습니다. 금은 금 ETF GLDM(보수 0.10%)의 연말·월말 뉴욕 종가 기준이며, 달러 기준이라 원·달러 환율 변동이 빠져 있습니다.</p></div>`;
 }
 // 올해는 기록한 마지막 달 말까지 월 단위로 같은 기간을 비교한다. 위 세 칸과 같은 열에 맞춘다.
@@ -156,7 +158,7 @@ function ledgerBenchmarkYtdRow(choices,picked,both){
   const item=(label,value,neg,hint="")=>`<span><small>${label}</small><b class="${neg?"neg":""}">${value}</b>${hint?`<small>${hint}</small>`:""}</span>`;
   const indexCell=x=>{const row=x.c.current;return item(`${x.name} 누적`,row[x.key]===null?"반영 전":pct2(row[x.key]),row[x.key]<0,both?`차이 ${pct2(row.diff,"%p")}`:"");};
   const shown=both?choices:[picked], status=shown.map(x=>`${x.name}${x.c.current[x.key]!==null?`은 ${now.month}월 말 기준`:` ${now.month}월 말 값 반영 전`}`).join(" · ");
-  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${status} · 연간 확정 후 연복리에 포함</small></div>
+  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${!both?`누적이 더 높은 ${picked.name} 표시 · `:""}${status} · 연간 확정 후 연복리에 포함</small></div>
     <div class="benchmark-ytd-cells">${item("내 누적",pct2(now.rate),now.rate<0)}${both?choices.map(indexCell).join(""):indexCell(picked)+item("차이",pct2(now.diff,"%p"),now.diff<0)}</div></div>`;
 }
 // 자주 적는 손익 항목은 빈 전용 칸으로 보여 준다. 실제 금액을 넣은 항목만 pnlEntries에 저장하고, 열기만 해서는 기록을 만들지 않는다.

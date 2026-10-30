@@ -202,7 +202,7 @@ test('연도별 요약 아래 기본 높은 쪽은 금 연복리·차이를 표�
   assert.doesNotMatch(cells[1],/S&amp;P 500 연복리/);
   assert.match(block,/올해 2026년 1~9월 누적/);
   const current=benchmarkCells(block,'benchmark-ytd-cells');assert.equal(current.length,3);
-  includes(current[0],'내 누적');includes(current[0],((1.01**9-1)*100).toFixed(2)+'%');includes(current[1],'금 누적');includes(current[1],'반영 전');
+  includes(current[0],'내 누적');includes(current[0],((1.01**9-1)*100).toFixed(2)+'%');includes(current[1],'S&amp;P 500 누적');includes(current[1],c.SP500_TR_YTD['2026-09'].toFixed(2)+'%');includes(block,'누적이 더 높은 S&amp;P 500 표시');
   assert.doesNotMatch(html,/연평균|산술평균|LBMA/);
   assert.match(block,/Total Return 지수\(배당 재투자\) 달러 수익률.*원·달러 환율 변동.*원화 실현손익 기준이라 평가손익/);
   includes(block,'금은 금 ETF GLDM(보수 0.10%)의 연말·월말 뉴욕 종가 기준이며, 달러 기준이라 원·달러 환율 변동이 빠져 있습니다.');
@@ -303,18 +303,18 @@ test('0 이하인 월·연 합계 인수는 수익률 그래프를 비우고 카
   const g=c.ledgerChartData(missing,today);assert.deepEqual([g.rate,g.total,g.unrated],[null,null,[]],'연 합계가 있는데 마지막 총자산이 0이면 그래프도 계산 불가');
 });
 
-test('월별 손익 맨 위 카드: 고른 연도의 누적 수익률은 높은 금과 비교하고 선물·옵션은 따로 나눠 보이지 않으며, 금액 보기는 이 기기 화면 설정',()=>{
+test('월별 손익 맨 위 카드: 고른 기간 누적이 높은 S&P 500과 비교하고 선물·옵션은 따로 나눠 보이지 않으며, 금액 보기는 이 기기 화면 설정',()=>{
   const years=fixture().map(y=>y.year===2026?yearOf(2026,Array(9).fill(1),{futures:-20000}):y),data={version:1,ledger:{savedAt:'',years}},before=JSON.stringify(data),at=new Date(2026,9,16).getTime();
-  const page=ledgerPage(data,at),raw=goldCollected(),rate=(1.01**9*.98-1)*100,goldRate=(raw.monthEnd.find(p=>p.ym==='2026-09').close/goldEnds[2025]-1)*100;
+  const page=ledgerPage(data,at),raw=goldCollected(),rate=(1.01**9*.98-1)*100,spRate=c.SP500_TR_YTD['2026-09'];
   page.ctx.fakeGold=raw;vm.runInContext('goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);
   const html=page.html;
   assert.match(html,/<h1 class="sr-only">월별 손익<\/h1>/);assert.doesNotMatch(html,/class="card metrics"/,'세 칸 지표 카드 대신 맨 위 카드');
   assert.match(html,/data-pick-year="2026" aria-pressed="true">2026<\/button><button class="chip add" id="addYear"/,'연도 칩 끝에 연도 추가');
-  assert.match(html,/2026년 1~9월 누적 수익률/);includes(html,`금보다 <em class="down">${(goldRate-rate).toFixed(2)}%p 낮아요</em>`);
-  includes(html,`내 누적<b>${rate.toFixed(2)}%</b></span><span class="ledger-key"><i class="gold"></i>금<b>${goldRate.toFixed(2)}%</b>`);
+  assert.match(html,/2026년 1~9월 누적 수익률/);includes(html,`S&amp;P 500보다 <em class="down">${(spRate-rate).toFixed(2)}%p 낮아요</em>`);
+  includes(html,`내 누적<b>${rate.toFixed(2)}%</b></span><span class="ledger-key"><i class="sp"></i>S&amp;P 500<b>${spRate.toFixed(2)}%</b>`);
   const card=html.slice(0,html.indexOf('</section>')).replace('원화 실현손익(선물·옵션 포함) 기준','원화 실현손익 기준');
   assert.doesNotMatch(card,/선물·옵션|ledger-calc|class="(?:drop|mid)/,'카드에 선물·옵션을 따로 쓰거나 그리지 않음');assert.match(html,/원화 실현손익\(선물·옵션 포함\) 기준 월 복리 누적/);
-  assert.equal((card.match(/<circle /g)||[]).length,3,'점은 금 8·9월과 내 누적 끝만');
+  assert.equal((card.match(/<circle /g)||[]).length,3,'점은 S&P 500 8·9월과 내 누적 끝만');
   assert.equal((html.match(/class="month(?: on)?" style="left:/g)||[]).length,12,'월 글자 12개');assert.match(html,/class="month on" style="left:[\d.]+%">9</,'마지막 기록 달 강조');
   assert.match(html,/<div class="ledger-cells"><div><span>실현손익<\/span><b class="">7만원<\/b><\/div><div><span>총자산 9월 말<\/span><b class="">100만원<\/b><\/div><\/div>/);
   includes(html,`<small>연환산 ${(((1.01**9*.98)**(12/9)-1)*100).toFixed(1)}%</small></span></div></section>`,'연환산은 합계 줄로, 선물·옵션 포함 복리 환산');
@@ -386,12 +386,25 @@ test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 
 
 // 금 비교도 같은 가상 기록으로 검증한다. 아래 수집 자료는 실제 시세가 아닌 검증용 종가다.
 const goldCalc=vm.runInThisContext(`(function(){${['js/ma-ladder.js','js/assets-calc.js','js/ledger-benchmark.js'].map(read).join('\n;\n')}
-return {GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END,cleanGoldData,goldYearReturn,goldYtdAt,goldComparison,bestBenchmark,ledgerChartData};})()`);
+return {GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END,cleanGoldData,goldYearReturn,goldYtdAt,goldComparison,bestBenchmark,periodBenchmark,ledgerChartData};})()`);
 const goldEnds=goldCalc.GOLD_ETF_YEAR_END;
 const goldCollected=()=>({schemaVersion:1,symbol:'GLDM',currency:'USD',
   yearEnd:[{year:2025,date:'2025-12-30',close:goldEnds[2025]},{year:2026,date:'2026-12-30',close:goldEnds[2025]*1.12},{year:2027,date:'2027-12-30',close:goldEnds[2025]*1.12*1.05}],
   monthEnd:[{ym:'2026-08',date:'2026-08-28',close:goldEnds[2025]*1.08},{ym:'2026-09',date:'2026-09-30',close:goldEnds[2025]*1.1}]});
 const goldCompound=((goldEnds[2025]/goldEnds[2020])**(1/5)-1)*100;
+
+test('기간별 높은 지수는 유한수끼리 비교하고 동점은 S&P 500, 하나만 있으면 그쪽, 둘 다 없으면 fallback이다',()=>{
+  assert.equal(goldCalc.periodBenchmark(12,10),'sp500');assert.equal(goldCalc.periodBenchmark(-12,-10),'gold');
+  assert.equal(goldCalc.periodBenchmark(0,0),'sp500');assert.equal(goldCalc.periodBenchmark(12,12,'gold'),'sp500');
+  assert.equal(goldCalc.periodBenchmark(0,null),'sp500');assert.equal(goldCalc.periodBenchmark(null,0),'gold');
+  const absent=[null,undefined,NaN,Infinity,-Infinity,'12',{},[]];
+  for(const value of absent){
+    assert.equal(goldCalc.periodBenchmark(1,value,'gold'),'sp500','한쪽 유한수 S&P 500');
+    assert.equal(goldCalc.periodBenchmark(value,-1),'gold','한쪽 유한수 금');
+    assert.equal(goldCalc.periodBenchmark(value,value),'sp500','둘 다 없으면 기본 S&P 500');
+    assert.equal(goldCalc.periodBenchmark(value,value,'gold'),'gold','둘 다 없으면 전달한 fallback');
+  }
+});
 
 test('금 계산 상수는 2020년부터 이어지는 GLDM 연말 종가이며 frozen이고 DOM 없이 내보낸다',()=>{
   const years=Object.keys(goldEnds).map(Number);
@@ -552,6 +565,28 @@ test('지수 비교 둘 다는 세 칸에 내·S&P 500·금 연복리와 각 차
   assert.doesNotMatch(html,/LBMA/);assert.equal(JSON.stringify(data),before);
 });
 
+test('높은 쪽의 연복리 칸은 금을 유지하고 올해 누적 줄과 맨 위 카드는 마지막 달 말의 높은 지수를 따로 고른다',()=>{
+  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),at=new Date(2026,9,16).getTime(),page=ledgerPage(data,at);
+  const raw=goldCollected(),gold=(raw.monthEnd.find(p=>p.ym==='2026-09').close/goldEnds[2025]-1)*100,sp=c.SP500_TR_YTD['2026-09'],mine=(1.01**9-1)*100;
+  assert.ok(sp>gold,'가짜 9월 금 누적보다 S&P 500 누적이 높음');
+  page.ctx.fakeGold=raw;vm.runInContext('goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);
+  let block=benchmarkHtml(page.html),annual=benchmarkCells(block),current=benchmarkCells(block,'benchmark-ytd-cells');
+  includes(annual[1],'금 연복리');includes(annual[1],goldCompound.toFixed(2)+'%');includes(annual[2],(completedCompound-goldCompound).toFixed(2)+'%p');
+  includes(current[1],'S&amp;P 500 누적');includes(current[1],sp.toFixed(2)+'%');includes(current[2],(mine-sp).toFixed(2)+'%p');includes(block,'누적이 더 높은 S&amp;P 500 표시');
+  includes(topCardHtml(page.html),`S&amp;P 500보다 <em class="down">${(sp-mine).toFixed(2)}%p 낮아요</em>`);
+  const high=fullGoldMonths();high.monthEnd.at(-1).close=goldEnds[2025]*1.2;page.ctx.fakeGold=high;
+  vm.runInContext('goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);
+  const highPct=(high.monthEnd.at(-1).close/goldEnds[2025]-1)*100;
+  block=benchmarkHtml(page.html);annual=benchmarkCells(block);current=benchmarkCells(block,'benchmark-ytd-cells');
+  includes(annual[1],'금 연복리');includes(current[1],'금 누적');includes(current[1],highPct.toFixed(2)+'%');includes(current[2],(mine-highPct).toFixed(2)+'%p');includes(block,'누적이 더 높은 금 표시');
+  const best=topCardHtml(page.html);assert.match(best,/<path[^>]*class="gold"/);assert.doesNotMatch(best,/class="sp"|class="sp-dot"/);includes(best,`금보다 <em class="down">${(highPct-mine).toFixed(2)}%p 낮아요</em>`);
+  page.buttons.find(b=>b.dataset.ledgerBench==='both').onclick();
+  const both=topCardHtml(page.html);assert.match(both,/<path[^>]*class="gold"/);assert.match(both,/class="sp-dot"/);
+  assert.equal(both.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)[1],best.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)[1]);
+  assert.doesNotMatch(benchmarkHtml(page.html),/누적이 더 높은/,'둘 다의 올해 누적 머리는 기존 안내를 유지');
+  assert.equal(JSON.stringify(data),before,'조회와 모드 변경만으로 기록이 바뀌지 않는다');
+});
+
 test('지수 비교 표시 선택은 setUi로 이 기기에만 기억하고 모르는 설정은 높은 쪽으로 본다',()=>{
   const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),today=new Date(2026,9,16).getTime();
   const page=ledgerPage(data,today);
@@ -609,7 +644,7 @@ test('다른 탭에서 도착한 금 자료는 다시 그리지 않고 금 자�
     });
     await new Promise(resolve=>setImmediate(resolve));vm.runInContext('loadGold();renderLedger();',page.ctx);
     const cells=benchmarkCells(benchmarkHtml(page.html));includes(cells[1],goldCompound.toFixed(2)+'%');
-    includes(benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells')[1],'반영 전');
+    includes(benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells')[1],'S&amp;P 500 누적');
     assert.equal(requests.filter(url=>url==='data/gold-etf.json').length,1,'실패해도 페이지에서 반복 요청하지 않는다');
     assert.doesNotMatch(page.html,/가상 네트워크 실패|LBMA/);
   }
@@ -668,35 +703,40 @@ test('두 지수에 연간 자료가 있어도 공통 연도가 없으면 연복
 const topCardHtml=html=>html.slice(html.indexOf('<section class="card ledger-card">'),html.indexOf('</section>')+'</section>'.length);
 const fullGoldMonths=()=>({...goldCollected(),monthEnd:Array.from({length:9},(_,i)=>({ym:`2026-${String(i+1).padStart(2,'0')}`,date:`2026-${String(i+1).padStart(2,'0')}-28`,close:goldEnds[2025]*(1+(i+1)/100)}))});
 
-test('맨 위 높은 쪽은 연도별 요약과 같은 금을 모든 선택 연도에 유지하고 모르는 설정도 높은 쪽으로 본다',()=>{
+test('맨 위 높은 쪽은 선택한 완료 연도의 수익률로 2021년 S&P 500·2025년 금을 고르고 모르는 설정도 같은 기준이다',()=>{
   const years=fixture(),data={version:1,ledger:{savedAt:'',years}},before=JSON.stringify(data),at=new Date(2026,9,16).getTime();
-  assert.equal(goldCalc.bestBenchmark(c.sp500Comparison(years,new Date(at)),goldCalc.goldComparison(years,new Date(at))),'gold');
-  assert.ok(SP[0]>(goldEnds[2021]/goldEnds[2020]-1)*100,'2021년 단독으로는 S&P 500이 높아도 전체 비교 결과를 유지');
+  assert.equal(goldCalc.bestBenchmark(c.sp500Comparison(years,new Date(at)),goldCalc.goldComparison(years,new Date(at))),'gold','연복리 기준은 그대로 금');
   for(const setting of [undefined,'best','unknown'])for(const year of [2021,2025]){
-    const html=ledgerHtml(data,at,{year,ledgerBench:setting}),card=topCardHtml(html),mine=c.yearSummary(years.find(y=>y.year===year)).rate,gold=(goldEnds[year]/goldEnds[year-1]-1)*100,diff=mine-gold;
-    includes(card,`금보다 <em class="${diff>0?'up':'down'}">${Math.abs(diff).toFixed(2)}%p ${diff>0?'높아요':'낮아요'}</em>`);
-    includes(card,`<i class="gold"></i>금<b>${gold.toFixed(2)}%</b>`);assert.doesNotMatch(card,/class="sp"|class="sp-dot"|S&amp;P 500/);
-    assert.match(card,/내 누적 수익률과 금 누적 수익률 그래프/);includes(card,'금은 금 ETF GLDM 종가 기준');
-    assert.equal((card.match(/class="gold-dot"/g)||[]).length,1,'연간 값은 금 12월 점 하나');assert.doesNotMatch(card,/<path[^>]*class="gold"/);
+    const html=ledgerHtml(data,at,{year,ledgerBench:setting}),card=topCardHtml(html),mine=c.yearSummary(years.find(y=>y.year===year)).rate;
+    const gold=(goldEnds[year]/goldEnds[year-1]-1)*100,sp=c.SP500_TR_RETURNS[year],isGold=year===2025,key=isGold?'gold':'sp',label=isGold?'금':'S&amp;P 500',value=isGold?gold:sp,diff=mine-value;
+    assert.ok(isGold?gold>sp:sp>gold,'해당 연도에 높은 지수');
+    includes(card,`${label}보다 <em class="${diff>0?'up':'down'}">${Math.abs(diff).toFixed(2)}%p ${diff>0?'높아요':'낮아요'}</em>`);
+    includes(card,`<i class="${key}"></i>${label}<b>${value.toFixed(2)}%</b>`);assert.doesNotMatch(card,new RegExp(`class="${isGold?'sp':'gold'}(?:-dot)?"`));
+    includes(card,`내 누적 수익률과 ${label} 누적 수익률 그래프`);
+    if(isGold)includes(card,'금은 금 ETF GLDM 종가 기준');
+    assert.match(card,/그해.*수익률이 더 높은 지수 표시/);
+    assert.equal((card.match(new RegExp(`class="${key}-dot"`,'g'))||[]).length,1,'연간 값은 12월 점 하나');assert.doesNotMatch(card,new RegExp(`<path[^>]*class="${key}"`));
     assert.equal((card.match(/<circle /g)||[]).length,2,'지수 연간 점과 내 누적 끝만 표시');
     includes(benchmarkHtml(html),'연복리가 더 높은 금 표시');assert.doesNotMatch(html,/LBMA/);
+    const both=topCardHtml(ledgerHtml(data,at,{year,ledgerBench:'both'}));
+    assert.equal((both.match(/class="sp-dot"/g)||[]).length,1);assert.equal((both.match(/class="gold-dot"/g)||[]).length,1);
+    assert.equal((both.match(/<circle /g)||[]).length,3,'연간 값만 있는 둘 다는 지수 두 점과 내 누적 끝');
+    assert.doesNotMatch(both,/<path[^>]*class="(?:sp|gold)"/,'월말 경로가 없는 두 지수는 점만 표시');
+    assert.equal(both.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)[1],card.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)[1],'두 모드 모두 선택한 해의 높은 지수로 제목');
   }
-  const both=topCardHtml(ledgerHtml(data,at,{year:2025,ledgerBench:'both'}));
-  assert.equal((both.match(/class="sp-dot"/g)||[]).length,1);assert.equal((both.match(/class="gold-dot"/g)||[]).length,1);
-  assert.equal((both.match(/<circle /g)||[]).length,3,'연간 값만 있는 둘 다는 지수 두 점과 내 누적 끝');
-  assert.doesNotMatch(both,/<path[^>]*class="(?:sp|gold)"/,'월말 경로가 없는 두 지수는 점만 표시');
   assert.equal(JSON.stringify(data),before);
 });
 
-test('맨 위 둘 다는 두 지수 선·범례를 표시하고 제목은 높은 쪽과 같은 금 기준이며 금액에는 지수가 없다',()=>{
+test('맨 위 둘 다는 두 지수 선·범례를 표시하고 제목은 그 기간의 높은 S&P 500 기준이며 금액에는 지수가 없다',()=>{
   const data={version:1,ledger:{savedAt:'',years:fixture()}},raw=fullGoldMonths(),sp=collected(),at=new Date(2026,9,16).getTime();
   // S&P 500도 1월부터 있어야 점선 경로를 그리는 기존 규칙을 확인할 수 있다.
   sp.monthEnd=raw.monthEnd.map((p,i)=>({...p,close:100*(1+(i+1)/200)}));sp.yearEnd=[{year:2025,date:'2025-12-31',close:100}];
   const snapshot=JSON.stringify({data,raw,sp}),page=ledgerPage(data,at);
   page.ctx.fakeGold=raw;page.ctx.fakeSp=sp;vm.runInContext('goldData=cleanGoldData(fakeGold);sp500Data=cleanSp500Data(fakeSp);renderLedger();',page.ctx);
-  const best=topCardHtml(page.html),gold=(raw.monthEnd.at(-1).close/goldEnds[2025]-1)*100,rate=(1.01**9-1)*100;
-  assert.match(best,/<path[^>]*class="gold"/);assert.match(best,/class="gold-dot"/);assert.doesNotMatch(best,/class="sp"|class="sp-dot"/);
-  includes(best,`금보다 <em class="up">${(rate-gold).toFixed(2)}%p 높아요</em>`);includes(best,`<i class="gold"></i>금<b>${gold.toFixed(2)}%</b>`);
+  const best=topCardHtml(page.html),gold=(raw.monthEnd.at(-1).close/goldEnds[2025]-1)*100,rate=(1.01**9-1)*100,spRate=c.SP500_TR_YTD['2026-09'];
+  assert.ok(spRate>gold);assert.match(best,/<path[^>]*class="sp"/);assert.match(best,/class="sp-dot"/);assert.doesNotMatch(best,/class="gold"|class="gold-dot"/);
+  includes(best,`S&amp;P 500보다 <em class="down">${(spRate-rate).toFixed(2)}%p 낮아요</em>`);includes(best,`<i class="sp"></i>S&amp;P 500<b>${spRate.toFixed(2)}%</b>`);
+  assert.match(best,/올해.*9월 말까지.*수익률이 더 높은 지수 표시/);
   page.buttons.find(b=>b.dataset.ledgerBench==='both').onclick();
   const both=topCardHtml(page.html);
   assert.match(both,/<path[^>]*class="sp"/);assert.match(both,/<path[^>]*class="gold"/);
@@ -710,15 +750,19 @@ test('맨 위 둘 다는 두 지수 선·범례를 표시하고 제목은 높은
   assert.equal(JSON.stringify({data,raw,sp}),snapshot,'모드 변경·조회로 기록과 시세 자료를 바꾸지 않는다');
 });
 
-test('높은 금의 해당 월말이 없으면 범례 반영 전·내 누적 제목이고 앞달 값이나 S&P 500으로 바꾸지 않는다',()=>{
-  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),at=new Date(2026,9,16).getTime(),page=ledgerPage(data,at);
+test('금의 해당 월말이 없으면 S&P 500을 고르고 앞달 금 값으로 대체하지 않으며 두 값 모두 없을 때만 연복리 기준을 쓴다',()=>{
+  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),at=new Date(2026,9,16).getTime(),page=ledgerPage(data,at),spRate=c.SP500_TR_YTD['2026-09'],mine=(1.01**9-1)*100;
+  const title=`S&amp;P 500보다 <em class="down">${(spRate-mine).toFixed(2)}%p 낮아요</em>`;
   let card=topCardHtml(page.html);
-  includes(card,'<i class="gold"></i>금<b>반영 전</b>');includes(card,`내 누적 <em class="up">${((1.01**9-1)*100).toFixed(2)}%</em>`);assert.doesNotMatch(card,/보다|class="sp"|class="gold-dot"/);
+  includes(card,'<i class="sp"></i>S&amp;P 500<b>'+spRate.toFixed(2)+'%</b>');includes(card,title);assert.doesNotMatch(card,/class="gold"|class="gold-dot"/);
   const sparse=goldCollected();sparse.monthEnd=sparse.monthEnd.filter(p=>p.ym!=='2026-09');page.ctx.fakeGold=sparse;
   vm.runInContext('goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);card=topCardHtml(page.html);
-  includes(card,'<i class="gold"></i>금<b>반영 전</b>');assert.equal((card.match(/class="gold-dot"/g)||[]).length,1,'앞달의 관측점은 남기되 누적 비교값은 대신 쓰지 않는다');assert.doesNotMatch(card,/금보다|S&amp;P 500/);
+  includes(card,title);assert.doesNotMatch(card,/class="gold-dot"|금보다/,'앞달 금 관측값이 있어도 그달 비교 대상은 S&P 500');
   page.buttons.find(b=>b.dataset.ledgerBench==='both').onclick();card=topCardHtml(page.html);
-  includes(card,'<i class="sp"></i>S&amp;P 500<b>12.75%</b>');includes(card,'<i class="gold"></i>금<b>반영 전</b>');assert.doesNotMatch(card,/보다/);
+  includes(card,'<i class="sp"></i>S&amp;P 500<b>'+spRate.toFixed(2)+'%</b>');includes(card,'<i class="gold"></i>금<b>반영 전</b>');includes(card,title);
+  assert.equal((card.match(/class="gold-dot"/g)||[]).length,1,'둘 다는 앞달 금 관측점도 남기고 범례는 반영 전');
+  const noValues=ledgerHtml({...data,ledger:{...data.ledger,years:fixture().map(y=>y.year===2026?yearOf(2026,Array(10).fill(1)):y)}},new Date(2026,10,3).getTime());
+  const fallback=topCardHtml(noValues);includes(fallback,'<i class="gold"></i>금<b>반영 전</b>');includes(fallback,`내 누적 <em class="up">${((1.01**10-1)*100).toFixed(2)}%</em>`);assert.doesNotMatch(fallback,/보다/);
   assert.equal(JSON.stringify(data),before);
 });
 
