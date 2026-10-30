@@ -162,39 +162,56 @@ test('수집 자료는 형식·지수·통화를 확인해 종가만 남기고, 
 });
 
 // 연도별 요약 화면: 자산 현황 스크립트(assets.js·assets-ledger.js 등)를 가상 DOM으로 불러 월별 손익 탭만 그린다.
-function ledgerHtml(data,now,ui=null){
+function ledgerPage(data,now,ui=null,fetcher=null){
   class SystemDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
   const nodes=new Map(),storage=new Map();
   const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},hidden:false,innerHTML:'',textContent:'',classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),setAttribute(){},getAttribute(){}});return nodes.get(id);};
-  const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:()=>[],addEventListener(){}};
+  const buttons=['best','both'].map(value=>Object.assign(node(`bench-${value}`),{dataset:{ledgerBench:value}}));
+  const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-ledger-bench]'?buttons:[],addEventListener(){}};
   const store={doc:data,prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){throw Error('조회만으로 저장하면 안 된다');}};
   const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
+  if(fetcher)ctx.fetch=fetcher;
   if(ui)storage.set('etf-planner-assets-ui',JSON.stringify({tab:'ledger',...ui}));
   vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
-  return node('ledgerView').innerHTML;
+  return {ctx,storage,node,buttons,get html(){return node('ledgerView').innerHTML;}};
 }
+const ledgerHtml=(data,now,ui=null)=>ledgerPage(data,now,ui).html;
+const benchmarkHtml=html=>html.slice(html.indexOf('class="benchmark"'));
+const benchmarkCells=(html,kind='benchmark-grid')=>{
+  const section=html.slice(html.indexOf(`class="${kind}"`));
+  if(kind==='benchmark-ytd-cells')return [...section.slice(0,section.indexOf('</div>')).matchAll(/<span>([\s\S]*?)<\/span>/g)].map(m=>m[1]);
+  return [...section.slice(0,section.indexOf('class="benchmark-ytd"')).matchAll(/<div(?: class="[^"]*")?>([\s\S]*?)<\/div>/g)].map(m=>m[1]);
+};
 
-test('연도별 요약 아래에 올해 포함 연복리와 내 연복리·S&P 500 연복리·차이(%p)의 기간을 표시한다',()=>{
+test('연도별 요약 아래 기본 높은 쪽은 금 연복리·차이를 표시하고 조회만으로 기록을 바꾸지 않는다',()=>{
   const data={version:1,ledger:{savedAt:'2026-01-01',years:fixture()}},before=JSON.stringify(data);
   const html=ledgerHtml(data,new Date(2026,9,16).getTime()),block=html.slice(html.indexOf('class="benchmark"'));
   includes(html,`연복리 수익률 <small>2021~2026년 9월 · 5.75년</small></span><strong class="">${(((fixtureGrowth*1.01**9)**(1/(5+9/12))-1)*100).toFixed(1)}%</strong>`,'올해를 마지막 기록 달까지 기간에 포함');
   assert.match(html,/연 수익률\(월 복리\) · 선물·옵션 포함/);
-  assert.match(block,/S&amp;P 500 비교<\/b><small>2021~2025년 완료 5개 연도 · 같은 연도 연복리<\/small>/);
-  includes(block,`<span>내 연복리</span><strong class="">${completedCompound.toFixed(2)}%</strong><small>원화 · 실현손익</small>`);
-  includes(block,`<span>S&amp;P 500 연복리</span><strong class="">${spCompound.toFixed(2)}%</strong><small>달러 · 배당 재투자</small>`);
-  includes(block,`<span>차이</span><strong class="">+${(completedCompound-spCompound).toFixed(2)}%p</strong>`);
-  assert.match(block,/올해 2026년 1~9월 누적<small>S&amp;P 500은 9월 말 기준 · 연간 확정 후 연복리에 포함<\/small>/);
-  assert.doesNotMatch(html,/연평균|산술평균/);
-  includes(block,`<span><small>내 누적</small><b class="">${((1.01**9-1)*100).toFixed(2)}%</b></span><span><small>S&amp;P 500 누적</small><b class="">12.75%</b></span><span><small>차이</small><b class="neg">${((1.01**9-1)*100-12.75).toFixed(2)}%p</b></span>`);
+  const ends=require('../js/ledger-benchmark.js').GOLD_ETF_YEAR_END,goldRate=((ends[2025]/ends[2020])**(1/5)-1)*100;
+  assert.match(block,/>지수 비교<\/b>/);
+  assert.match(block,/2021~2025년 완료 5개 연도 · 같은 연도 연복리 · 연복리가 더 높은 금 표시 · S&amp;P 500/);
+  includes(block,spCompound.toFixed(2)+'%');
+  assert.match(block,/data-ledger-bench="best" aria-pressed="true"/);assert.match(block,/data-ledger-bench="both" aria-pressed="false"/);
+  const cells=benchmarkCells(block);assert.equal(cells.length,3,'폰에서도 세 칸 구조');
+  includes(cells[0],'내 연복리');includes(cells[0],completedCompound.toFixed(2)+'%');
+  includes(cells[1],'금 연복리');includes(cells[1],goldRate.toFixed(2)+'%');
+  includes(cells[2],'차이');includes(cells[2],(completedCompound-goldRate).toFixed(2)+'%p');
+  assert.doesNotMatch(cells[1],/S&amp;P 500 연복리/);
+  assert.match(block,/올해 2026년 1~9월 누적/);
+  const current=benchmarkCells(block,'benchmark-ytd-cells');assert.equal(current.length,3);
+  includes(current[0],'내 누적');includes(current[0],((1.01**9-1)*100).toFixed(2)+'%');includes(current[1],'금 누적');includes(current[1],'반영 전');
+  assert.doesNotMatch(html,/연평균|산술평균|LBMA/);
   assert.match(block,/Total Return 지수\(배당 재투자\) 달러 수익률.*원·달러 환율 변동.*원화 실현손익 기준이라 평가손익/);
+  includes(block,'금은 금 ETF GLDM(보수 0.10%)의 연말·월말 뉴욕 종가 기준이며, 달러 기준이라 원·달러 환율 변동이 빠져 있습니다.');
   assert.equal(JSON.stringify(data),before);
-  const pending=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture()}},new Date(2027,0,5).getTime());
-  assert.match(pending,/2021~2025년 완료 5개 연도 · 같은 연도 연복리 · 2026년 S&amp;P 500 값 반영 전/);
+  const pending=benchmarkHtml(ledgerHtml({version:1,ledger:{savedAt:'',years:fixture()}},new Date(2027,0,5).getTime()));
+  assert.match(pending,/2026년/);assert.match(pending,/S&amp;P 500.*반영 전/);assert.match(pending,/금.*반영 전/);
   assert.doesNotMatch(pending,/올해 2027년/);
-  const october=ledgerHtml({version:1,ledger:{savedAt:'',years:fixture().map(y=>y.year===2026?yearOf(2026,Array(10).fill(1)):y)}},new Date(2026,10,3).getTime());
-  assert.match(october,/올해 2026년 1~10월 누적<small>S&amp;P 500 10월 말 값 반영 전/);assert.match(october,/<small>S&amp;P 500 누적<\/small><b class="">—<\/b>/);
+  const october=benchmarkHtml(ledgerHtml({version:1,ledger:{savedAt:'',years:fixture().map(y=>y.year===2026?yearOf(2026,Array(10).fill(1)):y)}},new Date(2026,10,3).getTime()));
+  assert.match(october,/올해 2026년 1~10월 누적/);includes(benchmarkCells(october,'benchmark-ytd-cells')[1],'반영 전');
   const empty=ledgerHtml({version:1,ledger:{savedAt:'',years:[yearOf(2026,[1])]}},new Date(2026,9,16).getTime());
   assert.match(empty,/비교할 완료 연도가 아직 없습니다/);assert.doesNotMatch(empty,/benchmark-grid/);assert.match(empty,/올해 2026년 1월 누적/);
 });
@@ -516,4 +533,132 @@ test('금 비교·지수 선택·그래프 조회만으로 기록과 수집 자�
   goldCalc.bestBenchmark(sp,gold);
   for(const year of years){goldCalc.goldYearReturn(year.year,data);goldCalc.goldYtdAt(year.year,9,data);goldCalc.ledgerChartData(year,today,spData,data);}
   assert.deepEqual({years,raw,data,spData},before);
+});
+
+test('지수 비교 둘 다는 세 칸에 내·S&P 500·금 연복리와 각 차이를 표시하고 더 높은 금 칸에 표시한다',()=>{
+  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),today=new Date(2026,9,16).getTime();
+  assert.equal(goldCalc.bestBenchmark(c.sp500Comparison(data.ledger.years,new Date(today)),goldCalc.goldComparison(data.ledger.years,new Date(today))),'gold','fixture의 최고 지수가 바뀌면 화면 기대를 임의 변경하지 않는다');
+  const html=ledgerHtml(data,today,{ledgerBench:'both'}),block=benchmarkHtml(html),cells=benchmarkCells(block);
+  assert.equal(cells.length,3);assert.match(block,/data-ledger-bench="both" aria-pressed="true"/);assert.match(block,/data-ledger-bench="best" aria-pressed="false"/);
+  includes(cells[0],'내 연복리');includes(cells[0],completedCompound.toFixed(2)+'%');
+  includes(cells[1],'S&amp;P 500 연복리');includes(cells[1],spCompound.toFixed(2)+'%');includes(cells[1],'차이 +'+(completedCompound-spCompound).toFixed(2)+'%p');
+  includes(cells[2],'금 연복리');includes(cells[2],goldCompound.toFixed(2)+'%');includes(cells[2],'차이 '+(completedCompound-goldCompound).toFixed(2)+'%p');
+  assert.doesNotMatch(cells[0]+cells[1],/연복리 높음/);includes(cells[2],'연복리 높음');
+  const current=benchmarkCells(block,'benchmark-ytd-cells');assert.equal(current.length,3);
+  includes(current[0],'내 누적');includes(current[1],'S&amp;P 500 누적');includes(current[1],'12.75%');includes(current[1],'차이 '+((1.01**9-1)*100-12.75).toFixed(2)+'%p');
+  includes(current[2],'금 누적');includes(current[2],'반영 전');
+  assert.doesNotMatch(html,/LBMA/);assert.equal(JSON.stringify(data),before);
+});
+
+test('지수 비교 표시 선택은 setUi로 이 기기에만 기억하고 모르는 설정은 높은 쪽으로 본다',()=>{
+  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),today=new Date(2026,9,16).getTime();
+  const page=ledgerPage(data,today);
+  page.buttons.find(b=>b.dataset.ledgerBench==='both').onclick();
+  assert.equal(JSON.parse(page.storage.get('etf-planner-assets-ui')).ledgerBench,'both');
+  assert.match(page.html,/data-ledger-bench="both" aria-pressed="true"/);
+  const restored=ledgerHtml(data,today,{ledgerBench:JSON.parse(page.storage.get('etf-planner-assets-ui')).ledgerBench});
+  assert.match(restored,/data-ledger-bench="both" aria-pressed="true"/);
+  page.buttons.find(b=>b.dataset.ledgerBench==='best').onclick();
+  assert.equal(JSON.parse(page.storage.get('etf-planner-assets-ui')).ledgerBench,'best');
+  assert.equal(JSON.stringify(data),before,'기기 설정을 바꾸어도 doc.ledger에 필드가 생기거나 저장되지 않는다');
+  assert.deepEqual([...page.storage.keys()],['etf-planner-assets-ui']);
+  for(const value of [undefined,null,'unknown','gold','BEST',0,true]){
+    const block=benchmarkHtml(ledgerHtml(data,today,{ledgerBench:value}));
+    assert.match(block,/data-ledger-bench="best" aria-pressed="true"/);assert.match(block,/data-ledger-bench="both" aria-pressed="false"/);
+    const cells=benchmarkCells(block);includes(cells[1],'금 연복리');includes(cells[2],'차이');
+  }
+});
+
+test('높은 쪽 선택은 완료 연도 기준으로 S&P 500이 높으면 S&P 500을 표시하고 다른 지수 값도 안내한다',()=>{
+  const years=[yearOf(2021,Array(12).fill(2))],today=new Date(2026,9,16),data={version:1,ledger:{savedAt:'',years}};
+  assert.equal(goldCalc.bestBenchmark(c.sp500Comparison(years,today),goldCalc.goldComparison(years,today)),'sp500');
+  const block=benchmarkHtml(ledgerHtml(data,today.getTime())),cells=benchmarkCells(block);
+  includes(cells[1],'S&amp;P 500 연복리');includes(cells[1],SP[0].toFixed(2)+'%');
+  includes(block,'연복리가 더 높은 S&amp;P 500 표시');includes(block,'금 '+((goldEnds[2021]/goldEnds[2020]-1)*100).toFixed(2)+'%');
+});
+
+test('금 월말은 페이지당 한 번 no-cache로 읽고 가짜 GLDM 자료가 오면 올해 값과 차이를 다시 그린다',async()=>{
+  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),today=new Date(2026,9,16).getTime(),requests=[];
+  const raw=goldCollected();let deliver;
+  const page=ledgerPage(data,today,{ledgerBench:'both'},(url,options)=>{
+    requests.push({url,options});
+    return url==='data/gold-etf.json'?new Promise(resolve=>{deliver=()=>resolve({ok:true,json:async()=>raw});}):Promise.resolve({ok:false});
+  });
+  page.ctx.redrawCount=0;vm.runInContext('const testGoldRedraw=redrawIdle;redrawIdle=()=>{globalThis.redrawCount++;testGoldRedraw();};loadGold();loadGold();renderLedger();',page.ctx);
+  const request=requests.filter(r=>r.url==='data/gold-etf.json');assert.equal(request.length,1);assert.equal(request[0].options.cache,'no-cache');
+  includes(benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells')[2],'반영 전');
+  deliver();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(page.ctx.redrawCount,1,'월별 손익 탭을 보면서 유효한 자료가 도착하면 다시 그린다');
+  const cells=benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells'),expected=(raw.monthEnd.find(p=>p.ym==='2026-09').close/goldEnds[2025]-1)*100;
+  includes(cells[2],'금 누적');includes(cells[2],expected.toFixed(2)+'%');includes(cells[2],'차이 '+((1.01**9-1)*100-expected).toFixed(2)+'%p');
+  assert.equal(requests.filter(r=>r.url==='data/gold-etf.json').length,1,'다시 그려도 요청을 반복하지 않는다');
+  assert.equal(JSON.stringify(data),before,'자료 조회만으로 투자 기록을 바꾸지 않는다');assert.doesNotMatch(page.html,/LBMA/);
+});
+
+test('다른 탭에서 도착한 금 자료는 다시 그리지 않고 금 자료 실패·잘못된 형식은 상수로 조용히 비교한다',async()=>{
+  const data={version:1,ledger:{savedAt:'',years:fixture()}},before=JSON.stringify(data),today=new Date(2026,9,16).getTime();let deliver;
+  const off=ledgerPage(data,today,null,url=>url==='data/gold-etf.json'?new Promise(resolve=>{deliver=()=>resolve({ok:true,json:async()=>goldCollected()});}):Promise.resolve({ok:false}));
+  off.ctx.redrawCount=0;vm.runInContext('ui.tab="alloc";redrawIdle=()=>globalThis.redrawCount++;',off.ctx);
+  deliver();await new Promise(resolve=>setImmediate(resolve));assert.equal(off.ctx.redrawCount,0,'월별 손익 탭일 때만 redrawIdle');
+  for(const mode of ['reject','http','invalid']){
+    const requests=[],page=ledgerPage(data,today,null,url=>{
+      requests.push(url);if(url!=='data/gold-etf.json')return Promise.resolve({ok:false});
+      return mode==='reject'?Promise.reject(Error('가상 네트워크 실패')):Promise.resolve({ok:mode!=='http',json:async()=>({...goldCollected(),symbol:'GLD'})});
+    });
+    await new Promise(resolve=>setImmediate(resolve));vm.runInContext('loadGold();renderLedger();',page.ctx);
+    const cells=benchmarkCells(benchmarkHtml(page.html));includes(cells[1],goldCompound.toFixed(2)+'%');
+    includes(benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells')[1],'반영 전');
+    assert.equal(requests.filter(url=>url==='data/gold-etf.json').length,1,'실패해도 페이지에서 반복 요청하지 않는다');
+    assert.doesNotMatch(page.html,/가상 네트워크 실패|LBMA/);
+  }
+  assert.equal(JSON.stringify(data),before);
+});
+
+test('지수마다 제외·반영 전 연도가 다르면 각각 지수 이름을 붙여 안내한다',()=>{
+  const years=fixture();years.at(-1).months[0].balances=[];
+  const data={version:1,ledger:{savedAt:'',years}},before=JSON.stringify(data),page=ledgerPage(data,new Date(2027,0,5).getTime(),{ledgerBench:'both'});
+  page.ctx.fakeGold=goldCollected();vm.runInContext('goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);
+  const block=benchmarkHtml(page.html);
+  assert.match(block,/S&amp;P 500: 2026년 값 반영 전/,'S&P 500은 연말 자료가 없는 상태');
+  assert.match(block,/금: 2026년은 내 연 수익률이 없어 제외/,'금은 연말 자료가 있어도 내 기록 분모가 없어 제외한 상태');
+  assert.equal(JSON.stringify(data),before);
+});
+
+test('수집 연도 범위가 다르면 공통 완료 연도로 내·두 지수·차이를 맞추고 올해 누적은 유지한다',()=>{
+  const years=[...fixture(),yearOf(2027,[2,2,2])],today=new Date(2027,9,16),data={version:1,ledger:{savedAt:'',years}},before=JSON.stringify(data);
+  const raw=goldCollected();raw.yearEnd.find(p=>p.year===2026).close=goldEnds[2025]*.01;
+  raw.monthEnd.push({ym:'2027-03',date:'2027-03-31',close:goldEnds[2025]*.01*1.02});
+  const rawGold=goldCalc.goldComparison(years,today,goldCalc.cleanGoldData(raw)),rawSp=c.sp500Comparison(years,today);
+  assert.equal(rawGold.years,6);assert.equal(rawSp.years,5);
+  assert.ok(rawGold.gold<rawSp.sp,'개별 전체 기간의 순위는 공통 기간 순위와 다를 수 있다');
+  assert.equal(goldCalc.bestBenchmark(rawSp,rawGold),'gold','공통 2021~2025년의 순위');
+  const page=ledgerPage(data,today.getTime(),{ledgerBench:'both'});page.ctx.fakeGold=raw;
+  vm.runInContext('goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);
+  const block=benchmarkHtml(page.html),cells=benchmarkCells(block);
+  assert.equal(cells.length,3);
+  includes(cells[0],completedCompound.toFixed(2)+'%');includes(cells[1],spCompound.toFixed(2)+'%');includes(cells[2],goldCompound.toFixed(2)+'%');
+  includes(cells[1],'차이 +'+(completedCompound-spCompound).toFixed(2)+'%p');includes(cells[2],'차이 '+(completedCompound-goldCompound).toFixed(2)+'%p');
+  includes(cells[2],'연복리 높음');assert.doesNotMatch(cells[1],/연복리 높음/,'표시 수치와 높은 지수 표시가 같은 기간을 따른다');
+  assert.match(block,/2021~2025년 완료 5개 연도 · 같은 연도 연복리/);
+  assert.match(block,/S&amp;P 500 자료: 2021~2025년 완료 5개 연도/);assert.match(block,/금 자료: 2021~2026년 완료 6개 연도/);
+  assert.doesNotMatch(block,/내 연 수익률이 없어 제외/,'공통 기간 필터로 뺀 해를 개인 기록 누락으로 안내하지 않는다');
+  const current=benchmarkCells(block,'benchmark-ytd-cells');
+  includes(current[0],((1.02**3-1)*100).toFixed(2)+'%');includes(current[2],((1.02-1)*100).toFixed(2)+'%');
+  page.buttons.find(b=>b.dataset.ledgerBench==='best').onclick();
+  const best=benchmarkCells(benchmarkHtml(page.html));includes(best[1],'금 연복리');includes(best[1],goldCompound.toFixed(2)+'%');includes(best[2],(completedCompound-goldCompound).toFixed(2)+'%p');
+  assert.equal(JSON.stringify(data),before);
+});
+
+test('두 지수에 연간 자료가 있어도 공통 연도가 없으면 연복리 칸을 비우고 올해 누적은 표시한다',()=>{
+  const years=[yearOf(2027,[1]),yearOf(2029,[2]),yearOf(2030,[3,3])],data={version:1,ledger:{savedAt:'',years}},before=JSON.stringify(data),page=ledgerPage(data,new Date(2030,9,16).getTime(),{ledgerBench:'both'});
+  // 2027년은 S&P 500만, 2029년은 금만 연간 비율을 계산할 수 있는 가상 자료다.
+  page.ctx.fakeSp={schemaVersion:1,symbol:'^SP500TR',currency:'USD',yearEnd:[{year:2026,date:'2026-12-31',close:100},{year:2027,date:'2027-12-31',close:110}],monthEnd:[]};
+  page.ctx.fakeGold={schemaVersion:1,symbol:'GLDM',currency:'USD',yearEnd:[{year:2028,date:'2028-12-31',close:100},{year:2029,date:'2029-12-31',close:120}],monthEnd:[{ym:'2030-02',date:'2030-02-28',close:126}]};
+  vm.runInContext('sp500Data=cleanSp500Data(fakeSp);goldData=cleanGoldData(fakeGold);renderLedger();',page.ctx);
+  const block=benchmarkHtml(page.html);
+  assert.doesNotMatch(block,/class="benchmark-grid"/);includes(block,'비교할 완료 연도가 아직 없습니다');
+  includes(block,'올해 2030년 1~2월 누적');
+  const current=benchmarkCells(block,'benchmark-ytd-cells');assert.equal(current.length,3);
+  includes(current[0],((1.03**2-1)*100).toFixed(2)+'%');includes(current[2],((126/120-1)*100).toFixed(2)+'%');
+  assert.equal(JSON.stringify(data),before);
 });
