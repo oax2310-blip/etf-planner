@@ -1,4 +1,4 @@
-// 자산 현황 › 월별 손익 탭(S&P 500 비교 표시 포함). 공통 도구·render·saveSection은 assets.js, 계산은 assets-calc.js·ledger-benchmark.js.
+// 자산 현황 › 월별 손익 탭(S&P 500·금 비교 표시 포함). 공통 도구·render·saveSection은 assets.js, 계산은 assets-calc.js·ledger-benchmark.js.
 // 잔액을 넣은 달에 비어 있는 계좌 중, 같은 해 앞 달에 0이 아닌 잔액이 있고 뒤 달에도 잔액이 있는 계좌({account, index} 목록).
 // 빈칸은 monthTotals에서 0원으로 더해져 그달 수익률이 높게 나오므로 입력이 빠졌는지 표시만 한다. 아직 열지 않았거나 해지 뒤 비운 계좌는 앞·뒤 조건으로 뺀다. 기록은 바꾸지 않는다.
 function ledgerBalanceGaps(y, m){
@@ -93,6 +93,7 @@ function renderLedger(){
     <section class="card ledger-table years"><div class="ledger-row head"><span>연도</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>${summaryRows}<div class="year-average"><span>연복리 수익률 <small>${compoundHint}</small></span><strong class="${compound.rate<0?"neg":""}">${pc(compound.rate)}</strong></div>${sp500Block(years)}</section>`;
   all("[data-pick-year]").forEach(b=>b.onclick=()=>{ setUi({year:Number(b.dataset.pickYear)}); renderLedger(); });
   all("[data-ledger-chart]").forEach(b=>b.onclick=()=>{ setUi({ledgerChart:b.dataset.ledgerChart}); renderLedger(); });
+  all("[data-ledger-bench]").forEach(b=>b.onclick=()=>{ setUi({ledgerBench:b.dataset.ledgerBench==="both"?"both":"best"}); renderLedger(); });
   // 고른 연도 칩이 가운데(끝 연도면 연도 추가까지) 보이게 연도 줄을 가로로 민다(세로 스크롤은 건드리지 않는다).
   const yearRow=view.querySelector(".ledger-years"), picked=yearRow?.querySelector(".chip.active");
   if(picked&&typeof picked.offsetLeft==="number")yearRow.scrollLeft=Math.max(0,picked.offsetLeft-(yearRow.clientWidth-picked.offsetWidth)/2);
@@ -103,8 +104,8 @@ function renderLedger(){
     if(!confirm(`${next}년을 추가할까요? 계좌 목록은 ${last.year}년과 같게 시작합니다.`)) return;
     L.years.push({year:next,accounts:ledgerAccounts(last).map(x=>({...x.account})),months:[]}); setUi({year:next}); saveSection("ledger"); render(); };
 }
-// 연도별 요약 아래 S&P 500 연복리 비교. 계산 기준은 ledger-benchmark.js sp500Comparison 주석.
-// 세 값은 S&P 500 공표치와 같은 소수 둘째 자리로 표시한다.
+// 연도별 요약 아래 지수 연복리 비교. 계산 기준은 ledger-benchmark.js의 비교 함수·bestBenchmark 주석.
+// 세 값은 소수 둘째 자리로 표시한다. 표시 선택은 화면 설정(ui.ledgerBench)이라 이 기기에만 기억하고 기록에 넣지 않는다.
 const nfFixed2 = new Intl.NumberFormat("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct2 = (v, unit="%") => v===null||v===undefined||!Number.isFinite(Number(v)) ? "—" : `${unit==="%p"&&v>0?"+":""}${nfFixed2.format(Number(v))}${unit}`;
 // S&P 500 연말·월말 종가(공개 data/sp500-tr.json, 매월 자동 수집: scripts/collect-sp500.cjs). 페이지마다 한 번 읽고, 못 읽으면 공표치만으로 비교한다.
@@ -113,22 +114,46 @@ function loadSp500(){
   if(sp500Requested||typeof fetch!=="function")return;sp500Requested=true;
   fetch("data/sp500-tr.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(raw=>{sp500Data=cleanSp500Data(raw);if(sp500Data&&ui.tab==="ledger")redrawIdle();}).catch(()=>{});
 }
+// GLDM 연말·월말 종가도 페이지마다 한 번 읽는다. 실패하면 연말 상수만으로 비교하며 기록은 바꾸지 않는다.
+let goldData=null, goldRequested=false;
+function loadGold(){
+  if(goldRequested||typeof fetch!=="function")return;goldRequested=true;
+  fetch("data/gold-etf.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(raw=>{goldData=cleanGoldData(raw);if(goldData&&ui.tab==="ledger")redrawIdle();}).catch(()=>{});
+}
+// 양쪽에 연간 자료가 있으면 표시할 완료 연도를 공통 연도로 맞춘다. 한 개의 내 연복리와 두 차이가 같은 기간을 가리키게 한다.
+// 원래 비교 결과는 지수별 제외·반영 전 안내에 쓰고, 올해 누적은 완료 연도 필터에서 빼지 않는다.
 function sp500Block(years){
-  loadSp500();
-  const c=sp500Comparison(years,new Date(),sp500Data), now=c.current, notes=[];
-  if(c.missing.length)notes.push(`${c.missing.join("·")}년은 내 연 수익률이 없어 제외`);
-  if(c.pending.length)notes.push(`${c.pending.join("·")}년 S&amp;P 500 값 반영 전`);
-  const cell=(label,value,cls,hint)=>`<div><span>${label}</span><strong class="${cls?"neg":""}">${value}</strong><small>${hint}</small></div>`;
-  return `<div class="benchmark"><div class="benchmark-head"><b>S&amp;P 500 비교</b><small>${c.years?`${c.from}~${c.to}년 완료 ${c.years}개 연도 · `:""}같은 연도 연복리${notes.length?` · ${notes.join(" · ")}`:""}</small></div>
-    ${c.years?`<div class="benchmark-grid">${cell("내 연복리",pct2(c.mine),c.mine<0,"원화 · 실현손익")}${cell("S&amp;P 500 연복리",pct2(c.sp),c.sp<0,"달러 · 배당 재투자")}${cell("차이",pct2(c.diff,"%p"),c.diff<0,"내 연복리 − S&amp;P 500")}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
-    ${now&&now.rate!==null&&now.month?sp500YtdRow(now):""}
-    <p class="benchmark-note">S&amp;P 500은 S&amp;P Dow Jones Indices의 Total Return 지수(배당 재투자) 달러 수익률이라 원·달러 환율 변동이 빠져 있고, 내 수익률은 원화 실현손익 기준이라 평가손익이 빠져 있습니다.</p></div>`;
+  loadSp500();loadGold();
+  const today=new Date(), sp=sp500Comparison(years,today,sp500Data), gold=goldComparison(years,today,goldData);
+  const choices=[{key:"sp",id:"sp500",name:"S&amp;P 500",c:sp},{key:"gold",id:"gold",name:"금",c:gold}], winner=bestBenchmark(sp,gold);
+  const common=new Set(sp.rows.filter(r=>gold.rows.some(g=>g.year===r.year)).map(r=>r.year));
+  const annualYears=years.filter(y=>Number(y.year)>=today.getFullYear()||common.has(Number(y.year)));
+  const display=sp.rows.length&&gold.rows.length?choices.map(x=>({...x,c:x.id==="gold"?goldComparison(annualYears,today,goldData):sp500Comparison(annualYears,today,sp500Data)})):choices;
+  const picked=display.find(x=>x.id===winner), other=display.find(x=>x!==picked), c=picked.c, both=ui.ledgerBench==="both", notes=[];
+  const sameList=(a,b)=>JSON.stringify(a)===JSON.stringify(b), period=x=>`${x.from}~${x.to}년 완료 ${x.years}개 연도`;
+  if(sameList(sp.missing,gold.missing)){
+    if(sp.missing.length)notes.push(`${sp.missing.join("·")}년은 내 연 수익률이 없어 제외`);
+  }else for(const x of choices)if(x.c.missing.length)notes.push(`${x.name}: ${x.c.missing.join("·")}년은 내 연 수익률이 없어 제외`);
+  for(const x of choices)if(x.c.pending.length)notes.push(`${x.name}: ${x.c.pending.join("·")}년 값 반영 전`);
+  if(!sameList(sp.rows.map(r=>r.year),gold.rows.map(r=>r.year)))for(const x of choices)if(x.c.years)notes.push(`${x.name} 자료: ${period(x.c)}`);
+  const cell=(label,value,neg,hint,high=false)=>`<div><span>${label}</span><strong class="${neg?"neg":""}">${value}</strong><small>${hint}</small>${high?'<small class="benchmark-best">연복리 높음</small>':""}</div>`;
+  const indexCell=x=>cell(`${x.name} 연복리`,pct2(x.c[x.key]),x.c[x.key]<0,`차이 ${pct2(x.c.diff,"%p")}`,x.id===winner&&display.every(x=>x.c[x.key]!==null)&&display[0].c.sp!==display[1].c.gold);
+  const grid=cell("내 연복리",pct2(c.mine),c.mine<0,"원화 · 실현손익")+(both?display.map(indexCell).join(""):
+    cell(`${picked.name} 연복리`,pct2(c[picked.key]),c[picked.key]<0,picked.id==="gold"?"달러 · GLDM 종가":"달러 · 배당 재투자")+cell("차이",pct2(c.diff,"%p"),c.diff<0,`내 연복리 − ${picked.name}`));
+  const hint=`${c.years?`${period(c)} · `:""}같은 연도 연복리${!both?` · 연복리가 더 높은 ${picked.name} 표시 · ${other.name} ${pct2(other.c[other.key])}`:""}${notes.length?` · ${notes.join(" · ")}`:""}`;
+  return `<div class="benchmark"><div class="benchmark-head"><b>지수 비교</b><div class="ledger-seg" role="group" aria-label="지수 비교 표시"><button type="button" data-ledger-bench="best" aria-pressed="${!both}">높은 쪽</button><button type="button" data-ledger-bench="both" aria-pressed="${both}">둘 다</button></div><small>${hint}</small></div>
+    ${c.years?`<div class="benchmark-grid">${grid}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
+    ${c.current&&c.current.rate!==null&&c.current.month?ledgerBenchmarkYtdRow(choices,picked,both):""}
+    <p class="benchmark-note">S&amp;P 500은 S&amp;P Dow Jones Indices의 Total Return 지수(배당 재투자) 달러 수익률이라 원·달러 환율 변동이 빠져 있고, 내 수익률은 원화 실현손익 기준이라 평가손익이 빠져 있습니다. 금은 금 ETF GLDM(보수 0.10%)의 연말·월말 뉴욕 종가 기준이며, 달러 기준이라 원·달러 환율 변동이 빠져 있습니다.</p></div>`;
 }
 // 올해는 기록한 마지막 달 말까지 월 단위로 같은 기간을 비교한다. 위 세 칸과 같은 열에 맞춘다.
-function sp500YtdRow(now){
-  const span=now.month>1?`1~${now.month}월`:"1월", item=(label,value,neg)=>`<span><small>${label}</small><b class="${neg?"neg":""}">${value}</b></span>`;
-  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${now.sp!==null?`S&amp;P 500은 ${now.month}월 말 기준`:`S&amp;P 500 ${now.month}월 말 값 반영 전`} · 연간 확정 후 연복리에 포함</small></div>
-    <div class="benchmark-ytd-cells">${item("내 누적",pct2(now.rate),now.rate<0)}${item("S&amp;P 500 누적",pct2(now.sp),now.sp<0)}${item("차이",pct2(now.diff,"%p"),now.diff<0)}</div></div>`;
+function ledgerBenchmarkYtdRow(choices,picked,both){
+  const now=picked.c.current, span=now.month>1?`1~${now.month}월`:"1월";
+  const item=(label,value,neg,hint="")=>`<span><small>${label}</small><b class="${neg?"neg":""}">${value}</b>${hint?`<small>${hint}</small>`:""}</span>`;
+  const indexCell=x=>{const row=x.c.current;return item(`${x.name} 누적`,row[x.key]===null?"반영 전":pct2(row[x.key]),row[x.key]<0,both?`차이 ${pct2(row.diff,"%p")}`:"");};
+  const shown=both?choices:[picked], status=shown.map(x=>`${x.name}${x.c.current[x.key]!==null?`은 ${now.month}월 말 기준`:` ${now.month}월 말 값 반영 전`}`).join(" · ");
+  return `<div class="benchmark-ytd"><div class="benchmark-ytd-head">올해 ${now.year}년 ${span} 누적<small>${status} · 연간 확정 후 연복리에 포함</small></div>
+    <div class="benchmark-ytd-cells">${item("내 누적",pct2(now.rate),now.rate<0)}${both?choices.map(indexCell).join(""):indexCell(picked)+item("차이",pct2(now.diff,"%p"),now.diff<0)}</div></div>`;
 }
 // 자주 적는 손익 항목은 빈 전용 칸으로 보여 준다. 실제 금액을 넣은 항목만 pnlEntries에 저장하고, 열기만 해서는 기록을 만들지 않는다.
 let updateLedgerDividendFx=null;
