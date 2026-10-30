@@ -1,5 +1,5 @@
 // 월별 손익 맨 위 누적 그래프와 ‘연도별 요약’의 S&P 500·금 수익률 비교 계산. 내 연 수익률은 assets-calc.js yearSummary가 기준이다.
-// 화면 없이 계산한다(tests/ledger-benchmark.test.cjs). 공개 자료 수집 scripts/collect-sp500.cjs는 공표치 검증에 S&P 500 두 표만 읽는다.
+// 화면 없이 계산한다(tests/ledger-benchmark.test.cjs). 공개 자료 수집 collect-sp500.cjs·collect-gold.cjs는 검증에 해당 지수·금 상수만 읽는다.
 // 개인 기록은 읽기만 하며 저장·변경하지 않는다. 시세 수집(비공개 저장소)은 이 파일을 읽지 않는다.
 
 // S&P 500 Total Return(배당 재투자) 지수의 달러 기준 연간 수익률(%, 전년 12월 말 종가 → 그해 12월 말 종가).
@@ -16,7 +16,7 @@ const SP500_COMPARE_FROM = 2021; // 투자 기록을 시작한 해
 // 출처(2차 자료): Wheaton Precious Metals 2022·2025 Annual Information Form의 Gold Prices, Closing.
 // 2020~2022: https://s203.q4cdn.com/976005377/files/doc_financials/2022/ar/56f9e1a4-3f7d-4aec-b08f-217f7f63241b.pdf (PDF 122쪽)
 // 2023~2025: https://s203.q4cdn.com/976005377/files/doc_financials/2025/ar/AIF-for-the-year-ended-December-31-2025-FINAL.pdf (PDF 120쪽)
-// 2026-10-30 조회. 2차 자료로 확인한 값이므로 4단계 CI에서 LBMA 원자료와 대조한다.
+// 2026-10-30 조회. 2차 자료로 확인한 값이며, GLDM 수집 수익률과의 차이는 scripts/collect-gold.cjs의 summarize에서 검증한다.
 const GOLD_LBMA_YEAR_END = Object.freeze({2020:1887.60, 2021:1805.85, 2022:1813.75, 2023:2078.40, 2024:2609.10, 2025:4367.80});
 
 // 공개 비교 자료의 schemaVersion·지수·통화와 날짜·양수 종가를 확인한다. 형식이 틀리면 null, 연말은 200개·월말은 240개까지 사본에 남긴다.
@@ -33,8 +33,8 @@ function cleanBenchmarkData(raw, symbol){
 }
 // data/sp500-tr.json의 기존 검증 진입점. 수집 자료가 없거나 틀리면 공표치만으로 비교한다.
 function cleanSp500Data(raw){ return cleanBenchmarkData(raw,"^SP500TR"); }
-// LBMA Gold Price PM 달러 수집 자료의 검증 진입점. S&P 500과 같은 연말·월말 검증을 적용한다.
-function cleanGoldData(raw){ return cleanBenchmarkData(raw,"LBMA-GOLD-PM"); }
+// GLDM 달러 종가 수집 자료의 검증 진입점. S&P 500과 같은 연말·월말 검증을 적용한다.
+function cleanGoldData(raw){ return cleanBenchmarkData(raw,"GLDM"); }
 const sp500Ratio = (end, start) => end&&start ? (end.close/start.close-1)*100 : null;
 // 월말 누적: 공표치, 없으면 수집한 전년 말 종가 → 그달 말 종가. 둘 다 없으면 null.
 function sp500YtdAt(year, month, data=null){
@@ -44,14 +44,19 @@ function sp500YtdAt(year, month, data=null){
 // 연간: 연간 공표치, 12월 말 누적 공표치, 수집한 연말 종가 비율 순. 모두 없으면 null.
 const sp500YearReturn = (year, data=null) => finite(SP500_TR_RETURNS[year]) ?? finite(SP500_TR_YTD[`${year}-12`]) ?? sp500Ratio(data?.yearEnd?.[year], data?.yearEnd?.[year-1]);
 
-// 금 연간 수익률(%): (그해 연말 ÷ 전년 연말 − 1) × 100. 두 연말값 각각 상수 우선, 없으면 검증한 수집 종가. 한쪽이라도 없으면 null.
+// 2025년까지 연간은 LBMA PM 연말 상수, 올해 누적과 상수가 없는 해는 GLDM 종가(보수 0.10%·뉴욕 종가 기준이라 금값과 조금 다름)를 쓴다.
+// 금 연간 수익률(%): (그해 연말 ÷ 전년 연말 − 1) × 100. 두 연말 상수가 모두 있으면 LBMA 비율, 아니면 수집한 두 연말이 모두 있을 때만 GLDM 비율.
+// GLDM은 1주 가격이라 LBMA의 달러/온스 상수와 단위가 다르므로 한 비율에 섞지 않는다. 같은 계열의 두 값이 없으면 null.
 function goldYearReturn(year, data=null){
-  const end=finite(GOLD_LBMA_YEAR_END[year])??data?.yearEnd?.[year]?.close, start=finite(GOLD_LBMA_YEAR_END[year-1])??data?.yearEnd?.[year-1]?.close;
-  return end&&start?(end/start-1)*100:null;
+  const end=finite(GOLD_LBMA_YEAR_END[year]), start=finite(GOLD_LBMA_YEAR_END[year-1]);
+  if(end!==null&&start!==null)return (end/start-1)*100;
+  const etfEnd=data?.yearEnd?.[year]?.close, etfStart=data?.yearEnd?.[year-1]?.close;
+  return etfEnd&&etfStart?(etfEnd/etfStart-1)*100:null;
 }
-// 금 월말 누적(%): (해당 월말 수집 종가 ÷ 전년 연말 − 1) × 100. 전년 말은 상수 우선이며, 해당 월말이 없으면 앞달로 대체하지 않고 null.
+// 금 월말 누적(%): (해당 GLDM 월말 수집 종가 ÷ GLDM 전년 연말 수집 종가 − 1) × 100. LBMA 상수를 분모로 쓰지 않는다.
+// 해당 월말이나 수집한 전년 말이 없으면 null이며 앞달로 대체하지 않는다.
 function goldYtdAt(year, month, data=null){
-  const key=`${year}-${String(month).padStart(2,"0")}`, end=data?.monthEnd?.[key]?.close, start=finite(GOLD_LBMA_YEAR_END[year-1])??data?.yearEnd?.[year-1]?.close;
+  const key=`${year}-${String(month).padStart(2,"0")}`, end=data?.monthEnd?.[key]?.close, start=data?.yearEnd?.[year-1]?.close;
   return end&&start?(end/start-1)*100:null;
 }
 
