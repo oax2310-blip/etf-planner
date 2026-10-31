@@ -560,6 +560,37 @@ test('분할매수 시세 대기에도 전체 알림을 켜 두면 시세 도착
   r.inputs('[data-purchase-alert-all]').find(x=>x.dataset.on==='off').onclick();assert.equal(r.rules().length,0);
 });
 
+test('비트코인(BTC-USD) 이동평균선 돌파: 시선 없이 일선·주선·월선으로 나누고 0.00000001 BTC 단위·달러 알림을 만들며 매수대기는 막는다',()=>{
+  const ma={'25일선':70000,'32일선':72000,'25주선':80000,'25개월선':90000};
+  const r=setup({bitcoin:true,currency:'USD',price:60000,ma,budget:1000,end:null,names:['25일선']}),other={id:'k',name:'국내 종목',ticker:'111111',shares:1};
+  delete r.item.buyPlan;r.doc.allocation.groups[0].items.push(other);r.initialize();r.render();
+  const option=(value,textContent)=>({value,textContent,disabled:false,dataset:{}});
+  r.form.lineStartUnit.options=[option('선','시선 · 60분봉'),option('일선','일선')];r.form.lineLastUnit.options=[option('선','시선 · 60분봉'),option('개월선','월선')];
+  r.form.lineSet.options=[option('all','시선 + 일선 + 주선 + 월선'),option('hour','시선 · 60분봉만'),option('day','일선만'),option('legacy','시선 + 일선')];
+  const pick=id=>r.element('purchaseItemList').onclick({target:{closest:sel=>sel==='[data-pick]'?{dataset:{pick:id}}:null}}),label=()=>r.form.lineSet.options.map(o=>`${o.value}:${o.textContent}:${o.disabled}`);
+  r.element('addPurchase').onclick();pick('a');
+  assert.equal(r.form.lineStartUnit.value,'일선','새 비트코인 계획의 기본 시작선은 시선 대신 일선');assert.equal(r.form.lineSet.value,'all');
+  assert.deepEqual(label(),['all:일선 + 주선 + 월선:false','hour:시선 · 60분봉만:true','day:일선만:false','legacy:시선 + 일선:true']);
+  assert.equal(r.form.lineStartUnit.options[0].disabled,true);assert.equal(r.form.lineLastUnit.options[0].disabled,true);
+  r.form.lineLastPeriod.value='25';r.form.lineBudget.value='1000';r.submit();assert.deepEqual(r.alerts,[]);
+  const plan=r.item.buyPlan;assert.equal(plan.currency,'USD');assert.equal(plan.lines.startLine,'25일선');
+  assert.deepEqual(Array.from(plan.lines.names),['25일선','32일선','42일선','60일선','80일선','125일선','150일선','25주선','32주선','42주선','60주선','80주선','125주선','150주선','25개월선']);
+  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','25일선:1','25일선:2','32일선:0','32일선:1','32일선:2','25주선:0','25주선:1','25주선:2','25개월선:0']);
+  assert.match(r.html(),/class="card table-card purchase-table[^"]* btc" id="purchaseTable"/);
+  const qty=Array.from(r.html().matchAll(/class="purchase-qty">([\d.]+)<\/div>/g),m=>m[1]);assert.equal(qty.length,10);
+  assert.ok(qty.every(q=>Number(q)>0&&Number(q)<1&&/^0\.\d{1,8}$/.test(q)),qty.join());
+  plan.notify={stages:true};const rules=r.rules();assert.equal(rules.length,10);
+  assert.deepEqual([rules[0].ticker,rules[0].quoteKind,rules[0].condition,rules[0].targetPrice,rules[0].label],['BTC-USD','코인','up',70000,'분할매수 25일선 1차']);
+  assert.equal(rules[9].targetPrice,90000);
+  r.edit();assert.equal(r.form.lineSet.value,'all');assert.equal(r.form.lineStartUnit.value,'일선');const before=JSON.stringify(plan);r.submit();assert.equal(JSON.stringify(r.item.buyPlan),before,'다시 저장해도 같은 계획');
+  r.alerts.length=0;r.edit();r.form.lineStartUnit.value='선';r.submit();assert.match(r.alerts[0],/비트코인은 60분봉\(시선\)을 수집하지 않습니다/);assert.equal(JSON.stringify(r.item.buyPlan),before);
+  r.alerts.length=0;r.edit();r.form.lineLastUnit.value='선';r.submit();assert.match(r.alerts[0],/비트코인은 60분봉\(시선\)을 수집하지 않습니다/);assert.equal(JSON.stringify(r.item.buyPlan),before);
+  r.alerts.length=0;r.edit();r.form.mode.value='wait';r.submit();assert.match(r.alerts[0],/매수대기는 .*비트코인 제외/);assert.equal(JSON.stringify(r.item.buyPlan),before);
+  r.form.mode.value='lines';r.element('addPurchase').onclick();pick('k');
+  assert.deepEqual(label(),['all:시선 + 일선 + 주선 + 월선:false','hour:시선 · 60분봉만:false','day:일선만:false','legacy:시선 + 일선:false'],'국내·미국 종목은 시선을 그대로 고른다');
+  assert.equal(r.form.lineStartUnit.options[0].disabled,false);
+});
+
 test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도달하며 보유량·체결 회차는 바꾸지 않는다',()=>{
   const r=setup({currency:'USD',wait:'25개월선',price:110,ma:{'25개월선':100}}),before=JSON.stringify(r.doc);
   // 매수대기 진행 카드(purchases.js waitCard): 왼쪽이 낮은 가격인 띠(왼쪽 선·오른쪽 현재가), 가운데 상태 칩·선까지 남은 하락 %, 맨 아래 알림 스위치. 계산 요약 카드는 두지 않는다.
