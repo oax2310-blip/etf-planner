@@ -68,8 +68,10 @@ const recordedShares=(key,b)=>{
 // 이동평균선 돌파 계획의 시세: 메인 플래너가 읽은 시세 파일(sync.js priceData — 종목마다 ma 포함). 종목 코드 시장과 시세 종류가 같을 때만.
 const priceDoc=()=>typeof priceData==="object"&&priceData?priceData:null;
 const lineEntry=it=>{const e=stockEntry(priceDoc(),it?.ticker);return e&&e.kind===purchaseQuoteKind(it.ticker)?e:null;};
-const lineMarket=it=>["국내","해외"].includes(purchaseQuoteKind(it?.ticker)); // 이동평균(일봉·60분봉)은 국내·미국 종목만 수집(비트코인 제외)
-const waitEntry=it=>{const e=lineEntry(it)||quoteOf(it);return lineMarket(it)&&e?.kind===purchaseQuoteKind(it.ticker)?e:null;};
+// 이동평균선 돌파는 국내·미국 종목과 비트코인(BTC-USD). 비트코인은 Coinbase UTC 일봉으로 일선·주선·월선만 수집하고 60분봉(시선)은 없다(hourless).
+// 매수대기는 국내·미국만(서버 알림 assets-calc.js purchaseAlertRules의 매수대기가 코인을 제외).
+const lineMarket=it=>!!purchaseQuoteKind(it?.ticker), waitMarket=it=>["국내","해외"].includes(purchaseQuoteKind(it?.ticker)), hourless=it=>purchaseQuoteKind(it?.ticker)==="코인";
+const waitEntry=it=>{const e=lineEntry(it)||quoteOf(it);return waitMarket(it)&&e?.kind===purchaseQuoteKind(it.ticker)?e:null;};
 const lineKnown=(lines,e)=>purchaseLineNames(lines).filter(n=>Number(e?.ma?.[n])>0);
 // 단계 묶음(창의 '단계' 선택). 마지막 목표로 평균선을 고르면 그 선까지의 names만 저장해 수집 작업도 같은 선을 받는다.
 const LINE_SETS={all:PURCHASE_LINES,hour:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="선"),day:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="일선"),week:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="주선"),month:PURCHASE_LINES.filter(n=>movingLineUnit(n)==="개월선"),legacy:PURCHASE_LINES.filter(n=>["선","일선"].includes(movingLineUnit(n)))};
@@ -78,6 +80,8 @@ const lineSetOf=(names,extend=false)=>Object.keys(LINE_SETS).find(k=>LINE_SETS[k
   const bounded=extend?purchaseLineRange(LINE_SETS[k],names[0],names[names.length-1]):[];
   return names.length&&(names.every((n,i)=>range[i]===n)&&(extend||names.length===range.length)||bounded.length===names.length&&names.every((n,i)=>bounded[i]===n));
 })||"custom";
+// 창에서 고른 단계 묶음의 선. 비트코인은 시선을 빼고 일선·주선·월선만 쓴다.
+const lineSetNames=key=>{const names=LINE_SETS[key];return names&&hourless(pickedItem()?.it)?names.filter(n=>movingLineUnit(n)!=="선"):names;};
 const startText=name=>movingLineUnit(name)==="선"?name.replace(/선$/,"시선"):movingLineText(name);
 // 분할매도와 같은 보유 목록·상태·메모 순서(계산 요약 카드 없음). 조회는 계산에 쓰는 연결 항목 그대로 읽으며 보유 수량·자산 이름·계획 기록을 바꾸지 않는다.
 function linkedHoldings({g,it},s){
@@ -138,7 +142,7 @@ function waitCard({g,it},s){
   const plan=it.buyPlan, entry=waitEntry(it), info=purchaseWaitInfo(plan,entry), cur=planCurrency(plan,it), pt=v=>v?priceText(v,cur):"—", id=escA(it.id);
   const line=escA(movingLineText(info.line)||"기준선 미입력"), ready=info.gapPct!==null, gap=!ready?null:info.reached?info.gapPct:(info.price/info.current-1)*100;
   const status=!ready?"시세 대기":info.reached?"기준선 도달":"매수대기", tone=!ready?"wait":info.reached?"due":"next";
-  const alertable=lineMarket(it)&&(purchaseQuoteKind(it.ticker)==="국내"?"KRW":"USD")===cur;
+  const alertable=waitMarket(it)&&(purchaseQuoteKind(it.ticker)==="국내"?"KRW":"USD")===cur;
   const gapText=ready?`${gap>0?"+":""}${pc(gap)}`:"", caption=info.reached?`${line} ${info.gapPct<0?"아래":"도달"}`:`${line}까지 하락`;
   const end=(price,name,cls="")=>`<div class="buy-track-end${cls}"><b>${price}</b><small>${name}</small></div>`, low=info.reached?end(pt(info.current),"현재가"):end(pt(info.price),line), high=info.reached?end(pt(info.price),line," r"):end(pt(info.current),"현재가"," r");
   const notes=[!info.price?"선택한 이동평균선의 시세를 기다리는 중입니다. 다음 수집 후 표시하며, 봉이 부족하면 계산될 때까지 기다립니다.":"",!alertable?"자산 배분에서 국내·미국 시세 종목 코드를 확인하세요.":""].filter(Boolean);
@@ -372,8 +376,19 @@ function pickPurchaseItem(itemId){
   form().item.value=itemId;if(quoteOf(found.it))delete purchaseDraft.currency; // 시세가 있으면 그 통화(전에 고른 종목의 직접 선택은 버림)
   budgetAuto=true;renderDraft();
 }
+// 비트코인은 시선(60분봉) 단위와 '시선만'·'시선 + 일선' 단계를 고를 수 없게 하고, 이미 고른 값이면 일선(단계는 일선만)으로 옮긴다. 창 입력만 바꾸며 기록은 저장할 때.
+function fitLineUnits(it){
+  const f=form(),off=hourless(it),options=sel=>Array.from(sel?.options||[]);
+  for(const sel of [f.lineStartUnit,f.lineLastUnit])options(sel).forEach(o=>{if(o.value==="선")o.disabled=off;});
+  options(f.lineSet).forEach(o=>{if(["hour","legacy"].includes(o.value))o.disabled=off;if(o.value==="all"){o.dataset.label??=o.textContent;o.textContent=off?"일선 + 주선 + 월선":o.dataset.label;}});
+  if(!off)return;
+  for(const sel of [f.lineStartUnit,f.lineLastUnit])if(sel.value==="선")sel.value="일선";
+  if(["hour","legacy"].includes(f.lineSet.value))f.lineSet.value="day";
+}
+const NO_HOUR="비트코인은 60분봉(시선)을 수집하지 않습니다. 일선·주선·월선을 고르세요.";
+const hourPicked=it=>hourless(it)&&[lineStartDraft(),lineEndPriced()?"":lineLastDraft()].some(n=>movingLineUnit(n)==="선");
 const renderDraft=()=>{
-  renderPicker();const picked=pickedItem(),it=picked?.it,info=el("purchaseTrackingInfo"),target=el("purchaseTargetInfo");
+  renderPicker();const picked=pickedItem(),it=picked?.it;fitLineUnits(it);const info=el("purchaseTrackingInfo"),target=el("purchaseTargetInfo");
   const first=it?targetsOf(it,purchaseDraft)[0]:null,tracking=first?trackingInfo(it,first.it):"";
   info.hidden=mode()==="wait"||!tracking;target.hidden=mode()==="wait"||!first;info.innerHTML=tracking;target.innerHTML=first?targetInfo(first,allocationSummary(doc.allocation,prices)):"";
   el("purchaseLines").hidden=mode()!=="lines";el("purchaseWait").hidden=mode()!=="wait";el("purchaseManual").hidden=mode()!=="manual";
@@ -389,7 +404,7 @@ function renderWait(){
   if(mode()!=="wait")return;
   const it=pickedItem()?.it,box=el("waitResult"),hint=t=>`<p>${t}</p>`;
   if(!it){box.innerHTML=hint("종목을 먼저 고르세요.");return;}
-  if(!lineMarket(it)){box.innerHTML=hint(`<span class="ladder-error">자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목을 고르세요.</span>`);return;}
+  if(!waitMarket(it)){box.innerHTML=hint(`<span class="ladder-error">매수대기는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다(비트코인 제외).</span>`);return;}
   const wait=waitDraft();
   if(!wait.line){box.innerHTML=hint(`<span class="ladder-error">기준선 기간은 1~400의 정수로 넣으세요.</span>`);return;}
   const info=purchaseWaitInfo({wait},waitEntry(it)),cur=purchaseQuoteKind(it.ticker)==="국내"?"KRW":"USD";
@@ -428,7 +443,7 @@ function lineLastDraft(){
 const draftLineNames=(last=null)=>{
   const old=purchaseLineNames(purchaseDraft.lines),start=lineStartDraft();
   if(form().lineSet.value==="custom"&&start===old[0]&&(last===null||last===old[old.length-1]))return old;
-  return purchaseLineRange(LINE_SETS[form().lineSet.value]||old,start,last);
+  return purchaseLineRange(lineSetNames(form().lineSet.value)||old,start,last);
 };
 function renderLines(){
   const f=form(), picked=pickedItem(), it=picked?.it, q=quoteOf(it), cur=quoteOf(it)?.currency||"KRW", lines=mode()==="lines";
@@ -443,7 +458,7 @@ function renderLines(){
   f.lineTarget.value=picked&&holding.target!==null?holding.target:"";el("lineTargetNote").innerHTML=picked?targetNote(holding):"종목을 고르면 자산 배분 목표를 표시합니다.";
   if(!lines)return;
   if(!picked){box.innerHTML=hint("종목을 먼저 고르세요.");return;}
-  if(!lineMarket(it)){box.innerHTML=`<p class="ladder-error">자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목을 고르세요.</p>`;return;}
+  if(!lineMarket(it)){box.innerHTML=`<p class="ladder-error">자산 배분에서 국내·미국 시세 종목 코드나 비트코인(BTC-USD)을 넣은 종목을 고르세요.</p>`;return;}
   const target=holding.target, value=holding.value;
   const spent=Object.values(purchaseBuys(purchaseDraft)).reduce((n,b)=>n+Math.max(0,finite(b?.actual)||0),0), goal=target!==null?target/100*s.base:null;
   const auto=purchaseAutoBudget(purchaseDraft,holding,target);
@@ -452,6 +467,7 @@ function renderLines(){
   const draft=linesDraft(), entry=lineEntry(it), rows=purchaseLineRows({lines:draft,buys:purchaseDraft.buys},entry,{...lineOptions(it,purchaseDraft),currency:cur}), open=rows.filter(r=>!r.done), known=lineKnown(draft,entry);
   const out=[];
   if(!lineStartDraft())out.push(`<span class="ladder-error">시작선 기간은 1~400의 정수로 넣으세요.</span>`);
+  else if(hourPicked(it))out.push(`<span class="ladder-error">${NO_HOUR}</span>`);
   else if(draft.end!==undefined&&!(draft.end>0))out.push(`<span class="ladder-error">마지막 목표 가격은 0보다 크게 넣으세요.</span>`);
   else if(draft.end===undefined&&!lineLastDraft())out.push(`<span class="ladder-error">마지막 목표 평균선 기간은 1~400의 정수로 넣으세요.</span>`);
   else if(!draft.names.length)out.push(`<span class="ladder-error">마지막 목표 평균선은 시작선과 같거나 뒤에 있어야 합니다.</span>`);
@@ -465,7 +481,7 @@ function renderLines(){
     if(open.length&&purchaseLineLevels(draft,entry).filter(r=>!purchaseBuys(purchaseDraft)[r.key]).length>rows.filter(r=>!purchaseBuys(purchaseDraft)[r.key]).length)out.push('<small>예산에 맞춰 회차 간격을 넓혀 고르게 나눴습니다.</small>');
     if(draft.startLine&&!known.includes(draft.startLine))out.push(`<small>시작 이동평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
     else if(draft.end===undefined&&!known.includes(draft.names[draft.names.length-1]))out.push(`<small>마지막 목표 평균선의 시세를 기다립니다. 저장하면 선택한 선의 시세를 수집하고, 시세가 채워진 뒤 매수 회차를 계산합니다.</small>`);
-    else if(!known.length)out.push(`<small>${escA(it.ticker)}의 이동평균 시세가 아직 없습니다. 저장하면 다음 수집(장중 30분마다)부터 이동평균을 받아 단계 회차가 채워지고, 그 전에는 목표가 회차만 있습니다.</small>`);
+    else if(!known.length)out.push(`<small>${escA(it.ticker)}의 이동평균 시세가 아직 없습니다. 저장하면 다음 수집${hourless(it)?"":"(장중 30분마다)"}부터 이동평균을 받아 단계 회차가 채워지고, 그 전에는 목표가 회차만 있습니다.</small>`);
     const tradeTarget=targetsOf(it,purchaseDraft,s)[0]?.it||it;
     list.innerHTML=rows.map(r=>{const b=purchaseBuys(purchaseDraft)[r.key],fill=!r.done&&!b?purchaseTrackingFill(r,it,prices,s.fx,cur,tradeTarget):null,qty=r.plannedShares??fill?.shares,actualItem=b?recordedTarget(it,b,`buy:${it.id}:${r.key}`).tradeItem:tradeTarget;
       return `<span class="${r.done?"done":now!==null&&now>=r.price?"due":""}"><b>${escA(movingLineText(purchaseLineLabel(r)))}</b> ${r.price?priceText(r.price,cur):""}${r.done?" · 체결":qty!==null&&qty!==undefined?`${otherCode(it,assetTradeTicker(tradeTarget))?" →":" · 매수"} ${qtyText(qty,actualItem)}`:" · 수량 계산 불가"}</span>`;}).join("");
@@ -518,8 +534,9 @@ function openPurchase(id){
     if(mode()!==originalMode&&(Object.keys(purchaseBuys(draft)).length||(draft.stages||[]).some(purchaseStageRecorded))){alert("체결 기록이 있어 방식을 바꿀 수 없습니다.");return;}
     if(mode()==="lines"){
       const kind=purchaseQuoteKind(item.ticker),l=linesDraft();
-      if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다.");return;}
+      if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드나 비트코인(BTC-USD)을 넣은 종목만 쓸 수 있습니다.");return;}
       if(!lineStartDraft()){alert("시작선 기간은 1~400의 정수로 넣으세요.");f.lineStartPeriod.focus();return;}
+      if(hourPicked(item)){alert(NO_HOUR);f.lineStartUnit.focus();return;}
       if(l.end!==undefined&&!(l.end>0)){alert("마지막 목표 가격은 0보다 크게 넣으세요.");f.lineEnd.focus();return;}
       if(l.end===undefined&&!lineLastDraft()){alert("마지막 목표 평균선 기간은 1~400의 정수로 넣으세요.");f.lineLastPeriod.focus();return;}
       if(!l.names.length){alert("마지막 목표 평균선은 시작선과 같거나 뒤에 있어야 합니다.");f.lineLastPeriod.focus();return;}
@@ -529,7 +546,7 @@ function openPurchase(id){
       draft.lines=l;delete draft.wait;delete draft.stages;delete draft.ladder;
       if(kind!=="국내")draft.currency="USD";else delete draft.currency;
     }else if(mode()==="wait"){
-      if(!lineMarket(item)){alert("자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목을 고르세요.");return;}
+      if(!waitMarket(item)){alert("매수대기는 자산 배분에서 국내·미국 시세 종목 코드를 넣은 종목만 쓸 수 있습니다(비트코인 제외).");return;}
       const wait=waitDraft();if(!wait.line){alert("기준선 기간은 1~400의 정수로 넣으세요.");f.waitPeriod.focus();return;}
       draft.wait=wait;delete draft.lines;delete draft.stages;delete draft.buys;delete draft.ladder;
       draft.notify={...(draft.notify&&typeof draft.notify==="object"?draft.notify:{}),stages:f.waitNotify.checked};delete draft.notify.keys;
@@ -563,13 +580,13 @@ function initialize(){
   const f=form();picker();
   f.lineEnd.oninput=f.lineLastPeriod.oninput=()=>renderLines();f.lineLastUnit.onchange=()=>renderLines();
   f.lineSet.onchange=()=>{
-    const names=LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines);
+    const names=lineSetNames(f.lineSet.value)||purchaseLineNames(purchaseDraft.lines);
     if(!names.some(n=>movingLineUnit(n)===f.lineStartUnit.value))f.lineStartUnit.value=movingLineUnit(names[0]);
     renderLines();
   };
   f.lineStartPeriod.oninput=()=>renderLines();
   f.lineStartUnit.onchange=()=>{
-    const names=LINE_SETS[f.lineSet.value]||purchaseLineNames(purchaseDraft.lines);
+    const names=lineSetNames(f.lineSet.value)||purchaseLineNames(purchaseDraft.lines);
     if(!names.some(n=>movingLineUnit(n)===f.lineStartUnit.value))f.lineSet.value={선:"hour",일선:"day",주선:"week",개월선:"month"}[f.lineStartUnit.value];
     renderLines();
   };
