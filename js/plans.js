@@ -376,8 +376,9 @@ const openCompletedSales=new Set();
 // 다음 = 회차표 순서로 첫 미완료·미도달 회차이고 현재가 이름표를 그 칸 앞에 둔다. 다음 회차가 없으면 현재가가 지난 기준가 회차 수만큼 뒤에 둔다.
 // 오른쪽 끝은 첫 매도 기준가(카드에서 바로 수정)·시작선, 왼쪽 끝은 마지막 매도 기준가·종료선, 달러 계획은 원화 환산. 하락률 계획은 다음 회차 줄 아래 전액 매도 표식(planFullSellMark), 맨 아래 줄은 환율 수정과 첫 매도 알림.
 // 계산 요약 카드는 두지 않는다(회차별 가격·수량은 아래 회차표, 매도 비중은 제목 아래 시세 줄). 화면 표시만 하며 기록에 필드를 만들지 않는다.
+// 카드의 가격(현재가 이름표·왼쪽 끝·다음 회차)은 회차표와 같은 planRowPrice(비트코인 달러는 센트 없이)로 보인다. 첫 매도 기준가 입력칸은 저장값 그대로.
 function planTrackCard(p,{status,value,valueTitle,startText,fxAuto,px,label}){
-  const now=Number(px?.close)>0?Number(px.close):null,up=Number(p.endPrice)>Number(p.startPrice),usd=p.currency==="USD",done=p.checked.filter(Boolean).length,pt=v=>priceText(v,p.currency);
+  const now=Number(px?.close)>0?Number(px.close):null,up=Number(p.endPrice)>Number(p.startPrice),usd=p.currency==="USD",done=p.checked.filter(Boolean).length,pt=v=>planRowPrice(v,p);
   const rows=Array.from({length:p.stages},(_,i)=>{const r=planQuantityProgress(p,i);return {i,r,price:r.trade.price>0?r.trade.price:null};});
   const due=x=>planStageDue(p,x.r,now);
   const next=now===null?null:rows.find(x=>!x.r.done&&x.price!==null&&!due(x))||null,priced=rows.some(x=>x.price!==null);

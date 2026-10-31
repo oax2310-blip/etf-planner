@@ -62,3 +62,14 @@ test('주식 회차표와 진행 카드 등 다른 표시는 그대로',()=>{
   const t=load(btc());t.fill(0,'0.00012');
   assert.match(t.draw(),/0\.00012 BTC 매도, 0\.00024134 BTC 남음/,'진행 카드는 단위까지 그대로');
 });
+
+test('비트코인 진행 카드의 현재가·끝 기준가·다음 회차는 회차표처럼 센트 없이, 첫 매도 기준가 입력칸과 주식 카드는 그대로',()=>{
+  const p=btc({endPrice:50000.55}),before=JSON.stringify(p),html=load(p).draw(),card=html.slice(html.indexOf('<section class="card buy-track sale-track"'),html.indexOf('</section>',html.indexOf('<section class="card buy-track sale-track"')));
+  assert.match(card,/<em class="buy-track-now [a-z]+"><span>현재 <b>\$61,000<\/b><\/span><\/em>/);
+  assert.match(card,/<div class="buy-track-end"><b>\$50,001<\/b>/,'왼쪽 끝 마지막 매도 기준가($50,000.55)');
+  assert.match(card,/<span class="next">다음 1회 <b>\$60,000<\/b>/);
+  assert.match(card,/<input id="startPrice"[^>]*value="60000\.00"/,'입력칸은 저장값 그대로');
+  assert.equal(JSON.stringify(p),before,'화면 표시만 바꾼다');
+  const stock=load(btc({id:'stock',ticker:'AAA',startPrice:600,endPrice:500.55,holdings:[{name:'가상 ETF',shares:60}]})).draw();
+  assert.match(stock,/<div class="buy-track-end"><b>\$500\.55<\/b>/,'주식은 원래 표시(priceText)');
+});

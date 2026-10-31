@@ -231,21 +231,22 @@ function renderPurchases(){
     const mixedTickers=new Set(rows.map(r=>linkTicker(r.tradeTicker||assetTradeTicker(r.tradeItem)))).size>1;
     const summaryItem=rows[0]?.tradeItem||trade.target;
     const emptyText=targetReached?"전체 계좌 보유액이 목표 이상이라 추가 매수할 금액이 없습니다.":budgetMissing?"계획에 매수 금액을 입력하면 회차가 표시됩니다.":"기준가가 준비되면 매수 회차가 표시됩니다.";
-    // 계획 진행 카드: 회차 띠(회차표 순서, 완료·부분 체결·도달·다음·대기 색) 위에 현재가 이름표, 양 끝은 첫·마지막 기준가와 선 이름(회차 번호 생략), 가운데 상태·완료 회차·체결/남은 수량.
+    // 계획 진행 카드: 회차 띠(회차표 순서, 완료·부분 체결·도달·다음·대기 색) 위에 현재가 이름표, 양 끝은 첫·마지막 기준가와 선 이름(회차 번호 생략), 가운데 상태·완료 회차,
+    // 그 아래 카드 너비 한 줄에 체결/남은 수량. 카드의 가격(이름표·양 끝·다음 회차)은 회차표와 같은 rowPt(비트코인 달러는 센트 없이)로 보인다.
     // 이름표는 다음 회차 칸 앞에 둔다. 다음 회차가 없으면 현재가가 지난(도달 방향) 기준가 회차 수만큼 뒤에 둔다. 화면 표시만 하며 기록에 필드를 만들지 않는다.
     const dueRows=rows.filter(r=>!r.recorded&&due(r)),partialRows=rows.filter(r=>r.recorded&&!r.done),qtyOf=(v,item)=>qtyText(Number(Math.max(0,v).toFixed(8)),item);
     const at=now===null||!rows.length?-1:next?rows.indexOf(next):rows.filter(r=>r.price>0&&(up?r.price<=now:r.price>=now)).length;
-    const nowTag=at<0?"":`<em class="buy-track-now ${at/rows.length<.18?"left":at/rows.length>.82?"right":"mid"}"><span>현재 <b>${pt(now)}</b></span></em>`;
+    const nowTag=at<0?"":`<em class="buy-track-now ${at/rows.length<.18?"left":at/rows.length>.82?"right":"mid"}"><span>현재 <b>${rowPt(now)}</b></span></em>`;
     const cell=r=>`<i class="${r.done?"done":r.recorded?"partial":due(r)?"due":r===next?"next":"wait"}"></i>`;
     const lineOf=r=>movingLineText(String(r?.label||purchaseLineLabel(r)).replace(/\s+\d+차$/,"")); // 회차 이름에서 번호만 뗀 선 이름(목표가·직접 입력 'N차'는 그대로)
-    const end=(r,cls="")=>`<div class="buy-track-end${cls}"><b>${r?.price>0?pt(r.price):"—"}</b><small>${r?.price>0?escA(lineOf(r)):"시세 대기"}</small></div>`;
+    const end=(r,cls="")=>`<div class="buy-track-end${cls}"><b>${r?.price>0?rowPt(r.price):"—"}</b><small>${r?.price>0?escA(lineOf(r)):"시세 대기"}</small></div>`;
     const chips=`<span class="buy-track-chip${{"매수 완료":" done","목표 도달":" done","예산 확인 필요":" warn","기준가 대기":" muted"}[status]||""}">${status}</span>${dueRows.length?`<span class="buy-track-chip warn">도달 ${dueRows.length}회</span>`:""}${partialRows.length?`<span class="buy-track-chip warn">부분 체결 ${partialRows.length}회</span>`:""}`;
     const shareLine=!rows.length?emptyText:sharesKnown&&!mixedTickers?`체결 <b>${qtyOf(filledShares,summaryItem)}</b> · 남은 <b>${qtyOf(remainingShares,summaryItem)}</b>`:`부분 체결 ${partialCount}회 · 미완료 ${open.length}회`;
     // 도달 회차는 칩·띠·범례로만 표시하고 안내 문장은 부분 체결에만 둔다.
     const notes=[partialRows.length===1?(r=>`${escA(movingLineText(r.label))} 부분 체결 · ${r.plannedShares!==null&&r.shares!==null?`${qtyOf(r.shares,r.tradeItem)} 체결, ${qtyOf(r.plannedShares-r.shares,r.tradeItem)} 남음`:"남은 수량은 아래 회차표에서 확인하세요"}`)(partialRows[0]):partialRows.length?`부분 체결 ${partialRows.length}회 · 아래 회차표에서 남은 수량을 확인하세요`:""].filter(Boolean);
-    const legend=`${partialRows.length?`<span class="partial">부분 ${partialRows.length}</span>`:""}${dueRows.length?`<span class="due">도달 ${dueRows.length}</span>`:""}${next?`<span class="next">다음 ${escA(movingLineText(next.label))} <b>${pt(next.price)}</b>${nextGap?`<em class="${nextGap.dir}">${nextGap.text}</em>`:""}</span>`:""}`;
-    const main=`<div class="buy-track-main"><div class="buy-track-chips">${chips}</div>${p.count?`<div class="buy-track-count"><b>${p.done}</b><span>/ ${p.count}회</span></div>`:""}<small>${shareLine}</small></div>`;
-    const statusCard=`<section class="card buy-track${rows.length?"":" empty"}" aria-label="계획 진행">${rows.length?`<div class="buy-track-cells${at<0?"":" with-now"}" role="img" aria-label="${p.count}회 중 ${p.done}회 완료${now!==null?`, 현재 ${pt(now)}`:""}">${rows.map((r,i)=>(i===at?nowTag:"")+cell(r)).join("")}${at===rows.length?nowTag:""}</div><div class="buy-track-row">${end(first)}${main}${end(last," r")}</div>`:main}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${waits.map(t=>`<p class="buy-track-note muted">${t}</p>`).join("")}${legend?`<div class="buy-track-legend">${legend}</div>`:""}</section>`;
+    const legend=`${partialRows.length?`<span class="partial">부분 ${partialRows.length}</span>`:""}${dueRows.length?`<span class="due">도달 ${dueRows.length}</span>`:""}${next?`<span class="next">다음 ${escA(movingLineText(next.label))} <b>${rowPt(next.price)}</b>${nextGap?`<em class="${nextGap.dir}">${nextGap.text}</em>`:""}</span>`:""}`;
+    const main=`<div class="buy-track-main"><div class="buy-track-chips">${chips}</div>${p.count?`<div class="buy-track-count"><b>${p.done}</b><span>/ ${p.count}회</span></div>`:""}${rows.length?"":`<small>${shareLine}</small>`}</div>`;
+    const statusCard=`<section class="card buy-track${rows.length?"":" empty"}" aria-label="계획 진행">${rows.length?`<div class="buy-track-cells${at<0?"":" with-now"}" role="img" aria-label="${p.count}회 중 ${p.done}회 완료${now!==null?`, 현재 ${rowPt(now)}`:""}">${rows.map((r,i)=>(i===at?nowTag:"")+cell(r)).join("")}${at===rows.length?nowTag:""}</div><div class="buy-track-row">${end(first)}${main}${end(last," r")}</div><p class="buy-track-sub">${shareLine}</p>`:main}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${waits.map(t=>`<p class="buy-track-note muted">${t}</p>`).join("")}${legend?`<div class="buy-track-legend">${legend}</div>`:""}</section>`;
     return `<div data-purchase-item="${id}">${purchaseHeading({g,it},s,quote,q)}${linkedHoldings({g,it},s)}
       ${statusCard}
       <div class="control-grid">${memoPanel(it)}</div>
