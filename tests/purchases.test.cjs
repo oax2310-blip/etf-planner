@@ -542,6 +542,23 @@ test('계획 진행 카드: 다음 회차 칸 앞에 현재가 이름표를 두�
   assert.match(card(r),/<i class="partial"><\/i><i class="due"><\/i><em class="buy-track-now mid">/);
   assert.match(card(r),/<p class="buy-track-note">25일선 1차 부분 체결 · 1주 체결, \d+주 남음<\/p>/);
 });
+test('계획 진행 카드: 비트코인 달러 가격은 회차표처럼 센트 없이 보이고, 체결·남은 수량은 양 끝 아래 카드 너비 한 줄에 둔다',()=>{
+  const card=r=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
+  const r=setup({bitcoin:true,currency:'USD',price:77432.08,budget:1000,end:null,names:['25일선','32일선'],ma:{'25일선':81359.52,'32일선':87415.25}}),before=JSON.stringify(r.doc);
+  assert.match(card(r),/<em class="buy-track-now left"><span>현재 <b>\$77,432<\/b><\/span><\/em><i class="next"><\/i>/);
+  assert.match(card(r),/aria-label="4회 중 0회 완료, 현재 \$77,432"/);
+  assert.match(card(r),/<div class="buy-track-end"><b>\$81,360<\/b><small>25일선<\/small><\/div>/);
+  assert.match(card(r),/<div class="buy-track-end r"><b>\$87,415<\/b><small>32일선<\/small><\/div><\/div><p class="buy-track-sub">체결 <b>0 BTC<\/b> · 남은 <b>0\.\d+ BTC<\/b><\/p>/);
+  assert.match(card(r),/<span class="next">다음 25일선 1차 <b>\$81,360<\/b><em class="up">\+5\.1%<\/em><\/span>/);
+  assert.match(card(r),/<div class="buy-track-main"><div class="buy-track-chips">.*?<\/div><div class="buy-track-count"><b>0<\/b><span>\/ 4회<\/span><\/div><\/div>/,'가운데는 상태·회차만');
+  assert.equal(JSON.stringify(r.doc),before,'화면 표시만 바꾼다');
+  const stock=setup({currency:'USD',price:90.5,budget:100,end:null,names:['25일선'],ma:{'25일선':100.25}});
+  assert.match(card(stock),/<div class="buy-track-end"><b>\$100\.25<\/b>/,'미국 주식은 원래 표시(priceText)');
+  assert.match(card(stock),/<p class="buy-track-sub">체결 <b>0주<\/b> · 남은 <b>\d+주<\/b><\/p>/);
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  assert.match(css,/\.buy-track-row\{display:grid;grid-template-columns:minmax\(min-content,1fr\) auto minmax\(min-content,1fr\)/,'양 끝 칸은 가격 글자 너비 밑으로 줄지 않는다');
+  assert.match(css,/\.buy-track-end b\{[^}]*white-space:nowrap/);
+});
 test('계획 목록: 매수대기의 시세 대기·도달 상태를 표시하고 회차 수를 만들지 않는다',()=>{
   const r=setup({wait:'25일선',ma:{'25일선':10000}});
   const progress=()=>r.html().match(/<span class="plan-count[^"]*">(.*?)<\/span>/)[1];

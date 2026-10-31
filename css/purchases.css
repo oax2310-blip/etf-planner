@@ -1,6 +1,7 @@
 /* 분할매수: 저장된 계획 목록과 선택한 종목의 회차, 창은 저장 전 복사본을 편집한다 */
 #purchaseMain{min-width:0}#purchaseList .plan-count{white-space:nowrap}.side .purchase-save-status{margin-bottom:4px}
-/* 계획 진행 카드(purchases.js statusCard): 회차 띠 위 현재가 이름표(꼬리가 다음 회차 칸 앞을 가리킴), 양 끝 기준가·선 이름, 가운데 상태·회차·수량 */
+/* 계획 진행 카드(purchases.js statusCard): 회차 띠 위 현재가 이름표(꼬리가 다음 회차 칸 앞을 가리킴), 양 끝 기준가·선 이름, 가운데 상태·회차, 아래 카드 너비 한 줄에 체결·남은 수량.
+   양 끝 칸은 가격 글자 너비 밑으로 줄지 않고(좁은 폰에서 카드 밖으로 넘치지 않게) 가운데 칩이 줄을 바꾼다. */
 .buy-track{padding:16px 18px 15px;margin-bottom:16px;font-variant-numeric:tabular-nums}.buy-track.empty{padding:14px 18px}
 .buy-track-cells{position:relative;display:flex;gap:2px;height:18px;margin-top:4px}.buy-track-cells.with-now{margin-top:40px}
 .buy-track-cells i{flex:1;min-width:0;border-radius:2px;background:var(--surface-3)}.buy-track-cells i.done{background:var(--good)}.buy-track-cells i.partial{background:linear-gradient(to top,var(--warn) 40%,var(--warn-soft) 40%)}.buy-track-cells i.due{background:var(--warn)}.buy-track-cells i.next{background:var(--accent)}
@@ -9,8 +10,8 @@
 .buy-track-now.mid span{left:0;transform:translateX(-50%)}.buy-track-now.left span{left:-14px}.buy-track-now.right span{right:-14px}
 .buy-track-now::before{content:"";position:absolute;bottom:calc(100% + 3px);left:-6px;border:6px solid transparent;border-bottom:0;border-top:7px solid var(--line-strong)}
 .buy-track-now::after{content:"";position:absolute;z-index:2;bottom:calc(100% + 4.6px);left:-5px;border:5px solid transparent;border-bottom:0;border-top:6px solid var(--surface-2)}
-.buy-track-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:8px;margin-top:10px}
-.buy-track-end{display:grid;min-width:0}.buy-track-end.r{text-align:right}.buy-track-end b{font-size:15px;font-weight:700;letter-spacing:-.01em}.buy-track-end small{font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
+.buy-track-row{display:grid;grid-template-columns:minmax(min-content,1fr) auto minmax(min-content,1fr);align-items:start;gap:8px;margin-top:10px}
+.buy-track-end{display:grid;min-width:0}.buy-track-end.r{text-align:right}.buy-track-end b{font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}.buy-track-end small{font-size:12px;color:var(--text-2);overflow-wrap:anywhere}
 .buy-track-main{display:grid;justify-items:center;gap:3px;min-width:0;padding-top:2px;text-align:center}.buy-track-main>small{font-size:12px;color:var(--text-2);word-break:keep-all}.buy-track-main>small b{color:var(--text);font-weight:600}
 .buy-track-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
 .buy-track-chip{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.buy-track-chip.done{background:var(--good-soft);color:var(--good)}.buy-track-chip.warn{background:var(--warn-soft);color:var(--warn)}.buy-track-chip.muted{background:var(--surface-2);color:var(--text-3)}
@@ -23,7 +24,7 @@
 .sale-track .buy-track-cells.dense{gap:1px}.sale-track .buy-track-cells.tight{gap:0}.sale-track .buy-track-cells.tight i{border-radius:0}
 .sale-track .buy-track-end small+small{color:var(--text-3)}.sale-track .buy-track-legend .sold::before{background:transparent;box-shadow:inset 0 0 0 1px var(--text-3)}
 .sale-track .metric-edit{display:inline-flex;align-items:baseline;cursor:text}.sale-track .buy-track-end .metric-edit svg{width:12px;height:12px;margin-left:5px}.sale-track .fx-edit{gap:.3em}.sale-track .fx-edit svg{width:12px;height:12px;margin-left:1px}
-.sale-track-sub{margin:6px 0 0;font-size:12px;color:var(--text-2);text-align:center;word-break:keep-all;overflow-wrap:anywhere}
+.sale-track-sub,.buy-track-sub{margin:6px 0 0;font-size:12px;color:var(--text-2);text-align:center;word-break:keep-all;overflow-wrap:anywhere}.buy-track-sub b{color:var(--text);font-weight:600}
 .buy-track-legend{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--text-2)}
 .buy-track-legend span{display:inline-flex;align-items:center;gap:5px}.buy-track-legend span::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--warn)}.buy-track-legend .next::before{background:var(--accent)}.buy-track-legend b{color:var(--text);font-weight:700}
 .buy-track-legend em{margin-left:2px;padding:0 6px;border-radius:99px;background:var(--surface-2);color:var(--text);font-size:11px;font-style:normal;font-weight:700;line-height:18px}.buy-track-legend em.up{background:var(--danger-soft);color:var(--danger)}.buy-track-legend em.down{background:var(--accent-soft);color:var(--accent)}
