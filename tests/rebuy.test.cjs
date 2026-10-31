@@ -843,6 +843,16 @@ test('손절 표는 끝나지 않은 가까운 5회만 바로 보이고 나머�
   ctx.renderRebuy();
 });
 
+test('손절 시점 회차가 5회를 넘으면 도달한 회차는 모두 바로 보이고 남은 손절 띠에는 도달 전 회차만 접는다', () => {
+  const r=flowFixture({steps:30,currentPrice:9150}),before=JSON.stringify(r),{els}=ui({rebuy:{items:[r]}});
+  const html=els.rebuyMain.innerHTML,near=html.split('id="rebuyCutRows">')[1].split('id="toggleRebuyCutRest"')[0],rest=html.split('<div id="rebuyCutRest"')[1].split('id="rBuys"')[0];
+  assert.deepEqual([...near.matchAll(/data-cut="(\d+)"/g)].map(m=>Number(m[1])),[0,1,2,3,4,5,6,7],'부분 손절 2회부터 9200원 8회까지 7회 도달');
+  assert.equal((near.match(/<div class="status due">손절 시점<\/div>/g)||[]).length,6,'부분 손절 2회를 뺀 도달 회차는 모두 주황 손절 시점');
+  assert.doesNotMatch(rest,/status due/,'접힌 띠 안에는 도달한 회차가 없다');
+  assert.match(html,/<span>남은 손절 <b>22회<\/b> · 9100원 이하<\/span>/);
+  assert.equal(JSON.stringify(r),before,'표시만 바꾸고 기록은 그대로');
+});
+
 test('손절 기준 저장(setRebuyRules)은 바꾼 칸만 검사해 저장하고, 잘못된 칸이 있거나 바꾼 칸이 없으면 기록을 만들지 않는다', () => {
   const r=flowFixture(),{ctx}=ui({rebuy:{items:[r]}}),before=JSON.stringify(r);
   assert.equal(ctx.setRebuyRules({}),true);assert.equal(JSON.stringify(r),before);
