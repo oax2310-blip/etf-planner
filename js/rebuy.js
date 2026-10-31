@@ -948,7 +948,7 @@ function bindRebuyTable(t,box){
   box.addEventListener?.("change",()=>{t.open=true;},true); // 체크·입력 처리(다시 그리기)보다 먼저 열린 상태를 남긴다
   box.querySelector?.("summary")?.addEventListener("click",e=>{if(e.target.closest("button"))e.preventDefault();}); // 제목 줄의 연필·알림 버튼은 표를 접지 않는다
 }
-const REBUY_NEAR_CUTS=5; // 표에 바로 보이는 남은 손절 회차 수(나머지는 '남은 손절' 띠를 펼쳐 본다)
+const REBUY_NEAR_CUTS=5; // 표에 바로 보이는 남은 손절 회차 수(손절 시점 회차는 이보다 많아도 모두 보이고, 나머지는 '남은 손절' 띠를 펼쳐 본다)
 // 화면(달러선물 '신저점 손절 후 재매수'와 같은 구조): 왼쪽(모바일은 위) 종목 목록(분할매도 '저장된 계획'과 같은 카드 — 종목 이름, 오른쪽 짧은 상태, 아래 종목 코드(PC), 막대는 재매수 금액/손절 금액)
 // + 고른 종목. 제목은 작은 글씨 '손절 후 재매수 · 종목 코드' 아래 종목 이름(크게), 옆 연필로 이름·코드 수정·종목 삭제 창.
 // 그 아래 구역: 손절 기준 한 줄 버튼(연필 = 손절 기준 창), 보유 주수 카드(rebuyTrack), 절반·전액 매도 두 줄, 접는 1·2 표(분할매도 회차표 purchase-table). 메모는 다른 탭과 같은 칸.
@@ -1027,8 +1027,9 @@ function renderRebuy(){
       <div class="stage-price">${price}<span class="krw">${c.done?amt(c.qty,c.execPrice||c.price):`신저점 −${shown(c.drop)}%`}</span></div><div class="purchase-qty">${won.format(planned)}주</div><div class="purchase-fill"><input type="number" min="0" step="1" inputmode="numeric" data-cut-qty="${c.k-1}" value="${c.recorded?c.qty:""}" placeholder="0"${blocked?" disabled":""} aria-label="${c.k}회 누적 손절 수량"></div>${alerts?`<div class="purchase-alert">${toggle(alertOn(r,"cuts",c.k-1),`data-rebuy-alert="cuts" data-alert-index="${c.k-1}"`,`${c.k}회 손절`,c.done)}</div>`:""}
       <div class="status${state?` ${state}`:""}">${c.done?"손절 완료":partial?"부분 손절":due?"손절 시점":"대기"}</div>${c.recorded?acctNote("cut",`cut:${r.id}:${c.k-1}`):""}</div>`;
   };
-  // 끝나지 않은 회차는 가까운 REBUY_NEAR_CUTS개만 바로 보이고 나머지는 '남은 손절' 띠(fold.rest)를 펼쳐 본다. 완료 회차는 '손절 완료' 띠(fold.cuts).
-  const openCuts=cuts.filter(c=>!c.done),near=openCuts.slice(0,REBUY_NEAR_CUTS),far=openCuts.slice(REBUY_NEAR_CUTS);
+  // 끝나지 않은 회차는 가까운 REBUY_NEAR_CUTS개와 손절 시점 회차(cutRow의 due, 현재가 ≤ 손절가)를 모두 바로 보이고 나머지는 '남은 손절' 띠(fold.rest)를 펼쳐 본다.
+  // 여러 회차를 한꺼번에 지나쳐도 주황 줄 수가 도달한 회차 수와 같다(손절가는 회차 순서로 내려가므로 바로 보이는 줄은 이어진다). 완료 회차는 '손절 완료' 띠(fold.cuts).
+  const openCuts=cuts.filter(c=>!c.done),near=openCuts.filter((c,i)=>i<REBUY_NEAR_CUTS||cur>0&&cur<=c.price),far=openCuts.filter(c=>!near.includes(c));
   const cutRows=!ready&&!s.filledCuts?"<div class='empty'>손절 기준 연필에서 신저점 가격을 넣고, 자산 배분에 이 종목 보유를 등록하세요.</div>"
     :!cuts.length?'<div class="empty">표시 구간에 손절할 수량이 없습니다.</div>'
     :cuts.filter(c=>c.done||near.includes(c)).map(cutRow).join("")
