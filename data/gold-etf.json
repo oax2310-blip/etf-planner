@@ -5,7 +5,7 @@
   "currency": "USD",
   "sourceName": "Yahoo Finance",
   "sourceUrl": "https://finance.yahoo.com/quote/GLDM/history/",
-  "fetchedAt": "2026-10-30T12:13:33.766Z",
+  "fetchedAt": "2026-11-01T00:57:35.822Z",
   "verified": [
     {
       "period": "2021",
@@ -115,6 +115,11 @@
       "ym": "2026-09",
       "date": "2026-09-30",
       "close": 82.18
+    },
+    {
+      "ym": "2026-10",
+      "date": "2026-10-30",
+      "close": 76.83
     }
   ]
 }
