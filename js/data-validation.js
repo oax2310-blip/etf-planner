@@ -111,9 +111,17 @@ const externalData = (()=>{
       recordMap(a.trades,`${p}.trades`,v=>records(v.items,`${p}.trades.items`,(x,q)=>{trade(x,q);numbers(x,["exact"],q);}));
     });
     child(data,"ledger","자산",(v,p)=>records(v.years,`${p}.years`,(y,k)=>{
-      numbers(y,["year"],k,1,9999,true);records(y.accounts,`${k}.accounts`,(a,q)=>strings(a,["id","name"],q));
+      numbers(y,["year"],k,1,9999,true);
+      // 연간 선물 손익은 숫자, 메모는 문자열인지 검사하며 누락된 옛 필드는 그대로 둔다.
+      numbers(y,["futures"],k);strings(y,["note"],k);
+      // 옛 대출 계좌 표시 loan은 불리언인지 검사하고 계좌·잔액 인덱스를 보존한다.
+      records(y.accounts,`${k}.accounts`,(a,q)=>{strings(a,["id","name"],q);flags(a,["loan"],q);});
       records(y.months,`${k}.months`,(m,q)=>{
-        numbers(m,["m"],q,1,12,true);numbers(m,["pnl","total","futures"],q);records(m.pnlEntries,`${q}.pnlEntries`);
+        numbers(m,["m"],q,1,12,true);numbers(m,["pnl","total","futures"],q);
+        // 계좌별 잔액은 배열과 숫자 형식만 검사하며 옛 숫자 문자열·null·빈칸을 보존한다.
+        list(m.balances,`${q}.balances`);if(Array.isArray(m.balances))numbers(m.balances,Object.keys(m.balances),`${q}.balances`);
+        // 손익 상세의 증권사·구분·통화·환율 기준·일자는 문자열, 손익·원화 환산액·환율은 숫자인지 검사한다.
+        records(m.pnlEntries,`${q}.pnlEntries`,(e,t)=>{strings(e,["broker","label","currency","fxBasis","fxAt"],t);numbers(e,["amount","krw","fx"],t);});
         // RP 배열(계좌 인덱스): rp 원화 환산액·rpUsd 달러는 0 이상, rpFx 원/달러 환율은 양수. 빈칸은 null.
         for(const [key,ok] of [["rp",x=>x>=0],["rpUsd",x=>x>=0],["rpFx",x=>x>0]])if(m[key]!==undefined){
           if(!Array.isArray(m[key]))fail(`${q}.${key}`);
@@ -130,7 +138,12 @@ const externalData = (()=>{
         records(s.stages,`${k}.stages`,(r,q)=>{numbers(r,["age"],q,0,200);numbers(r,["salary","giving","spending","growth","returnRate"],q);});
       });
     });
-    child(data,"installments","자산");
+    child(data,"installments","자산",(v,p)=>{
+      // 할부 공통 금액·수익률·기간·첫 납부는 숫자, 결제 연월·저장 시각은 문자열인지 검사한다.
+      numbers(v,["price","returnRate","netAssets","years","firstMonth"],p);strings(v,["startYm","savedAt"],p);
+      // 결제 방식은 객체 맵이며 개월수·옛 비용·할인율·한도는 숫자, 할인 적용은 불리언인지 검사한다.
+      recordMap(v.methods,`${p}.methods`,(m,q)=>{numbers(m,["months","fee","discountRate","discountCap"],q);flags(m,["discountEnabled"],q);});
+    });
     return data;
   }
   return {planner,assets};

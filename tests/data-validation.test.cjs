@@ -72,7 +72,7 @@ test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한
 });
 
 test('월별 RP·달러 RP·환율은 누락된 옛 기록·빈 배열·null·허용 범위 숫자를 변경 없이 허용한다',()=>{
-  for(const month of [{m:1,balances:['옛 형식 보존']},{m:1,rp:[]},{m:1,rp:[null,0,1200.5,null]},{m:1,rp:[0,1300],rpUsd:[0,1],rpFx:[null,1300.1234]}]){
+  for(const month of [{m:1,balances:['1200']},{m:1,rp:[]},{m:1,rp:[null,0,1200.5,null]},{m:1,rp:[0,1300],rpUsd:[0,1],rpFx:[null,1300.1234]}]){
     const data={ledger:{years:[{year:2026,months:[month]}]}};
     const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
   }
@@ -86,6 +86,90 @@ test('월별 RP·달러 RP·환율의 잘못된 배열 형식과 음수·문자�
     assert.throws(()=>validate.assets(data),/기록 형식/,`${key}`);
   }
   assert.throws(()=>validate.assets({ledger:{years:[{year:2026,months:[{m:1,rpFx:[0]}]}]}}),/기록 형식/,'환율 0은 거부');
+});
+
+// 새 경계 검사는 정상·실패 모두 원본과 누락된 필드를 그대로 두어야 한다.
+const assetsUnchanged=data=>{const before=structuredClone(data);assert.equal(validate.assets(data),data);assert.deepEqual(data,before);};
+const assetsRejected=(data,field)=>{
+  const before=structuredClone(data);
+  assert.throws(()=>validate.assets(data),error=>error.message===`기록 형식이 맞지 않습니다 (${field}). 기존 기록은 변경하지 않았습니다.`);
+  assert.deepEqual(data,before);
+};
+const ledgerYear=year=>({ledger:{years:[year]}});
+const ledgerMonth=month=>ledgerYear({year:2026,months:[month]});
+
+test('월별 잔액은 누락·null·빈 배열과 옛 숫자 문자열·빈칸·null 원소를 보존한다',()=>{
+  for(const month of [{},{balances:undefined},{balances:null},{balances:[]},{balances:[null,undefined,'',0,-1200.5,'1200','-2.5',1e15]}])assetsUnchanged(ledgerMonth(month));
+});
+
+test('월별 잔액의 배열 형식과 각 원소의 숫자 타입을 검사한다',()=>{
+  const field='자산.ledger.years[0].months[0].balances';
+  for(const balances of ['',0,'1200',{},true])assetsRejected(ledgerMonth({balances}),field);
+  for(const value of [{},[],true,false,'옛 형식 보존',' '])assetsRejected(ledgerMonth({balances:[value]}),`${field}.0`);
+});
+
+test('연도 선물손익·메모와 옛 대출 계좌 표시는 선택값과 타입을 보존한다',()=>{
+  for(const futures of [undefined,null,'',0,-1200.5,'1200','-2.5',1e15])assetsUnchanged(ledgerYear({futures}));
+  for(const note of [undefined,null,'','옛 메모 <예시>'])assetsUnchanged(ledgerYear({note}));
+  for(const loan of [undefined,null,true,false])assetsUnchanged(ledgerYear({accounts:[{loan}]}));
+  assetsUnchanged(ledgerYear({accounts:[{}],months:[{}]}));
+});
+
+test('연도 선물손익·메모와 계좌 loan의 잘못된 타입을 거부한다',()=>{
+  for(const futures of [{},[],true,false,'synthetic-private-value',' '])assetsRejected(ledgerYear({futures}),'자산.ledger.years[0].futures');
+  for(const note of [{},[],true,0])assetsRejected(ledgerYear({note}),'자산.ledger.years[0].note');
+  for(const loan of ['',{},[],0,1,'false'])assetsRejected(ledgerYear({accounts:[{loan}]}),'자산.ledger.years[0].accounts[0].loan');
+});
+
+for(const field of ['broker','label','currency','fxBasis','fxAt'])test(`손익 상세 ${field}는 선택 문자열을 보존하고 다른 타입을 거부한다`,()=>{
+  const entry=value=>ledgerMonth({pnlEntries:[{[field]:value}]});
+  for(const value of [undefined,null,'','예시 <img src=x> & 기록'])assetsUnchanged(entry(value));
+  for(const value of [{},[],true,0])assetsRejected(entry(value),`자산.ledger.years[0].months[0].pnlEntries[0].${field}`);
+});
+
+for(const field of ['amount','krw','fx'])test(`손익 상세 ${field}는 옛 숫자 문자열·null을 보존하고 다른 타입을 거부한다`,()=>{
+  const entry=value=>ledgerMonth({pnlEntries:[{[field]:value}]});
+  for(const value of [undefined,null,'',0,-2.5,'1200','-2.5',1e15])assetsUnchanged(entry(value));
+  for(const value of [{},[],true,false,'synthetic-private-value',' '])assetsRejected(entry(value),`자산.ledger.years[0].months[0].pnlEntries[0].${field}`);
+});
+
+test('손익 상세 목록·항목 구조를 검사하고 없는 필드와 알 수 없는 필드를 보존한다',()=>{
+  for(const pnlEntries of [undefined,null,[],[{}],[{broker:'예시',amount:'0',legacy:{keep:true}}]])assetsUnchanged(ledgerMonth({pnlEntries}));
+  for(const pnlEntries of ['',{},true,1])assetsRejected(ledgerMonth({pnlEntries}),'자산.ledger.years[0].months[0].pnlEntries');
+  for(const value of [null,[],true,1,''])assetsRejected(ledgerMonth({pnlEntries:[value]}),'자산.ledger.years[0].months[0].pnlEntries[0]');
+});
+
+for(const field of ['price','returnRate','netAssets','years','firstMonth'])test(`할부 ${field}는 숫자 타입만 검사하며 옛 선택값과 계산 전 범위를 보존한다`,()=>{
+  for(const value of [undefined,null,'',0,-2.5,'1200','-2.5',1e15])assetsUnchanged({installments:{[field]:value}});
+  for(const value of [{},[],true,false,'synthetic-private-value',' '])assetsRejected({installments:{[field]:value}},`자산.installments.${field}`);
+});
+
+for(const field of ['startYm','savedAt'])test(`할부 ${field}는 선택 문자열을 보존하고 다른 타입을 거부한다`,()=>{
+  for(const value of [undefined,null,'','2026-01','옛 문자열 <예시>'])assetsUnchanged({installments:{[field]:value}});
+  for(const value of [{},[],true,0])assetsRejected({installments:{[field]:value}},`자산.installments.${field}`);
+});
+
+for(const field of ['months','fee','discountRate','discountCap'])test(`할부 방식 ${field}는 옛 숫자 문자열·null을 보존하고 다른 타입을 거부한다`,()=>{
+  for(const id of ['once','m12','m36','futureMethod']){
+    for(const value of [undefined,null,'',0,-2.5,'1200','-2.5',1e15])assetsUnchanged({installments:{methods:{[id]:{[field]:value}}}});
+    for(const value of [{},[],true,false,'synthetic-private-value',' '])assetsRejected({installments:{methods:{[id]:{[field]:value}}}},`자산.installments.methods.${field}`);
+  }
+});
+
+test('할부 방식 discountEnabled는 선택 boolean만 허용한다',()=>{
+  for(const id of ['once','m12','m36','futureMethod']){
+    for(const discountEnabled of [undefined,null,true,false])assetsUnchanged({installments:{methods:{[id]:{discountEnabled}}}});
+    for(const discountEnabled of ['',{},[],0,1,'false'])assetsRejected({installments:{methods:{[id]:{discountEnabled}}}},'자산.installments.methods.discountEnabled');
+  }
+});
+
+test('할부와 방식별 객체 구조를 검사하고 누락·null 및 쓰지 않는 옛 필드를 보존한다',()=>{
+  for(const data of [{},{installments:undefined},{installments:null},{installments:{}},{installments:{methods:undefined}},{installments:{methods:null}},{installments:{methods:{}}},{installments:{methods:{once:null,m12:{},m36:{},futureMethod:{keep:['옛 자료']}}}}])assetsUnchanged(data);
+  const legacy={installments:{oldField:{keep:true},methods:{once:{fixedDiscount:{keep:true},rewardRate:'옛 형식',rewardCap:[1],rewardsEnabled:'이전 선택',cashback:{keep:true}},m12:{months:'18',fee:'0'},m36:{discountEnabled:false,discountRate:null,discountCap:''}}}};
+  assetsUnchanged(legacy);
+  for(const installments of ['',[],true,1])assetsRejected({installments},'자산.installments');
+  for(const methods of ['',[],true,1])assetsRejected({installments:{methods}},'자산.installments.methods');
+  for(const method of ['',[],true,1])assetsRejected({installments:{methods:{m12:method}}},'자산.installments.methods');
 });
 
 
