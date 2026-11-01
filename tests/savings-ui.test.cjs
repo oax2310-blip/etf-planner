@@ -253,6 +253,25 @@ test('저축 가정 CTA와 접힌 상세: 다른 탭에서 편집을 열 수 있
   assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
 });
 
+test('저축 설정 줄: 펼친 상태에서 다시 누르면 맨 아래 버튼 없이 바로 접고 기록은 바꾸지 않는다',()=>{
+  const data=fixture(),before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
+  const rows=()=>h.document.querySelectorAll('[data-savings-setting]');
+  const state=()=>[h.node('savingsAssumptionsBody').hidden,...rows().map(r=>r.getAttribute('aria-expanded'))];
+  assert.equal(rows().length,3);assert.deepEqual(state(),[true,'false','false','false']);
+  assert.ok(rows().every(r=>r.getAttribute('aria-controls')==='savingsAssumptionsBody'));
+  assert.match(h.html(),/data-savings-setting-action>설정</);
+  const salary=rows().find(r=>r.dataset.savingsSetting==='salary');salary.onclick();
+  assert.deepEqual(state(),[false,'true','true','true']);
+  assert.equal(h.document.activeElement,h.inputs().find(x=>x.dataset.param==='salary'),'열 때는 해당 입력으로 이동한다');
+  assert.equal(h.node('toggleSavingsAssumptions').getAttribute('aria-expanded'),'true');
+  h.render();assert.match(h.html(),/data-savings-setting-action>접기</,'다시 그려도 펼친 줄은 접기로 표시한다');
+  rows().find(r=>r.dataset.savingsSetting==='returnRate').onclick();
+  assert.deepEqual(state(),[true,'false','false','false']);
+  assert.equal(h.node('toggleSavingsAssumptions').getAttribute('aria-expanded'),'false');
+  assert.equal(h.node('deleteScenario').hidden,true);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+});
+
 test('저축 연도별: 투자수익은 기부 전으로 표시하고 기부·연말 잔액·저장 기록은 유지한다',()=>{
   for(const rate of [-10,0,10]){
     const data=fixture();data.savings.scenarios=[{id:'base',name:'기본',salary:100,giving:10,spending:20,spendingYear:2026,growth:0,returnRate:rate,endAge:34,stages:[]}];
