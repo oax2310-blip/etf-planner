@@ -240,8 +240,8 @@ function openMonth(y, n){
         const fx=plus(rpFx(index)), legacy=rpSaved.get(index).legacy;
         el(`ledgerRpFx${index}`).textContent=usd===null&&legacy!==null?"기존 원화 기록입니다. 달러로 넣으면 125개월 평균 환율로 바꿉니다."
           :!fx?"125개월 평균선을 불러오면 자동 적용됩니다."
-          :rpKeep.has(index)?`125개월 평균 환율 ${assetNumberText(fx)}원 · 기록한 환율`
-          :`125개월 평균 환율 ${assetNumberText(fx)}원 · ${prices?.fx?.maAsOf||prices?.fx?.asOf?`${prices.fx.maAsOf||prices.fx.asOf} 기준 · `:""}자동 적용${prices?.fx?.maStale?" · 갱신 필요":""}`;
+          :rpKeep.has(index)?`125개월 평균 ${assetNumberText(fx)}원 · 기록한 환율`
+          :`125개월 평균 ${assetNumberText(fx)}원${prices?.fx?.maAsOf||prices?.fx?.asOf?` · ${prices.fx.maAsOf||prices.fx.asOf}`:""}${prices?.fx?.maStale?" · 갱신 필요":""}`;
         el(`ledgerRpWon${index}`).textContent=value!==null?wonA(value):usd!==null?"평균선 필요":"—";
         const hint=el(`ledgerAccountTotal${index}`);hint.hidden=value===null;hint.textContent=value===null?"":`계좌 합계 ${wonA(sum)} (원화추정자산 + RP)`;
       }
