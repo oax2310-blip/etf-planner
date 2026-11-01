@@ -2,18 +2,21 @@ name: 금 ETF(GLDM) 월말 자료 갱신
 # 월별 손익의 금 ETF 비교용 연말·월말 종가만 공개 자료로 기록한다(scripts/collect-gold.cjs). Secrets·개인 기록을 쓰지 않는다.
 on:
   schedule:
-    # 매월 1~7일 UTC 22:50(뉴욕 장 마감 뒤, 한국시간 다음날 07:50). 지난달 말 종가가 처음 잡힐 때만 커밋하고 나머지 날은 그대로 둔다.
-    - cron: '50 22 1-7 * *'
+    # 매월 26~31일·1~7일 UTC 22:50(뉴욕 장 마감 뒤 17~18시대, 한국시간 다음날 07:50). 그달 마지막 평일 장 마감 뒤나 주말로 끝나는 달의 마지막 금요일 뒤면
+    # 다음 달을 기다리지 않고 그달 말 종가를 기록한다(scripts/month-close.cjs). 1~7일은 실패·늦은 정정 재시도이며 새 월말 종가가 있을 때만 커밋한다.
+    - cron: '50 22 1-7,26-31 * *'
   push:
     branches: [main]
     paths:
       - scripts/collect-gold.cjs
+      - scripts/month-close.cjs
       - js/ledger-benchmark.js
       - .github/workflows/gold-etf.yml
   # PR에서는 실제 수집과 공표치 확인만 하고 기록하지 않는다(읽기 권한).
   pull_request:
     paths:
       - scripts/collect-gold.cjs
+      - scripts/month-close.cjs
       - js/ledger-benchmark.js
       - .github/workflows/gold-etf.yml
   workflow_dispatch:
@@ -37,7 +40,7 @@ jobs:
       - name: 수집 시험(기록 없음)
         run: node scripts/collect-gold.cjs --dry-run
       - name: 계산·자료 계약 확인
-        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/gold-collect.test.cjs
+        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/gold-collect.test.cjs tests/month-close.test.cjs
   collect:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -55,7 +58,7 @@ jobs:
       - name: 금 ETF(GLDM) 수집
         run: node scripts/collect-gold.cjs
       - name: 계산·자료 계약 확인
-        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/gold-collect.test.cjs
+        run: node --test --experimental-test-isolation=none tests/ledger-benchmark.test.cjs tests/gold-collect.test.cjs tests/month-close.test.cjs
       - name: 공개 금 ETF 자료만 기록
         id: commit
         run: |

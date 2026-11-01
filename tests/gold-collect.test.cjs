@@ -126,7 +126,7 @@ test('HTTP·종목·검증 실패는 기존 자료를 보존하고 CLI는 exitCo
   const before=existing();await assert.rejects(main([],now,async()=>({ok:false,status:403})),/http-403/);
   await assert.rejects(main([],now,async()=>({ok:true,json:async()=>chart(undefined,undefined,p=>{p.chart.result[0].meta.symbol='GLD';return p;})})),/unexpected-series/);
   await assert.rejects(main([],now,async()=>({ok:true,json:async()=>chart(undefined,undefined,p=>{const r=p.chart.result[0];r.indicators.quote[0].close=r.indicators.quote[0].close.map(v=>v===GOLD_ETF_YEAR_END[2025]?v*2:v);return p;})})),/official-mismatch-close-2025/);
-  const mod={exports:{}},proc={argv:[]};let error='';const fakeRequire=name=>name==='node:fs'?fs:name==='node:path'?path:require('../js/ledger-benchmark.js');fakeRequire.main=mod;
+  const mod={exports:{}},proc={argv:[]};let error='';const fakeRequire=name=>name==='node:fs'?fs:name==='node:path'?path:name==='./month-close.cjs'?require('../scripts/month-close.cjs'):require('../js/ledger-benchmark.js');fakeRequire.main=mod;
   const context=vm.createContext({require:fakeRequire,module:mod,__dirname:path.dirname(SCRIPT),process:proc,AbortSignal,Date,Intl,
     fetch:async()=>({ok:false,status:403}),console:{error:x=>{error+=x;}}});
   await vm.runInContext(fs.readFileSync(SCRIPT,'utf8'),context);assert.equal(proc.exitCode,1);assert.match(error,/http-403.*기존 자료는 그대로 둡니다/);assert.equal(existing(),before);
@@ -137,7 +137,7 @@ test('새 파일은 검증 후에만 교체하고 쓰기 실패·같은 값·dry
   let fail=false;
   const fakeFs={readFileSync:p=>files.get(p),writeFileSync:(p,text)=>{writes.push(p);files.set(p,text);if(fail)throw Error('disk-full');},
     renameSync:(from,to)=>{files.set(to,files.get(from));files.delete(from);},rmSync:p=>files.delete(p)};
-  const fakeRequire=name=>name==='node:fs'?fakeFs:name==='node:path'?path:require('../js/ledger-benchmark.js');
+  const fakeRequire=name=>name==='node:fs'?fakeFs:name==='node:path'?path:name==='./month-close.cjs'?require('../scripts/month-close.cjs'):require('../js/ledger-benchmark.js');
   const context=vm.createContext({require:fakeRequire,module:{exports:{}},__dirname:path.dirname(SCRIPT),console:{log(){}},AbortSignal,Date,Intl,process:{argv:[]}});
   vm.runInContext(fs.readFileSync(SCRIPT,'utf8'),context);const run=context.module.exports.main,fetcher=async()=>({ok:true,json:async()=>chart()});
   await run([],now,fetcher);assert.equal(writes.length,0);assert.equal(files.get(OUT),original);
@@ -146,4 +146,13 @@ test('새 파일은 검증 후에만 교체하고 쓰기 실패·같은 값·dry
   fail=true;await assert.rejects(run([],now,update),/disk-full/);assert.equal(files.get(OUT),original);assert.equal(files.has(`${OUT}.tmp`),false);
   fail=false;await run([],now,update);assert.deepEqual(writes,[`${OUT}.tmp`,`${OUT}.tmp`]);assert.equal(files.has(`${OUT}.tmp`),false);
   assert.equal(JSON.parse(files.get(OUT)).monthEnd.at(-1).close,round(GOLD_ETF_YEAR_END[2025]*1.09+1));assert.ok(cleanGoldData(JSON.parse(files.get(OUT))));
+});
+
+test('10월 31일 토요일처럼 그달 거래가 끝났으면 다음 달을 기다리지 않고 그달 말 종가를 남긴다',async t=>{
+  const run=async iso=>{let printed='';const m=t.mock.method(console,'log',x=>{printed+=x;});
+    try{await main(['--dry-run'],new Date(iso),async()=>({ok:true,json:async()=>chart('2020-12-01','2026-10-30')}));}finally{m.mock.restore();}
+    return JSON.parse(printed);};
+  assert.deepEqual((await run('2026-10-31T22:50:00Z')).monthEnd.at(-1),{ym:'2026-10',date:'2026-10-30',close:round(GOLD_ETF_YEAR_END[2025]*1.1)},'뉴욕 10월 31일 토요일');
+  assert.equal((await run('2026-10-30T22:50:00Z')).monthEnd.at(-1).ym,'2026-10','마지막 금요일 장 마감 뒤');
+  assert.equal((await run('2026-10-30T19:00:00Z')).monthEnd.at(-1).ym,'2026-09','장중인 마지막 금요일은 기다린다');
 });

@@ -204,8 +204,7 @@ test('연도별 요약 아래 기본 높은 쪽은 금 연복리·차이를 표�
   const current=benchmarkCells(block,'benchmark-ytd-cells');assert.equal(current.length,3);
   includes(current[0],'내 누적');includes(current[0],((1.01**9-1)*100).toFixed(2)+'%');includes(current[1],'S&amp;P 500 누적');includes(current[1],c.SP500_TR_YTD['2026-09'].toFixed(2)+'%');includes(block,'누적이 더 높은 S&amp;P 500 표시');
   assert.doesNotMatch(html,/연평균|산술평균|LBMA/);
-  assert.match(block,/Total Return 지수\(배당 재투자\) 달러 수익률.*원·달러 환율 변동.*원화 실현손익 기준이라 평가손익/);
-  includes(block,'금은 금 ETF GLDM(보수 0.10%)의 연말·월말 뉴욕 종가 기준이며, 달러 기준이라 원·달러 환율 변동이 빠져 있습니다.');
+  assert.doesNotMatch(block,/benchmark-note|원·달러 환율 변동이 빠져|평가손익이 빠져/,'지수 비교 아래 긴 기준 안내 문단은 두지 않는다');
   assert.equal(JSON.stringify(data),before);
   const pending=benchmarkHtml(ledgerHtml({version:1,ledger:{savedAt:'',years:fixture()}},new Date(2027,0,5).getTime()));
   assert.match(pending,/2026년/);assert.match(pending,/S&amp;P 500.*반영 전/);assert.match(pending,/금.*반영 전/);

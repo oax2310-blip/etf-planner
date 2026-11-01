@@ -150,7 +150,7 @@ function sp500Block(years){
   return `<div class="benchmark"><div class="benchmark-head"><b>지수 비교</b><div class="ledger-seg" role="group" aria-label="지수 비교 표시"><button type="button" data-ledger-bench="best" aria-pressed="${!both}">높은 쪽</button><button type="button" data-ledger-bench="both" aria-pressed="${both}">둘 다</button></div><small>${hint}</small></div>
     ${c.years?`<div class="benchmark-grid">${grid}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
     ${c.current&&c.current.rate!==null&&c.current.month?ledgerBenchmarkYtdRow(choices,currentPicked,both):""}
-    <p class="benchmark-note">S&amp;P 500은 S&amp;P Dow Jones Indices의 Total Return 지수(배당 재투자) 달러 수익률이라 원·달러 환율 변동이 빠져 있고, 내 수익률은 원화 실현손익 기준이라 평가손익이 빠져 있습니다. 금은 금 ETF GLDM(보수 0.10%)의 연말·월말 뉴욕 종가 기준이며, 달러 기준이라 원·달러 환율 변동이 빠져 있습니다.</p></div>`;
+  </div>`;
 }
 // 올해는 기록한 마지막 달 말까지 월 단위로 같은 기간을 비교한다. 위 세 칸과 같은 열에 맞춘다.
 function ledgerBenchmarkYtdRow(choices,picked,both){

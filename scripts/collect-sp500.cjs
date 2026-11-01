@@ -6,6 +6,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const {SP500_TR_RETURNS,SP500_TR_YTD}=require('../js/ledger-benchmark.js');
+const {closedMonthCutoff}=require('./month-close.cjs');
 
 const OUT=path.join(__dirname,'../data/sp500-tr.json');
 const SYMBOL='^SP500TR';
@@ -27,6 +28,7 @@ function parseChart(payload){
   return {zone,points:[...byDate].sort(([a],[b])=>a.localeCompare(b)).map(([date,close])=>({date,close}))};
 }
 const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
+// today는 main이 month-close.cjs의 closedMonthCutoff로 정한 기준일이다(그달 거래가 모두 끝났으면 다음 달 1일).
 // 연말·월말 종가: 끝난 해의 마지막 종가, 올해 끝난 달의 마지막 종가. 마지막 종가가 그 달 마지막 4일보다 이르면 자료가 빠진 것으로 보고 멈춘다.
 // verified: 연간 공표치가 있는 가장 최근 해와 범위 안 월말 공표치를 수집 종가로 다시 계산한 값. 연간 검증이 없거나 공표치와 다르면 기록하지 않는다.
 function summarize(points, today){
@@ -78,7 +80,7 @@ function nextFile(previous, summary, fetchedAt){
 async function main(argv=process.argv.slice(2), now=new Date(), fetcher=fetch){
   const dry=argv.includes('--dry-run'), thisYear=Number(dateIn(now.getTime()/1000,'America/New_York').slice(0,4));
   const {zone,points}=parseChart(await fetchChart(rangeStart(thisYear),now,fetcher));
-  const summary=summarize(points,dateIn(now.getTime()/1000,zone));
+  const summary=summarize(points,closedMonthCutoff(now,zone,points));
   let previous=null;try{previous=JSON.parse(fs.readFileSync(OUT,'utf8'));}catch{}
   const file=nextFile(previous,summary,now.toISOString());
   console.log(JSON.stringify({dryRun:dry,changed:!!file,points:points.length,first:points[0]?.date,last:points[points.length-1]?.date,...summary},null,1));

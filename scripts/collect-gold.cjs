@@ -3,6 +3,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const {GOLD_LBMA_YEAR_END,GOLD_ETF_YEAR_END}=require('../js/ledger-benchmark.js');
+const {closedMonthCutoff}=require('./month-close.cjs');
 
 const OUT=path.join(__dirname,'../data/gold-etf.json');
 const SYMBOL='GLDM';
@@ -25,6 +26,7 @@ function parseChart(payload){
   return {zone,points:[...byDate].sort(([a],[b])=>a.localeCompare(b)).map(([date,close])=>({date,close}))};
 }
 const lastDay=(y,m)=>new Date(Date.UTC(y,m,0)).getUTCDate();
+// today는 main이 month-close.cjs의 closedMonthCutoff로 정한 기준일이다(그달 거래가 모두 끝났으면 다음 달 1일).
 // 2020~지난해 연말과 올해 끝난 달의 마지막 종가만 남긴다. 마지막 날짜가 해당 월말에서 4일보다 더 이르면 incomplete로 멈춘다.
 // 올해 월말의 기준이 될 전년 말이 없으면 missing-base다. 연말은 반드시 해당 해 12월의 값이어야 한다.
 // 정확 대조: GOLD_ETF_YEAR_END가 있는 해는 수집 종가가 해당 GLDM 상수의 ±0.02달러 안이어야 한다. 벗어나면 official-mismatch로 기록하지 않는다.
@@ -79,7 +81,7 @@ function nextFile(previous, summary, fetchedAt){
 async function main(argv=process.argv.slice(2), now=new Date(), fetcher=fetch){
   const dry=argv.includes('--dry-run');
   const {zone,points}=parseChart(await fetchChart(rangeStart(),now,fetcher));
-  const summary=summarize(points,dateIn(now.getTime()/1000,zone));
+  const summary=summarize(points,closedMonthCutoff(now,zone,points));
   let previous=null;try{previous=JSON.parse(fs.readFileSync(OUT,'utf8'));}catch{}
   const file=nextFile(previous,summary,now.toISOString());
   console.log(JSON.stringify({dryRun:dry,changed:!!file,points:points.length,first:points[0]?.date,last:points[points.length-1]?.date,...summary},null,1));
