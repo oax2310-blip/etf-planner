@@ -71,8 +71,8 @@ test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한
   ])assert.throws(()=>validate.assets(data),/기록 형식/);
 });
 
-test('월별 RP는 누락된 옛 기록·빈 배열·null·0 이상 숫자를 변경 없이 허용한다',()=>{
-  for(const month of [{m:1,balances:['옛 형식 보존']},{m:1,rp:[]},{m:1,rp:[null,0,1200.5,null]}]){
+test('월별 RP·달러 RP·환율은 누락된 옛 기록·빈 배열·null·허용 범위 숫자를 변경 없이 허용한다',()=>{
+  for(const month of [{m:1,balances:['옛 형식 보존']},{m:1,rp:[]},{m:1,rp:[null,0,1200.5,null]},{m:1,rp:[0,1300],rpUsd:[0,1],rpFx:[null,1300.1234]}]){
     const data={ledger:{years:[{year:2026,months:[month]}]}};
     const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
   }
@@ -80,11 +80,12 @@ test('월별 RP는 누락된 옛 기록·빈 배열·null·0 이상 숫자를 �
   assert.equal(Object.hasOwn(month,'rp'),false);
 });
 
-test('월별 RP의 잘못된 배열 형식과 음수·문자열·객체·유한하지 않은 원소를 거부한다',()=>{
-  for(const rp of [null,0,'1200',{},[-1],['1200'],[{}],[[]],[true],[undefined],[NaN],[Infinity],Array(1)]){
-    const data={ledger:{years:[{year:2026,months:[{m:1,rp}]}]}};
-    assert.throws(()=>validate.assets(data),/기록 형식/);
+test('월별 RP·달러 RP·환율의 잘못된 배열 형식과 음수·문자열·객체·유한하지 않은 원소를 거부한다',()=>{
+  for(const key of ['rp','rpUsd','rpFx'])for(const rp of [null,0,'1200',{},[-1],['1200'],[{}],[[]],[true],[undefined],[NaN],[Infinity],Array(1)]){
+    const data={ledger:{years:[{year:2026,months:[{m:1,[key]:rp}]}]}};
+    assert.throws(()=>validate.assets(data),/기록 형식/,`${key}`);
   }
+  assert.throws(()=>validate.assets({ledger:{years:[{year:2026,months:[{m:1,rpFx:[0]}]}]}}),/기록 형식/,'환율 0은 거부');
 });
 
 
