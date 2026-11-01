@@ -459,7 +459,7 @@ const ledgerFx=(h,ma,extra='')=>vm.runInContext(`prices={fx:{ma:{"125개월선":
 test('월 입력은 RP 달러를 125개월 평균 환율로 환산해 balances에 원화추정자산+RP를 저장하고 다시 열면 기록 환율을 유지하며 RP를 비우면 필드를 지운다',()=>{
   const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,pnl:0,balances:[1000,2000]}]};
   const h=ledgerDialog(year);ledgerFx(h,1300.5);h.openMonth();
-  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균 환율 1,300.5원 · 2026-10-30 기준 · 자동 적용');assert.equal(h.node('ledgerRpWon0').textContent,'—');
+  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균 1,300.5원 · 2026-10-30');assert.equal(h.node('ledgerRpWon0').textContent,'—');
   h.input('bal0','1,500');h.input('rp0','2.5');h.input('bal1','3,000');
   assert.equal(h.node('ledgerRpWon0').textContent,'3,251원','2.5달러 × 1,300.5원 반올림');
   h.submit();
@@ -467,7 +467,7 @@ test('월 입력은 RP 달러를 125개월 평균 환율로 환산해 balances�
   assert.deepEqual(h.saves,['ledger']);
   ledgerFx(h,1400);const saved=JSON.stringify(year);h.openMonth();
   assert.equal(h.node('monthForm').bal0.value,'1,500');assert.equal(h.node('monthForm').rp0.value,'2.5');
-  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균 환율 1,300.5원 · 기록한 환율','현재 평균선이 바뀌어도 저장한 환율 유지');
+  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균 1,300.5원 · 기록한 환율','현재 평균선이 바뀌어도 저장한 환율 유지');
   assert.equal(JSON.stringify(year),saved);assert.equal(h.saves.length,1,'재열기도 저장하지 않는다');
   h.input('rp0','3');h.submit();
   assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[5402,3000],rp:[3902],rpUsd:[3],rpFx:[1300.5]},'금액을 고쳐도 기록 환율로 환산');
@@ -549,7 +549,7 @@ test('RP 125개월선이 없으면 환산·저장을 막고 시세가 오면 새
   h.input('rp0','2');assert.equal(h.node('ledgerRpWon0').textContent,'평균선 필요');assert.equal(h.node('ledgerAccountTotal0').hidden,true);
   assert.throws(()=>h.submit(),/125개월 평균선/);assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[]);
   ledgerFx(h,1250,',maStale:true');vm.runInContext('updateLedgerDividendFx()',h.ctx);
-  assert.equal(h.node('ledgerRpWon0').textContent,'2,500원');assert.match(h.node('ledgerRpFx0').textContent,/1,250원 · 2026-10-30 기준 · 자동 적용 · 갱신 필요$/);
+  assert.equal(h.node('ledgerRpWon0').textContent,'2,500원');assert.match(h.node('ledgerRpFx0').textContent,/1,250원 · 2026-10-30 · 갱신 필요$/);
   h.submit();assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[3500],rp:[2500],rpUsd:[2],rpFx:[1250]});
   const zero={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[1000]}]};
   const z=ledgerDialog(zero);z.openMonth();z.input('rp0','0');z.submit();
@@ -564,7 +564,7 @@ test('125개월 평균선 갱신은 저장한 RP 환율도 현재 평균선으�
   vm.runInContext('prices=null',h.ctx);await h.node('refreshDividendFx').onclick();
   assert.equal(h.node('ledgerRpWon0').textContent,'2,600원','평균선이 없으면 기록 환율 유지');
   ledgerFx(h,1400);await h.node('refreshDividendFx').onclick();
-  assert.equal(h.node('ledgerRpWon0').textContent,'2,800원');assert.match(h.node('ledgerRpFx0').textContent,/^125개월 평균 환율 1,400원 · 2026-10-30 기준/);
+  assert.equal(h.node('ledgerRpWon0').textContent,'2,800원');assert.match(h.node('ledgerRpFx0').textContent,/^125개월 평균 1,400원 · 2026-10-30/);
   h.submit();assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[3800],rp:[2800],rpUsd:[2],rpFx:[1400]});
 });
 
