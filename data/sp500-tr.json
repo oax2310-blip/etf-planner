@@ -5,7 +5,7 @@
   "currency": "USD",
   "sourceName": "S&P Dow Jones Indices · Yahoo Finance",
   "sourceUrl": "https://finance.yahoo.com/quote/%5ESP500TR/history/",
-  "fetchedAt": "2026-10-16T14:42:46.929Z",
+  "fetchedAt": "2026-11-01T00:57:35.112Z",
   "verified": [
     {
       "period": "2025",
@@ -80,6 +80,11 @@
       "ym": "2026-09",
       "date": "2026-09-30",
       "close": 17160.41
+    },
+    {
+      "ym": "2026-10",
+      "date": "2026-10-30",
+      "close": 17011.14
     }
   ]
 }
