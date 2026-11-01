@@ -12,7 +12,7 @@ function setup(initial,fetcher,shared){
   storage.set('etf-planner-collection-data-repo','example/private-data');
   const context={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
-    AbortController,crypto:require('node:crypto').webcrypto,setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);return 1;},clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
+    AbortController,AbortSignal,crypto:require('node:crypto').webcrypto,setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);return 1;},clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
     async fetch(url,options){
       if(url.endsWith('/issues/123'))return new Response(JSON.stringify({state:'open'}));
       if(url.endsWith('/issues')){const body=JSON.parse(options.body);collection.id=JSON.parse(body.body).request_id;collection.dispatches.push(body);return new Response(JSON.stringify({number:123}),{status:201});}
@@ -31,6 +31,73 @@ const milestoneDoc=()=>({...fake(),savings:{savedAt:'2026-01-01',startYear:2025,
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 const contents=doc=>json({sha:'remote-sha',encoding:'base64',content:Buffer.from(JSON.stringify(doc)).toString('base64')});
 function connect(storage){storage.set('etf-planner-data-repo','example/private-data');storage.set('etf-planner-github-token','fake-test-token');}
+const timeoutMessage='GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
+const stalled=signal=>new Promise((resolve,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});});
+function fakeDeadline(context){
+  const requests=[];
+  context.AbortSignal={timeout(ms){assert.equal(ms,30000);const controller=new AbortController();requests.push(controller);return controller.signal;}};
+  return {requests,expire:(name='TimeoutError')=>requests.at(-1).abort(new DOMException('synthetic request detail',name))};
+}
+async function waitFor(check){for(let i=0;i<100&&!check();i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(check(),'대기 중인 요청에 도달해야 한다');}
+
+test('자산 동기화 fetch가 끝나지 않으면 30초 제한으로 busy를 풀고 다음 동기화를 시작한다',async()=>{
+  for(const name of ['TimeoutError','AbortError']){
+    let blocked=true,requests=0,writes=0;
+    const original=fake(),h=setup(original,async(url,options)=>{
+      requests++;
+      if(blocked)return stalled(options.signal);
+      if(url.endsWith('/repos/example/private-data'))return json({private:true});
+      if(options.method==='PUT'){writes++;return json({content:{sha:'saved-sha'}});}
+      return new Response(null,{status:404});
+    });
+    const deadline=fakeDeadline(h.context);connect(h.storage);
+    const pending=h.store.sync();assert.equal(h.store.status.busy,true);assert.equal(requests,1);
+    deadline.expire(name);await pending;
+    assert.equal(h.store.status.busy,false);assert.equal(h.store.status.state,'error');assert.equal(h.store.status.message,timeoutMessage);
+    assert.deepEqual(clone(h.store.doc),original);assert.deepEqual(JSON.parse(h.storage.get(KEY)),original);
+    blocked=false;await h.store.sync();
+    assert.equal(h.store.status.busy,false);assert.equal(h.store.status.state,'done');assert.equal(writes,1);assert.ok(requests>1);
+  }
+});
+
+test('자산 동기화는 응답 헤더 뒤 json·text 본문이 멈춰도 같은 제한과 안내를 유지한다',async()=>{
+  for(const method of ['json','text']){
+    let reading=false;
+    const h=setup(fake(),async(url,options)=>{
+      if(url.endsWith('/repos/example/private-data')){
+        const response=json({private:true});
+        if(method==='json')response.json=()=>{reading=true;return stalled(options.signal);};
+        return response;
+      }
+      if(url.endsWith('/etf-planner-prices.json'))return new Response(null,{status:404});
+      if(options.headers.Accept==='application/vnd.github.raw+json'){
+        const response=new Response('');response.text=()=>{reading=true;return stalled(options.signal);};return response;
+      }
+      return json({sha:'remote-sha'});
+    });
+    const deadline=fakeDeadline(h.context);connect(h.storage);const pending=h.store.sync();
+    await waitFor(()=>reading);assert.equal(h.store.status.busy,true);assert.equal(deadline.requests.at(-1).signal.aborted,false);
+    deadline.expire();await pending;
+    assert.equal(h.store.status.busy,false);assert.equal(h.store.status.state,'error');assert.equal(h.store.status.message,timeoutMessage);
+  }
+});
+
+test('자산 동기화의 fetch·본문 TypeError는 원문 대신 네트워크 연결 안내만 표시한다',async()=>{
+  for(const method of ['fetch','json','text']){
+    const fail=()=>{throw new TypeError('fake-test-token example/private-data');};
+    const h=setup(fake(),async(url,options)=>{
+      if(method==='fetch')fail();
+      if(url.endsWith('/repos/example/private-data')){
+        const response=json({private:true});if(method==='json')response.json=fail;return response;
+      }
+      if(url.endsWith('/etf-planner-prices.json'))return new Response(null,{status:404});
+      if(options.headers.Accept==='application/vnd.github.raw+json'){const response=new Response('');response.text=fail;return response;}
+      return json({sha:'remote-sha'});
+    });
+    fakeDeadline(h.context);connect(h.storage);await h.store.sync();
+    assert.equal(h.store.status.busy,false);assert.equal(h.store.status.state,'error');assert.equal(h.store.status.message,'네트워크 연결을 확인해 주세요.');
+  }
+});
 
 test('잘못된 자산 백업은 현재 종목·체결·복구본을 바꾸기 전에 거부한다',()=>{
   const original=fake(),h=setup(original),before=[...h.storage];
@@ -225,6 +292,39 @@ test('분할매수 기기 간 동기화는 저장 중 409를 다시 병합하고
   assert.equal(remote.allocation.groups[0].items[0].buyPlan.stages[0].actual,25);
   assert.equal(remote.ledger.years[0].months[0].pnl,100);
   assert.deepEqual(JSON.parse(storage.get(BASE)),remote);
+});
+
+test('자산 PUT 반영 뒤 본문 시간 초과가 나도 다음 동기화의 409·422에서 SHA를 다시 읽어 회복한다',async()=>{
+  for(const conflict of [409,422]){
+    const original=fake();let remote=clone(original),sha='sha-1',reading=false,staleRead=false;
+    const puts=[],reads=[];
+    const h=setup(original,async(url,options)=>{
+      if(url.endsWith('/repos/example/private-data'))return json({private:true});
+      if(url.endsWith('/etf-planner-prices.json'))return new Response(null,{status:404});
+      if(options.method==='PUT'){
+        const body=JSON.parse(options.body);puts.push(body);
+        if(body.sha!==sha)return json({message:'sha mismatch'},conflict);
+        remote=JSON.parse(Buffer.from(body.content,'base64').toString());sha='sha-'+(puts.length+1);
+        const response=json({content:{sha}});
+        if(puts.length===1)response.json=()=>{reading=true;return stalled(options.signal);};
+        return response;
+      }
+      reads.push(options.headers['If-None-Match']);
+      // PUT 응답을 잃은 뒤 이전 ETag의 304를 한 번 받으면 캐시의 옛 SHA로 저장을 시도하게 된다.
+      if(reading&&!staleRead&&options.headers['If-None-Match']==='"etag-1"'){staleRead=true;return new Response(null,{status:304});}
+      return new Response(JSON.stringify({sha,encoding:'base64',content:Buffer.from(JSON.stringify(remote)).toString('base64')}),{headers:{ETag:'"etag-1"'}});
+    });
+    const deadline=fakeDeadline(h.context);connect(h.storage);h.storage.set(BASE,JSON.stringify(original));
+    let stage=h.store.doc.allocation.groups[0].items[0].buyPlan.stages[0];stage.done=true;stage.actual=25;h.store.saveSection('allocation');
+    const pending=h.store.sync();await waitFor(()=>reading);assert.equal(remote.allocation.groups[0].items[0].buyPlan.stages[0].actual,25);
+    deadline.expire();await pending;
+    assert.equal(h.store.status.busy,false);assert.equal(h.store.status.message,timeoutMessage);assert.deepEqual(JSON.parse(h.storage.get(BASE)),original);
+    stage=h.store.doc.allocation.groups[0].items[0].buyPlan.stages[0];stage.actual=26;h.store.saveSection('allocation');h.store.doc.allocation.savedAt='2099-01-01';
+    await h.store.sync();
+    assert.equal(h.store.status.busy,false);assert.equal(h.store.status.state,'done');assert.deepEqual(puts.map(body=>body.sha),['sha-1','sha-1','sha-2']);
+    assert.deepEqual(reads,[undefined,'"etag-1"',undefined]);assert.equal(remote.allocation.groups[0].items[0].buyPlan.stages[0].actual,26);
+    assert.deepEqual(JSON.parse(h.storage.get(BASE)),remote);
+  }
 });
 
 test('두 기기가 동기화 사이에 다른 종목을 고쳐도 둘 다 올리고, 같은 칸만 나중 값을 쓰며 안내한다',async()=>{

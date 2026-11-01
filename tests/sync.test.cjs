@@ -16,7 +16,7 @@ const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60}
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
 // 시세 파일(prices)은 있으면 ETag와 함께 돌려주고, 같은 ETag로 물으면 304. priceStatus를 주면 시세 파일 요청만 그 상태로 실패.
-function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0, includeHistory = false, historyEvents = []} = {}) {
+function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0, includeHistory = false, historyEvents = [], fetcher = null, timeout = AbortSignal.timeout} = {}) {
   const items = new Map(Object.entries(stored));
   if (connect) {
     items.set('etf-planner-data-repo', REPO);
@@ -25,7 +25,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
-  const elements = new Map();
+  const elements = new Map(), intervals = [];
   let version = 1;
   const server = {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
@@ -38,8 +38,8 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
     $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
-    Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,crypto:require('node:crypto').webcrypto,
-    setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval() {},
+    Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,AbortSignal:{timeout},crypto:require('node:crypto').webcrypto,
+    setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval:fn=>intervals.push(fn),
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
     async fetch(url, options = {}) {
       server.requests++; server.auth.push(options.headers?.Authorization);
@@ -76,15 +76,118 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
       return reply(200, {sha: server.file.sha, encoding: 'base64', content: b64(server.file.text)});
     }
   });
+  if(fetcher){const request=context.fetch;context.fetch=(url,options)=>fetcher(url,options,request);}
   if(includeHistory)for(const name of ['alert-history-store.js','alert-history.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js',name),'utf8'),context);
   vm.runInContext(source, context);
   vm.runInContext(pricesSource, context);
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../js/assets-calc.js'), 'utf8'), context); // 충돌 자동 병합(mergeThreeWay)
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
-  return {context, server, items, elements, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
+  return {context, server, items, elements, intervals, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
+const timeoutMessage='GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
+const abortPending=signal=>new Promise((resolve,reject)=>{
+  if(signal.aborted)reject(signal.reason);
+  else signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+});
+function githubClock(){
+  const requests=[];
+  return {requests,timeout(ms){const controller=new AbortController();requests.push({ms,controller});return controller.signal;},
+    expire(signal){const request=requests.find(r=>r.controller.signal===signal);assert.equal(request?.ms,30000);request.controller.abort(new DOMException('synthetic request details','TimeoutError'));}};
+}
+
+test('끝나지 않는 GitHub 요청은 30초 제한으로 busy와 시세 버튼 잠금을 풀고 다음 자동 동기화를 허용한다',async()=>{
+  const clock=githubClock();let signal,held=true;
+  const h=harness({timeout:clock.timeout,fetcher:(url,options,next)=>{
+    if(held){signal=options.signal;return abortPending(signal);}
+    return next(url,options);
+  }});
+  assert.equal(vm.runInContext('sync.busy',h.context),true);
+  for(const id of ['refreshPricesBtn','refreshPricesDialogBtn'])assert.equal(h.elements.get(id).disabled,true);
+  clock.expire(signal);await h.restored();
+  assert.equal(h.status(),'이 기기 저장됨 · '+timeoutMessage);
+  assert.equal(vm.runInContext('sync.busy',h.context),false);
+  for(const id of ['refreshPricesBtn','refreshPricesDialogBtn'])assert.equal(h.elements.get(id).disabled,false);
+  held=false;h.intervals[0]();await waitFor(()=>!vm.runInContext('sync.busy',h.context));
+  assert.match(h.status(),/^동기화 완료/);assert.equal(h.server.writes,1);
+});
+
+test('GitHub TypeError는 원문 대신 네트워크 안내를 표시하고 수동 재동기화를 허용한다',async()=>{
+  let offline=true;
+  const h=harness({fetcher:(url,options,next)=>{if(offline)throw new TypeError('synthetic token/repository details');return next(url,options);}});
+  await h.restored();
+  assert.equal(h.status(),'이 기기 저장됨 · 네트워크 연결을 확인해 주세요.');
+  assert.equal(vm.runInContext('sync.busy',h.context),false);
+  offline=false;await h.elements.get('syncNow').onclick();await waitFor(()=>!vm.runInContext('sync.busy',h.context));
+  assert.match(h.status(),/^동기화 완료/);
+});
+
+for(const method of ['json','text'])test(`GitHub ${method} 본문을 읽는 동안에도 제한 신호와 시간 초과 안내를 유지한다`,async()=>{
+  const clock=githubClock();let signal,reading=false;
+  const h=harness({remote:empty(),timeout:clock.timeout,fetcher:async(url,options,next)=>{
+    const response=await next(url,options),path=new URL(url).pathname;
+    if(method==='json'&&path===`/repos/${REPO}`){response.json=()=>{reading=true;signal=options.signal;return abortPending(signal);};}
+    if(method==='text'&&path===FILE){
+      if(options.headers.Accept==='application/vnd.github.raw+json')response.text=()=>{reading=true;signal=options.signal;return abortPending(signal);};
+      else response.json=async()=>({sha:'sha-1'});
+    }
+    return response;
+  }});
+  await waitFor(()=>reading);assert.equal(reading,true);assert.equal(vm.runInContext('sync.busy',h.context),true);
+  clock.expire(signal);await h.restored();
+  assert.equal(h.status(),'이 기기 저장됨 · '+timeoutMessage);
+  assert.equal(vm.runInContext('sync.busy',h.context),false);assert.equal(h.server.writes,0);
+});
+
+test('시세 text 본문의 시간 초과를 JSON 형식 오류로 바꾸지 않고 기록 동기화와 버튼 잠금을 마친다',async()=>{
+  const clock=githubClock(),h=harness({remote:empty(),timeout:clock.timeout});await h.restored();
+  const fetch=h.context.fetch;let signal;
+  h.context.fetch=async(url,options)=>{
+    const response=await fetch(url,options);
+    if(new URL(url).pathname===PRICE_FILE){response.status=200;response.ok=true;response.text=()=>{signal=options.signal;return abortPending(signal);};}
+    return response;
+  };
+  const work=h.run();await waitFor(()=>!!signal);assert.ok(signal);clock.expire(signal);await work;
+  assert.equal(h.elements.get('priceStatus').textContent,'시세 확인 실패 · '+timeoutMessage);
+  assert.match(h.status(),/^동기화 완료/);assert.equal(vm.runInContext('sync.busy',h.context),false);
+  assert.equal(h.elements.get('refreshPricesBtn').disabled,false);
+});
+
+test('gh는 호출자 신호와 헤더를 보존하고 AbortError를 같은 시간 초과 안내로 바꾼다',async()=>{
+  const clock=githubClock(),h=harness({timeout:clock.timeout});await h.restored();
+  const controller=new AbortController(),before=clock.requests.length;let captured;
+  h.context.callerSignal=controller.signal;h.context.fetch=(url,options)=>{captured=options;return abortPending(options.signal);};
+  const request=vm.runInContext('gh("/repos/"+sync.repo,{signal:callerSignal,headers:{Accept:"application/vnd.github.raw+json","If-None-Match":"synthetic-etag"}})',h.context);
+  assert.equal(captured.signal,controller.signal);assert.equal(clock.requests.length,before);
+  assert.equal(captured.cache,'no-store');assert.equal(captured.redirect,undefined);
+  assert.equal(captured.headers.Accept,'application/vnd.github.raw+json');assert.equal(captured.headers['If-None-Match'],'synthetic-etag');
+  assert.equal(captured.headers['X-GitHub-Api-Version'],'2022-11-28');assert.equal(captured.headers.Authorization,'Bearer test-token');
+  controller.abort(new DOMException('synthetic request details','AbortError'));
+  await assert.rejects(request,{message:timeoutMessage});
+});
+
+for(const status of [409,422])test(`PUT 반영 후 시간 초과가 나도 다음 동기화의 SHA 충돌(${status}) 경로로 회복한다`,async()=>{
+  const clock=githubClock(),old=empty(),local={...empty(),plans:[{id:'mine'}]};let signal,held=true;
+  const h=harness({local,remote:old,base:snap(old),timeout:clock.timeout,fetcher:async(url,options,next)=>{
+    const response=await next(url,options);
+    if(options.method==='PUT'&&held&&response.ok){held=false;signal=options.signal;return abortPending(signal);}
+    if(response.status===409)return {...response,status};
+    return response;
+  }});
+  await waitFor(()=>!!signal);assert.ok(signal);assert.equal(h.server.writes,1);assert.deepEqual(h.remoteData().plans,local.plans);
+  clock.expire(signal);await h.restored();
+  assert.equal(h.status(),'이 기기 저장됨 · '+timeoutMessage);assert.equal(vm.runInContext('sync.busy',h.context),false);
+  assert.equal(h.items.get('etf-planner-sync-base:'+REPO),snap(old),'성공 응답을 받기 전에는 동기화 기준을 올리지 않는다');
+  h.context.state.plans.push({id:'mine-next'});
+  h.server.beforePut=()=>{h.server.file={sha:'sha-concurrent',text:JSON.stringify({...empty(),plans:[{id:'mine'},{id:'concurrent'}]})};};
+  await h.run();
+  assert.match(h.status(),/다른 기기 저장 확인/);assert.equal(vm.runInContext('sync.again',h.context),true);assert.equal(vm.runInContext('sync.busy',h.context),false);
+  await h.run();
+  assert.match(h.status(),/^동기화 완료/);assert.equal(h.server.writes,2);
+  assert.deepEqual(h.remoteData().plans.map(p=>p.id).sort(),['concurrent','mine','mine-next']);
+  assert.equal(h.items.get('etf-planner-sync-base:'+REPO),vm.runInContext('dataSnapshot()',h.context));
+});
 
 test('악성·잘못된 백업은 현재 기록·복구본·원격 저장을 변경하기 전에 거부한다',async()=>{
   const local={...empty(),plans:[{id:'original',stages:2,note:'보존할 가상 메모'}]};

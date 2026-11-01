@@ -17,7 +17,7 @@ const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60}
 const reply = (status, body) => ({ok: status >= 200 && status < 300, status, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
-function githubServer({remote = null, isPrivate = true, raw = null} = {}) {
+function githubServer({remote = null, isPrivate = true, raw = null, staleStatus = 409} = {}) {
   let version = 1;
   const server = {file: remote || raw ? {sha: 'sha-1', text: raw ?? JSON.stringify(remote, null, 2)} : null, puts: [], requests: 0, beforePut: null,
     data() { return this.file && JSON.parse(this.file.text); }};
@@ -32,7 +32,7 @@ function githubServer({remote = null, isPrivate = true, raw = null} = {}) {
       if (server.beforePut) { const hook = server.beforePut; server.beforePut = null; hook(); }
       const body = JSON.parse(options.body);
       server.puts.push(body);
-      if ((server.file && body.sha !== server.file.sha) || (!server.file && body.sha)) return reply(409, {message: 'sha mismatch'});
+      if ((server.file && body.sha !== server.file.sha) || (!server.file && body.sha)) return reply(staleStatus, {message: 'sha mismatch'});
       server.file = {sha: `sha-${++version}`, text: Buffer.from(body.content, 'base64').toString('utf8')};
       return reply(200, {content: {sha: server.file.sha}});
     }
@@ -57,7 +57,7 @@ function control(id, {type = 'range', value, min = 0, max = 1000, options}) {
     set value(v) { current = type === 'range' ? String(Math.min(max, Math.max(min, Number(v)))) : String(v); }};
 }
 
-function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenStorage = false, server = null} = {}) {
+function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenStorage = false, server = null, signalTimeout = ms => AbortSignal.timeout(ms)} = {}) {
   const controls = [
     control('robotM', {value: defaults.robotM ?? 80, max: 160}),
     control('evShare', {value: defaults.evShare ?? 5, max: 15}),
@@ -116,7 +116,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     crypto: {randomUUID: (() => { let n = 0; return () => `id-${++n}`; })()},
     setTimeout: (fn, ms) => { timers.set(++timerId, {fn, ms}); return timerId; }, clearTimeout: id => { timers.delete(id); }, setInterval() {},
     fetch: server ? server.fetch : async () => { throw Error('연결하지 않았는데 GitHub에 요청했다'); },
-    Date, JSON, Number, String, Object, Array, Set, Map, Error, TextEncoder, TextDecoder, Uint8Array, btoa, atob, URL
+    AbortSignal: {timeout: signalTimeout}, Date, JSON, Number, String, Object, Array, Set, Map, Error, TextEncoder, TextDecoder, Uint8Array, btoa, atob, URL
   });
   vm.runInContext(repoSecuritySource+'\n'+source, context);
   const fire = (type, target) => (listeners[type] || []).forEach(fn => fn({target, preventDefault() {}}));
@@ -329,6 +329,119 @@ const T1 = '2026-09-01T00:00:00.000Z', T2 = '2026-09-02T00:00:00.000Z', T3 = '20
 const saved = (values, savedAt, presets = {sdi: '', battery: 'base'}) => ({values, presets, savedAt});
 const scenario = (id, name, savedAt, values = {robotM: 10}) => ({id, name, savedAt, values, presets: {sdi: '', battery: 'base'}});
 const remoteFile = ({current = null, scenarios = [], deleted = {}} = {}) => ({version: 1, current, scenarios, deleted});
+const TIMEOUT_MESSAGE = 'GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
+function fakeDeadlines() {
+  const controllers = [];
+  return {timeout(ms) { assert.equal(ms, 30000); const controller = new AbortController(); controllers.push(controller); return controller.signal; },
+    expire(name = 'TimeoutError') { controllers.at(-1).abort(new DOMException('가상 요청 중단', name)); }};
+}
+const untilAborted = signal => new Promise((resolve, reject) => {
+  if (signal.aborted) reject(signal.reason);
+  else signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+});
+
+test('끝나지 않는 시나리오 요청은 30초 제한으로 busy를 풀고 다음 동기화를 허용한다', async () => {
+  const deadlines = fakeDeadlines(), server = githubServer(), fetch = server.fetch;
+  server.fetch = (url, options) => untilAborted(options.signal);
+  const h = page({server, storage: connectedStorage(), signalTimeout: deadlines.timeout});
+  assert.equal(vm.runInContext('scenarioSync.busy', h.context), true);
+  deadlines.expire();
+  await h.ready();
+  assert.equal(h.el('scenarioSyncError').textContent, TIMEOUT_MESSAGE);
+  assert.equal(vm.runInContext('scenarioSync.busy', h.context), false);
+  server.fetch = fetch; h.context.fetch = server.fetch;
+  await h.sync();
+  assert.ok(server.requests > 0);
+  assert.match(h.el('scenarioSyncStatus').textContent, /^동기화 완료/);
+});
+
+test('시나리오 fetch와 본문의 TypeError는 원문 대신 네트워크 안내만 표시한다', async () => {
+  for (const phase of ['fetch', 'json', 'text']) {
+    const server = githubServer(), original = server.fetch;
+    server.fetch = async (url, options) => {
+      const fail = () => { throw new TypeError('가상 비밀 synthetic-secret /repos/me/data'); };
+      if (phase === 'fetch') return fail();
+      if (phase === 'json') return {...reply(200, null), json: fail};
+      if (options.headers.Accept === 'application/vnd.github.raw+json') return {...reply(200, ''), text: fail};
+      if (new URL(url).pathname === FILE) return reply(200, {sha: 'sha-1'});
+      return original(url, options);
+    };
+    const h = page({server, storage: connectedStorage()});
+    await h.ready();
+    assert.equal(h.el('scenarioSyncError').textContent, '네트워크 연결을 확인해 주세요.', phase);
+    assert.equal(vm.runInContext('scenarioSync.busy', h.context), false, phase);
+  }
+});
+
+test('시나리오 JSON·raw 본문을 읽는 중에도 제한 신호와 시간 초과 문구를 유지한다', async () => {
+  for (const method of ['json', 'text']) {
+    const deadlines = fakeDeadlines(), server = githubServer(), original = server.fetch;
+    let reading;
+    const started = new Promise(resolve => { reading = resolve; });
+    server.fetch = async (url, options) => {
+      const body = () => { reading(); return untilAborted(options.signal); };
+      if (method === 'json') return {...reply(200, null), json: body};
+      if (options.headers.Accept === 'application/vnd.github.raw+json') return {...reply(200, ''), text: body};
+      if (new URL(url).pathname === FILE) return reply(200, {sha: 'sha-1'});
+      return original(url, options);
+    };
+    const h = page({server, storage: connectedStorage(), signalTimeout: deadlines.timeout});
+    await started;
+    assert.equal(vm.runInContext('scenarioSync.busy', h.context), true);
+    deadlines.expire(method === 'json' ? 'AbortError' : 'TimeoutError');
+    await h.ready();
+    assert.equal(h.el('scenarioSyncError').textContent, TIMEOUT_MESSAGE, method);
+    assert.equal(vm.runInContext('scenarioSync.busy', h.context), false, method);
+  }
+});
+
+test('시나리오 요청은 호출자의 신호·헤더를 보존하고 redirect를 추가하지 않는다', async () => {
+  const controller = new AbortController(), server = githubServer();
+  let received;
+  server.fetch = async (url, options) => { received = options; return reply(200, {private: true}); };
+  const h = page({server, signalTimeout: () => assert.fail('호출자 신호가 있으면 기본 제한을 만들지 않는다')});
+  await h.ready();
+  h.context.callerSignal = controller.signal;
+  const response = await vm.runInContext(`scenarioGh({repo:'me/data',token:'test-token'},'/repos/me/data',{signal:callerSignal,headers:{Accept:'application/custom'}})`, h.context);
+  assert.equal(received.signal, controller.signal);
+  assert.equal(received.headers.Accept, 'application/custom');
+  assert.equal(received.headers.Authorization, 'Bearer test-token');
+  assert.equal(received.headers['X-GitHub-Api-Version'], '2022-11-28');
+  assert.equal(received.cache, 'no-store');
+  assert.equal(Object.hasOwn(received, 'redirect'), false);
+  assert.deepEqual(await response.json(), {private: true});
+});
+
+test('시나리오 PUT 반영 후 응답이 멈춰도 다음 동기화의 409·422를 재병합해 회복한다', async () => {
+  for (const staleStatus of [409, 422]) {
+    const deadlines = fakeDeadlines(), server = githubServer({remote: remoteFile({scenarios: [scenario('b', '보수', T1)]}), staleStatus}), original = server.fetch;
+    let committed;
+    const written = new Promise(resolve => { committed = resolve; });
+    let hang = true;
+    server.fetch = async (url, options) => {
+      const response = await original(url, options);
+      if (options.method === 'PUT' && hang) { hang = false; committed(); return untilAborted(options.signal); }
+      return response;
+    };
+    const h = page({server, storage: connectedStorage({[LIST]: [scenario('a', '낙관', T2)]}), signalTimeout: deadlines.timeout});
+    await written;
+    assert.deepEqual(server.data().scenarios.map(s => s.id), ['a', 'b']);
+    deadlines.expire();
+    await h.ready();
+    assert.equal(h.el('scenarioSyncError').textContent, TIMEOUT_MESSAGE);
+    assert.equal(vm.runInContext('scenarioSync.busy', h.context), false);
+    h.adjust('robotM', 120); h.flush();
+    server.beforePut = () => { server.file = {sha: 'sha-other', text: JSON.stringify({...server.data(), scenarios: [scenario('c', '다른 기기', T3), ...server.data().scenarios]})}; };
+    await h.sync();
+    assert.equal(server.puts.length, 3);
+    assert.equal(server.puts[1].sha, 'sha-2');
+    assert.equal(server.puts[2].sha, 'sha-other');
+    assert.deepEqual(server.data().scenarios.map(s => s.id), ['c', 'a', 'b']);
+    assert.equal(server.data().current.values.robotM, 120);
+    assert.equal(vm.runInContext('scenarioSync.busy', h.context), false);
+    assert.match(h.el('scenarioSyncStatus').textContent, /^동기화 완료/);
+  }
+});
 
 test('연결하지 않은 기기는 GitHub에 요청하지 않고 연결 방법을 안내한다', async () => {
   const h = page();

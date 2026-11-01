@@ -589,9 +589,21 @@ const toB64=text=>{ const bytes=new TextEncoder().encode(text); let bin=""; for(
 const fromB64=b64=>new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
 async function scenarioGh(config,path,options={}){
   repoSecurity.assertDataRepo(config.repo);
-  const response=await fetch("https://api.github.com"+path,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:"Bearer "+config.token,...options.headers}});
+  const networkError=error=>{
+    if(error?.name==="AbortError"||error?.name==="TimeoutError")return Error("GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
+    if(error?.name==="TypeError")return Error("네트워크 연결을 확인해 주세요.");
+    return error;
+  };
+  let response;
+  try{response=await fetch("https://api.github.com"+path,{cache:"no-store",...options,signal:options.signal??AbortSignal.timeout(30000),headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:"Bearer "+config.token,...options.headers}});}
+  catch(error){throw networkError(error);}
   if(response.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
   if(response.status===403) throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
+  // 제한 신호는 본문을 읽을 때도 유지된다. 본문 전송 중 끊긴 오류도 같은 안내로 바꾼다.
+  for(const method of ["json","text"]){
+    const read=response[method].bind(response);
+    response[method]=async(...args)=>{try{return await read(...args);}catch(error){throw networkError(error);}};
+  }
   return response;
 }
 async function checkScenarioRepo(config){
