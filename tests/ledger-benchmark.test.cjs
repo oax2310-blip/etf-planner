@@ -355,17 +355,68 @@ test('월별 선물·옵션: 월 손익에 더해 복리 누적하고, 달을 �
   assert.equal(JSON.stringify(year),before,'기록은 바꾸지 않음');
 });
 
+// openMonth·openYear의 기존 VM 하네스. 동적 HTML의 칸만 가볍게 읽어 실제 입력·저장 경로를 호출한다.
+function ledgerDialog(year,{popover=true}={}){
+  const nodes=new Map(),storage=new Map(),rendered=new Map(),saves=[],listeners=new Map();
+  const decode=value=>String(value).replace(/&(amp|lt|gt|quot|#39);/g,(_,k)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'"}[k]));
+  const match=(x,selector)=>selector.split(',').some(part=>{
+    part=part.trim();if(part===':popover-open')return !!x.popoverOpen;
+    const tag=part.match(/^[a-z]+/i)?.[0];if(tag&&x.tagName!==tag.toUpperCase())return false;
+    const id=part.match(/#([\w-]+)/)?.[1];if(id&&x.id!==id)return false;
+    const klass=part.match(/\.([\w-]+)/)?.[1];if(klass&&!String(x.className||'').split(/\s+/).includes(klass))return false;
+    return [...part.matchAll(/\[([\w-]+)(?:([*^$]?=)"([^\"]*)")?\]/g)].every(([,key,op,value])=>{
+      const attr=x.attrs?.[key];if(attr===undefined)return false;if(!op)return true;
+      return op==='='?attr===value:op==='^='?attr.startsWith(value):op==='$='?attr.endsWith(value):attr.includes(value);
+    });
+  });
+  const query=(selector,id)=>[...(id?rendered.get(id)||[]:[...rendered.values()].flat())].filter(x=>match(x,selector));
+  const field=()=>({value:'',readOnly:false,setCustomValidity(message){this.validationMessage=message;}});
+  const node=id=>{
+    if(nodes.has(id))return nodes.get(id);
+    const x={...field(),id,dataset:{},attrs:{id},hidden:false,textContent:'',open:false,isConnected:true,style:{},classList:{toggle(){}},
+      querySelector:sel=>query(sel,id)[0]||node(`${id}:${sel}`),querySelectorAll:sel=>query(sel,id),
+      setAttribute(key,value){this.attrs[key]=String(value);},getAttribute(key){return this.attrs[key]??null;},
+      addEventListener(type,fn){(this.listeners??={})[type]=fn;},removeEventListener(){},
+      matches(selector){return match(this,selector);},getBoundingClientRect:()=>({left:20,right:52,top:100,bottom:132}),
+      focus(){},setSelectionRange(){},reportValidity(){
+        const fields=id==='monthForm'?[...query('input','monthFields'),...query('input','pnlEntryRows')]:id==='yearForm'?[this.futures,this.note,...query('input','accountRows')]:[];
+        return !this.validationMessage&&fields.every(field=>!field.validationMessage);
+      },showModal(){this.open=true;},close(){this.open=false;},
+      showPopover(){this.popoverOpen=true;},hidePopover(){this.popoverOpen=false;}};
+    let html='';Object.defineProperty(x,'innerHTML',{get:()=>html,set:value=>{
+      html=String(value);const children=[];
+      for(const [,tag,raw] of html.matchAll(/<([a-z][\w-]*)\b([^>]*)>/gi)){
+        const attrs=Object.fromEntries([...raw.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,decode(value??'')]));
+        const child=attrs.id?node(attrs.id):{...field(),...x,id:'',listeners:{}};
+        Object.assign(child,{attrs,tagName:tag.toUpperCase(),className:attrs.class||'',value:attrs.value||'',validationMessage:'',dataset:Object.fromEntries(Object.entries(attrs).filter(([k])=>k.startsWith('data-')).map(([k,v])=>[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase()),v]))});
+        if(attrs.name)node(id==='accountRows'?'yearForm':'monthForm')[attrs.name]=child;
+        children.push(child);
+      }
+      rendered.set(id,children);
+    }});
+    nodes.set(id,x);return x;
+  };
+  Object.assign(node('monthForm'),{pnl:field(),futures:field(),dividendFx:field()});
+  Object.assign(node('yearForm'),{futures:field(),note:field()});
+  const document={hidden:false,activeElement:null,getElementById:node,querySelector:sel=>query(sel)[0]||node(sel),querySelectorAll:sel=>query(sel),addEventListener(type,fn){listeners.set(type,fn);}};
+  const store={doc:{version:1,ledger:{savedAt:'',years:year?[year]:[]}},prices:null,saveSection:section=>saves.push(section)};
+  class HTMLElement{};if(popover)HTMLElement.prototype.popover='auto';
+  const ctx=vm.createContext({Date,document,assetStore:store,HTMLElement,crypto:require('node:crypto').webcrypto,
+    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
+    location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){},innerWidth:393,innerHeight:852,confirm:()=>true,alert:message=>{throw Error(message);}});
+  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js'].map(read).join('\n;\n'),ctx);
+  vm.runInContext('render=()=>{}',ctx);ctx.year=year;
+  return {ctx,node,saves,query,
+    openMonth(n=3){vm.runInContext(`openMonth(year,${n})`,ctx);return node('monthFields').innerHTML;},
+    openYear(){vm.runInContext('openYear(year)',ctx);},
+    input(name,value){const x=node('monthForm')[name];assert.ok(x,`입력 칸 ${name}`);x.value=String(value);x.oninput?.({target:x});listeners.get('input')?.({target:x});return x;},
+    submit(id='monthForm'){node(id).onsubmit({preventDefault(){}});},
+  };
+}
+
 test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 있는 키패드(numeric), 배당·잔액은 소수 키패드(decimal)를 쓴다',()=>{
   // 삼성 키보드는 inputmode=decimal 키패드에 '-' 키가 없고 numeric 키패드에는 '-'와 '.'이 있다. 금액은 가짜 값.
-  const nodes=new Map(),storage=new Map(),field=()=>({value:'',readOnly:false,setCustomValidity(){}});
-  const node=id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},hidden:false,innerHTML:'',textContent:'',open:false,classList:{toggle(){}},querySelector:sel=>node(`${id}:${sel}`),setAttribute(){},getAttribute(){},focus(){},showModal(){this.open=true;}});return nodes.get(id);};
-  Object.assign(node('monthForm'),{pnl:field(),futures:field(),dividendFx:field()});
-  const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:()=>[],addEventListener(){}};
-  const store={doc:{version:1,ledger:{savedAt:'',years:[]}},prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){throw Error('창을 열기만 해서 저장하면 안 된다');}};
-  const ctx=vm.createContext({Date,document,assetStore:store,crypto:require('node:crypto').webcrypto,
-    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
-    location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
-  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
+  const {ctx,node}=ledgerDialog();
   const entries=[{broker:'B',amount:-700},{broker:'C',amount:-1.5,currency:'USD',krw:-2000}];
   ctx.year={year:2026,accounts:[{name:'A'}],months:[{m:3,pnl:-5000,futures:-12000,balances:[1000000],pnlEntries:entries}]};
   vm.runInContext('openMonth(year,3)',ctx);
@@ -381,6 +432,127 @@ test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 
   assert.match(rows,numeric('data-pnl-entry="1" data-k="krw"'),'원화 입금액');
   assert.doesNotMatch(html+rows,/sign-toggle|data-sign/,'부호 버튼 없음');
   assert.match(read('assets.html'),/<input name="futures" type="text" inputmode="numeric" autocomplete="off" data-money aria-describedby="yearFuturesHint" \/>/,'연도 설정 선물·옵션');
+});
+
+test('월 입력 RP 칸과 안내 버튼은 키움·영웅문 해외 및 RP 기록 계좌에만 있고 loan은 제외한다',()=>{
+  const names=['영 웅 문 해 외 가상','키 움 해외 가상','키움 국내 가상','영웅문 가상','다른 해외 가상','바꾼 가상 이름','키움 해외 대출','키움 해외 "<가상>"'];
+  const year={year:2026,accounts:names.map((name,i)=>({name,...(i===6?{loan:true}:{})})),months:[{m:3,balances:[1000,2000,3000,4000,5000,6000,7000,8000],rp:[null,null,null,null,null,0,300]}]};
+  const before=JSON.stringify(year),h=ledgerDialog(year),html=h.openMonth();
+  for(const i of [0,1,5,7]){
+    assert.match(html,new RegExp(`<input[^>]*name="rp${i}"[^>]*inputmode="decimal"`),`RP 대상 ${i}`);
+    assert.match(html,new RegExp(`<button[^>]*data-ledger-rp-help="${i}"`),`안내 버튼 ${i}`);
+    assert.match(html,new RegExp(`<label[^>]*for="ledgerBal${i}"`),'원화추정자산 label과 입력 칸을 연결');
+  }
+  for(const i of [2,3,4,6])assert.doesNotMatch(html,new RegExp(`name="rp${i}"|data-ledger-rp-help="${i}"`),`RP 비대상 ${i}`);
+  assert.doesNotMatch(html,/name="bal6"/,'loan은 원래 잔액 칸도 숨긴다');
+  assert.match(html,/aria-label="키움 해외 &quot;&lt;가상&gt;&quot; 입력 안내"/,'이름은 HTML 속성에서도 이스케이프');
+  assert.doesNotMatch(html,/<가상>|"<가상>"/);
+  for(const label of html.matchAll(/<label\b[^>]*>[\s\S]*?<\/label>/g))assert.doesNotMatch(label[0],/data-ledger-rp-help/,'안내 버튼을 label 안에 두지 않는다');
+  assert.equal(h.node('monthForm').rp5.value,'0','RP 0원도 숨기지 않는다');
+  assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[],'창을 열기만 해서 기록을 저장하지 않는다');
+});
+
+test('월 입력은 balances에 원화추정자산+RP를 저장하고 다시 열면 차액을 보이며 RP를 비우면 필드를 지운다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,pnl:0,balances:[1000,2000]}]};
+  const h=ledgerDialog(year);h.openMonth();
+  h.input('bal0','1,500');h.input('rp0','250');h.input('bal1','3,000');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[1750,3000],rp:[250]});
+  assert.deepEqual(h.saves,['ledger']);
+  const saved=JSON.stringify(year);h.openMonth();
+  assert.equal(h.node('monthForm').bal0.value,'1,500');assert.equal(h.node('monthForm').rp0.value,'250');
+  assert.equal(JSON.stringify(year),saved);assert.equal(h.saves.length,1,'재열기도 저장하지 않는다');
+  h.input('rp0','');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[1500,3000]});
+  assert.equal(Object.hasOwn(year.months[0],'rp'),false,'비운 RP 필드는 삭제');
+});
+
+test('월 입력의 빈칸·RP만 입력·명시적 0원과 배열 끝 null은 저장 시 구분한다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상 A'},{name:'가상 일반'},{name:'영웅문 해외 가상 B'},{name:'가상 끝'}],months:[{m:3,pnl:0}]};
+  const h=ledgerDialog(year);h.openMonth();h.input('rp0','100');h.input('rp2','0');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[100,null,0],rp:[100,null,0]},'기초 잔액 없이 RP만 있어도 합계에 포함하고 끝 null만 제거');
+  h.openMonth();assert.equal(h.node('monthForm').bal0.value,'0','RP만 있는 합계에서 RP를 뺀 값');
+  h.input('bal0','');h.input('rp0','');h.input('bal2','');h.input('rp2','');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0},'모든 잔액·RP를 비우면 두 선택 필드 삭제');
+});
+
+test('옛 월 기록은 RP 필드를 만들지 않고 기존 잔액을 그대로 열고 저장한다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,balances:[1234,500]}]};
+  const h=ledgerDialog(year),before=JSON.stringify(year);h.openMonth();
+  assert.equal(h.node('monthForm').bal0.value,'1,234');assert.equal(h.node('monthForm').rp0.value,'');
+  assert.equal(h.node('monthForm').bal1.value,'500');assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[]);
+  h.submit();assert.equal(JSON.stringify(year),before,'옛 기록을 저장해도 빈 RP 필드는 생기지 않는다');
+  const commaYear={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,balances:['1,200','2,500']}]};
+  const comma=ledgerDialog(commaYear),commaBefore=JSON.stringify(commaYear);comma.openMonth();
+  assert.equal(comma.node('monthForm').bal0.value,'1,200','대상 계좌의 옛 쉼표 문자열 잔액 유지');
+  assert.equal(comma.node('monthForm').bal1.value,'2,500','일반 계좌의 옛 쉼표 문자열 잔액 유지');
+  assert.equal(comma.node('monthForm').rp0.value,'');assert.equal(JSON.stringify(commaYear),commaBefore);assert.deepEqual(comma.saves,[]);
+  comma.submit();assert.deepEqual(JSON.parse(JSON.stringify(commaYear.months[0])),{m:3,balances:[1200,2500]},'저장할 때만 기존 숫자 형식으로 바꾸며 RP는 만들지 않는다');
+});
+
+test('계좌 잔액 제목 합계와 RP 계좌 소계는 입력 때 바로 갱신하고 빈 값은 숨긴다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'},{name:'가상 loan',loan:true}],months:[{m:3,balances:[null,null,900],rp:[null,null,100]}]};
+  const h=ledgerDialog(year);h.openMonth();
+  assert.equal(h.node('ledgerBalanceTotal').hidden,true);assert.equal(h.node('ledgerAccountTotal0').hidden,true);
+  h.input('bal0','1,000');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 1,000원');assert.equal(h.node('ledgerBalanceTotal').hidden,false);
+  h.input('rp0','250');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 1,250원');
+  assert.equal(h.node('ledgerAccountTotal0').textContent,'계좌 합계 1,250원 (원화추정자산 + RP)');assert.equal(h.node('ledgerAccountTotal0').hidden,false);
+  h.input('bal1','2,000');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 3,250원','loan 잔액은 합계에 포함하지 않는다');
+  h.input('rp0','');assert.equal(h.node('ledgerAccountTotal0').hidden,true);assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 3,000원');
+  h.input('bal0','');h.input('bal1','0');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 0원');assert.equal(h.node('ledgerBalanceTotal').hidden,false,'0원은 입력한 값');
+  h.input('bal1','');assert.equal(h.node('ledgerBalanceTotal').hidden,true);assert.deepEqual(h.saves,[],'합계 갱신은 저장하지 않는다');
+});
+
+test('RP 음수·잘못된 숫자는 다른 잔액 입력과 제출 뒤에도 거부하고 고친 값만 저장한다',()=>{
+  for(const invalid of ['-1','abc','1.2.3','Infinity','NaN','1e3','0x10']){
+    const year={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[1000],rp:[100]}]};
+    const h=ledgerDialog(year),before=JSON.stringify(year);h.openMonth();
+    h.input('rp0',invalid);h.input('bal0','2,500');
+    assert.ok(h.node('monthForm').rp0.validationMessage,`${invalid}: 다른 칸 입력 뒤에도 RP 오류 유지`);
+    h.submit();assert.deepEqual(h.saves,[],`${invalid}: 잘못된 RP는 저장하지 않는다`);
+    assert.equal(JSON.stringify(year),before);assert.equal(h.node('monthDialog').open,true,'오류가 있으면 창을 유지한다');
+    h.input('rp0','300');assert.equal(h.node('monthForm').rp0.validationMessage,'');h.submit();
+    assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[2800],rp:[300]});
+    assert.deepEqual(h.saves,['ledger']);assert.equal(h.node('monthDialog').open,false);
+  }
+});
+
+test('RP 계좌의 입력 빠짐 표시는 원화추정자산 칸에 유지한다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:2,balances:[1000,2000]},{m:3,balances:[null,2100]},{m:4,balances:[1200,2200]}]};
+  const h=ledgerDialog(year),html=h.openMonth();
+  assert.match(html,/<input[^>]*name="bal0"[^>]*placeholder="입력 빠짐\?"/);
+  assert.match(html,/<input[^>]*name="rp0"[^>]*placeholder="미입력"/);
+  assert.match(html,/앞뒤 달에는 잔액이 있습니다/);assert.deepEqual(h.saves,[]);
+});
+
+test('연도 설정에서 계좌 삭제·loan 뒤로 정렬 시 balances와 rp 인덱스를 함께 맞춘다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상 A'},{name:'가상 loan',loan:true},{name:'영웅문 해외 가상 B'},{name:'가상 일반'}],months:[
+    {m:2,balances:[1000,2000,3000,4000],rp:[100,200,300]},
+    {m:3,rp:[100,null,300]},
+    {m:4,balances:[1100,2200,3300,4400]},
+  ]};
+  const h=ledgerDialog(year),before=JSON.stringify(year);h.openYear();assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[]);
+  h.submit('yearForm');
+  assert.deepEqual(Array.from(year.accounts,a=>a.name),['키움 해외 가상 A','영웅문 해외 가상 B','가상 일반','가상 loan']);
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[
+    {m:2,balances:[1000,3000,4000,2000],rp:[100,300,null,200]},
+    {m:3,rp:[100,300]},
+    {m:4,balances:[1100,3300,4400,2200]},
+  ],'loan 보존 순서 변경과 balances 없는 달의 RP도 함께 remap');
+  h.openYear();h.query('[data-acc-del="0"]')[0].onclick();h.submit('yearForm');
+  assert.deepEqual(Array.from(year.accounts,a=>a.name),['영웅문 해외 가상 B','가상 일반','가상 loan']);
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[
+    {m:2,balances:[3000,4000,2000],rp:[300,null,200]},
+    {m:3,rp:[300]},
+    {m:4,balances:[3300,4400,2200]},
+  ],'삭제한 계좌의 두 금액 배열을 같은 인덱스로 제거');
+});
+
+test('연도 설정에서 마지막 RP 계좌를 지우면 비어 있는 rp를 삭제하고 새 계좌는 null로 맞춘다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,balances:[1000,2000],rp:[100]}]};
+  const h=ledgerDialog(year);h.openYear();h.query('[data-acc-del="0"]')[0].onclick();
+  h.node('addAccount').onclick();const added=h.query('[data-acc-name="1"]')[0];added.value='가상 새 계좌';added.oninput();h.submit('yearForm');
+  assert.deepEqual(Array.from(year.accounts,a=>a.name),['가상 일반','가상 새 계좌']);
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[2000]},'새 계좌의 끝 null도 남기지 않는다');
 });
 
 // 금 비교도 같은 가상 기록으로 검증한다. 아래 수집 자료는 실제 시세가 아닌 검증용 종가다.
