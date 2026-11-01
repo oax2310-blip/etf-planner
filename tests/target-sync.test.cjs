@@ -28,7 +28,7 @@ function device(storage=new Map(),fetcher){
   const listeners=new Map();
   const ctx={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
-    AbortController,crypto:require('node:crypto').webcrypto,setTimeout:()=>1,clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},
+    AbortController,AbortSignal,crypto:require('node:crypto').webcrypto,setTimeout:()=>1,clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},
     addEventListener:(type,fn)=>listeners.set(type,fn),esc:v=>String(v??''),
     fetch:async(url,options)=>{if(!fetcher)throw Error('unexpected network call');return fetcher(url,options);}};
   const api=vm.runInNewContext(`${code}\n;({assetStore,allocLink,purchaseAllocationSummary,purchaseBudget,syncPurchaseTargets})`,ctx);

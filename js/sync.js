@@ -55,9 +55,21 @@ const toB64 = text => {const bytes=new TextEncoder().encode(text);let bin="";for
 const fromB64 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
 async function gh(path,options={}){
   repoSecurity.assertDataRepo(sync.repo);
-  const response=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${sync.token}`,...options.headers}});
+  const networkError=error=>{
+    if(error?.name==="AbortError"||error?.name==="TimeoutError")return Error("GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
+    if(error?.name==="TypeError")return Error("네트워크 연결을 확인해 주세요.");
+    return error;
+  };
+  let response;
+  try{response=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,signal:options.signal??AbortSignal.timeout(30000),headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${sync.token}`,...options.headers}});}
+  catch(error){throw networkError(error);}
   if(response.status===401)throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 동기화 설정에서 새 토큰을 넣어 주세요.");
   if(response.status===403)throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
+  // 제한 신호는 본문을 읽을 때도 유지된다. 본문 전송 중 끊긴 오류도 같은 안내로 바꾼다.
+  for(const method of ["json","text"]){
+    const read=response[method].bind(response);
+    response[method]=async(...args)=>{try{return await read(...args);}catch(error){throw networkError(error);}};
+  }
   return response;
 }
 // 업로드 전 비공개 저장소인지 확인하고 공개 저장소면 거부한다.
@@ -99,7 +111,8 @@ async function readPrices(force=false){
     if(response.status===304){priceStatus();return false;}
     if(response.status===404){const had=!!priceData;priceData=null;localStorage.removeItem(PRICE_KEY);if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,null);priceStatus("데이터 저장소에 시세 파일(etf-planner-prices.json)이 없어 현재가·기준가를 채우지 않습니다.");return had;}
     if(!response.ok)throw Error(`시세 읽기 실패 (${response.status})`);
-    let doc;try{doc=JSON.parse(await response.text());}catch{throw Error("시세 파일을 읽을 수 없습니다.");}
+    const text=await response.text();
+    let doc;try{doc=JSON.parse(text);}catch{throw Error("시세 파일을 읽을 수 없습니다.");}
     if(!same())return false;
     return acceptPlannerPrices(cfg,doc,response.headers?.get?.("ETag")||"");
   }catch(error){if(same())priceStatus(`시세 확인 실패 · ${error.message}`);return false;}

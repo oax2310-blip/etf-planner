@@ -18,7 +18,7 @@ function setup(initial,{shared,remote}={}){
   const storage=shared||new Map([[KEY,JSON.stringify(initial)]]),listeners=new Map(),uploads=[];
   const context={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
-    AbortController,crypto:require('node:crypto').webcrypto,setTimeout:()=>1,clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
+    AbortController,AbortSignal,crypto:require('node:crypto').webcrypto,setTimeout:()=>1,clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
     async fetch(url,options={}){
       if(url.endsWith('/repos/example/private-data'))return json({private:true});
       if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
