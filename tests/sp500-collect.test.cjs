@@ -78,3 +78,12 @@ test('종가가 같으면 파일을 다시 쓰지 않고, 만든 자료는 화�
   assert.equal(fs.existsSync(OUT)?fs.readFileSync(OUT,'utf8'):null,before);
   assert.match(printed,/"dryRun": true/);assert.match(printed,/"period": "2026-09"/);
 });
+
+test('10월 31일 토요일처럼 그달 거래가 끝났으면 다음 달을 기다리지 않고 그달 말 종가를 남긴다',async t=>{
+  const run=async iso=>{let printed='';const m=t.mock.method(console,'log',x=>{printed+=x;});
+    try{await main(['--dry-run'],new Date(iso),async()=>({ok:true,json:async()=>chart('2024-12-02','2026-10-30')}));}finally{m.mock.restore();}
+    return JSON.parse(printed);};
+  assert.deepEqual((await run('2026-10-31T22:40:00Z')).monthEnd.at(-1),{ym:'2026-10',date:'2026-10-30',close:13500},'뉴욕 10월 31일 토요일');
+  assert.equal((await run('2026-10-30T22:40:00Z')).monthEnd.at(-1).ym,'2026-10','마지막 금요일 장 마감 뒤');
+  assert.equal((await run('2026-10-30T19:00:00Z')).monthEnd.at(-1).ym,'2026-09','장중인 마지막 금요일은 기다린다');
+});

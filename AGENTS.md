@@ -1,5 +1,6 @@
 # 작업 진입점
 
+- 사용자에게 보내는 답·요약·질문·파일 캡션은 모두 한국어로 쓴다(코드·명령·파일 이름·오류 원문은 그대로).
 - 이 파일 → 관련 파일 머리 → 필요한 함수·호출부·테스트 순서. README는 필요한 절만 읽는다.
 - 점검·수정 요청에서는 보고된 증상뿐 아니라 관련 기능의 다른 오류와 회귀도 함께 확인한다.
 - 공개 소스·기본값에 개인 보유 종목·금액·수량·손익·메모·토큰·기기 구독 정보를 넣지 않는다. 기록은 브라우저와 비공개 데이터 저장소에만 둔다.
@@ -19,7 +20,7 @@
 - 매매: js/plans.js·futures.js·rebuy.js·purchases.js; 공통 회차: js/ma-ladder.js. 달러선물은 계산·화면 futures.js, 분할매수 계획 창 futures-plan.js, 신저점 손절 후 재매수 화면 futures-rebuy.js(계산은 rebuy.js).
 - 계획 창 종목 검색(분할매수·분할매도·재매수 공통): js/item-search.js; 체결 연동 UI: js/alloc-link.js; 자산·매수 계산: js/assets-calc.js; 공유 저장: js/assets-store.js.
 - 자산 배분 종목의 분할매수·분할매도·재매수 편입·매수중/매도중 표시: js/member-link.js(읽기 전용 계산·이동 주소), 플래너 도착 이동: js/member-go.js.
-- 자산 화면: assets.html·js/assets.js(공통·탭·자산 배분), 탭별 js/assets-ledger.js(월별 손익)·assets-savings.js(저축)·assets-installments.js(할부), 동기화 표시·첫 화면 js/assets-start.js; 월별 손익 S&P 500 비교: js/ledger-benchmark.js(월말 자료 수집 scripts/collect-sp500.cjs → data/sp500-tr.json); 시나리오: valuation.html(본문)·css/valuation.css·js/valuation.js(계산, ASSUMPTION_KEY 이후 가정 저장·동기화), 원·달러 js/currency-pressure.js.
+- 자산 화면: assets.html·js/assets.js(공통·탭·자산 배분), 탭별 js/assets-ledger.js(월별 손익)·assets-savings.js(저축)·assets-installments.js(할부), 동기화 표시·첫 화면 js/assets-start.js; 월별 손익 S&P 500 비교: js/ledger-benchmark.js(월말 자료 수집 scripts/collect-sp500.cjs → data/sp500-tr.json, 금 collect-gold.cjs → data/gold-etf.json, 끝난 달 판정 month-close.cjs); 시나리오: valuation.html(본문)·css/valuation.css·js/valuation.js(계산, ASSUMPTION_KEY 이후 가정 저장·동기화), 원·달러 js/currency-pressure.js.
 - 알림: js/trade-alerts.js·alerts.js·push.js·alert-target.js·push-sw.js. 서버 공유 계약은 계산 함수 주석 확인.
 - 종목 표시 이름(목록·제목·푸시·알림내역 글자, 기록은 코드 그대로): js/stock-names.js(페이지·push-sw.js 공용).
 - 디자인: css/app.css·assets.css·purchases.css; 화면 모드: js/theme.js.
