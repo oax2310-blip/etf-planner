@@ -177,8 +177,17 @@ function ledgerPnlSlots(m){
 }
 // 항목별로 적은 달(pnlEntries 있음)에서 비어 있는 전용 칸 수. 0원을 넣은 칸은 채운 것으로 보고, 합계만 적은 달은 0이다.
 const ledgerPnlBlanks=m=>Array.isArray(m?.pnlEntries)&&m.pnlEntries.length?ledgerPnlSlots(m).fixed.filter(r=>finite(r.amount)===null&&finite(r.krw)===null).length:0;
+// 키움 해외 계좌와 RP를 기록한 계좌는 잔액을 나눠 입력한다. 이름이 바뀌어도 0원을 포함한 RP 기록을 보여 주며 loan은 제외한다.
+function ledgerRpAccount(account, m, index){
+  const name=String(account.name||"").replace(/\s+/g,"");
+  return !account.loan&&((/영웅문|키움/.test(name)&&name.includes("해외"))||finite(m.rp?.[index])!==null);
+}
+// 월 입력 창 자체·그 안의 스크롤에서도 안내를 닫는다. 매번 창을 열 때 리스너를 늘리지 않는다.
+document.addEventListener("scroll",()=>all(".ledger-rp-help").forEach(p=>{if(p.matches(":popover-open"))p.hidePopover();}),{capture:true,passive:true});
 function openMonth(y, n){
   const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
+  const rp=m.rp||[], supportsPopover=typeof HTMLElement!=="undefined"&&Object.prototype.hasOwnProperty.call(HTMLElement.prototype,"popover");
+  const rpHint="영웅문 해외 잔고의 원화추정자산을 넣고, RP는 아래 칸에 따로 넣습니다.";
   const {fixed,extra}=ledgerPnlSlots(m);
   const gaps=new Set(ledgerBalanceGaps(y,m).map(x=>x.index)); // 입력이 빠졌을 수 있는 계좌 칸(ledgerBalanceGaps)
   const fxLine="125개월선", savedDividend=finite(fixed[4].amount)!==null&&finite(fixed[4].krw)!==null;
@@ -192,10 +201,34 @@ function openMonth(y, n){
       <section class="pnl-broker"><h3>키움증권</h3>${input(3,"실현손익 (원)",true)}${input(4,"배당 (달러)")}<label class="field"><span id="dividendFxLabel"></span><input name="dividendFx" ${moneyAttrs} readonly placeholder="평균선 필요"><small class="field-hint" id="dividendFxHint"></small></label><div class="pnl-conversion"><span>배당 원화 환산액</span><output id="kiwoomDividendWon"></output></div><button class="btn mini ghost" type="button" id="refreshDividendFx">125개월 평균선 갱신</button></section></div>
     <details class="dialog-wide pnl-other" id="pnlOther"${extra.length?" open":""}><summary>다른 증권사·항목 추가</summary><div id="pnlEntryRows"></div><button class="btn mini" type="button" id="addPnlEntry">＋ 내역</button></details>
     <label class="field dialog-wide"><span>선물·옵션 손익 (원)</span><input name="futures" ${signedMoneyAttrs} value="${moneyText(m.futures)}" placeholder="미입력"><small class="field-hint">그달 선물·옵션 실현손익입니다. 실현손익 합계와 따로 더해 그래프·연 수익률·연환산에 반영합니다.${finite(y.futures)!==null?` 연도 설정에 달을 모르는 선물·옵션 ${escA(wonA(y.futures))}이 따로 있어 마지막 기록 달에 더합니다. 달마다 나눠 넣었다면 그 값은 비워 주세요.`:""}</small></label>
-    <h3 class="dialog-wide pnl-balance-title">계좌 잔액 (원)</h3>
-    ${accounts.map(({account,index})=>`<label class="field"><span>${escA(account.name)}</span><input name="bal${index}" ${moneyAttrs} value="${moneyText(bal[index])}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 0원으로 더해 이달 수익률이 높게 나옵니다(해지했으면 0).</small>`:""}</label>`).join("")}
+    <h3 class="dialog-wide pnl-balance-title"><span>계좌 잔액 (원)</span><output id="ledgerBalanceTotal" hidden></output></h3>
+    ${accounts.map(({account,index})=>{
+      const split=ledgerRpAccount(account,m,index), balance=numIn(bal[index]), value=finite(rp[index]), base=split&&balance!==null&&value!==null?balance-value:bal[index];
+      const field=`<label class="field" for="ledgerBal${index}"><span>${split?"원화추정자산 (원)":escA(account.name)}</span><input name="bal${index}" id="ledgerBal${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(base)}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 0원으로 더해 이달 수익률이 높게 나옵니다(해지했으면 0).</small>`:""}</label>`;
+      return split?`<section class="ledger-rp-account"><div class="ledger-rp-head"><strong>${escA(account.name)}</strong>${supportsPopover?`<button class="ledger-rp-button" type="button" data-ledger-rp-help="${index}" popovertarget="ledgerRpHelp${index}" aria-label="${escA(account.name)} 입력 안내">!</button><div class="ledger-rp-help" id="ledgerRpHelp${index}" popover><strong>원화추정자산</strong><small>${rpHint}</small></div>`:""}</div>
+        ${field}${!supportsPopover?`<small class="field-hint">${rpHint}</small>`:""}<label class="field" for="ledgerRp${index}"><span>RP (원)</span><input name="rp${index}" id="ledgerRp${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(rp[index])}" placeholder="미입력"></label><small class="ledger-account-total" id="ledgerAccountTotal${index}" data-ledger-account-total="${index}" hidden></small></section>`:field;
+    }).join("")}
     ${!y.accounts.length?`<label class="field"><span>총자산 (원)</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`:""}
     <p class="hint dialog-wide">${accounts.length?"총자산은 계좌 잔액 합계입니다. 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":y.accounts.length?"‘연도 설정’에서 계좌를 추가한 뒤 잔액을 입력해 주세요.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
+  const balanceParts=index=>[numIn(f[`bal${index}`]?.value),numIn(f[`rp${index}`]?.value)];
+  const updateBalances=()=>{
+    let total=0, hasValue=false;
+    accounts.forEach(({index})=>{
+      const [base,value]=balanceParts(index), sum=(base??0)+(value??0);
+      if(base!==null||value!==null){total+=sum;hasValue=true;}
+      if(f[`rp${index}`]){
+        const field=f[`rp${index}`],raw=field.value.replace(/,/g,"").trim(),valid=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)&&value!==null;
+        field.setCustomValidity(raw&&!valid?"금액을 숫자로 입력해 주세요.":value!==null&&value<0?"RP는 0원 이상으로 입력해 주세요.":"");
+        const hint=el(`ledgerAccountTotal${index}`);hint.hidden=value===null;hint.textContent=value===null?"":`계좌 합계 ${wonA(sum)} (원화추정자산 + RP)`;
+      }
+    });
+    const output=el("ledgerBalanceTotal");output.hidden=!hasValue;output.textContent=hasValue?`합계 ${wonA(total)}`:"";
+  };
+  all("[data-ledger-balance]").forEach(x=>x.oninput=updateBalances);updateBalances();
+  all("[data-ledger-rp-help]").forEach(button=>{
+    const help=el(`ledgerRpHelp${button.dataset.ledgerRpHelp}`);
+    help.addEventListener("beforetoggle",e=>{if(e.newState!=="open")return;const r=button.getBoundingClientRect(),width=Math.min(300,innerWidth-32);help.style.top=`${Math.round(r.bottom+6)}px`;help.style.left=`${Math.max(16,Math.min(Math.round(r.left),innerWidth-16-width))}px`;});
+  });
   let manualPnl=f.pnl.value;
   const entries=()=>[...fixed.filter(r=>finite(r.amount)!==null||finite(r.krw)!==null),...extra];
   const update=()=>{
@@ -236,11 +269,17 @@ function openMonth(y, n){
   el("addPnlEntry").onclick=()=>{extra.push({broker:""});draw();el("pnlEntryRows").querySelector(`[data-pnl-entry="${extra.length-1}"][data-k="broker"]`).focus();};
   draw();
   el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>x.m!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault();update();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
-    const t={...m,m:n}; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;delete t.total;
+  f.onsubmit=e=>{ e.preventDefault();update();updateBalances();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
+    const t={...m,m:n};delete t.rp; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;delete t.total;
     const rows=entries();
     if(rows.length){if(rows.some(r=>!String(r.broker||"").trim())){alert("내역의 증권사 이름을 넣어 주세요.");return;}if(pnlEntriesTotal(rows)===null){alert("내역의 금액과 원화 입금액을 모두 넣어 주세요.");return;}t.pnlEntries=rows.map(r=>({...r}));t.pnl=pnlEntriesTotal(rows);}
-    if(y.accounts.length){ const b=y.accounts.map((acc,i)=>acc.loan?finite(bal[i]):numIn(f[`bal${i}`].value)); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) t.balances=b; }
+    // balances는 원화추정자산+RP 합계로 유지한다. 비운 RP는 지워 옛 저장·계산 경로와 호환한다.
+    if(y.accounts.length){
+      const b=y.accounts.map((acc,i)=>{if(acc.loan)return finite(bal[i]);const [base,value]=balanceParts(i);return base===null&&value===null?null:(base??0)+(value??0);});
+      const r=y.accounts.map((acc,i)=>acc.loan?finite(rp[i]):balanceParts(i)[1]);
+      while(b.length&&b[b.length-1]===null)b.pop();if(b.length)t.balances=b;
+      while(r.length&&r[r.length-1]===null)r.pop();if(r.length)t.rp=r;
+    }
     else setNum(t,"total",f.total.value);
     y.months=y.months.filter(x=>x.m!==n); if(Object.keys(t).length>1){ y.months.push(t); y.months.sort((a,b)=>a.m-b.m); }
     saveSection("ledger"); dlg("monthDialog").close(); render(); };
@@ -262,7 +301,7 @@ function openYear(y){
   el("yearDelete").onclick=()=>{ if(!confirm(`${y.year}년 손익 기록을 모두 지울까요?`)) return; doc.ledger.years=doc.ledger.years.filter(x=>x!==y); setUi({year:null}); saveSection("ledger"); dlg("yearDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault(); if(!f.reportValidity())return;setNum(y,"futures",f.futures.value); setText(y,"note",f.note.value);
     rows=[...rows.filter(r=>r.name.trim()),...hidden];y.accounts=rows.map(r=>({...y.accounts[r.from],name:r.name.trim()}));
-    y.months.forEach(m=>{ if(!Array.isArray(m.balances)) return; const b=rows.map(r=>r.from===null?null:m.balances[r.from]??null); while(b.length&&b[b.length-1]===null) b.pop(); if(b.length) m.balances=b; else delete m.balances; });
+    y.months.forEach(m=>{for(const key of ["balances","rp"]){if(!Array.isArray(m[key]))continue;const b=rows.map(r=>r.from===null?null:m[key][r.from]??null);while(b.length&&b[b.length-1]===null)b.pop();if(b.length)m[key]=b;else delete m[key];}});
     saveSection("ledger"); dlg("yearDialog").close(); render(); };
   dlg("yearDialog").showModal();
 }

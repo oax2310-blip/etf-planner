@@ -71,6 +71,22 @@ test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한
   ])assert.throws(()=>validate.assets(data),/기록 형식/);
 });
 
+test('월별 RP는 누락된 옛 기록·빈 배열·null·0 이상 숫자를 변경 없이 허용한다',()=>{
+  for(const month of [{m:1,balances:['옛 형식 보존']},{m:1,rp:[]},{m:1,rp:[null,0,1200.5,null]}]){
+    const data={ledger:{years:[{year:2026,months:[month]}]}};
+    const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
+  }
+  const month={m:1};validate.assets({ledger:{years:[{year:2026,months:[month]}]}});
+  assert.equal(Object.hasOwn(month,'rp'),false);
+});
+
+test('월별 RP의 잘못된 배열 형식과 음수·문자열·객체·유한하지 않은 원소를 거부한다',()=>{
+  for(const rp of [null,0,'1200',{},[-1],['1200'],[{}],[[]],[true],[undefined],[NaN],[Infinity],Array(1)]){
+    const data={ledger:{years:[{year:2026,months:[{m:1,rp}]}]}};
+    assert.throws(()=>validate.assets(data),/기록 형식/);
+  }
+});
+
 
 test('이동평균 종료 설정은 변경 없이 불러오고 잘못된 필드 형식은 거부한다',()=>{
   const data=planner();data.futures.buyPlan={startLine:'32일선',endLine:'19일선',endPrice:1370,manualEndPrice:1380,contracts:7,units:['일선']};

@@ -112,7 +112,13 @@ const externalData = (()=>{
     });
     child(data,"ledger","자산",(v,p)=>records(v.years,`${p}.years`,(y,k)=>{
       numbers(y,["year"],k,1,9999,true);records(y.accounts,`${k}.accounts`,(a,q)=>strings(a,["id","name"],q));
-      records(y.months,`${k}.months`,(m,q)=>{numbers(m,["m"],q,1,12,true);numbers(m,["pnl","total","futures"],q);records(m.pnlEntries,`${q}.pnlEntries`);});
+      records(y.months,`${k}.months`,(m,q)=>{
+        numbers(m,["m"],q,1,12,true);numbers(m,["pnl","total","futures"],q);records(m.pnlEntries,`${q}.pnlEntries`);
+        if(m.rp!==undefined){
+          if(!Array.isArray(m.rp))fail(`${q}.rp`);
+          for(const [i,x] of m.rp.entries())if(x!==null&&(typeof x!=="number"||!Number.isFinite(x)||x<0))fail(`${q}.rp[${i}]`);
+        }
+      });
     }));
     child(data,"savings","자산",(v,p)=>{
       numbers(v,["startYear"],p,1,9999,true);numbers(v,["startAge"],p,0,200);
