@@ -79,7 +79,8 @@ function renderSavings(){
   const progress=sim?sim.last.total/5e8*100:null, fill=progress===null?0:Math.max(0,Math.min(100,progress));
   const percent=progress===null?"—":`${nf1.format(progress)}%`, activeTab=sc?savingsTab:"records";
   const tabs=[["overview","Overview","개요"],["assumptions","Assumptions","가정"],["records","Records","기록"]];
-  const setting=(key,label,icon)=>`<button class="savings-setting" type="button" data-savings-setting="${key}">${savingsIcon(icon)}<span>${label}</span><small>설정</small><i aria-hidden="true"></i></button>`;
+  // 설정 줄은 가정창 열기·접기 토글이다. 펼친 상태에서 누르면 맨 아래 "가정 접기"까지 내려가지 않고 바로 접는다.
+  const setting=(key,label,icon)=>`<button class="savings-setting" type="button" data-savings-setting="${key}" aria-controls="savingsAssumptionsBody" aria-expanded="${savingsAssumptionsOpen}">${savingsIcon(icon)}<span>${label}</span><small data-savings-setting-action>${savingsAssumptionsOpen?"접기":"설정"}</small><i aria-hidden="true"></i></button>`;
   view.innerHTML=`<div class="savings-heading"><h1>저축 계획</h1></div>
     <section class="card savings-summary" aria-label="저축 요약">
       <div class="savings-summary-head">${sc?`<select id="savingsScenarioSelect" aria-label="저축 시나리오">${S.scenarios.map(x=>`<option value="${escA(x.id)}"${x===sc?" selected":""}>${escA(x.name)} 계획</option>`).join("")}</select>`:'<span>저축 기록</span>'}<button class="btn icon-btn" id="copyScenario" type="button" aria-label="시나리오 복사" title="시나리오 복사">${savingsIcon('<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>')}</button></div>
@@ -141,12 +142,13 @@ function renderSavings(){
     const button=el("toggleSavingsAssumptions"), action=open?"가정 접기":"가정 수정하기";
     el("savingsAssumptionsBody").hidden=!open;button.setAttribute("aria-expanded",String(open));button.querySelector("[data-savings-assumptions-action]").textContent=action;
     el("deleteScenario").hidden=!open||S.scenarios.length<2;
+    all("[data-savings-setting]").forEach(row=>{row.setAttribute("aria-expanded",String(open));row.querySelector("[data-savings-setting-action]").textContent=open?"접기":"설정";});
   };
   el("toggleSavingsAssumptions").onclick=()=>{
     showAssumptions(!savingsAssumptionsOpen);
     if(savingsAssumptionsOpen)el("savingsAssumptionsBody").scrollIntoView?.({block:"start",behavior:"instant"});
   };
-  all("[data-savings-setting]").forEach(button=>button.onclick=()=>{showAssumptions(true);const input=view.querySelector(`[data-param="${button.dataset.savingsSetting}"]`);input?.focus();});
+  all("[data-savings-setting]").forEach(button=>button.onclick=()=>{if(savingsAssumptionsOpen){showAssumptions(false);return;}showAssumptions(true);const input=view.querySelector(`[data-param="${button.dataset.savingsSetting}"]`);input?.focus();});
   onChange("[data-param]","savings",(v,x)=>{ const k=x.dataset.param; if(k==="name"){ sc.name=v.trim()||sc.name; return; } if(k==="note"){ setText(sc,"note",v); return; }
     const n=numIn(v); if(n===null) return false; sc[k]=["spendingYear","endAge"].includes(k)?Math.round(n):n; });
   onChange("[data-stage]","savings",(v,x)=>{ const st=sc.stages[Number(x.dataset.stage)]; if(x.dataset.k==="age"&&numIn(v)===null) return false; setNum(st,x.dataset.k,v); sc.stages.sort((a,b)=>a.age-b.age); });
