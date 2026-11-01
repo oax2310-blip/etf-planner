@@ -114,9 +114,10 @@ const externalData = (()=>{
       numbers(y,["year"],k,1,9999,true);records(y.accounts,`${k}.accounts`,(a,q)=>strings(a,["id","name"],q));
       records(y.months,`${k}.months`,(m,q)=>{
         numbers(m,["m"],q,1,12,true);numbers(m,["pnl","total","futures"],q);records(m.pnlEntries,`${q}.pnlEntries`);
-        if(m.rp!==undefined){
-          if(!Array.isArray(m.rp))fail(`${q}.rp`);
-          for(const [i,x] of m.rp.entries())if(x!==null&&(typeof x!=="number"||!Number.isFinite(x)||x<0))fail(`${q}.rp[${i}]`);
+        // RP 배열(계좌 인덱스): rp 원화 환산액·rpUsd 달러는 0 이상, rpFx 원/달러 환율은 양수. 빈칸은 null.
+        for(const [key,ok] of [["rp",x=>x>=0],["rpUsd",x=>x>=0],["rpFx",x=>x>0]])if(m[key]!==undefined){
+          if(!Array.isArray(m[key]))fail(`${q}.${key}`);
+          for(const [i,x] of m[key].entries())if(x!==null&&(typeof x!=="number"||!Number.isFinite(x)||!ok(x)))fail(`${q}.${key}[${i}]`);
         }
       });
     }));

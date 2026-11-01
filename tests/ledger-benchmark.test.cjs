@@ -436,7 +436,7 @@ test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 
 
 test('월 입력 RP 칸과 안내 버튼은 키움·영웅문 해외 및 RP 기록 계좌에만 있고 loan은 제외한다',()=>{
   const names=['영 웅 문 해 외 가상','키 움 해외 가상','키움 국내 가상','영웅문 가상','다른 해외 가상','바꾼 가상 이름','키움 해외 대출','키움 해외 "<가상>"'];
-  const year={year:2026,accounts:names.map((name,i)=>({name,...(i===6?{loan:true}:{})})),months:[{m:3,balances:[1000,2000,3000,4000,5000,6000,7000,8000],rp:[null,null,null,null,null,0,300]}]};
+  const year={year:2026,accounts:names.map((name,i)=>({name,...(i===6?{loan:true}:{})})),months:[{m:3,balances:[1000,2000,3000,4000,5000,6000,7000,8000],rp:[null,null,null,null,null,0,300],rpUsd:[null,null,null,null,null,0]}]};
   const before=JSON.stringify(year),h=ledgerDialog(year),html=h.openMonth();
   for(const i of [0,1,5,7]){
     assert.match(html,new RegExp(`<input[^>]*name="rp${i}"[^>]*inputmode="decimal"`),`RP 대상 ${i}`);
@@ -448,31 +448,41 @@ test('월 입력 RP 칸과 안내 버튼은 키움·영웅문 해외 및 RP 기�
   assert.match(html,/aria-label="키움 해외 &quot;&lt;가상&gt;&quot; 입력 안내"/,'이름은 HTML 속성에서도 이스케이프');
   assert.doesNotMatch(html,/<가상>|"<가상>"/);
   for(const label of html.matchAll(/<label\b[^>]*>[\s\S]*?<\/label>/g))assert.doesNotMatch(label[0],/data-ledger-rp-help/,'안내 버튼을 label 안에 두지 않는다');
-  assert.equal(h.node('monthForm').rp5.value,'0','RP 0원도 숨기지 않는다');
+  assert.equal(h.node('monthForm').rp5.value,'0','RP 0달러도 숨기지 않는다');
+  assert.match(html,/<span>RP \(달러\)<\/span>/);assert.doesNotMatch(html,/RP \(원\)/,'RP는 달러 칸만 둔다');
   assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[],'창을 열기만 해서 기록을 저장하지 않는다');
 });
 
-test('월 입력은 balances에 원화추정자산+RP를 저장하고 다시 열면 차액을 보이며 RP를 비우면 필드를 지운다',()=>{
+// RP 환율 검증용 가상 원/달러 125개월선(실제 시세 아님)
+const ledgerFx=(h,ma,extra='')=>vm.runInContext(`prices={fx:{ma:{"125개월선":${ma}},maAsOf:"2026-10-30"${extra}}}`,h.ctx);
+
+test('월 입력은 RP 달러를 125개월 평균 환율로 환산해 balances에 원화추정자산+RP를 저장하고 다시 열면 기록 환율을 유지하며 RP를 비우면 필드를 지운다',()=>{
   const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,pnl:0,balances:[1000,2000]}]};
-  const h=ledgerDialog(year);h.openMonth();
-  h.input('bal0','1,500');h.input('rp0','250');h.input('bal1','3,000');h.submit();
-  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[1750,3000],rp:[250]});
+  const h=ledgerDialog(year);ledgerFx(h,1300.5);h.openMonth();
+  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균 환율 1,300.5원 · 2026-10-30 기준 · 자동 적용');assert.equal(h.node('ledgerRpWon0').textContent,'—');
+  h.input('bal0','1,500');h.input('rp0','2.5');h.input('bal1','3,000');
+  assert.equal(h.node('ledgerRpWon0').textContent,'3,251원','2.5달러 × 1,300.5원 반올림');
+  h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[4751,3000],rp:[3251],rpUsd:[2.5],rpFx:[1300.5]});
   assert.deepEqual(h.saves,['ledger']);
-  const saved=JSON.stringify(year);h.openMonth();
-  assert.equal(h.node('monthForm').bal0.value,'1,500');assert.equal(h.node('monthForm').rp0.value,'250');
+  ledgerFx(h,1400);const saved=JSON.stringify(year);h.openMonth();
+  assert.equal(h.node('monthForm').bal0.value,'1,500');assert.equal(h.node('monthForm').rp0.value,'2.5');
+  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균 환율 1,300.5원 · 기록한 환율','현재 평균선이 바뀌어도 저장한 환율 유지');
   assert.equal(JSON.stringify(year),saved);assert.equal(h.saves.length,1,'재열기도 저장하지 않는다');
-  h.input('rp0','');h.submit();
+  h.input('rp0','3');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[5402,3000],rp:[3902],rpUsd:[3],rpFx:[1300.5]},'금액을 고쳐도 기록 환율로 환산');
+  h.openMonth();h.input('rp0','');h.submit();
   assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[1500,3000]});
-  assert.equal(Object.hasOwn(year.months[0],'rp'),false,'비운 RP 필드는 삭제');
+  for(const key of ['rp','rpUsd','rpFx'])assert.equal(Object.hasOwn(year.months[0],key),false,`비운 RP 필드 ${key}는 삭제`);
 });
 
 test('월 입력의 빈칸·RP만 입력·명시적 0원과 배열 끝 null은 저장 시 구분한다',()=>{
   const year={year:2026,accounts:[{name:'키움 해외 가상 A'},{name:'가상 일반'},{name:'영웅문 해외 가상 B'},{name:'가상 끝'}],months:[{m:3,pnl:0}]};
-  const h=ledgerDialog(year);h.openMonth();h.input('rp0','100');h.input('rp2','0');h.submit();
-  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[100,null,0],rp:[100,null,0]},'기초 잔액 없이 RP만 있어도 합계에 포함하고 끝 null만 제거');
+  const h=ledgerDialog(year);ledgerFx(h,1300);h.openMonth();h.input('rp0','100');h.input('rp2','0');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[130000,null,0],rp:[130000,null,0],rpUsd:[100,null,0],rpFx:[1300,null,1300]},'기초 잔액 없이 RP만 있어도 합계에 포함하고 끝 null만 제거');
   h.openMonth();assert.equal(h.node('monthForm').bal0.value,'0','RP만 있는 합계에서 RP를 뺀 값');
   h.input('bal0','');h.input('rp0','');h.input('bal2','');h.input('rp2','');h.submit();
-  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0},'모든 잔액·RP를 비우면 두 선택 필드 삭제');
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0},'모든 잔액·RP를 비우면 선택 필드 삭제');
 });
 
 test('옛 월 기록은 RP 필드를 만들지 않고 기존 잔액을 그대로 열고 저장한다',()=>{
@@ -494,9 +504,9 @@ test('계좌 잔액 제목 합계와 RP 계좌 소계는 입력 때 바로 갱�
   const h=ledgerDialog(year);h.openMonth();
   assert.equal(h.node('ledgerBalanceTotal').hidden,true);assert.equal(h.node('ledgerAccountTotal0').hidden,true);
   h.input('bal0','1,000');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 1,000원');assert.equal(h.node('ledgerBalanceTotal').hidden,false);
-  h.input('rp0','250');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 1,250원');
-  assert.equal(h.node('ledgerAccountTotal0').textContent,'계좌 합계 1,250원 (원화추정자산 + RP)');assert.equal(h.node('ledgerAccountTotal0').hidden,false);
-  h.input('bal1','2,000');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 3,250원','loan 잔액은 합계에 포함하지 않는다');
+  ledgerFx(h,1300);h.input('rp0','0.5');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 1,650원');
+  assert.equal(h.node('ledgerAccountTotal0').textContent,'계좌 합계 1,650원 (원화추정자산 + RP)');assert.equal(h.node('ledgerAccountTotal0').hidden,false);
+  h.input('bal1','2,000');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 3,650원','loan 잔액은 합계에 포함하지 않는다');
   h.input('rp0','');assert.equal(h.node('ledgerAccountTotal0').hidden,true);assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 3,000원');
   h.input('bal0','');h.input('bal1','0');assert.equal(h.node('ledgerBalanceTotal').textContent,'합계 0원');assert.equal(h.node('ledgerBalanceTotal').hidden,false,'0원은 입력한 값');
   h.input('bal1','');assert.equal(h.node('ledgerBalanceTotal').hidden,true);assert.deepEqual(h.saves,[],'합계 갱신은 저장하지 않는다');
@@ -505,15 +515,57 @@ test('계좌 잔액 제목 합계와 RP 계좌 소계는 입력 때 바로 갱�
 test('RP 음수·잘못된 숫자는 다른 잔액 입력과 제출 뒤에도 거부하고 고친 값만 저장한다',()=>{
   for(const invalid of ['-1','abc','1.2.3','Infinity','NaN','1e3','0x10']){
     const year={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[1000],rp:[100]}]};
-    const h=ledgerDialog(year),before=JSON.stringify(year);h.openMonth();
+    const h=ledgerDialog(year),before=JSON.stringify(year);ledgerFx(h,1300);h.openMonth();
     h.input('rp0',invalid);h.input('bal0','2,500');
     assert.ok(h.node('monthForm').rp0.validationMessage,`${invalid}: 다른 칸 입력 뒤에도 RP 오류 유지`);
     h.submit();assert.deepEqual(h.saves,[],`${invalid}: 잘못된 RP는 저장하지 않는다`);
     assert.equal(JSON.stringify(year),before);assert.equal(h.node('monthDialog').open,true,'오류가 있으면 창을 유지한다');
-    h.input('rp0','300');assert.equal(h.node('monthForm').rp0.validationMessage,'');h.submit();
-    assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[2800],rp:[300]});
+    h.input('rp0','3');assert.equal(h.node('monthForm').rp0.validationMessage,'');h.submit();
+    assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[6400],rp:[3900],rpUsd:[3],rpFx:[1300]});
     assert.deepEqual(h.saves,['ledger']);assert.equal(h.node('monthDialog').open,false);
   }
+});
+
+test('달러 칸 이전의 원화 RP는 달러 칸을 비운 채 저장해도 보존하고 달러를 넣으면 환산액으로 바꾼다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[1000],rp:[100]}]};
+  const h=ledgerDialog(year),before=JSON.stringify(year);ledgerFx(h,1300);h.openMonth();
+  assert.equal(h.node('monthForm').bal0.value,'900');assert.equal(h.node('monthForm').rp0.value,'','원화 기록을 달러 칸에 넣지 않는다');
+  assert.equal(h.node('ledgerRpFx0').textContent,'기존 원화 기록입니다. 달러로 넣으면 125개월 평균 환율로 바꿉니다.');
+  assert.equal(h.node('ledgerRpWon0').textContent,'100원');assert.equal(h.node('ledgerAccountTotal0').textContent,'계좌 합계 1,000원 (원화추정자산 + RP)');
+  h.submit();assert.equal(JSON.stringify(year),before,'달러 칸을 비우면 원화 rp와 합계를 그대로 저장');
+  h.openMonth();h.input('rp0','1');assert.equal(h.node('ledgerRpWon0').textContent,'1,300원');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[2200],rp:[1300],rpUsd:[1],rpFx:[1300]});
+  // 옛 화면에서 원화 RP만 고쳐 달러×환율과 다른 기록은 원화 rp를 정본으로 보고, 저장하면 맞지 않는 달러·환율을 지운다.
+  const edited={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[5000],rp:[2000],rpUsd:[1],rpFx:[1300]}]};
+  const e=ledgerDialog(edited);ledgerFx(e,1300);e.openMonth();
+  assert.equal(e.node('monthForm').bal0.value,'3,000');assert.equal(e.node('monthForm').rp0.value,'');e.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(edited.months[0])),{m:3,balances:[5000],rp:[2000]});
+});
+
+test('RP 125개월선이 없으면 환산·저장을 막고 시세가 오면 새 평균선을 적용한다. 0달러는 환율 없이 0원이다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[1000]}]};
+  const h=ledgerDialog(year),before=JSON.stringify(year);h.openMonth();
+  assert.equal(h.node('ledgerRpFx0').textContent,'125개월 평균선을 불러오면 자동 적용됩니다.');
+  h.input('rp0','2');assert.equal(h.node('ledgerRpWon0').textContent,'평균선 필요');assert.equal(h.node('ledgerAccountTotal0').hidden,true);
+  assert.throws(()=>h.submit(),/125개월 평균선/);assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[]);
+  ledgerFx(h,1250,',maStale:true');vm.runInContext('updateLedgerDividendFx()',h.ctx);
+  assert.equal(h.node('ledgerRpWon0').textContent,'2,500원');assert.match(h.node('ledgerRpFx0').textContent,/1,250원 · 2026-10-30 기준 · 자동 적용 · 갱신 필요$/);
+  h.submit();assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[3500],rp:[2500],rpUsd:[2],rpFx:[1250]});
+  const zero={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[1000]}]};
+  const z=ledgerDialog(zero);z.openMonth();z.input('rp0','0');z.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(zero.months[0])),{m:3,balances:[1000],rp:[0],rpUsd:[0]},'환율이 없으면 rpFx를 만들지 않는다');
+  z.openMonth();assert.equal(z.node('monthForm').rp0.value,'0','0달러 기록을 다시 연다');
+});
+
+test('125개월 평균선 갱신은 저장한 RP 환율도 현재 평균선으로 바꾸고 평균선을 못 받으면 기록 환율을 유지한다',async()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'}],months:[{m:3,balances:[3600],rp:[2600],rpUsd:[2],rpFx:[1300]}]};
+  const h=ledgerDialog(year);ledgerFx(h,1400);vm.runInContext('refreshAssetPrices=async()=>{};globalThis.assetConfig=()=>null',h.ctx);h.openMonth();
+  h.node('monthDialog').open=true;assert.equal(h.node('ledgerRpWon0').textContent,'2,600원');
+  vm.runInContext('prices=null',h.ctx);await h.node('refreshDividendFx').onclick();
+  assert.equal(h.node('ledgerRpWon0').textContent,'2,600원','평균선이 없으면 기록 환율 유지');
+  ledgerFx(h,1400);await h.node('refreshDividendFx').onclick();
+  assert.equal(h.node('ledgerRpWon0').textContent,'2,800원');assert.match(h.node('ledgerRpFx0').textContent,/^125개월 평균 환율 1,400원 · 2026-10-30 기준/);
+  h.submit();assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[3800],rp:[2800],rpUsd:[2],rpFx:[1400]});
 });
 
 test('RP 계좌의 입력 빠짐 표시는 원화추정자산 칸에 유지한다',()=>{
@@ -524,9 +576,9 @@ test('RP 계좌의 입력 빠짐 표시는 원화추정자산 칸에 유지한�
   assert.match(html,/앞뒤 달에는 잔액이 있습니다/);assert.deepEqual(h.saves,[]);
 });
 
-test('연도 설정에서 계좌 삭제·loan 뒤로 정렬 시 balances와 rp 인덱스를 함께 맞춘다',()=>{
+test('연도 설정에서 계좌 삭제·loan 뒤로 정렬 시 balances와 rp·rpUsd·rpFx 인덱스를 함께 맞춘다',()=>{
   const year={year:2026,accounts:[{name:'키움 해외 가상 A'},{name:'가상 loan',loan:true},{name:'영웅문 해외 가상 B'},{name:'가상 일반'}],months:[
-    {m:2,balances:[1000,2000,3000,4000],rp:[100,200,300]},
+    {m:2,balances:[1000,2000,3000,4000],rp:[100,200,300],rpUsd:[1,null,3],rpFx:[100,null,100]},
     {m:3,rp:[100,null,300]},
     {m:4,balances:[1100,2200,3300,4400]},
   ]};
@@ -534,14 +586,14 @@ test('연도 설정에서 계좌 삭제·loan 뒤로 정렬 시 balances와 rp �
   h.submit('yearForm');
   assert.deepEqual(Array.from(year.accounts,a=>a.name),['키움 해외 가상 A','영웅문 해외 가상 B','가상 일반','가상 loan']);
   assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[
-    {m:2,balances:[1000,3000,4000,2000],rp:[100,300,null,200]},
+    {m:2,balances:[1000,3000,4000,2000],rp:[100,300,null,200],rpUsd:[1,3],rpFx:[100,100]},
     {m:3,rp:[100,300]},
     {m:4,balances:[1100,3300,4400,2200]},
   ],'loan 보존 순서 변경과 balances 없는 달의 RP도 함께 remap');
   h.openYear();h.query('[data-acc-del="0"]')[0].onclick();h.submit('yearForm');
   assert.deepEqual(Array.from(year.accounts,a=>a.name),['영웅문 해외 가상 B','가상 일반','가상 loan']);
   assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[
-    {m:2,balances:[3000,4000,2000],rp:[300,null,200]},
+    {m:2,balances:[3000,4000,2000],rp:[300,null,200],rpUsd:[3],rpFx:[100]},
     {m:3,rp:[300]},
     {m:4,balances:[3300,4400,2200]},
   ],'삭제한 계좌의 두 금액 배열을 같은 인덱스로 제거');
