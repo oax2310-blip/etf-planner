@@ -46,7 +46,7 @@ function saveSection(section){assetStore.saveSection(section);}
 
 // ---------- 탭 ----------
 const TABS = ["strategy","alloc","ledger","savings","installments"];
-function openTab(tab){ if(!TABS.includes(tab)) tab="alloc"; setUi({tab}); all(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); TABS.forEach(t=>el(t+"View").classList.toggle("hidden",t!==tab)); document.querySelector(".price-refresh").classList.toggle("hidden",tab==="installments"); render(); }
+function openTab(tab){ if(!TABS.includes(tab)) tab="alloc"; setUi({tab}); all("nav.tabs .tab[data-tab]").forEach(b=>{ const active=b.dataset.tab===tab; b.classList.toggle("active",active); if(active)b.setAttribute("aria-current","page"); else b.removeAttribute("aria-current"); }); TABS.forEach(t=>el(t+"View").classList.toggle("hidden",t!==tab)); document.querySelector(".price-refresh").classList.toggle("hidden",tab==="installments"); render(); }
 function render(){ if(ui.tab==="alloc"||ui.tab==="strategy") renderAlloc(ui.tab); if(ui.tab==="ledger") renderLedger(); if(ui.tab==="savings") renderSavings(); if(ui.tab==="installments") renderInstallments(); }
 // 시세·동기화로 다시 그릴 때 입력 중인 칸이 있으면 미룬다(쓰던 값이 지워지지 않게)
 let redrawLater = false;

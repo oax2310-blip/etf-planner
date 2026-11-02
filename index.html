@@ -15,20 +15,20 @@
   <title>매매 플래너 (독립형)</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=342"></script>
+  <script src="js/theme.js?v=343"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=342" />
-  <link rel="stylesheet" href="css/purchases.css?v=342" />
-  <script src="js/repo-security.js?v=342" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=343" />
+  <link rel="stylesheet" href="css/purchases.css?v=343" />
+  <script src="js/repo-security.js?v=343" defer></script>
 </head>
 <body>
   <header class="top">
     <div class="brand"><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 11v8M12 6v10M18 3v10"/><rect x="4.5" y="13" width="3" height="4" rx=".5"/><rect x="10.5" y="8" width="3" height="5" rx=".5"/><rect x="16.5" y="5" width="3" height="5" rx=".5"/></svg></b> 매매 플래너</div>
     <nav class="tabs" aria-label="화면 선택">
       <button class="tab" data-tab="buys" type="button">분할매수</button>
-      <button class="tab active" data-tab="plans">분할매도</button>
-      <button class="tab" data-tab="futures">달러선물</button>
-      <button class="tab" data-tab="rebuy">재매수</button>
+      <button class="tab active" data-tab="plans" type="button">분할매도</button>
+      <button class="tab" data-tab="futures" type="button">달러선물</button>
+      <button class="tab" data-tab="rebuy" type="button">재매수</button>
       <a class="tab tab-link" href="assets.html">자산</a>
     </nav>
     <div class="sync-head"><a class="btn mini scenario-link" href="valuation.html">시나리오</a><button class="btn mini icon-btn alerts-icon-btn" id="alertsBtn" type="button" aria-label="알림" title="알림내역"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="alert-unread-badge" id="alertsUnreadBadge" hidden></span></button><span data-theme-pick></span><span class="sync-status" id="syncStatus" role="status">이 기기에 저장 중</span><button class="btn mini sync-btn off" id="syncBtn" type="button" title="이 기기에 저장 중"><span class="sync-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.3L3 9M3 4v5h5M4 13a8 8 0 0 0 14.3 4.3L21 15M21 20v-5h-5"/></svg></span>동기화</button></div>
@@ -63,7 +63,7 @@
     </section>
   </main>
 
-  <dialog id="purchaseDialog"><form method="dialog" class="dialog-inner" id="purchaseForm">
+  <dialog id="purchaseDialog" aria-labelledby="purchaseTitle"><form method="dialog" class="dialog-inner" id="purchaseForm">
     <div class="dialog-head"><h2 id="purchaseTitle">분할매수 계획</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="field purchase-item-field"><span id="purchaseItemLabel">매수를 반영할 자산 종목</span>
       <div class="item-search" id="purchaseItemSearch"></div><input type="hidden" name="item" />
@@ -105,7 +105,7 @@
     <div class="dialog-foot"><button class="btn danger" type="button" id="purchaseDelete">계획 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="planDialog"><form method="dialog" class="dialog-inner" id="planForm">
+  <dialog id="planDialog" aria-labelledby="dialogTitle"><form method="dialog" class="dialog-inner" id="planForm">
     <div class="dialog-head"><h2 id="dialogTitle">새 분할매도 계획</h2><button class="btn ghost" type="button" data-close-plan>닫기</button></div>
     <div class="field item-search-field"><span id="planItemLabel">매도할 자산 종목</span>
       <div class="item-search" id="planItemSearch"></div>
@@ -137,13 +137,13 @@
     <div class="dialog-foot"><button class="btn danger hidden" type="button" id="deletePlanBtn">계획 삭제</button><button class="btn" type="button" data-close-plan>취소</button><button class="btn primary" id="savePlanBtn" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="nameDialog"><form method="dialog" class="dialog-inner" id="nameForm">
+  <dialog id="nameDialog" aria-labelledby="nameTitle"><form method="dialog" class="dialog-inner" id="nameForm">
     <div class="dialog-head"><h2 id="nameTitle">카드 이름</h2><button class="btn ghost" type="button" data-close-name>닫기</button></div>
     <label class="field"><input name="cardName" maxlength="40" aria-label="카드 이름" autocomplete="off" enterkeyhint="done" /></label>
     <div class="dialog-foot"><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="rebuyDialog"><form method="dialog" class="dialog-inner" id="rebuyForm">
+  <dialog id="rebuyDialog" aria-labelledby="rebuyTitle"><form method="dialog" class="dialog-inner" id="rebuyForm">
     <div class="dialog-head"><h2 id="rebuyTitle">새 재매수 종목</h2><button class="btn ghost" type="button" data-close-rebuy>닫기</button></div>
     <div class="field item-search-field" id="rebuyHoldingField"><span id="rebuyItemLabel">재매수할 보유 종목</span>
       <div class="item-search" id="rebuyItemSearch"></div><input type="hidden" name="holding" />
@@ -237,8 +237,8 @@
     <p class="alert-history-foot">알림을 누르면 해당 종목으로 이동합니다. 내역은 이 기기에 저장되며, 연결한 비공개 저장소와 JSON 파일 백업에도 포함됩니다.</p>
   </div></dialog>
 
-  <dialog id="syncDialog"><div class="dialog-inner">
-    <div class="dialog-head"><h2>기기 간 동기화</h2><button class="btn ghost" id="closeSync" type="button">닫기</button></div>
+  <dialog id="syncDialog" aria-labelledby="syncTitle"><div class="dialog-inner">
+    <div class="dialog-head"><h2 id="syncTitle">기기 간 동기화</h2><button class="btn ghost" id="closeSync" type="button">닫기</button></div>
     <p class="sync-details">기록을 내 GitHub의 <b>비공개</b> 데이터 저장소에 저장하고, 페이지를 열 때마다 다른 기기에서 바꾼 내용을 자동으로 불러옵니다. 토큰은 이 기기 브라우저에만 저장됩니다. 연결하면 시나리오 페이지의 가정도 같은 저장소에 함께 동기화됩니다.</p>
     <label class="field"><span>데이터 저장소 (아이디/저장소이름)</span><input id="dataRepo" type="text" spellcheck="false" autocomplete="off" placeholder="예: oax2310-blip/etf-planner-records" /></label>
     <label class="field" style="margin-top:10px"><span>데이터 전용 GitHub 토큰</span><input id="githubToken" type="password" spellcheck="false" autocomplete="off" placeholder="github_pat_로 시작하는 값" /></label>
@@ -256,8 +256,8 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <dialog id="conflictDialog"><div class="dialog-inner">
-    <div class="dialog-head"><h2>기록이 서로 다릅니다</h2></div>
+  <dialog id="conflictDialog" aria-labelledby="conflictTitle"><div class="dialog-inner">
+    <div class="dialog-head"><h2 id="conflictTitle">기록이 서로 다릅니다</h2></div>
     <p class="sync-details" id="conflictMessage"></p>
     <p class="sync-details">보통은 다른 기기와 같은 <b>저장소 기록</b>을 쓰면 됩니다. 고르지 않은 쪽은 이 기기의 플래너 보관 기록(동기화 창)에 남습니다.</p>
     <div class="sync-controls"><button class="btn primary" id="keepRemote" type="button">저장소 기록 사용 (권장)</button><button class="btn" id="keepLocal" type="button">이 기기 기록 사용</button><button class="btn ghost" id="conflictLater" type="button">나중에 결정</button></div>
@@ -269,31 +269,31 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=342" defer></script>
-  <script src="js/data-validation.js?v=342" defer></script>
-  <script src="js/core.js?v=342" defer></script>
-  <script src="js/price-collection.js?v=342" defer></script>
-  <script src="js/sync.js?v=342" defer></script>
-  <script src="js/prices.js?v=342" defer></script>
-  <script src="js/assets-calc.js?v=342" defer></script>
-  <script src="js/assets-store.js?v=342" defer></script>
-  <script src="js/alloc-link.js?v=342" defer></script>
-  <script src="js/stock-names.js?v=342" defer></script>
-  <script src="js/item-search.js?v=342" defer></script>
-  <script src="js/purchases.js?v=342" defer></script>
-  <script src="js/trade-alerts.js?v=342" defer></script>
-  <script src="js/plans.js?v=342" defer></script>
-  <script src="js/futures.js?v=342" defer></script>
-  <script src="js/futures-plan.js?v=342" defer></script>
-  <script src="js/futures-rebuy.js?v=342" defer></script>
-  <script src="js/rebuy.js?v=342" defer></script>
-  <script src="js/alerts.js?v=342" defer></script>
-  <script src="js/alert-target.js?v=342" defer></script>
-  <script src="js/alert-history-store.js?v=342" defer></script>
-  <script src="js/alert-history.js?v=342" defer></script>
-  <script src="js/push.js?v=342" defer></script>
-  <script src="js/member-link.js?v=342" defer></script>
-  <script src="js/member-go.js?v=342" defer></script>
-  <script src="js/start.js?v=342" defer></script>
+  <script src="js/ma-ladder.js?v=343" defer></script>
+  <script src="js/data-validation.js?v=343" defer></script>
+  <script src="js/core.js?v=343" defer></script>
+  <script src="js/price-collection.js?v=343" defer></script>
+  <script src="js/sync.js?v=343" defer></script>
+  <script src="js/prices.js?v=343" defer></script>
+  <script src="js/assets-calc.js?v=343" defer></script>
+  <script src="js/assets-store.js?v=343" defer></script>
+  <script src="js/alloc-link.js?v=343" defer></script>
+  <script src="js/stock-names.js?v=343" defer></script>
+  <script src="js/item-search.js?v=343" defer></script>
+  <script src="js/purchases.js?v=343" defer></script>
+  <script src="js/trade-alerts.js?v=343" defer></script>
+  <script src="js/plans.js?v=343" defer></script>
+  <script src="js/futures.js?v=343" defer></script>
+  <script src="js/futures-plan.js?v=343" defer></script>
+  <script src="js/futures-rebuy.js?v=343" defer></script>
+  <script src="js/rebuy.js?v=343" defer></script>
+  <script src="js/alerts.js?v=343" defer></script>
+  <script src="js/alert-target.js?v=343" defer></script>
+  <script src="js/alert-history-store.js?v=343" defer></script>
+  <script src="js/alert-history.js?v=343" defer></script>
+  <script src="js/push.js?v=343" defer></script>
+  <script src="js/member-link.js?v=343" defer></script>
+  <script src="js/member-go.js?v=343" defer></script>
+  <script src="js/start.js?v=343" defer></script>
 </body>
 </html>
