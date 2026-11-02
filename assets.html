@@ -16,11 +16,11 @@
   <title>자산 현황</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=342"></script>
+  <script src="js/theme.js?v=343"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=342" />
-  <link rel="stylesheet" href="css/assets.css?v=342" />
-  <script src="js/repo-security.js?v=342" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=343" />
+  <link rel="stylesheet" href="css/assets.css?v=343" />
+  <script src="js/repo-security.js?v=343" defer></script>
 </head>
 <body class="assets-page">
   <header class="top">
@@ -48,7 +48,7 @@
     <section id="installmentsView" class="hidden"></section>
   </main>
 
-  <dialog id="itemDialog"><form method="dialog" class="dialog-inner" id="itemForm">
+  <dialog id="itemDialog" aria-labelledby="itemTitle"><form method="dialog" class="dialog-inner" id="itemForm">
     <div class="dialog-head"><h2 id="itemTitle">종목</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>이름</span><input name="name" required maxlength="60" autocomplete="off" /></label>
@@ -73,7 +73,7 @@
     <div class="dialog-foot"><button class="btn danger" type="button" id="itemDelete">종목 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="groupDialog"><form method="dialog" class="dialog-inner" id="groupForm">
+  <dialog id="groupDialog" aria-labelledby="groupTitle"><form method="dialog" class="dialog-inner" id="groupForm">
     <div class="dialog-head"><h2 id="groupTitle">그룹</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>그룹 이름</span><input name="name" required maxlength="60" autocomplete="off" /></label>
@@ -85,7 +85,7 @@
     <div class="dialog-foot"><button class="btn danger" type="button" id="groupDelete">그룹 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="classDialog"><form method="dialog" class="dialog-inner" id="classForm">
+  <dialog id="classDialog" aria-labelledby="classTitle"><form method="dialog" class="dialog-inner" id="classForm">
     <div class="dialog-head"><h2 id="classTitle">큰 분류</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>이름</span><input name="name" required maxlength="40" autocomplete="off" /></label>
@@ -96,7 +96,7 @@
     <div class="dialog-foot"><button class="btn danger" type="button" id="classDelete">분류 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="cashDialog"><form method="dialog" class="dialog-inner" id="cashForm">
+  <dialog id="cashDialog" aria-labelledby="cashTitle"><form method="dialog" class="dialog-inner" id="cashForm">
     <div class="dialog-head"><h2 id="cashTitle">현금</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>증권사·은행</span><input name="place" maxlength="30" autocomplete="off" /></label>
@@ -108,13 +108,13 @@
     <div class="dialog-foot"><button class="btn danger" type="button" id="cashDelete">삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="monthDialog"><form method="dialog" class="dialog-inner" id="monthForm">
+  <dialog id="monthDialog" aria-labelledby="monthTitle"><form method="dialog" class="dialog-inner" id="monthForm">
     <div class="dialog-head"><h2 id="monthTitle">월</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="dialog-grid" id="monthFields"></div>
     <div class="dialog-foot"><button class="btn danger" type="button" id="monthClear">이 달 기록 지우기</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="yearDialog"><form method="dialog" class="dialog-inner" id="yearForm">
+  <dialog id="yearDialog" aria-labelledby="yearTitle"><form method="dialog" class="dialog-inner" id="yearForm">
     <div class="dialog-head"><h2 id="yearTitle">연도 설정</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <div class="dialog-grid">
       <label class="field"><span>선물·옵션 손익 (원, 달을 모르는 금액)</span><input name="futures" type="text" inputmode="numeric" autocomplete="off" data-money aria-describedby="yearFuturesHint" /><small class="field-hint" id="yearFuturesHint"></small></label>
@@ -124,8 +124,8 @@
     <div class="dialog-foot"><button class="btn danger" type="button" id="yearDelete">연도 삭제</button><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></dialog>
 
-  <dialog id="syncDialog"><div class="dialog-inner">
-    <div class="dialog-head"><h2>기기 간 동기화</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
+  <dialog id="syncDialog" aria-labelledby="syncTitle"><div class="dialog-inner">
+    <div class="dialog-head"><h2 id="syncTitle">기기 간 동기화</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
     <p class="sync-details" id="syncOff"><a href="index.html">메인 플래너</a>의 <b>동기화</b>에서 비공개 데이터 저장소를 연결하면, 이 페이지의 기록도 같은 저장소의 <b>etf-planner-assets.json</b>에 함께 동기화됩니다.</p>
     <p class="sync-details" id="syncOn" hidden><b id="syncRepo"></b> 저장소의 etf-planner-assets.json에 저장합니다. 자산 배분·월별 손익·저축 계획·할부 계산은 따로 맞추고, 두 기기에서 고친 칸은 모두 합치고, 같은 칸을 함께 고쳤으면 나중에 저장한 값을 씁니다(이전 값은 이 기기에 보관).</p>
     <p class="sync-details" id="syncDialogStatus" role="status"></p>
@@ -135,17 +135,17 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=342" defer></script>
-  <script src="js/data-validation.js?v=342" defer></script>
-  <script src="js/assets-calc.js?v=342" defer></script>
-  <script src="js/price-collection.js?v=342" defer></script>
-  <script src="js/assets-store.js?v=342" defer></script>
-  <script src="js/member-link.js?v=342" defer></script>
-  <script src="js/ledger-benchmark.js?v=342" defer></script>
-  <script src="js/assets.js?v=342" defer></script>
-  <script src="js/assets-ledger.js?v=342" defer></script>
-  <script src="js/assets-savings.js?v=342" defer></script>
-  <script src="js/assets-installments.js?v=342" defer></script>
-  <script src="js/assets-start.js?v=342" defer></script>
+  <script src="js/ma-ladder.js?v=343" defer></script>
+  <script src="js/data-validation.js?v=343" defer></script>
+  <script src="js/assets-calc.js?v=343" defer></script>
+  <script src="js/price-collection.js?v=343" defer></script>
+  <script src="js/assets-store.js?v=343" defer></script>
+  <script src="js/member-link.js?v=343" defer></script>
+  <script src="js/ledger-benchmark.js?v=343" defer></script>
+  <script src="js/assets.js?v=343" defer></script>
+  <script src="js/assets-ledger.js?v=343" defer></script>
+  <script src="js/assets-savings.js?v=343" defer></script>
+  <script src="js/assets-installments.js?v=343" defer></script>
+  <script src="js/assets-start.js?v=343" defer></script>
 </body>
 </html>

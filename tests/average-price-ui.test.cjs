@@ -115,7 +115,7 @@ test('투자구성과 자산배분 탭 왕복은 기존 분류·목표 화면과
 });
 
 test('평균매수가 입력은 종목 수정창 안에만 있으며 제거한 자동 계산 입력 없이 소수 입력 접근성을 제공한다',()=>{
-  const html=read('assets.html'),modal=html.split('<dialog id="itemDialog">')[1].split('</dialog>')[0];
+  const html=read('assets.html'),modal=html.split('<dialog id="itemDialog"')[1].split('</dialog>')[0];
   assert.doesNotMatch(html,/id="averagePriceDialog"|id="averagePriceForm"/);
   assert.doesNotMatch(modal,/name="(?:amount|tradePrice)"/);
   assert.equal([...html.matchAll(/name="averagePrice"/g)].length,1);
