@@ -13,14 +13,18 @@ const alertHistoryReadStamp=item=>new Date(Math.max(Date.now(),Date.parse(item.l
 function alertHistoryApplyTaps(items){
   for(const item of items){const at=alertHistoryReadIds.get(item.id)??alertHistoryReadIds.get(item.alertKey);if(at!==undefined&&alertHistoryUnread(item)&&(!item.lastSentAt||Date.parse(item.lastSentAt)<=at+30*60e3))item.readAt=alertHistoryReadStamp(item);}
 }
+// 수신함·서버 이력의 새 유입만 마지막 발송(lastSentAt, 없으면 occurredAt)이 90일(retentionMs) 초과면 버린다.
+// 삭제 ID 정리 뒤 오래된 발송의 재등장을 막으며, 동기화로 합치는 기존 items에는 적용하지 않는다.
 function acceptAlertHistory(items){
-  const next=alertHistoryStore.merge(state.alertHistory,{items});
+  const cutoff=Date.now()-alertHistoryStore.retentionMs;
+  const incoming=items.map(item=>alertHistoryStore.record(item)).filter(item=>item&&Date.parse(item.lastSentAt||item.occurredAt)>=cutoff);
+  const next=alertHistoryStore.merge(state.alertHistory,{items:incoming});
   alertHistoryApplyTaps(next.items);
   if(!next.items.length&&!state.alertHistory)return false;
   if(JSON.stringify(state.alertHistory)===JSON.stringify(next))return false;
   state.alertHistory=next;save();renderAlertHistory();return true;
 }
-// 수신·동기화가 겹쳐도 로컬 저장을 마친 이벤트만 수신함에서 제거한다.
+// 수신·동기화가 겹쳐도 수신 처리를 마친 이벤트만 수신함에서 제거한다(오래되어 받지 않은 항목 포함).
 async function collectAlertInbox(){
   if(alertHistoryBusy){alertHistoryAgain=true;return;}
   alertHistoryBusy=true;
@@ -97,7 +101,11 @@ function noteAlertHistoryRead(eventId){
 }
 function removeAlertHistory(eventId){
   const item=alertHistoryItems().find(item=>item.id===eventId);if(!item)return false;
-  state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:alertHistoryStore.removal(item)});save();renderAlertHistory();return true;
+  removeAlertHistoryItems([item]);return true;
+}
+function removeAlertHistoryItems(items){
+  const deletedIds=items.flatMap(alertHistoryStore.removal),at=new Date().toISOString();
+  state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds,deletedAt:Object.fromEntries(deletedIds.map(id=>[id,at]))});save();renderAlertHistory();
 }
 function renderAlertHistory(){
   const list=$("alertHistoryList");if(!list)return;
@@ -127,7 +135,7 @@ function initializeAlertHistory(){
   $("openAlertSettings").onclick=()=>{$("alertHistoryDialog").close();openAlertSettings();};
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
   $("readAllHistory").onclick=()=>{for(const item of state.alertHistory?.items||[])if(alertHistoryUnread(item))item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();};
-  $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:items.flatMap(alertHistoryStore.removal)});save();renderAlertHistory();};
+  $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;removeAlertHistoryItems(items);};
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
   // 다른 탭의 읽음·삭제는 sync.js absorbPlanner가 플래너 기록 전체와 함께 받는다(알림내역만 합쳐 옛 체결 기록을 다시 저장하지 않게).
