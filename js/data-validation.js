@@ -91,7 +91,13 @@ const externalData = (()=>{
       records(v.subscriptions,`${p}.subscriptions`,(s,k)=>{strings(s,["id"],k);child(s,"subscription",k,(x,q)=>{strings(x,["endpoint"],q);child(x,"keys",q,(keys,t)=>strings(keys,["auth","p256dh"],t));});});
       flags(v,["krOpenReminder"],p);
     });
-    child(data,"alertHistory","플래너",(v,p)=>{records(v.items,`${p}.items`);list(v.deletedIds,`${p}.deletedIds`,(x,k)=>{if(typeof x!=="string")fail(k);});});
+    child(data,"alertHistory","플래너",(v,p)=>{
+      records(v.items,`${p}.items`);list(v.deletedIds,`${p}.deletedIds`,(x,k)=>{if(typeof x!=="string")fail(k);});
+      if(v.deletedAt!==undefined){
+        const field=`${p}.deletedAt`;record(v.deletedAt,field);
+        for(const [key,value] of Object.entries(v.deletedAt))if(key.length>128||typeof value!=="string"||!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/.test(value)||!Number.isFinite(Date.parse(value)))fail(field);
+      }
+    });
     strings(data,["selectedPlan","selectedRebuy","tab"],"플래너");
     return data;
   }

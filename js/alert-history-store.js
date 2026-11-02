@@ -3,6 +3,7 @@
 // 같은 매매 회차의 재알림·재도달 알림은 alertKey(최초 알림 ID)와 reminderCount를 싣고 온다(수집 저장소 trade_reminders.py).
 // 그 알림들은 최초 알림 항목 하나에 재알림 횟수(reminderCount)·마지막 발송 시각(lastSentAt)만 더한다. 그 항목을 지운 뒤 온 재알림은 새 항목 하나로 보인다.
 const alertHistoryStore = (()=>{
+  const retentionMs=90*24*60*60e3;
   const clean=(value,max)=>typeof value==="string"?value.slice(0,max):"";
   const stamp=value=>typeof value==="string"&&/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value)&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():"";
   const positive=value=>typeof value==="number"&&Number.isFinite(value)&&value>0?value:null;
@@ -33,18 +34,26 @@ const alertHistoryStore = (()=>{
   };
   const latest=item=>item.lastSentAt||item.occurredAt;
   // 삭제 ID는 수신함·발송 이력을 다시 읽어도 복구하지 않는다. 읽음은 어느 기기에서 읽었든 유지한다.
+  // deletedAt은 입력에 있는 시각만 합치고 같은 ID는 늦은 시각을 택해 보수적으로 보관한다. 시각이 있는 삭제 ID만
+  // 90일(retentionMs) 초과 시 시각과 함께 정리하며, 시각 없는 옛 삭제 ID와 지우지 않은 items는 나이로 지우지 않는다.
+  // 새 수신은 acceptAlertHistory에서 오래된 발송을 걸러 되살아남을 막는다. 다만 90일 넘게 접속하지 않은 다른 기기가
+  // 옛 플래너 items로 동기화하면 삭제 ID가 이미 정리되어 지운 알림이 다시 보일 수 있다.
   function merge(...histories){
-    const deleted=new Set(),items=new Map(),later=[];
+    const deleted=new Set(),deletedAt=new Map(),items=new Map(),later=[],cutoff=Date.now()-retentionMs;
     const readAt=(item,value)=>{if(value&&(!item.readAt||value>item.readAt))item.readAt=value;};
     for(const history of histories){
       if(!history||typeof history!=="object")continue;
       for(const key of Array.isArray(history.deletedIds)?history.deletedIds:[])if(typeof key==="string"&&key.length<=128)deleted.add(key);
+      if(history.deletedAt&&typeof history.deletedAt==="object"&&!Array.isArray(history.deletedAt))for(const [key,value] of Object.entries(history.deletedAt)){
+        const at=stamp(value);if(at&&(!deletedAt.has(key)||at>deletedAt.get(key)))deletedAt.set(key,at);
+      }
       for(const raw of Array.isArray(history.items)?history.items:[]){const item=record(raw);if(!item)continue;if(item.alertKey){later.push(item);continue;}const old=items.get(item.id);if(!old)items.set(item.id,item);else{
         // 먼저 기록한 당시 정보는 유지하고 더 정확한 발송 스냅샷의 빈 필드만 보충한다.
         for(const [key,value] of Object.entries(item))if(old[key]===undefined||old[key]===""||(key==="name"&&old.name===old.ticker))old[key]=value;
         readAt(old,item.readAt);follow(old,item.reminderCount,item.lastSentAt);
       }}
     }
+    for(const key of deleted)if(deletedAt.has(key)&&Date.parse(deletedAt.get(key))<cutoff){deleted.delete(key);deletedAt.delete(key);}
     // 회차 항목을 지울 때 남긴 'alertKey:재알림 횟수'(removal)까지의 후속 알림은 지운 항목에 합쳐 보이지 않는다(표시 없는 옛 삭제는 0회).
     const covered=new Map();
     for(const key of deleted){const mark=/^([0-9a-f]{64}):(\d{1,6})$/.exec(key);if(mark)covered.set(mark[1],Math.max(covered.get(mark[1])||0,Number(mark[2])));}
@@ -61,12 +70,17 @@ const alertHistoryStore = (()=>{
       }
       let base=items.get(key);
       if(!base){base={...rest,id:key,occurredAt:first||item.occurredAt};delete base.readAt;items.set(key,base);} // 최초 알림을 받지 못한 기기
-      readAt(base,stray?.readAt);follow(base,count,item.occurredAt);
+      readAt(base,stray?.readAt);follow(base,count,item.lastSentAt||item.occurredAt);
     }
-    return {items:[...items.values(),...restarted.values()].filter(item=>!deleted.has(item.id)).sort((a,b)=>latest(b).localeCompare(latest(a))||a.id.localeCompare(b.id)),deletedIds:[...deleted].sort()};
+    const result={items:[...items.values(),...restarted.values()].filter(item=>!deleted.has(item.id)).sort((a,b)=>latest(b).localeCompare(latest(a))||a.id.localeCompare(b.id)),deletedIds:[...deleted].sort()};
+    const times=result.deletedIds.filter(key=>deletedAt.has(key)).map(key=>[key,deletedAt.get(key)]);
+    if(times.length)result.deletedAt=Object.fromEntries(times);
+    return result;
   }
   // 항목을 지울 때 남길 삭제 ID. 재알림을 합친 회차 항목은 그 횟수까지 덮는 표시를 더해, 다른 기기 수신함·발송 이력에 남은
   // 같은 재알림이 다시 나타나지 않게 하고 그 뒤 재알림만 새 항목으로 보인다.
+  // 개별·전체 삭제 조작 때 호출부가 반환된 각 ID(덮개 포함)에 현재 시각을 deletedAt으로 남긴다.
+  // 옛 삭제 ID에는 시각을 만들어 붙이지 않으며, 보관·정리는 merge가 맡는다.
   function removal(item){
     const key=item.alertKey||item.id,count=item.reminderCount;
     return Number.isInteger(count)&&count>0&&/^[0-9a-f]{64}$/.test(key)?[item.id,`${key}:${count}`]:[item.id];
@@ -94,5 +108,5 @@ const alertHistoryStore = (()=>{
   }
   const pending=()=>transaction("readonly",(store,done)=>{const request=store.getAll();request.onsuccess=()=>done(request.result);});
   const acknowledge=ids=>transaction("readwrite",store=>{for(const key of ids)store.delete(key);});
-  return {record,merge,removal,enqueue,pending,acknowledge};
+  return {retentionMs,record,merge,removal,enqueue,pending,acknowledge};
 })();
