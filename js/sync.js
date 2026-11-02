@@ -87,33 +87,16 @@ function renderRecovery(){
 }
 function downloadJson(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 const toB64 = text => {const bytes=new TextEncoder().encode(text);let bin="";for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(bin);};
-const fromB64 = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+const fromB64 = b64 => repoSecurity.decodeBase64Text(b64);
 async function gh(path,options={}){
-  repoSecurity.assertDataRepo(sync.repo);
-  const networkError=error=>{
-    if(error?.name==="AbortError"||error?.name==="TimeoutError")return Error("GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
-    if(error?.name==="TypeError")return Error("네트워크 연결을 확인해 주세요.");
-    return error;
-  };
-  let response;
-  try{response=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,signal:options.signal??AbortSignal.timeout(30000),headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${sync.token}`,...options.headers}});}
-  catch(error){throw networkError(error);}
-  if(response.status===401)throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 동기화 설정에서 새 토큰을 넣어 주세요.");
-  if(response.status===403)throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
-  // 제한 신호는 본문을 읽을 때도 유지된다. 본문 전송 중 끊긴 오류도 같은 안내로 바꾼다.
-  for(const method of ["json","text"]){
-    const read=response[method].bind(response);
-    response[method]=async(...args)=>{try{return await read(...args);}catch(error){throw networkError(error);}};
-  }
-  return response;
+  return repoSecurity.dataRequest(sync,path,options);
 }
 // 업로드 전 비공개 저장소인지 확인하고 공개 저장소면 거부한다.
 async function checkRepo(){
-  const response=await gh(`/repos/${sync.repo}`);
-  if(response.status===404)throw Error(`저장소 ${sync.repo}를 찾을 수 없습니다. 이름과 토큰에 고른 저장소를 확인해 주세요.`);
-  if(!response.ok)throw Error(`저장소 확인 실패 (${response.status})`);
-  const info=await response.json();
-  if(!info.private)throw Error(`${sync.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`);
+  await repoSecurity.checkPrivateDataRepo(sync,{
+    notFound:`저장소 ${sync.repo}를 찾을 수 없습니다. 이름과 토큰에 고른 저장소를 확인해 주세요.`,
+    publicRepo:`${sync.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`
+  });
   sync.checked=true;
 }
 async function readRemote(){

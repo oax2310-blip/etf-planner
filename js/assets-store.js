@@ -33,25 +33,9 @@ const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", mes
 function assetConfig(){ try { const repo=(localStorage.getItem(A_REPO_KEY)||"").trim(), token=localStorage.getItem(A_TOKEN_KEY)||""; return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null; } catch { return null; } }
 const sameConfig=cfg=>{const current=assetConfig();return !!current&&current.repo===cfg.repo&&current.token===cfg.token;};
 const toB64A = text => { const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
-const fromB64A = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")),c=>c.charCodeAt(0)));
+const fromB64A = b64 => repoSecurity.decodeBase64Text(b64);
 async function aGh(cfg, path, options={}){
-  repoSecurity.assertDataRepo(cfg.repo);
-  const networkError=error=>{
-    if(error?.name==="AbortError"||error?.name==="TimeoutError")return Error("GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
-    if(error?.name==="TypeError")return Error("네트워크 연결을 확인해 주세요.");
-    return error;
-  };
-  let r;
-  try{r=await fetch(`https://api.github.com${path}`,{cache:"no-store",...options,signal:options.signal??AbortSignal.timeout(30000),headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",Authorization:`Bearer ${cfg.token}`,...options.headers}});}
-  catch(error){throw networkError(error);}
-  if(r.status===401) throw Error("GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.");
-  if(r.status===403) throw Error("토큰 권한이 부족하거나 요청이 너무 많습니다. 토큰의 Contents 읽기·쓰기 권한을 확인해 주세요.");
-  // 제한 신호는 본문을 읽을 때도 유지된다. 본문 전송 중 끊긴 오류도 같은 안내로 바꾼다.
-  for(const method of ["json","text"]){
-    const read=r[method].bind(r);
-    r[method]=async(...args)=>{try{return await read(...args);}catch(error){throw networkError(error);}};
-  }
-  return r;
+  return repoSecurity.dataRequest(cfg,path,options,{unauthorized:"GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요."});
 }
 async function readAssetRemote(cfg){
   const path=`/repos/${cfg.repo}/contents/${A_FILE}`, last=aSync.remote?.repo===cfg.repo?aSync.remote:null;
@@ -171,7 +155,14 @@ async function syncAssets(beforePriceCollection=false){
   if(aSync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){ aSync.again=true; return; }
   aSync.busy=true; aSync.again=false; clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("busy");
   try{
-    if(aSync.checked!==cfg.repo){ const r=await aGh(cfg,`/repos/${cfg.repo}`); if(r.status===404) throw Error(`저장소 ${cfg.repo}를 찾을 수 없습니다.`); if(!r.ok) throw Error(`저장소 확인 실패 (${r.status})`); if(!(await r.json()).private) throw Error(`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`); aSync.checked=cfg.repo; }
+    if(aSync.checked!==cfg.repo){
+      await repoSecurity.checkPrivateDataRepo(cfg,{
+        unauthorized:"GitHub 토큰이 맞지 않거나 만료됐습니다. 메인 플래너의 동기화 설정에서 새 토큰을 넣어 주세요.",
+        notFound:`저장소 ${cfg.repo}를 찾을 수 없습니다.`,
+        publicRepo:`${cfg.repo}는 공개 저장소라 기록을 올리지 않았습니다. 비공개 저장소를 지정해 주세요.`
+      });
+      aSync.checked=cfg.repo;
+    }
     let redraw=await readAssetPrices(cfg);
     for(let attempt=1;;attempt++){
       const remote=await readAssetRemote(cfg);
