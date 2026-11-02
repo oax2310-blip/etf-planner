@@ -62,12 +62,12 @@ function page(options={}){
 }
 
 function assertHints(p,names){
-  const hints=[...p.html.matchAll(/<p class="hint"[^>]*>([^<]*월말 자료를 불러오지 못해[^<]*)<\/p>/g)]
+  const hints=[...p.html.matchAll(/<p class="hint"[^>]*>([^<]*월말 자료 실패[^<]*)<\/p>/g)]
     .map(match=>match[1].replace(/&amp;/g,'&'));
-  const expected=names?`${names} 월말 자료를 불러오지 못해 공표치만 비교 중 · 다시 시도합니다`:null;
+  const expected=names?`${names} 월말 자료 실패 · 공표치 비교 · 재시도 예정`:null;
   assert.deepEqual(hints,expected?[expected,expected]:[],'맨 위 카드 근처와 지수 비교에 안내를 하나씩만 표시한다');
   const benchmark=p.html.slice(p.html.indexOf('<div class="benchmark">'));
-  assert.equal((benchmark.match(/월말 자료를 불러오지 못해/g)||[]).length,names?1:0,'지수 비교 영역의 안내는 한 줄이다');
+  assert.equal((benchmark.match(/월말 자료 실패/g)||[]).length,names?1:0,'지수 비교 영역의 안내는 한 줄이다');
   assert.doesNotMatch(p.html,/가상 네트워크 오류|외부 문자열/,'응답·오류 내용은 안내에 넣지 않는다');
 }
 

@@ -152,7 +152,7 @@ function ledgerBenchmarkLoadHint(){
   const sp=ledgerSp500Request.failed, gold=ledgerGoldRequest.failed;
   if(!sp&&!gold)return "";
   const name=sp&&gold?"S&amp;P 500·금":sp?"S&amp;P 500":"금(GLDM)";
-  return `<p class="hint" role="status">${name} 월말 자료를 불러오지 못해 공표치만 비교 중 · 다시 시도합니다</p>`;
+  return `<p class="hint" role="status">${name} 월말 자료 실패 · 공표치 비교 · 재시도 예정</p>`;
 }
 // 양쪽에 연간 자료가 있으면 표시할 완료 연도를 공통 연도로 맞춘다. 한 개의 내 연복리와 두 차이가 같은 기간을 가리키게 한다.
 // 원래 비교 결과는 지수별 제외·반영 전 안내에 쓰고, 올해 누적은 완료 연도 필터에서 빼지 않는다.
