@@ -105,7 +105,7 @@ test('여러 기기·수신함·발송 이력의 재알림은 순서와 중복�
 test('회차 항목을 지운 뒤 온 재알림은 새 항목으로 보이고, 지울 때까지 받은 재알림은 다시 나타나지 않는다',()=>{
   const h=load(),isUnread=unreadOf(h),one=followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z'),SECOND='s'.repeat(64),THIRD='t'.repeat(64);
   h.ctx.acceptAlertHistory([event(FIRST),one]);assert.equal(h.ctx.removeAlertHistory(FIRST),true);
-  assert.deepEqual(plain(h.ctx.state.alertHistory),{items:[],deletedIds:[FIRST,`${FIRST}:1`]});
+  const deletedHistory=plain(h.ctx.state.alertHistory);assert.deepEqual(deletedHistory.items,[]);assert.deepEqual(deletedHistory.deletedIds,[FIRST,`${FIRST}:1`]);assert.deepEqual(Object.keys(deletedHistory.deletedAt).sort(),[FIRST,`${FIRST}:1`]);for(const value of Object.values(deletedHistory.deletedAt)){assert.equal(typeof value,'string');assert.match(value,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/);assert.ok(Number.isFinite(Date.parse(value)));}
   h.ctx.acceptAlertHistory([one]);assert.deepEqual(plain(h.ctx.state.alertHistory.items),[],'다른 기기 수신함·발송 이력의 지운 재알림');
   const two=followUp(SECOND,2,'2099-01-01T00:45:00Z',{price:98,receivedAt:'2099-01-01T00:45:05Z'});
   h.ctx.acceptAlertHistory([two]);
