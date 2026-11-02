@@ -848,7 +848,7 @@ test('금 월말은 페이지당 한 번 no-cache로 읽고 가짜 GLDM 자료�
   const request=requests.filter(r=>r.url==='data/gold-etf.json');assert.equal(request.length,1);assert.equal(request[0].options.cache,'no-cache');
   includes(benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells')[2],'반영 전');
   deliver();await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(page.ctx.redrawCount,1,'월별 손익 탭을 보면서 유효한 자료가 도착하면 다시 그린다');
+  assert.equal(page.ctx.redrawCount,2,'S&P 500 실패 안내와 유효한 금 자료 도착에 한 번씩 다시 그린다');
   const cells=benchmarkCells(benchmarkHtml(page.html),'benchmark-ytd-cells'),expected=(raw.monthEnd.find(p=>p.ym==='2026-09').close/goldEnds[2025]-1)*100;
   includes(cells[2],'금 누적');includes(cells[2],expected.toFixed(2)+'%');includes(cells[2],'차이 '+((1.01**9-1)*100-expected).toFixed(2)+'%p');
   assert.equal(requests.filter(r=>r.url==='data/gold-etf.json').length,1,'다시 그려도 요청을 반복하지 않는다');
