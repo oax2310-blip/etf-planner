@@ -65,7 +65,7 @@ function ledgerTopHtml(y, ys, years, c){
       ${noRate?"":ledgerChartHtml(c,won,ledgerChartWidth,shown)}
       <p class="ledger-info">${info}</p>
       <div class="ledger-cells">${cell("실현손익",c.month||ys.futures!==null?eok(ys.pnl):"—",ys.pnl<0)}${cell(ys.last?`총자산 ${ys.last.m}월 말`:"총자산",ys.last?eok(ys.last.total):"—")}</div>
-    </section>`;
+    </section>${ledgerBenchmarkLoadHint()}`;
 }
 // 화면 너비가 크게 바뀌면(가로 전환·창 크기) 그래프를 새 너비로 다시 그린다.
 addEventListener("resize",()=>{clearTimeout(ledgerResizeTimer);ledgerResizeTimer=setTimeout(()=>{const v=el("ledgerView");if(ui.tab==="ledger"&&ledgerChartWidth&&v?.clientWidth&&Math.abs(v.clientWidth-34-ledgerChartWidth)>40)redrawIdle();},200);});
@@ -113,17 +113,46 @@ function renderLedger(){
 // 세 값은 소수 둘째 자리로 표시한다. 표시 선택은 화면 설정(ui.ledgerBench)이라 이 기기에만 기억하고 기록에 넣지 않는다.
 const nfFixed2 = new Intl.NumberFormat("ko-KR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const pct2 = (v, unit="%") => v===null||v===undefined||!Number.isFinite(Number(v)) ? "—" : `${unit==="%p"&&v>0?"+":""}${nfFixed2.format(Number(v))}${unit}`;
-// S&P 500 연말·월말 종가(공개 data/sp500-tr.json, 매월 자동 수집: scripts/collect-sp500.cjs). 페이지마다 한 번 읽고, 못 읽으면 공표치만으로 비교한다.
-let sp500Data=null, sp500Requested=false;
-function loadSp500(){
-  if(sp500Requested||typeof fetch!=="function")return;sp500Requested=true;
-  fetch("data/sp500-tr.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(raw=>{sp500Data=cleanSp500Data(raw);if(sp500Data&&ui.tab==="ledger")redrawIdle();}).catch(()=>{});
+// 월말 자료 요청은 지수마다 따로 관리한다. 성공하면 재사용하고, 실패하면 마지막 시도 60초 뒤 렌더 또는 페이지 복귀 때 다시 받는다.
+// failed는 마지막 실패를 기억해 재시도 중에도 안내를 유지하며, 정상 자료를 받은 뒤에만 지운다. 기록·화면 설정에는 저장하지 않는다.
+let sp500Data=null, goldData=null;
+const ledgerSp500Request={status:"idle",lastAttempt:0,failed:false}, ledgerGoldRequest={status:"idle",lastAttempt:0,failed:false};
+async function ledgerLoadBenchmark(request, url, clean, apply, retryImmediately){
+  if(request.status==="loading"||request.status==="success"||typeof fetch!=="function")return;
+  if(request.status==="failed"&&!retryImmediately&&Date.now()-request.lastAttempt<60000)return;
+  request.status="loading";request.lastAttempt=Date.now();
+  try{
+    const options={cache:"no-cache"};
+    if(typeof AbortSignal!=="undefined"&&typeof AbortSignal.timeout==="function")options.signal=AbortSignal.timeout(15000);
+    const response=await fetch(url,options);
+    if(!response.ok)throw new Error("월말 자료 응답 오류");
+    const data=clean(await response.json());
+    if(!data)throw new Error("월말 자료 형식 오류");
+    apply(data);request.status="success";request.failed=false;
+  }catch{
+    request.status="failed";request.failed=true;
+  }
+  if(ui.tab==="ledger")redrawIdle();
 }
-// GLDM 연말·월말 종가도 페이지마다 한 번 읽는다. 실패하면 연말 상수만으로 비교하며 기록은 바꾸지 않는다.
-let goldData=null, goldRequested=false;
-function loadGold(){
-  if(goldRequested||typeof fetch!=="function")return;goldRequested=true;
-  fetch("data/gold-etf.json",{cache:"no-cache"}).then(r=>r.ok?r.json():null).then(raw=>{goldData=cleanGoldData(raw);if(goldData&&ui.tab==="ledger")redrawIdle();}).catch(()=>{});
+// S&P 500 연말·월말 종가(공개 data/sp500-tr.json, 매월 자동 수집: scripts/collect-sp500.cjs). 실패하면 공표치만으로 비교한다.
+function loadSp500(retryImmediately=false){
+  return ledgerLoadBenchmark(ledgerSp500Request,"data/sp500-tr.json",cleanSp500Data,data=>{sp500Data=data;},retryImmediately);
+}
+// GLDM도 실패하면 연말 상수만으로 비교하며, S&P 500의 요청 상태와 관계없이 받는다.
+function loadGold(retryImmediately=false){
+  return ledgerLoadBenchmark(ledgerGoldRequest,"data/gold-etf.json",cleanGoldData,data=>{goldData=data;},retryImmediately);
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden)return;
+  if(ledgerSp500Request.status==="failed")loadSp500(true);
+  if(ledgerGoldRequest.status==="failed")loadGold(true);
+});
+// 외부 자료나 오류 원문은 안내에 넣지 않는다. 두 위치 모두 실패한 이름만 같은 고정 문구로 표시한다.
+function ledgerBenchmarkLoadHint(){
+  const sp=ledgerSp500Request.failed, gold=ledgerGoldRequest.failed;
+  if(!sp&&!gold)return "";
+  const name=sp&&gold?"S&amp;P 500·금":sp?"S&amp;P 500":"금(GLDM)";
+  return `<p class="hint" role="status">${name} 월말 자료를 불러오지 못해 공표치만 비교 중 · 다시 시도합니다</p>`;
 }
 // 양쪽에 연간 자료가 있으면 표시할 완료 연도를 공통 연도로 맞춘다. 한 개의 내 연복리와 두 차이가 같은 기간을 가리키게 한다.
 // 원래 비교 결과는 지수별 제외·반영 전 안내에 쓰고, 올해 누적은 완료 연도 필터에서 빼지 않는다.
@@ -150,6 +179,7 @@ function sp500Block(years){
   return `<div class="benchmark"><div class="benchmark-head"><b>지수 비교</b><div class="ledger-seg" role="group" aria-label="지수 비교 표시"><button type="button" data-ledger-bench="best" aria-pressed="${!both}">높은 쪽</button><button type="button" data-ledger-bench="both" aria-pressed="${both}">둘 다</button></div><small>${hint}</small></div>
     ${c.years?`<div class="benchmark-grid">${grid}</div>`:'<p class="benchmark-empty">비교할 완료 연도가 아직 없습니다.</p>'}
     ${c.current&&c.current.rate!==null&&c.current.month?ledgerBenchmarkYtdRow(choices,currentPicked,both):""}
+    ${ledgerBenchmarkLoadHint()}
   </div>`;
 }
 // 올해는 기록한 마지막 달 말까지 월 단위로 같은 기간을 비교한다. 위 세 칸과 같은 열에 맞춘다.
