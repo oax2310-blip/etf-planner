@@ -34,6 +34,7 @@ function normalize(target=state){
 normalize();
 function openTab(tab,redraw=true){ state.tab=["plans","buys","futures","rebuy"].includes(tab)?tab:"plans"; tab=state.tab; save(); $$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab)); ["plans","buys","futures","rebuy"].forEach(x=>$(x+"View").classList.toggle("hidden",x!==tab)); if(redraw)render(); }
 function openPlannerLocation(){
+  if(typeof absorbPlanner==="function")absorbPlanner(); // 알림으로 다시 연 옛 화면이면 다른 페이지가 저장한 체결부터 받는다(sync.js)
   if(typeof openPushAlertFromHash==="function"&&openPushAlertFromHash())return;
   if(typeof clearPushAlertTarget==="function")clearPushAlertTarget();
   if(typeof memberGo==="object"&&memberGo.open())return; // 자산 배분의 편입 표시에서 온 이동(#go?…)

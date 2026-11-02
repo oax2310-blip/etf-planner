@@ -13,7 +13,8 @@ const PRICE_FILE = "etf-planner-prices.json"; // 데이터 저장소 Actions(KIS
 const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우기·표시에 쓰는 값과 ETag만). 이 기기에만 두고 동기화 기록에는 넣지 않는다
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
 let priceRefreshBusy=false, priceReadMessage="";
-const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false,waitTyping:false};
+// stored: 이 페이지가 마지막으로 읽거나 쓴 플래너 기록 원문(같은 브라우저의 다른 페이지가 그 뒤 저장했는지 비교, storePlanner·absorbPlanner).
+const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
 function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
@@ -28,8 +29,42 @@ function syncStatus(message){$("syncStatus").textContent=message;$("syncDialogSt
 function syncBadge(){$("syncBtn").className="btn mini sync-btn "+(!connected()?"off":sync.failed||sync.blocked?"warn":sync.busy?"busy":"ok");priceRefreshControls();}
 function priceRefreshControls(){for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=$(key);btn.disabled=sync.busy||priceRefreshBusy;btn.ariaBusy=String(priceRefreshBusy);btn.textContent=priceRefreshBusy?"시세 불러오는 중…":"시세 즉시 불러오기";}}
 function scheduleSync(delay=1500){if(!connected()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),delay);}
-// 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다.
-function save(next=state){localStorage.setItem(STORAGE_KEY,JSON.stringify(next));state=next;if(connected() && dataSnapshot()!==sync.base) scheduleSync();if(typeof stockNames==="object")stockNames.remember();}
+// 같은 브라우저의 여러 페이지(탭·창·뒤로 가기로 복원한 화면·알림으로 다시 연 화면)는 state를 따로 들고 기기 기록(STORAGE_KEY)과 동기화 기준(SYNC_BASE_KEY)은 함께 쓴다.
+// 옛 state를 가진 페이지가 그대로 덮어쓰면 다른 페이지의 체결·알림 삭제가 기기 기록에서 사라지고, 다음에 열 때 더 새 동기화 기준과 비교해 이 기기에서 지운 수정으로 보고
+// 저장소까지 되돌린다(서버는 미완료 회차로 보고 재알림). 그래서 쓰기 전(storePlanner)·받을 때(absorbPlanner) 다른 페이지 기록과 합친다.
+const PLANNER_FIELDS=["plans","futures","actions","rebuy","alerts","alertHistory"]; // snapshotOf의 동기화 항목
+const parsePlanner=text=>{try{const value=text?JSON.parse(text):null;return value&&typeof value==="object"&&!Array.isArray(value)?value:null;}catch{return null;}};
+// mine(이 페이지)에 theirs(다른 페이지)를 합친다. base는 이 페이지가 마지막으로 읽거나 쓴 기록(없으면 null). 동기화 항목은 기기 간 병합과 같은 mergeThreeWay
+// (겹친 칸은 preferMine 쪽), 알림내역은 합집합(alertHistoryStore.merge: 삭제·읽음 유지), 탭·선택 계획 같은 화면 상태는 이 페이지 값. 원본은 바꾸지 않는다.
+function mergePlannerPages(mine,theirs,base,preferMine){
+  const view=d=>{if(!d)return undefined;const copy=JSON.parse(JSON.stringify(d));normalize(copy);return JSON.parse(snapshotOf(copy));};
+  const merged=mergeThreeWay(JSON.parse(snapshotOf(mine)),view(theirs),view(base),preferMine).value||{},next={...mine};
+  for(const key of PLANNER_FIELDS){if(merged[key]===undefined)delete next[key];else next[key]=merged[key];}
+  if((mine.alertHistory||theirs?.alertHistory)&&typeof alertHistoryStore==="object")next.alertHistory=alertHistoryStore.merge(mine.alertHistory,theirs?.alertHistory);
+  normalize(next);return next;
+}
+// 기기 기록에 쓴다. 다른 페이지가 그사이 쓴 기록이 있으면 합친 뒤 쓰고 true. 브라우저 저장이 실패하면 예외를 던지고 state도 바꾸지 않는다.
+function storePlanner(next,preferMine=true){
+  const raw=localStorage.getItem(STORAGE_KEY),theirs=raw!==null&&raw!==sync.stored?parsePlanner(raw):null;
+  if(theirs)next=mergePlannerPages(next,theirs,parsePlanner(sync.stored),preferMine);
+  const text=JSON.stringify(next);localStorage.setItem(STORAGE_KEY,text);sync.stored=text;state=next;return !!theirs;
+}
+// 다른 페이지가 저장한 기록을 받는다(storage 알림·화면 복귀·뒤로 가기 복원·알림으로 이동·동기화 직전). 겹친 칸은 나중에 쓴 다른 페이지 값. 받았으면 true.
+// 동기화 항목이 받은 기록과 같으면 다시 쓰지 않는다(페이지끼리 저장을 주고받지 않게). 기기 기록과 같아진 뒤에는 기기의 동기화 기준도 받아
+// 기록·기준의 짝을 맞춘다(다른 페이지가 이미 올린 변경을 겹친 칸으로 묻지 않게).
+function absorbPlanner(){
+  const raw=localStorage.getItem(STORAGE_KEY),theirs=raw!==null&&raw!==sync.stored?parsePlanner(raw):null;
+  if(theirs){
+    const next=mergePlannerPages(state,theirs,parsePlanner(sync.stored),false),copy=JSON.parse(raw);normalize(copy);
+    sync.stored=raw;if(snapshotOf(next)!==snapshotOf(copy))storePlanner(next);else state=next;
+    sync.redraw=true;
+  }
+  const base=sync.repo&&localStorage.getItem(STORAGE_KEY)===sync.stored?localStorage.getItem(SYNC_BASE_KEY+sync.repo):null;
+  if(base)sync.base=base;
+  return !!theirs;
+}
+// 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다. 다른 페이지 기록을 합쳤으면 이 작업이 끝난 뒤 다시 그린다.
+function save(next=state){if(storePlanner(next)){sync.redraw=true;Promise.resolve().then(()=>{if(sync.redraw)redrawIdle();});}if(connected() && dataSnapshot()!==sync.base) scheduleSync();if(typeof stockNames==="object")stockNames.remember();}
 // 복구본: 덮어쓰기(충돌 선택·JSON 복원) 전 기록을 이 기기에 최근 RECOVERY_LIMIT개까지 목록으로 남긴다(옛 한 개 형식도 목록으로 읽음).
 // 각 항목은 그대로 JSON 복원할 수 있는 플래너 기록 + recoveryReason·exportedAt. 저장 공간이 모자라면 오래된 것부터 줄이고, 하나도 못 남기면 예외로 덮어쓰기를 멈춘다.
 const RECOVERY_LIMIT = 5;
@@ -158,7 +193,8 @@ function holdForTyping(){if(!typingIn(document.activeElement))return false;sync.
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
 function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
 // 병합: 원격에 rebuy·alerts가 없으면 이 기기 값 유지. 빈 목록도 지우려면 {items:[]}·{rules:[]}로 저장.
-function applyRemote(snapshot){const incoming=externalData.planner(JSON.parse(snapshot)),next={...state,...incoming};normalize(next);localStorage.setItem(STORAGE_KEY,JSON.stringify(next));state=next;render();}
+// 기기 기록에 쓰기 직전 다른 페이지가 저장한 칸은 그 페이지 값을 둔다(storePlanner).
+function applyRemote(snapshot){const incoming=externalData.planner(JSON.parse(snapshot)),next={...state,...incoming};normalize(next);storePlanner(next,false);render();}
 // 충돌 창: 겹친 곳(overlap = mergeThreeWay 경로, 없으면 지난 동기화 기준이 없는 기기)과 양쪽 계획·월물 수. 저장소 기록을 기본(첫 버튼)으로 둔다.
 const CONFLICT_AREAS={plans:"분할매도",futures:"달러선물",rebuy:"재매수",alerts:"알림 설정",actions:"이전 기록",alertHistory:"알림내역"};
 function chooseConflict(local,remote,overlap=[]){return new Promise(resolve=>{
@@ -174,6 +210,7 @@ async function syncNow(beforePriceCollection=false){
   const repo=sync.repo,token=sync.token,same=()=>sync.repo===repo&&sync.token===token;
   sync.busy=true;sync.again=false;sync.failed=false;sync.waitTyping=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
   try{
+    absorbPlanner(); // 다른 페이지가 저장·동기화한 기록(알림을 놓쳤어도)부터 받는다
     if(!sync.checked){await checkRepo();if(!same())return;}
     const {sha,snapshot:raw}=await readRemote();if(!same())return;
     if(await readPrices())sync.redraw=true;
@@ -182,7 +219,7 @@ async function syncNow(beforePriceCollection=false){
     if(!same())return;
     if(typeof readAlertHistory==="function")await readAlertHistory();
     if(!same())return;
-    if(fillPrices(state,priceData)){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));sync.redraw=true;}
+    if(fillPrices(state,priceData)){storePlanner(state);sync.redraw=true;}
     sync.sha=sha;
     // 로컬·원격·base를 같은 시세로 채운 뒤 비교(시세 갱신만으로 충돌 창이 뜨지 않음). settle은 채운 원격 값도 저장.
     let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData),merged=null;
@@ -244,7 +281,10 @@ $("refreshPricesBtn").onclick=refreshPrices;$("refreshPricesDialogBtn").onclick=
 $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");};
 // 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 자동 동기화를 멈춘다.
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&connected()&&!sync.blocked)syncNow();});
+document.addEventListener("visibilitychange",()=>{if(document.hidden)return;if(absorbPlanner())redrawIdle();if(connected()&&!sync.blocked)syncNow();});
+// 같은 브라우저의 다른 페이지가 저장하면 바로 받고, 그 알림을 받지 못했을 수 있는 뒤로 가기 복원 때도 받는다(그 밖의 놓친 저장은 화면 복귀·동기화 직전에 받음).
+addEventListener("storage",e=>{if(e.key===STORAGE_KEY&&absorbPlanner())redrawIdle();});
+addEventListener("pageshow",e=>{if(e.persisted&&absorbPlanner())redrawIdle();});
 document.addEventListener("focusout",e=>{if(sync.waitTyping&&!typingIn(e.relatedTarget)){sync.waitTyping=false;scheduleSync(300);}}); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 loadConfig();refreshTokenField();refreshCollectionTokenField();
 $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);

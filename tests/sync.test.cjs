@@ -16,8 +16,8 @@ const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60}
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
 // 시세 파일(prices)은 있으면 ETag와 함께 돌려주고, 같은 ETag로 물으면 304. priceStatus를 주면 시세 파일 요청만 그 상태로 실패.
-function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0, includeHistory = false, historyEvents = [], fetcher = null, timeout = AbortSignal.timeout} = {}) {
-  const items = new Map(Object.entries(stored));
+function harness({local = empty(), remote = null, base = '', hadStoredState = true, stored = {}, connect = true, isPrivate = true, failStatus = 0, prices = null, priceStatus = 0, includeHistory = false, historyEvents = [], fetcher = null, timeout = AbortSignal.timeout, items: sharedItems = null, server: sharedServer = null} = {}) {
+  const items = sharedItems || new Map(Object.entries(stored)); // items·server를 넘기면 같은 브라우저의 다른 페이지처럼 기기 기록·저장소를 함께 쓴다
   if (connect) {
     items.set('etf-planner-data-repo', REPO);
     items.set('etf-planner-github-token', 'test-token');
@@ -25,9 +25,9 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
-  const elements = new Map(), intervals = [];
+  const elements = new Map(), intervals = [], windowOn = {};
   let version = 1;
-  const server = {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
+  const server = sharedServer || {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
   const element = name => {
     if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }, replaceChildren(...children) { this.children = children; }});
@@ -39,7 +39,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
     $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
     Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,AbortSignal:{timeout},crypto:require('node:crypto').webcrypto,
-    setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval:fn=>intervals.push(fn),
+    setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval:fn=>intervals.push(fn), addEventListener:(type,fn)=>(windowOn[type]??=[]).push(fn),
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
     async fetch(url, options = {}) {
       server.requests++; server.auth.push(options.headers?.Authorization);
@@ -83,7 +83,8 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../js/assets-calc.js'), 'utf8'), context); // 충돌 자동 병합(mergeThreeWay)
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
-  return {context, server, items, elements, intervals, remoteData, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
+  const fire = (type, event = {}) => (windowOn[type] || []).forEach(fn => fn(event));
+  return {context, server, items, elements, intervals, remoteData, fire, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 const timeoutMessage='GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
@@ -828,4 +829,52 @@ test('60회 이후의 손절 설정·부분 체결 기록은 다른 기기로 �
   const local={...empty(),rebuy:{items:[{id:'long-rounds',name:'테스트 ETF',lowPrice:10000,shares:1000,stepPct:0.8,sellPct:1,steps:100,cuts,stages:[{name:'25선',price:2100}]}]}};
   const h=harness({local});await h.restored();assert.deepEqual(h.remoteData().rebuy,local.rebuy);
   const other=harness({remote:h.remoteData(),hadStoredState:false});await other.restored();assert.equal(other.server.writes,0);assert.deepEqual(JSON.parse(other.items.get('test-state')).rebuy,local.rebuy);
+});
+
+// 같은 브라우저의 여러 화면(탭·창·알림으로 다시 연 화면)은 state를 따로 들고 기기 기록·동기화 기준은 함께 쓴다.
+const twoStages = (...ids) => ({...empty(), plans: ids.map(id => ({id, stages: 2, checked: [false, false]}))});
+test('storage 알림을 놓친 옛 화면이 저장해도 다른 화면의 체결을 덮어쓰지 않고, 다시 열어도 저장소를 되돌리지 않는다', async () => {
+  const start = twoStages('p1', 'p2');
+  const old = harness({local: start, remote: start, base: snap(start), stored: {'test-state': JSON.stringify(start)}}); await old.restored();
+  const fresh = harness({local: start, items: old.items, server: old.server}); await fresh.restored();
+  vm.runInContext('state.plans[0].checked[0]=true;save()', fresh.context); await fresh.run();
+  assert.deepEqual(old.remoteData().plans[0].checked, [true, false]);
+  vm.runInContext('state.plans[1].checked[1]=true;save()', old.context); // 옛 화면에서 다른 계획을 체크(탭 이동 같은 저장도 같음)
+  const stored = JSON.parse(old.items.get('test-state'));
+  assert.deepEqual(stored.plans.map(p => p.checked), [[true, false], [false, true]], '기기 기록에 두 화면의 체결이 모두 남는다');
+  assert.deepEqual(old.context.state.plans[0].checked, [true, false], '옛 화면도 합친 기록을 보인다');
+  await old.run(); assert.deepEqual(old.remoteData().plans.map(p => p.checked), [[true, false], [false, true]]);
+  const reopened = harness({local: JSON.parse(old.items.get('test-state')), items: old.items, server: old.server}); await reopened.restored();
+  assert.deepEqual(reopened.remoteData().plans.map(p => p.checked), [[true, false], [false, true]], '다시 열어도 저장소의 체결을 되돌리지 않는다');
+  assert.equal(vm.runInContext('sync.blocked', reopened.context), false);
+});
+
+test('다른 화면의 체결·알림 삭제는 storage 알림으로 바로 받고, 그 화면이 맞춘 동기화 기준으로 다음 변경을 겹친 칸으로 묻지 않는다', async () => {
+  const start = {...twoStages('p1'), alertHistory: {items: [{...historyEvent('done'), id: 'done'}], deletedIds: []}};
+  const old = harness({local: start, remote: start, stored: {'test-state': JSON.stringify(start)}, base: snap(start), includeHistory: true}); await old.restored();
+  const fresh = harness({local: JSON.parse(old.items.get('test-state')), items: old.items, server: old.server, includeHistory: true}); await fresh.restored();
+  vm.runInContext("state.plans[0].checked[0]=true;save();removeAlertHistory('done')", fresh.context);
+  old.fire('storage', {key: 'test-state'});
+  assert.deepEqual(old.context.state.plans[0].checked, [true, false]);
+  assert.equal(old.context.state.alertHistory.items.length, 0, '지운 알림은 옛 화면에서도 사라진다');
+  await fresh.run(); assert.deepEqual(old.remoteData().alertHistory.deletedIds, ['done']);
+  const later = {...old.remoteData(), plans: [{...old.remoteData().plans[0], checked: [true, true]}]}; // 다른 기기가 이어서 2회차 체크
+  old.server.file = {sha: 'sha-other', text: JSON.stringify(later, null, 2)};
+  await old.run();
+  assert.equal(vm.runInContext('sync.blocked', old.context), false, '이미 올린 1회차 체크를 겹친 칸으로 보지 않는다');
+  assert.deepEqual(old.context.state.plans[0].checked, [true, true]);
+  assert.deepEqual([...old.context.state.alertHistory.deletedIds], ['done']);
+});
+
+test('뒤로 가기로 복원한 화면은 다른 화면 기록을 받고, 바뀌지 않은 화면끼리는 저장을 주고받지 않는다', async () => {
+  const start = twoStages('p1');
+  const a = harness({local: start, remote: start, base: snap(start), stored: {'test-state': JSON.stringify(start)}}); await a.restored();
+  const b = harness({local: start, items: a.items, server: a.server}); await b.restored();
+  vm.runInContext("state.tab='futures';state.plans[0].checked[1]=true;save()", b.context);
+  const written = a.items.get('test-state');
+  a.fire('pageshow', {persisted: true});
+  assert.deepEqual(a.context.state.plans[0].checked, [false, true]);
+  assert.equal(a.items.get('test-state'), written, '동기화 항목이 같으면 다시 쓰지 않는다');
+  a.fire('storage', {key: 'test-state'}); b.fire('storage', {key: 'test-state'});
+  assert.equal(a.items.get('test-state'), written);
 });
