@@ -31,6 +31,16 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
   assert.deepEqual([...valuation.matchAll(/src="js\/theme\.js\?v=(\d+)"/g)].map(r => r[1]), [refs[0][2]], 'valuation.html도 같은 버전의 theme.js를 한 번 불러야 한다');
 });
 
+test('push-sw.js의 importScripts는 세 HTML과 같은 버전(?v=)으로 불러온다', () => {
+  const worker = fs.readFileSync(path.join(root, 'push-sw.js'), 'utf8');
+  const workerRefs = [...worker.matchAll(/\bimportScripts\s*\(([^)]*)\)/g)]
+    .flatMap(([, args]) => [...args.matchAll(/["'](js\/[^"'?]+)\?v=(\d+)["']/g)]);
+  assert.ok(workerRefs.length > 0, 'push-sw.js의 importScripts에 버전이 지정된 공유 js 파일이 있어야 한다');
+  const versions = [...new Set([...refs, ...assetRefs, ...valuationRefs].map(r => r[2]))];
+  for (const [, file, version] of workerRefs)
+    assert.deepEqual(versions, [version], `${file}의 ?v=는 세 HTML의 모든 로컬 참조와 같아야 한다`);
+});
+
 test('분할매수·분할매도·재매수 계획 창은 같은 종목 검색(item-search.js)을 쓴다', () => {
   for (const f of ['js/purchases.js', 'js/plans.js', 'js/rebuy.js']) {
     assert.ok(scripts.indexOf('js/item-search.js') >= 0 && scripts.indexOf('js/item-search.js') < scripts.indexOf(f), `item-search.js를 ${f}보다 먼저 불러야 한다`);
