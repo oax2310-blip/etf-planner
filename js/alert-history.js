@@ -50,7 +50,7 @@ function alignAlertHistorySnapshots(local,remote,base){
   const merged=alertHistoryStore.merge(...sources);
   alertHistoryApplyTaps(merged.items);
   const apply=doc=>doc?JSON.stringify({...doc,alertHistory:merged}):null;
-  state.alertHistory=merged;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
+  state.alertHistory=merged;if(typeof storePlanner==="function")storePlanner(state);else localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
   return {local:apply(docs[0]),remote:apply(docs[1]),base:apply(docs[2])};
 }
 // 달러선물 알림은 달러선물 화면(futures.js fmtPrice)과 같게 소수 첫째 자리, 나머지는 넷째 자리까지 보인다. 저장된 가격은 그대로 둔다.
@@ -130,9 +130,6 @@ function initializeAlertHistory(){
   $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;state.alertHistory=alertHistoryStore.merge(state.alertHistory,{deletedIds:items.flatMap(alertHistoryStore.removal)});save();renderAlertHistory();};
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
-  addEventListener("storage",event=>{if(event.key!==STORAGE_KEY||!event.newValue)return;try{const other=JSON.parse(event.newValue).alertHistory;if(other)acceptAlertHistoryFromTab(other);}catch{}});
+  // 다른 탭의 읽음·삭제는 sync.js absorbPlanner가 플래너 기록 전체와 함께 받는다(알림내역만 합쳐 옛 체결 기록을 다시 저장하지 않게).
   renderAlertHistory();collectAlertInbox();
-}
-function acceptAlertHistoryFromTab(other){
-  const next=alertHistoryStore.merge(state.alertHistory,other);if(JSON.stringify(next)===JSON.stringify(state.alertHistory))return;state.alertHistory=next;save();renderAlertHistory();
 }

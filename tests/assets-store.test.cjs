@@ -529,3 +529,23 @@ test('자산 수동 시세 조회 중 연결을 바꾸면 이전 시세·404·�
     assert.match(store.priceMessage,/연결 설정이 바뀌었습니다/);assert.equal(store.priceRefreshing,false);
   }
 });
+
+test('storage 알림을 놓친 페이지의 자산 동기화도 다른 페이지 체결·보유량을 합친 뒤 올려 저장소를 되돌리지 않는다',async()=>{
+  const original=fake();original.allocation.groups[0].items[0].shares=900;
+  let remote=clone(original),version=1;
+  const server=async(url,options={})=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+    if(!url.endsWith('/contents/etf-planner-assets.json'))throw Error('unexpected network call');
+    if(options.method==='PUT'){const body=JSON.parse(options.body);if(body.sha!==`v${version}`)return json({message:'conflict'},409);remote=JSON.parse(Buffer.from(body.content,'base64').toString());version++;return json({content:{sha:`v${version}`}});}
+    return json({sha:`v${version}`,encoding:'base64',content:Buffer.from(JSON.stringify(remote)).toString('base64')});
+  };
+  const stale=setup(original,server);connect(stale.storage);stale.storage.set(BASE,JSON.stringify(original));
+  const other=setup(null,server,stale.storage);await stale.store.sync();await other.store.sync();
+  other.store.doc.allocation.groups[0].items[0].shares=918;other.store.saveSection('allocation');await other.store.sync(); // stale은 알림을 받지 못함
+  assert.equal(remote.allocation.groups[0].items[0].shares,918);
+  await stale.store.sync();
+  assert.equal(remote.allocation.groups[0].items[0].shares,918,'옛 화면의 동기화가 저장소 보유량을 되돌리지 않는다');
+  assert.equal(stale.store.doc.allocation.groups[0].items[0].shares,918);
+  assert.equal(stale.store.recovery().length,0,'다른 페이지만 바꾼 기록은 충돌로 보관하지 않는다');
+});
