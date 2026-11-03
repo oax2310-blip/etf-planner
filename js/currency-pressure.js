@@ -102,6 +102,7 @@
   const qLabel = q => q?.replace('-Q','년 ')+'분기';
   const dateLabel = date => !date ? '확인 안 됨' : date.includes('T') && Number.isFinite(Date.parse(date)) ? new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(date)) : date.slice(0,10);
   let dataset = null, rows = [], years = 10, selectedQuarter = null;
+  let inFlight = null, lastSuccessAt = null;
   const svgNode = (tag, attrs={}) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg',tag);
     for (const [key,value] of Object.entries(attrs)) node.setAttribute(key,String(value));
@@ -193,19 +194,33 @@
       body.append(tr);
     }
   }
-  async function refresh() {
+  function refresh() {
+    if(inFlight)return inFlight;
     const button=el('cpRefresh');button.disabled=true;el('cpLoadStatus').textContent='공개 자료 확인 중…';
-    try {
-      const response=await fetch('data/currency-pressure.json',{cache:'no-store',signal:AbortSignal.timeout(15000)});
-      if(!response.ok)throw Error('자료 파일을 읽지 못했습니다.');
-      const data=await response.json();
-      const valid=data?.schemaVersion===1 && data.series && typeof data.series==='object' && !Array.isArray(data.series) && typeof data.generatedAt==='string' && Number.isFinite(Date.parse(data.generatedAt)) &&
-        Object.values(data.series).every(s=>s && typeof s==='object' && (s.observations===undefined || Array.isArray(s.observations) && s.observations.every(point=>point && typeof point.period==='string' && periodQuarter(point.period) && (point.value===null || finite(point.value)))));
-      if(!valid)throw Error('자료 형식을 확인할 수 없습니다.');
-      if(!dataset)selectedQuarter=null; // 첫 수집 완료 시에는 최신 공통 분기로 맞춘다.
-      dataset=data;render();el('cpLoadStatus').textContent='';
-    } catch (_) { el('cpLoadStatus').textContent=dataset?'자료 확인 실패 · 마지막으로 확인한 자료 유지':'자료를 불러오지 못했습니다. 다시 확인해 주세요.'; }
-    finally {button.disabled=false;}
+    inFlight=Promise.resolve().then(async()=>{
+      let timeoutId=null;
+      try {
+        let signal;
+        if(typeof AbortSignal!=='undefined' && typeof AbortSignal.timeout==='function')signal=AbortSignal.timeout(15000);
+        else {
+          const controller=new AbortController();signal=controller.signal;
+          timeoutId=setTimeout(()=>controller.abort(),15000);
+        }
+        const response=await fetch('data/currency-pressure.json',{cache:'no-store',signal});
+        if(!response.ok)throw Error('자료 파일을 읽지 못했습니다.');
+        const data=await response.json();
+        const valid=data?.schemaVersion===1 && data.series && typeof data.series==='object' && !Array.isArray(data.series) && typeof data.generatedAt==='string' && Number.isFinite(Date.parse(data.generatedAt)) &&
+          Object.values(data.series).every(s=>s && typeof s==='object' && (s.observations===undefined || Array.isArray(s.observations) && s.observations.every(point=>point && typeof point.period==='string' && periodQuarter(point.period) && (point.value===null || finite(point.value)))));
+        if(!valid)throw Error('자료 형식을 확인할 수 없습니다.');
+        if(!dataset)selectedQuarter=null; // 첫 수집 완료 시에는 최신 공통 분기로 맞춘다.
+        dataset=data;render();el('cpLoadStatus').textContent='';lastSuccessAt=Date.now();
+      } catch (_) { el('cpLoadStatus').textContent=dataset?'자료 확인 실패 · 마지막으로 확인한 자료 유지':'자료를 불러오지 못했습니다. 다시 확인해 주세요.'; }
+      finally {
+        if(timeoutId!==null)clearTimeout(timeoutId);
+        inFlight=null;button.disabled=false;
+      }
+    });
+    return inFlight;
   }
   el('cpRefresh').addEventListener('click',refresh);
   root.querySelectorAll('[data-cp-years]').forEach(button=>button.addEventListener('click',()=>{years=Number(button.dataset.cpYears);root.querySelectorAll('[data-cp-years]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});render();}));
@@ -217,7 +232,7 @@
     const i=Math.max(0,Math.min(rows.length-1,Math.round((x-49)/(width-49-(el('cpCompareFx').checked?65:22))*(rows.length-1))));
     selectedQuarter=rows[i]?.quarter;renderSelected();
   });
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden && (lastSuccessAt===null || Date.now()-lastSuccessAt>=600000))refresh();});
   window.addEventListener('resize',drawChart);
   setInterval(()=>{if(!document.hidden)refresh();},3600000);
   render();refresh();
