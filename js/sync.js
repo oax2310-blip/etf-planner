@@ -72,6 +72,18 @@ function setLocalSaveFailed(failed){
     try{localStorage.setItem(SYNC_BASE_KEY+sync.repo,sync.base);}catch(error){console.error(error);failed=true;}
   }
   sync.localFailed=failed;
+  renderLocalSaveWarning();
+}
+// 플래너와 공유 자산의 실패는 독립적으로 표시한다. 백업은 기존 버튼과 같은 메모리 기록을 내려받는다.
+function renderLocalSaveWarning(){
+  const box=$("localSaveWarning");if(!box)return;
+  const assetsFailed=typeof assetStore!=="undefined"&&assetStore.localSaveFailed;
+  $("plannerLocalSaveWarning").hidden=!sync.localFailed;$("assetLocalSaveWarning").hidden=!assetsFailed;
+  $("plannerLocalSaveMessage").textContent="이 기기 브라우저에 기록을 저장하지 못했습니다(저장 공간 부족 등). 페이지를 닫기 전에 JSON 백업을 받아 두세요.";
+  $("assetLocalSaveMessage").textContent="분할매수·자산 기록을 이 기기 브라우저에 저장하지 못했습니다. JSON 백업을 받아 두세요.";
+  $("plannerLocalSaveExport").textContent="JSON 백업";$("assetLocalSaveExport").textContent="분할매수·자산 JSON 백업";
+  $("plannerLocalSaveExport").onclick=()=>$("exportBtn").click();$("assetLocalSaveExport").onclick=()=>$("purchaseExport").click();
+  box.hidden=!sync.localFailed&&!assetsFailed;
 }
 function save(next=state){
   let merged=false;
@@ -307,4 +319,5 @@ $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)retu
     if(connected()&&dataSnapshot()!==sync.base)scheduleSync();if(typeof stockNames==="object")stockNames.remember();
     render();alert("백업을 복원했습니다.");
   }}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
+renderLocalSaveWarning();
 function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // js/start.js에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)

@@ -30,7 +30,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   const server = sharedServer || {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
   const element = name => {
-    if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }, replaceChildren(...children) { this.children = children; }});
+    if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, click(){return this.onclick?.();},showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }, replaceChildren(...children) { this.children = children; }});
     return elements.get(name);
   };
   const reply = (status, body, headers = {}) => ({ok: status >= 200 && status < 300, status, headers: {get: name => headers[name.toLowerCase()] ?? null}, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
@@ -97,12 +97,28 @@ test('save는 기기 저장 예외를 알리고 메모리 입력·동기화 예�
   assert.doesNotThrow(()=>vm.runInContext('save()',h.context));
   assert.equal(h.context.state,state);assert.equal(h.context.state.plans[0].note,'방금 쓴 가상 메모');assert.equal(h.items.get('test-state'),raw);
   assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.equal(h.storageErrors[0],error);
+  assert.equal(h.elements.get('localSaveWarning').hidden,false);assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,false);
   assert.equal(scheduled,1);assert.equal(remembered,1);
   assert.throws(()=>vm.runInContext('storePlanner({...state,plans:[]})',h.context),{name:'QuotaExceededError'});
   assert.equal(h.context.state,state);
   h.context.localStorage.setItem=write;vm.runInContext('save()',h.context);
   assert.equal(vm.runInContext('sync.localFailed',h.context),false);assert.equal(JSON.parse(h.items.get('test-state')).plans[0].note,'방금 쓴 가상 메모');
+  assert.equal(h.elements.get('localSaveWarning').hidden,true);
   assert.doesNotMatch(h.items.get('test-state'),/localFailed/);
+});
+test('플래너·자산 경고는 각각 표시하고 두 실패가 겹치면 두 줄과 기존 백업 버튼을 유지한다',async()=>{
+  const h=harness({connect:false});await h.restored();assert.equal(h.elements.get('localSaveWarning').hidden,true);
+  h.context.assetStore={localSaveFailed:true};h.context.renderLocalSaveWarning();
+  assert.equal(h.elements.get('localSaveWarning').hidden,false);assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,true);assert.equal(h.elements.get('assetLocalSaveWarning').hidden,false);
+  h.context.setLocalSaveFailed(true);
+  assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,false);assert.equal(h.elements.get('assetLocalSaveWarning').hidden,false);
+  assert.equal(h.elements.get('plannerLocalSaveMessage').textContent,'이 기기 브라우저에 기록을 저장하지 못했습니다(저장 공간 부족 등). 페이지를 닫기 전에 JSON 백업을 받아 두세요.');
+  assert.equal(h.elements.get('assetLocalSaveMessage').textContent,'분할매수·자산 기록을 이 기기 브라우저에 저장하지 못했습니다. JSON 백업을 받아 두세요.');
+  assert.equal(h.elements.get('plannerLocalSaveExport').textContent,'JSON 백업');assert.equal(h.elements.get('assetLocalSaveExport').textContent,'분할매수·자산 JSON 백업');
+  let plannerExports=0,assetExports=0;h.elements.get('exportBtn').onclick=()=>plannerExports++;h.elements.set('purchaseExport',{click:()=>assetExports++});
+  h.elements.get('plannerLocalSaveExport').click();h.elements.get('assetLocalSaveExport').click();assert.equal(plannerExports,1);assert.equal(assetExports,1);
+  vm.runInContext('save()',h.context);assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,true);assert.equal(h.elements.get('localSaveWarning').hidden,false);
+  h.context.assetStore.localSaveFailed=false;h.context.renderLocalSaveWarning();assert.equal(h.elements.get('localSaveWarning').hidden,true);
 });
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 const timeoutMessage='GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';

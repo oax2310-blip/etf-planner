@@ -41,14 +41,29 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','cardName','note'])purchaseForm[name]=element();
   const dialog=document.getElementById('purchaseDialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
   const listeners=new Set(),store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[],start(){},subscribe:fn=>listeners.add(fn)};
-  const alerts=[],renameDialogs=[],ctx={document,assetStore:store,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
+  let warningRenders=0;
+  const alerts=[],renameDialogs=[],ctx={document,assetStore:store,renderLocalSaveWarning:()=>warningRenders++,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {ctx,doc,item,prices,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:()=>listeners.forEach(fn=>fn('change')),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
+  return {ctx,doc,item,prices,store,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
+
+test('분할매수는 첫 로딩·저장 실패/회복 알림에 경고를 갱신하고 동기화 완료 뒤에도 기기 저장 실패를 표시한다',()=>{
+  const r=setup();r.initialize();assert.equal(r.warningRenders(),1);
+  assert.match(r.element('purchaseSyncDialogStatus').textContent,/이 기기에만 저장 중/);
+  r.store.localSaveFailed=true;r.emit('local-save');
+  assert.equal(r.warningRenders(),2);assert.equal(r.element('purchaseSaveStatus').textContent,'이 기기 저장 실패');
+  assert.equal(r.element('purchaseSyncDialogStatus').textContent,'분할매수·자산: 이 기기 저장 실패');
+  for(const state of ['off','error','choose','pending','busy','done']){
+    r.store.status={state,at:'가상 시각',message:'가상 오류'};r.emit('status');
+    assert.equal(r.element('purchaseSaveStatus').textContent,'이 기기 저장 실패');
+  }
+  r.store.localSaveFailed=false;r.emit('local-save');
+  assert.equal(r.warningRenders(),3);assert.equal(r.element('purchaseSaveStatus').textContent,'동기화 완료 · 가상 시각');
+});
 
 // 회차표 부분 체결 줄: 회차 칸 아래 남은 수량과 같은 줄의 누적 체결 입력값
 const partialRow=(filled,left)=>new RegExp(`<small>남은 ${left}주</small>[\\s\\S]*?value="${filled}"`);
