@@ -608,10 +608,10 @@ function initialize(){
   el("purchaseExport").onclick=()=>downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
   el("purchaseRecovery").onclick=()=>downloadJson(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
   el("purchaseImport").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;
-    try{const incoming=cleanAssets(JSON.parse(await file.text()));if(!incoming||assetsBlank(incoming))throw Error("분할매수·자산 백업 형식이 아닙니다.");
+    try{const incoming=cleanAssets(externalData.assets(JSON.parse(await file.text())));if(!incoming||assetsBlank(incoming))throw Error("분할매수·자산 백업 형식이 아닙니다.");
       const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"분할매수·자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));
       if(confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.`)){assetStore.restore(incoming);alert("복원했습니다.");}}
-    catch(error){alert(`복원 실패: ${error.message}`);}e.target.value="";};
+    catch(error){alert(`복원 실패: ${error instanceof SyntaxError?"JSON 파일 형식을 확인해 주세요.":error.message}`);}e.target.value="";};
   updateStatus();if(typeof renderLocalSaveWarning==="function")renderLocalSaveWarning();assetStore.start();
 }
 return {render:renderPurchases,select:selectPurchase,initialize,alertCount:()=>purchaseAlertRules(assetStore.doc,priceDoc()||assetStore.prices).length};

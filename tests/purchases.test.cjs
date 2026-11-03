@@ -5,7 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
-function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false}={}){
+function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false}={}){
   const ticker=bitcoin?'BTC-USD':currency==='USD'?'AAA':'111111',item={id:'a',name:'테스트 종목',ticker,shares:bitcoin?0.01:legacy?19:10,amount:0,
     buyPlan:wait?{wait:{line:wait},notify:{stages:true}}:manual?{stages:[{id:'s',price,...(manualShares===null?{}:{shares:manualShares}),amount:manualAmount}]}:{lines:{names,...(end===null?{}:{end}),budget}}};
   if(currency==='USD')item.buyPlan.currency='USD';
@@ -44,12 +44,67 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   let warningRenders=0;
   const alerts=[],renameDialogs=[],ctx={document,assetStore:store,renderLocalSaveWarning:()=>warningRenders++,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
-  const code=['ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
-  const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets})`,ctx);
+  const storage=new Map([['etf-planner-assets-v1',JSON.stringify(doc)]]);
+  if(realStore)Object.assign(ctx,{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)},setInterval(){},addEventListener(){}});
+  const code=['ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+  const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets,assetStore})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {ctx,doc,item,prices,store,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
+  return {ctx,doc,item,prices,store:api.assetStore,storage,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
 }
+
+// 실제 파일 입력 핸들러·검증기·저장소를 함께 실행하며 확인과 복원의 순서를 기록한다.
+function setupImport(confirmed=true){
+  const r=setup({realStore:true}),events=[],confirmations=[],restore=r.store.restore;
+  r.ctx.confirm=message=>{events.push('confirm');confirmations.push(message);return confirmed;};
+  r.store.restore=incoming=>{events.push('restore');return restore(incoming);};
+  r.initialize();
+  return {...r,events,confirmations,snapshot:()=>({doc:JSON.stringify(r.store.doc),storage:[...r.storage],html:r.html()}),import:async text=>{
+    const input=r.element('purchaseImport');input.files=[{text:async()=>text}];input.value='synthetic-backup.json';
+    await input.onchange({target:input});assert.equal(input.value,'');
+  }};
+}
+
+for(const [label,text,error] of [
+  ['예약 필드','{"allocation":{},"__proto__":{"note":"synthetic-private-value"}}',/예약된 필드/],
+  ['정리로 사라지는 숫자 범위 초과','{"allocation":{},"extra":9007199254740992}',/숫자 범위/],
+  ['구역 안 숫자 범위 초과','{"allocation":{"total":9007199254740992}}',/숫자 범위/],
+  ['정리로 덮이는 목록 구조','{"allocation":{"groups":"synthetic-private-value"}}',/allocation\.groups/],
+  ['잘못된 구역 구조','{"allocation":{},"ledger":[]}',/ledger/],
+  ['빈 백업','{"version":1}',/분할매수·자산 백업 형식/],
+  ['지원하지 않는 버전','{"version":2,"allocation":{}}',/분할매수·자산 백업 형식/],
+  ['JSON 문법 오류','synthetic-private-value',/JSON 파일 형식/]
+])test(`분할매수 JSON 복원: ${label}는 확인 전에 거부하고 기록·화면·보관을 유지한다`,async()=>{
+  const r=setupImport(),before=r.snapshot();await r.import(text);
+  assert.deepEqual(r.events,[],'확인 창과 restore를 모두 호출하지 않아야 한다');
+  assert.deepEqual(r.snapshot(),before);assert.equal(r.store.recovery().length,0);
+  assert.equal(r.alerts.length,1);assert.match(r.alerts[0],/^복원 실패: /);assert.match(r.alerts[0],error);
+  assert.doesNotMatch(r.alerts[0],/synthetic-|9007199254740992/,'파일 내용을 오류 문구에 넣지 않는다');
+});
+
+test('분할매수 JSON 복원: 정상 백업은 기존 섹션 문구로 확인한 뒤 복원하고 이전 기록을 보관한다',async()=>{
+  const r=setupImport(),before=JSON.parse(JSON.stringify(r.store.doc)),incoming=JSON.parse(JSON.stringify(before));
+  const item=incoming.allocation.groups[0].items[0];item.name='복원한 가상 종목';item.shares='17';
+  item.buyPlan.buys={end:{shares:7,price:10000}};item.compatibleField={note:'가상 호환 필드'};
+  incoming.ledger={years:[]};incoming.savings={actual:[],scenarios:[]};incoming.installments={price:100};
+  incoming.exportedAt='2026-01-02T00:00:00Z';
+  await r.import(JSON.stringify(incoming));
+  assert.deepEqual(r.events,['confirm','restore']);
+  assert.deepEqual(r.confirmations,['분할매수·자산 배분·월별 손익·저축 계획·할부 계산 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.']);
+  assert.deepEqual(r.alerts,['복원했습니다.']);
+  const saved=JSON.parse(r.storage.get('etf-planner-assets-v1'));
+  for(const section of ['allocation','ledger','savings','installments']){
+    const {savedAt,...data}=saved[section];assert.ok(savedAt);assert.deepEqual(data,incoming[section]);
+  }
+  assert.equal(saved.exportedAt,undefined,'정리한 구역만 저장소로 넘긴다');
+  assert.equal(r.store.recovery().length,1);assert.deepEqual(JSON.parse(JSON.stringify(r.store.recovery()[0].data)),before.allocation);
+  assert.match(r.html(),/복원한 가상 종목/);
+});
+
+test('분할매수 JSON 복원: 정상 백업도 확인을 취소하면 기록·화면·보관을 유지한다',async()=>{
+  const r=setupImport(false),before=r.snapshot();await r.import(JSON.stringify(r.store.doc));
+  assert.deepEqual(r.events,['confirm']);assert.deepEqual(r.alerts,[]);assert.deepEqual(r.snapshot(),before);
+});
 
 test('분할매수는 첫 로딩·저장 실패/회복 알림에 경고를 갱신하고 동기화 완료 뒤에도 기기 저장 실패를 표시한다',()=>{
   const r=setup();r.initialize();assert.equal(r.warningRenders(),1);
