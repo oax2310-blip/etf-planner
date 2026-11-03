@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const {quarterly,yoy,buildRows,direction,validate} = require('../js/currency-pressure.js');
 const {numberOrNull,parseFredCsv,parseEcosRows,validateEcosSpec,updateSeries,collectFred,collectEcos} = require('../scripts/collect-currency-pressure.cjs');
 const near = (actual,expected) => assert.ok(Math.abs(actual-expected)<1e-9,`${actual} != ${expected}`);
@@ -10,6 +11,117 @@ const gdp = values => ({frequency:'Q',kind:'gdp',observations:values.map((value,
 function fixture() {
   return {schemaVersion:1,series:{krGdp:gdp([100,100,100,100,102,102]),usGdp:gdp([100,100,100,100,103,103]),krM2:m2([...Array(12).fill(100),...Array(6).fill(108)]),usM2:m2([...Array(12).fill(100),...Array(6).fill(105)])}};
 }
+const browserData = () => ({...fixture(),generatedAt:'2026-11-03T00:00:00Z'});
+const flush = () => new Promise(resolve=>setImmediate(resolve));
+function deferred() {
+  let resolve,reject;
+  const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  return {promise,resolve,reject};
+}
+function loadBrowser(abortSignal) {
+  if(!arguments.length)abortSignal={timeout:()=>new AbortController().signal};
+  let now=Date.parse('2026-11-03T00:00:00Z'),timerId=0;
+  const nodes=new Map(),events={},requests=[],timers=new Map(),cleared=[],intervals=[];
+  const makeNode=()=>({dataset:{},listeners:{},children:[],value:'0',checked:false,disabled:false,textContent:'',
+    addEventListener(type,listener){this.listeners[type]=listener;},querySelectorAll(){return [];},setAttribute(){},
+    append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;}});
+  const node=id=>{if(!nodes.has(id))nodes.set(id,makeNode());return nodes.get(id);};
+  const document={hidden:false,getElementById:node,createElement:makeNode,createElementNS:makeNode,
+    addEventListener:(type,listener)=>{events[type]=listener;}};
+  class Clock extends Date {
+    constructor(...args){super(...(args.length?args:[now]));}
+    static now(){return now;}
+  }
+  const context={document,Date:Clock,Intl,AbortSignal:abortSignal,AbortController,
+    window:{addEventListener(){}},
+    setTimeout:(callback,ms)=>{const id=timerId++;timers.set(id,{callback,ms});return id;},
+    clearTimeout:id=>{cleared.push(id);timers.delete(id);},
+    setInterval:(callback,ms)=>{intervals.push({callback,ms});return intervals.length;},
+    fetch:(url,options)=>{
+      const pending=deferred();
+      requests.push({url,options,...pending,complete:(data=browserData())=>pending.resolve({ok:true,json:async()=>data})});
+      options.signal.addEventListener('abort',()=>pending.reject(Error('aborted')),{once:true});
+      return pending.promise;
+    }};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../js/currency-pressure.js'),'utf8'),context);
+  return {node,document,requests,timers,cleared,intervals,
+    advance:ms=>{now+=ms;},click:()=>node('cpRefresh').listeners.click(),
+    visibility:()=>events.visibilitychange(),hourly:()=>intervals[0].callback()};
+}
+test('AbortSignal.timeout이 없어도 15초 제한으로 읽고 성공·실패·시간초과 뒤 타이머를 정리한다',async()=>{
+  for(const abortSignal of [undefined,{}]) {
+    const browser=loadBrowser(abortSignal);
+    await flush();
+    assert.equal(browser.requests.length,1);
+    assert.equal(browser.requests[0].options.cache,'no-store');
+    assert.ok(browser.requests[0].options.signal instanceof AbortSignal);
+    assert.equal(browser.timers.get(0).ms,15000);
+    browser.requests[0].complete();await flush();
+    assert.equal(browser.node('cpLoadStatus').textContent,'');
+    assert.equal(browser.node('cpValue').textContent,'+4.00');
+    assert.equal(browser.node('cpRefresh').disabled,false);
+    assert.equal(browser.timers.size,0);assert.ok(browser.cleared.includes(0));
+
+    const failed=browser.click();await flush();
+    browser.requests[1].reject(Error('network failed'));await failed;
+    assert.equal(browser.timers.size,0);
+    assert.equal(browser.node('cpLoadStatus').textContent,'자료 확인 실패 · 마지막으로 확인한 자료 유지');
+    assert.equal(browser.node('cpValue').textContent,'+4.00');
+
+    const timedOut=browser.click();await flush();
+    const [{callback,ms}]=browser.timers.values();assert.equal(ms,15000);callback();await timedOut;
+    assert.equal(browser.requests[2].options.signal.aborted,true);
+    assert.equal(browser.timers.size,0);assert.equal(browser.node('cpRefresh').disabled,false);
+  }
+});
+test('첫 로딩·버튼·화면 복귀·시간 타이머가 겹쳐도 fetch 한 번을 함께 기다린다',async()=>{
+  const browser=loadBrowser();await flush();
+  const first=browser.click(),second=browser.click();
+  let finished=false;Promise.all([first,second]).then(()=>{finished=true;});
+  browser.visibility();browser.hourly();await flush();
+  assert.equal(browser.requests.length,1);assert.equal(browser.node('cpRefresh').disabled,true);
+  assert.equal(browser.intervals[0].ms,3600000);
+  const body=deferred();browser.requests[0].resolve({ok:true,json:()=>body.promise});await flush();
+  assert.equal(finished,false);assert.equal(browser.node('cpRefresh').disabled,true);
+  browser.click();browser.visibility();browser.hourly();await flush();
+  assert.equal(browser.requests.length,1);
+  body.resolve(browserData());await Promise.all([first,second]);
+  assert.equal(finished,true);assert.equal(browser.node('cpRefresh').disabled,false);
+  const next=browser.click();await flush();assert.equal(browser.requests.length,2);
+  browser.requests[1].reject(Error('network failed'));await next;
+  assert.equal(browser.node('cpRefresh').disabled,false);
+  const retry=browser.click();await flush();assert.equal(browser.requests.length,3);
+  browser.requests[2].complete();await retry;assert.equal(browser.node('cpLoadStatus').textContent,'');
+});
+test('화면 복귀는 마지막 성공 후 10분 안이면 생략하고 경계·버튼·실패 뒤에는 다시 읽는다',async()=>{
+  const browser=loadBrowser();await flush();
+  browser.advance(120000);browser.requests[0].complete();await flush();
+  browser.advance(599999);browser.visibility();await flush();assert.equal(browser.requests.length,1);
+  const manual=browser.click();await flush();assert.equal(browser.requests.length,2);
+  browser.requests[1].reject(Error('network failed'));await manual;
+  browser.advance(1);browser.document.hidden=true;browser.visibility();await flush();
+  assert.equal(browser.requests.length,2);
+  browser.document.hidden=false;browser.visibility();await flush();assert.equal(browser.requests.length,3);
+  browser.requests[2].reject(Error('network failed'));await flush();
+  browser.visibility();await flush();assert.equal(browser.requests.length,4,'실패는 마지막 성공 시각을 갱신하지 않는다');
+  browser.requests[3].complete();await flush();
+  browser.visibility();await flush();assert.equal(browser.requests.length,4);
+  browser.hourly();await flush();assert.equal(browser.requests.length,5,'시간 타이머는 복귀 제한과 관계없이 읽는다');
+  browser.requests[4].complete();await flush();
+});
+test('새로고침 자료의 스키마·계열·관측값 검증 실패는 마지막 표시를 유지한다',async()=>{
+  const browser=loadBrowser();await flush();browser.requests[0].complete();await flush();
+  const displayed=browser.node('cpFetched').textContent;
+  const invalid=[{...browserData(),schemaVersion:2},{...browserData(),series:[]},
+    {...browserData(),series:{krGdp:{observations:{}}}},
+    {...browserData(),series:{krGdp:{observations:[{period:'2026-Q1',value:'100'}]}}}];
+  for(const data of invalid) {
+    const pending=browser.click();await flush();browser.requests.at(-1).complete(data);await pending;
+    assert.equal(browser.node('cpLoadStatus').textContent,'자료 확인 실패 · 마지막으로 확인한 자료 유지');
+    assert.equal(browser.node('cpValue').textContent,'+4.00');assert.equal(browser.node('cpFetched').textContent,displayed);
+    assert.equal(browser.node('cpRefresh').disabled,false);
+  }
+});
 test('M2는 증가율 평균이 아닌 3개월 수준 평균의 전년 대비이며 부분 분기를 쓰지 않는다',()=>{
   const s=m2([...Array(12).fill(100),110,120,130,140,150]);
   const q=quarterly(s);near(q.get('2026-Q1'),120);near(yoy(q,'2026-Q1'),20);
