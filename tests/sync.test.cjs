@@ -25,7 +25,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
-  const elements = new Map(), intervals = [], windowOn = {};
+  const elements = new Map(), intervals = [], windowOn = {}, storageErrors = [];
   let version = 1;
   const server = sharedServer || {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
@@ -38,7 +38,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
     $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
-    Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,AbortSignal:{timeout},crypto:require('node:crypto').webcrypto,
+    console:{error:error=>storageErrors.push(error)},Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,AbortSignal:{timeout},crypto:require('node:crypto').webcrypto,
     setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval:fn=>intervals.push(fn), addEventListener:(type,fn)=>(windowOn[type]??=[]).push(fn),
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
     async fetch(url, options = {}) {
@@ -84,8 +84,26 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   const fire = (type, event = {}) => (windowOn[type] || []).forEach(fn => fn(event));
-  return {context, server, items, elements, intervals, remoteData, fire, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
+  return {context, server, items, elements, intervals, storageErrors, remoteData, fire, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
+test('save는 기기 저장 예외를 알리고 메모리 입력·동기화 예약·이름표 갱신을 유지하며 다음 저장 성공 때 회복한다',async()=>{
+  const local={...empty(),plans:[{id:'fake-plan',note:'이전 가상 메모'}]},raw=JSON.stringify(local);
+  const h=harness({local,remote:local,base:snap(local),stored:{'test-state':raw}});await h.restored();
+  const write=h.context.localStorage.setItem,error=new DOMException('synthetic quota exceeded','QuotaExceededError');
+  let remembered=0,scheduled=0;
+  h.context.stockNames={remember:()=>remembered++};h.context.setTimeout=()=>{scheduled++;return 1;};
+  h.context.localStorage.setItem=(key,value)=>{if(key==='test-state')throw error;return write(key,value);};
+  const state=h.context.state;state.plans[0].note='방금 쓴 가상 메모';
+  assert.doesNotThrow(()=>vm.runInContext('save()',h.context));
+  assert.equal(h.context.state,state);assert.equal(h.context.state.plans[0].note,'방금 쓴 가상 메모');assert.equal(h.items.get('test-state'),raw);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.equal(h.storageErrors[0],error);
+  assert.equal(scheduled,1);assert.equal(remembered,1);
+  assert.throws(()=>vm.runInContext('storePlanner({...state,plans:[]})',h.context),{name:'QuotaExceededError'});
+  assert.equal(h.context.state,state);
+  h.context.localStorage.setItem=write;vm.runInContext('save()',h.context);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),false);assert.equal(JSON.parse(h.items.get('test-state')).plans[0].note,'방금 쓴 가상 메모');
+  assert.doesNotMatch(h.items.get('test-state'),/localFailed/);
+});
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 const timeoutMessage='GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
 const abortPending=signal=>new Promise((resolve,reject)=>{

@@ -14,7 +14,7 @@ const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우�
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
 let priceRefreshBusy=false, priceReadMessage="";
 // stored: 이 페이지가 마지막으로 읽거나 쓴 플래너 기록 원문(같은 브라우저의 다른 페이지가 그 뒤 저장했는지 비교, storePlanner·absorbPlanner).
-const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
+const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,localFailed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
 function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
@@ -64,7 +64,14 @@ function absorbPlanner(){
   return !!theirs;
 }
 // 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다. 다른 페이지 기록을 합쳤으면 이 작업이 끝난 뒤 다시 그린다.
-function save(next=state){if(storePlanner(next)){sync.redraw=true;Promise.resolve().then(()=>{if(sync.redraw)redrawIdle();});}if(connected() && dataSnapshot()!==sync.base) scheduleSync();if(typeof stockNames==="object")stockNames.remember();}
+function setLocalSaveFailed(failed){sync.localFailed=failed;}
+function save(next=state){
+  let merged=false;
+  try{merged=storePlanner(next);setLocalSaveFailed(false);}catch(error){console.error(error);setLocalSaveFailed(true);}
+  if(merged){sync.redraw=true;Promise.resolve().then(()=>{if(sync.redraw)redrawIdle();});}
+  if(connected() && dataSnapshot()!==sync.base) scheduleSync();
+  if(typeof stockNames==="object")stockNames.remember();
+}
 // 복구본: 덮어쓰기(충돌 선택·JSON 복원) 전 기록을 이 기기에 최근 RECOVERY_LIMIT개까지 목록으로 남긴다(옛 한 개 형식도 목록으로 읽음).
 // 각 항목은 그대로 JSON 복원할 수 있는 플래너 기록 + recoveryReason·exportedAt. 저장 공간이 모자라면 오래된 것부터 줄이고, 하나도 못 남기면 예외로 덮어쓰기를 멈춘다.
 const RECOVERY_LIMIT = 5;
