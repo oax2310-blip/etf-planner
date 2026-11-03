@@ -11,7 +11,13 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
-  const nodes = {pushSetup:{},enablePhonePush:{},disablePhonePush:{}};
+  const classes = new Set();
+  const alertsBtn = {
+    title:'알림내역',ariaLabel:'알림',
+    classList:{toggle(name,on){if(on)classes.add(name);else classes.delete(name);},contains:name=>classes.has(name)},
+    setAttribute(name,value){if(name==='aria-label')this.ariaLabel=value;else this[name]=value;}
+  };
+  const nodes = {pushSetup:{},enablePhonePush:{},disablePhonePush:{},alertsBtn,alertsUnreadBadge:{hidden:true,textContent:''}};
   const storage = new Map();
   const subscription = {
     endpoint:'https://push.example.test/device',
@@ -52,8 +58,126 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
   };
   vm.runInContext(source,ctx);
   vm.runInContext(`pushConfig={repo:sync.repo,publicKey:${JSON.stringify(publicKey)},ready:${ready}}`,ctx);
-  return {ctx,calls,nodes,subscription,message:()=>vm.runInContext('pushMessage',ctx)};
+  return {ctx,calls,nodes,subscription,storage,message:()=>vm.runInContext('pushMessage',ctx)};
 }
+
+const savedDevice = (endpoint='https://push.example.test/device',deviceId='device-test') => ({alerts:{rules:[],subscriptions:[{id:deviceId,subscription:{endpoint}}]}});
+const changedMessage = '이 기기의 알림 연결이 끊겼거나 바뀌었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.';
+
+test('이 기기에 저장된 구독이 브라우저에서 사라지면 다시 연결할 상태임을 읽기 전용으로 표시한다',async()=>{
+  const {ctx,calls,nodes,storage}=load({initial:savedDevice(),existing:false,permission:'default'});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  const before=JSON.stringify(ctx.state),storedBefore=[...storage];
+  ctx.renderPushSetup();
+  assert.equal(ctx.pushConnectionChanged(),false,'브라우저 구독을 조회하기 전에는 연결 끊김으로 단정하지 않는다');
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),false);
+  await ctx.initializePush();
+  ctx.renderPushSetup();
+  assert.equal(ctx.pushConnectionChanged(),true);
+  assert.ok(nodes.pushSetup.innerHTML.includes(changedMessage));
+  assert.match(nodes.pushSetup.innerHTML,/id="enablePhonePush"[^>]*>알림 연결 확인<\/button>/);
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),true);
+  assert.match(nodes.alertsBtn.title,/알림 연결 확인/);
+  assert.match(nodes.alertsBtn.ariaLabel,/알림 연결 확인/);
+  assert.equal(JSON.stringify(ctx.state),before);
+  assert.deepEqual([...storage],storedBefore);
+  assert.deepEqual(calls,{permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]});
+});
+
+test('이 기기에 저장된 주소와 브라우저의 현재 구독 주소가 다르면 연결 변경을 알린다',async()=>{
+  const {ctx,calls,nodes,storage}=load({initial:savedDevice('https://push.example.test/old-device')});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  const before=JSON.stringify(ctx.state),storedBefore=[...storage];
+  await ctx.initializePush();
+  assert.equal(ctx.pushConnectionChanged(),true);
+  assert.ok(nodes.pushSetup.innerHTML.includes(changedMessage));
+  assert.match(nodes.pushSetup.innerHTML,/id="enablePhonePush"[^>]*>알림 연결 확인<\/button>/);
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),true);
+  assert.equal(JSON.stringify(ctx.state),before);
+  assert.deepEqual([...storage],storedBefore);
+  assert.deepEqual(calls,{permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]});
+});
+
+test('이 기기의 저장 주소와 현재 구독이 같으면 연결 변경 경고를 없앤다',async()=>{
+  const {ctx,nodes}=load({initial:savedDevice()});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  ctx.sync.base=JSON.stringify(ctx.state);
+  nodes.alertsBtn.classList.toggle('push-connection-warning',true);
+  nodes.alertsBtn.title='알림내역 · 이 기기의 알림 연결 확인 필요';
+  nodes.alertsBtn.ariaLabel='알림, 이 기기의 알림 연결 확인 필요';
+  await ctx.initializePush();
+  assert.equal(ctx.pushConnectionChanged(),false);
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),false);
+  assert.equal(nodes.alertsBtn.title,'알림내역');
+  assert.equal(nodes.alertsBtn.ariaLabel,'알림');
+  assert.match(nodes.pushSetup.innerHTML,/이 휴대폰에 알림이 연결되어 있습니다/);
+  assert.ok(!nodes.pushSetup.innerHTML.includes(changedMessage));
+});
+
+test('다른 기기만 저장되어 있으면 이 기기의 연결 변경으로 표시하지 않는다',async()=>{
+  const {ctx,nodes}=load({initial:savedDevice('https://push.example.test/other-device','device-other'),existing:false});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  await ctx.initializePush();
+  assert.equal(ctx.pushConnectionChanged(),false);
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),false);
+  assert.match(nodes.pushSetup.innerHTML,/id="enablePhonePush"[^>]*>알림 받기<\/button>/);
+  assert.ok(!nodes.pushSetup.innerHTML.includes(changedMessage));
+});
+
+test('상단 연결 경고는 읽지 않은 알림 수를 보존하고 정상 연결 뒤에 함께 갱신된다',async()=>{
+  const {ctx,nodes,subscription}=load({initial:savedDevice('https://push.example.test/old-device')});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  nodes.alertsUnreadBadge.hidden=false;nodes.alertsUnreadBadge.textContent='3';
+  await ctx.initializePush();
+  ctx.renderPushConnectionStatus(3);
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),true);
+  assert.match(nodes.alertsBtn.ariaLabel,/읽지 않은 알림 3개/);
+  assert.match(nodes.alertsBtn.ariaLabel,/알림 연결 확인/);
+  assert.equal(nodes.alertsUnreadBadge.hidden,false);
+  assert.equal(nodes.alertsUnreadBadge.textContent,'3');
+  ctx.state.alerts.subscriptions[0].subscription.endpoint=subscription.endpoint;
+  ctx.renderPushConnectionStatus(3);
+  assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),false);
+  assert.equal(nodes.alertsBtn.title,'알림내역');
+  assert.equal(nodes.alertsBtn.ariaLabel,'알림, 읽지 않은 알림 3개');
+});
+
+test('연결 변경 판단은 동기화·브라우저 지원·발송 준비·기존 기기 ID가 필요하고 새 ID를 만들지 않는다',async t=>{
+  for(const reason of ['disconnected','unsupported','not-ready','no-device-id'])await t.test(reason,async()=>{
+    const {ctx,nodes,storage}=load({initial:savedDevice(),existing:false,ready:reason!=='not-ready'});
+    if(reason!=='no-device-id')ctx.localStorage.setItem('etf-planner-push-device','device-test');
+    if(reason==='disconnected')ctx.sync.token='';
+    if(reason==='unsupported')delete ctx.window.PushManager;
+    const before=JSON.stringify(ctx.state),storedBefore=[...storage];
+    await ctx.initializePush();
+    assert.equal(ctx.pushConnectionChanged(),false);
+    assert.equal(nodes.alertsBtn.classList.contains('push-connection-warning'),false);
+    assert.deepEqual([...storage],storedBefore);
+    assert.equal(JSON.stringify(ctx.state),before);
+  });
+});
+
+test('연결이 끊겨도 알림 차단 안내가 우선하고 기존 키·만료·동기화 안내 순서를 유지한다',async()=>{
+  const blocked=load({initial:savedDevice(),existing:false,permission:'denied'});
+  blocked.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  await blocked.ctx.initializePush();
+  assert.equal(blocked.ctx.pushConnectionChanged(),true);
+  assert.match(blocked.nodes.pushSetup.innerHTML,/알림이 차단되어 있습니다/);
+  assert.ok(!blocked.nodes.pushSetup.innerHTML.includes(changedMessage));
+
+  const {ctx,nodes,subscription}=load({initial:savedDevice()});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  await ctx.initializePush();
+  subscription.options.applicationServerKey=new Uint8Array(65).buffer;
+  ctx.renderPushSetup();
+  assert.match(nodes.pushSetup.innerHTML,/알림 연결키가 바뀌었습니다/);
+  vm.runInContext('pushConfig.inactiveDeviceIds=["device-test"]',ctx);
+  ctx.renderPushSetup();
+  assert.match(nodes.pushSetup.innerHTML,/연결이 만료되었습니다/);
+  ctx.sync.failed=true;
+  ctx.renderPushSetup();
+  assert.match(nodes.pushSetup.innerHTML,/동기화를 완료해야 발송 서버에 반영/);
+});
 
 test('진행 중인 동기화는 휴대폰 연결 성공으로 표시하지 않는다',async()=>{
   const {ctx,calls,nodes,message}=load({syncMode:'busy'});

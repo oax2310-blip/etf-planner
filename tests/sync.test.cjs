@@ -584,6 +584,17 @@ test('연결 해제하면 이 기기에서 토큰을 지운다', async () => {
   assert.match(h.status(), /이 기기에만/);
 });
 
+test('동기화 상태가 바뀌면 알림 버튼을 갱신하고 해제 직후에는 연결 경고를 지울 수 있다', async () => {
+  const h = harness({remote: empty(), base: snap(empty())});
+  await h.restored();
+  const connections=[];
+  h.context.renderPushConnectionStatus=()=>connections.push(vm.runInContext('connected()',h.context));
+  vm.runInContext('syncBadge()',h.context);
+  assert.deepEqual(connections,[true]);
+  h.elements.get('disconnectRepo').onclick();
+  assert.deepEqual(connections,[true,false],'설정 창을 열지 않아도 해제된 연결 상태로 알림 버튼을 다시 그린다');
+});
+
 test('손절 후 재매수 기록도 저장소에 올리고 다른 기기에서 가져온다', async () => {
   const local = {plans: [], futures: {positions: []}, actions: {}, rebuy: {name: '니프티50', lowPrice: 10000, cuts: [{shares: 5, price: 9900}]}};
   const h = harness({local});

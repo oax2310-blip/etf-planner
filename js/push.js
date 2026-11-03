@@ -2,7 +2,7 @@
 const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
-let pushConfig = null, pushSubscription = null, pushBusy = false, pushMessage = "";
+let pushConfig = null, pushSubscription, pushBusy = false, pushMessage = ""; // undefined: 브라우저 구독 조회 전, null: 구독 없음.
 let pendingPushTarget = null, pushAlertFrame = 0, pushAlertFontTarget = null;
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
 // ruleId를 우선해 메뉴·항목을 식별한다. ID가 있으면 같은 코드의 다른 계좌로 대체하지 않는다.
@@ -114,6 +114,20 @@ function pushReady(){
   if(!connected()||pushConfig?.repo!==sync.repo||pushConfig.ready!==true||!pushConfig.publicKey)return false;
   try{pushPublicBytes(pushConfig.publicKey);return true;}catch{return false;}
 }
+// 저장된 이 기기 ID와 브라우저 구독만 비교한다. 조회 때 ID·구독·알림 기록을 만들거나 고치지 않는다.
+function pushConnectionChanged(){
+  if(pushSubscription===undefined||!connected()||!pushSupported()||!pushReady())return false;
+  const deviceId=localStorage.getItem(PUSH_DEVICE_KEY);
+  return !!deviceId&&pushDevices().some(s=>s?.id===deviceId&&s?.subscription?.endpoint&&s.subscription.endpoint!==pushSubscription?.endpoint);
+}
+// 알림내역이 다시 그려져도 읽지 않은 개수와 연결 경고를 함께 유지한다.
+function renderPushConnectionStatus(unreadCount=typeof alertHistoryItems==="function"?alertHistoryItems().filter(alertHistoryUnread).length:0){
+  const button=$("alertsBtn");if(!button)return;
+  const changed=pushConnectionChanged(),warning=changed?"이 기기의 알림 연결 확인 필요":"";
+  button.classList.toggle("push-connection-warning",changed);
+  button.title=`알림내역${warning?` · ${warning}`:""}`;
+  button.ariaLabel=`알림${unreadCount?`, 읽지 않은 알림 ${unreadCount}개`:""}${warning?`, ${warning}`:""}`;
+}
 function pushDeviceExpired(){return pushConfig?.repo===sync.repo && Array.isArray(pushConfig.inactiveDeviceIds) && pushConfig.inactiveDeviceIds.includes(localStorage.getItem(PUSH_DEVICE_KEY));}
 function pushKeyMatches(subscription,key){
   const stored=subscription?.options?.applicationServerKey;
@@ -140,12 +154,14 @@ async function readPushConfig(){
 }
 // 기기마다 따로 연결하며 연결·발송 방식은 같다. 안내 문구만 PC(theme.js와 같은 마우스 기준)와 휴대폰으로 나눈다.
 function renderPushSetup(){
+  renderPushConnectionStatus();
   const target=$("pushSetup");if(!target)return;
-  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),pc=pushOnPc(),device=pc?"PC":"휴대폰";
+  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),changed=pushConnectionChanged(),pc=pushOnPc(),device=pc?"PC":"휴대폰";
   let message=!connected()?`동기화를 연결하면 알림 조건과 이 ${device}의 연결 정보를 비공개 저장소에 저장합니다.`:
     !supported?"이 브라우저는 웹 푸시를 지원하지 않습니다. 휴대폰은 안드로이드 Chrome, PC는 Chrome·Edge·Firefox·Safari에서 사이트를 열어 주세요.":
     Notification.permission==="denied"?"알림이 차단되어 있습니다. 브라우저의 이 사이트 설정에서 알림을 허용해 주세요.":
     !ready?`알림 연결을 준비 중입니다. 발송 설정이 적용된 뒤 동기화하고 이 ${device}에서 알림을 허용해 주세요.`:
+    changed?"이 기기의 알림 연결이 끊겼거나 바뀌었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.":
     saved?(pushRemoteHas(pushSubscription.endpoint)?`이 ${device}에 알림이 연결되어 있습니다. 플래너를 닫아도 조건에 맞는 새 알림을 받습니다.`:`이 ${device}의 연결을 저장했습니다. 동기화가 끝나면 발송 서버에 반영됩니다.`):`이 ${device}에서 한 번 알림을 허용하면 플래너를 닫아도 받을 수 있습니다.`;
   if(saved && ready && !pushKeyMatches(pushSubscription,pushConfig.publicKey))message="알림 연결키가 바뀌었습니다. 알림 받기를 다시 눌러 연결해 주세요.";
   if(saved && pushDeviceExpired())message=`이 ${device}의 알림 연결이 만료되었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.`;
@@ -155,7 +171,7 @@ function renderPushSetup(){
   if(status==="collection-unavailable")message+=" 최근 시세 수집에 실패했습니다. 새 시세를 받은 뒤 발송을 재개합니다.";
   if(status==="linked-alerts-unavailable")message+=" 매매 기준 알림 계산을 확인 중입니다. 다음 수집에서 계산을 마치면 발송을 재개합니다.";
   const disabled=pushBusy||!supported||!ready||sync.blocked||Notification.permission==="denied";
-  target.innerHTML=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy?"연결 중…":saved?"알림 연결 확인":"알림 받기"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. ${pc?"PC는 보통 브라우저가 켜져 있을 때 받고(플래너 탭은 닫아도 됨), 꺼져 있던 동안의 알림은 다시 켤 때(최대 24시간) 옵니다. Windows에서 브라우저를 닫아도 받으려면 Edge로 연결하고 Edge 설정 → 시스템 및 성능의 ‘닫혀 있을 때 백그라운드 확장 및 앱 계속 실행’을 켜 두세요. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
+  target.innerHTML=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy?"연결 중…":saved||changed?"알림 연결 확인":"알림 받기"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. ${pc?"PC는 보통 브라우저가 켜져 있을 때 받고(플래너 탭은 닫아도 됨), 꺼져 있던 동안의 알림은 다시 켤 때(최대 24시간) 옵니다. Windows에서 브라우저를 닫아도 받으려면 Edge로 연결하고 Edge 설정 → 시스템 및 성능의 ‘닫혀 있을 때 백그라운드 확장 및 앱 계속 실행’을 켜 두세요. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
   $("enablePhonePush").onclick=enablePhonePush;
   const disable=$("disablePhonePush");if(disable){disable.disabled=pushBusy;disable.onclick=disablePhonePush;}
 }

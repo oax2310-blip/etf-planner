@@ -117,7 +117,8 @@ function renderAlertHistory(){
   const all=alertHistoryItems(),unread=all.filter(alertHistoryUnread),items=alertHistoryFilter==="unread"?unread:all;
   $("historyAllCount").textContent=all.length;$("historyUnreadCount").textContent=unread.length;
   $("alertsUnreadBadge").textContent=unread.length;$("alertsUnreadBadge").hidden=!unread.length;
-  $("alertsBtn").ariaLabel=`알림${unread.length?`, 읽지 않은 알림 ${unread.length}개`:""}`;
+  if(typeof renderPushConnectionStatus==="function")renderPushConnectionStatus(unread.length);
+  else $("alertsBtn").ariaLabel=`알림${unread.length?`, 읽지 않은 알림 ${unread.length}개`:""}`;
   for(const button of $$("[data-history-filter]")){const selected=button.dataset.historyFilter===alertHistoryFilter;button.classList.toggle("active",selected);button.setAttribute("aria-pressed",String(selected));}
   $("readAllHistory").disabled=!unread.length;$("clearAlertHistory").disabled=!all.length;
   const names=items.length&&typeof stockNames==="object"?stockNames.alertMap():null;
