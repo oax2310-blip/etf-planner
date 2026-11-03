@@ -25,12 +25,12 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
-  const elements = new Map(), intervals = [], windowOn = {};
+  const elements = new Map(), intervals = [], windowOn = {}, storageErrors = [];
   let version = 1;
   const server = sharedServer || {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
   const element = name => {
-    if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }, replaceChildren(...children) { this.children = children; }});
+    if (!elements.has(name)) elements.set(name, {textContent: '', value: '', placeholder: '', hidden: false, click(){return this.onclick?.();},showModal() { this.open = true; }, close() { this.open = false; if (this.onclose) this.onclose(); }, replaceChildren(...children) { this.children = children; }});
     return elements.get(name);
   };
   const reply = (status, body, headers = {}) => ({ok: status >= 200 && status < 300, status, headers: {get: name => headers[name.toLowerCase()] ?? null}, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
@@ -38,7 +38,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
     $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
-    Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,AbortSignal:{timeout},crypto:require('node:crypto').webcrypto,
+    console:{error:error=>storageErrors.push(error)},Date, URLSearchParams, JSON, TextEncoder, TextDecoder, Uint8Array, String, btoa, atob, AbortController,AbortSignal:{timeout},crypto:require('node:crypto').webcrypto,
     setTimeout: (fn,ms) => {if(ms===5000)queueMicrotask(fn);return 1;}, clearTimeout() {}, setInterval:fn=>intervals.push(fn), addEventListener:(type,fn)=>(windowOn[type]??=[]).push(fn),
     normalize() {}, render() {}, id: () => 'test-id', confirm: () => false,
     async fetch(url, options = {}) {
@@ -84,8 +84,42 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   const fire = (type, event = {}) => (windowOn[type] || []).forEach(fn => fn(event));
-  return {context, server, items, elements, intervals, remoteData, fire, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
+  return {context, server, items, elements, intervals, storageErrors, remoteData, fire, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
+test('save는 기기 저장 예외를 알리고 메모리 입력·동기화 예약·이름표 갱신을 유지하며 다음 저장 성공 때 회복한다',async()=>{
+  const local={...empty(),plans:[{id:'fake-plan',note:'이전 가상 메모'}]},raw=JSON.stringify(local);
+  const h=harness({local,remote:local,base:snap(local),stored:{'test-state':raw}});await h.restored();
+  const write=h.context.localStorage.setItem,error=new DOMException('synthetic quota exceeded','QuotaExceededError');
+  let remembered=0,scheduled=0;
+  h.context.stockNames={remember:()=>remembered++};h.context.setTimeout=()=>{scheduled++;return 1;};
+  h.context.localStorage.setItem=(key,value)=>{if(key==='test-state')throw error;return write(key,value);};
+  const state=h.context.state;state.plans[0].note='방금 쓴 가상 메모';
+  assert.doesNotThrow(()=>vm.runInContext('save()',h.context));
+  assert.equal(h.context.state,state);assert.equal(h.context.state.plans[0].note,'방금 쓴 가상 메모');assert.equal(h.items.get('test-state'),raw);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.equal(h.storageErrors[0],error);
+  assert.equal(h.elements.get('localSaveWarning').hidden,false);assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,false);
+  assert.equal(scheduled,1);assert.equal(remembered,1);
+  assert.throws(()=>vm.runInContext('storePlanner({...state,plans:[]})',h.context),{name:'QuotaExceededError'});
+  assert.equal(h.context.state,state);
+  h.context.localStorage.setItem=write;vm.runInContext('save()',h.context);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),false);assert.equal(JSON.parse(h.items.get('test-state')).plans[0].note,'방금 쓴 가상 메모');
+  assert.equal(h.elements.get('localSaveWarning').hidden,true);
+  assert.doesNotMatch(h.items.get('test-state'),/localFailed/);
+});
+test('플래너·자산 경고는 각각 표시하고 두 실패가 겹치면 두 줄과 기존 백업 버튼을 유지한다',async()=>{
+  const h=harness({connect:false});await h.restored();assert.equal(h.elements.get('localSaveWarning').hidden,true);
+  h.context.assetStore={localSaveFailed:true};h.context.renderLocalSaveWarning();
+  assert.equal(h.elements.get('localSaveWarning').hidden,false);assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,true);assert.equal(h.elements.get('assetLocalSaveWarning').hidden,false);
+  h.context.setLocalSaveFailed(true);
+  assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,false);assert.equal(h.elements.get('assetLocalSaveWarning').hidden,false);
+  assert.equal(h.elements.get('plannerLocalSaveMessage').textContent,'이 기기 브라우저에 기록을 저장하지 못했습니다(저장 공간 부족 등). 페이지를 닫기 전에 JSON 백업을 받아 두세요.');
+  assert.equal(h.elements.get('assetLocalSaveMessage').textContent,'분할매수·자산 기록을 이 기기 브라우저에 저장하지 못했습니다. JSON 백업을 받아 두세요.');
+  assert.equal(h.elements.get('plannerLocalSaveExport').textContent,'JSON 백업');assert.equal(h.elements.get('assetLocalSaveExport').textContent,'분할매수·자산 JSON 백업');
+  let plannerExports=0,assetExports=0;h.elements.get('exportBtn').onclick=()=>plannerExports++;h.elements.set('purchaseExport',{click:()=>assetExports++});
+  h.elements.get('plannerLocalSaveExport').click();h.elements.get('assetLocalSaveExport').click();assert.equal(plannerExports,1);assert.equal(assetExports,1);
+  vm.runInContext('save()',h.context);assert.equal(h.elements.get('plannerLocalSaveWarning').hidden,true);assert.equal(h.elements.get('localSaveWarning').hidden,false);
+  h.context.assetStore.localSaveFailed=false;h.context.renderLocalSaveWarning();assert.equal(h.elements.get('localSaveWarning').hidden,true);
+});
 const waitFor = async (check) => { for (let i = 0; i < 200 && !check(); i++) await Promise.resolve(); };
 const timeoutMessage='GitHub 응답이 늦어 동기화를 멈췄습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
 const abortPending=signal=>new Promise((resolve,reject)=>{
@@ -588,6 +622,76 @@ const plan = extra => ({id: 'p1', ticker: 'AAA', currency: 'USD', startLabel: '6
 const withPlan = p => ({plans: [p], futures: {positions: []}, actions: {}});
 const filledPlan = extra => plan({endPrice: 90.1, ...extra, auto: {at: AT, endPrice: 90.1}}); // 시작 기준가는 직접 정하는 값이라 채우지 않는다
 const statePlan = h => JSON.parse(vm.runInContext('dataSnapshot()', h.context)).plans[0];
+
+function failStorageWrites(h,keys){
+  const write=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(keys.includes(key))throw new DOMException('synthetic quota exceeded','QuotaExceededError');return write(key,value);};
+  return ()=>{h.context.localStorage.setItem=write;};
+}
+test('기기 저장 실패 중 연속 수정은 메모리 기준으로 충돌 없이 올라가고 회복 때만 저장된 기준을 맞춘다',async()=>{
+  const local=withPlan(plan({note:'이전 가상 메모'})),raw=JSON.stringify(local),base=snap(local);
+  const h=harness({local,remote:local,base,stored:{'test-state':raw}});await h.restored();
+  const recover=failStorageWrites(h,['test-state']);
+  for(const note of ['첫 가상 수정','두 번째 가상 수정']){
+    h.context.state.plans[0].note=note;vm.runInContext('save()',h.context);await h.run();
+    assert.equal(h.remoteData().plans[0].note,note);assert.equal(h.items.get('test-state'),raw);
+    assert.equal(h.items.get('etf-planner-sync-base:'+REPO),base);assert.equal(vm.runInContext('sync.localFailed',h.context),true);
+    assert.equal(h.elements.get('conflictDialog')?.open,undefined);assert.match(h.status(),/^동기화 완료/);
+  }
+  assert.equal(h.server.writes,2);
+  const memoryBase=vm.runInContext('sync.base',h.context);recover();vm.runInContext('save()',h.context);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),false);assert.equal(h.items.get('etf-planner-sync-base:'+REPO),memoryBase);
+  assert.equal(JSON.parse(h.items.get('test-state')).plans[0].note,'두 번째 가상 수정');
+});
+test('저장 실패 뒤 옛 기록·옛 기준으로 다시 열면 새 원격 기록을 받아 옛 값으로 덮어쓰지 않는다',async()=>{
+  const local=withPlan(plan({note:'옛 가상 기록'})),h=harness({local,remote:local,base:snap(local),stored:{'test-state':JSON.stringify(local)}});await h.restored();
+  failStorageWrites(h,['test-state']);h.context.state.plans[0].note='새 가상 기록';vm.runInContext('save()',h.context);await h.run();
+  const writes=h.server.writes,reopened=harness({local:JSON.parse(h.items.get('test-state')),items:h.items,server:h.server});await reopened.restored();
+  assert.equal(reopened.context.state.plans[0].note,'새 가상 기록');assert.equal(h.server.writes,writes);assert.equal(reopened.elements.get('conflictDialog')?.open,undefined);
+});
+test('기기 기록 저장이 회복되어도 기준 쓰기가 실패하면 경고를 유지하고 나중에 함께 회복한다',async()=>{
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),stored:{'test-state':JSON.stringify(local)}});await h.restored();
+  const write=h.context.localStorage.setItem;failStorageWrites(h,['test-state']);
+  h.context.state.plans[0].note='가상 수정';vm.runInContext('save()',h.context);await h.run();
+  h.context.localStorage.setItem=write;const recover=failStorageWrites(h,['etf-planner-sync-base:'+REPO]);vm.runInContext('save()',h.context);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.equal(h.items.get('etf-planner-sync-base:'+REPO),snap(local));
+  recover();vm.runInContext('save()',h.context);assert.equal(vm.runInContext('sync.localFailed',h.context),false);
+  assert.equal(h.items.get('etf-planner-sync-base:'+REPO),vm.runInContext('sync.base',h.context));
+});
+test('시세 채움 뒤 기기 저장 실패도 메모리 시세 기록 업로드를 계속하고 복구본·시세 캐시를 지우지 않는다',async()=>{
+  const local=withPlan(plan()),recovery='[{"recoveryReason":"가상 보관"}]';
+  const h=harness({local,remote:local,base:snap(local),prices:PRICES,stored:{'test-state':JSON.stringify(local),'etf-planner-sync-recovery':recovery}});
+  failStorageWrites(h,['test-state']);await h.restored();
+  assert.deepEqual(h.remoteData().plans[0],filledPlan());assert.equal(h.server.writes,1);assert.match(h.status(),/^동기화 완료/);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.equal(h.items.get('etf-planner-sync-base:'+REPO),snap(local));
+  assert.equal(h.items.get('etf-planner-sync-recovery'),recovery);assert.ok(h.items.get('etf-planner-prices'));
+});
+test('알림내역 정렬의 기기 저장 실패도 메모리 알림내역을 비교하고 업로드한다',async()=>{
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),stored:{'test-state':JSON.stringify(local)},includeHistory:true,historyEvents:[historyEvent('fake-history')]});
+  failStorageWrites(h,['test-state']);await h.restored();
+  assert.equal(h.remoteData().alertHistory.items[0].id,'fake-history');assert.equal(h.server.writes,1);assert.match(h.status(),/^동기화 완료/);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.equal(h.items.get('etf-planner-sync-base:'+REPO),snap(local));
+});
+test('원격 적용의 기기 저장 실패는 state를 바꾸거나 이어서 업로드하지 않는다',async()=>{
+  const local=withPlan(plan({note:'기존 가상 기록'})),remote=withPlan(plan({note:'받을 가상 기록'}));
+  const h=harness({local,remote,base:snap(local),stored:{'test-state':JSON.stringify(local)}});failStorageWrites(h,['test-state']);await h.restored();
+  assert.equal(h.context.state.plans[0].note,'기존 가상 기록');assert.equal(h.server.writes,0);assert.deepEqual(h.remoteData(),remote);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.match(h.status(),/^이 기기 저장 실패/);
+});
+test('JSON 복원의 기기 저장 실패는 성공 안내·업로드 없이 원래 state를 유지한다',async()=>{
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),stored:{'test-state':JSON.stringify(local)}});await h.restored();
+  failStorageWrites(h,['test-state']);const messages=[];h.context.alert=message=>messages.push(message);h.context.confirm=()=>true;
+  const incoming=withPlan(plan({note:'복원할 가상 기록'}));await h.elements.get('importInput').onchange({target:{files:[{text:async()=>JSON.stringify(incoming)}],value:'fake.json'}});
+  assert.deepEqual(h.context.state,local);assert.equal(h.server.writes,0);assert.equal(messages.length,1);assert.match(messages[0],/^복원 실패:/);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);
+});
+for(const key of ['etf-planner-last-data-repo','etf-planner-sync-base:'+REPO])test(`markSynced의 ${key} 쓰기 실패는 업로드 성공을 실패로 바꾸지 않는다`,async()=>{
+  const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),stored:{'test-state':JSON.stringify(local)}});await h.restored();
+  h.context.state.plans[0].note='올릴 가상 기록';vm.runInContext('save()',h.context);failStorageWrites(h,[key]);await h.run();
+  assert.equal(h.server.writes,1);assert.equal(h.remoteData().plans[0].note,'올릴 가상 기록');assert.equal(vm.runInContext('sync.failed',h.context),false);
+  assert.equal(vm.runInContext('sync.localFailed',h.context),true);assert.match(h.status(),/^동기화 완료/);
+  await h.run();assert.equal(vm.runInContext('sync.localFailed',h.context),true,'동기화 성공만으로는 경고를 지우지 않는다');
+});
 
 test('시세 파일의 이동평균으로 기준가를 채우고 저장소에도 올린다', async () => {
   const local = withPlan(plan());

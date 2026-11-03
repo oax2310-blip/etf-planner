@@ -10,12 +10,15 @@ function priceLine(message=assetStore.priceMessage){
 }
 function setAssetSync(){
   const cfg=assetConfig(),s=assetStore.status;
-  const text={off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];
+  const text=assetStore.localSaveFailed?"이 기기 저장 실패":{off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];
   el("syncStatus").textContent=text;el("syncDialogStatus").textContent=text;el("syncBtn").title=text;
   el("syncBtn").className="btn mini sync-btn "+(!cfg?"off":s.state==="error"||s.state==="choose"?"warn":s.state==="busy"?"busy":"ok");
   el("syncOff").hidden=!!cfg;el("syncOn").hidden=!cfg;el("syncRepo").textContent=cfg?.repo||"";el("syncNowBtn").hidden=!cfg;
   el("downloadRecovery").hidden=!assetStore.recovery().length;
   assetStore.renderNotice?.(el("assetSyncNotice"),()=>el("downloadRecovery").click());
+  el("localSaveWarning").hidden=!assetStore.localSaveFailed;
+  el("assetLocalSaveMessage").textContent="자산 기록을 이 기기 브라우저에 저장하지 못했습니다(저장 공간 부족 등). 페이지를 닫기 전에 JSON 백업을 받아 두세요.";
+  el("assetLocalSaveExport").textContent="JSON 백업";
 }
 assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;setAssetSync();priceLine();if(type==="prices"||type==="change")updateLedgerDividendFx?.();if(type==="change")redrawIdle();});
 el("syncBtn").onclick=()=>el("syncDialog").showModal();
@@ -27,6 +30,7 @@ el("downloadRecovery").hidden=!assetStore.recovery().length;
 const downloadA = (value, name) => { const blob=new Blob([JSON.stringify(value,null,2)],{type:"application/json"}), a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); };
 el("downloadRecovery").onclick=()=>downloadA(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
 el("exportBtn").onclick=()=>downloadA({...doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
+el("assetLocalSaveExport").onclick=()=>el("exportBtn").click();
 el("importInput").onchange=async e=>{ const file=e.target.files?.[0]; if(!file) return;
   try{ const incoming=cleanAssets(externalData.assets(JSON.parse(await file.text()))); if(!incoming||assetsBlank(incoming)) throw Error("자산 현황 백업 형식이 아닙니다.");
     const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));

@@ -54,7 +54,12 @@ function alignAlertHistorySnapshots(local,remote,base){
   const merged=alertHistoryStore.merge(...sources);
   alertHistoryApplyTaps(merged.items);
   const apply=doc=>doc?JSON.stringify({...doc,alertHistory:merged}):null;
-  state.alertHistory=merged;if(typeof storePlanner==="function")storePlanner(state);else localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAlertHistory();
+  state.alertHistory=merged;
+  try{
+    if(typeof storePlanner==="function")storePlanner(state);else localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+    if(typeof setLocalSaveFailed==="function")setLocalSaveFailed(false);
+  }catch(error){console.error(error);if(typeof setLocalSaveFailed==="function")setLocalSaveFailed(true);}
+  renderAlertHistory();
   return {local:apply(docs[0]),remote:apply(docs[1]),base:apply(docs[2])};
 }
 // 달러선물 알림은 달러선물 화면(futures.js fmtPrice)과 같게 소수 첫째 자리, 나머지는 넷째 자리까지 보인다. 저장된 가격은 그대로 둔다.

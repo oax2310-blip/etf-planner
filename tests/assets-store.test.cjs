@@ -40,6 +40,109 @@ function fakeDeadline(context){
 }
 async function waitFor(check){for(let i=0;i<100&&!check();i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(check(),'대기 중인 요청에 도달해야 한다');}
 
+test('자산 저장 실패는 마지막 성공 기록을 유지해 storage·복귀 알림이 메모리 수정을 되돌리지 않는다',()=>{
+  const original=fake(),h=setup(original),events=[];h.store.start();h.store.subscribe(type=>events.push(type));
+  const setItem=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw new DOMException('synthetic quota','QuotaExceededError');setItem(key,value);};
+  assert.equal(h.store.localSaveFailed,false);
+  assert.equal(Object.getOwnPropertyDescriptor(h.store,'localSaveFailed').set,undefined,'실패 상태는 읽기 전용이다');
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');
+  assert.equal(h.store.localSaveFailed,true);assert.deepEqual(JSON.parse(h.storage.get(KEY)),original);
+  h.event();h.pageshow(true);
+  assert.equal(h.store.doc.allocation.groups[0].items[0].target,20);
+  h.store.doc.allocation.groups[0].items[0].target=30;h.store.saveSection('allocation');h.event();
+  assert.equal(h.store.doc.allocation.groups[0].items[0].target,30);
+  assert.equal(h.store.recovery().length,0);assert.equal(h.store.notice,null);
+  assert.equal(events.filter(type=>type==='local-save').length,1,'실패 상태가 바뀔 때만 알린다');
+  h.context.localStorage.setItem=setItem;h.store.saveSection('allocation');
+  assert.equal(h.store.localSaveFailed,false);assert.equal(JSON.parse(h.storage.get(KEY)).allocation.groups[0].items[0].target,30);
+  assert.equal(events.filter(type=>type==='local-save').length,2);
+});
+
+test('자산 저장 실패 중 두 번 수정·동기화해도 옛 기기 기준을 유지하고 회복 시 메모리 기준을 저장한다',async()=>{
+  const original=fake(),uploads=[],events=[];let remote=clone(original);
+  const h=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:304});
+    if(options.method==='PUT'){
+      remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());uploads.push(clone(remote));
+      return json({content:{sha:`saved-${uploads.length}`}});
+    }
+    return contents(remote);
+  });
+  const recovery=JSON.stringify([{section:'ledger',data:{years:[]},keptAt:'2026-01-01'}]),cache=JSON.stringify({format:2,stocks:{}});
+  h.storage.set(BASE,JSON.stringify(original));h.storage.set('etf-planner-assets-recovery',recovery);h.storage.set('etf-planner-assets-prices',cache);
+  connect(h.storage);h.store.subscribe(type=>events.push(type));const setItem=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw new DOMException('synthetic quota','QuotaExceededError');setItem(key,value);};
+  for(const target of [20,30]){
+    h.store.doc.allocation.groups[0].items[0].target=target;h.store.saveSection('allocation');await h.store.sync();
+    assert.equal(h.store.status.state,'done');assert.equal(h.store.localSaveFailed,true,'업로드 성공으로 기기 저장 경고를 지우지 않는다');
+    assert.equal(uploads.at(-1).allocation.groups[0].items[0].target,target);
+    assert.deepEqual(JSON.parse(h.storage.get(KEY)),original);assert.deepEqual(JSON.parse(h.storage.get(BASE)),original);
+    assert.equal(h.store.notice,null);assert.equal(h.storage.get('etf-planner-assets-recovery'),recovery);
+  }
+  assert.equal(uploads.length,2);assert.equal(events.filter(type=>type==='local-save').length,1);
+  h.context.localStorage.setItem=setItem;h.store.saveSection('allocation');
+  assert.equal(h.store.localSaveFailed,false);assert.deepEqual(JSON.parse(h.storage.get(BASE)),remote);
+  assert.equal(events.filter(type=>type==='local-save').length,2);
+  assert.equal(h.storage.get('etf-planner-assets-recovery'),recovery);assert.equal(h.storage.get('etf-planner-assets-prices'),cache);
+});
+
+test('자산 기준 저장만 실패해도 업로드는 성공하고 다음 기기 저장에서 기준·경고를 회복한다',async()=>{
+  const original=fake();let remote=clone(original),writes=0;
+  const h=setup(original,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:304});
+    if(options.method==='PUT'){writes++;remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());return json({content:{sha:'saved'}});}
+    return contents(remote);
+  });
+  connect(h.storage);h.storage.set(BASE,JSON.stringify(original));const setItem=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key===BASE)throw new DOMException('synthetic quota','QuotaExceededError');setItem(key,value);};
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');await h.store.sync();
+  assert.equal(writes,1);assert.equal(h.store.status.state,'done');assert.equal(h.store.localSaveFailed,true);
+  assert.deepEqual(JSON.parse(h.storage.get(BASE)),original);
+  h.store.saveSection('allocation');assert.equal(h.store.localSaveFailed,true,'기록만 쓰고 기준을 못 맞추면 경고를 유지한다');
+  h.context.localStorage.setItem=setItem;h.store.saveSection('allocation');
+  assert.equal(h.store.localSaveFailed,false);assert.deepEqual(JSON.parse(h.storage.get(BASE)),remote);
+});
+
+test('저장 실패 중 저장소를 바꿔도 각 메모리 기준을 따로 비교하고 회복 때 각 키에 저장한다',async()=>{
+  const original=fake(),secondBase='etf-planner-assets-sync-base:example/other-data',remotes=new Map(['example/private-data','example/other-data'].map(repo=>[repo,clone(original)]));
+  const h=setup(original,async(url,options)=>{
+    const repo=new URL(url).pathname.split('/').slice(2,4).join('/');
+    if(url.endsWith(`/repos/${repo}`))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:304});
+    if(options.method==='PUT'){remotes.set(repo,JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString()));return json({content:{sha:'saved'}});}
+    return contents(remotes.get(repo));
+  });
+  h.storage.set(BASE,JSON.stringify(original));h.storage.set(secondBase,JSON.stringify(original));connect(h.storage);
+  const setItem=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw new DOMException('synthetic quota','QuotaExceededError');setItem(key,value);};
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');await h.store.sync();
+  h.storage.set('etf-planner-data-repo','example/other-data');
+  h.store.doc.allocation.groups[0].items[0].target=30;h.store.saveSection('allocation');await h.store.sync();
+  assert.equal(h.store.status.state,'done');assert.equal(h.store.notice,null);
+  assert.deepEqual(JSON.parse(h.storage.get(BASE)),original);assert.deepEqual(JSON.parse(h.storage.get(secondBase)),original);
+  h.context.localStorage.setItem=setItem;h.store.saveSection('allocation');
+  assert.equal(h.store.localSaveFailed,false);
+  assert.deepEqual(JSON.parse(h.storage.get(BASE)),remotes.get('example/private-data'));
+  assert.deepEqual(JSON.parse(h.storage.get(secondBase)),remotes.get('example/other-data'));
+});
+
+test('자산 복원 중 기기 저장 실패는 원래 doc을 보존하고 지정한 오류를 던진다',()=>{
+  const original=fake(),incoming=fake(),h=setup(original),events=[],observed=[];incoming.allocation.groups[0].items[0].target=20;
+  h.store.subscribe(type=>{events.push(type);if(type==='local-save')observed.push(h.store.doc);});const before=h.store.doc,setItem=h.context.localStorage.setItem;
+  h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw new DOMException('synthetic quota','QuotaExceededError');setItem(key,value);};
+  assert.throws(()=>h.store.restore(incoming),{message:'이 기기에 저장하지 못해 복원하지 않았습니다. 브라우저 저장 공간을 확인해 주세요.'});
+  assert.equal(h.store.doc,before);assert.deepEqual(clone(h.store.doc),original);assert.deepEqual(JSON.parse(h.storage.get(KEY)),original);
+  assert.equal(h.store.localSaveFailed,true);assert.equal(events.includes('change'),false);
+  assert.equal(observed[0],before,'실패 이벤트에서 화면 구독자가 캐시한 doc도 복원 전 기록이다');
+  assert.deepEqual(clone(observed[0]),original);
+  h.context.localStorage.setItem=setItem;assert.equal(h.store.restore(incoming),true);
+  assert.equal(h.store.localSaveFailed,false);assert.equal(observed[1],h.store.doc,'성공 이벤트에서는 저장한 새 기록을 받는다');
+  assert.equal(observed[1].allocation.groups[0].items[0].target,20);
+});
+
 test('자산 동기화 fetch가 끝나지 않으면 30초 제한으로 busy를 풀고 다음 동기화를 시작한다',async()=>{
   for(const name of ['TimeoutError','AbortError']){
     let blocked=true,requests=0,writes=0;

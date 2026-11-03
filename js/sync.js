@@ -14,7 +14,7 @@ const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우�
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
 let priceRefreshBusy=false, priceReadMessage="";
 // stored: 이 페이지가 마지막으로 읽거나 쓴 플래너 기록 원문(같은 브라우저의 다른 페이지가 그 뒤 저장했는지 비교, storePlanner·absorbPlanner).
-const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
+const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,localFailed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
 function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
@@ -56,15 +56,42 @@ function absorbPlanner(){
   const raw=localStorage.getItem(STORAGE_KEY),theirs=raw!==null&&raw!==sync.stored?parsePlanner(raw):null;
   if(theirs){
     const next=mergePlannerPages(state,theirs,parsePlanner(sync.stored),false),copy=JSON.parse(raw);normalize(copy);
-    sync.stored=raw;if(snapshotOf(next)!==snapshotOf(copy))storePlanner(next);else state=next;
+    sync.stored=raw;if(snapshotOf(next)!==snapshotOf(copy)){
+      try{storePlanner(next);setLocalSaveFailed(false);}catch(error){setLocalSaveFailed(true);throw error;}
+    }else state=next;
     sync.redraw=true;
   }
-  const base=sync.repo&&localStorage.getItem(STORAGE_KEY)===sync.stored?localStorage.getItem(SYNC_BASE_KEY+sync.repo):null;
+  const base=!sync.localFailed&&sync.repo&&localStorage.getItem(STORAGE_KEY)===sync.stored?localStorage.getItem(SYNC_BASE_KEY+sync.repo):null;
   if(base)sync.base=base;
   return !!theirs;
 }
 // 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다. 다른 페이지 기록을 합쳤으면 이 작업이 끝난 뒤 다시 그린다.
-function save(next=state){if(storePlanner(next)){sync.redraw=true;Promise.resolve().then(()=>{if(sync.redraw)redrawIdle();});}if(connected() && dataSnapshot()!==sync.base) scheduleSync();if(typeof stockNames==="object")stockNames.remember();}
+// 실패 중에는 기기 기록과 기준의 옛 짝을 남긴다. 실제 기록 저장이 회복된 뒤에만 메모리 기준도 쓴다.
+function setLocalSaveFailed(failed){
+  if(!failed&&sync.localFailed&&connected()){
+    try{localStorage.setItem(SYNC_BASE_KEY+sync.repo,sync.base);}catch(error){console.error(error);failed=true;}
+  }
+  sync.localFailed=failed;
+  renderLocalSaveWarning();
+}
+// 플래너와 공유 자산의 실패는 독립적으로 표시한다. 백업은 기존 버튼과 같은 메모리 기록을 내려받는다.
+function renderLocalSaveWarning(){
+  const box=$("localSaveWarning");if(!box)return;
+  const assetsFailed=typeof assetStore!=="undefined"&&assetStore.localSaveFailed;
+  $("plannerLocalSaveWarning").hidden=!sync.localFailed;$("assetLocalSaveWarning").hidden=!assetsFailed;
+  $("plannerLocalSaveMessage").textContent="이 기기 브라우저에 기록을 저장하지 못했습니다(저장 공간 부족 등). 페이지를 닫기 전에 JSON 백업을 받아 두세요.";
+  $("assetLocalSaveMessage").textContent="분할매수·자산 기록을 이 기기 브라우저에 저장하지 못했습니다. JSON 백업을 받아 두세요.";
+  $("plannerLocalSaveExport").textContent="JSON 백업";$("assetLocalSaveExport").textContent="분할매수·자산 JSON 백업";
+  $("plannerLocalSaveExport").onclick=()=>$("exportBtn").click();$("assetLocalSaveExport").onclick=()=>$("purchaseExport").click();
+  box.hidden=!sync.localFailed&&!assetsFailed;
+}
+function save(next=state){
+  let merged=false;
+  try{merged=storePlanner(next);setLocalSaveFailed(false);}catch(error){console.error(error);setLocalSaveFailed(true);}
+  if(merged){sync.redraw=true;Promise.resolve().then(()=>{if(sync.redraw)redrawIdle();});}
+  if(connected() && dataSnapshot()!==sync.base) scheduleSync();
+  if(typeof stockNames==="object")stockNames.remember();
+}
 // 복구본: 덮어쓰기(충돌 선택·JSON 복원) 전 기록을 이 기기에 최근 RECOVERY_LIMIT개까지 목록으로 남긴다(옛 한 개 형식도 목록으로 읽음).
 // 각 항목은 그대로 JSON 복원할 수 있는 플래너 기록 + recoveryReason·exportedAt. 저장 공간이 모자라면 오래된 것부터 줄이고, 하나도 못 남기면 예외로 덮어쓰기를 멈춘다.
 const RECOVERY_LIMIT = 5;
@@ -174,10 +201,19 @@ function typingIn(el){return !!el&&(el.tagName==="TEXTAREA"||el.tagName==="SELEC
 function holdForTyping(){if(!typingIn(document.activeElement))return false;sync.waitTyping=true;syncStatus("입력 중 · 끝나면 동기화");return true;}
 // 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
-function markSynced(snapshot,sha){sync.base=snapshot;if(sha!==undefined)sync.sha=sha;localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);localStorage.setItem(LAST_REPO_KEY,sync.repo);syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);}
+function markSynced(snapshot,sha){
+  sync.base=snapshot;if(sha!==undefined)sync.sha=sha;
+  if(!sync.localFailed)try{localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);}catch(error){console.error(error);setLocalSaveFailed(true);}
+  try{localStorage.setItem(LAST_REPO_KEY,sync.repo);}catch(error){console.error(error);setLocalSaveFailed(true);}
+  syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);
+}
 // 병합: 원격에 rebuy·alerts가 없으면 이 기기 값 유지. 빈 목록도 지우려면 {items:[]}·{rules:[]}로 저장.
 // 기기 기록에 쓰기 직전 다른 페이지가 저장한 칸은 그 페이지 값을 둔다(storePlanner).
-function applyRemote(snapshot){const incoming=externalData.planner(JSON.parse(snapshot)),next={...state,...incoming};normalize(next);storePlanner(next,false);render();}
+function applyRemote(snapshot){
+  const incoming=externalData.planner(JSON.parse(snapshot)),next={...state,...incoming};normalize(next);
+  try{storePlanner(next,false);setLocalSaveFailed(false);}catch(error){setLocalSaveFailed(true);throw error;}
+  render();
+}
 // 충돌 창: 겹친 곳(overlap = mergeThreeWay 경로, 없으면 지난 동기화 기준이 없는 기기)과 양쪽 계획·월물 수. 저장소 기록을 기본(첫 버튼)으로 둔다.
 const CONFLICT_AREAS={plans:"분할매도",futures:"달러선물",rebuy:"재매수",alerts:"알림 설정",actions:"이전 기록",alertHistory:"알림내역"};
 function chooseConflict(local,remote,overlap=[]){return new Promise(resolve=>{
@@ -202,7 +238,10 @@ async function syncNow(beforePriceCollection=false){
     if(!same())return;
     if(typeof readAlertHistory==="function")await readAlertHistory();
     if(!same())return;
-    if(fillPrices(state,priceData)){storePlanner(state);sync.redraw=true;}
+    if(fillPrices(state,priceData)){
+      try{storePlanner(state);setLocalSaveFailed(false);}catch(error){console.error(error);setLocalSaveFailed(true);}
+      sync.redraw=true;
+    }
     sync.sha=sha;
     // 로컬·원격·base를 같은 시세로 채운 뒤 비교(시세 갱신만으로 충돌 창이 뜨지 않음). settle은 채운 원격 값도 저장.
     let remote=pricedSnapshot(raw,priceData),local=dataSnapshot(),base=pricedSnapshot(sync.base,priceData),merged=null;
@@ -236,7 +275,7 @@ async function syncNow(beforePriceCollection=false){
       }
       else syncStatus("기록 차이 확인 전 · 이 기기에만 저장 중");
     }
-  }catch(error){if(error.stale){sync.again=true;syncStatus("다른 기기 저장 확인 중…");}else{sync.failed=true;syncStatus(`이 기기 저장됨 · ${error.message}`);}}
+  }catch(error){if(error.stale){sync.again=true;syncStatus("다른 기기 저장 확인 중…");}else{sync.failed=true;syncStatus(`${sync.localFailed?"이 기기 저장 실패":"이 기기 저장됨"} · ${error.message}`);}}
   finally{sync.busy=false;syncBadge();if(sync.redraw)redrawIdle();if(typeof renderPushSetup==="function")renderPushSetup();if(sync.failed||sync.waitTyping)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
 }
 function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.checked=false;sync.blocked=false;}
@@ -275,6 +314,10 @@ $("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOStr
 $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{
   const {exportedAt,recoveryReason,...incoming}=externalData.planner(JSON.parse(await file.text())),at=recordTime(exportedAt);
   if(confirm(`이 백업으로 플래너 기록을 바꿀까요?\n백업 파일: ${at?`${at} 백업`:"백업 시각 없음"} · ${recordSummary(incoming)}\n지금 기록: ${recordSummary(state)}\n지금 기록은 이 기기에 보관합니다(동기화 창에서 내려받기).`)){
-    backupRecord(dataSnapshot(),"JSON 복원 전 이 기기 기록");const next={...state,...incoming};normalize(next);save(next);render();alert("백업을 복원했습니다.");
+    backupRecord(dataSnapshot(),"JSON 복원 전 이 기기 기록");const next={...state,...incoming};normalize(next);
+    try{storePlanner(next);setLocalSaveFailed(false);}catch(error){setLocalSaveFailed(true);throw error;}
+    if(connected()&&dataSnapshot()!==sync.base)scheduleSync();if(typeof stockNames==="object")stockNames.remember();
+    render();alert("백업을 복원했습니다.");
   }}catch(err){alert(`복원 실패: ${err.message}`);}e.target.value="";};
+renderLocalSaveWarning();
 function startSync(){ priceStatus();return connected()?syncNow():Promise.resolve(); } // js/start.js에서 부름(모든 파일을 불러온 뒤 시세 표시·동기화 시작)

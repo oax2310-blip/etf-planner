@@ -563,7 +563,7 @@ function openPurchase(id){
 }
 
 
-function statusText(){const s=assetStore.status;return {off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];}
+function statusText(){const s=assetStore.status;return assetStore.localSaveFailed?"이 기기 저장 실패":{off:"이 기기에만 저장 중",pending:"잠시 후 동기화",busy:"동기화 확인 중…",done:`동기화 완료 · ${s.at}`,error:`이 기기 저장됨 · ${s.message}`,choose:"기록 선택 필요 · 이 기기에만 저장 중"}[s.state];}
 function updateStatus(){
   const text=statusText();if(el("purchaseSaveStatus"))el("purchaseSaveStatus").textContent=text;
   el("purchaseSyncDialogStatus").textContent=`분할매수·자산: ${text}`;el("purchaseRecovery").hidden=!assetStore.recovery().length;
@@ -603,7 +603,7 @@ function initialize(){
   const releasePriorityPointer=()=>{if(!priorityPointerDown)return;priorityPointerDown=false;if(redrawLater)redrawIdle();};
   document.addEventListener("pointerup",()=>{if(priorityPointerDown)setTimeout(releasePriorityPointer,0);});
   document.addEventListener("pointercancel",releasePriorityPointer);
-  assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;updateStatus();if(type==="change")redrawIdle();});
+  assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;updateStatus();if(type==="local-save"&&typeof renderLocalSaveWarning==="function")renderLocalSaveWarning();if(type==="change")redrawIdle();});
   for(const key of ["connectRepo","syncNow","disconnectRepo"]){const button=el(key),previous=button.onclick;button.onclick=e=>{previous?.call(button,e);assetStore.refreshConfig();};}
   el("purchaseExport").onclick=()=>downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
   el("purchaseRecovery").onclick=()=>downloadJson(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
@@ -612,7 +612,7 @@ function initialize(){
       const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"분할매수·자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));
       if(confirm(`${names.join("·")} 기록을 이 파일로 바꿀까요? 지금 기록은 이 기기에 보관합니다.`)){assetStore.restore(incoming);alert("복원했습니다.");}}
     catch(error){alert(`복원 실패: ${error.message}`);}e.target.value="";};
-  updateStatus();assetStore.start();
+  updateStatus();if(typeof renderLocalSaveWarning==="function")renderLocalSaveWarning();assetStore.start();
 }
 return {render:renderPurchases,select:selectPurchase,initialize,alertCount:()=>purchaseAlertRules(assetStore.doc,priceDoc()||assetStore.prices).length};
 })();
