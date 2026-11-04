@@ -87,7 +87,7 @@ function savingsMarkup(S,sc,stages){
   const currentYear=savingsCurrentYear,scenarios=S.scenarios.map(scenario=>{const sim=simulateSavings(S,scenario);return {scenario,sim,milestone:savingsMilestone(sim)};}),sim=scenarios.find(x=>x.scenario===sc)?.sim??null;
   const field=(key,label,unit,attrs="")=>`<label class="field"><span>${label}</span><span class="unit-input"><input data-param="${key}" ${unit==="원"?moneyAttrs:key==="growth"||key==="returnRate"?signedNumAttrs:'type="number" step="any" inputmode="decimal"'} value="${unit==="원"?moneyText(sc[key]):escA(sc[key]??"")}" ${attrs}><em>${unit}</em></span>${unit==="원"?`<small class="field-hint" data-savings-result="param-${key}"${finite(sc[key])?"":" hidden"}>${finite(sc[key])?eok(sc[key]):""}</small>`:""}</label>`;
   const spending=sc?savingsCurrentSpending(S,sc):null;
-  const spendingField=spending?`<label class="field savings-current-spending"><span data-savings-result="spending-label">월 사용금액 (${currentYear}년)</span><span class="unit-input"><input data-param="spending" ${moneyAttrs} value="${moneyText(spending.value)}" aria-describedby="savingsSpendingHelp"${spending.readOnly?" readonly":""}><em>원</em></span><small class="field-hint" data-savings-result="param-spending"${spending.value?"":" hidden"}>${spending.value?eok(spending.value):""}</small><small class="savings-spending-help" id="savingsSpendingHelp" data-savings-result="spending-help"${spending.readOnly?"":" hidden"}>올해는 ${spending.age}세 단계 사용금액이 적용됩니다</small></label>`:"";
+  const spendingField=spending?`<label class="field savings-current-spending"><span data-savings-result="spending-label">월 사용금액 (${currentYear}년)</span><span class="unit-input"><input data-param="spending" ${moneyAttrs} value="${moneyText(spending.value)}"${spending.readOnly?' readonly aria-describedby="savingsSpendingHelp"':""}><em>원</em></span><small class="field-hint" data-savings-result="param-spending"${spending.value?"":" hidden"}>${spending.value?eok(spending.value):""}</small><small class="savings-spending-help" id="savingsSpendingHelp" data-savings-result="spending-help"${spending.readOnly?"":" hidden"}>올해는 ${spending.age}세 단계 사용금액이 적용됩니다</small></label>`:"";
   const stageRow=(st,i)=>{
     const applied=savingsStageApplied(S,sc,st);
     const input=(key,label,money=false)=>{
@@ -99,10 +99,10 @@ function savingsMarkup(S,sc,stages){
     return `<div class="plan-line" role="group" aria-labelledby="savings-stage-${i}"><div class="plan-line-head"><strong id="savings-stage-${i}" data-savings-result="stage-title-${i}">${title}</strong><button class="remove" type="button" data-stage-del="${i}" data-savings-result="stage-delete-${i}" aria-label="${remove}">삭제</button></div><div class="plan-line-fields"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${escA(st.age??"")}"></label>${input("salary","월급 (원)",true)}${input("spending","사용금액 (원)",true)}${input("growth","증가율 (%)")}${input("returnRate","수익률 (%)")}</div></div>`;
   };
   const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
-  const compare=scenarios.map(({scenario:x,sim:r})=>{const first=ages.find(a=>a<=(finite(x.endAge)||0)&&r?.at(a)>=5e8);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>{
+  const compare=scenarios.map(({scenario:x,sim:r})=>`<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>{
     const value=r&&a<=(finite(x.endAge)||0)?r.at(a):null;
-    return value===null?"<td>—</td>":`<td${a===first?' class="savings-compare-goal"':""} aria-label="${wonA(value)}${a===first?" · 첫 5억 이상":""}">${savingsCompactWon(value)}</td>`;
-  }).join("")}</tr>`;}).join("");
+    return value===null?"<td>—</td>":`<td aria-label="${wonA(value)}">${savingsCompactWon(value)}</td>`;
+  }).join("")}</tr>`).join("");
   const actual=[...S.actual].filter(a=>ymNum(a.ym)!==null).sort((a,b)=>String(a.ym).localeCompare(String(b.ym))), actualByMonth=new Map(actual.map(a=>[a.ym,a]));
   const actualYears=[...new Set(actual.map(a=>Math.floor(ymNum(a.ym)/12)))], missing=missingActual(S);
   const startYear=finite(S.startYear)??new Date().getFullYear(), startAge=finite(S.startAge)??0;
@@ -116,7 +116,8 @@ function savingsMarkup(S,sc,stages){
   const yearRows=yearData.filter(r=>r.year===currentYear||shownFuture.includes(r)).map(r=>savingsYearHtml(r,{simulated,actualByMonth,missing,currentYear})).join("");
   const pastGaps=missing.filter(ym=>Math.floor(ymNum(ym)/12)<currentYear).length,lastPast=past[past.length-1];
   const pastRange=past.length?`${past[0].year}–${lastPast.year} · ${past.length}년`:"";
-  const pastRows=`<div class="savings-past"${past.length?"":" hidden"}><button class="savings-past-toggle" id="toggleSavingsPast" type="button" data-savings-result="past-head" aria-expanded="${savingsPastOpen}" aria-controls="savingsPastYears" aria-label="지난 기록 ${pastRange} · 빠진 달 ${pastGaps} · ${savingsPastOpen?"접기":"펼치기"}"><span class="savings-past-label"><b>지난 기록</b><span>${pastRange}</span></span><span class="savings-past-missing"${pastGaps?"":" hidden"}>빠진 달 ${pastGaps}</span><b class="savings-past-balance">${lastPast?.end!==null&&lastPast?.end!==undefined?savingsCompactWon(lastPast.end):"—"}</b></button><div class="savings-past-years" id="savingsPastYears"${savingsPastOpen?"":" hidden"}>${past.map(r=>savingsYearHtml(r,{simulated,actualByMonth,missing,currentYear})).join("")}</div></div>`;
+  const pastSummary=`<span class="savings-past-summary"><span class="savings-past-label"><b>지난 기록</b><span>${pastRange}</span></span><b class="savings-past-balance">${lastPast?.end!==null&&lastPast?.end!==undefined?savingsCompactWon(lastPast.end):"—"}</b></span>`;
+  const pastRows=`<div class="savings-past"${past.length?"":" hidden"}><button class="savings-past-toggle" id="toggleSavingsPast" type="button" data-savings-result="past-head" aria-expanded="${savingsPastOpen}" aria-controls="savingsPastYears" aria-label="지난 기록 ${pastRange} · 빠진 달 ${pastGaps} · ${savingsPastOpen?"접기":"펼치기"}">${pastSummary}<span class="savings-past-missing"${pastGaps?"":" hidden"}>빠진 달 ${pastGaps}</span></button><div class="savings-past-years" id="savingsPastYears"${savingsPastOpen?"":" hidden"}>${past.map(r=>savingsYearHtml(r,{simulated,actualByMonth,missing,currentYear})).join("")}</div></div>`;
   const endRow=sim?.rows[sim.rows.length-1], milestone=savingsMilestone(sim), best=earlierSavingsRecord(S.milestoneRecord);
   const canSave=milestone&&(!best||ymNum(milestone.ym)<ymNum(best.ym));
   const progress=sim?sim.last.total/5e8*100:null, fill=progress===null?0:Math.max(0,Math.min(100,progress));
@@ -200,7 +201,7 @@ function updateSavingsResults(changedInput){
   const spending=view.querySelector('[data-param="spending"]'),nextSpending=next.querySelector('[data-param="spending"]');
   if(spending&&nextSpending){
     if(document.activeElement!==spending)spending.value=nextSpending.value;
-    if(nextSpending.hasAttribute("readonly"))spending.setAttribute("readonly","");else spending.removeAttribute("readonly");
+    for(const key of ["readonly","aria-describedby"]){if(nextSpending.hasAttribute(key))spending.setAttribute(key,nextSpending.getAttribute(key));else spending.removeAttribute(key);}
   }
   // 시작/종료 나이로 연도 범위가 바뀌어도 기존 연도의 입력·버튼은 교체하지 않는다.
   const years=view.querySelector(".savings-years"),shown=new Set();
