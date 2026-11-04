@@ -65,6 +65,66 @@ const savingsPaneHtml=(h,name)=>h.html().split(`id="savingsPane${name}"`)[1].spl
 const savingsYearsHtml=h=>savingsPaneHtml(h,'Records').split('<div class="card savings-years">')[1];
 const stageInput=(h,i,key)=>h.inputs().find(x=>x.dataset.stage===String(i)&&x.dataset.k===key);
 const editInput=(x,value)=>{x.value=value;x.onchange();};
+const yearRow=(h,year)=>h.html().split(/<section class="savings-year(?: savings-year-current)?">/).find(x=>x.includes(`data-savings-year="${year}"`))?.split('</section>')[0];
+const yearButton=(h,year)=>h.document.querySelectorAll('[data-savings-year]').find(x=>x.dataset.savingsYear===String(year));
+
+test('저축 연도 상태: 실제·예상·혼합·미기록을 금액 아래에 표시하며 조회로 판정·계산·저장을 바꾸지 않는다',()=>{
+  const data=fixture();Object.assign(data.savings,{startYear:2022,startAge:28,actual:[{ym:'2023-09',total:0},
+    ...Array.from({length:9},(_,i)=>({ym:`2026-${String(i+1).padStart(2,'0')}`,total:100000000+i*1000000}))]});
+  data.savings.scenarios[0].endAge=34;
+  const before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
+  const simulation=()=>JSON.parse(vm.runInContext('JSON.stringify(simulateSavings(doc.savings,doc.savings.scenarios[0]))',h.ctx)),calculated=simulation();
+  for(const [year,note] of [[2022,'기록 없음'],[2023,'실제 · 9월까지'],[2026,'실제 9개월 + 예상'],[2027,'예상 · 12월']]){
+    const row=yearRow(h,year),balance=row.match(/<span class="savings-year-balance">([^]*?)<\/span>/)[1];
+    assert.ok(balance.includes(`<small class="savings-balance-note">${note}</small>`),`${year}: 상태가 title 밖의 글자여야 한다`);
+    assert.ok(yearButton(h,year).getAttribute('aria-label').includes(note));
+    assert.ok(row.includes(`<span>· ${note}</span>`),'펼친 정확 금액에도 같은 판정을 표시한다');
+  }
+  assert.match(yearRow(h,2022),/class="savings-year-balance"><b>—<\/b>/);
+  assert.match(yearRow(h,2023),/class="savings-year-balance"><b>0원<\/b>/,'실제 0원은 미기록과 다르다');
+  h.node('savingsTabRecords').onclick();h.click(2023);h.click(2026);h.render();
+  assert.deepEqual(simulation(),calculated);assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+  data.savings.actual.push({ym:'2026-12',total:127947465});h.render();
+  assert.match(yearRow(h,2026),/class="savings-balance-note">실제 · 12월까지<\/small>/,'12월 실제 기록 뒤에는 혼합이 아닌 실제로 표시한다');
+});
+
+test('저축 연도 금액: 축약 금액의 원은 붙이고 펼친 본문 첫 줄·접근성 이름은 정확한 원 금액을 제공한다',()=>{
+  const data=fixture();data.savings.actual[0].total=127947465;
+  Object.assign(data.savings.scenarios[0],{salary:0,spending:0,growth:0,returnRate:10,giving:10,endAge:34});
+  const before=JSON.stringify(data),h=setup(data),stored=[...h.storage],row=yearRow(h,2025);
+  assert.match(row,/<span class="savings-year-balance"><b>1억 2,795만\u00a0원<\/b>/);
+  assert.match(row,/<div class="savings-year-body" id="savings-year-2025" hidden><p class="savings-year-exact"><span>연말 저축총액 <b>127,947,465원<\/b><\/span><span>· 실제 · 12월까지<\/span><\/p>/);
+  const predicted=yearRow(h,2026);
+  assert.match(predicted,/class="savings-year-balance"><b>1억 3,946만\u00a0원<\/b>/);
+  assert.match(predicted,/class="savings-year-return"[^]*?<b>1,279만\u00a0원<\/b>/);
+  assert.match(predicted,/class="savings-year-giving"[^]*?<b>128만\u00a0원<\/b>/);
+  assert.match(predicted,/연말 저축총액 <b>139,462,737원<\/b><\/span><span>· 예상 · 12월/);
+  assert.equal(yearButton(h,2025).getAttribute('aria-label'),'2025년 · 31세 · 연말 저축총액 127,947,465원 · 실제 · 12월까지 · 월별 기록 펼치기');
+  h.click(2025);assert.equal(yearButton(h,2025).getAttribute('aria-label'),'2025년 · 31세 · 연말 저축총액 127,947,465원 · 실제 · 12월까지 · 월별 기록 접기');
+  h.click(2025);assert.match(yearButton(h,2025).getAttribute('aria-label'),/월별 기록 펼치기$/);
+  h.render();assert.match(yearButton(h,2025).getAttribute('aria-label'),/월별 기록 펼치기$/);
+  assert.match(savingsYearsHtml(h),/<span>연도<\/span><span>연말 저축총액<\/span><span>투자수익<\/span><span title="월급 기부 \+ 투자수익 기부">기부금<\/span>/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+  data.savings.actual[0].total=-127947465;h.render();
+  assert.match(yearRow(h,2025),/<b>−1억 2,795만\u00a0원<\/b>/);
+  assert.match(yearButton(h,2025).getAttribute('aria-label'),/연말 저축총액 -127,947,465원/);
+});
+
+test('나이별 단계: 제목·삭제 이름은 나이와 순서를 구분하고 수정·삭제 뒤에도 맞게 갱신한다',()=>{
+  const data=fixture();data.savings.scenarios[0].stages=[{age:35},{age:40,salary:0},{}];
+  const before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
+  const names=()=>h.document.querySelectorAll('[data-stage-del]').map(b=>b.getAttribute('aria-label'));
+  assert.deepEqual(names(),['35세 단계 삭제','40세 단계 삭제','3번째 단계 삭제']);
+  assert.match(h.html(),/role="group" aria-labelledby="savings-stage-0"><div class="plan-line-head"><strong id="savings-stage-0">35세부터<\/strong><button[^>]*data-stage-del="0"[^>]*>삭제<\/button><\/div><div class="plan-line-fields">/);
+  assert.match(h.html(),/id="savings-stage-2">3번째 단계<\/strong>/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+  editInput(stageInput(h,0,'age'),'45');
+  assert.deepEqual(names(),['40세 단계 삭제','45세 단계 삭제','3번째 단계 삭제']);
+  assert.match(h.html(),/id="savings-stage-1">45세부터<\/strong>/);
+  assert.equal(stageInput(h,0,'salary').value,'0','제목 변경으로 실제 0원 입력을 비우지 않는다');
+  h.document.querySelectorAll('[data-stage-del]')[0].onclick();
+  assert.deepEqual(names(),['45세 단계 삭제','2번째 단계 삭제']);assert.equal(h.saves(),2);
+});
 
 test('나이별 빈칸은 계산에 적용되는 월급·누적 사용금액·비율을 표시하고 조회로 입력·저장·결과를 바꾸지 않는다',()=>{
   const data=fixture(),sc=data.savings.scenarios[0];
@@ -384,8 +444,10 @@ test('저축 연도별: 시스템 현재 연도만 기본 펼침이고 화면 �
   assert.match(h.html(),/class="savings-year savings-year-current"/);
   assert.match(h.html(),/2026년<\/b><small class="savings-year-age">32세<\/small>/);
   const years=savingsYearsHtml(h);
-  assert.doesNotMatch(years,/펼치기|접기|data-savings-fold-action|올해|savings-current-label|실제 마지막 기록 \/ 예상 12월/);
-  assert.match(years,/aria-label="2026년 월별 저축 기록"/);
+  assert.doesNotMatch(years.replace(/<[^>]*>/g,''),/펼치기|접기|올해|실제 마지막 기록 \/ 예상 12월/);
+  assert.doesNotMatch(years,/data-savings-fold-action|savings-current-label/);
+  assert.match(yearButton(h,2026).getAttribute('aria-label'),/^2026년 · 32세 · 연말 저축총액 1,513원 · 예상 · 12월 · 월별 기록 접기$/);
+  h.click(2026);assert.match(yearButton(h,2026).getAttribute('aria-label'),/월별 기록 펼치기$/);
   assert.equal(h.storage.get(key),before);assert.equal(h.saves(),0);
 });
 
