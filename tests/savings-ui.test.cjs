@@ -61,7 +61,8 @@ function setup(data=fixture(),year=2026,shared){
 }
 const openYears=h=>h.state().filter(x=>x[1]).map(x=>x[0]);
 const selectScenario=(h,id)=>{const select=h.node('savingsScenarioSelect');select.value=id;select.onchange();};
-const savingsYearsHtml=h=>h.html().split('<div class="card savings-years">')[1].split('<div class="card savings-details">')[0];
+const savingsPaneHtml=(h,name)=>h.html().split(`id="savingsPane${name}"`)[1].split(/<section id="savingsPane/)[0];
+const savingsYearsHtml=h=>savingsPaneHtml(h,'Records').split('<div class="card savings-years">')[1];
 const stageInput=(h,i,key)=>h.inputs().find(x=>x.dataset.stage===String(i)&&x.dataset.k===key);
 const editInput=(x,value)=>{x.value=value;x.onchange();};
 
@@ -83,7 +84,7 @@ test('나이별 빈칸은 계산에 적용되는 월급·누적 사용금액·�
     for(const k of ['salary','spending','growth','returnRate'])assert.equal(stageInput(h,i,k).value,'','적용값을 입력값으로 채우지 않는다');
   }
   assert.doesNotMatch(h.html(),/placeholder="그대로"/);assert.match(h.html(),/회색은 적용값/);
-  h.node('toggleSavingsAssumptions').onclick();h.render();selectScenario(h,'other');selectScenario(h,'base');
+  h.node('savingsTabAssumptions').onclick();h.render();selectScenario(h,'other');selectScenario(h,'base');
   assert.deepEqual(simulation(),result);assert.equal(JSON.stringify(data),before);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
 });
 
@@ -128,13 +129,13 @@ test('저축 요약: 현재 5억 달성 월·연도 나이와 과거 최단 기�
   const data=milestoneFixture(),before=JSON.stringify(data),h=setup(data),stored=h.storage.get(key);
   assert.doesNotMatch(h.html(),/40세 말 \(예상\)/);
   assert.match(h.html(),/class="savings-goal-date"[^>]*>2031\.01 <span class="savings-milestone-age">· 37세<\/span><\/span>/);
-  assert.match(h.html(),/과거 최단 기록<\/span><div><b>2032\.01 <span class="savings-milestone-age">· 38세<\/span><\/b>/);assert.match(h.html(),/id="saveSavingsMilestone"/);
+  assert.match(h.html(),/목표 도달 최단 기록<\/h2><div><b>2032\.01 <span class="savings-milestone-age">· 38세<\/span><\/b>/);assert.match(h.html(),/id="saveSavingsMilestone"/);
   assert.equal((h.html().match(/class="card savings-summary"/g)||[]).length,1);
   assert.equal((h.html().match(/class="savings-goal"/g)||[]).length,1);assert.doesNotMatch(h.html(),/class="metric(?: |")/);
   assert.equal(h.node('savingsScenarioSelect').value,'base');
   selectScenario(h,'other');assert.equal(h.node('savingsScenarioSelect').value,'other');
   assert.match(h.html(),/class="savings-goal-date"[^>]*>2031\.02 <span class="savings-milestone-age">· 37세<\/span><\/span>/);
-  assert.match(h.html(),/과거 최단 기록<\/span><div><b>2032\.01 <span class="savings-milestone-age">· 38세<\/span><\/b>/);
+  assert.match(h.html(),/목표 도달 최단 기록<\/h2><div><b>2032\.01 <span class="savings-milestone-age">· 38세<\/span><\/b>/);
   assert.equal(JSON.stringify(data),before);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
 });
 
@@ -144,9 +145,9 @@ test('저축 요약: 저장 버튼은 현재 예상 월을 저장하며 늦어�
   assert.doesNotMatch(h.html(),/id="saveSavingsMilestone"/);
   selectScenario(h,'other');assert.match(h.html(),/class="savings-goal-date"[^>]*>2031\.02 <span class="savings-milestone-age">· 37세<\/span><\/span>/);
   data.savings.scenarios[1].salary=0;data.savings.startAge=32;h.render();
-  assert.match(h.html(),/기간 내 미도달/);assert.match(h.html(),/과거 최단 기록<\/span><div><b>2031\.01 <span class="savings-milestone-age">· 37세<\/span><\/b>/);
+  assert.match(h.html(),/기간 내 미도달/);assert.match(h.html(),/목표 도달 최단 기록<\/h2><div><b>2031\.01 <span class="savings-milestone-age">· 37세<\/span><\/b>/);
   assert.doesNotMatch(h.html(),/id="saveSavingsMilestone"/);assert.equal(h.saves(),1);
-  const reloaded=setup(JSON.parse(h.storage.get(key)));assert.match(reloaded.html(),/과거 최단 기록<\/span><div><b>2031\.01 <span class="savings-milestone-age">· 37세<\/span><\/b>/);
+  const reloaded=setup(JSON.parse(h.storage.get(key)));assert.match(reloaded.html(),/목표 도달 최단 기록<\/h2><div><b>2031\.01 <span class="savings-milestone-age">· 37세<\/span><\/b>/);
 });
 
 test('저축 요약: 실제 기록 없음·이미 달성·나이 정보 없는 옛 기록을 구분하고 조회로 초기 기록을 만들지 않는다',()=>{
@@ -154,7 +155,7 @@ test('저축 요약: 실제 기록 없음·이미 달성·나이 정보 없는 �
   const h=setup(data),before=JSON.stringify(data);assert.match(h.html(),/class="savings-goal-date"[^>]*>실제 기록 없음<\/span>/);assert.match(h.html(),/저장된 기록 없음/);
   assert.equal(JSON.stringify(data),before);assert.equal(h.saves(),0);
   data.savings.actual=[{ym:'2030-12',total:500000000}];h.render();assert.match(h.html(),/2030\.12 <span class="savings-milestone-age">· 36세<\/span>/);assert.match(h.html(),/실제 월말 기록 · 이미 달성/);
-  data.savings.milestoneRecord={ym:'2030-11'};h.render();assert.match(h.html(),/과거 최단 기록<\/span><div><b>2030\.11<\/b>/,'기록에 나이가 없으면 추정해서 붙이지 않는다');
+  data.savings.milestoneRecord={ym:'2030-11'};h.render();assert.match(h.html(),/목표 도달 최단 기록<\/h2><div><b>2030\.11<\/b>/,'기록에 나이가 없으면 추정해서 붙이지 않는다');
 });
 
 test('저축 목표 바: 실제 금액의 진행률은 그대로 읽히고 채움은 0~100%, 백분율 위치는 절반까지만 이동한다',()=>{
@@ -199,7 +200,7 @@ test('저축 목표 바: 시나리오 예상과 별개로 마지막 실제 기�
 
 test('저축 상세 탭: DOM과 입력값을 유지하며 탭 선택·키보드 이동·다시 그리기는 저장하지 않는다',()=>{
   const data=fixture(),before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
-  const names=['Overview','Assumptions','Records'];
+  const names=['Overview','Records','Assumptions'];
   const check=active=>{
     for(const name of names){
       const button=h.node(`savingsTab${name}`),pane=h.node(button.getAttribute('aria-controls'));
@@ -208,19 +209,22 @@ test('저축 상세 탭: DOM과 입력값을 유지하며 탭 선택·키보드 
       assert.match(h.html(),new RegExp(`id="savingsPane${name}"`));
     }
   };
-  check('Assumptions');
+  check('Overview');
   const input=h.inputs().find(x=>x.dataset.param==='salary'),actual=h.inputs().find(x=>x.dataset.actual==='2026-01');
   for(const name of names){h.node(`savingsTab${name}`).onclick();check(name);assert.equal(h.inputs().find(x=>x.dataset.param==='salary'),input);assert.equal(h.inputs().find(x=>x.dataset.actual==='2026-01'),actual);}
-  let prevented=false;h.node('savingsTabRecords').onkeydown({key:'ArrowRight',preventDefault(){prevented=true;}});
+  let prevented=false;h.node('savingsTabAssumptions').onkeydown({key:'ArrowRight',preventDefault(){prevented=true;}});
   assert.equal(prevented,true);check('Overview');assert.equal(h.document.activeElement,h.node('savingsTabOverview'));
+  for(const [from,key,to] of [['Overview','ArrowRight','Records'],['Records','ArrowRight','Assumptions'],['Overview','ArrowLeft','Assumptions'],['Assumptions','Home','Overview'],['Overview','End','Assumptions'],['Assumptions','ArrowLeft','Records'],['Records','Home','Overview']]){
+    h.node(`savingsTab${from}`).onkeydown({key,preventDefault(){}});check(to);assert.equal(h.document.activeElement,h.node(`savingsTab${to}`));
+  }
   h.render();check('Overview');
   assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
-  const reloaded=setup(JSON.parse(before),2026,h.storage);assert.equal(reloaded.node('savingsTabAssumptions').getAttribute('aria-selected'),'true','탭 선택은 새로고침하면 기본 가정 탭으로 돌아간다');
+  const reloaded=setup(JSON.parse(before),2026,h.storage);assert.equal(reloaded.node('savingsTabOverview').getAttribute('aria-selected'),'true','탭 선택은 새로고침하면 실제 기록 유무로 다시 정한다');
 });
 
 test('저축 상세 탭: 입력을 편집하다 첫 터치로 이동하면 변경을 한 번 저장하고 선택한 탭을 연다',()=>{
   const data=fixture(),h=setup(data),storedUi=h.storage.get('etf-planner-assets-ui');
-  h.node('toggleSavingsAssumptions').onclick();
+  h.node('savingsTabAssumptions').onclick();
   const salary=h.inputs().find(x=>x.dataset.param==='salary'),records=h.node('savingsTabRecords');
   salary.focus();salary.value='450';
   let prevented=false;records.onpointerdown({button:0,preventDefault(){prevented=true;}});
@@ -238,38 +242,105 @@ test('저축 상세 탭: 입력을 편집하다 첫 터치로 이동하면 변�
   assert.equal(h.storage.get('etf-planner-assets-ui'),storedUi);
 });
 
-test('저축 가정 CTA와 접힌 상세: 다른 탭에서 편집을 열 수 있고 펼침 상태는 기록에 저장하지 않는다',()=>{
+test('저축 기본 탭: 유효한 실제 총액이 있으면 개요, 없으면 기록이며 0원도 실제 기록이다',()=>{
+  for(const [actual,tab] of [[[],'Records'],[[{ym:'2025-12',total:null}],'Records'],[[{ym:'2025-12',total:''}],'Records'],[[{ym:'2025-12',total:'invalid'}],'Records'],[[{ym:'invalid',total:100}],'Records'],[[{ym:'2025-12',total:0}],'Overview'],[[{ym:'2025-12',total:1000}],'Overview']]){
+    const data=fixture();data.savings.actual=actual;const before=JSON.stringify(data),h=setup(data);
+    assert.equal(h.node(`savingsTab${tab}`).getAttribute('aria-selected'),'true');
+    assert.deepEqual([...h.html().matchAll(/role="tab" id="savingsTab(\w+)"/g)].map(m=>m[1]),['Overview','Records','Assumptions']);
+    h.node('savingsTabAssumptions').onclick();h.render();selectScenario(h,'other');
+    assert.equal(h.node('savingsTabAssumptions').getAttribute('aria-selected'),'true');
+    assert.equal(JSON.stringify(data),before);assert.equal(h.saves(),0);
+    const reloaded=setup(JSON.parse(before),2026,h.storage);assert.equal(reloaded.node(`savingsTab${tab}`).getAttribute('aria-selected'),'true');
+  }
+});
+
+test('저축 탭 구조: 요약만 탭 위에 두고 개요·가정·기록 내용은 해당 패널 안에 둔다',()=>{
+  const h=setup(milestoneFixture()),overview=savingsPaneHtml(h,'Overview'),assumptions=savingsPaneHtml(h,'Assumptions'),records=savingsPaneHtml(h,'Records');
+  assert.ok(h.html().indexOf('class="card savings-summary"')<h.html().indexOf('role="tablist"'));
+  assert.match(overview,/class="card savings-future"[^]*장기 예상 자산[^]*60세 말 · 2054\.12[^]*현재 시나리오의 월말 자산 기준[^]*시나리오 비교[^]*목표 도달 최단 기록/);
+  assert.match(overview,/지금 예상이 저장된 시점보다 빠를 때 저장할 수 있습니다/);
+  assert.doesNotMatch(overview,/<details/);
+  assert.match(assumptions,/data-param="salary"[^]*계산 방식/);assert.match(records,/연도별 기록/);
+  for(const content of ['장기 예상 자산','목표 도달 최단 기록','계산 방식']){
+    assert.equal(h.html().split(content).length-1,1);
+  }
+  assert.doesNotMatch(assumptions+records,/장기 예상 자산|목표 도달 최단 기록/);
+  assert.doesNotMatch(overview+records,/계산 방식/);
+  // 마지막 패널의 닫힘 뒤에 카드나 편집 버튼이 남지 않는다.
+  assert.match(h.html(),/<\/div>\s*<\/section>\s*$/);
+  assert.doesNotMatch(h.html(),/data-savings-setting|toggleSavingsAssumptions|가정 수정하기|가정 접기|data-savings-detail="future"|과거 최단 기록/);
+  for(const name of ['Overview','Records','Assumptions']){
+    h.node(`savingsTab${name}`).onclick();
+    assert.equal(['Overview','Records','Assumptions'].filter(x=>!h.node(`savingsPane${x}`).hidden).join(),name);
+  }
+  assert.equal(h.saves(),0);
+});
+
+test('저축 가정: 입력 묶음을 바로 보여 주고 계산 방식만 기본 접힘이며 삭제는 둘 이상일 때 맨 아래에 있다',()=>{
   const data=fixture(),before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
-  const action=()=>h.node('toggleSavingsAssumptions').querySelector('[data-savings-assumptions-action]').textContent;
-  assert.equal(h.node('savingsAssumptionsBody').hidden,true);assert.equal(action(),'가정 수정하기');
-  h.node('savingsTabRecords').onclick();h.node('toggleSavingsAssumptions').onclick();
-  assert.equal(h.node('savingsPaneAssumptions').hidden,false);assert.equal(h.node('savingsPaneRecords').hidden,true);
-  assert.equal(h.node('savingsAssumptionsBody').hidden,false);assert.equal(h.node('toggleSavingsAssumptions').getAttribute('aria-expanded'),'true');assert.equal(action(),'가정 접기');
-  const detail=h.document.querySelectorAll('[data-savings-detail]').find(x=>x.dataset.savingsDetail==='future');
-  assert.ok(detail);assert.equal(detail.open,false);detail.open=true;detail.ontoggle();h.render();
-  assert.equal(h.document.querySelectorAll('[data-savings-detail]').find(x=>x.dataset.savingsDetail==='future').open,true);
-  assert.equal(h.node('savingsAssumptionsBody').hidden,false);h.node('toggleSavingsAssumptions').onclick();
-  assert.equal(h.node('savingsAssumptionsBody').hidden,true);assert.equal(h.node('toggleSavingsAssumptions').getAttribute('aria-expanded'),'false');assert.equal(action(),'가정 수정하기');
+  h.node('savingsTabAssumptions').onclick();assert.equal(h.node('savingsAssumptionsBody').hidden,false);
+  const pane=savingsPaneHtml(h,'Assumptions');
+  assert.match(pane,/기본<\/h2>[^]*data-param="name"[^]*data-base="startYear"[^]*data-base="startAge"[^]*data-param="endAge"[^]*월급·지출<\/h2>[^]*data-param="salary"[^]*data-param="giving"[^]*data-param="spending"[^]*data-param="spendingYear"[^]*data-param="growth"[^]*수익<\/h2>[^]*data-param="returnRate"[^]*나이별 변경[^]*메모[^]*계산 방식[^]*id="deleteScenario"/);
+  const detail=()=>h.document.querySelectorAll('[data-savings-detail]').find(x=>x.dataset.savingsDetail==='method');
+  assert.equal(detail().open,false);detail().open=true;detail().ontoggle();h.render();
+  assert.equal(detail().open,true);assert.equal(h.node('savingsAssumptionsBody').hidden,false);
+  h.node('savingsTabOverview').onclick();h.node('savingsTabAssumptions').onclick();
+  assert.equal(detail().open,true);assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+  const single=fixture();single.savings.scenarios.length=1;
+  assert.doesNotMatch(setup(single).html(),/id="deleteScenario"/);
+});
+
+test('저축 미기록 안내: 기록 입력 버튼은 기록 탭으로만 이동하며 조회·재렌더·이동은 저장하지 않는다',()=>{
+  const data=fixture();data.savings.actual=[];const before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
+  assert.match(h.html(),/id="enterSavingsRecord"[^>]*>기록 입력<\/button>/);
+  assert.doesNotMatch(h.html(),/기록 탭에서/);
+  h.node('savingsTabOverview').onclick();h.node('enterSavingsRecord').onclick();
+  assert.equal(h.node('savingsPaneRecords').hidden,false);assert.equal(h.document.activeElement,h.node('savingsTabRecords'));
+  h.render();assert.equal(h.node('savingsTabRecords').getAttribute('aria-selected'),'true');
   assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
 });
 
-test('저축 설정 줄: 펼친 상태에서 다시 누르면 맨 아래 버튼 없이 바로 접고 기록은 바꾸지 않는다',()=>{
-  const data=fixture(),before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
-  const rows=()=>h.document.querySelectorAll('[data-savings-setting]');
-  const state=()=>[h.node('savingsAssumptionsBody').hidden,...rows().map(r=>r.getAttribute('aria-expanded'))];
-  assert.equal(rows().length,3);assert.deepEqual(state(),[true,'false','false','false']);
-  assert.ok(rows().every(r=>r.getAttribute('aria-controls')==='savingsAssumptionsBody'));
-  assert.match(h.html(),/data-savings-setting-action>설정</);
-  const salary=rows().find(r=>r.dataset.savingsSetting==='salary');salary.onclick();
-  assert.deepEqual(state(),[false,'true','true','true']);
-  assert.equal(h.document.activeElement,h.inputs().find(x=>x.dataset.param==='salary'),'열 때는 해당 입력으로 이동한다');
-  assert.equal(h.node('toggleSavingsAssumptions').getAttribute('aria-expanded'),'true');
-  h.render();assert.match(h.html(),/data-savings-setting-action>접기</,'다시 그려도 펼친 줄은 접기로 표시한다');
-  rows().find(r=>r.dataset.savingsSetting==='returnRate').onclick();
-  assert.deepEqual(state(),[true,'false','false','false']);
-  assert.equal(h.node('toggleSavingsAssumptions').getAttribute('aria-expanded'),'false');
-  assert.equal(h.node('deleteScenario').hidden,true);
+test('저축 기록 입력 버튼: 가정 편집 중 첫 터치도 값을 한 번 저장하고 기록 탭으로 이동한다',()=>{
+  const data=fixture();data.savings.actual=[];const h=setup(data);
+  h.node('savingsTabAssumptions').onclick();
+  const salary=h.inputs().find(x=>x.dataset.param==='salary');salary.focus();salary.value='450';
+  const button=h.node('enterSavingsRecord');let prevented=false;
+  button.onpointerdown({button:0,preventDefault(){prevented=true;}});assert.equal(prevented,true);
+  button.onclick();assert.equal(h.saves(),1);assert.equal(data.savings.scenarios[0].salary,450);
+  assert.equal(h.node('savingsPaneRecords').hidden,false);assert.equal(h.document.activeElement,h.node('savingsTabRecords'));
+  h.render();assert.equal(h.node('savingsTabRecords').getAttribute('aria-selected'),'true');assert.equal(h.saves(),1);
+});
+
+test('저축 비교 표: 미기록 연도·종료 나이 밖은 —, 실제 0원은 0원이며 축약 금액의 정확한 원 금액을 읽을 수 있다',()=>{
+  const data=fixture();data.savings.startAge=30;
+  data.savings.actual=[{ym:'2035-12',total:0},{ym:'2040-12',total:123456789}];
+  data.savings.scenarios[1].endAge=40;const before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
+  const rows=[...savingsPaneHtml(h,'Overview').matchAll(/<tr[^>]*><th scope="row">([^]*?)<\/tr>/g)].map(m=>m[1]);
+  assert.equal(rows.length,2);
+  assert.match(rows[0],/^기본<\/th><td>—<\/td><td aria-label="0원">0원<\/td><td aria-label="123,456,789원">1억 2,346만 원<\/td>/);
+  assert.match(rows[1],/^비교<\/th><td>—<\/td><td aria-label="0원">0원<\/td>(?:<td>—<\/td>){3}$/);
   assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+});
+
+test('저축 빈 화면과 새로 시작: 기존 초기 데이터 필드로 한 번만 저장하고 기록 탭의 현재 연도를 펼친다',()=>{
+  const data={version:1},h=setup(data),stored=[...h.storage];
+  assert.match(h.html(),/저축 계획을 시작하세요/);
+  assert.match(h.html(),/매달 말 저축총액을 기록하면 목표 5억 도달 시점을 예상합니다\. 다른 기기에서 쓰던 기록은 동기화하면 불러옵니다\./);
+  h.render();assert.deepEqual(data,{version:1});assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+  h.node('startSavings').onclick();
+  assert.deepEqual(JSON.parse(JSON.stringify(data.savings)),{savedAt:'',startYear:2026,startAge:30,actual:[],scenarios:[{id:data.savings.scenarios[0].id,name:'기본',salary:0,giving:0,spending:0,spendingYear:2026,growth:2,returnRate:5,endAge:60,stages:[]}]});
+  assert.ok(data.savings.scenarios[0].id);assert.equal(h.saves(),1);
+  assert.equal(h.node('savingsPaneRecords').hidden,false);assert.deepEqual(openYears(h),[2026]);
+  h.node('savingsTabAssumptions').onclick();h.render();assert.equal(h.saves(),1);
+});
+
+test('저축 사용자 문자열: 시나리오 이름과 메모를 모든 위치에서 이스케이프한다',()=>{
+  const data=fixture();Object.assign(data.savings.scenarios[0],{name:'<img src=x onerror="alert(1)">',note:'</textarea><script>alert(1)</script>&'});
+  const before=JSON.stringify(data),h=setup(data);
+  assert.doesNotMatch(h.html(),/<img src=x|<script>alert/);
+  assert.match(h.html(),/&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  assert.match(h.html(),/&lt;\/textarea&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;&amp;/);
+  assert.equal(JSON.stringify(data),before);assert.equal(h.saves(),0);
 });
 
 test('저축 연도별: 투자수익은 기부 전으로 표시하고 기부·연말 잔액·저장 기록은 유지한다',()=>{
