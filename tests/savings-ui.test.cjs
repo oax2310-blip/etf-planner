@@ -97,6 +97,65 @@ const stageInput=(h,i,key)=>h.inputs().find(x=>x.dataset.stage===String(i)&&x.da
 const editInput=(x,value)=>{x.value=value;x.onchange();};
 const yearRow=(h,year)=>h.html().split(/<section class="savings-year(?: savings-year-current)?">/).find(x=>x.includes(`data-savings-year="${year}"`))?.split('</section>')[0];
 const yearButton=(h,year)=>h.document.querySelectorAll('[data-savings-year]').find(x=>x.dataset.savingsYear===String(year));
+const paramInput=(h,key)=>h.inputs().find(x=>x.dataset.param===key);
+const arrivalButton=(h,id)=>h.document.querySelectorAll('[data-savings-scenario]').find(x=>x.dataset.savingsScenario===id);
+const spendingNow=h=>vm.runInContext('Math.round((()=>{const s=doc.savings,c=s.scenarios.find(x=>x.id===ui.scenario)||s.scenarios[0],months=s.actual.filter(a=>finite(a.total)!==null).map(a=>ymNum(a.ym)).filter(n=>n!==null),y=finite(s.startYear)??(months.length?Math.floor(Math.min(...months)/12):new Date().getFullYear());return savingsSpending(c,y,finite(s.startAge)??0,months.length?Math.floor(Math.max(...months)/12):y)(new Date().getFullYear());})())',h.ctx);
+
+test('지난 기록 묶음: 기본 접힘·범위·지난 빠진 달만·지난해 금액을 표시하며 조회·토글·새로고침은 저장하지 않는다',()=>{
+  const data=fixture();Object.assign(data.savings,{startYear:2024,startAge:30,actual:[{ym:'2024-12',total:100000000},{ym:'2025-02',total:110000000},{ym:'2025-12',total:125000000},{ym:'2026-03',total:130000000}]});
+  const before=JSON.stringify(data),h=setup(data),stored=[...h.storage],button=h.node('toggleSavingsPast');
+  assert.equal(button.getAttribute('aria-expanded'),'false');assert.equal(button.getAttribute('aria-controls'),'savingsPastYears');
+  assert.match(button.getAttribute('aria-label'),/지난 기록 2024–2025 · 2년 · 빠진 달 10/);
+  assert.equal(button.querySelector('.savings-past-balance').textContent,'1억 2,500만 원');
+  assert.equal(button.querySelector('.savings-past-missing').textContent,'빠진 달 10');assert.equal(h.node('savingsPastYears').hidden,true);
+  assert.deepEqual(h.node('savingsPastYears').querySelectorAll('[data-savings-year]').map(x=>x.dataset.savingsYear),['2024','2025']);
+  assert.equal(yearButton(h,2026).closest('section').parentElement.className,'card savings-years');assert.deepEqual(openYears(h),[2026]);
+  const input=h.inputs().find(x=>x.dataset.actual==='2025-01');button.click();h.click(2025);
+  assert.equal(button.getAttribute('aria-expanded'),'true');assert.equal(h.node('savingsPastYears').hidden,false);assert.equal(h.inputs().find(x=>x.dataset.actual==='2025-01'),input);
+  h.node('savingsTabRecords').click();h.render();assert.equal(h.node('savingsPastYears').hidden,false);
+  const reload=setup(JSON.parse(before),2026,h.storage);assert.equal(reload.node('savingsPastYears').hidden,true);assert.deepEqual(openYears(reload),[2026]);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+  const css=fs.readFileSync(path.join(root,'css/assets.css'),'utf8');assert.match(css,/\.savings-past-missing\{[^}]*color:var\(--warn\)/);
+});
+
+test('지난 기록 묶음: 현재 연도 이전이 없으면 숨기고 새해에는 지난해를 묶어 새해 행을 펼친다',()=>{
+  const data=fixture();data.savings.startYear=2026;data.savings.actual=[{ym:'2026-12',total:1000}];
+  const h=setup(data),stored=[...h.storage];assert.equal(h.document.querySelector('.savings-past').hidden,true);
+  h.setYear(2027);h.tick();assert.equal(h.document.querySelector('.savings-past').hidden,false);assert.equal(h.node('savingsPastYears').hidden,true);
+  assert.equal(yearButton(h,2026).closest('section').parentElement,h.node('savingsPastYears'));assert.deepEqual(openYears(h),[2027]);
+  h.node('toggleSavingsPast').click();h.setYear(2028);h.events.get('window:focus')();
+  assert.equal(h.node('toggleSavingsPast').getAttribute('aria-expanded'),'false');assert.match(h.node('toggleSavingsPast').textContent,/2026–2027 · 2년/);
+  assert.deepEqual(openYears(h),[2028]);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+});
+
+test('지난 기록 묶음: 모든 지난 연도를 담고 모든 연도 보기의 줄임과 개수는 미래 연도에만 적용한다',()=>{
+  const data=fixture();Object.assign(data.savings,{startYear:2000,startAge:10,actual:[{ym:'2000-12',total:1000}]});
+  const h=setup(data),past=h.node('savingsPastYears');assert.equal(past.querySelectorAll('[data-savings-year]').length,26);
+  assert.equal(h.node('toggleYears').textContent,'모든 연도 보기 (24년)');
+  const future=()=>h.state().filter(([y])=>y>2026).map(([y])=>y),short=future();assert.ok(short.length<24);
+  h.node('toggleYears').click();assert.equal(future().length,24);assert.equal(h.node('savingsPastYears').querySelectorAll('[data-savings-year]').length,26);assert.equal(h.node('savingsPastYears').hidden,true);
+  h.node('toggleYears').click();assert.deepEqual(future(),short);assert.deepEqual(openYears(h),[2026]);assert.equal(h.saves(),0);
+});
+
+test('지난 묶음 월 입력 뒤 첫 터치: 복사 저장 뒤에도 다른 연도 버튼과 내부 대상을 유지하고 저장·펼침을 한 번 실행한다',()=>{
+  for(const targetYear of [2025,2027]){
+    const h=setup(fixture(),2026,undefined,{cloneOnSave:true});h.node('savingsTabRecords').click();h.node('toggleSavingsPast').click();h.click(2025);
+    const input=h.inputs().find(x=>x.dataset.actual==='2025-01'),target=yearButton(h,targetYear),touch=target.querySelector('b'),before=h.node('toggleSavingsPast');
+    input.focus();input.value='123456789';target.focus();assert.equal(h.saves(),1);assert.equal(target.querySelector('b'),touch);assert.equal(h.node('toggleSavingsPast'),before);
+    target.onclick();h.flush();assert.equal(h.store.doc.savings.actual.find(x=>x.ym==='2025-01').total,123456789);assert.equal(h.saves(),1);
+    assert.equal(target.getAttribute('aria-expanded'),targetYear===2025?'false':'true');assert.equal(h.node('savingsPastYears').hidden,false);
+    editInput(h.inputs().find(x=>x.dataset.actual==='2025-12'),'150000000');assert.equal(before.querySelector('.savings-past-balance').textContent,'1억 5,000만 원');
+    assert.equal(before.querySelector('.savings-past-missing').textContent,'빠진 달 10');assert.equal(h.saves(),2);
+  }
+});
+
+test('지난 기록 부분 갱신: 시작 연도 변경으로 묶음을 추가·숨겨도 기존 입력과 버튼을 교체하지 않는다',()=>{
+  const data=fixture();data.savings.startYear=2026;data.savings.actual=[{ym:'2026-12',total:1000}];const h=setup(data),view=h.node('savingsView');
+  const input=paramInput(h,'salary'),button=yearButton(h,2026),pastButton=h.node('toggleSavingsPast'),start=h.inputs().find(x=>x.dataset.base==='startYear');
+  editInput(start,'2024');assert.equal(view.querySelector('.savings-past').hidden,false);assert.deepEqual(h.node('savingsPastYears').querySelectorAll('[data-savings-year]').map(x=>x.dataset.savingsYear),['2024','2025']);
+  pastButton.click();editInput(start,'2026');assert.equal(view.querySelector('.savings-past').hidden,true);
+  assert.equal(paramInput(h,'salary'),input);assert.equal(yearButton(h,2026),button);assert.equal(h.node('toggleSavingsPast'),pastButton);assert.equal(h.saves(),2);
+});
 
 test('저축 입력 확정: 저장 알림과 문서 복사 뒤에도 입력·버튼·버튼 안의 터치 대상 노드를 유지한다',()=>{
   const data=fixture();data.savings.scenarios[0].stages=[{age:35},{age:40}];
@@ -206,7 +265,7 @@ test('저축 입력 중 외부 문서 교체: 초점·입력값을 유지하고 
   assert.equal(h.store.doc.savings.scenarios[0].growth,7);assert.equal(h.saves(),1);assert.equal(vm.runInContext('redrawLater',h.ctx),true);
 });
 
-test('저축 연도 상태: 실제·예상·혼합·미기록을 금액 아래에 표시하며 조회로 판정·계산·저장을 바꾸지 않는다',()=>{
+test('저축 연도 상태: 요약 상태 줄 없이 예상 금액만 흐리게 구분하고 접근성 이름·본문에 판정을 유지한다',()=>{
   const data=fixture();Object.assign(data.savings,{startYear:2022,startAge:28,actual:[{ym:'2023-09',total:0},
     ...Array.from({length:9},(_,i)=>({ym:`2026-${String(i+1).padStart(2,'0')}`,total:100000000+i*1000000}))]});
   data.savings.scenarios[0].endAge=34;
@@ -214,7 +273,8 @@ test('저축 연도 상태: 실제·예상·혼합·미기록을 금액 아래�
   const simulation=()=>JSON.parse(vm.runInContext('JSON.stringify(simulateSavings(doc.savings,doc.savings.scenarios[0]))',h.ctx)),calculated=simulation();
   for(const [year,note] of [[2022,'기록 없음'],[2023,'실제 · 9월까지'],[2026,'실제 9개월 + 예상'],[2027,'예상 · 12월']]){
     const row=yearRow(h,year),balance=row.match(/<span class="savings-year-balance">([^]*?)<\/span>/)[1];
-    assert.ok(balance.includes(`<small class="savings-balance-note">${note}</small>`),`${year}: 상태가 title 밖의 글자여야 한다`);
+    assert.doesNotMatch(balance,/<small|실제|예상|기록 없음/);
+    assert.equal(yearButton(h,year).className.includes('savings-year-predicted'),year>=2026);
     assert.ok(yearButton(h,year).getAttribute('aria-label').includes(note));
     assert.ok(row.includes(`<span>· ${note}</span>`),'펼친 정확 금액에도 같은 판정을 표시한다');
   }
@@ -223,7 +283,13 @@ test('저축 연도 상태: 실제·예상·혼합·미기록을 금액 아래�
   h.node('savingsTabRecords').onclick();h.click(2023);h.click(2026);h.render();
   assert.deepEqual(simulation(),calculated);assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
   data.savings.actual.push({ym:'2026-12',total:127947465});h.render();
-  assert.match(yearRow(h,2026),/class="savings-balance-note">실제 · 12월까지<\/small>/,'12월 실제 기록 뒤에는 혼합이 아닌 실제로 표시한다');
+  assert.doesNotMatch(yearButton(h,2026).outerHTML,/savings-year-predicted|savings-balance-note/);
+  assert.match(yearButton(h,2026).getAttribute('aria-label'),/실제 · 12월까지/,'12월 실제 기록 뒤에는 혼합이 아닌 실제로 표시한다');
+  assert.equal(h.html().split('흐린 금액은 예상').length-1,1);
+  const css=fs.readFileSync(path.join(root,'css/assets.css'),'utf8');
+  assert.match(css,/\.savings-year-predicted \.savings-year-balance b[^}]*color:var\(--text-2\)/);
+  assert.match(css,/\.savings-year-toggle \.savings-year-balance[^}]*white-space:nowrap/);
+  assert.doesNotMatch(h.html(),/savings-balance-note/);
 });
 
 test('저축 연도 금액: 축약 금액의 원은 붙이고 펼친 본문 첫 줄·접근성 이름은 정확한 원 금액을 제공한다',()=>{
@@ -291,14 +357,14 @@ test('나이별 적용값은 기존 기본 가정·앞 단계·나이 변경과 
   const data=fixture(),sc=data.savings.scenarios[0];sc.stages=[{age:32},{age:34}];
   const h=setup(data),param=k=>h.inputs().find(x=>x.dataset.param===k);
   editInput(param('salary'),'200');editInput(param('spending'),'100');editInput(param('growth'),'10');editInput(param('returnRate'),'4.125');
-  assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['200','133','10','4.125']);
-  assert.equal(stageInput(h,1,'spending').title,'적용값: 133.10000000000005원','원 미만 정밀값도 반올림하지 않은 원래 계산값에서 조회한다');
+  assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['200','121','10','4.125']);
+  assert.equal(stageInput(h,1,'spending').title,'적용값: 121.00000000000003원','원 미만 정밀값도 반올림하지 않은 원래 계산값에서 조회한다');
   editInput(stageInput(h,0,'salary'),'0');editInput(stageInput(h,0,'spending'),'50');editInput(stageInput(h,0,'growth'),'20');editInput(stageInput(h,0,'returnRate'),'-2.345');
   assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['0','72','20','-2.345']);
-  editInput(stageInput(h,0,'spending'),'');assert.equal('spending' in sc.stages[0],false);assert.equal(stageInput(h,1,'spending').placeholder,'173');
+  editInput(stageInput(h,0,'spending'),'');assert.equal('spending' in sc.stages[0],false);assert.equal(stageInput(h,1,'spending').placeholder,'144');
   editInput(stageInput(h,0,'salary'),'');assert.equal('salary' in sc.stages[0],false);assert.equal(stageInput(h,1,'salary').placeholder,'200');
   editInput(stageInput(h,0,'age'),'35');
-  assert.equal(sc.stages[0].age,34);assert.equal(stageInput(h,0,'age').value,'35');assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['200','133','10','4.125']);
+  assert.equal(sc.stages[0].age,34);assert.equal(stageInput(h,0,'age').value,'35');assert.deepEqual(['salary','spending','growth','returnRate'].map(k=>stageInput(h,1,k).placeholder),['200','121','10','4.125']);
   assert.equal(h.saves(),11,'기존 입력 변경에만 저장한다');
 });
 
@@ -323,6 +389,105 @@ const milestoneFixture=()=>{
   data.savings.scenarios.forEach((sc,i)=>Object.assign(sc,{salary:i?500000:1000000,giving:0,spending:0,growth:0,returnRate:0}));
   data.savings.milestoneRecord={ym:'2032-01',age:38};return data;
 };
+
+test('5억 도달 목록: 요약과 같은 연월·나이와 월 단위 차이·가장 빠름·선택 강조를 표시한다',()=>{
+  const data=milestoneFixture();data.savings.scenarios[1].salary=25000;
+  const h=setup(data),before=JSON.stringify(data),stored=h.storage.get(key),base=arrivalButton(h,'base'),other=arrivalButton(h,'other');
+  assert.match(base.querySelector('.savings-arrival-date').textContent,/2031.01 · 37세/);
+  assert.equal(base.getAttribute('aria-pressed'),'true');assert.equal(base.querySelector('.savings-arrival-meta').children[1].textContent,'');
+  assert.equal(base.querySelector('.savings-arrival-fastest').hidden,false);assert.equal(other.querySelector('.savings-arrival-fastest').hidden,true);
+  assert.match(other.querySelector('.savings-arrival-date').textContent,/2034.04 · 40세/);assert.equal(other.querySelector('.savings-arrival-meta').children[1].textContent,'3년 3개월 늦음');
+  other.click();assert.equal(h.node('savingsScenarioSelect').value,'other');assert.equal(arrivalButton(h,'other').getAttribute('aria-pressed'),'true');
+  assert.equal(arrivalButton(h,'base').querySelector('.savings-arrival-meta').children[1].textContent,'3년 3개월 빠름');
+  assert.equal(arrivalButton(h,'other').querySelector('.savings-arrival-meta').children[1].textContent,'');
+  assert.match(h.document.querySelector('.savings-goal-date').textContent,/2034.04 · 40세/);
+  assert.equal(JSON.stringify(data),before);assert.equal(h.storage.get(key),stored);assert.equal(h.saves(),0);
+});
+
+test('5억 도달 목록: 실제 달성·동일 시점·미도달·실제 기록 없음을 계산 판정 그대로 표시한다',()=>{
+  const data=milestoneFixture(),h=setup(data),sc=data.savings.scenarios[1];
+  Object.assign(sc,{salary:0,returnRate:0});h.render();assert.match(arrivalButton(h,'other').textContent,/종료 나이까지 미도달/);
+  assert.equal(arrivalButton(h,'other').querySelector('.savings-arrival-fastest').hidden,true);assert.equal(arrivalButton(h,'other').querySelector('.savings-arrival-meta').children[1].textContent,'');
+  data.savings.actual=[{ym:'2025-06',total:500000000},{ym:'2025-12',total:490000000}];h.render();
+  for(const id of ['base','other']){assert.match(arrivalButton(h,id).querySelector('.savings-arrival-date').textContent,/달성 2025.06 · 31세/);assert.equal(arrivalButton(h,id).querySelector('.savings-arrival-fastest').hidden,false);}
+  assert.equal(arrivalButton(h,'other').querySelector('.savings-arrival-meta').children[1].textContent,'같은 시점');
+  data.savings.actual=[];const empty=JSON.stringify(data);h.render();
+  for(const id of ['base','other']){assert.match(arrivalButton(h,id).textContent,/실제 기록 없음/);assert.equal(arrivalButton(h,id).querySelector('.savings-arrival-fastest').hidden,true);}
+  assert.equal(JSON.stringify(data),empty);assert.equal(h.saves(),0);
+});
+
+test('5억 도달 비교 표: 각 행의 처음 5억 이상인 표시 칸만 강조하고 미도달은 강조하지 않는다',()=>{
+  const data=milestoneFixture(),h=setup(data),rows=()=>h.document.querySelector('[data-savings-result="compare"]').querySelectorAll('tbody tr');
+  for(const row of rows()){
+    const cells=row.querySelectorAll('td'),highlight=cells.filter(x=>x.className==='savings-compare-goal');
+    assert.equal(highlight.length,1);assert.equal(highlight[0],cells[1]);assert.match(highlight[0].getAttribute('aria-label'),/원 · 첫 5억 이상$/);
+  }
+  editInput(paramInput(h,'salary'),'0');assert.equal(rows()[0].querySelectorAll('.savings-compare-goal').length,0);assert.equal(rows()[1].querySelectorAll('.savings-compare-goal').length,1);
+});
+
+test('5억 도달 목록 입력 직후 선택: 결과와 내부 터치 노드를 유지한 채 한 번 저장하고 시나리오만 전환한다',()=>{
+  const h=setup(milestoneFixture(),2026,undefined,{cloneOnSave:true}),salary=paramInput(h,'salary'),button=arrivalButton(h,'other'),touch=button.querySelector('.savings-arrival-date').children[0];
+  salary.focus();salary.value='2000000';button.focus();
+  assert.equal(arrivalButton(h,'other'),button);assert.equal(button.querySelector('.savings-arrival-date').children[0],touch);assert.equal(h.saves(),1);
+  button.onclick();assert.equal(h.node('savingsScenarioSelect').value,'other');assert.equal(h.saves(),1);assert.equal(h.store.doc.savings.scenarios[0].salary,2000000);
+});
+
+test('올해 월 사용금액: 과거 기준 연도의 증가분·단계를 반영해 원 반올림으로 표시하고 조회는 저장·계산을 바꾸지 않는다',()=>{
+  const data=fixture(),sc=data.savings.scenarios[0];Object.assign(sc,{spending:123456.78,spendingYear:2020,growth:7.4,stages:[{age:34,spending:300000}]});
+  const original=JSON.stringify(data),h=setup(data),stored=[...h.storage],simulation=()=>vm.runInContext('JSON.stringify(simulateSavings(doc.savings,doc.savings.scenarios[0]))',h.ctx),before=simulation();
+  assert.equal(paramInput(h,'spending').value,new Intl.NumberFormat('ko-KR').format(Math.round(123456.78*1.074**6)));
+  assert.equal(Number(paramInput(h,'spending').value.replaceAll(',','')),spendingNow(h));
+  const row=JSON.parse(before).rows.find(r=>r.year===2026);assert.ok(Math.abs(row.spending/12-123456.78*1.074**6)<1e-8);
+  assert.doesNotMatch(h.html(),/data-param="spendingYear"|사용금액 기준 연도/);assert.match(h.html(),/월 사용금액 \(2026년\)/);
+  h.node('savingsTabAssumptions').click();h.render();h.tick();h.node('savingsTabOverview').click();
+  assert.equal(simulation(),before);assert.equal(JSON.stringify(data),original);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+});
+
+test('올해 월 사용금액: 실제 없음·시작 연도/나이 생략·옛 기준 연도 생략도 단계 적용값과 같은 기준으로 조회한다',()=>{
+  for(const noActual of [false,true]){
+    const data=fixture();delete data.savings.startYear;delete data.savings.startAge;delete data.savings.scenarios[0].spendingYear;
+    data.savings.actual=noActual?[]:[{ym:'2023-12',total:1000},{ym:'2025-09',total:2000},{ym:'2030-12',total:null}];
+    Object.assign(data.savings.scenarios[0],{spending:123.45,growth:10,endAge:10,stages:[{age:1,spending:222.22}]});
+    const original=JSON.stringify(data),h=setup(data);assert.equal(Number(paramInput(h,'spending').value.replaceAll(',','')),spendingNow(h));
+    h.render();assert.equal(JSON.stringify(data),original);assert.equal(h.saves(),0);
+  }
+});
+
+test('올해 월 사용금액 수정: 값 변경 때만 금액·올해 기준 연도를 함께 저장하고 빈값·동일값은 저장하지 않는다',()=>{
+  const h=setup(fixture(),2026,undefined,{cloneOnSave:true}),input=paramInput(h,'spending'),button=yearButton(h,2027),before=h.store.doc.savings.scenarios[0];
+  assert.equal(input.value,'51');editInput(input,'');assert.equal(input.value,'51');editInput(input,'51');assert.equal(h.saves(),0);assert.equal(before.spendingYear,2025);
+  input.focus();input.value='1200000';button.focus();assert.equal(h.saves(),1);assert.equal(paramInput(h,'spending'),input);assert.equal(yearButton(h,2027),button);
+  const saved=h.store.doc.savings.scenarios[0];assert.equal(saved.spending,1200000);assert.equal(saved.spendingYear,2026);assert.equal(saved.growth,2);
+  button.onclick();assert.equal(button.getAttribute('aria-expanded'),'true');assert.equal(input.value,'1,200,000');assert.equal(h.saves(),1);
+});
+
+test('올해 월 사용금액 부분 갱신: 증가율·시작 기준·단계 변경을 표시하되 초점이 있으면 입력 중인 값을 유지한다',()=>{
+  const data=fixture();data.savings.scenarios[0].stages=[{age:31,growth:5}];const h=setup(data),input=paramInput(h,'spending'),base=k=>h.inputs().find(x=>x.dataset.base===k);
+  const check=()=>assert.equal(Number(input.value.replaceAll(',','')),spendingNow(h));check();
+  editInput(stageInput(h,0,'growth'),'10');check();editInput(base('startYear'),'2024');check();editInput(base('startAge'),'30');check();
+  editInput(stageInput(h,0,'spending'),'100000');check();editInput(paramInput(h,'growth'),'20');check();
+  assert.equal(paramInput(h,'spending'),input);input.focus();input.value='180.';editInput(paramInput(h,'growth'),'12');
+  assert.equal(h.document.activeElement,input);assert.equal(input.value,'180.');
+  assert.equal(h.store.doc.savings.scenarios[0].spending,50);assert.equal(h.store.doc.savings.scenarios[0].spendingYear,2025);
+});
+
+test('올해 월 사용금액: 사용금액을 재설정하는 올해 나이 단계에서만 읽기 전용이며 단계 변경 후 같은 칸을 갱신한다',()=>{
+  const data=fixture();data.savings.scenarios[0].stages=[{age:32,salary:200},{age:32,spending:765432.5}];
+  const h=setup(data),input=paramInput(h,'spending');assert.equal(input.hasAttribute('readonly'),true);assert.equal(input.value,'765,433');
+  assert.equal(h.node('savingsSpendingHelp').hidden,false);assert.equal(h.node('savingsSpendingHelp').textContent,'올해는 32세 단계 사용금액이 적용됩니다');
+  editInput(input,'999');assert.equal(h.saves(),0);assert.equal(input.value,'765,433');assert.equal(data.savings.scenarios[0].spending,50);
+  editInput(stageInput(h,1,'spending'),'800000');assert.equal(input.value,'800,000');assert.equal(input.hasAttribute('readonly'),true);
+  editInput(stageInput(h,1,'age'),'33');assert.equal(paramInput(h,'spending'),input);assert.equal(input.hasAttribute('readonly'),false);assert.equal(h.node('savingsSpendingHelp').hidden,true);assert.equal(input.value,'51');
+  editInput(stageInput(h,1,'age'),'32');assert.equal(input.hasAttribute('readonly'),true);
+  editInput(stageInput(h,1,'spending'),'');assert.equal(input.hasAttribute('readonly'),false);assert.equal(input.value,'51');
+});
+
+test('올해 월 사용금액 새해: 연도·금액·단계 읽기 전용을 자동 갱신하며 기존 기준 연도는 저장하지 않는다',()=>{
+  const data=fixture();data.savings.scenarios[0].stages=[{age:33,spending:700}];const h=setup(data),stored=[...h.storage],before=JSON.stringify(data);
+  h.setYear(2027);h.tick();assert.match(h.html(),/월 사용금액 \(2027년\)/);assert.equal(paramInput(h,'spending').value,'700');assert.equal(paramInput(h,'spending').hasAttribute('readonly'),true);
+  h.setYear(2028);h.events.get('window:focus')();assert.match(h.html(),/월 사용금액 \(2028년\)/);assert.equal(paramInput(h,'spending').value,'714');assert.equal(paramInput(h,'spending').hasAttribute('readonly'),false);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual([...h.storage],stored);assert.equal(h.saves(),0);
+});
 
 test('저축 요약: 현재 5억 달성 월·연도 나이와 과거 최단 기록을 구분하고 시나리오 전환은 기록을 저장하지 않는다',()=>{
   const data=milestoneFixture(),before=JSON.stringify(data),h=setup(data),stored=h.storage.get(key);
@@ -455,7 +620,7 @@ test('저축 기본 탭: 유효한 실제 총액이 있으면 개요, 없으면 
 test('저축 탭 구조: 요약만 탭 위에 두고 개요·가정·기록 내용은 해당 패널 안에 둔다',()=>{
   const h=setup(milestoneFixture()),overview=savingsPaneHtml(h,'Overview'),assumptions=savingsPaneHtml(h,'Assumptions'),records=savingsPaneHtml(h,'Records');
   assert.ok(h.html().indexOf('class="card savings-summary"')<h.html().indexOf('role="tablist"'));
-  assert.match(overview,/class="card savings-future"[^]*장기 예상 자산[^]*60세 말 · 2054\.12[^]*현재 시나리오의 월말 자산 기준[^]*시나리오 비교[^]*목표 도달 최단 기록/);
+  assert.match(overview,/5억 도달 시점[^]*시나리오 비교[^]*나이별 연말 저축총액[^]*class="card savings-future"[^]*장기 예상 자산[^]*60세 말 · 2054\.12[^]*현재 시나리오의 월말 자산 기준[^]*목표 도달 최단 기록/);
   assert.match(overview,/지금 예상이 저장된 시점보다 빠를 때 저장할 수 있습니다/);
   assert.doesNotMatch(overview,/<details/);
   assert.match(assumptions,/data-param="salary"[^]*계산 방식/);assert.match(records,/연도별 기록/);
@@ -478,7 +643,8 @@ test('저축 가정: 입력 묶음을 바로 보여 주고 계산 방식만 기�
   const data=fixture(),before=JSON.stringify(data),h=setup(data),stored=[...h.storage];
   h.node('savingsTabAssumptions').onclick();assert.equal(h.node('savingsAssumptionsBody').hidden,false);
   const pane=savingsPaneHtml(h,'Assumptions');
-  assert.match(pane,/기본<\/h2>[^]*data-param="name"[^]*data-base="startYear"[^]*data-base="startAge"[^]*data-param="endAge"[^]*월급·지출<\/h2>[^]*data-param="salary"[^]*data-param="giving"[^]*data-param="spending"[^]*data-param="spendingYear"[^]*data-param="growth"[^]*수익<\/h2>[^]*data-param="returnRate"[^]*나이별 변경[^]*메모[^]*계산 방식[^]*id="deleteScenario"/);
+  assert.match(pane,/기본<\/h2>[^]*data-param="name"[^]*data-base="startYear"[^]*data-base="startAge"[^]*data-param="endAge"[^]*월급·지출<\/h2>[^]*data-param="salary"[^]*data-param="giving"[^]*월 사용금액 \(2026년\)[^]*data-param="spending"[^]*data-param="growth"[^]*수익<\/h2>[^]*data-param="returnRate"[^]*나이별 변경[^]*메모[^]*계산 방식[^]*id="deleteScenario"/);
+  assert.doesNotMatch(pane,/사용금액 기준 연도|data-param="spendingYear"/);
   const detail=()=>h.document.querySelectorAll('[data-savings-detail]').find(x=>x.dataset.savingsDetail==='method');
   assert.equal(detail().open,false);detail().open=true;detail().ontoggle();h.render();
   assert.equal(detail().open,true);assert.equal(h.node('savingsAssumptionsBody').hidden,false);
