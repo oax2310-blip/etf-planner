@@ -46,7 +46,8 @@ function renderSavings(){
       const detail=finite(st[key])===null&&applied?` title="적용값: ${escA(assetNumberText(value))}${money?"원":"%"}"`:"";
       return `<label><span>${label}</span><input data-stage="${i}" data-k="${key}" ${money?moneyAttrs:signedNumAttrs} value="${money?moneyText(st[key]):escA(st[key]??"")}" placeholder="${escA(hint)}"${detail}></label>`;
     };
-    return `<div class="plan-line"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${escA(st.age??"")}"></label>${input("salary","월급 (원)",true)}${input("spending","사용금액 (원)",true)}${input("growth","증가율 (%)")}${input("returnRate","수익률 (%)")}<button class="remove" type="button" data-stage-del="${i}" aria-label="단계 삭제">삭제</button></div>`;
+    const age=finite(st.age), title=age===null?`${i+1}번째 단계`:`${age}세부터`, remove=age===null?`${i+1}번째 단계 삭제`:`${age}세 단계 삭제`;
+    return `<div class="plan-line" role="group" aria-labelledby="savings-stage-${i}"><div class="plan-line-head"><strong id="savings-stage-${i}">${title}</strong><button class="remove" type="button" data-stage-del="${i}" aria-label="${remove}">삭제</button></div><div class="plan-line-fields"><label><span>나이</span><input data-stage="${i}" data-k="age" type="number" step="1" value="${escA(st.age??"")}"></label>${input("salary","월급 (원)",true)}${input("spending","사용금액 (원)",true)}${input("growth","증가율 (%)")}${input("returnRate","수익률 (%)")}</div></div>`;
   };
   const maxAge=Math.max(...S.scenarios.map(x=>finite(x.endAge)||0)), ages=KEY_AGES.filter(a=>a<=maxAge&&a>=(finite(S.startAge)||0));
   const compare=S.scenarios.map(x=>{const r=simulateSavings(S,x);return `<tr${x===sc?' class="active"':""}><th scope="row">${escA(x.name)}</th>${ages.map(a=>{
@@ -64,16 +65,19 @@ function renderSavings(){
   const shownRows=yearData.filter((r,i)=>savingsAllYears||r.year===currentYear||r.recordCount||savingsOpenYears.has(r.year)||i<10||i===yearData.length-1||r.age%5===0);
   const yearRows=shownRows.map(r=>{
     const open=savingsOpenYears.has(r.year), predicted=simulated.has(r.year)&&!r.actual, hintId=`savings-year-hint-${r.year}`;
+    // 억과 만 사이만 줄을 나눌 수 있게 하고, 마지막 '원'은 금액에 붙인다.
+    const compact=value=>savingsCompactWon(value).replace(/ 원$/,"\u00a0원");
     const months=Array.from({length:12},(_,i)=>{const ym=ymText(r.year*12+i), a=actualByMonth.get(ym);return `<label class="field savings-month"><span>${i+1}월 <small>${finite(a?.total)!==null?"실제":"미기록"}</small></span><input data-actual="${ym}" ${moneyAttrs} value="${moneyText(a?.total)}" placeholder="저축총액 (원)" aria-label="${r.year}년 ${i+1}월 실제 저축총액 (원)" aria-describedby="${hintId}">${finite(a?.total)!==null?`<small class="field-hint">${eok(a.total)}</small>`:""}</label>`;}).join("");
     const totals=predicted?`<div class="savings-year-totals">${[["월급",r.salary],["사용금액",r.spending],["월급 기부",r.salaryGiving],["투자수익 기부",r.returnGiving]].map(([label,value])=>`<div><span>${label}</span><b>${wonA(value)}</b></div>`).join("")}</div>`:"";
-    const giving=`<span class="savings-year-giving"><small class="savings-column-label">기부금</small><b>${predicted?wonA(r.giving):"—"}</b></span>`;
-    const results=`<span class="savings-year-return"><small class="savings-column-label">투자수익</small><b>${predicted?wonA(r.returns+r.returnGiving):"—"}</b></span>${giving}`;
-    const balanceNote=predicted?`예상 12월${r.recordCount?` · 실제 ${r.recordCount}개월`:""}`:r.actual?`실제 ${Number(r.endYm.slice(5))}월 · ${r.recordCount}개월`:"기록 없음";
+    const giving=(summary=false)=>`<span class="savings-year-giving"><small class="savings-column-label">기부금</small><b>${predicted?(summary?compact(r.giving):wonA(r.giving)):"—"}</b></span>`;
+    const results=`<span class="savings-year-return"><small class="savings-column-label">투자수익</small><b>${predicted?compact(r.returns+r.returnGiving):"—"}</b></span>${giving(true)}`;
+    const balanceNote=predicted?(r.recordCount?`실제 ${r.recordCount}개월 + 예상`:"예상 · 12월"):r.actual?`실제 · ${Number(r.endYm.slice(5))}월까지`:"기록 없음";
+    const balance=r.end!==null?wonA(r.end):"—", yearLabel=`${r.year}년 · ${r.age}세 · 연말 저축총액 ${balance} · ${balanceNote}`;
     const gaps=missing.filter(ym=>ym.startsWith(`${r.year}-`));
-    return `<section class="savings-year${r.year===currentYear?" savings-year-current":""}"><button class="savings-year-toggle" type="button" data-savings-year="${r.year}" aria-expanded="${open}" aria-controls="savings-year-${r.year}" aria-label="${r.year}년 월별 저축 기록">
+    return `<section class="savings-year${r.year===currentYear?" savings-year-current":""}"><button class="savings-year-toggle" type="button" data-savings-year="${r.year}" aria-expanded="${open}" aria-controls="savings-year-${r.year}" aria-label="${yearLabel} · 월별 기록 ${open?"접기":"펼치기"}">
       <span class="savings-year-label"><span class="savings-year-title"><b>${r.year}년</b><small class="savings-year-age">${r.age}세</small></span></span>
-      <span class="savings-year-balance"><b title="${balanceNote}">${r.end!==null?wonA(r.end):"—"}</b></span>${results}</button>
-      <div class="savings-year-body" id="savings-year-${r.year}"${open?"":" hidden"}><div class="savings-year-results">${giving}</div>${totals}<div class="savings-record-heading"><h3>월별 실제 저축총액</h3><span>원 단위 · 입력 후 자동 저장</span></div>
+      <span class="savings-year-balance"><b>${r.end!==null?compact(r.end):"—"}</b><small class="savings-balance-note">${balanceNote}</small></span>${results}</button>
+      <div class="savings-year-body" id="savings-year-${r.year}"${open?"":" hidden"}><p class="savings-year-exact"><span>연말 저축총액 <b>${balance}</b></span><span>· ${balanceNote}</span></p><div class="savings-year-results">${giving()}</div>${totals}<div class="savings-record-heading"><h3>월별 실제 저축총액</h3><span>원 단위 · 입력 후 자동 저장</span></div>
         <p class="hint" id="${hintId}">빈칸은 미기록이며, 입력한 값을 비우면 그 달 기록이 삭제됩니다.${predicted&&r.recordCount?" 수익·기부·지출은 마지막 실제 기록 다음 달부터의 예상입니다.":!predicted&&r.actual?" 실제 기록 기간의 수익·기부·지출은 추정하지 않습니다.":""}</p>
         ${gaps.length?`<p class="hint missing-note">기록 사이에 빠진 달: ${gaps.map(ym=>`${Number(ym.slice(5))}월`).join(", ")}</p>`:""}<div class="savings-month-grid">${months}</div></div></section>`;
   }).join("");
@@ -102,14 +106,14 @@ function renderSavings(){
       <h2 class="savings-group-title">기본</h2><div class="param-grid"><label class="field"><span>시나리오 이름</span><input data-param="name" maxlength="40" value="${escA(sc.name)}"></label><label class="field"><span>시작 연도</span><input data-base="startYear" type="number" step="1" value="${escA(S.startYear??"")}"></label><label class="field"><span>그해 나이</span><input data-base="startAge" type="number" step="1" value="${escA(S.startAge??"")}"></label>${field("endAge","종료 나이","세",'step="1"')}</div>
       <h2 class="savings-group-title">월급·지출</h2><div class="param-grid">${field("salary","월급","원")}${field("giving","기부 (월급·수익의 %)","%")}${field("spending","월 사용금액","원")}${field("spendingYear","사용금액 기준 연도","년",'step="1"')}${field("growth","사용금액 연 증가율","%")}</div>
       <h2 class="savings-group-title">수익</h2><div class="param-grid">${field("returnRate","연 수익률","%")}</div>
-      <h3 class="sub-title">나이별 변경 <small>그 나이(그해)부터 적용 · 회색은 적용값 · 사용금액은 그해 월 사용금액을 그 값으로 바꿈</small></h3><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
+      <h3 class="sub-title">나이별 변경</h3><p class="savings-stage-help">그 나이(그해)부터 적용 · 회색은 적용값<br>사용금액은 그해 월 사용금액으로 적용</p><div class="plan-lines">${(sc.stages||[]).map(stageRow).join("")||`<p class="hint">없음</p>`}</div><button class="btn mini" type="button" id="addStage">＋ 단계</button>
       <label class="field scenario-note"><span>메모</span><textarea data-param="note" maxlength="2000">${escA(sc.note||"")}</textarea></label>
       <div class="savings-details"><details data-savings-detail="method"${savingsOpenDetails.has("method")?" open":""}><summary>계산 방식<i aria-hidden="true"></i></summary><p>매달 월급 − 기부 − 사용금액을 더하고, 12월에 전년 12월 저축총액 × 연 수익률(수익의 기부 뺌)을 더합니다. 마지막 실제 기록 다음 달부터 계산합니다.</p></details></div>
       ${S.scenarios.length>=2?'<button class="btn mini danger" type="button" id="deleteScenario">시나리오 삭제</button>':""}</div>`:""}
     </section>
     <section id="savingsPaneRecords" class="savings-pane" role="tabpanel" aria-labelledby="savingsTabRecords"${activeTab==="records"?"":" hidden"}>
       <div class="section-heading"><h2>연도별 기록</h2><span>연도를 펼쳐 월별 실제 저축액 수정</span></div>
-      <div class="card savings-years"><div class="savings-years-head"><span>연도</span><span>저축총액</span><span>투자수익</span><span title="월급 + 투자수익">기부금</span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</div>
+      <div class="card savings-years"><div class="savings-years-head"><span>연도</span><span>연말 저축총액</span><span>투자수익</span><span title="월급 기부 + 투자수익 기부">기부금</span></div>${yearRows}${yearData.length>shownRows.length||savingsAllYears?`<div class="group-foot"><button class="btn mini ghost" type="button" id="toggleYears">${savingsAllYears?"줄여 보기":`모든 연도 보기 (${yearData.length}년)`}</button></div>`:""}</div>
     </section>`;
   const select=el("savingsScenarioSelect");if(sc)select.onchange=()=>{setUi({scenario:select.value});renderSavings();};
   const showTab=(key,focus=false)=>{
@@ -136,6 +140,7 @@ function renderSavings(){
   all("[data-savings-year]").forEach(b=>b.onclick=()=>{
     const year=Number(b.dataset.savingsYear), open=!savingsOpenYears.has(year);if(open)savingsOpenYears.add(year);else savingsOpenYears.delete(year);
     el(b.getAttribute("aria-controls")).hidden=!open;b.setAttribute("aria-expanded",String(open));
+    b.setAttribute("aria-label",b.getAttribute("aria-label").replace(/월별 기록 (펼치기|접기)$/,`월별 기록 ${open?"접기":"펼치기"}`));
   });
   el("copyScenario").onclick=()=>{ const base=sc||{}; const copy=JSON.parse(JSON.stringify({...base,id:newId(),name:`${base.name||"시나리오"} 복사`})); S.scenarios.push(copy); setUi({scenario:copy.id}); saveSection("savings"); render(); };
   onChange("[data-base]","savings",(v,x)=>{ const n=numIn(v); if(n===null) return false; S[x.dataset.base]=Math.round(n); });
