@@ -65,7 +65,7 @@ function buyDone(alloc, prices, it, summary, stocks){
   try{
     const plan=it.buyPlan, entry=plan.lines?lineEntry(stocks,it.ticker):null, target=purchaseTargets(alloc,prices,it,plan,summary)[0]?.it||it;
     const currency=plan.currency||assetQuote(prices,it.ticker)?.currency||(tracksETF(it)&&purchaseQuoteKind(it.ticker)==="해외"?"USD":"KRW");
-    const p=purchaseSummary(plan,entry,{item:it,target,allocation:alloc,prices,fx:assetFx(prices,alloc),currency});
+    const p=purchaseSummary(plan,entry,{item:it,target,allocation:alloc,prices,fx:assetFx(prices,alloc),currency,inOrder:true});
     return p.count>0&&p.done===p.count&&(!plan.lines||!!entry||p.remaining<1e-6);
   }catch{return false;}
 }

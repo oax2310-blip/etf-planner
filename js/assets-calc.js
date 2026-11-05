@@ -220,13 +220,28 @@ function purchaseTrackingFill(row, it, prices, fx, currency="USD", target=it){
   const raw=plus(row?.price), price=raw?currency==="USD"?Math.round(raw*100)/100:Math.round(raw):null;
   return {...fill,price,budget:amount,tradeTicker:assetTradeTicker(target),tradePrice:fill.price,tradeCurrency:q.currency};
 }
-// 회차 목록(화면·합계·알림 공통): 체결 기록(완료·부분 체결) + 아직 안 산 회차(지금 이동평균 기준).
+// 화면 전용 순서 판정: 체결 기록이 없는 회차를 계획 순서로 받는다. 첫 미도달(현재가 < 가격) 뒤에서 이미 도달(현재가 ≥ 가격)한 회차만 뺀다.
+// 완료·부분 체결은 호출 전에 빠져 지난 회차로 본다. 현재가가 없으면 그대로 두며, 입력·저장 기록을 바꾸지 않고 매번 다시 판정한다.
+// 한계: 현재가만 보므로 순서대로 도달한 뒤 사지 않고 앞 회차 아래로 돌아오면 화면에서는 빠져도 서버의 미체결 재알림은 계속될 수 있다.
+function purchaseInOrderSelection(rows, current){
+  const now=plus(current), kept=[], skipped=[];
+  let waiting=false;
+  for(const row of rows){
+    if(now!==null&&now<row.price)waiting=true;
+    (waiting&&now>=row.price?skipped:kept).push(row);
+  }
+  return {rows:kept,skipped};
+}
+// 회차 선택(화면·합계·알림 공통): 체결 기록(완료·부분 체결) + 아직 안 산 회차(지금 이동평균 기준). skipped는 화면 안내용으로 뺀 회차다.
 // 부분 체결의 잔량 예산을 먼저 남겨 두고, 나머지 예산만 새 회차에 나눈다. 시세·단계·예산이 바뀌어도 부분 체결 잔량은 사라지지 않는다.
 // 각 회차에 최소 1주(실제 추종 ETF도 같은 단위)를 남길 수 있는 최대 회차 수를 고른다. 부족하면 시작~종료 전체 구간에서 회차 간격을 고르게 넓힌다.
 // 체결한 회차도 간격 계산에 포함해 건너뛴 앞 회차를 다시 만들지 않는다. 금액은 최소 매수액을 먼저 확보하고 나머지를 가능한 한 같게 나눈다.
 // trade는 화면·알림이 쓰는 실제 종목·시세·환율·계획 통화. 필요한 시세나 환율이 없으면 기존 균등 예산을 유지하며 수량을 추정하지 않는다.
 // 기준 item으로 전체 계좌 목표·예산을 유지하고 target(없으면 buyPriority 첫 항목)의 실제 가격·단위로 미체결 회차의 수량·최소 매수액을 계산한다.
-function purchaseLineRows(plan, entry, trade={}){
+// trade.inOrder === true(화면 전용)일 때만 기존 간격 선택·1회차 대체·비용 미상 경로가 끝난 뒤 순서 밖 도달 회차를 빼고 남은 예산을 다시 나눈다.
+// 현재가는 assetQuote와 같은 유효 종가·기준일 조건 및 시세/계획 통화 일치 조건에서만 읽는다. 간격 선택은 유지해 화면 회차가 알림 회차의 부분집합으로 남는다.
+// 알림은 inOrder를 넘기지 않아 현재가와 무관한 전체 회차·선행 관계를 유지한다. 도달 이력은 저장하지 않으며 재편입 규칙·한계는 purchaseInOrderSelection 주석을 따른다.
+function purchaseLineSelection(plan, entry, trade={}){
   const lines=plan?.lines, buys=purchaseBuys(plan), names=purchaseLineNames(lines);
   const parse=key=>{if(key==="end")return {line:"목표가",t:0};const m=/^(.+):([0-2])$/.exec(key);return m&&purchaseLineName(m[1])?{line:m[1],t:Number(m[2])}:null;};
   const records=Object.entries(buys).map(([key,b])=>{
@@ -244,7 +259,8 @@ function purchaseLineRows(plan, entry, trade={}){
     const price=fill?.tradePrice??fill?.price, rate=(fill?.tradeCurrency||currency)==="USD"?plus(trade.fx):1;
     return [r.key,price&&rate?price*rate*step/1e4:null];
   }));
-  if(open.length&&[...costs.values()].every(v=>v>0)){
+  const costsKnown=open.length>0&&[...costs.values()].every(v=>v>0);
+  if(costsKnown){
     const eligible=levels.filter(r=>buys[r.key]||costs.get(r.key)<=budget+1e-8);
     let selected=null;
     for(let count=eligible.length;count>0;count--){
@@ -254,6 +270,14 @@ function purchaseLineRows(plan, entry, trade={}){
     }
     // 총예산으로도 1주를 못 사거나 체결 뒤 종료선 가격이 올라 더 살 수 없으면 한 회차에서 실제 부족액을 보여 준다.
     open=selected??[!records.length?open.reduce((a,b)=>costs.get(a.key)<=costs.get(b.key)?a:b):open[open.length-1]];
+  }
+  let skipped=[];
+  if(trade.inOrder===true){
+    const quoteCurrency=["해외","코인"].includes(entry?.kind)?"USD":"KRW";
+    const current=Number(entry?.close)>0&&/^\d{4}-\d{2}-\d{2}$/.test(String(entry?.asOf))&&quoteCurrency===currency?Number(entry.close):null;
+    ({rows:open,skipped}=purchaseInOrderSelection(open,current));
+  }
+  if(costsKnown){
     let remaining=left;
     [...open].sort((a,b)=>costs.get(b.key)-costs.get(a.key)).forEach((r,i)=>{
       const amount=Math.min(remaining,Math.max(costs.get(r.key),remaining/(open.length-i)));
@@ -261,7 +285,11 @@ function purchaseLineRows(plan, entry, trade={}){
     });
   }
   const order=r=>r.key==="end"?1e6:(names.indexOf(r.line)+1||999)*3+r.t;
-  return [...records,...open.map(x=>({...x,done:false,amount:amounts.get(x.key)??left/open.length}))].sort((a,b)=>order(a)-order(b));
+  return {rows:[...records,...open.map(x=>({...x,done:false,amount:amounts.get(x.key)??left/open.length}))].sort((a,b)=>order(a)-order(b)),skipped};
+}
+// 기존 호출 계약은 회차 배열 그대로 유지한다. 화면 안내가 필요하면 purchaseLineSelection의 skipped를 함께 읽는다.
+function purchaseLineRows(plan, entry, trade={}){
+  return purchaseLineSelection(plan,entry,trade).rows;
 }
 // 합계: 예정 = 총 매수 금액(이동평균선 돌파) 또는 회차 예정액 합(직접 입력), 체결 = 부분 체결·완료의 실제 금액, 남은 예정 = 예산 차이·미체결 잔량 예정액.
 // 이동평균선 돌파의 회차 수는 지금 이동평균 기준이라 entry(시세 파일 종목)가 필요하다(없으면 목표 가격을 넣은 계획만 목표가 회차).

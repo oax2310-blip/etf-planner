@@ -6,13 +6,92 @@ const vm=require('node:vm');
 
 // 공개 계산을 DOM 없이 실행한다. 도달 이력은 서버가 관리하므로 여기서는
 // 현재 시세에 관계없이 회차와 선행 관계가 유지되는지를 검증한다.
-const {purchaseAlertRules}=vm.runInThisContext(`(function(){${['ma-ladder.js','assets-calc.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n')}
-return {purchaseAlertRules};})()`);
+const {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseInOrderSelection}=vm.runInThisContext(`(function(){${['ma-ladder.js','assets-calc.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n')}
+return {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseInOrderSelection};})()`);
 const item=(id='a',ticker='111111',buyPlan=linePlan())=>({id,ticker,buyPlan});
 const assets=(...items)=>({version:1,allocation:{groups:[{id:'test-group',items}]}});
 const linePlan=()=>({lines:{names:['42선','150주선'],startLine:'42선',budget:100},notify:{stages:true}});
 const quotes=(close=11000)=>({stocks:{'111111':{kind:'국내',asOf:'2026-01-02',close,ma:{'42선':12000,'150주선':10000}}}});
 const chain=rules=>rules.map(r=>[r.id,r.after??null]);
+
+const screenPlan=()=>({lines:{names:['25일선','32일선','60개월선'],budget:100},notify:{stages:true}});
+const screenQuote=(close=11000)=>({kind:'국내',asOf:'2026-01-02',close,ma:{'25일선':12000,'32일선':13000,'60개월선':10000}});
+const keys=rows=>rows.map(r=>r.key);
+const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} ≠ ${b}`);
+
+test('화면 순서 판정은 첫 미도달 뒤의 도달만 빼고 현재가가 없으면 입력 목록을 유지한다',()=>{
+  const rows=[12000,13000,10000,14000,9000].map((price,i)=>({key:String(i),price})),before=JSON.stringify(rows);
+  assert.deepEqual(purchaseInOrderSelection(rows,12500),{rows:[rows[0],rows[1],rows[3]],skipped:[rows[2],rows[4]]});
+  for(const current of [null,undefined,0])assert.deepEqual(purchaseInOrderSelection(rows,current),{rows,skipped:[]});
+  assert.equal(JSON.stringify(rows),before);
+});
+
+test('화면만 순서 밖 장기선을 빼고 남은 회차에 예산 전액을 다시 나누며 알림 출력은 유지한다',()=>{
+  const plan=screenPlan(),entry=screenQuote(),doc=assets(item('a','111111',plan)),prices={stocks:{'111111':entry}},trade={inOrder:true};
+  const before=JSON.stringify({plan,entry,trade}),normal=purchaseLineRows(plan,entry),rules=purchaseAlertRules(doc,prices);
+  const selected=purchaseLineSelection(plan,entry,trade);
+  assert.deepEqual(keys(selected.skipped),['60개월선:0']);
+  assert.deepEqual(keys(selected.rows),keys(normal).filter(key=>key!=='60개월선:0'));
+  assert.deepEqual(purchaseLineRows(plan,entry,trade),selected.rows,'기존 진입점의 반환값은 배열');
+  assert.ok(selected.rows.every(r=>r.amount>normal.find(n=>n.key===r.key).amount));
+  near(selected.rows.reduce((sum,r)=>sum+r.amount,0),plan.lines.budget);
+  assert.deepEqual(purchaseLineSelection(plan,entry),{rows:normal,skipped:[]});
+  assert.deepEqual(purchaseLineRows(plan,entry,{inOrder:1}),normal,'정확히 true일 때만 제외한다');
+  assert.deepEqual(purchaseAlertRules(doc,prices),rules);
+  assert.equal(JSON.stringify({plan,entry,trade}),before,'읽기·계산 중 저장 필드를 만들지 않는다');
+});
+
+test('현재가가 장기선 아래로 내려오거나 앞 회차를 모두 넘으면 저장 없이 다시 편입한다',()=>{
+  const plan=screenPlan(),before=JSON.stringify(plan);
+  for(const [close,reached] of [[9500,false],[13500,true],[10000,true]]){
+    const entry=screenQuote(close),selected=purchaseLineSelection(plan,entry,{inOrder:true});
+    if(close===10000){assert.deepEqual(keys(selected.skipped),['60개월선:0'],'선과 같은 가격도 도달이므로 순서 밖이면 제외');continue;}
+    assert.deepEqual(selected.skipped,[]);assert.equal(selected.rows.at(-1).key,'60개월선:0');
+    assert.equal(close>=selected.rows.at(-1).price,reached);near(selected.rows.reduce((sum,r)=>sum+r.amount,0),100);
+  }
+  assert.deepEqual(keys(purchaseLineSelection(plan,screenQuote(),{inOrder:true}).skipped),['60개월선:0']);
+  assert.equal(JSON.stringify(plan),before);
+});
+
+test('완료·부분 체결은 지난 회차로 보고 잔량 예산을 보존하며 남은 앞 회차까지 체결하면 장기선 도달을 넣는다',()=>{
+  const plan=screenPlan(),entry=screenQuote();
+  plan.buys={'25일선:0':{plannedShares:10,shares:4,plannedActual:12,actual:4.8,price:12000}};
+  let before=JSON.stringify({plan,entry}),selected=purchaseLineSelection(plan,entry,{inOrder:true});
+  assert.deepEqual(keys(selected.skipped),['60개월선:0']);
+  assert.equal(selected.rows[0].remainingShares,6);near(selected.rows[0].amount,7.2);
+  near(selected.rows.filter(r=>!r.done).reduce((sum,r)=>sum+r.amount,0),100-4.8);
+  assert.equal(JSON.stringify({plan,entry}),before);
+  for(const r of selected.rows.slice(1))plan.buys[r.key]={price:r.price,actual:1};
+  before=JSON.stringify({plan,entry});selected=purchaseLineSelection(plan,entry,{inOrder:true});
+  assert.deepEqual(selected.skipped,[]);assert.equal(selected.rows.at(-1).key,'60개월선:0');assert.ok(entry.close>=selected.rows.at(-1).price);
+  near(selected.rows.filter(r=>!r.done).reduce((sum,r)=>sum+r.amount,0),100-selected.rows.reduce((sum,r)=>sum+(r.actual||0),0));
+  assert.equal(JSON.stringify({plan,entry}),before,'부분 체결이 남아도 새 기록 없이 재편입한다');
+});
+
+test('현재가·올바른 기준일이 없거나 시세 통화가 계획 통화와 다르면 화면도 회차를 빼지 않는다',()=>{
+  for(const entry of [screenQuote(null),screenQuote(0),{...screenQuote(),asOf:undefined},{...screenQuote(),asOf:'2026/01/02'}]){
+    const plan=screenPlan(),before=JSON.stringify({plan,entry}),selected=purchaseLineSelection(plan,entry,{inOrder:true});
+    assert.deepEqual(selected,{rows:purchaseLineRows(plan,entry),skipped:[]});assert.equal(JSON.stringify({plan,entry}),before);
+  }
+  const plan={...screenPlan(),currency:'USD'},entry=screenQuote(),trade={inOrder:true,fx:1000};
+  const before=JSON.stringify({plan,entry,trade});
+  assert.deepEqual(purchaseLineSelection(plan,entry,trade),{rows:purchaseLineRows(plan,entry,{fx:1000}),skipped:[]});
+  assert.deepEqual(purchaseLineSelection(screenPlan(),{...entry,kind:'해외'},{inOrder:true,currency:'KRW'}).skipped,[]);
+  assert.equal(JSON.stringify({plan,entry,trade}),before);
+});
+
+test('간격을 고른 뒤에만 제외해 화면 회차는 서버 집합의 부분집합이고 비용 미상 경로도 예산을 다시 나눈다',()=>{
+  for(const budget of [0.5,3,5,8,100])for(const trade of [{},{currency:'USD'}, {currency:'USD',fx:1000}]){
+    const plan=screenPlan();plan.lines.budget=budget;
+    const entry=screenQuote(),normal=purchaseLineRows(plan,entry,trade),selected=purchaseLineSelection(plan,entry,{...trade,inOrder:true});
+    assert.deepEqual(keys(selected.rows),keys(normal).filter(key=>!keys(selected.skipped).includes(key)));
+    near(selected.rows.reduce((sum,r)=>sum+r.amount,0),budget);
+  }
+  const plan=screenPlan(),entry={...screenQuote(),kind:'해외'},trade={inOrder:true,currency:'USD'};
+  const selected=purchaseLineSelection(plan,entry,trade);
+  assert.deepEqual(keys(selected.skipped),['60개월선:0'],'환율을 몰라 비용을 계산할 수 없어도 제외한다');
+  near(selected.rows.reduce((sum,r)=>sum+r.amount,0),100);
+});
 
 test('앞선 42선 미도달·뒤 150주선 도달: 시세와 무관하게 선행 도달 관계를 서버에 전달한다',()=>{
   const doc=assets(item()),prices=quotes(),before=JSON.stringify({doc,prices});
