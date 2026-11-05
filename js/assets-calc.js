@@ -233,6 +233,8 @@ function purchaseInOrderSelection(rows, current){
   return {rows:kept,skipped};
 }
 // 회차 선택(화면·합계·알림 공통): 체결 기록(완료·부분 체결) + 아직 안 산 회차(지금 이동평균 기준). skipped는 화면 안내용으로 뺀 회차다.
+// 정렬은 names 순서 → 회차를 유지하고, 범위 밖 기록은 이름을 정규화해 시·일·주·월 → 기간 → 회차로 뒤에 오는 첫 names 선 앞(없으면 마지막 선 뒤)에 넣는다.
+// 해석 불가 선은 목표가 바로 앞, 목표가(end)는 맨 끝. 정렬 중 계획·체결 기록은 바꾸지 않는다.
 // 부분 체결의 잔량 예산을 먼저 남겨 두고, 나머지 예산만 새 회차에 나눈다. 시세·단계·예산이 바뀌어도 부분 체결 잔량은 사라지지 않는다.
 // 각 회차에 최소 1주(실제 추종 ETF도 같은 단위)를 남길 수 있는 최대 회차 수를 고른다. 부족하면 시작~종료 전체 구간에서 회차 간격을 고르게 넓힌다.
 // 체결한 회차도 간격 계산에 포함해 건너뛴 앞 회차를 다시 만들지 않는다. 금액은 최소 매수액을 먼저 확보하고 나머지를 가능한 한 같게 나눈다.
@@ -284,8 +286,20 @@ function purchaseLineSelection(plan, entry, trade={}){
       amounts.set(r.key,amount);remaining-=amount;
     });
   }
-  const order=r=>r.key==="end"?1e6:(names.indexOf(r.line)+1||999)*3+r.t;
-  return {rows:[...records,...open.map(x=>({...x,done:false,amount:amounts.get(x.key)??left/open.length}))].sort((a,b)=>order(a)-order(b)),skipped};
+  const lineOrder=name=>{const line=movingLineName(name);return line?[MA_UNITS.indexOf(line.replace(/^\d+/,"")),parseInt(line)]:null;};
+  const namedOrders=names.map(lineOrder), compareLine=(a,b)=>a[0]-b[0]||a[1]-b[1];
+  const order=r=>{
+    if(r.key==="end")return [names.length+2,0,0,0];
+    const at=names.indexOf(r.line);
+    if(at>=0)return [at,MA_UNITS.length,0,r.t];
+    const line=lineOrder(r.line);
+    if(!line)return [names.length+1,0,0,r.t];
+    const before=namedOrders.findIndex(n=>compareLine(line,n)<0);
+    return [before<0?names.length:before,...line,r.t];
+  };
+  return {rows:[...records,...open.map(x=>({...x,done:false,amount:amounts.get(x.key)??left/open.length}))].sort((a,b)=>{
+    const x=order(a),y=order(b);return x[0]-y[0]||x[1]-y[1]||x[2]-y[2]||x[3]-y[3];
+  }),skipped};
 }
 // 기존 호출 계약은 회차 배열 그대로 유지한다. 화면 안내가 필요하면 purchaseLineSelection의 skipped를 함께 읽는다.
 function purchaseLineRows(plan, entry, trade={}){
