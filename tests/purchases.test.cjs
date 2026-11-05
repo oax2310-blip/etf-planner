@@ -494,7 +494,7 @@ test('시작선 변경: 완료·부분 체결 가격과 수량·잔량·자산 �
   const before=JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other});
   r.edit();r.form.lineSet.value='hour';r.form.lineStartPeriod.value='150';r.form.lineStartUnit.value='선';r.form.lineLastPeriod.value='150';r.form.lineLastUnit.value='선';r.submit();
   assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other}),before);
-  const keys=r.inputs('[data-purchase-buy]').map(x=>x.dataset.key);assert.deepEqual(keys,['150선:0','25선:0','32선:0']);
+  const keys=r.inputs('[data-purchase-buy]').map(x=>x.dataset.key);assert.deepEqual(keys,['25선:0','32선:0','150선:0']);
   assert.match(r.html(),/부분 체결/);assert.match(r.html(),/진행 중/);assert.match(r.html(),/매수 완료 <b>1회/);
   r.edit();r.form.lineStartPeriod.value='25';r.submit();
   assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares,other}),before);
@@ -507,7 +507,7 @@ test('시작선 시세 대기: 목표가가 있어도 새 매수·알림을 만�
   r.edit();r.form.lineSet.value='hour';r.form.lineStartPeriod.value='150';r.form.lineStartUnit.value='선';r.submit();
   assert.equal(r.inputs('[data-purchase-buy]').length,1);assert.match(r.html(),/매수 시작 이동평균선 150시선의 시세를 기다리는 중/);
   assert.equal(JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares}),before);
-  r.prices.stocks['111111'].ma['150선']=16000;r.render();assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['150선:0','25선:0','end']);
+  r.prices.stocks['111111'].ma['150선']=16000;r.render();assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25선:0','150선:0','end']);
 });
 
 test('잘못된 시작선 기간은 저장하지 않고 기존 계획·체결을 보존한다',()=>{
