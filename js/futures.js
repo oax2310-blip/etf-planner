@@ -203,7 +203,7 @@ function futureLadderHtml(f,fe){
   const now=Number(fe?.close)>0?Number(fe.close):null,{rows,unpriced}=futureLadder(f,now);
   const sign=v=>`${Math.round(v)>0?"+":""}${won.format(Math.round(v))}`,half=r=>r?r.kind.startsWith("be-")?15:r.kind==="now"?30:26:0;
   const nowText=()=>{const prices=typeof priceData==="object"?priceData:null,q=futureQuoteTime(fe,prices?.updatedAt),text=esc(q.text.replace(/^\d{1,2}\/\d{1,2} \d{2}:\d{2} 수집 · /,"")).replace("지연",'<b class="future-ladder-late">지연</b>');
-    return `<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(priceMonth(f,prices))} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다.">지금 · ${text}</span>`;};
+    return `<span class="future-quote-time${q.old?" old":""}" title="한국투자증권 달러선물 ${esc(priceMonth(f,prices))} 시세(기준일 ${esc(fe.asOf)}). 예약·즉시 수집 때 받은 값으로 실시간 시세가 아닙니다. 거래 시간이 아니면 수집하지 않습니다.">지금 · ${text}</span>`;};
   const label=r=>r.kind==="now"?nowText():esc({target:"목표 환율",avg:`보유 평균 · ${r.contracts}계약`,check:"확인 환율",floor:`손절 하단 · ${r.rounds}회`}[r.kind]);
   const price=r=>r.kind==="check"?`<label class="future-tap-price future-ladder-edit" title="확인 환율 수정"><span class="price" aria-hidden="true">${fmtPrice(r.price)}원</span>${PENCIL}<input id="flossPrice" type="number" min="0" step="any" inputmode="decimal" value="${shown(r.price)}" aria-label="손익을 확인할 환율 (원)"></label>`:`${fmtPrice(r.price)}원`;
   const sub=x=>x?`<small>${x.type==="buy"?"분할매수":"손절"} ${x.count}계약 ${sign(Math.round(x.pnl/100)*100)}</small>`:"";
@@ -214,17 +214,35 @@ function futureLadderHtml(f,fe){
 // 매수 완료 접기는 화면 상태만 유지하며 저장·동기화하지 않는다.
 let futureCompletedOpen=false;
 
+const FUTURE_QUOTE_DELAY_MIN = 60;
+const FUTURE_QUOTE_NIGHT_DELAY_MIN = 90;
+function futureSessionKind(at){
+  const local=new Date(Number(at)+9*36e5),day=local.getUTCDay(),minute=local.getUTCHours()*60+local.getUTCMinutes();
+  if(day>=1&&day<=5&&minute>=8*60+45&&minute<15*60+45)return "day";
+  if((day>=1&&day<=5&&minute>=18*60)||(day>=2&&day<=6&&minute<6*60))return "night";
+  return "";
+}
 // 환율 사다리 '지금' 행의 시세 시각(화면 전용, 시세 조회 없음). 시세 파일에는 체결 시각이 없어 파일 수집 시각(updatedAt)을 한국 시간으로 쓴다.
 // 조회 실패(stale)면 기준일의 마지막 값, 기준일이 수집일보다 앞서면(휴장 등) 그날 종가로 표시한다.
-// 실시간 시세가 아니므로 수집 후 FUTURE_QUOTE_DELAY_MIN분이 지나면 '지연'을 붙인다. old = 경고색(조회 실패·기준일 PRICE_STALE_DAYS일 초과).
-const FUTURE_QUOTE_DELAY_MIN = 60;
+// 일반 시세는 고정 UTC+9 기준 월~금 08:45~15:45, 월~금 18:00~다음 날 06:00만 거래시간으로 센다(종료 미포함).
+// 금요일 야간장은 토요일 새벽까지이고 월요일 새벽은 장외다. 공개 앱에는 달력이 없어 휴장일·최종거래일 단축·특별 시간 변경은 구분하지 않는다.
+// 장외에는 경과 시간과 관계없이 '장 마감'(delayed=false). 장중에는 수집 뒤 열린 시간만 합산해 현재 주간장 60분·야간장 90분 이상이면 '지연'.
+// 최대 최근 14일을 분 경계로 나누어 실제로 겹친 거래시간을 합산하고 기준을 채우면 멈춘다. 경과 시간 표시는 실제 시간, old는 조회 실패·기준일 PRICE_STALE_DAYS일 초과 경고색이다.
 function futureQuoteTime(fe, updatedAt, now=new Date()){
   const md=d=>`${Number(d.slice(5,7))}/${Number(d.slice(8,10))}`,at=Date.parse(updatedAt),old=!!fe.stale||priceOld(fe,now);
   const kst=at?new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(at):"";
   if(fe.stale)return {text:`조회 실패 · ${md(fe.asOf)} 기준 마지막 가격`,old,delayed:true};
   if(!kst||fe.asOf<kst.slice(0,10))return {text:`${md(fe.asOf)} ${kst?"종가 · 마지막 가격":"기준"}`,old,delayed:true};
-  const min=Math.max(0,Math.floor((now-at)/6e4)),delayed=min>=FUTURE_QUOTE_DELAY_MIN,ago=min<1?"방금":min<60?`${min}분 전`:min<1440?`${Math.floor(min/60)}시간 전`:`${Math.floor(min/1440)}일 전`;
-  return {text:`${md(kst)} ${kst.slice(11)} 수집 · ${ago}${delayed?" · 지연":""}`,old,delayed};
+  const min=Math.max(0,Math.floor((now-at)/6e4)),ago=min<1?"방금":min<60?`${min}분 전`:min<1440?`${Math.floor(min/60)}시간 전`:`${Math.floor(min/1440)}일 전`;
+  const session=futureSessionKind(now),limit=(session==="night"?FUTURE_QUOTE_NIGHT_DELAY_MIN:FUTURE_QUOTE_DELAY_MIN)*6e4;
+  let openTime=0;
+  for(let start=Math.max(at,Number(now)-14*864e5);session&&start<now&&openTime<limit;){
+    const end=Math.min((Math.floor(start/6e4)+1)*6e4,Number(now));
+    if(futureSessionKind(start))openTime+=end-start;
+    start=end;
+  }
+  const delayed=!!session&&openTime>=limit;
+  return {text:`${md(kst)} ${kst.slice(11)} 수집 · ${ago}${!session?" · 장 마감":delayed?" · 지연":""}`,old,delayed};
 }
 // 환율 사다리의 시세 안내: 보유 월물이 없거나 그 월물 시세가 없을 때만 문구를 돌려준다(있으면 "" — 사다리 '지금' 행이 현재가를 보인다).
 function futureQuote(f,fe){

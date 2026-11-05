@@ -98,6 +98,43 @@ test('환율 사다리 지금 행은 보유 근월물 선물 시세와 수집 �
   assert.deepEqual({...ctx.futureQuoteTime({...fe,asOf:'2026-10-15'},'2026-10-17T00:00:00Z',now)},{text:'10/15 종가 · 마지막 가격',old:false,delayed:true});
   assert.deepEqual({...ctx.futureQuoteTime({...fe,stale:true},at,now)},{text:'조회 실패 · 10/16 기준 마지막 가격',old:true,delayed:true});
   assert.equal(ctx.futureQuoteTime(fe,'',now).text,'10/16 기준');
+  const quoteAt=(sample,current)=>ctx.futureQuoteTime({...fe,asOf:new Date(Date.parse(sample)+9*3600000).toISOString().slice(0,10)},sample,new Date(current));
+  for(const [sample,current,text,delayed] of [
+    ['2026-11-05T06:05:00Z','2026-11-05T07:17:00Z','11/5 15:05 수집 · 1시간 전 · 장 마감',false],
+    ['2026-11-05T08:00:00Z','2026-11-05T08:00:00Z','11/5 17:00 수집 · 방금 · 장 마감',false],
+    ['2026-11-05T08:00:00Z','2026-11-05T09:40:00Z','11/5 17:00 수집 · 1시간 전',false],
+    ['2026-11-05T06:05:00Z','2026-11-05T09:30:00Z','11/5 15:05 수집 · 3시간 전',false],
+    ['2026-11-05T06:05:00Z','2026-11-05T10:00:00Z','11/5 15:05 수집 · 3시간 전 · 지연',true],
+    ['2026-11-06T14:30:00Z','2026-11-06T15:50:00Z','11/6 23:30 수집 · 1시간 전',false],
+    ['2026-11-06T14:30:00Z','2026-11-06T16:30:00Z','11/6 23:30 수집 · 2시간 전 · 지연',true],
+    ['2026-11-06T14:30:00Z','2026-11-06T22:00:00Z','11/6 23:30 수집 · 7시간 전 · 장 마감',false],
+    ['2026-11-06T14:30:00Z','2026-11-08T03:00:00Z','11/6 23:30 수집 · 1일 전 · 장 마감',false],
+    ['2026-11-08T21:40:00Z','2026-11-09T00:50:00Z','11/9 06:40 수집 · 3시간 전 · 지연',true],
+    ['2026-11-08T21:40:00Z','2026-11-09T00:30:00Z','11/9 06:40 수집 · 2시간 전',false],
+    ['2026-11-04T23:45:00Z','2026-11-05T00:44:59Z','11/5 08:45 수집 · 59분 전',false],
+    ['2026-11-04T23:45:00Z','2026-11-05T00:45:00Z','11/5 08:45 수집 · 1시간 전 · 지연',true],
+    ['2026-11-05T09:00:00Z','2026-11-05T10:29:59Z','11/5 18:00 수집 · 1시간 전',false],
+    ['2026-11-05T09:00:00Z','2026-11-05T10:30:00Z','11/5 18:00 수집 · 1시간 전 · 지연',true],
+    ['2026-11-05T06:44:30Z','2026-11-05T10:29:30Z','11/5 15:44 수집 · 3시간 전 · 지연',true],
+    ['2026-11-05T06:44:31Z','2026-11-05T10:29:30Z','11/5 15:44 수집 · 3시간 전',false]
+  ])assert.deepEqual({...quoteAt(sample,current)},{text,old:false,delayed},`${sample} → ${current}`);
+  for(const [current,closed] of [
+    ['2026-11-04T23:44:59Z',true],['2026-11-04T23:45:00Z',false],
+    ['2026-11-05T06:44:59Z',false],['2026-11-05T06:45:00Z',true],
+    ['2026-11-05T08:59:59Z',true],['2026-11-05T09:00:00Z',false],
+    ['2026-11-06T20:59:59Z',false],['2026-11-06T21:00:00Z',true],
+    ['2026-11-08T09:00:00Z',true],['2026-11-08T15:00:00Z',true],
+    ['2026-11-08T20:59:59Z',true],['2026-11-09T20:59:59Z',false],['2026-11-09T21:00:00Z',true]
+  ]){
+    const quote=quoteAt(current,current);
+    assert.equal(quote.text.endsWith(' · 장 마감'),closed,current);
+    assert.equal(quote.delayed,false,current);
+  }
+  const closedNow=new Date('2026-11-05T08:00:00Z'),closedQuote={...fe,asOf:'2026-11-05'};
+  assert.deepEqual({...ctx.futureQuoteTime({...closedQuote,stale:true},'2026-11-05T08:00:00Z',closedNow)},
+    {text:'조회 실패 · 11/5 기준 마지막 가격',old:true,delayed:true});
+  assert.equal(ctx.futureQuoteTime({...closedQuote,asOf:'2026-11-04'},'2026-11-05T08:00:00Z',closedNow).text,'11/4 종가 · 마지막 가격');
+  assert.equal(ctx.futureQuoteTime(closedQuote,'',closedNow).text,'11/5 기준');
   // 시세 파일의 현물 환율이 있어도 선물 월물 시세만 쓰고, 보유 월물이 없으면 안내만 한다.
   ctx.priceData={updatedAt:at,stocks:{},fx:{USDKRW:{kind:'현물환율',asOf:'2026-10-16',close:1370,ma:{}}},futures:{'202611':fe}};
   Object.assign(ctx,{won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),shown:v=>String(v),PENCIL:''});
@@ -109,6 +146,20 @@ test('환율 사다리 지금 행은 보유 근월물 선물 시세와 수집 �
   assert.match(ctx.futureQuote({positions:[]},null),/보유 월물을 입력하면/);
   assert.match(ctx.futureQuote(f,null),/시세 없음/);
   assert.match(ctx.futureLadderHtml(f,null),/시세 없음[^]*1,480원/,'시세가 없으면 지금 행 대신 안내를 보이고 나머지 행은 그린다');
+  const quoteTime=ctx.futureQuoteTime;
+  for(const [current,ending,delayed] of [
+    ['2026-11-05T07:17:00Z','1시간 전 · 장 마감',false],
+    ['2026-11-05T10:00:00Z','3시간 전 · <b class="future-ladder-late">지연</b>',true]
+  ]){
+    ctx.priceData.updatedAt='2026-11-05T06:05:00Z';
+    ctx.futureQuoteTime=(entry,sampled)=>quoteTime(entry,sampled,new Date(current));
+    const rendered=ctx.futureLadderHtml(f,{...fe,asOf:'2026-11-05'});
+    assert.ok(rendered.includes(`지금 · ${ending}</span>`));
+    assert.match(rendered,/title="[^"]*거래 시간이 아니면 수집하지 않습니다\.[^"]*"/);
+    assert.equal(rendered.includes('class="future-ladder-late"'),delayed);
+    assert.doesNotMatch(rendered,/future-quote-time old/);
+  }
+  ctx.futureQuoteTime=quoteTime;
 });
 
 test('달러선물 가격 글자·입력칸은 소수 첫째 자리까지만 보이고 기록한 가격은 그대로 둔다',()=>{
