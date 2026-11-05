@@ -11,7 +11,8 @@ function load(plan){
   const els={},handlers={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',events:{},addEventListener(kind,handler){this.events[kind]=handler;},
     setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
-  el('planForm').elements={};
+  const form=el('planForm'),fields={endLabel:Object.assign(el('field:endLabel'),{value:''})};
+  form.elements=fields;form.reset=()=>{fields.endLabel.value='';};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit:(sel,set)=>{handlers[sel]=set;},alert(){},
     document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[plan],futures:{positions:[]},selectedPlan:plan.id},PENCIL:'',memoCount:()=>'',id:()=>'p1',
