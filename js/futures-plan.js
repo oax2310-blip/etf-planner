@@ -99,6 +99,17 @@ function futureAutoBreakdown(f){
   }).join("");
 }
 
+// 화면의 체크 상태를 초안과 맞춘다. 원본 buyPlan은 저장할 때만 반영한다.
+function futureAutoUnitSelection(inputs,unit){
+  const startAt=MA_UNITS.indexOf(unit);
+  inputs.forEach(input=>{
+    const at=MA_UNITS.indexOf(input.dataset.futureAutoUnit);
+    input.disabled=at<=startAt;
+    if(input.disabled)input.checked=at===startAt;
+  });
+  return [...inputs].filter(input=>input.checked).map(input=>input.dataset.futureAutoUnit);
+}
+
 function renderFuturePlanDialog(){
   const draft=futurePlanDraft;if(!draft)return;
   const dialog=$("futurePlanDialog"),f=state.futures,fe=futuresEntry(priceData,f);
@@ -114,7 +125,7 @@ function renderFuturePlanDialog(){
     <select id="futureAutoEndUnit" aria-label="종료가격 기준"><option value=""${draft.endMode==="price"?" selected":""}>직접 입력</option>${units.filter(([value])=>value).map(([value,label])=>`<option value="${value}"${draft.endMode==="ma"&&movingLineUnit(draft.endLine)===value?" selected":""}>${value==="선"?"시선":label}</option>`).join("")}</select></div><small id="futureAutoEndPrice"${draft.endMode==="ma"?"":" hidden"}></small></div>
     <label class="field future-auto-contracts"><span>총 계약 수</span><input id="futureAutoContracts" type="number" min="1" max="100" step="1" inputmode="numeric" value="${esc(draft.auto.contracts)}" required></label></div>
     <fieldset class="future-auto-units"><legend>배분할 기준선</legend>${units.filter(([value])=>value).map(([value,label])=>`<label><input type="checkbox" data-future-auto-unit="${value}"${draft.auto.units.includes(value)?" checked":""}>${label}</label>`).join("")}</fieldset>
-    <div id="futureAutoPreview" class="future-auto-preview" aria-live="polite"></div><p class="hint future-auto-hint">시세가 있는 기준선으로 회차와 계약 수를 계산합니다. 이미 매수한 계약은 포함하고, 남은 계약만 자동 배분합니다.</p></div>
+    <div id="futureAutoPreview" class="future-auto-preview" aria-live="polite"></div><p class="hint future-auto-hint">시세가 있는 기준선으로 회차와 계약 수를 계산합니다. 시작 기준선보다 짧은 시간축은 배분하지 않습니다. 이미 매수한 계약은 포함하고, 남은 계약만 자동 배분합니다.</p></div>
     <div id="futureManualFields"${draft.autoEnabled?' class="hidden"':""}>
     <div class="future-plan-toolbar"><label class="field"><span>시간축</span><select id="futurePlanUnit">${options(draft.unit)}</select></label><span id="futurePlanCount"></span></div>
     <div class="future-plan-head"><span>기준선</span><span>기준가 (원)</span><span>계약 수</span></div><div class="future-plan-rows">${draft.levels.map((l,i)=>{const name=futureLineName(l),unit=movingLineUnit(name),bought=l.tranches.filter(t=>t.completed).length;return `<div class="future-plan-row${unit===draft.unit?"":" hidden"}" data-future-plan-unit="${unit}"><strong>${esc(movingLineText(name||l.label||`추가 ${i+1}`))}${bought?`<small>완료 ${bought}계약</small>`:""}</strong><input data-future-plan-price="${i}" type="number" min="0" step="any" inputmode="decimal" value="${futureShown(l.price)}" required aria-label="${esc(movingLineText(name||l.label||`추가 ${i+1}`))} 기준가"><input data-future-plan-qty="${i}" type="number" min="${bought}" max="100" step="1" inputmode="numeric" value="${esc(l.contracts)}" required aria-label="${esc(movingLineText(name||l.label||`추가 ${i+1}`))} 계획 계약 수"><small class="future-plan-preview" data-future-plan-preview="${i}"></small></div>`;}).join("")}</div>
@@ -134,11 +145,10 @@ function renderFuturePlanDialog(){
     $("futureAutoPreview").innerHTML=`<div class="future-auto-preview-head"><strong>${plan.waiting?"추가 매수 대기":`${used.size}분할 · 남은 ${plan.remaining}계약`}</strong><span>총 ${plan.config.contracts}계약${plan.completed?` · 매수 완료 ${plan.completed}`:""}</span></div>${plan.waiting?`<p class="hint">${esc(plan.waiting)}</p>`:`<div class="future-auto-breakdown">${futureAutoBreakdown(arranged)}</div><div class="future-auto-preview-table"><div class="future-auto-preview-row head"><span>기준선 · 회차</span><span>매수가</span><span>계약 수</span></div>${body}</div>`}`;
   };
   const readAuto=()=>{
-    const unit=$("futureAutoStartUnit").value;
-    $$("[data-future-auto-unit]").forEach(input=>{input.disabled=input.dataset.futureAutoUnit===unit;if(input.disabled)input.checked=true;});
+    const unit=$("futureAutoStartUnit").value,units=futureAutoUnitSelection($$("[data-future-auto-unit]"),unit);
     draft.manualEndPrice=$("futureAutoEnd").value;
     if(draft.endMode==="ma")draft.endLine=`${$("futureAutoEndPeriod").value}${$("futureAutoEndUnit").value}`;
-    draft.auto={...draft.auto,startLine:`${$("futureAutoPeriod").value}${unit}`,endPrice:$("futureAutoEnd").value,contracts:$("futureAutoContracts").value,units:[...$$("[data-future-auto-unit]")].filter(x=>x.checked).map(x=>x.dataset.futureAutoUnit)};
+    draft.auto={...draft.auto,startLine:`${$("futureAutoPeriod").value}${unit}`,endPrice:$("futureAutoEnd").value,contracts:$("futureAutoContracts").value,units};
     if(draft.endMode==="ma"){draft.auto.endLine=draft.endLine;if(Number(draft.manualEndPrice)>0)draft.auto.manualEndPrice=Number(draft.manualEndPrice);else delete draft.auto.manualEndPrice;}
     else{delete draft.auto.endLine;delete draft.auto.manualEndPrice;}
     draft.autoDirty=true;$("futurePlanError").textContent="";updateAutoPreview();
@@ -150,7 +160,8 @@ function renderFuturePlanDialog(){
     $("futureAutoEndPeriod").hidden=!ma;$("futureAutoEndPeriod").disabled=!ma;
     $("futureAutoEndPrice").hidden=!ma;$("futureAutoEndLabel").textContent=ma?"종료가격":"종료가격 (원)";readAuto();
   };
-  $("futureAutoStartUnit").onchange=readAuto;$$("[data-future-auto-unit]").forEach(input=>{input.onchange=readAuto;input.disabled=input.dataset.futureAutoUnit===movingLineUnit(draft.auto.startLine);if(input.disabled)input.checked=true;});
+  $("futureAutoStartUnit").onchange=readAuto;$$("[data-future-auto-unit]").forEach(input=>{input.onchange=readAuto;});
+  draft.auto.units=futureAutoUnitSelection($$("[data-future-auto-unit]"),movingLineUnit(draft.auto.startLine));
   $("futurePlanMode").onchange=e=>{draft.autoEnabled=e.target.value==="auto";$("futureAutoFields").classList.toggle("hidden",!draft.autoEnabled);$("futureManualFields").classList.toggle("hidden",draft.autoEnabled);$("futurePlanError").textContent="";updateAutoPreview();};
   updateAutoPreview();
   const updatePreview=()=>{

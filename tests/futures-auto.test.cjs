@@ -11,6 +11,7 @@ const level=(days,unit,price)=>({days,unit,price,contracts:0,tranches:[]});
 const futures=()=>({targetPrice:1500,baselinePnl:0,positions:[{month:'202612',contracts:5,settlementPrice:1300}],notify:{levels:true},levels:[level(32,'일선',1320),level(42,'일선',1380)]});
 const config=extra=>({startLine:'32일선',endPrice:1380,contracts:7,units:['일선'],...extra});
 const pending=f=>f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))).filter(x=>!x.t.completed);
+const unitOf=name=>String(name).replace(/^\d+/,'');
 
 test('자동 배분은 시작선·종료가를 포함하고 정수 계약 합계를 보유 월물과 따로 맞춘다',()=>{
   const ctx=load();
@@ -30,17 +31,84 @@ test('자동 배분은 시작선·종료가를 포함하고 정수 계약 합계
   assert.deepEqual(plain(ctx.futureAutoBuyPlan(futures(),config()).rows).map(r=>[r.price,r.contracts]),[[1320,2],[1340,2],[1360,2],[1380,1]]);
 });
 
-test('시·일·주·월선에서 구간 밖 가격과 겹치는 가격을 빼고 적은 계약은 회차를 줄인다',()=>{
+test('시작 시간축 이후의 선에서 구간 밖 가격과 겹치는 가격을 빼고 적은 계약은 회차를 줄인다',()=>{
   const ctx=load(),f=futures();
   f.levels.push(level(32,'선',1310),level(42,'선',1345),level(60,'선',1370),level(32,'개월선',1350),level(42,'개월선',1380),level(32,'주선',1372));
   const input=config({units:['선','일선','주선','개월선'],contracts:30}),plan=ctx.futureAutoBuyPlan(f,input);
   assert.equal(new Set(plan.rows.map(r=>r.price)).size,plan.rows.length,'같은 가격에 다른 시간축의 주문을 중복하지 않는다');
   assert.ok(plan.rows.every(r=>r.price>=1320&&r.price<=1380));
-  for(const unit of ['선','일선','주선','개월선'])assert.ok(plan.rows.some(r=>r.line.replace(/^\d+/,'')===unit));
-  assert.ok(!plan.rows.some(r=>r.line==='32선'),'시작 기준가보다 낮은 선은 사용하지 않는다');
+  for(const unit of ['일선','주선','개월선'])assert.ok(plan.rows.some(r=>r.line.replace(/^\d+/,'')===unit));
+  assert.ok(!plan.rows.some(r=>unitOf(r.line)==='선'),'일선 시작이면 가격 범위 안의 시선도 사용하지 않는다');
   assert.equal(plan.rows.filter(r=>r.price===1380).length,1,'끝선과 종료가가 같아도 한 번만 매수한다');
   const small=ctx.futureAutoBuyPlan(f,{...input,contracts:3});
   assert.equal(small.rows.length,3);assert.equal(small.rows[0].line,'32일선');assert.equal(small.rows.at(-1).key,'end');
+});
+
+test('시작선보다 짧은 시간축은 미리보기에서만 거르고 입력·반환 설정의 units는 보존한다',()=>{
+  const ctx=load(),units=['선','일선','주선','개월선'];
+  for(const startUnit of units){
+    const f=futures();
+    f.levels=units.flatMap((unit,i)=>[level(42,unit,unit===startUnit?1320:1330+i*5),level(60,unit,1380)]);
+    const input=config({startLine:`42${startUnit}`,units:Object.freeze([...units]),contracts:30}),before=JSON.stringify(input),saved=JSON.stringify(f);
+    const plan=ctx.futureAutoBuyPlan(f,input);
+    assert.equal(plan.error,undefined);assert.ok(plan.rows.length>1);
+    assert.ok(plan.rows.every(r=>r.key==='end'||units.indexOf(unitOf(r.line))>=units.indexOf(startUnit)));
+    assert.equal(JSON.stringify(input),before);assert.deepEqual(plain(plan.config.units),units);
+    assert.equal(JSON.stringify(f),saved,'미리보기에서 원본 기록을 바꾸지 않는다');
+  }
+});
+
+test('일선 자동 배분·시세 갱신은 시선 미체결 계약을 없애고 완료 기록·저장 units·알림을 보존한다',()=>{
+  const ctx=load();
+  for(const endLine of ['', '19일선']){
+    const f=futures(),hourly=level(42,'선',1345);
+    hourly.contracts=2;hourly.tranches=[
+      {slot:0,price:1345,completed:true,executionPrice:1344.8,mergedMonth:'202612',month:'202612',notify:false},
+      {slot:1,price:1350,completed:false,executionPrice:null}
+    ];
+    f.levels.push(hourly,level(60,'선',1370));
+    f.buyPlan=config({units:['선','일선'],...(endLine?{endLine}:{})});
+    const bought=plain(hourly.tranches[0]),savedPlan=JSON.stringify(f.buyPlan),positions=JSON.stringify(f.positions);
+    const verify=()=>{
+      assert.ok(pending(f).every(x=>unitOf(ctx.futureLineName(x.l))!=='선'));
+      assert.deepEqual(plain(f.levels.find(l=>ctx.futureLineName(l)==='42선').tranches),[bought]);
+      assert.equal(pending(f).length,6);assert.equal(f.levels.reduce((n,l)=>n+l.contracts,0),7);
+      assert.equal(JSON.stringify(f.buyPlan),savedPlan);assert.equal(JSON.stringify(f.positions),positions);
+      const before=JSON.stringify(f),rules=ctx.buildTradeAlertRules({futures:f},null,true);
+      assert.ok(rules.length>0);assert.ok(!rules.some(r=>/\d+선/.test(r.label)),'시선 알림도 남지 않는다');
+      assert.equal(JSON.stringify(f),before,'알림 계산은 기록을 바꾸지 않는다');
+    };
+    assert.equal(ctx.applyFutureAutoBuyPlan(f),true);verify();
+    const data={updatedAt:'2026-10-08T01:00:00Z',stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-08',close:1390,ma:{'32일선':1323,'42일선':1380,'42선':1348,'60선':1370,'19일선':1380}}}};
+    assert.equal(ctx.fillPrices({futures:f},data),true);verify();
+    const snapshot=JSON.stringify(f);assert.equal(ctx.applyFutureAutoBuyPlan(f),false);assert.equal(JSON.stringify(f),snapshot);
+  }
+});
+
+test('시작선보다 짧은 시간축도 이동평균 종료 계획의 직접 수정 계약은 기존대로 보존한다',()=>{
+  const ctx=load(),f=futures(),hourly=level(42,'선',1345);
+  hourly.contracts=1;hourly.tranches=[{slot:0,price:1351,priceOverride:1351,completed:false,executionPrice:null,month:'202701',notify:false}];
+  f.levels.push(hourly);const saved=plain(hourly);
+  const input=config({endLine:'19일선',units:['선','일선']}),plan=ctx.futureAutoBuyPlan(f,input);
+  assert.deepEqual(plain(plan.rows.filter(r=>unitOf(r.line)==='선')).map(r=>[r.fixed,r.price,r.contracts]),[[true,1351,1]]);
+  assert.equal(ctx.applyFutureAutoBuyPlan(f,input),true);assert.deepEqual(plain(f.levels[2]),saved);
+});
+
+test('시간축 체크박스는 시작선 앞을 끄고 잠그며 시작선을 켜고 뒤의 사용자 선택은 유지한다',()=>{
+  const ctx=load(),units=['선','일선','주선','개월선'];
+  const inputs=units.map((unit,i)=>({dataset:{futureAutoUnit:unit},checked:[true,false,false,true][i],disabled:false}));
+  const flags=()=>inputs.map(x=>[x.checked,x.disabled]);
+  assert.deepEqual(plain(ctx.futureAutoUnitSelection(inputs,'선')),['선','개월선']);
+  assert.deepEqual(flags(),[[true,true],[false,false],[false,false],[true,false]]);
+  assert.deepEqual(plain(ctx.futureAutoUnitSelection(inputs,'일선')),['일선','개월선']);
+  assert.deepEqual(flags(),[[false,true],[true,true],[false,false],[true,false]]);
+  inputs[3].checked=false;
+  assert.deepEqual(plain(ctx.futureAutoUnitSelection(inputs,'주선')),['주선']);
+  assert.deepEqual(flags(),[[false,true],[false,true],[true,true],[false,false]]);
+  assert.deepEqual(plain(ctx.futureAutoUnitSelection(inputs,'개월선')),['개월선']);
+  assert.deepEqual(flags(),[[false,true],[false,true],[false,true],[true,true]]);
+  assert.deepEqual(plain(ctx.futureAutoUnitSelection(inputs,'일선')),['일선','개월선']);
+  assert.deepEqual(flags(),[[false,true],[true,true],[false,false],[true,false]]);
 });
 
 test('자동 배분은 현재가가 아닌 시작선 가격을 사용하고 없는 다음 선을 추정하지 않는다',()=>{
