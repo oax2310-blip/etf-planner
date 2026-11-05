@@ -38,6 +38,30 @@ test('수신한 종목·기준선만 같은 사이트의 이동 주소에 담는
   assert.equal((await push({})).data.url,scope);
 });
 
+test('분할·병합 반영 요청은 검증한 actionId로 미리보기 query를 만들고 알림 클릭에도 보존한다',async()=>{
+  for(const actionId of ['TEST:2026-11-05:1:3','TEST:2026-11-05:10:1','BRK/B:2026-11-05:1:3','T'.repeat(32)+':2026-11-05:1:1000']){
+    const ticker=actionId.split(':')[0],{push,click,calls}=worker();
+    const notice=await push({kind:'corporateAction',ticker,actionId,eventId:'a'.repeat(64),title:'액면분할 반영 요청',body:'가상 ETF 1→3 액면분할 감지',url:'https://outside.test/'});
+    assert.equal(notice.data.url,scope+'index.html?split='+encodeURIComponent(actionId));await click(notice.data);
+    assert.deepEqual(calls.opened,[notice.data.url]);assert.equal(notice.tag,'a'.repeat(64));
+  }
+});
+test('열린 플래너에서도 분할 query로 이동한 뒤 포커스하고 자산 탭은 바꾸지 않는다',async()=>{
+  const order=[],client={url:scope+'index.html',async navigate(url){order.push(url);return this;},async focus(){order.push('focus');}};
+  const {push,click,calls}=worker([{url:scope+'assets.html',navigate(){throw Error('unrelated');}},client]);
+  const notice=await push({kind:'corporateAction',ticker:'TEST',actionId:'TEST:2026-11-05:1:3'});await click(notice.data);
+  assert.deepEqual(order,[notice.data.url,'focus']);assert.deepEqual(calls.opened,[]);
+});
+test('위조된 분할 id·날짜·비율과 외부·다른 경로·중복 split query를 미리보기로 열지 않는다',async()=>{
+  for(const actionId of ['BTC-USD:2026-11-05:1:3','KS200:2026-11-05:1:3','TEST:2026-02-30:1:3','TEST:2026-11-05:01:3','TEST:2026-11-05:1:1','TEST:2026-11-05:1:1001','bad']){
+    const {push}=worker(),notice=await push({kind:'corporateAction',ticker:actionId.split(':')[0],actionId});assert.equal(new URL(notice.data.url).searchParams.has('split'),false);
+  }
+  const id=encodeURIComponent('TEST:2026-11-05:1:3');
+  for(const url of ['https://outside.test/index.html?split='+id,scope+'assets.html?split='+id,scope+'index.html?split='+id+'&split='+id]){
+    const {click,calls}=worker();await click({url});assert.deepEqual(calls.opened,[scope]);
+  }
+});
+
 test('열린 플래너를 알림 대상 주소로 이동한 뒤 포커스한다',async()=>{
   const order=[],client={url:scope+'index.html#rebuy',
     async navigate(url){order.push(['navigate',url]);return this;},async focus(){order.push(['focus']);}};
