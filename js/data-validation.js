@@ -64,8 +64,27 @@ const externalData = (()=>{
     });
     child(v,"notify",path);child(v,"auto",path);
   }
+  // 적용 때만 저장하는 이력(최대 200개). 필수 타입·실제 날짜·비율·문자열 길이를 검사하며 없던 배열을 만들지 않는다.
+  function splitLog(value){
+    if(value===undefined)return;
+    if(!Array.isArray(value)||value.length>200)fail("splitLog");
+    const date=s=>typeof s==="string"&&/^(?!0000)\d{4}-\d\d-\d\d$/.test(s)&&Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
+    const ids=new Set();
+    value.forEach((v,i)=>{
+      const p=`splitLog[${i}]`;record(v,p);
+      if(typeof v.id!=="string"||!v.id.trim()||v.id.length>128||ids.has(v.id))fail(`${p}.id`);ids.add(v.id);
+      if(typeof v.ticker!=="string"||!/^[A-Z0-9][A-Z0-9.\/-]{0,31}$/.test(v.ticker)||["BTC-USD","KS200"].includes(v.ticker))fail(`${p}.ticker`);
+      for(const k of ["from","to"])if(!Number.isInteger(v[k])||v[k]<1||v[k]>1000)fail(`${p}.${k}`);
+      if(v.from===v.to)fail(`${p}.to`);
+      if(!date(v.exDate))fail(`${p}.exDate`);
+      if(typeof v.appliedAt!=="string"||v.appliedAt.length>40||!date(v.appliedAt.slice(0,10))||!/^\d{4}-\d\d-\d\dT(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(v.appliedAt)||!Number.isFinite(Date.parse(v.appliedAt)))fail(`${p}.appliedAt`);
+      for(const k of ["planner","assets"])if(typeof v[k]!=="boolean")fail(`${p}.${k}`);
+      if(!v.planner&&!v.assets)fail(p);
+    });
+  }
   function planner(data){
     record(data,"플래너");tree(data);
+    splitLog(data.splitLog);
     if(!Array.isArray(data.plans))fail("plans");record(data.futures,"futures");
     records(data.plans,"plans",(p,path)=>{
       strings(p,["id","ticker","title","cardName","currency","startLabel","endLabel","note","sellTargetId"],path);
