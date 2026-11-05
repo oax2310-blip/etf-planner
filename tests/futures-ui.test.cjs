@@ -259,9 +259,10 @@ test('종료 이동평균 계획이 오류·추가 배분 대기이면 보존한
   assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
   f.buyPlan.endPrice=1450;f.levels[0].price=0;assert.ok(ctx.futureAutoBuyPlan(f).error);
   assertBuyTableDue(ctx.futureBuyTable(f),'0:0',false);
-  f.levels=[level(25,1400,1),level(32,1300,1),level(42,1450,0),{planEnd:true,label:'종료가',price:1450,contracts:1,tranches:[{price:1450,completed:true,executionPrice:1450,mergedMonth:'202612'}]}];
-  Object.assign(f.levels[0].tranches[0],{completed:true,executionPrice:1400,mergedMonth:'202612'});
-  f.levels[1].tranches[0].price=1410;f.buyPlan.contracts=3;
+  f.levels=[level(25,1400,3),level(32,1300,1),level(42,1450,0),{planEnd:true,label:'종료가',price:1450,contracts:1,tranches:[{price:1450,completed:true,executionPrice:1450,mergedMonth:'202612'}]}];
+  // 새 규칙의 25일선 1·2·3차와 종료가를 모두 산 상태라 새로 배분할 회차가 없다.
+  [1400,1400+50/3,1400+100/3].forEach((price,i)=>Object.assign(f.levels[0].tranches[i],{price,completed:true,executionPrice:price,mergedMonth:'202612'}));
+  f.levels[1].tranches[0].price=1410;f.buyPlan.contracts=5;
   assert.ok(ctx.futureAutoBuyPlan(f).waiting,'남은 계약을 배분할 새 기준선이 없다');
   const before=JSON.stringify(f),html=ctx.futureBuyTable(f);
   assertBuyTableDue(html,'1:0',false);
