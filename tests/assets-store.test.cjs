@@ -27,6 +27,30 @@ function setup(initial,fetcher,shared){
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY}),pageshow:persisted=>listeners.get('pageshow')?.({persisted})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
+
+test('기록 보정의 구역 교체는 저장에 성공해야 doc을 바꾸며 입력한 매수 금액을 다시 계산하지 않는다',()=>{
+  const original=fake(),h=setup(original),replacement=clone(original.allocation);
+  replacement.groups[0].items[0].shares=9;replacement.groups[0].items[0].buyPlan.stages[0].amount=17;
+  const before=JSON.stringify(replacement);
+  assert.equal(h.store.saveSection('allocation',replacement),true);
+  assert.equal(h.store.doc.allocation.groups[0].items[0].shares,9);
+  assert.equal(h.store.doc.allocation.groups[0].items[0].buyPlan.stages[0].amount,17);
+  assert.equal(JSON.stringify(replacement),before,'호출부가 넘긴 사본도 바꾸지 않는다');
+  assert.deepEqual(clone(h.store.doc.ledger),original.ledger);
+  assert.equal(JSON.parse(h.storage.get(KEY)).allocation.groups[0].items[0].shares,9);
+});
+
+test('구역 교체 저장 실패는 메모리·브라우저 기록과 마지막 성공 기준을 보존한다',()=>{
+  const original=fake(),h=setup(original),replacement=clone(original.allocation),write=h.context.localStorage.setItem;
+  replacement.groups[0].items[0].shares=9;
+  h.context.localStorage.setItem=(key,value)=>{if(key===KEY)throw Error('synthetic quota');write(key,value);};
+  assert.equal(h.store.saveSection('allocation',replacement),false);
+  assert.deepEqual(clone(h.store.doc),original);assert.deepEqual(JSON.parse(h.storage.get(KEY)),original);
+  h.event();h.pageshow(true);assert.deepEqual(clone(h.store.doc),original);
+  assert.equal(h.store.localSaveFailed,true);
+  h.context.localStorage.setItem=write;
+  assert.equal(h.store.saveSection('allocation',replacement),true);assert.equal(h.store.doc.allocation.groups[0].items[0].shares,9);
+});
 const milestoneDoc=()=>({...fake(),savings:{savedAt:'2026-01-01',startYear:2025,startAge:31,actual:[{ym:'2025-12',total:1000}],scenarios:[{id:'base',name:'가상 계획',salary:100}],milestoneRecord:{ym:'2031-01',age:37}}});
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 const contents=doc=>json({sha:'remote-sha',encoding:'base64',content:Buffer.from(JSON.stringify(doc)).toString('base64')});

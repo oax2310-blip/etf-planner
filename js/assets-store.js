@@ -26,14 +26,20 @@ function writeLocal(next=doc){
   for(const [repo,base] of memoryBases)if(writeJson(A_BASE_KEY+repo,base))memoryBases.delete(repo);
   setLocalSaveFailed(memoryBases.size>0);return true;
 }
-function saveSection(section){
+function saveSection(section,replacement){
+  // 기록 보정의 구역 교체는 저장 성공 전까지 doc을 바꾸지 않는다. 일반 입력·저장 실패 시 메모리 유지 동작은 보존한다.
+  // 교체한 매수 예산은 복원·동기화처럼 다시 계산하지 않는다. false이면 호출부는 이전 구역을 그대로 사용할 수 있다.
+  const replacing=arguments.length>1,next=replacing?{...doc,[section]:JSON.parse(JSON.stringify(replacement))}:doc;
+  if(replacing)externalData.assets(next);
   // storage 알림이 아직 도착하지 않은 다른 페이지의 같은 구역 입력도 마지막으로 읽은 기록을 기준으로 합친다.
   // 직접 고친 구역에 먼저 저장 시각을 찍어 기존 충돌 선택·보관 규칙과 체결 보유량 합산을 그대로 쓴다.
   const latest=cleanAssets(readJson(A_KEY,null));
   // 자산 배분 목표가 바뀐 분할매수 계획은 같은 저장에서 옛 계획 목표·총 매수 금액을 맞춘다(assets-calc.js syncPurchaseTargets). 동기화·복원으로 받은 기록은 다시 계산하지 않는다.
-  if(section==="allocation"&&doc.allocation)syncPurchaseTargets(lastLocal.allocation,doc.allocation,prices);
-  if(doc[section])doc[section].savedAt=new Date().toISOString();
-  const merged=mergeAssets(doc,latest,lastLocal);doc=JSON.parse(JSON.stringify(merged.doc));writeLocal();keepMerged(merged);scheduleAssetSync(1500);emit("change");
+  if(!replacing&&section==="allocation"&&next.allocation)syncPurchaseTargets(lastLocal.allocation,next.allocation,prices);
+  if(next[section])next[section].savedAt=new Date().toISOString();
+  const merged=mergeAssets(next,latest,lastLocal),candidate=JSON.parse(JSON.stringify(merged.doc));
+  if(replacing){if(!writeLocal(candidate))return false;}else{doc=candidate;writeLocal();}
+  keepMerged(merged);scheduleAssetSync(1500);emit("change");return replacing||!localSaveFailed;
 }
 // 저장 버튼을 누를 때만 기록을 갱신한다. 다른 탭의 최신 입력·최단 기록을 먼저 합치고, 브라우저 저장 실패 시 기존 상태를 유지한다.
 function saveSavingsMilestone(record){
@@ -196,7 +202,7 @@ async function syncAssets(beforePriceCollection=false){
     if(redraw) emit("change");
     setAssetSync(aSync.timer?"pending":"done");
   }catch(error){ setAssetSync("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error)); }
-  finally{ aSync.busy=false; if(aSync.again) scheduleAssetSync(300); }
+  finally{ aSync.busy=false; emit("status"); if(aSync.again) scheduleAssetSync(300); }
 }
 function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync.timer); aSync.timer=setTimeout(()=>{ aSync.timer=null; syncAssets(); },delay); if(!aSync.busy&&!aSync.choice) setAssetSync("pending"); }
 
@@ -233,6 +239,6 @@ function start(){
   syncAssets();
 }
 return {get doc(){return doc;},get localSaveFailed(){return localSaveFailed;},get prices(){return prices;},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
-  get notice(){return notice();},config:assetConfig,saveSection,saveSavingsMilestone,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,choose,renderNotice,
+  get notice(){return notice();},config:assetConfig,saveSection,saveSavingsMilestone,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,choose,renderNotice,absorbLocal,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();
