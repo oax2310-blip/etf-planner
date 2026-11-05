@@ -112,7 +112,8 @@ function refreshFutureBuyPrices(f,changedNames=null){
 // 이동평균 종료 계획에서 보존할 직접 수정가. 0으로 비운 값도 자동 가격으로 되돌리지 않고 검증한다.
 function futureFixedBuyPrice(level,tranche){return tranche.priceOverride!=null?Number(tranche.priceOverride):!futureLineName(level)&&!level.planEnd?Number(tranche.price):null;}
 
-// 자동 분할매수: 시작선 가격 이상·종료가격 미만의 시·일·주·월선 0·⅓·⅔ 회차를 가격순으로 모으고 종료가를 한 번 붙인다.
+// 자동 분할매수: 시·일·주·월 순서로 시작선과 같거나 뒤인 선택 시간축에서 시작선 가격 이상·종료가격 미만의 0·⅓·⅔ 회차를 가격순으로 모으고 종료가를 한 번 붙인다.
+// 앞선 시간축은 후보에서만 거르고 저장 설정의 units는 그대로 둔다. 직접 수정가·완료 계약은 기존대로 보존한다.
 // 소수 넷째 자리 표시가 같은 가격은 시작선을 우선해 합치며 종료가와 겹치면 종료가만 둔다.
 // 총 계약 수에는 이 계획의 완료 계약을 포함한다(별도로 입력한 보유 월물은 제외). 다 산 회차도 순서에 남겨 간격을 잡는다:
 // 첫·끝을 포함해 회차 순서상 고르게 고른 회차 중 아직 안 끝난 회차가 남은 계약 수 이하인 가장 많은 회차 수를 쓰고(1계약이면 끝 회차),
@@ -150,10 +151,10 @@ function futureAutoBuyPlan(f, input=f?.buyPlan){
   if(fixed.length>remaining)return {...result,error:"직접 수정한 미매수 계약 수보다 총 계약 수를 줄일 수 없습니다. 직접 수정값을 먼저 확인하세요."};
   if(fixed.some(r=>!Number.isFinite(r.price)||r.price<startPrice||r.price>endPrice))return {...result,error:"직접 수정한 매수가가 시작·종료 범위를 벗어납니다. 직접 수정값을 확인하세요. 기존 계획은 유지합니다."};
   const finished=key=>filled.has(key)&&!pending.has(key);
-  const candidates=[];
+  const candidates=[],startAt=MA_UNITS.indexOf(movingLineUnit(startLine));
   levels.forEach((l,li)=>{
     const name=futureLineName(l),unit=movingLineUnit(name),price=Number(l.price);
-    if(!name||!config.units.includes(unit)||price<startPrice||price>=endPrice)return;
+    if(!name||MA_UNITS.indexOf(unit)<startAt||!config.units.includes(unit)||price<startPrice||price>=endPrice)return;
     futureBuyPrices(levels,li).forEach((p,slot)=>{
       const price=Number(p),key=roundKey(l,slot),done=finished(key);
       if(price>=startPrice&&price<endPrice&&Math.round(price*1e4)!==Math.round(endPrice*1e4)&&(done||!(endLine&&filledPrices.has(Math.round(price*1e4))&&!pending.has(key))))candidates.push({li,line:name,slot,price,key,done});
