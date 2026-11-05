@@ -1,5 +1,5 @@
 // 수신 알림의 당시 내용을 로컬 수신함에 저장한다. 토큰·매매 기록을 캐시하거나 네트워크로 보내지 않는다.
-importScripts("js/alert-target.js?v=367","js/alert-history-store.js?v=367","js/stock-names.js?v=367");
+importScripts("js/alert-target.js?v=368","js/alert-history-store.js?v=368","js/stock-names.js?v=368");
 self.addEventListener("install",event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener("activate",event=>event.waitUntil(self.clients.claim()));
 self.addEventListener("push",event=>{
@@ -14,7 +14,7 @@ self.addEventListener("push",event=>{
     let view;try{view=stockNames.notice(data,names);}catch{view={title:text(data.title,100)||"매매 플래너 알림",body:text(data.body,400)||"설정한 기준선 알림을 확인해 주세요."};}
     return self.registration.showNotification(view.title,{
       body:view.body,
-      tag:text(data.eventId,100)||"ma-alert",data:{url:self.registration.scope+pushAlertHash(data)},
+      tag:text(data.eventId,100)||"ma-alert",data:{url:pushAlertUrl(data,self.registration.scope)},
       icon:new URL("push-icon.svg",self.registration.scope).href
     });
   });
@@ -24,9 +24,7 @@ self.addEventListener("notificationclick",event=>{
   event.notification.close();
   event.waitUntil((async()=>{
     const scope=new URL(self.registration.scope);
-    let hash="";
-    try{const sent=new URL(event.notification.data?.url);if(sent.origin===scope.origin&&sent.pathname===scope.pathname)hash=pushAlertHash(pushAlertTargetFromHash(sent.hash));}catch{}
-    const url=scope.href+hash;
+    const url=pushSavedAlertUrl(event.notification.data?.url,scope.href);
     for(const client of await self.clients.matchAll({type:"window",includeUncontrolled:true})){
       const current=new URL(client.url);
       if(current.origin!==scope.origin||![scope.pathname,scope.pathname+"index.html"].includes(current.pathname)||!("navigate" in client))continue;

@@ -1,4 +1,25 @@
-// push.js와 push-sw.js가 공유하는 알림 이동 주소. 발송 URL 대신 이 사이트 안의 주소만 만든다.
+// push.js와 push-sw.js가 공유하는 알림 이동 주소. 발송 URL 대신 검증된 식별자로 이 사이트 안의 주소만 만든다.
+function pushSplitActionId(value){
+  const match=typeof value==="string"?/^([A-Z0-9][A-Z0-9.\/-]{0,31}):((?!0000)\d{4}-\d{2}-\d{2}):([1-9]\d{0,3}):([1-9]\d{0,3})$/.exec(value):null;
+  if(!match||["BTC-USD","KS200"].includes(match[1]))return null;
+  const [,ticker,day,from,to]=match,parsed=Date.parse(day);
+  return Number(from)<=1000&&Number(to)<=1000&&from!==to&&Number.isFinite(parsed)&&new Date(parsed).toISOString().slice(0,10)===day?{id:value,ticker}:null;
+}
+function pushAlertUrl(data,scope){
+  const split=data?.kind==="corporateAction"?pushSplitActionId(data.actionId):null;
+  return split&&split.ticker===data.ticker?new URL(`index.html?split=${encodeURIComponent(split.id)}`,scope).href:scope+pushAlertHash(data);
+}
+// 알림에 보관한 주소도 다시 검사해 외부 사이트·다른 화면·중복 쿼리로 이동하지 않는다.
+function pushSavedAlertUrl(value,scope){
+  const root=new URL(scope);
+  try{
+    const sent=new URL(value);
+    if(sent.origin!==root.origin||![root.pathname,root.pathname+"index.html"].includes(sent.pathname))return root.href;
+    const ids=sent.searchParams.getAll("split"),split=ids.length===1?pushSplitActionId(ids[0]):null;
+    if(split)return new URL(`index.html?split=${encodeURIComponent(split.id)}`,root).href;
+    return root.href+pushAlertHash(pushAlertTargetFromHash(sent.hash));
+  }catch{return root.href;}
+}
 function pushAlertTarget(data){
   const ticker=typeof data?.ticker==="string"?data.ticker.trim().toUpperCase():"";
   if(!/^[A-Z0-9][A-Z0-9.\-/]{0,11}$/.test(ticker))return null;

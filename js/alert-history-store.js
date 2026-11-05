@@ -9,9 +9,9 @@ const alertHistoryStore = (()=>{
   const positive=value=>typeof value==="number"&&Number.isFinite(value)&&value>0?value:null;
   function record(data,receivedAt){
     if(!data||typeof data!=="object")return null;
-    const eventId=clean(data.eventId||data.id,128),ticker=clean(data.ticker,12).trim().toUpperCase();
+    const eventId=clean(data.eventId||data.id,128),ticker=clean(data.ticker,32).trim().toUpperCase();
     const occurredAt=stamp(data.occurredAt)||stamp(data.observedAt);
-    if(!eventId||!occurredAt||!/^[A-Z0-9][A-Z0-9.\-/]{0,11}$/.test(ticker))return null;
+    if(!eventId||!occurredAt||!/^[A-Z0-9][A-Z0-9.\-/]{0,31}$/.test(ticker))return null;
     const line=clean(data.line,100),type=/손절|신저점 이탈/.test(line)?"손절":/재매수/.test(line)?"재매수":line.startsWith("분할매도 ")?"분할매도":line.startsWith("분할매수 ")?"분할매수":line.startsWith("매수대기 ")?"매수대기":line.startsWith("달러선물 ")?"달러선물 매수":"기준선";
     const item={id:eventId,ticker,line,ruleId:clean(data.ruleId,512),name:clean(data.name,200)||ticker,type,occurredAt,body:clean(data.body,2000)};
     for(const field of ["price","ma"]){const value=positive(data[field]);if(value!==null)item[field]=value;}

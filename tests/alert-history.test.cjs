@@ -6,6 +6,12 @@ const vm=require('node:vm');
 const source=name=>fs.readFileSync(path.join(__dirname,'..','js',name),'utf8');
 const plain=value=>JSON.parse(JSON.stringify(value));
 const event=(id='event-1',extra={})=>({eventId:id,ticker:'TEST',ruleId:'trade:buy:one:round',line:'분할매수 25선 2차',name:'예제 ETF',price:101.2345,ma:100.1234,currency:'USD',condition:'up',trigger:'reach',observedAt:'2026-10-14T01:02:03Z',occurredAt:'2026-10-14T01:02:10Z',body:'분할매수 25선 2차 기준가 이상 도달',...extra});
+
+test('가격·MA 없는 분할 반영 요청도 기존 내역으로 보존하고 32자 종목 코드를 자르지 않는다',()=>{
+  const ticker='T'.repeat(32),raw={eventId:'a'.repeat(64),ticker,line:'1→3 액면분할 감지',name:'가상 ETF',body:'플래너에서 기록을 반영하면 매매 알림이 다시 켜집니다',observedAt:'2026-11-05T12:00:00Z',ruleId:`split-action:${ticker}:2026-11-05:1:3`};
+  const store=load().ctx.store,record=store.record(raw);assert.equal(record.ticker,ticker);assert.equal(record.body,raw.body);assert.equal(record.ruleId,raw.ruleId);assert.equal(Object.hasOwn(record,'price'),false);assert.equal(Object.hasOwn(record,'ma'),false);
+  assert.equal(store.merge({items:[record]}).items[0].ticker,ticker);
+});
 function load(initial={}){
   let saves=0;const storage=new Map(),nodes=new Map();
   const ctx=vm.createContext({state:plain(initial),Intl,Date,Set,Map,JSON,URLSearchParams,
