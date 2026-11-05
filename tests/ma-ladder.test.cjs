@@ -27,13 +27,27 @@ for(const unit of ['선','일선','주선','개월선']){
   });
 }
 
-test('가격은 기간 순서와 같은 시간축으로 연결하며 빈 다음 선을 건너뛰지 않는다',()=>{
+test('가격은 같은 시간축의 바로 높은 가격으로 연결하며 값 없는 선은 건너뛴다',()=>{
   const ctx=load(),levels=[level(60,'일선',1450),level(32,'일선',1350),level(42,'일선',0),level(42,'주선',1400)];
-  assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),[1350]);
+  const skipped=[1350,1350+100/3,1350+200/3];
+  assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),skipped);
   levels[2].price=1380;
   assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),[1350,1360,1370]);
-  for(const bad of [0,1340,1350,NaN,Infinity]){levels[2].price=bad;assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),[1350]);}
-  levels[1].price=0;assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),[]);
+  for(const bad of [0,1340,1350,NaN,Infinity]){levels[2].price=bad;assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),skipped);}
+  for(const bad of [0,-1,null,undefined,'',NaN,Infinity,-Infinity]){
+    levels[1].price=bad;
+    assert.equal(ctx.nextFutureLine(levels,1),null);assert.deepEqual(plain(ctx.futureBuyPrices(levels,1)),[]);
+  }
+});
+
+test('가격상 다음 선은 자신을 제외하고 기간이 짧아도 고르며 동가는 짧은 기간을 우선한다',()=>{
+  const ctx=load(),levels=[level(42,'일선',1350),level(60,'일선',1400),level(32,'일선',1380),level(25,'일선',1380),level(42,'주선',1360)];
+  const before=JSON.stringify(levels),next=ctx.nextFutureLine(levels,0);
+  assert.equal(next.name,'25일선');assert.equal(next.i,3);assert.equal(next.level,levels[3]);
+  assert.equal(JSON.stringify(levels),before,'다음 선을 조회해도 원본 순서와 기록은 바뀌지 않는다');
+  assert.equal(ctx.nextFutureLine(levels,1),null,'더 높은 선이 없으면 자기 자신도 선택하지 않는다');
+  assert.equal(ctx.nextFutureLine(levels,4),null,'다른 시간축의 선은 연결하지 않는다');
+  assert.equal(ctx.nextFutureLine(levels,-1),null);
 });
 
 test('다음 선 시세만 바뀌어도 앞 구간 미매수 가격을 다시 계산하고 체결가·월물·수량은 보존한다',()=>{

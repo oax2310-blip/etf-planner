@@ -61,14 +61,16 @@ function ensureFutureMovingLines(f){
   const names=new Set(f.levels.map(futureLineName));
   for(const name of MA_LINES)if(!names.has(name))f.levels.push({days:parseInt(name),unit:movingLineUnit(name),price:0,confirmed:false,contracts:0,tranches:[]});
 }
-// 같은 시간축의 다음 기간을 찾는다. 빈 기준선을 건너뛰어 추정 회차를 만들지 않는다.
+// 같은 시간축에서 자기 가격보다 높은 유한한 양수 중 가장 낮은 선을 찾는다(기간 순서와 무관).
+// 자기 시세가 없으면 null, 값 없는 후보는 건너뛰고 동가는 짧은 기간을 우선한다. 원본 순서는 바꾸지 않는다.
 function nextFutureLine(levels,index){
-  const name=futureLineName(levels[index]),unit=movingLineUnit(name),period=parseInt(name);
-  if(!name)return null;
+  const name=futureLineName(levels[index]),unit=movingLineUnit(name),price=Number(levels[index]?.price);
+  if(!name||!Number.isFinite(price)||price<=0)return null;
   return levels.map((level,i)=>({level,i,name:futureLineName(level)}))
-    .filter(x=>movingLineUnit(x.name)===unit&&parseInt(x.name)>period)
-    .sort((a,b)=>parseInt(a.name)-parseInt(b.name))[0]||null;
+    .filter(x=>x.i!==index&&movingLineUnit(x.name)===unit&&Number.isFinite(Number(x.level.price))&&Number(x.level.price)>price)
+    .sort((a,b)=>Number(a.level.price)-Number(b.level.price)||parseInt(a.name)-parseInt(b.name))[0]||null;
 }
+// 가격상 다음 선까지 0·⅓·⅔로 나눈다. 더 높은 선이 없으면 1차만, 자기 시세가 없으면 빈 목록이다.
 function futureBuyPrices(levels,index){
   const level=levels[index],next=nextFutureLine(levels,index);
   return lineThirds(level?.price,next?.level.price);
@@ -113,6 +115,7 @@ function refreshFutureBuyPrices(f,changedNames=null){
 function futureFixedBuyPrice(level,tranche){return tranche.priceOverride!=null?Number(tranche.priceOverride):!futureLineName(level)&&!level.planEnd?Number(tranche.price):null;}
 
 // 자동 분할매수: 시·일·주·월 순서로 시작선과 같거나 뒤인 선택 시간축에서 시작선 가격 이상·종료가격 미만의 0·⅓·⅔ 회차를 가격순으로 모으고 종료가를 한 번 붙인다.
+// 각 선의 중간 회차는 같은 시간축의 가격상 다음 선까지 나누며 기간 순서와 무관하게 값 없는 선을 건너뛴다.
 // 앞선 시간축은 후보에서만 거르고 저장 설정의 units는 그대로 둔다. 직접 수정가·완료 계약은 기존대로 보존한다.
 // 소수 넷째 자리 표시가 같은 가격은 시작선을 우선해 합치며 종료가와 겹치면 종료가만 둔다.
 // 총 계약 수에는 이 계획의 완료 계약을 포함한다(별도로 입력한 보유 월물은 제외). 다 산 회차도 순서에 남겨 간격을 잡는다:

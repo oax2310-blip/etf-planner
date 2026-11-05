@@ -111,11 +111,46 @@ test('시간축 체크박스는 시작선 앞을 끄고 잠그며 시작선을 �
   assert.deepEqual(flags(),[[false,true],[true,true],[false,false],[true,false]]);
 });
 
-test('자동 배분은 현재가가 아닌 시작선 가격을 사용하고 없는 다음 선을 추정하지 않는다',()=>{
+test('자동 배분은 현재가가 아닌 시작선 가격을 사용하고 값 없는 선은 건너뛴다',()=>{
   const ctx=load(),f=futures();f.currentPrice=1379;f.levels.splice(1,0,level(35,'일선',0));
   const rows=plain(ctx.futureAutoBuyPlan(f,config()).rows);
-  assert.deepEqual(rows.map(r=>[r.price,r.contracts]),[[1320,4],[1380,3]]);
+  assert.deepEqual(rows.map(r=>[r.price,r.contracts]),[[1320,2],[1340,2],[1360,2],[1380,1]]);
   assert.equal(ctx.futureAutoBuyPlan(f,config({startLine:'32시선',units:['선']})).waiting,'시작 기준선의 시세를 기다립니다.');
+});
+
+test('역배열에서도 높은 가격의 다음 선까지 나눠 계약 증가에 따라 회차를 늘리고 저장·알림 가격을 맞춘다',()=>{
+  const ctx=load(),prices=[[25,1430],[32,1425],[42,1420],[60,1410],[80,1405],[125,1395],[150,1390]];
+  const expected=new Map([
+    [5,[[1420,1],[1423.33,1],[1426.67,1],[1428.33,1],[1460,1]]],
+    [9,[[1420,2],[1421.67,1],[1423.33,1],[1425,1],[1426.67,1],[1428.33,1],[1430,1],[1460,1]]]
+  ]);
+  for(const [contracts,want] of expected){
+    const f=futures();f.levels=prices.map(([days,price])=>level(days,'일선',price));
+    const input=config({startLine:'42일선',endPrice:1460,units:['일선'],contracts}),before=JSON.stringify(f),plan=ctx.futureAutoBuyPlan(f,input);
+    assert.equal(plan.error,undefined);assert.equal(plan.available,8);
+    assert.deepEqual(plain(plan.rows).map(r=>[Number(r.price.toFixed(2)),r.contracts]),want);
+    assert.equal(JSON.stringify(f),before,'미리보기는 원본 기록을 바꾸지 않는다');
+    const preview=plain(plan.rows).flatMap(r=>Array(r.contracts).fill(r.price));
+    assert.equal(ctx.applyFutureAutoBuyPlan(f,input),true);
+    const openPrices=()=>plain(pending(f)).map(x=>x.t.price).sort((a,b)=>a-b);
+    assert.deepEqual(openPrices(),preview);
+    ctx.refreshFutureBuyPrices(f);assert.deepEqual(openPrices(),preview,'렌더링 재계산도 미리보기와 같은 가격을 쓴다');
+    const snapshot=JSON.stringify(f),rules=plain(ctx.buildTradeAlertRules({futures:f},null,true));
+    assert.deepEqual(rules.map(r=>r.targetPrice).sort((a,b)=>a-b),plain(plan.rows).map(r=>r.price));
+    assert.ok(rules.every(r=>r.condition==='up'&&r.quoteKind==='달러선물'));
+    assert.equal(JSON.stringify(f),snapshot,'알림 조회는 기록을 바꾸지 않는다');
+    assert.equal(ctx.applyFutureAutoBuyPlan(f),false,'같은 설정의 재배분은 멱등이다');
+  }
+});
+
+test('정배열의 자동 배분은 기존 가격·회차별 계약 수를 유지한다',()=>{
+  const ctx=load(),f=futures();
+  f.levels=[[25,1320],[32,1350],[42,1380]].map(([days,price])=>level(days,'일선',price));
+  const rows=plain(ctx.futureAutoBuyPlan(f,config({startLine:'25일선',contracts:9})).rows);
+  assert.deepEqual(rows.map(r=>[r.line,r.slot,r.price,r.contracts]),[
+    ['25일선',0,1320,2],['25일선',1,1330,2],['25일선',2,1340,1],
+    ['32일선',0,1350,1],['32일선',1,1360,1],['32일선',2,1370,1],['종료가',0,1380,1]
+  ]);
 });
 
 test('이미 매수한 계약을 포함해 남은 수량만 배분하고 체결가·월물·알림을 보존한다',()=>{
