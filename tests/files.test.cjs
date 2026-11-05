@@ -15,14 +15,13 @@ const assetScripts = assetRefs.map(r => r[1]).filter(f => f.startsWith('js/'));
 const valuationHtml = fs.readFileSync(path.join(root, 'valuation.html'), 'utf8');
 const valuationRefs = refsOf(valuationHtml);
 const valuationScripts = valuationRefs.map(r => r[1]).filter(f => f.startsWith('js/'));
-const calculationOnlyFiles = ['js/split-adjust.js'];
 
 test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불러온다', () => {
   assert.equal(new Set([...refs, ...assetRefs, ...valuationRefs].map(r => r[2])).size, 1, '세 HTML의 모든 ?v= 숫자가 같아야 한다');
   for (const [, f] of [...refs, ...assetRefs, ...valuationRefs]) assert.ok(fs.existsSync(path.join(root, f)), `${f} 파일이 없다`);
   const onDisk = ['css', 'js'].flatMap(d => fs.readdirSync(path.join(root, d)).map(f => `${d}/${f}`));
-  assert.deepEqual([...new Set([...refs, ...assetRefs, ...valuationRefs].map(r => r[1]))].sort(), onDisk.filter(f=>!calculationOnlyFiles.includes(f)).sort(), '세 HTML에서 불러오지 않는 파일이 있다');
-  for(const f of calculationOnlyFiles)assert.ok(onDisk.includes(f)&&![...scripts,...assetScripts,...valuationScripts].includes(f), `${f}는 화면에 연결하지 않은 계산 파일이다`);
+  assert.deepEqual([...new Set([...refs, ...assetRefs, ...valuationRefs].map(r => r[1]))].sort(), onDisk.sort(), '세 HTML에서 불러오지 않는 파일이 있다');
+  assert.deepEqual(scripts.slice(-3),['js/split-adjust.js','js/split-dialog.js','js/start.js'],'액면분할 계산·창을 초기화 전에 순서대로 불러온다');
   assert.deepEqual(assetScripts, ['js/theme.js', 'js/repo-security.js', 'js/ma-ladder.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/price-collection.js', 'js/assets-store.js', 'js/member-link.js', 'js/ledger-benchmark.js', 'js/assets.js', 'js/assets-ledger.js', 'js/assets-savings.js', 'js/assets-installments.js', 'js/assets-start.js'], 'assets.html은 공유 수집 함수를 assets-store보다 먼저, 첫 화면(assets-start.js)은 모든 탭 파일 다음에 불러온다');
   assert.ok(assetRefs.some(r => r[1] === 'css/app.css'), 'assets.html도 공통 토큰(css/app.css)을 불러야 한다');
   assert.equal(scripts[0], 'js/theme.js', '화면 모드(theme.js)는 head에서 가장 먼저 불러야 첫 화면 색이 맞는다');
@@ -58,7 +57,7 @@ test('분할매수·분할매도·재매수 계획 창은 같은 종목 검색(i
 test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름이 없다', () => {
   // 일반 <script>는 맨 위 이름을 함께 쓰므로, 이어 붙여 한 번에 해석하면 겹치는 const·let이 오류로 드러난다.
   for (const list of [scripts, assetScripts, valuationScripts])
-    assert.doesNotThrow(() => new vm.Script([...list,...calculationOnlyFiles].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
+    assert.doesNotThrow(() => new vm.Script(list.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
 });
 
 test('theme.js만 CSS보다 먼저 바로 실행하고 나머지 script는 defer로 한꺼번에 받는다', () => {

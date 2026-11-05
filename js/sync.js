@@ -15,24 +15,24 @@ let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KE
 let priceRefreshBusy=false, priceReadMessage="";
 // stored: 이 페이지가 마지막으로 읽거나 쓴 플래너 기록 원문(같은 브라우저의 다른 페이지가 그 뒤 저장했는지 비교, storePlanner·absorbPlanner).
 const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,localFailed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
-// 순서는 plans → futures → actions → rebuy → alerts → alertHistory(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
+// 순서는 plans → futures → actions → rebuy → alerts → alertHistory → splitLog(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
-function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
+function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory,splitLog:d.splitLog});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
 function dataSnapshot(){return snapshotOf(state);}
 const repoOk = r => /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r);
 const connected = () => !!(sync.token && sync.repo);
 // 빈 기기만 처음 연결 때 자동 수신. rebuy·alerts가 있으면 비어 있지 않다.
 // 옛 futures.rolls·targetProfit·actions도 이 판정에 보존한다(화면·계산에 다시 넣지 않음).
-const isBlank = json => {const d=JSON.parse(json),f=d.futures||{},a=d.actions||{},al=a.allocation||{};return !(d.plans||[]).length&&!(f.positions||[]).length&&!(f.rolls||[]).length&&!Number(f.baselinePnl)&&!Number(f.targetProfit)&&!f.note&&!f.rebuy&&!f.buyPlan&&!(f.levels||[]).some(l=>Number(l.contracts)>0||Number(l.price)>0)&&!(a.buys||[]).some(b=>b.completed||b.actualKrw)&&!(a.adobeSales||[]).some(s=>s.completed||s.plannedShares||s.soldShares||s.priceUsd)&&!a.buyNote&&!a.adobeNote&&!al.completed&&!al.note&&!al.targetNasdaqPct&&!al.targetCoveredCallPct&&!d.rebuy&&!d.alerts;};
+const isBlank = json => {const d=JSON.parse(json),f=d.futures||{},a=d.actions||{},al=a.allocation||{};return !(d.plans||[]).length&&!(f.positions||[]).length&&!(f.rolls||[]).length&&!Number(f.baselinePnl)&&!Number(f.targetProfit)&&!f.note&&!f.rebuy&&!f.buyPlan&&!(f.levels||[]).some(l=>Number(l.contracts)>0||Number(l.price)>0)&&!(a.buys||[]).some(b=>b.completed||b.actualKrw)&&!(a.adobeSales||[]).some(s=>s.completed||s.plannedShares||s.soldShares||s.priceUsd)&&!a.buyNote&&!a.adobeNote&&!al.completed&&!al.note&&!al.targetNasdaqPct&&!al.targetCoveredCallPct&&!d.rebuy&&!d.alerts&&!(d.splitLog||[]).length;};
 function syncStatus(message){$("syncStatus").textContent=message;$("syncDialogStatus").textContent=message;const btn=$("syncBtn");btn.title=message;syncBadge();}
 // 동기화 버튼 아이콘 상태: off(연결 안 됨, 회전 아이콘 대신 빨간 ! 표시) · busy(도는 중) · ok(초록 점) · warn(주황 점, 확인 필요)
-function syncBadge(){$("syncBtn").className="btn mini sync-btn "+(!connected()?"off":sync.failed||sync.blocked?"warn":sync.busy?"busy":"ok");priceRefreshControls();if(typeof renderPushConnectionStatus==="function")renderPushConnectionStatus();}
+function syncBadge(){$("syncBtn").className="btn mini sync-btn "+(!connected()?"off":sync.failed||sync.blocked?"warn":sync.busy?"busy":"ok");priceRefreshControls();if(typeof renderPushConnectionStatus==="function")renderPushConnectionStatus();if(typeof splitDialog==="object")splitDialog.updateStatus();}
 function priceRefreshControls(){for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=$(key);btn.disabled=sync.busy||priceRefreshBusy;btn.ariaBusy=String(priceRefreshBusy);btn.textContent=priceRefreshBusy?"시세 불러오는 중…":"시세 즉시 불러오기";}}
 function scheduleSync(delay=1500){if(!connected()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),delay);}
 // 같은 브라우저의 여러 페이지(탭·창·뒤로 가기로 복원한 화면·알림으로 다시 연 화면)는 state를 따로 들고 기기 기록(STORAGE_KEY)과 동기화 기준(SYNC_BASE_KEY)은 함께 쓴다.
 // 옛 state를 가진 페이지가 그대로 덮어쓰면 다른 페이지의 체결·알림 삭제가 기기 기록에서 사라지고, 다음에 열 때 더 새 동기화 기준과 비교해 이 기기에서 지운 수정으로 보고
 // 저장소까지 되돌린다(서버는 미완료 회차로 보고 재알림). 그래서 쓰기 전(storePlanner)·받을 때(absorbPlanner) 다른 페이지 기록과 합친다.
-const PLANNER_FIELDS=["plans","futures","actions","rebuy","alerts","alertHistory"]; // snapshotOf의 동기화 항목
+const PLANNER_FIELDS=["plans","futures","actions","rebuy","alerts","alertHistory","splitLog"]; // snapshotOf의 동기화 항목
 const parsePlanner=text=>{try{const value=text?JSON.parse(text):null;return value&&typeof value==="object"&&!Array.isArray(value)?value:null;}catch{return null;}};
 // mine(이 페이지)에 theirs(다른 페이지)를 합친다. base는 이 페이지가 마지막으로 읽거나 쓴 기록(없으면 null). 동기화 항목은 기기 간 병합과 같은 mergeThreeWay
 // (겹친 칸은 preferMine 쪽), 알림내역은 합집합(alertHistoryStore.merge: 삭제·읽음 유지), 탭·선택 계획 같은 화면 상태는 이 페이지 값. 원본은 바꾸지 않는다.
@@ -86,11 +86,12 @@ function renderLocalSaveWarning(){
   box.hidden=!sync.localFailed&&!assetsFailed;
 }
 function save(next=state){
-  let merged=false;
-  try{merged=storePlanner(next);setLocalSaveFailed(false);}catch(error){console.error(error);setLocalSaveFailed(true);}
+  let merged=false,stored=false;
+  try{merged=storePlanner(next);stored=true;setLocalSaveFailed(false);}catch(error){console.error(error);setLocalSaveFailed(true);}
   if(merged){sync.redraw=true;Promise.resolve().then(()=>{if(sync.redraw)redrawIdle();});}
   if(connected() && dataSnapshot()!==sync.base) scheduleSync();
   if(typeof stockNames==="object")stockNames.remember();
+  return stored;
 }
 // 복구본: 덮어쓰기(충돌 선택·JSON 복원) 전 기록을 이 기기에 최근 RECOVERY_LIMIT개까지 목록으로 남긴다(옛 한 개 형식도 목록으로 읽음).
 // 각 항목은 그대로 JSON 복원할 수 있는 플래너 기록 + recoveryReason·exportedAt. 저장 공간이 모자라면 오래된 것부터 줄이고, 하나도 못 남기면 예외로 덮어쓰기를 멈춘다.
@@ -215,7 +216,7 @@ function applyRemote(snapshot){
   render();
 }
 // 충돌 창: 겹친 곳(overlap = mergeThreeWay 경로, 없으면 지난 동기화 기준이 없는 기기)과 양쪽 계획·월물 수. 저장소 기록을 기본(첫 버튼)으로 둔다.
-const CONFLICT_AREAS={plans:"분할매도",futures:"달러선물",rebuy:"재매수",alerts:"알림 설정",actions:"이전 기록",alertHistory:"알림내역"};
+const CONFLICT_AREAS={plans:"분할매도",futures:"달러선물",rebuy:"재매수",alerts:"알림 설정",actions:"이전 기록",alertHistory:"알림내역",splitLog:"액면분할 이력"};
 function chooseConflict(local,remote,overlap=[]){return new Promise(resolve=>{
   const dialog=$("conflictDialog"),summary=json=>recordSummary(JSON.parse(json)),areas=[...new Set(overlap.map(path=>CONFLICT_AREAS[path[0]]||"기타"))].join("·");
   $("conflictMessage").textContent=`${areas?`두 기기에서 같은 곳(${areas})을 다르게 고쳤습니다.`:"이 기기와 저장소의 기록이 다릅니다(지난 동기화 기준이 없는 기기)."} 이 기기: ${summary(local)} / 저장소: ${summary(remote)}.`;

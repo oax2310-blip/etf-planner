@@ -12,6 +12,7 @@ const FILE = `/repos/${REPO}/contents/etf-planner-data.json`;
 const PRICE_FILE = `/repos/${REPO}/contents/etf-planner-prices.json`;
 const empty = () => ({plans: [], futures: {positions: []}, actions: {}});
 const snap = value => JSON.stringify({plans: value.plans, futures: value.futures, actions: value.actions});
+const splitRecord=extra=>({id:'example-split',ticker:'TEST',from:1,to:3,exDate:'2026-02-03',appliedAt:'2026-02-03T01:02:03.000Z',planner:true,assets:false,...extra});
 const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60})/g, '$1\n');
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
@@ -992,4 +993,30 @@ test('뒤로 가기로 복원한 화면은 다른 화면 기록을 받고, 바�
   assert.equal(a.items.get('test-state'), written, '동기화 항목이 같으면 다시 쓰지 않는다');
   a.fire('storage', {key: 'test-state'}); b.fire('storage', {key: 'test-state'});
   assert.equal(a.items.get('test-state'), written);
+});
+
+test('액면분할 이력은 업로드·다른 기기 수신·JSON 백업에 보존하며 없는 옛 이력은 만들지 않는다',async()=>{
+  const data={...empty(),splitLog:[splitRecord()]},h=harness({local:data});await h.restored();
+  assert.deepEqual(h.remoteData().splitLog,data.splitLog);
+  assert.equal(vm.runInContext('isBlank(dataSnapshot())',h.context),false,'이력만 있는 기기도 빈 기록으로 덮어쓰지 않는다');
+  const other=harness({local:empty(),remote:data});await other.restored();assert.deepEqual(other.context.state.splitLog,data.splitLog);
+  let exported;other.context.downloadJson=value=>{exported=value;};other.elements.get('exportBtn').click();assert.deepEqual(exported.splitLog,data.splitLog);
+  const old=harness({connect:false});assert.equal(Object.hasOwn(JSON.parse(vm.runInContext('dataSnapshot()',old.context)),'splitLog'),false);
+});
+
+test('서로 다른 기기의 분할 이력을 id별로 병합하고 같은 브라우저의 페이지에서도 보존한다',async()=>{
+  const base=empty(),local={...base,splitLog:[splitRecord()]},remote={...base,splitLog:[splitRecord({id:'other-split',ticker:'TESTALT'})]};
+  const h=harness({local,remote,base:snap(base)});await h.restored();
+  assert.equal(h.remoteData().splitLog.length,2);assert.deepEqual(new Set(h.remoteData().splitLog.map(x=>x.id)),new Set(['example-split','other-split']));
+  h.context.mine=local;h.context.theirs=remote;h.context.was=base;
+  const merged=vm.runInContext('mergePlannerPages(mine,theirs,was,true)',h.context);
+  assert.equal(merged.splitLog.length,2);
+});
+
+test('save(next)는 기기 저장 성공을 반환하고 실패한 새 사본으로 기존 state를 바꾸지 않는다',()=>{
+  const h=harness({connect:false}),before=h.context.state,write=h.context.localStorage.setItem;
+  h.context.candidate={...empty(),splitLog:[splitRecord()]};
+  h.context.localStorage.setItem=(key,value)=>{if(key==='test-state')throw Error('synthetic quota');write(key,value);};
+  assert.equal(vm.runInContext('save(candidate)',h.context),false);assert.equal(h.context.state,before);assert.equal(Object.hasOwn(h.context.state,'splitLog'),false);
+  h.context.localStorage.setItem=write;assert.equal(vm.runInContext('save(candidate)',h.context),true);assert.equal(h.context.state.splitLog.length,1);
 });
