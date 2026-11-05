@@ -30,7 +30,7 @@ function setup({data=records(),doc=assets(),readOnly=false,noStore=false,saveFai
   const assetStore={get doc(){return assetDoc;},localSaveFailed:readOnly,status:{busy:false,choice:false},priceRefreshing:false,
     saveSection(section,replacement){order.push('assets');assetWrites++;if(assetFails)return false;assetDoc={...assetDoc,[section]:clone(replacement)};listeners.forEach(fn=>fn('change'));return true;},
     absorbLocal(){},subscribe(fn){listeners.push(fn);}};
-  const context={Intl,Date:class extends Date{constructor(...args){super(...(args.length?args:['2026-02-03T10:00:00Z']));}},
+  const context={Intl,Date:class extends Date{constructor(...args){super(...(args.length?args:['2026-02-03T10:00:00Z']));}static now(){return Date.parse('2026-02-03T10:00:00Z');}},
     state:clone(data),sync:{busy:false,blocked:false},priceRefreshBusy:false,
     document:{getElementById:el,createElement:tag=>new Element(tag)},id:()=> 'example-split',
     absorbPlanner(){absorbed++;},save(next){order.push('planner');plannerWrites++;if(saveFails)return false;context.state=clone(next);saved.push(clone(next));return true;},
@@ -39,7 +39,7 @@ function setup({data=records(),doc=assets(),readOnly=false,noStore=false,saveFai
   el('planForm').elements={ticker:{value:' test '}};el('rebuyForm').elements={ticker:{value:'testalt'}};
   el('exportBtn').onclick=()=>plannerBackups++;el('purchaseExport').onclick=()=>assetBackups++;
   vm.createContext(context);
-  const code=['ma-ladder.js','prices.js','assets-calc.js','data-validation.js','split-adjust.js','split-dialog.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
+  const code=['ma-ladder.js','prices.js','assets-calc.js','split-auto.js','data-validation.js','split-adjust.js','split-dialog.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
   vm.runInContext(code,context);const ui=vm.runInContext('splitDialog',context);ui.initialize();
   return {ui,el,context,store:assetStore,saved,order,get doc(){return assetDoc;},stats:()=>({assetWrites,plannerWrites,rendered,plannerBackups,assetBackups,absorbed}),
     preview(){el('splitForm').onsubmit({preventDefault(){}});},checks:()=>el('splitGroups').querySelectorAll('[data-split-trade]')};
@@ -52,6 +52,32 @@ test('동기화·계획 수정 창의 진입과 종목 미리 채우기·오늘 
   h.el('planDialog').open=true;h.el('planSplitOpen').click();assert.equal(h.el('splitTicker').value,'TEST');assert.equal(h.el('planDialog').open,false);
   h.el('rebuyDialog').open=true;h.el('rebuySplitOpen').click();assert.equal(h.el('splitTicker').value,'TESTALT');assert.equal(h.el('rebuyDialog').open,false);
   assert.equal(h.stats().plannerWrites,0);assert.equal(h.stats().assetWrites,0);assert.equal(Object.hasOwn(h.context.state,'splitLog'),false);
+});
+
+const detected=()=>({id:'TEST:2026-02-03:1:3',ticker:'TEST',from:1,to:3,kind:'split',exDate:'2026-02-03',basisThrough:'2026-02-02',detectedAt:'2026-02-03T09:00:00Z'});
+test('자동 확인은 비율·적용일과 미리보기를 바로 채우고 반영을 눌러야 actionId·auto 이력을 저장한다',()=>{
+  const h=setup(),before=JSON.stringify(h.context.state);
+  assert.equal(h.ui.openAuto(detected()),true);assert.equal(h.el('splitInputs').hidden,true);assert.equal(h.el('splitPreviewSection').hidden,false);
+  assert.equal(h.el('splitFrom').value,'1');assert.equal(h.el('splitTo').value,'3');assert.equal(h.el('splitDate').value,'2026-02-03');
+  assert.equal(JSON.stringify(h.context.state),before);assert.equal(h.stats().plannerWrites,0);assert.equal(h.stats().assetWrites,0);
+  h.el('splitApply').click();assert.equal(h.saved[0].splitLog[0].actionId,detected().id);assert.equal(h.saved[0].splitLog[0].source,'auto');
+});
+test('자동 입력 조건을 고치면 수동 이력으로 저장하고 이미 처리한 감지는 열거나 다시 반영하지 않는다',()=>{
+  const h=setup();h.ui.openAuto(detected());h.el('splitEdit').click();h.el('splitTo').value='4';h.preview();h.el('splitApply').click();
+  assert.equal(h.saved[0].splitLog[0].source,'manual');assert.equal(Object.hasOwn(h.saved[0].splitLog[0],'actionId'),false);
+  const old={id:'old',ticker:'TEST',from:1,to:3,exDate:'2026-02-02',appliedAt:'2026-02-02T12:00:00Z',planner:true,assets:false};
+  const finished=setup({data:{...records(),splitLog:[old]}});assert.equal(finished.ui.openAuto(detected()),false);assert.equal(finished.stats().plannerWrites,0);
+  const changed=setup();changed.ui.openAuto(detected());changed.context.state.splitLog=[old];changed.el('splitApply').click();assert.equal(changed.stats().plannerWrites,0);
+});
+test('자동 미리보기에서 바뀔 칸이 없으면 해당 없음 확인으로 넘기며 이력을 미리 만들지 않는다',()=>{
+  const h=setup({data:{plans:[],futures:{}},doc:{version:1}}),seen=[];
+  h.context.splitNotices={render(){},dismiss:(a,empty)=>seen.push([a.id,empty])};h.ui.openAuto(detected());
+  assert.deepEqual(seen,[[detected().id,true]]);assert.equal(Object.hasOwn(h.context.state,'splitLog'),false);assert.equal(h.stats().plannerWrites,0);
+});
+test('자산 저장을 못 해도 바뀔 자산 칸이 있으면 0건으로 보고 자동 제외를 제안하지 않는다',()=>{
+  const h=setup({data:{plans:[],futures:{}},readOnly:true}),seen=[];
+  h.context.splitNotices={render(){},dismiss:(a,empty)=>seen.push([a.id,empty])};h.ui.openAuto(detected());
+  assert.deepEqual(seen,[]);assert.equal(h.el('splitApply').disabled,true);assert.equal(h.stats().plannerWrites,0);
 });
 
 test('미리보기는 네 그룹·이전→이후·자동값 건너뜀·기본 체결 체크를 표시한다',()=>{

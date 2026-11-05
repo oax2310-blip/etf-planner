@@ -8,6 +8,8 @@ const A_REPO_KEY="etf-planner-data-repo", A_TOKEN_KEY="etf-planner-github-token"
 const readJson=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||"null")??d;}catch{return d;}};
 const writeJson=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch{return false;}};
 let doc=cleanAssets(readJson(A_KEY,null))||{version:1}, prices=readJson(A_PRICE_KEY,null), priceMessage="", priceRefreshBusy=false, started=false;
+let actionsCache=typeof splitAuto==="object"?splitAuto.load(localStorage):null;
+const corporateActions=()=>typeof splitAuto==="object"?splitAuto.cached(actionsCache,assetConfig()?.repo||localStorage.getItem(A_REPO_KEY),prices?.etag)||[]:[];
 let lastLocal=JSON.parse(JSON.stringify(doc)); // 같은 브라우저의 다른 페이지가 바꾼 기록도 공통 기준으로 병합
 const listeners=new Set(), emit=type=>listeners.forEach(fn=>fn(type));
 let localSaveFailed=false;
@@ -80,10 +82,10 @@ async function writeAssetRemote(cfg, data, sha){
 // 시세 파일은 ETag로 읽고 종가·환율만 이 기기에 둔다. 수동 조회(force)는 ETag 없이 다시 받으며 연결이 바뀐 뒤의 응답은 무시한다. 자산 종목은 kis_prices.py가 마감 후 하루 한 번 수집한다. 시세가 바뀌었으면 true.
 async function readAssetPrices(cfg,force=false){
   try{
-    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&same&&prices.format===A_PRICE_FORMAT&&prices.etag?{"If-None-Match":prices.etag}:{})}});
+    const same=prices?.repo===cfg.repo, r=await aGh(cfg,`/repos/${cfg.repo}/contents/${A_PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&same&&prices.format===A_PRICE_FORMAT&&prices.etag&&(typeof splitAuto!=="object"||splitAuto.cached(actionsCache,cfg.repo,prices.etag)!==null)?{"If-None-Match":prices.etag}:{})}});
     if(!sameConfig(cfg))return false;
     if(r.status===304){ priceLine(); return false; }
-    if(r.status===404){ const had=!!prices; prices=null; localStorage.removeItem(A_PRICE_KEY); priceLine("데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다."); return had; }
+    if(r.status===404)return acceptPrices(cfg,null,"",false);
     if(!r.ok) throw Error(`시세 읽기 실패 (${r.status})`);
     const d=JSON.parse(await r.text());
     if(!d||!d.stocks||typeof d.stocks!=="object"||Array.isArray(d.stocks))throw Error("시세 파일 형식을 확인할 수 없습니다.");
@@ -93,12 +95,15 @@ async function readAssetPrices(cfg,force=false){
 // 메인에서 즉시 읽은 시세 파일을 분할매수·자산 평가에도 반영한다. 연결 변경 뒤의 응답은 받지 않는다.
 function acceptPrices(cfg,d,etag="",notify=true){
   if(!sameConfig(cfg))return false;
+  const before=JSON.stringify(corporateActions());
   let next=null;
   if(d){const stocks={};for(const [k,e] of Object.entries(d.stocks||{})){if(!e||typeof e!=="object")continue;stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true};}
     const fx=d.fx?.USDKRW;next={format:A_PRICE_FORMAT,repo:cfg.repo,etag,updatedAt:String(d.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf,ma:{"125개월선":plus(fx.ma?.["125개월선"])},...(fx.maAsOf?{maAsOf:fx.maAsOf}:{}),...(fx.maStale?{maStale:true}:{})}:null};}
+  if(typeof splitAuto==="object")actionsCache=splitAuto.remember(localStorage,cfg.repo,etag,d);
   const changed=JSON.stringify({...prices,etag:""})!==JSON.stringify({...next,etag:""});prices=next;
   if(next)writeJson(A_PRICE_KEY,next);else localStorage.removeItem(A_PRICE_KEY);
-  priceLine(next?"":"데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다.");if(changed&&notify)emit("change");return changed;
+  const actionsChanged=before!==JSON.stringify(corporateActions());
+  priceLine(next?"":"데이터 저장소에 시세 파일이 없어 입력한 금액 그대로 계산합니다.");if((changed||actionsChanged)&&notify)emit("change");return changed||actionsChanged;
 }
 function priceLine(message=""){ priceMessage=message; emit("prices"); }
 // 평가에 필요한 실제 종목 시세가 없으면 파일을 읽었어도 완료로 표시하지 않는다.
@@ -231,6 +236,7 @@ function start(){
   document.addEventListener("visibilitychange",()=>{if(assetConfig()&&(!document.hidden||aSync.timer))syncAssets();});
   // 다른 페이지의 저장은 storage 알림으로 받고, 떠나 있는 동안 알림을 받지 못했을 수 있는 뒤로 가기 복원(pageshow persisted) 때 한 번 더 합친다(absorbLocal).
   addEventListener("storage",e=>{
+    if(typeof splitAuto==="object"&&(e.key===splitAuto.key||e.key===null)){actionsCache=splitAuto.load(localStorage);emit("prices");}
     if(e.key===A_KEY)absorbLocal();
     if(e.key===null||e.key===A_REPO_KEY||e.key===A_TOKEN_KEY)refreshConfig();
   });
@@ -238,7 +244,7 @@ function start(){
   if(doc.allocation&&prices&&fillBases(doc.allocation,prices))saveSection("allocation");
   syncAssets();
 }
-return {get doc(){return doc;},get localSaveFailed(){return localSaveFailed;},get prices(){return prices;},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
+return {get doc(){return doc;},get localSaveFailed(){return localSaveFailed;},get prices(){return prices;},get corporateActions(){return corporateActions();},get priceMessage(){return priceMessage;},get missingPriceMessage(){return missingPriceMessage();},get priceRefreshing(){return priceRefreshBusy;},get status(){return {...aSync};},
   get notice(){return notice();},config:assetConfig,saveSection,saveSavingsMilestone,sync:syncAssets,start,refreshConfig,refreshPrices,restore,keepLost,acceptPrices,choose,renderNotice,absorbLocal,
   recovery:()=>readJson(A_RECOVERY_KEY,[]),subscribe:fn=>{listeners.add(fn);return ()=>listeners.delete(fn);}};
 })();

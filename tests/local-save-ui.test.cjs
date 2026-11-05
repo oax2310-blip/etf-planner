@@ -14,7 +14,7 @@ function assetsPage(failed=false){
   };
   const store={doc:{version:1},prices:null,status:{state:'off'},localSaveFailed:failed,priceRefreshing:false,
     config:()=>null,recovery:()=>[],subscribe:fn=>listeners.push(fn),start(){}};
-  const context=vm.createContext({assetStore:store,el:node,all:()=>[],doc:store.doc,prices:null,nf2:new Intl.NumberFormat('ko-KR'),
+  const context=vm.createContext({assetStore:store,splitNotices:{initialize(){}},el:node,all:()=>[],doc:store.doc,prices:null,nf2:new Intl.NumberFormat('ko-KR'),
     location:{hash:'#alloc'},history:{replaceState(){}},openTab(){},addEventListener(){},scrollTo(){},priceCollectionLate:()=>false});
   vm.runInContext(read('js/assets-start.js'),context);
   return {store,node,emit:type=>listeners.forEach(fn=>fn(type))};

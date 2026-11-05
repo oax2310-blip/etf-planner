@@ -44,4 +44,4 @@ addEventListener("hashchange",()=>{if(location.hash==="#buys")location.replace("
 priceLine();setAssetSync();
 if(location.hash==="#buys")location.replace("index.html#buys");
 else openTab(location.hash.slice(1)||ui.tab);
-assetStore.start();
+splitNotices.initialize();assetStore.start();

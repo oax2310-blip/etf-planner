@@ -12,6 +12,8 @@ const RECOVERY_KEY = "etf-planner-sync-recovery";
 const PRICE_FILE = "etf-planner-prices.json"; // 데이터 저장소 Actions(KIS 시세 수집)가 올리는 시세 파일. 읽기만 한다(채우는 규칙은 prices.js)
 const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우기·표시에 쓰는 값과 ETag만). 이 기기에만 두고 동기화 기록에는 넣지 않는다
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
+let plannerActionsCache=typeof splitAuto==="object"?splitAuto.load(localStorage):null;
+function plannerCorporateActions(){return typeof splitAuto==="object"?splitAuto.cached(plannerActionsCache,sync.repo||localStorage.getItem(REPO_KEY),priceData?.etag)||[]:[];}
 let priceRefreshBusy=false, priceReadMessage="";
 // stored: 이 페이지가 마지막으로 읽거나 쓴 플래너 기록 원문(같은 브라우저의 다른 페이지가 그 뒤 저장했는지 비교, storePlanner·absorbPlanner).
 const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,localFailed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
@@ -152,10 +154,10 @@ async function writeRemote(snapshot,sha){
 async function readPrices(force=false){
   const cfg={repo:sync.repo,token:sync.token},same=()=>sync.repo===cfg.repo&&sync.token===cfg.token;
   try{
-    const response=await gh(`/repos/${cfg.repo}/contents/${PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&priceData?.etag&&priceData.format===PRICE_FORMAT?{"If-None-Match":priceData.etag}:{})}});
+    const response=await gh(`/repos/${cfg.repo}/contents/${PRICE_FILE}`,{headers:{Accept:"application/vnd.github.raw+json",...(!force&&priceData?.etag&&priceData.format===PRICE_FORMAT&&(typeof splitAuto!=="object"||splitAuto.cached(plannerActionsCache,cfg.repo,priceData.etag)!==null)?{"If-None-Match":priceData.etag}:{})}});
     if(!same())return false;
     if(response.status===304){priceStatus();return false;}
-    if(response.status===404){const had=!!priceData;priceData=null;localStorage.removeItem(PRICE_KEY);if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,null);priceStatus("데이터 저장소에 시세 파일(etf-planner-prices.json)이 없어 현재가·기준가를 채우지 않습니다.");return had;}
+    if(response.status===404){const had=!!priceData;priceData=null;localStorage.removeItem(PRICE_KEY);if(typeof splitAuto==="object")plannerActionsCache=splitAuto.remember(localStorage,cfg.repo,"",null);if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,null);priceStatus("데이터 저장소에 시세 파일(etf-planner-prices.json)이 없어 현재가·기준가를 채우지 않습니다.");if(typeof splitNotices==="object")splitNotices.render();return had;}
     if(!response.ok)throw Error(`시세 읽기 실패 (${response.status})`);
     const text=await response.text();
     let doc;try{doc=JSON.parse(text);}catch{throw Error("시세 파일을 읽을 수 없습니다.");}
@@ -165,7 +167,9 @@ async function readPrices(force=false){
 }
 function acceptPlannerPrices(cfg,doc,etag){
   const next={...slimPrices(doc),etag},plain=d=>JSON.stringify({...d,etag:""}),changed=!priceData||plain(priceData)!==plain(next);
-  priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,doc,etag);priceStatus();return changed;
+  const before=JSON.stringify(plannerCorporateActions());
+  if(typeof splitAuto==="object")plannerActionsCache=splitAuto.remember(localStorage,cfg.repo,etag,doc);
+  priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,doc,etag);priceStatus();if(typeof splitNotices==="object")splitNotices.render();return changed||before!==JSON.stringify(plannerCorporateActions());
 }
 // 저장 대기 중인 종목을 먼저 동기화한 뒤 실제 수집을 요청한다. 수집 결과가 확인되기 전에는 마지막 시세를 유지한다.
 async function refreshPrices(){
@@ -307,6 +311,7 @@ setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},450
 document.addEventListener("visibilitychange",()=>{if(document.hidden)return;if(absorbPlanner())redrawIdle();if(connected()&&!sync.blocked)syncNow();});
 // 같은 브라우저의 다른 페이지가 저장하면 바로 받고, 그 알림을 받지 못했을 수 있는 뒤로 가기 복원 때도 받는다(그 밖의 놓친 저장은 화면 복귀·동기화 직전에 받음).
 addEventListener("storage",e=>{if(e.key===STORAGE_KEY&&absorbPlanner())redrawIdle();});
+addEventListener("storage",e=>{if(typeof splitAuto==="object"&&(e.key===splitAuto.key||e.key===null)){plannerActionsCache=splitAuto.load(localStorage);if(typeof splitNotices==="object")splitNotices.render();}});
 addEventListener("pageshow",e=>{if(e.persisted&&absorbPlanner())redrawIdle();});
 document.addEventListener("focusout",e=>{if(sync.waitTyping&&!typingIn(e.relatedTarget)){sync.waitTyping=false;scheduleSync(300);}}); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 loadConfig();refreshTokenField();refreshCollectionTokenField();

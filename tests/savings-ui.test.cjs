@@ -78,7 +78,7 @@ function setup(data=fixture(),year=2026,shared,{cloneOnSave=false}={}){
   const store={doc:data,prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe:fn=>listeners.push(fn),start(){},
     saveSection(){saves++;if(cloneOnSave){store.doc=JSON.parse(JSON.stringify(store.doc));storage.set(key,JSON.stringify(store.doc));}listeners.forEach(fn=>fn('change'));},
     saveSavingsMilestone(record){store.doc.savings.milestoneRecord={ym:record.ym,age:record.age};storage.set(key,JSON.stringify(store.doc));saves++;listeners.forEach(fn=>fn('change'));return true;}};
-  const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
+  const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,splitNotices:{initialize(){}},crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},
     addEventListener:(name,fn)=>events.set(`window:${name}`,fn),setInterval:(fn,ms)=>intervals.push({fn,ms}),setTimeout:fn=>{timers.push(fn);return timers.length;},
     location:{hash:'#savings'},history:{replaceState(){}},scrollTo(){}});

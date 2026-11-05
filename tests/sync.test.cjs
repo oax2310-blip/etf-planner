@@ -13,6 +13,7 @@ const PRICE_FILE = `/repos/${REPO}/contents/etf-planner-prices.json`;
 const empty = () => ({plans: [], futures: {positions: []}, actions: {}});
 const snap = value => JSON.stringify({plans: value.plans, futures: value.futures, actions: value.actions});
 const splitRecord=extra=>({id:'example-split',ticker:'TEST',from:1,to:3,exDate:'2026-02-03',appliedAt:'2026-02-03T01:02:03.000Z',planner:true,assets:false,...extra});
+const detectedSplit=()=>({id:'TEST:2026-11-05:1:3',ticker:'TEST',from:1,to:3,kind:'split',exDate:'2026-11-05',basisThrough:'2026-11-04',detectedAt:'2026-11-05T12:00:00Z'});
 const b64 = text => Buffer.from(text, 'utf8').toString('base64').replace(/(.{60})/g, '$1\n');
 
 // 가짜 GitHub API: 파일 sha가 다르면 409로 거절한다(실제 GitHub과 같은 동시 저장 보호).
@@ -79,6 +80,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   });
   if(fetcher){const request=context.fetch;context.fetch=(url,options)=>fetcher(url,options,request);}
   if(includeHistory)for(const name of ['alert-history-store.js','alert-history.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js',name),'utf8'),context);
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../js/split-auto.js'),'utf8'),context);
   vm.runInContext(source, context);
   vm.runInContext(pricesSource, context);
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../js/assets-calc.js'), 'utf8'), context); // 충돌 자동 병합(mergeThreeWay)
@@ -560,6 +562,18 @@ test('연결하지 않은 기기는 아무 요청도 하지 않는다', async ()
   const h = harness({connect: false, local: {plans: [{id: 'solo'}], futures: {positions: []}, actions: {}}});
   await h.restored();
   assert.equal(h.server.requests, 0);
+});
+
+test('원본 corporateActions를 별도 검증·보관하고 필드 없는 현재 형식 캐시는 ETag 없이 한 번 다시 읽는다',async()=>{
+  const raw={updatedAt:'2026-11-05T12:00:00Z',stocks:{},futures:{},fx:{},corporateActions:[detectedSplit(),{...detectedSplit(),id:'forged'}]};
+  const h=harness({prices:raw,stored:{'etf-planner-prices':JSON.stringify({format:5,etag:'"p1"',stocks:{},futures:{},fx:{}})}});
+  await h.restored();assert.equal(h.server.priceAsks[0],null);
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(plannerCorporateActions())',h.context)),[detectedSplit()]);
+  assert.equal(JSON.parse(h.items.get('etf-planner-prices')).corporateActions,undefined);
+  assert.deepEqual(JSON.parse(h.items.get('etf-planner-corporate-actions')).items,[detectedSplit()]);
+  await h.run();assert.equal(h.server.priceAsks.at(-1),'"p1"');
+  h.server.prices={etag:'"p2"',text:JSON.stringify({...raw,corporateActions:[]})};await h.run();
+  assert.equal(vm.runInContext('plannerCorporateActions().length',h.context),0);assert.equal(Object.hasOwn(h.context.state,'splitLog'),false);
 });
 
 test('연결할 때 fine-grained 토큰(github_pat_)만 저장하고 classic 토큰은 거부한다', async () => {

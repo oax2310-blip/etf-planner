@@ -22,7 +22,7 @@ function setup(initial,fetcher,shared){
       }
       return r;
     }};
-  const code=['js/repo-security.js','js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+  const code=['js/repo-security.js','js/ma-ladder.js','js/split-auto.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY}),pageshow:persisted=>listeners.get('pageshow')?.({persisted})};
 }
@@ -553,6 +553,22 @@ test('평균선을 버리던 옛 캐시는 ETag 없이 다시 받고 새 캐시�
   await store.sync();await store.sync();
   assert.equal(asks[0]['If-None-Match'],undefined);assert.equal(asks[1]['If-None-Match'],'same');
   assert.equal(store.prices.fx.ma['125개월선'],1320);assert.deepEqual(clone(store.doc),original);
+});
+
+test('자산 시세도 원본 감지 필드를 별도 보관하며 현재 형식 옛 캐시를 한 번 재조회하고 기록을 보존한다',async()=>{
+  const original=fake(),detected={id:'TEST:2026-11-05:1:3',ticker:'TEST',kind:'split',from:1,to:3,exDate:'2026-11-05',basisThrough:'2026-11-04',detectedAt:'2026-11-05T12:00:00Z'};
+  const storage=new Map([[KEY,JSON.stringify(original)],['etf-planner-assets-prices',JSON.stringify({format:2,repo:'example/private-data',etag:'same',stocks:{}})]]),asks=[];
+  const quote={updatedAt:'2026-11-05T12:00:00Z',stocks:{},corporateActions:[detected,{...detected,to:'3'}]};
+  const {store}=setup(null,async(url,options)=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json')){asks.push(options.headers);return asks.length===1?new Response(JSON.stringify(quote),{headers:{ETag:'same'}}):new Response(null,{status:304});}
+    if(url.endsWith('/contents/etf-planner-assets.json'))return contents(original);
+    throw Error('unexpected request');
+  },storage);connect(storage);await store.sync();await store.sync();
+  assert.equal(asks[0]['If-None-Match'],undefined);assert.equal(asks[1]['If-None-Match'],'same');
+  assert.deepEqual(clone(store.corporateActions),[detected]);assert.equal(store.prices.corporateActions,undefined);
+  assert.deepEqual(JSON.parse(storage.get('etf-planner-corporate-actions')).items,[detected]);assert.deepEqual(clone(store.doc),original);
+  assert.equal(store.acceptPrices(store.config(),{...quote,corporateActions:[]},'next'),true);assert.deepEqual(clone(store.corporateActions),[]);
 });
 
 const quotes=close=>({updatedAt:'2026-01-02T07:00:00Z',stocks:{AAA:{kind:'해외',close,asOf:'2026-01-02'}},fx:{USDKRW:{close:1400,asOf:'2026-01-02'}}});

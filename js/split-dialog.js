@@ -1,6 +1,6 @@
 // 액면분할 입력·미리보기·기존 저장 흐름 연결. 계산은 split-adjust.js, 시각·이력 생성은 반영 버튼을 누를 때만 한다.
 const splitDialog = (()=>{
-  let ready=false,shown=null,applying=false,appliedCount=null;
+  let ready=false,shown=null,applying=false,appliedCount=null,autoAction=null;
   const picks=new Map(),byId=key=>document.getElementById(key);
   const store=()=>typeof assetStore==="object"?assetStore:null;
   const copy=value=>JSON.parse(JSON.stringify(value));
@@ -72,6 +72,7 @@ const splitDialog = (()=>{
   }
   function message(text,good=false){byId("splitFeedback").textContent=text;byId("splitFeedback").className=`split-feedback${good?" good":""}`;}
   function updateStatus(){
+    if(typeof splitNotices==="object")splitNotices.render();
     if(!ready||!byId("splitDialog").open)return;
     const busy=blocked();byId("splitBusy").textContent=busy?"동기화·시세 갱신 또는 기록 차이 확인이 끝난 뒤 반영할 수 있습니다.":"";
     byId("splitAssetsNotice").textContent=writable()?"":"자산 기록을 저장할 수 없는 상태입니다. 플래너 기록만 반영하며 자산 기록은 변경하지 않습니다.";
@@ -93,6 +94,7 @@ const splitDialog = (()=>{
     try{
       absorb();
       shown=splitPreview(state,assets(),{ticker:byId("splitTicker").value,from:Number(byId("splitFrom").value),to:Number(byId("splitTo").value),exDate:byId("splitDate").value});
+      if(autoAction&&["ticker","from","to","exDate"].some(k=>shown[k]!==autoAction[k]))autoAction=null;
       picks.clear();appliedCount=null;byId("splitDuplicateConfirm").checked=false;message("");renderPreview();
       byId("splitInputs").hidden=true;byId("splitPreviewSection").hidden=false;
       if(shown.excluded)message("비트코인·코스피200은 액면분할 반영 대상이 아닙니다.");
@@ -107,8 +109,9 @@ const splitDialog = (()=>{
     applying=true;let assetsSaved=false,committed=false,oldAllocation,oldAssets,before,notice="";
     try{
       absorb();before=state;oldAssets=assets();
+      if(autoAction&&!splitAuto.pending([autoAction],before.splitLog).length){shown=null;message("다른 화면에서 이미 처리한 분할입니다. 대기 안내를 다시 확인하세요.");return;}
       let result=applySplit(before,oldAssets,shown,selection());if(!result.changedFields)return;
-      const entry={id:id(),ticker:shown.ticker,from:shown.from,to:shown.to,exDate:shown.exDate,appliedAt:new Date().toISOString(),planner:result.plannerChanged,assets:result.assetsChanged};
+      const entry={id:id(),ticker:shown.ticker,from:shown.from,to:shown.to,exDate:shown.exDate,appliedAt:new Date().toISOString(),planner:result.plannerChanged,assets:result.assetsChanged,source:autoAction?"auto":"manual",...(autoAction?{actionId:autoAction.id}:{})};
       externalData.planner(appendSplitLog(result.plannerData,entry));
       if(result.assetsChanged){
         oldAllocation=copy(oldAssets.allocation);
@@ -131,10 +134,19 @@ const splitDialog = (()=>{
     }finally{applying=false;updateStatus();}
   }
   function open(ticker=""){
+    autoAction=null;
     for(const key of ["syncDialog","planDialog","rebuyDialog"])if(byId(key).open)byId(key).close();
     byId("splitTicker").value=planTicker(ticker);byId("splitFrom").value="1";byId("splitTo").value="3";
     const today=new Date();byId("splitDate").value=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
     edit();byId("splitDialog").showModal();updateStatus();
+  }
+  function openAuto(action){
+    if(blocked()||applying||!splitAuto.pending([action],state.splitLog).length)return false;
+    open(action.ticker);autoAction={...action};
+    byId("splitFrom").value=String(action.from);byId("splitTo").value=String(action.to);byId("splitDate").value=action.exDate;preview();
+    // 저장할 수 없는 자산 칸도 실제 변경 대상이다. 선택·저장 가능 여부 때문에 0건으로 보고 자동 제외를 제안하지 않는다.
+    if(shown&&!shown.items.some(item=>item.changes.length||item.trades.some(t=>t.changes.length))&&typeof splitNotices==="object")splitNotices.dismiss(action,true);
+    return !!shown;
   }
   function initialize(){
     if(ready)return;ready=true;
@@ -148,5 +160,5 @@ const splitDialog = (()=>{
     byId("splitDialog").addEventListener("cancel",event=>{if(applying)event.preventDefault();});
     store()?.subscribe(()=>{if(!applying)updateStatus();});
   }
-  return {initialize,open,updateStatus};
+  return {initialize,open,openAuto,updateStatus};
 })();

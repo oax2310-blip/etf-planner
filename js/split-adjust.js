@@ -203,13 +203,14 @@ const {splitPreview, applySplit, appendSplitLog} = (()=>{
     return result;
   }
 
-  // 적용 결과를 저장할 때만 호출: id(1~128자)·appliedAt(ISO)·planner/assets(실제 변경 문서)를 호출부에서 받는다.
+  // 사용자 반영·제외 확인 때만 호출: id·appliedAt·실제 변경 문서와 선택 actionId/source/dismissed를 보존한다. 둘 다 변경 없으면 dismissed:true가 필수다.
   // 같은 종목·exDate의 재적용은 미리보기 경고로 판단하고, 같은 id나 200개 초과는 거부한다. 불러오기·normalize에서는 호출하지 않는다.
   function append(plannerData,entry){
     if(!object(plannerData)||!object(entry))throw Error("분할 이력을 확인하세요.");
     const opt=options(entry),old=plannerData.splitLog;
-    if(excluded(opt.ticker)||typeof entry.id!=="string"||!entry.id.trim()||entry.id.length>128||!stamp(entry.appliedAt)||typeof entry.planner!=="boolean"||typeof entry.assets!=="boolean"||!entry.planner&&!entry.assets||old!==undefined&&!Array.isArray(old)||list(old).length>=200||list(old).some(r=>r?.id===entry.id))throw Error("분할 이력 형식·개수를 확인하세요.");
-    const result=copy(plannerData);result.splitLog=[...copy(old||[]),{id:entry.id,...opt,appliedAt:entry.appliedAt,planner:entry.planner,assets:entry.assets}];return result;
+    if(excluded(opt.ticker)||typeof entry.id!=="string"||!entry.id.trim()||entry.id.length>128||!stamp(entry.appliedAt)||typeof entry.planner!=="boolean"||typeof entry.assets!=="boolean"||!entry.planner&&!entry.assets&&entry.dismissed!==true||old!==undefined&&!Array.isArray(old)||list(old).length>=200||list(old).some(r=>r?.id===entry.id)||entry.actionId!==undefined&&entry.actionId!==`${opt.ticker}:${opt.exDate}:${opt.from}:${opt.to}`||entry.source!==undefined&&!["auto","manual"].includes(entry.source)||entry.dismissed!==undefined&&typeof entry.dismissed!=="boolean")throw Error("분할 이력 형식·개수를 확인하세요.");
+    const optional=Object.fromEntries(["actionId","source","dismissed"].filter(k=>entry[k]!==undefined).map(k=>[k,entry[k]]));
+    const result=copy(plannerData);result.splitLog=[...copy(old||[]),{id:entry.id,...opt,appliedAt:entry.appliedAt,planner:entry.planner,assets:entry.assets,...optional}];return result;
   }
   return {splitPreview:preview,applySplit:apply,appendSplitLog:append};
 })();
