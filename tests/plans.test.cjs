@@ -13,10 +13,10 @@ function load(){
     return nodes.get(name);
   };
   const fields=Object.fromEntries(Object.entries({ticker:'비트코인',title:'테스트 계획',cardName:'',currency:'USD',shares:'0.01234567',
-    fx:'1000',startUnit:'',startN:'60',startLabel:'직접',startPrice:'60000',endN:'25',endUnit:'개월선',endPrice:'50000',stages:'3',salePct:'100',valueKrw:''})
+    fx:'1000',startUnit:'',startN:'60',startLabel:'직접',startPrice:'60000',endLabel:'',endN:'25',endUnit:'개월선',endPrice:'50000',stages:'3',salePct:'100',valueKrw:''})
     .map(([key,value])=>[key,Object.assign(node('field:'+key),{value})]));
   const form=node('planForm');form.elements=fields;form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage&&(!f.required||f.disabled||f.readOnly||String(f.value??'')!==''));
-  form.reset=()=>{for(const [key,value] of Object.entries({ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1354.91',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''}))fields[key].value=value;};
+  form.reset=()=>{for(const [key,value] of Object.entries({ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1354.91',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endLabel:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''}))fields[key].value=value;};
   const ctx=vm.createContext({$:node,$$:()=>[],addEventListener(){},document:{createElement(){const e={value:'',dataset:{},setAttribute(){},append(){},focus(){}};let id='';Object.defineProperty(e,'id',{get:()=>id,set(v){id=v;nodes.set(v,e);}});return e;}},state:{plans:[],futures:{positions:[]}},save(){},render(){},
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
     priceData:{updatedAt:'2026-10-02T12:00:00Z',stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-02',close:60000,ma:{'25개월선':50000}},

@@ -12,7 +12,8 @@ function draw(plan,prices){
   const els={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',events:{},addEventListener(kind,handler){this.events[kind]=handler;},
     setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
-  el('planForm').elements={};
+  const form=el('planForm'),fields={endLabel:Object.assign(el('field:endLabel'),{value:''})};
+  form.elements=fields;form.reset=()=>{fields.endLabel.value='';};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit(){},alert(){},
     document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[plan],futures:{positions:[]},selectedPlan:plan.id},PENCIL:'✎',memoCount:()=>'',id:()=>'p1',
@@ -32,6 +33,12 @@ test('띠는 오른쪽이 1회이고 남은 회차 칸을 초록으로 채운다
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/\.sale-track \.buy-track-cells\{flex-direction:row-reverse\}/,'회차표 순서를 오른쪽부터 그려 판 회차가 오른쪽부터 빈다');
   assert.match(css,/\.sale-track \.buy-track-cells i\.hold\{background:var\(--good\)\}/);
+});
+
+test('직접 종료 이름은 진행 트랙에서 기존 마지막 매도 글자로 보인다',()=>{
+  const {card}=draw(plan({endLabel:'전고점'}),quote(520));
+  assert.match(card,/<div class="buy-track-end"><b>\$400<\/b><small>마지막 매도<\/small>/);
+  assert.doesNotMatch(card,/전고점/);
 });
 
 test('시작 전에는 띠가 모두 차 있고 현재가 이름표가 다음 1회 칸 앞에 붙는다',()=>{
