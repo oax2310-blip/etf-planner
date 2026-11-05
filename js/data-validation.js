@@ -79,7 +79,10 @@ const externalData = (()=>{
       if(!date(v.exDate))fail(`${p}.exDate`);
       if(typeof v.appliedAt!=="string"||v.appliedAt.length>40||!date(v.appliedAt.slice(0,10))||!/^\d{4}-\d\d-\d\dT(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(v.appliedAt)||!Number.isFinite(Date.parse(v.appliedAt)))fail(`${p}.appliedAt`);
       for(const k of ["planner","assets"])if(typeof v[k]!=="boolean")fail(`${p}.${k}`);
-      if(!v.planner&&!v.assets)fail(p);
+      if(v.actionId!==undefined&&v.actionId!==`${v.ticker}:${v.exDate}:${v.from}:${v.to}`)fail(`${p}.actionId`);
+      if(v.source!==undefined&&!["auto","manual"].includes(v.source))fail(`${p}.source`);
+      if(v.dismissed!==undefined&&typeof v.dismissed!=="boolean")fail(`${p}.dismissed`);
+      if(!v.planner&&!v.assets&&v.dismissed!==true)fail(p);
     });
   }
   function planner(data){

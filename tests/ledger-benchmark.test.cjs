@@ -169,7 +169,7 @@ function ledgerPage(data,now,ui=null,fetcher=null){
   const buttons=['best','both'].map(value=>Object.assign(node(`bench-${value}`),{dataset:{ledgerBench:value}}));
   const document={hidden:false,activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-ledger-bench]'?buttons:[],addEventListener(){}};
   const store={doc:data,prices:null,status:{state:'off'},config:()=>null,recovery:()=>[],subscribe(){},start(){},saveSection(){throw Error('조회만으로 저장하면 안 된다');}};
-  const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,crypto:require('node:crypto').webcrypto,
+  const ctx=vm.createContext({Date:SystemDate,document,assetStore:store,splitNotices:{initialize(){}},crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
   if(fetcher)ctx.fetch=fetcher;
@@ -401,7 +401,7 @@ function ledgerDialog(year,{popover=true}={}){
   const document={hidden:false,activeElement:null,getElementById:node,querySelector:sel=>query(sel)[0]||node(sel),querySelectorAll:sel=>query(sel),addEventListener(type,fn){listeners.set(type,fn);}};
   const store={doc:{version:1,ledger:{savedAt:'',years:year?[year]:[]}},prices:null,saveSection:section=>saves.push(section)};
   class HTMLElement{};if(popover)HTMLElement.prototype.popover='auto';
-  const ctx=vm.createContext({Date,document,assetStore:store,HTMLElement,crypto:require('node:crypto').webcrypto,
+  const ctx=vm.createContext({Date,document,assetStore:store,splitNotices:{initialize(){}},HTMLElement,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){},innerWidth:393,innerHeight:852,confirm:()=>true,alert:message=>{throw Error(message);}});
   vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js'].map(read).join('\n;\n'),ctx);
