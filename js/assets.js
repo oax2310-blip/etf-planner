@@ -437,6 +437,9 @@ function openItem(id, groupId){
     if(tradeTicker&&(!["국내","해외"].includes(sourceKind)||!["국내","해외"].includes(tradeKind))){alert("기준 티커와 실제 매수 ETF에 국내 종목 코드 또는 미국 심볼을 넣으세요.");f.tradeTicker.focus();return;}
     const g=a.groups.find(x=>x.id===(f.group.value!==initialGroup?f.group.value:current?.g.id||f.group.value));
     if(!g){alert("선택한 그룹이 삭제되었습니다. 그룹을 다시 선택하세요.");return;}
+    // 체결된 분할매수의 기준 티커를 바꿔도 옛 회차 기준가는 변환하지 않는다.
+    const tickerMessage=typeof goldEstimate==="object"?goldEstimate.tickerChangeMessage(target,draft):"";
+    if(tickerMessage&&!confirm(tickerMessage))return;
     // 금액·기존 수동 시세는 입력란 제거와 관계없이 유지한다. 평가 기준가는 보유량·코드를 실제 수정할 때만 갱신한다.
     const marketFields=x=>JSON.stringify([x.amount,x.ticker,x.tradeTicker,x.shares]);
     if(!current||marketFields(target)!==marketFields(draft))resetBase(draft,prices,a);

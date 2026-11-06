@@ -3,7 +3,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const source = ['repo-security.js','data-validation.js','price-collection.js','sync.js'].map(f=>fs.readFileSync(require('node:path').join(__dirname, '../js',f), 'utf8')).join('\n');
+const source = ['repo-security.js','gold-estimate.js','data-validation.js','price-collection.js','sync.js'].map(f=>fs.readFileSync(require('node:path').join(__dirname, '../js',f), 'utf8')).join('\n');
+
+test('동기화의 slimPrices 결과는 검증된 금 추정가만 보관하고 없는 문서로 갱신하면 제거한다',()=>{
+  const h=harness({connect:false}),at='2026-11-06T10:12:00+09:00';
+  const estimate={close:81.52,at,baseDate:'2026-11-05',baseClose:80,source:'GC=F',check:'PAXG-USD',changePct:1.9,checkPct:1.9};
+  h.context.raw={updatedAt:at,stocks:{GLDM:{kind:'해외',asOf:'2026-11-05',close:80,ma:{'25일선':82},estimate},
+    GLD:{kind:'해외',asOf:'2026-11-05',close:80,ma:{},estimate:{...estimate,at:'bad'}}},futures:{}};
+  vm.runInContext('acceptPlannerPrices({},raw,"fake-etag")',h.context);
+  const read=()=>JSON.parse(h.items.get('etf-planner-prices'));
+  assert.equal(read().stocks.GLDM.estimate.close,81.52);assert.equal(read().stocks.GLDM.close,80);
+  assert.equal(read().stocks.GLD.estimate,undefined);
+  delete h.context.raw.stocks.GLDM.estimate;
+  vm.runInContext('acceptPlannerPrices({},raw,"new-etag")',h.context);
+  assert.equal(read().stocks.GLDM.estimate,undefined);
+});
 const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
 if (!source.includes('async function syncNow(')) throw Error('동기화 구현을 찾지 못했습니다.');
 

@@ -166,7 +166,8 @@ async function readPrices(force=false){
   }catch(error){if(same())priceStatus(`시세 확인 실패 · ${error.message}`);return false;}
 }
 function acceptPlannerPrices(cfg,doc,etag){
-  const next={...slimPrices(doc),etag},plain=d=>JSON.stringify({...d,etag:""}),changed=!priceData||plain(priceData)!==plain(next);
+  // prices.js는 고정 소스 유지. 원본 문서의 검증된 금 추정가만 축약 결과에 붙인다.
+  const slim=slimPrices(doc),next={...(typeof goldEstimate==="object"?goldEstimate.attach(slim,doc):slim),etag},plain=d=>JSON.stringify({...d,etag:""}),changed=!priceData||plain(priceData)!==plain(next);
   const before=JSON.stringify(plannerCorporateActions());
   if(typeof splitAuto==="object")plannerActionsCache=splitAuto.remember(localStorage,cfg.repo,etag,doc);
   priceData=next;localStorage.setItem(PRICE_KEY,JSON.stringify(next));if(typeof assetStore!=="undefined")assetStore.acceptPrices(cfg,doc,etag);priceStatus();if(typeof splitNotices==="object")splitNotices.render();return changed||before!==JSON.stringify(plannerCorporateActions());

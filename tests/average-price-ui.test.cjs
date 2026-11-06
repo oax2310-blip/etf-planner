@@ -6,11 +6,23 @@ const vm=require('node:vm');
 
 // 실제 투자 기록 없이 종목 수정창의 평균매수가 입력·저장 이벤트를 가상 DOM에서 실행한다.
 const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8');
-const source=['js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/assets.js'].map(read).join('\n;\n');
+const source=['js/gold-estimate.js','js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/assets.js'].map(read).join('\n;\n');
 const fixture=()=>({version:1,allocation:{savedAt:'2026-01-01',total:100,cashFx:1200,memo:'가상 메모',classes:[{id:'stock',region:'미국',name:'주식'}],cash:[],groups:[
   {id:'g1',name:'가상 계좌 1',classId:'stock',items:[{id:'a',name:'가상 해외 ETF',ticker:'AAA',shares:2,amount:20,base:50000,target:10,note:'보존',buyPlan:{stages:[{id:'stage',price:40,shares:1,amount:5,done:true}]}}]},
   {id:'g2',name:'가상 계좌 2',classId:'stock',items:[{id:'b',name:'다른 계좌 ETF',ticker:'AAA',shares:3,averagePrice:100,amount:30,base:60000},{id:'missing',name:'평균가 없는 ETF',ticker:'AAA',shares:1},{id:'domestic',name:'가상 국내 ETF',ticker:'111111',shares:4,averagePrice:10000}]}]}});
 const quoteFixture=()=>({stocks:{AAA:{kind:'해외',close:60,asOf:'2026-01-02'},'111111':{kind:'국내',close:12000,asOf:'2026-01-02'}},fx:{close:1200,asOf:'2026-01-02'}});
+
+test('체결된 매수의 기준 티커 변경 확인 취소는 저장하지 않고 승인해도 옛 회차를 변환하지 않는다',()=>{
+  for(const confirmed of [false,true])for(const buyPlan of [{stages:[{id:'s',price:80,done:true}]},{buys:{end:{price:80,actual:1}}},{stages:[{id:'s',price:80,partial:true,shares:1}]}]){
+    const data=fixture(),item=data.allocation.groups[0].items[0];Object.assign(item,{section:'금',ticker:'GLDM',buyPlan});
+    const h=page(data),messages=[],before=JSON.stringify(data),record=JSON.stringify(buyPlan);
+    h.ctx.confirm=message=>{messages.push(message);return confirmed;};h.open('a');h.field('ticker','GDX');h.submit();
+    assert.equal(messages.length,1);assert.match(messages[0],/옛 티커 가격/);assert.match(messages[0],/다음 수집/);assert.match(messages[0],/장중 금 추정이 꺼집니다/);
+    assert.equal(JSON.stringify(item.buyPlan),record);
+    if(confirmed){assert.equal(item.ticker,'GDX');assert.deepEqual(h.writes,['allocation']);}
+    else{assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('itemDialog').open,true);}
+  }
+});
 function page(data=fixture(),quotes=quoteFixture()){
   const nodes=new Map(),storage=new Map(),writes=[],alerts=[];let itemButtons=[];
   const document={activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-item]'?itemButtons:sel==='dialog [data-close]'?[node('itemCancel')]:[],addEventListener(){}};
@@ -42,7 +54,7 @@ function page(data=fixture(),quotes=quoteFixture()){
   form.checkValidity=()=>Object.values(form.elements).every(input=>input.checkValidity());
   const store={doc:data,prices:quotes,saveSection(section){writes.push(section);storage.set('etf-planner-assets-v1',JSON.stringify(store.doc));}};
   const ctx=vm.createContext({document,assetStore:store,URLSearchParams,crypto:require('node:crypto').webcrypto,localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},
-    addEventListener(){},setTimeout:fn=>{fn();return 1;},alert:message=>alerts.push(message)});
+    addEventListener(){},setTimeout:fn=>{fn();return 1;},confirm:()=>true,alert:message=>alerts.push(message)});
   vm.runInContext(source,ctx);ctx.openTab('alloc');
   const html=()=>node('allocView').innerHTML;
   const row=id=>{const start=html().indexOf(`data-alloc-item="${id}"`);assert.ok(start>=0,`종목 줄 ${id}`);const rest=html().slice(start),end=rest.search(/class="asset-row|class="group-foot"/);return end<0?rest:rest.slice(0,end);};
