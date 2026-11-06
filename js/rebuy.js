@@ -1008,13 +1008,14 @@ function renderRebuy(){
   const tapPrice=(text,attrs,value,label,placeholder="")=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="number" min="0" step="any" inputmode="decimal" value="${value}"${placeholder?` placeholder="${placeholder}"`:""} aria-label="${label}"></label>`;
   const head=(price)=>`<div class="purchase-table-head"><span>회차</span><span>${price}</span><span>수량</span><span>체결</span>${alerts?"<span>알림</span>":""}<span>상태</span></div>`;
   // 손절·재매수 계좌(1·2 표 위 한 줄, 분할매수 '매수 종목'·분할매도 '매도 종목'과 같은 모양): 체크하면 계좌 고르는 창이 먼저 고를 자산 배분 계좌(alloc-link.js account, rebuyPrefer).
-  // 이름 아래에 그룹·보유와 고른 근거(최근 손절·재매수 계좌 → 손절한 계좌, 없으면 평가액이 가장 큰 계좌). 연결 계좌가 없으면 줄도 회차 아래 계좌 줄도 없다. 읽기만 한다.
+  // 이름 옆에 현재 보유 수량·평가액, 아래 한 줄에 그룹·고른 근거(최근 손절·재매수 계좌 → 손절한 계좌, 없으면 평가액이 가장 큰 계좌). 근거만 말줄임하고 연결 계좌가 없으면 줄도 회차 아래 계좌 줄도 없다. 읽기만 한다.
   // 체크한 회차를 이 줄과 다른 계좌에 반영했으면 그 계좌, 반영 기록이 없으면(반영 안 함·연동 전 체크) '자산 배분 미반영'을 회차 아래 작은 줄에 적는다.
   const acctOf=kind=>rebuyLink("account",{ticker,prefer:rebuyPrefer(r,kind)}),acct={cut:acctOf("cut"),buy:acctOf("buy")};
   const acctWhy=(a,kind)=>({cut:["최근 손절 계좌"],buy:["최근 재매수 계좌","손절한 계좌"]})[kind][a.by]||(a.count>1?"평가액이 가장 큰 계좌":"");
   const acctLine=kind=>{const a=acct[kind];if(!a)return "";const sh=finite(a.it.shares),label=kind==="cut"?"손절 계좌":"재매수 계좌";
-    const info=[a.g.name,sh!==null?`${won.format(sh)}주 보유`:`${decimal.format(Math.round(a.value*10)/10)}만원`,acctWhy(a,kind)].filter(Boolean).join(" · ");
-    return `<div class="purchase-buy-target rebuy-account" data-rebuy-account="${kind}" title="${a.count>1?`같은 종목 코드 계좌 ${a.count}개 중 `:""}체크하면 이 계좌가 먼저 선택됩니다"><span>${label}</span><div><b>${esc(a.it.name)}</b><small>${esc(info)}</small></div></div>`;};
+    const held=sh!==null?`보유 ${won.format(sh)}주`:`평가 ${decimal.format(Math.round(a.value*10)/10)}만원`,why=acctWhy(a,kind);
+    const info=[a.g.name?`<span>${esc(a.g.name)}</span>`:"",why?`<span class="cut">${esc(why)}</span>`:""].filter(Boolean).join("<span> · </span>");
+    return `<div class="purchase-buy-target rebuy-account" data-rebuy-account="${kind}" title="${a.count>1?`같은 종목 코드 계좌 ${a.count}개 중 `:""}체크하면 이 계좌가 먼저 선택됩니다"><span>${label}</span><div><div class="buy-target-name"><b>${esc(a.it.name)}</b><span class="buy-target-held">${esc(held)}</span></div>${info?`<small class="buy-target-info">${info}</small>`:""}</div></div>`;};
   const acctNote=(kind,key)=>{if(!acct[kind])return "";const list=rebuyLink("reflected",key);if(!list)return "";
     const text=!list.length?"자산 배분 미반영":list.length===1&&list[0].it.id===acct[kind].it.id?"":list.map(x=>`${x.it.name}${x.shares?` ${won.format(Math.abs(x.shares))}주`:""}`).join(" · ");
     return text?`<div class="purchase-sub">${esc(text)}</div>`:"";};

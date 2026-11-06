@@ -31,7 +31,7 @@ function ui(state = {}, {alloc = allocation(), link = true, real = false, prices
   form.elements = {name: {value: '', focus() {}}, ticker: {value: '', focus() {}}, holding: {value: ''}};
   form.reset = () => { form.elements.name.value = ''; form.elements.ticker.value = ''; form.elements.holding.value = ''; };
   // 검색 칸(item-search.js)이 만든 요소도 id로 찾는다.
-  const document = {activeElement: null, createElement() { const e = {value: '', dataset: {}, setAttribute() {}, append() {}, focus() {}}; Object.defineProperty(e, 'id', {get: () => e._id, set(v) { e._id = v; els[v] = e; }}); return e; }};
+  const document = {activeElement: null, body: {append() {}}, createElement() { const e = {value: '', dataset: {}, classList: {add() {}, remove() {}}, setAttribute() {}, append() {}, focus() {}}; Object.defineProperty(e, 'id', {get: () => e._id, set(v) { e._id = v; els[v] = e; }}); return e; }};
   let n = 0, stored = null;
   const assetStore = {doc: {allocation: alloc}, prices, subscribe: fn => { listeners.push(fn); return () => {}; }};
   const ctx = vm.createContext({
@@ -231,15 +231,15 @@ const accountFixture = () => {
   const state = {tab: 'rebuy', rebuy: {items: [{id: 'a', name: '가상국내ETF', ticker: '900001', lowPrice: 10000, shares: 150, stepPct: 1, sellPct: 1, cuts: [{shares: 2, price: 9900}, {shares: 3, price: 9800}]}]}};
   return {alloc, state, prices: {stocks: {'900001': {kind: '국내', close: 10000, asOf: '2026-01-02'}}}};
 };
-const accountLine = (html, kind) => (html.match(new RegExp(`<div class="purchase-buy-target rebuy-account" data-rebuy-account="${kind}"[^>]*>.*?</div></div>`)) || [''])[0];
+const accountLine = (html, kind) => (html.match(new RegExp(`<div class="purchase-buy-target rebuy-account" data-rebuy-account="${kind}"[^>]*><span>[^<]*</span><div><div class="buy-target-name">.*?</div>(?:<small class="buy-target-info">.*?</small>)?</div></div>`)) || [''])[0];
 
 test('손절·재매수 계좌: 1·2 표 위에 체크할 때 먼저 고를 계좌와 근거를, 회차 아래에 다른 계좌·미반영 기록을 보인다 (읽기만)', () => {
   const {alloc, state, prices} = accountFixture(), before = JSON.stringify([state, alloc]);
   const {els, ctx} = ui(state, {alloc, prices, real: true}), html = els.rebuyMain.innerHTML;
   const cut = accountLine(html, 'cut'), buy = accountLine(html, 'buy');
-  assert.match(cut, /<span>손절 계좌<\/span><div><b>가상국내ETF\(B\)<\/b><small>가상계좌B · 30주 보유 · 최근 손절 계좌<\/small>/, '최근 손절을 반영한 계좌');
+  assert.match(cut, /<span>손절 계좌<\/span><div><div class="buy-target-name"><b>가상국내ETF\(B\)<\/b><span class="buy-target-held">보유 30주<\/span><\/div><small class="buy-target-info"><span>가상계좌B<\/span><span> · <\/span><span class="cut">최근 손절 계좌<\/span><\/small>/, '최근 손절을 반영한 계좌');
   assert.match(cut, /title="같은 종목 코드 계좌 2개 중 체크하면 이 계좌가 먼저 선택됩니다"/);
-  assert.match(buy, /<span>재매수 계좌<\/span><div><b>가상국내ETF\(B\)<\/b><small>가상계좌B · 30주 보유 · 손절한 계좌<\/small>/, '재매수 기록이 없으면 손절한 계좌');
+  assert.match(buy, /<span>재매수 계좌<\/span><div><div class="buy-target-name"><b>가상국내ETF\(B\)<\/b><span class="buy-target-held">보유 30주<\/span><\/div><small class="buy-target-info"><span>가상계좌B<\/span><span> · <\/span><span class="cut">손절한 계좌<\/span><\/small>/, '재매수 기록이 없으면 손절한 계좌');
   assert.ok(html.indexOf(cut) < html.indexOf('id="rebuyCutRows"') && html.indexOf('id="rebuyBuyTable"') < html.indexOf(buy), '각 표 위');
   const rows = html.split('<div class="purchase-row').slice(1);
   assert.match(rows[0], /data-cut="0"[\s\S]*<div class="purchase-sub">자산 배분 미반영<\/div><\/div>/, '반영 기록이 없는 손절 회차');
@@ -258,7 +258,7 @@ test('손절·재매수 계좌: 반영 기록이 없으면 평가액이 가장 �
   const {alloc, state, prices} = accountFixture();
   delete alloc.trades;
   let t = ui(state, {alloc, prices, real: true});
-  assert.match(accountLine(t.els.rebuyMain.innerHTML, 'cut'), /<b>가상국내ETF<\/b><small>가상계좌A · 120주 보유 · 평가액이 가장 큰 계좌<\/small>/);
+  assert.match(accountLine(t.els.rebuyMain.innerHTML, 'cut'), /<b>가상국내ETF<\/b><span class="buy-target-held">보유 120주<\/span><\/div><small class="buy-target-info"><span>가상계좌A<\/span><span> · <\/span><span class="cut">평가액이 가장 큰 계좌<\/span><\/small>/);
   assert.equal((t.els.rebuyMain.innerHTML.match(/자산 배분 미반영/g) || []).length, 2, '두 손절 모두 미반영');
 
   alloc.trades = {'cut:a:0': {label: '손절 1회', at: '2026-01-01T00:00:00.000Z', qty: 2, price: 9900, items: [{id: 'i1', shares: -2}]},
@@ -275,6 +275,40 @@ test('손절·재매수 계좌: 반영 기록이 없으면 평가액이 가장 �
   assert.equal(plain(vm.runInContext(`allocLink.account({ticker:'900099',prefer:[]})`, t.ctx)), null, '연결 계좌가 없으면 null');
   assert.deepEqual(plain(vm.runInContext(`allocLink.reflected('cut:a:9')`, t.ctx)), [], '반영 기록 없음');
   assert.deepEqual(plain(vm.runInContext(`allocLink.reflected('cut:a:1').map(x=>[x.g.name,x.it.id,x.shares])`, t.ctx)), [['가상계좌B', 'i7', -3]]);
+});
+
+test('손절·재매수 계좌: 누적 손절 체결을 고치면 이름 옆 현재 보유가 바뀌고 렌더는 기록을 바꾸지 않는다', () => {
+  const {alloc, state, prices} = accountFixture(), t = ui(state, {alloc, prices, real: true});
+  t.assetStore.saveSection = () => {};
+  t.ctx.setTimeout = () => 1; t.ctx.clearTimeout = () => {};
+  vm.runInContext('applyRebuyCut(1,{shares:4,price:9800})', t.ctx);
+  assert.equal(alloc.groups[1].items[0].shares, 29);
+  for(const kind of ['cut','buy'])assert.match(accountLine(t.els.rebuyMain.innerHTML, kind), /<b>가상국내ETF\(B\)<\/b><span class="buy-target-held">보유 29주<\/span>/);
+  const before = JSON.stringify([state, t.assetStore.doc]);t.ctx.renderRebuy();
+  assert.equal(JSON.stringify([state, t.assetStore.doc]), before);
+});
+
+test('손절·재매수 계좌: 수량 없는 금액 보유는 기존 소수 서식의 평가액을 이름 옆으로 옮긴다', () => {
+  for(const shares of [null,undefined]){
+    const {alloc, state, prices} = accountFixture();
+    alloc.groups[1].items[0].shares = shares;alloc.groups[1].items[0].amount = 123.45;
+    const before = JSON.stringify([state, alloc]), t = ui(state, {alloc, prices, real: true});
+    for(const kind of ['cut','buy']){
+      const line = accountLine(t.els.rebuyMain.innerHTML, kind);
+      assert.match(line, /<b>가상국내ETF\(B\)<\/b><span class="buy-target-held">평가 123.5만원<\/span><\/div><small class="buy-target-info"><span>가상계좌B<\/span>/);
+      assert.doesNotMatch(line, /주 보유/);
+    }
+    assert.equal(JSON.stringify([state, alloc]), before);
+  }
+});
+
+test('손절 계좌: 빈 설명은 small·구분점을 생략하며 이름·그룹은 이스케이프한다', () => {
+  const {alloc, state, prices} = accountFixture();alloc.groups = [alloc.groups[0]];alloc.groups[0].items = [alloc.groups[0].items[0]];
+  delete alloc.trades;state.rebuy.items[0].cuts = [];alloc.groups[0].name = '';alloc.groups[0].items[0].name = '가상 <ETF>';
+  const t = ui(state, {alloc, prices, real: true});let line = accountLine(t.els.rebuyMain.innerHTML,'cut');
+  assert.match(line, /<b>가상 &lt;ETF&gt;<\/b><span class="buy-target-held">보유 120주<\/span>/);assert.doesNotMatch(line, /buy-target-info|<span> · <\/span>/);
+  alloc.groups[0].name = '가상 <계좌>';const before = JSON.stringify([state, alloc]);t.ctx.renderRebuy();line = accountLine(t.els.rebuyMain.innerHTML,'cut');
+  assert.match(line, /<small class="buy-target-info"><span>가상 &lt;계좌&gt;<\/span><\/small>/);assert.doesNotMatch(line, /class="cut"|<span> · <\/span>/);assert.equal(JSON.stringify([state, alloc]), before);
 });
 
 test('손절·재매수 계좌: 자산 배분에 연결 계좌가 없으면 계좌 줄·미반영 표시를 하지 않고, 수정 창은 같은 코드 계좌들을 안내한다', () => {

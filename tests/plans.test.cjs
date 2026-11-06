@@ -619,11 +619,11 @@ test('통합 매도 회차표는 진행 카드와 같은 기준으로 도달 회
 });
 
 test('통합 매도 회차표는 분할매수 회차표처럼 한 줄에 입력칸 하나를 두고, 매도 종목은 지금 매도 중인 종목만 표 위에 두며 여러 계좌로 나눈 회차만 작은 줄로 보인다',()=>{
-  const fn=(r,name)=>vm.runInContext(name,r.ctx),table=r=>{const infos=Array.from({length:r.p.stages},(_,i)=>fn(r,'planSaleRowInfo')(r.p,i)),sellers=fn(r,'planSaleSellers')(infos);return {infos,sellers,head:fn(r,'planSellerHead')(sellers),rows:infos.map(x=>r.api.planSaleRow(r.p,x.i,sellers,x))};};
+  const fn=(r,name)=>vm.runInContext(name,r.ctx),table=r=>{const infos=Array.from({length:r.p.stages},(_,i)=>fn(r,'planSaleRowInfo')(r.p,i)),sellers=fn(r,'planSaleSellers')(infos);return {infos,sellers,head:fn(r,'planSellerHead')(sellers,r.p),rows:infos.map(x=>r.api.planSaleRow(r.p,x.i,sellers,x))};};
   const keys=sellers=>Array.from(sellers,h=>h.key);
   const r=groupSale(),before=JSON.stringify([r.p,r.alloc]);let {infos,sellers,head,rows}=table(r);const split=infos.findIndex(x=>x.members.length>1);
   assert.deepEqual(keys(sellers),['isa-etf'],'다음 회차를 파는 계좌만 표 위에');assert.equal(split,4,'경계 회차는 두 계좌로 나뉜다');
-  assert.equal(head,'<div class="purchase-buy-target"><span>매도 종목</span><div><b>가상 추종 ETF</b><small>예시 ISA · 111111 · 10000</small></div></div>');
+  assert.equal(head,'<div class="purchase-buy-target"><span>매도 종목</span><div><div class="buy-target-name"><b>가상 추종 ETF</b><span class="buy-target-held">보유 53주</span></div><small class="buy-target-info"><span class="cut">예시 ISA</span><span> · </span><span>111111</span><span> · </span><span>10000</span></small></div></div>');
   assert.equal((rows[0].match(/<input type="number"/g)||[]).length,1);assert.match(rows[0],/<div class="purchase-fill"><input type="number"[^>]*data-sale-member="isa-etf" data-sale-stage="0"/);
   assert.doesNotMatch(rows.join(''),/purchase-sub/,'뒤 계좌가 팔 미체결 회차에도 회차마다 계좌를 더하지 않는다');
   assert.match(r.api.planSaleRow(r.p,0,''),/<small class="purchase-sub">예시 ISA · 가상 추종 ETF · 111111<\/small>/,'매도 종목 줄이 없으면 회차마다 계좌');
@@ -633,12 +633,12 @@ test('통합 매도 회차표는 분할매수 회차표처럼 한 줄에 입력�
   assert.equal((rows[split].match(/data-sale-member="/g)||[]).length,2);
   assert.equal(JSON.stringify([r.p,r.alloc]),before,'회차표를 그려도 기록은 그대로');
   r.isa.name='가상 추종 ETF(ISA)';r.pension.name='가상 추종 ETF (연저펀)';r.api.movePlanSalePriority(r.p,r.pension.id,-1,()=>{});({sellers,head,rows}=table(r));
-  assert.deepEqual(keys(sellers),['pension-etf'],'순서를 바꾸면 표 위 종목도 바뀐다');assert.match(head,/<b>가상 추종 ETF \(연저펀\)<\/b><small>예시 연저펀 · 111111 · 10000<\/small>/);
+  assert.deepEqual(keys(sellers),['pension-etf'],'순서를 바꾸면 표 위 종목도 바뀐다');assert.match(head,/<b>가상 추종 ETF \(연저펀\)<\/b><span class="buy-target-held">보유 34주<\/span><\/div><small class="buy-target-info"><span class="cut">예시 연저펀<\/span><span> · <\/span><span>111111<\/span><span> · <\/span><span>10000<\/span><\/small>/);
   assert.doesNotMatch(rows.join(''),/purchase-sub/,'회차 안에 계좌 이름을 더하지 않는다');
   assert.match(rows[2],/<b>연저펀<\/b><small>예시 연저펀 · 가상 추종 ETF<\/small>.*<b>ISA<\/b><small>예시 ISA · 가상 추종 ETF<\/small>/,'나눈 회차 줄은 이름 끝 괄호를 굵게 보여 잘려도 구분');
   r.finish(0);r.finish(1);({sellers,head}=table(r));
   assert.deepEqual(keys(sellers),['pension-etf','isa-etf'],'다음 회차를 두 계좌로 나눴으면 두 계좌 모두 우선순위 순서로');
-  assert.equal(head,'<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers"><li><b>가상 추종 ETF (연저펀)</b><small>예시 연저펀 · 111111 · 10000</small></li><li><b>가상 추종 ETF(ISA)</b><small>예시 ISA · 111111 · 10000</small></li></ol></div>');
+  assert.equal(head,`<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers"><li><div class="buy-target-name"><b>가상 추종 ETF (연저펀)</b><span class="buy-target-held">보유 ${r.pension.shares}주</span></div><small class="buy-target-info"><span class="cut">예시 연저펀</span><span> · </span><span>111111</span><span> · </span><span>10000</span></small></li><li><div class="buy-target-name"><b>가상 추종 ETF(ISA)</b><span class="buy-target-held">보유 ${r.isa.shares}주</span></div><small class="buy-target-info"><span class="cut">예시 ISA</span><span> · </span><span>111111</span><span> · </span><span>10000</span></small></li></ol></div>`);
   r.finish(2);({sellers,rows}=table(r));
   assert.deepEqual(keys(sellers),['isa-etf'],'앞 계좌를 다 팔면 다음 계좌로');
   assert.match(rows[0],/<small class="purchase-sub">예시 연저펀 · 가상 추종 ETF \(연저펀\) · 111111<\/small>/,'지금 매도 중이 아닌 종목으로 체결한 회차만 회차 아래 작은 줄');
@@ -647,6 +647,32 @@ test('통합 매도 회차표는 분할매수 회차표처럼 한 줄에 입력�
   assert.deepEqual([oneTable.sellers.length,oneSeller.name,oneSeller.account,oneSeller.ticker],[1,'가상 추종 ETF','예시 ISA','111111'],'모든 회차를 한 계좌가 팔면 표 위 매도 종목 한 줄');
   assert.equal(fn(one,'planSellerText')(oneSeller),'예시 ISA · 111111 · 10000');
   assert.doesNotMatch(oneTable.rows[0],/purchase-sub|sale-member-line/,'회차마다 계좌·종목을 반복하지 않는다');assert.match(oneTable.rows[0],/<div class="purchase-qty">\d+주<\/div><div class="purchase-fill"><input/);
+});
+
+test('매도 종목: 이름 옆 보유는 체결 뒤 현재 수량으로 바뀌며 한 계좌·여러 계좌를 그려도 기록을 바꾸지 않는다',()=>{
+  const r=groupSale(),head=()=>{
+    const before=JSON.stringify([r.ctx.state,r.alloc]),html=vm.runInContext('(p)=>planSellerHead(planSaleSellers(Array.from({length:p.stages},(_,i)=>planSaleRowInfo(p,i))),p)',r.ctx)(r.p);
+    assert.equal(JSON.stringify([r.ctx.state,r.alloc]),before);return html;
+  };
+  assert.match(head(),/<div class="buy-target-name"><b>가상 추종 ETF<\/b><span class="buy-target-held">보유 53주<\/span><\/div>/);
+  r.member(0,r.isa.id,1);assert.equal(r.isa.shares,52);assert.match(head(),/buy-target-held">보유 52주<\/span>/);
+  for(let i=0;i<4;i++)r.finish(i);
+  const many=head();assert.match(many,/purchase-buy-target many/);
+  assert.equal((many.match(/class="buy-target-name"/g)||[]).length,2);
+  assert.match(many,new RegExp(`buy-target-held">보유 ${r.isa.shares}주</span>`));assert.match(many,/buy-target-held">보유 34주<\/span>/);
+});
+
+test('매도 종목: 직접 입력·비트코인의 수량 서식과 수량 없음·금액 관리·빈 계좌의 설명을 유지한다',()=>{
+  const {ctx}=load(),head=vm.runInContext('planSellerHead',ctx),seller={key:'',name:'가상 <ETF>',account:'',ticker:'AAA'},p={ticker:'AAA',holdings:[{shares:120}]};
+  let before=JSON.stringify([seller,p]);assert.match(head([seller],p),/<b>가상 &lt;ETF&gt;<\/b><span class="buy-target-held">보유 120주<\/span>/);assert.equal(JSON.stringify([seller,p]),before);
+  assert.match(head([seller],p),/<small class="buy-target-info"><span>AAA<\/span><\/small>/);assert.doesNotMatch(head([seller],p),/class="cut"|<span> · <\/span>/);
+  assert.match(head([{...seller,ticker:'BTC-USD'}],{ticker:'BTC-USD',holdings:[{shares:0.0123}]}),/buy-target-held">보유 0.0123 BTC<\/span>/);
+  for(const shares of [null,undefined])assert.doesNotMatch(head([seller],{holdings:[{shares}]}),/buy-target-held/);
+  assert.doesNotMatch(head([seller],{holdings:[],valueKrw:100}),/buy-target-held/);
+  assert.doesNotMatch(head([{...seller,key:'gone'}],p),/buy-target-held/,'연결 키가 없으면 직접 입력 보유로 대신하지 않음');
+  const live={...seller,account:'가상 <계좌>',ticker:'<CODE>',live:true,price:10000,currency:'KRW',manual:true,stale:true};before=JSON.stringify([live,p]);
+  const html=head([live],p);assert.match(html,/<span class="cut">가상 &lt;계좌&gt;<\/span><span> · <\/span><span>&lt;CODE&gt;<\/span><span> · <\/span><span>10000<\/span><span> · <\/span><span>직접 입력<\/span><span> · <\/span><span>지난 시세<\/span>/);assert.equal(JSON.stringify([live,p]),before);
+  assert.doesNotMatch(head([{...seller,ticker:'가상 <ETF>'}],p),/buy-target-info/,'설명이 없으면 small도 생략');
 });
 
 test('분할매도 제목·목록 카드 이름: 자산 배분에서 고른 종목 이름이면 매도 우선순위 맨 위 종목을 따르고 직접 쓴 계획 이름·기록은 그대로 둔다',()=>{
