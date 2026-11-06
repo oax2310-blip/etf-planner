@@ -201,7 +201,8 @@ function renderPurchases(){
     const alertLine=alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
       :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
     // 회차별 반영 계좌·실제 ETF·예상액. 새 체결이 들어갈 회차(미체결 → 없으면 부분 체결 → 모두 완료면 전체)의 계좌·ETF가 모두 같으면 회차표 위 '매수 종목' 한 줄로 올리고,
-    // 미체결 회차의 예상액·잔액까지 같으면 함께 올린다. 예상액·잔액은 실제 매수 코드가 계획 코드와 다를 때만 둔다(otherCode). 다른 계좌·ETF로 체결한 완료·부분 체결 회차만 회차 아래 작은 줄에 계좌를 둔다(실제 ETF 코드를 넣기 전에 같은 계좌로 체결한 옛 기록은 같은 계좌로 본다). 부분 체결의 남은 예상액은 회차마다 다르므로 회차 아래에 둔다.
+    // 이름 옆 보유는 새 체결이 반영될 계좌(base[0].found.it)의 현재 수량·평가액을 읽기만 한다. 아래 설명은 그룹만 줄이고 코드·회당 예상액·잔액과 구분점은 한 줄로 유지한다.
+    // 미체결 회차의 예상액·잔액까지 같으면 '회당'으로 함께 올린다. 예상액·잔액은 실제 매수 코드가 계획 코드와 다를 때만 둔다(otherCode). 다른 계좌·ETF로 체결한 완료·부분 체결 회차만 회차 아래 작은 줄에 계좌를 둔다(실제 ETF 코드를 넣기 전에 같은 계좌로 체결한 옛 기록은 같은 계좌로 본다). 부분 체결의 남은 예상액은 회차마다 다르므로 회차 아래에 둔다.
     const remainingOf=r=>r.plannedShares!==null?Number(Math.max(0,r.plannedShares-(r.shares||0)).toFixed(8)):null;
     const detailOf=r=>{
       const ticker=otherCode(it,r.tradeTicker)?r.tradeTicker:"",partial=r.recorded&&!r.done,remaining=remainingOf(r),expected=r.recorded?r.done?r.actual:r.shares>0?r.actual*remaining/r.shares:null:r.fill?.actual, remainder=ticker&&r.fill?.tradeTicker?Math.max(0,r.fill.budget-r.fill.actual):null;
@@ -211,7 +212,8 @@ function renderPurchases(){
     const details=new Map(rows.map(r=>[r,detailOf(r)])),base=[rows.filter(r=>!r.recorded),open,rows].find(x=>x.length)||[],lead=base.length?details.get(base[0]):null;
     const sameTarget=(d,l)=>d.group===l.group&&d.name===l.name&&d.ticker===l.ticker,shared=lead&&(lead.name||lead.ticker)&&base.every(r=>sameTarget(details.get(r),lead))?lead:null;
     const openAmounts=new Set(rows.filter(r=>!r.recorded).map(r=>details.get(r).amount)),sharedAmount=shared&&openAmounts.size===1?[...openAmounts][0]:"";
-    const buyTarget=shared?`<div class="purchase-buy-target"><span>매수 종목</span><div><b>${escA(shared.name||shared.ticker)}</b>${(t=>t?`<small>${t}</small>`:"")([shared.group,shared.name?shared.ticker:"",sharedAmount.startsWith("예상")?`회차 ${sharedAmount}`:sharedAmount].filter(Boolean).map(escA).join(" · "))}</div></div>`:"";
+    const heldItem=base[0]?.found?.it,heldInfo=heldItem?allocationHoldingInfo(heldItem,s):null,heldText=heldInfo?heldInfo.shares!==null?heldInfo.quantityText:heldInfo.valuePending?"":`평가 ${heldInfo.valueText}`:"";
+    const buyTarget=shared?`<div class="purchase-buy-target"><span>매수 종목</span><div><div class="buy-target-name"><b>${escA(shared.name||shared.ticker)}</b>${heldText?`<span class="buy-target-held">${escA(heldText)}</span>`:""}</div>${(parts=>parts.length?`<small class="buy-target-info">${parts.map((t,i)=>`<span${i===0&&shared.group?' class="cut"':""}>${escA(t)}</span>`).join("<span> · </span>")}</small>`:"")([shared.group,shared.name?shared.ticker:"",...sharedAmount.replace(/^예상 /,"회당 ").split(" · ")].filter(Boolean))}</div></div>`:"";
     const btcTable=rows.length>0&&rows.every(r=>unitOf(r.tradeItem)<1); // 모든 회차가 비트코인일 때만 수량·체결을 한 칸으로 쌓는다
     const row=r=>{
       const actualItem=r.tradeItem,reached=due(r), partial=r.recorded&&!r.done,missingTarget=!!r.targetId&&!r.found,follows=followsLead(r,trade.target),missingFx=!r.recorded&&!r.tradeTicker&&cur==="USD"&&!s.fx&&!(r.stage?.amount>0), blocked=!r.recorded&&(!(r.plannedShares>0)||!(r.price>0)||missingFx), remaining=remainingOf(r);
