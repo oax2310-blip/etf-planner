@@ -1,4 +1,5 @@
 /* 분할매수: 저장된 계획 목록과 선택한 종목의 회차, 창은 저장 전 복사본을 편집한다 */
+.gold-estimate{margin:8px 0;color:var(--text-2);font-size:12px;line-height:1.7;font-variant-numeric:tabular-nums}.gold-estimate b{color:var(--text)}.gold-estimate span{display:block}
 #purchaseMain{min-width:0}#purchaseList .plan-count{white-space:nowrap}.side .purchase-save-status{margin-bottom:4px}
 /* 계획 진행 카드(purchases.js statusCard): 회차 띠 위 현재가 이름표(꼬리가 다음 회차 칸 앞을 가리킴), 양 끝 기준가·선 이름, 가운데 상태·회차, 아래 카드 너비 한 줄에 체결·남은 수량.
    양 끝 칸은 가격 글자 너비 밑으로 줄지 않고(좁은 폰에서 카드 밖으로 넘치지 않게) 가운데 칩이 줄을 바꾼다. */

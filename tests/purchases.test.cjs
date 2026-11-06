@@ -46,7 +46,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const storage=new Map([['etf-planner-assets-v1',JSON.stringify(doc)]]);
   if(realStore)Object.assign(ctx,{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)},setInterval(){},addEventListener(){}});
-  const code=['ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+  const code=['gold-estimate.js','ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets,assetStore})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
@@ -54,6 +54,32 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
 }
 
 // 실제 파일 입력 핸들러·검증기·저장소를 함께 실행하며 확인과 복원의 순서를 기록한다.
+function goldFixture({ticker='GLDM',section='금(골드)',close=81.52}={}){
+  const r=setup({currency:'USD',price:80,end:85,ma:{'25선':81,'32선':84},names:['25선','32선'],tracking:true});
+  const raw=r.prices.stocks.AAA,at=new Date().toISOString();
+  Object.assign(r.item,{ticker,section});
+  r.prices.updatedAt=at;r.prices.stocks[ticker]={...raw,asOf:'2026-11-05',estimate:{close,at,baseDate:'2026-11-05',baseClose:80,source:'GC=F',check:'PAXG-USD',changePct:1.9,checkPct:1.9}};
+  r.render();return r;
+}
+
+test('금 분할매수 카드·미리보기는 추정가로 도달을 판단하고 실제 종가·원천·시각을 함께 표시한다',()=>{
+  const r=goldFixture(),before=JSON.stringify(r.doc);
+  assert.match(r.html(),/한국장 추정 <b>\$81.52<\/b> · 금선물 기준 · \d\d:\d\d/);
+  assert.match(r.html(),/실제 종가 \$80/);assert.match(r.html(),/도달 1회/);
+  assert.equal(r.prices.stocks.GLDM.close,80);
+  r.edit();assert.match(r.element('lineResult').innerHTML,/한국장 추정/);
+  assert.match(r.element('linePreview').innerHTML,/class="due"/);
+  assert.equal(JSON.stringify(r.doc),before,'표시·미리보기는 기록을 변경하지 않는다');
+});
+
+test('추정가 없는 문서는 기존 종가로 돌아가고 금 소분류의 목록 밖 티커는 미적용을 안내한다',()=>{
+  const r=goldFixture();delete r.prices.stocks.GLDM.estimate;r.render();
+  assert.doesNotMatch(r.html(),/한국장 추정|도달 1회/);
+  const outside=goldFixture({ticker:'GDX'});assert.match(outside.html(),/금 추정 미적용\(실물 금 ETF 아님\)/);
+  assert.doesNotMatch(outside.html(),/한국장 추정/);
+  const unrelated=goldFixture({section:'금커버드콜'});assert.doesNotMatch(unrelated.html(),/한국장 추정|금 추정 미적용/);
+});
+
 function setupImport(confirmed=true){
   const r=setup({realStore:true}),events=[],confirmations=[],restore=r.store.restore;
   r.ctx.confirm=message=>{events.push('confirm');confirmations.push(message);return confirmed;};
