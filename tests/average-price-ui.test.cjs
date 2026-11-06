@@ -54,6 +54,105 @@ function page(data=fixture(),quotes=quoteFixture()){
     refresh(quotes){store.prices=quotes;vm.runInContext('prices=assetStore.prices;render()',ctx);}};
 }
 
+// 소분류 검증에는 공개 가능한 가상 종목·수량·가격만 쓴다.
+function sectionFixture(mixed=false){
+  const data=fixture(),quotes=quoteFixture();
+  data.allocation.groups=[{id:'g1',name:'가상 계좌',classId:'stock',sections:[{name:'가상 소분류',note:'가상 소분류 메모'}],items:[
+    {id:'krw-a',name:'가상 원화 A',ticker:'111111',section:'가상 소분류',shares:3,averagePrice:10000},
+    {id:'other',name:'가상 종목 B',ticker:mixed?'AAA':'222222',section:'가상 소분류',shares:1,averagePrice:mixed?100:10000}]}];
+  quotes.stocks['222222']={kind:'국내',close:9000,asOf:'2026-01-02'};quotes.stocks.AAA.close=90;
+  return {data,quotes};
+}
+function sectionHead(h,group='g1',name='가상 소분류'){
+  const body=h.html().split(`id="allocGroup-${encodeURIComponent(group)}"`)[1]?.split('class="group-foot"')[0];
+  assert.ok(body,`그룹 상세 ${group}`);
+  const head=[...body.matchAll(/<div class="sub-head"><b>(.*?)<\/b>[\s\S]*?<\/div>/g)].find(m=>m[1]===name);
+  assert.ok(head,`소분류 머리줄 ${name}`);return head[0];
+}
+
+test('소분류 원화 손익률은 종목 수익률 평균이 아닌 매입금액 가중 합산이다',()=>{
+  const {data,quotes}=sectionFixture(),before=JSON.stringify(data),h=page(data,quotes),head=sectionHead(h);
+  assert.match(head,/손익 <b class="profit-gain">\+5,000원<\/b><b class="profit-gain">\+12\.5%<\/b>/);
+  assert.doesNotMatch(head,/개 합산|환율 없음/);assert.match(head,/<\/span><small title="가상 소분류 메모">가상 소분류 메모<\/small><\/div>$/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
+test('소분류 혼합 통화는 평가액과 같은 현재 현물 환율로 매입금액·손익을 모두 환산한다',()=>{
+  const {data,quotes}=sectionFixture(true);data.allocation.cashFx=1800;
+  const before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(sectionHead(h),/손익 <b class="profit-loss">−6,000원<\/b><b class="profit-loss">−4%<\/b>/);
+  assert.match(sectionHead(h),/title="달러 종목은 현재 환율 1,200원으로 환산 · 환차손익 제외"/);
+  const next=structuredClone(quotes);next.fx.close=1000;h.refresh(next);
+  assert.match(sectionHead(h),/손익 <b class="profit-loss">−4,000원<\/b><b class="profit-loss">−3\.08%<\/b>/);
+  assert.match(sectionHead(h),/현재 환율 1,000원/);assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
+test('현물 환율이 없으면 직접 넣은 cashFx를 소분류 손익에도 적용한다',()=>{
+  const {data,quotes}=sectionFixture(true);delete quotes.fx;data.allocation.cashFx=1000;
+  const before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(sectionHead(h),/−4,000원<\/b><b class="profit-loss">−3\.08%<\/b>/);
+  assert.match(sectionHead(h),/현재 환율 1,000원/);assert.doesNotMatch(sectionHead(h),/환율 없음|개 합산/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
+test('환율이 전혀 없으면 소분류 원화 종목만 합산하고 달러 누락을 표시한다',()=>{
+  const {data,quotes}=sectionFixture(true);delete quotes.fx;delete data.allocation.cashFx;
+  const before=JSON.stringify(data),h=page(data,quotes),head=sectionHead(h);
+  assert.match(head,/손익 <b class="profit-gain">\+6,000원<\/b><b class="profit-gain">\+20%<\/b>/);
+  assert.match(head,/1\/2개 합산/);assert.match(head,/환율 없음/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+  data.allocation.groups[0].items.shift();const usdOnly=JSON.stringify(data);h.ctx.renderAlloc();
+  assert.doesNotMatch(sectionHead(h),/sub-profit|손익|개 합산|환율 없음/,'합산 가능한 종목이 없으면 안내도 숨긴다');
+  assert.equal(JSON.stringify(data),usdOnly);assert.deepEqual(h.writes,[]);
+});
+
+test('평균매수가가 일부 없으면 소분류 합산 개수를 표시하고 전부 없으면 손익을 숨긴다',()=>{
+  const {data,quotes}=sectionFixture();delete data.allocation.groups[0].items[1].averagePrice;
+  const before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(sectionHead(h),/\+6,000원<\/b><b class="profit-gain">\+20%<\/b>/);assert.match(sectionHead(h),/1\/2개 합산/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+  delete data.allocation.groups[0].items[0].averagePrice;const empty=JSON.stringify(data);h.ctx.renderAlloc();
+  assert.doesNotMatch(sectionHead(h),/sub-profit|손익|개 합산/);assert.equal(JSON.stringify(data),empty);assert.deepEqual(h.writes,[]);
+});
+
+test('소분류 없는 종목과 다른 그룹의 같은 소분류는 제외하고 검색 중에도 소분류 전체를 합산한다',()=>{
+  const {data,quotes}=sectionFixture(),item={id:'plain',name:'가상 별도 종목',ticker:'111111',shares:100,averagePrice:10000};
+  data.allocation.groups[0].items.push(item);
+  data.allocation.groups.push({id:'g2',name:'가상 다른 계좌',classId:'stock',items:[{...item,id:'elsewhere',section:'가상 소분류'}]});
+  const before=JSON.stringify(data),h=page(data,quotes),head=sectionHead(h);
+  assert.match(head,/\+5,000원<\/b><b class="profit-gain">\+12\.5%<\/b>/);assert.doesNotMatch(head,/개 합산/);
+  assert.match(sectionHead(h,'g2'),/\+200,000원<\/b><b class="profit-gain">\+20%<\/b>/);
+  vm.runInContext('allocQuery="가상 원화 A";renderAlloc()',h.ctx);assert.equal(sectionHead(h),head,'검색으로 일부 종목만 보여도 합계는 그대로');
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
+test('소분류 원화 합산을 추가해도 종목 줄과 상단 보유 손익 카드는 현지 통화를 유지한다',()=>{
+  const {data,quotes}=sectionFixture(true),before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(h.row('other'),/손익 <b class="profit-loss">−\$10<\/b><b class="profit-loss">−10%<\/b>/);
+  assert.match(h.row('krw-a'),/손익 <b class="profit-gain">\+6,000원/);
+  const totals=h.html().split('<div class="alloc-profit-totals">')[1].split('<p class="hint">')[0];
+  assert.match(totals,/달러 \(USD\)<\/span><strong class="profit-loss">−\$10<\/strong>/);
+  assert.match(totals,/원화 \(KRW\)<\/span><strong class="profit-gain">\+6,000원<\/strong>/);assert.doesNotMatch(totals,/−6,000원/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.storage.has('etf-planner-assets-v1'),false);
+});
+
+test('소분류 미합산 개수에는 수량·시세 없는 보유를 포함하고 보유 0인 항목은 제외한다',()=>{
+  const {data,quotes}=sectionFixture(),items=data.allocation.groups[0].items;
+  items.push({...items[0],id:'no-shares',shares:undefined,amount:2},{...items[0],id:'no-quote',ticker:'333333'},{...items[0],id:'sold',shares:0});
+  const before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(sectionHead(h),/\+5,000원<\/b><b class="profit-gain">\+12\.5%<\/b>/);assert.match(sectionHead(h),/2\/4개 합산/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
+test('소분류 손익은 기존 원 단위 반올림을 따르고 손익 0도 숨기지 않는다',()=>{
+  const {data,quotes}=sectionFixture();data.allocation.groups[0].items.pop();quotes.stocks['111111'].close=10000.2;
+  const before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(sectionHead(h),/손익 <b class="profit-gain">\+1원<\/b><b class="profit-gain">\+0%<\/b>/);
+  quotes.stocks['111111'].close=10000;h.refresh(quotes);
+  assert.match(sectionHead(h),/손익 <b class="">0원<\/b><b class="">0%<\/b>/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
 test('평균매수가 미입력 종목에는 손익을 표시하지 않으며 조회·취소는 저장하지 않는다',()=>{
   const data=fixture(),before=JSON.stringify(data),h=page(data);
   assert.doesNotMatch(h.row('a'),/평균매수가|평가손익|손익률|asset-profit/,'미입력 안내 줄도 두지 않는다');
