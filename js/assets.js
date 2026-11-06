@@ -17,21 +17,9 @@ const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><pa
 const readJson = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v ?? d; } catch { return d; } };
 const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
 const newId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-const numIn = parseAssetNumber;
+const numIn = moneyInputNumber;
 const moneyAttrs = 'type="text" inputmode="decimal" autocomplete="off" data-money';
-const moneyText = v => escA(assetNumberText(v));
-// 금액 칸은 입력 중에도 천 단위 쉼표를 표시한다. 쉼표 삽입 전의 숫자 위치로 커서를 맞춰 중간 자리 수정도 유지한다.
-document.addEventListener("input",e=>{
-  const x=e.target;if(!x.matches("input[data-money]"))return;
-  const value=x.value, raw=value.replace(/,/g,""), before=value.slice(0,x.selectionStart??value.length).replace(/,/g,"").length;
-  const valid=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw.trim())&&numIn(raw)!==null;
-  x.setCustomValidity(value.trim()&&!valid?"금액을 숫자로 입력해 주세요.":"");
-  if(!/^[+-]?\d*(?:\.\d*)?$/.test(raw))return;
-  const formatted=assetNumberText(raw);if(value===formatted)return;
-  x.value=formatted;let pos=0,count=0;
-  while(pos<formatted.length&&count<before){if(formatted[pos]!==",")count++;pos++;}
-  x.setSelectionRange(pos,pos);
-});
+const moneyText = v => escA(moneyInputText(v));
 // 음수가 될 수 있는 칸(손익·순자산·증가율 등)은 inputmode=numeric. 삼성 키보드는 소수 키패드(decimal)·type=number 키패드에 '-' 키가 없고, numeric 키패드에는 '-'와 '.'이 모두 있다(실기기 확인).
 const signedMoneyAttrs = moneyAttrs.replace('inputmode="decimal"','inputmode="numeric"');
 // 쉼표 없는 비율(%) 칸은 pattern으로 숫자가 아닌 값을 막아 type=number처럼 onChange가 저장하지 않게 한다.
@@ -386,7 +374,7 @@ function openItem(id, groupId){
   f.name.value=it.name||""; f.section.value=it.section||""; f.ticker.value=it.ticker||""; f.shares.value=it.shares??""; f.target.value=it.target??""; f.done.checked=!!it.done; f.note.value=it.note||"";
   f.tradeTicker.value=it.tradeTicker||"";
   const input=f.elements.averagePrice, currencyInput=f.elements.averageCurrency, keys=["name","section","ticker","tradeTicker","shares","target","note","averagePrice","averageCurrency"];
-  input.value=plus(it.averagePrice)??"";input.setCustomValidity("");
+  input.value=moneyInputText(plus(it.averagePrice));input.setCustomValidity("");
   currencyInput.value=it.averageCurrency==="KRW"?"KRW":"";
   const initial=Object.fromEntries(keys.map(k=>[k,f.elements[k].value])), initialDone=f.done.checked, initialGroup=f.group.value;
   // 창을 연 뒤 동기화·체결이 갱신한 값은 보존하고 실제로 고친 입력만 최신 종목에 반영한다. 미리보기는 저장하지 않는다.
@@ -404,7 +392,7 @@ function openItem(id, groupId){
   };
   const preview=()=>{
     const current=id?findItem(id):null, draft=draftItem(current?.it||{}), alloc=doc.allocation;
-    const value=numIn(input.value), invalid=input.validity.badInput||input.value!==""&&(!plus(value)||value>Number.MAX_SAFE_INTEGER);
+    const value=moneyInputNumber(input.value), moneyValid=moneyInputValidate(input), invalid=!moneyValid||input.value.trim()!==""&&!plus(value);
     const invalidMessage=value>Number.MAX_SAFE_INTEGER?"평균매수가가 입력 가능한 범위를 초과했습니다.":"평균매수가를 0보다 큰 숫자로 입력하세요.";
     input.setCustomValidity(invalid?invalidMessage:"");
     const p=itemProfit(draft,prices,assetFx(prices,alloc)), coin=purchaseQuoteKind(assetTradeTicker(draft))==="코인", unit=linkStep(draft)<1?" BTC":"주";
@@ -514,11 +502,11 @@ function openClass(id){
 function openCash(id){
   const a=doc.allocation, c=id?a.cash.find(x=>x.id===id):null, f=el("cashForm");
   el("cashTitle").textContent=c?"현금 수정":"새 현금 항목";
-  f.place.value=c?.place||""; f.name.value=c?.name||""; f.amount.value=c?.amount??""; f.currency.value=c?.currency||"KRW"; f.minus.checked=!!c?.minus;
+  f.place.value=c?.place||""; f.name.value=c?.name||""; f.amount.value=moneyInputText(c?.amount);moneyInputValidate(f.amount); f.currency.value=c?.currency||"KRW"; f.minus.checked=!!c?.minus;
   el("cashDelete").hidden=!c;
   el("cashDelete").onclick=()=>{ if(!confirm(`'${c.name}' 항목을 삭제할까요?`)) return; a.cash=a.cash.filter(x=>x!==c); saveSection("allocation"); dlg("cashDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
-    setText(t,"place",f.place.value); t.name=f.name.value.trim()||"이름 없음"; t.amount=numIn(f.amount.value)??0; t.currency=f.currency.value==="USD"?"USD":"KRW"; if(f.minus.checked) t.minus=true; else delete t.minus;
+  f.onsubmit=e=>{ e.preventDefault();if(!moneyInputValidate(f.amount)){f.amount.reportValidity();return;} const t=c||{id:newId()};
+    setText(t,"place",f.place.value); t.name=f.name.value.trim()||"이름 없음"; t.amount=moneyInputNumber(f.amount.value)??0; t.currency=f.currency.value==="USD"?"USD":"KRW"; if(f.minus.checked) t.minus=true; else delete t.minus;
     if(!c) a.cash.push(t); saveSection("allocation"); dlg("cashDialog").close(); render(); };
   dlg("cashDialog").showModal();
 }

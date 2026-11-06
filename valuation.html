@@ -14,14 +14,15 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0c10">
   <link rel="icon" href="push-icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <script src="js/theme.js?v=375"></script>
+  <script src="js/theme.js?v=376"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <title>AI 구독 · 삼성SDI · ETF · 환율 시나리오</title>
   <meta name="description" content="AI 구독사업, 삼성SDI, ETF의 장기 가치와 한미 GDP·M2로 계산한 원·달러 상대 통화압력을 살펴봅니다.">
-  <link rel="stylesheet" href="css/currency-pressure.css?v=375">
-  <link rel="stylesheet" href="css/valuation.css?v=375">
-  <script src="js/repo-security.js?v=375" defer></script>
-  <script src="js/gold-estimate.js?v=375" defer></script>
+  <link rel="stylesheet" href="css/currency-pressure.css?v=376">
+  <link rel="stylesheet" href="css/valuation.css?v=376">
+  <script src="js/repo-security.js?v=376" defer></script>
+  <script src="js/gold-estimate.js?v=376" defer></script>
+  <script src="js/money-input.js?v=376" defer></script>
 </head>
 <body>
 <header class="top">
@@ -204,9 +205,9 @@
         </div>
       <details><summary>배터리 판매 단가 · 이익률 · PER</summary>
         <div class="battery-inputs">
-          <div class="battery-field"><label for="batEvAsp">전기차 셀 판매 단가</label><input id="batEvAsp" type="number" min="20" max="350" step="5" value="120"><span class="unit">천 원/kWh</span></div>
-          <div class="battery-field"><label for="batRobotAsp">로봇 셀 판매 단가</label><input id="batRobotAsp" type="number" min="20" max="500" step="5" value="200"><span class="unit">천 원/kWh</span></div>
-          <div class="battery-field"><label for="batEssAsp">ESS 셀 판매 단가</label><input id="batEssAsp" type="number" min="20" max="350" step="5" value="90"><span class="unit">천 원/kWh</span></div>
+          <div class="battery-field"><label for="batEvAsp">전기차 셀 판매 단가</label><input id="batEvAsp" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="20" data-money-max="350" data-money-step="5" value="120"><span class="unit">천 원/kWh</span></div>
+          <div class="battery-field"><label for="batRobotAsp">로봇 셀 판매 단가</label><input id="batRobotAsp" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="20" data-money-max="500" data-money-step="5" value="200"><span class="unit">천 원/kWh</span></div>
+          <div class="battery-field"><label for="batEssAsp">ESS 셀 판매 단가</label><input id="batEssAsp" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="20" data-money-max="350" data-money-step="5" value="90"><span class="unit">천 원/kWh</span></div>
           <div class="battery-field"><label for="batEvMargin">전기차 셀 영업이익률</label><input id="batEvMargin" type="number" min="0" max="40" step="0.5" value="8"><span class="unit">%</span></div>
           <div class="battery-field"><label for="batRobotMargin">로봇 셀 영업이익률</label><input id="batRobotMargin" type="number" min="0" max="40" step="0.5" value="12"><span class="unit">%</span></div>
           <div class="battery-field"><label for="batEssMargin">ESS 셀 영업이익률</label><input id="batEssMargin" type="number" min="0" max="40" step="0.5" value="8"><span class="unit">%</span></div>
@@ -230,8 +231,8 @@
     </div>
     <details class="market-folder battery-advanced"><summary>ETF별 계산 과정과 근거 자료 <span>펼쳐보기</span></summary><div class="market-folder-body">
     <div class="battery-results">
-      <div class="card"><h3>RISE · 국내 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="RISE 가치 구성"><tbody id="riseBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="riseBasePrice">계산 기준 ETF 종가</label><input id="riseBasePrice" type="number" min="1" max="1000000" step="1" value="11175"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 나머지에는 SK이노베이션(SK온의 모회사), 양극재·소재 기업도 들어갑니다.</p></div>
-      <div class="card"><h3>KODEX · 중국 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="KODEX 가치 구성"><tbody id="chinaBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="chinaFx">원화 대비 위안화 연 변화</label><input id="chinaFx" type="text" inputmode="numeric" autocomplete="off" pattern="-?(?:(?:1[0-4]|\d)(?:\.[05]0*)?|15(?:\.0+)?)" value="0"><span class="unit">%</span></div><div class="battery-field"><label for="chinaBasePrice">계산 기준 ETF 종가</label><input id="chinaBasePrice" type="number" min="1" max="1000000" step="1" value="8335"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 합성 ETF라 실제 보유명세에 주식 대신 스왑이 표시됩니다. 위안화 상승은 원화 가격을 높이는 것으로 가정합니다.</p></div>
+      <div class="card"><h3>RISE · 국내 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="RISE 가치 구성"><tbody id="riseBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="riseBasePrice">계산 기준 ETF 종가</label><input id="riseBasePrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="1" data-money-max="1000000" data-money-step="1" value="11175"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 나머지에는 SK이노베이션(SK온의 모회사), 양극재·소재 기업도 들어갑니다.</p></div>
+      <div class="card"><h3>KODEX · 중국 셀 제조사와 나머지 종목</h3><table class="battery-breakdown" aria-label="KODEX 가치 구성"><tbody id="chinaBreakdown"></tbody></table><div class="battery-inputs battery-detail-inputs"><div class="battery-field"><label for="chinaFx">원화 대비 위안화 연 변화</label><input id="chinaFx" type="text" inputmode="numeric" autocomplete="off" pattern="-?(?:(?:1[0-4]|\d)(?:\.[05]0*)?|15(?:\.0+)?)" value="0"><span class="unit">%</span></div><div class="battery-field"><label for="chinaBasePrice">계산 기준 ETF 종가</label><input id="chinaBasePrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="1" data-money-max="1000000" data-money-step="1" value="8335"><span class="unit">원</span></div></div><p class="small muted" style="margin-top:10px">기준 종가 기본값은 2026.09.23입니다. 합성 ETF라 실제 보유명세에 주식 대신 스왑이 표시됩니다. 위안화 상승은 원화 가격을 높이는 것으로 가정합니다.</p></div>
     </div>
     <div class="card">
       <h3>계산 과정</h3><div class="equation" id="batteryEquation">세계 판매량 → 기업별 배터리 출하량 → 매출과 이익 → 기업가치 → ETF 조건부 가격.</div>
@@ -472,7 +473,7 @@
     <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다.</p>
   </div>
 </dialog>
-<script src="js/valuation.js?v=375" defer></script>
-<script src="js/currency-pressure.js?v=375" defer></script>
+<script src="js/valuation.js?v=376" defer></script>
+<script src="js/currency-pressure.js?v=376" defer></script>
 </body>
 </html>

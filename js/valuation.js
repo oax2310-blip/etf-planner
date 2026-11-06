@@ -200,11 +200,15 @@ const batteryPresetValues={
   high:{batYear:2035,batCarM:95,batEvPct:75,batEvKwh:65,batRobotM:110,batRobotKwh:4,batEssGwh:2600,batEvAsp:130,batRobotAsp:230,batEssAsp:110,batEvMargin:11,batRobotMargin:16,batEssMargin:12,batNetRate:75,batPE:22,batRequired:10,chinaFx:0}
 };
 const batteryPresetLabels={low:"보수적 가정",base:"기본 가정",high:"낙관적 가정"};
-const inputCell=(company,key,title,step,min,max)=>'<input type="number" id="bc-'+company.id+'-'+key+'" aria-label="'+company.name+' '+title+'" value="'+company[key]+'" min="'+min+'" max="'+max+'" step="'+step+'">';
+const batteryInput=(id,title,value,step,min,max,monetary)=>{
+  const attrs=monetary?`type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="${min}" data-money-max="${max}" data-money-step="${step}"`:`type="number" min="${min}" max="${max}" step="${step}"`;
+  return `<input ${attrs} id="${id}" aria-label="${title}" value="${monetary?moneyInputText(value):value}">`;
+};
+const inputCell=(company,key,title,step,min,max)=>batteryInput("bc-"+company.id+"-"+key,company.name+" "+title,company[key],step,min,max,key==="cap"||key==="other");
 el("batteryCompanyRows").innerHTML=batteryCompanies.map(company=>'<tr><td><strong>'+company.name+'</strong><small>'+(company.fund==="rise"?"RISE":"KODEX 지수")+'</small></td>'+
   '<td>'+inputCell(company,"weight","ETF 편입 비중",.01,0,100)+'</td><td>'+inputCell(company,"ev","전기차 점유율",.5,0,100)+'</td><td>'+inputCell(company,"robot","로봇 점유율",.5,0,100)+'</td><td>'+inputCell(company,"ess","ESS 점유율",.5,0,100)+'</td><td>'+inputCell(company,"cap","2026 시가총액",.01,.01,10000)+'</td><td>'+inputCell(company,"other","미래 기타사업 가치",.1,0,5000)+'</td><td class="company-output" id="bc-'+company.id+'-revenue">—</td><td class="company-output" id="bc-'+company.id+'-profit">—</td></tr>').join("");
 const companyInputIds=batteryCompanies.flatMap(c=>["weight","ev","robot","ess","cap","other"].map(k=>"bc-"+c.id+"-"+k));
-const groupInput=(g,key,title,step,min,max)=>'<input type="number" id="bg-'+g.id+'-'+key+'" aria-label="'+g.name+' '+title+'" value="'+g[key]+'" min="'+min+'" max="'+max+'" step="'+step+'">';
+const groupInput=(g,key,title,step,min,max)=>batteryInput("bg-"+g.id+"-"+key,g.name+" "+title,g[key],step,min,max,key==="cap"||g.kind==="equipment"&&key==="share");
 el("batteryRestRows").innerHTML=batteryRestGroups.map(g=>'<tr><td><strong>'+g.name+'</strong><small>'+(g.fund==="rise"?"RISE ":"KODEX ")+two(g.weight)+'%</small></td>'+
   '<td>'+groupInput(g,"share",g.kind==="equipment"?"2025 관련 매출 조원":"관련 시장 점유율",.1,0,g.kind==="equipment"?100:100)+(g.kind==="equipment"?"조":"%")+'</td><td>'+groupInput(g,"cap","현재 합산 시총 조원",.01,.01,10000)+'</td><td>'+groupInput(g,"margin","사업 영업이익률 %",.5,0,50)+'</td><td class="company-output" id="bg-'+g.id+'-finance">—</td><td class="company-output" id="bg-'+g.id+'-multiple">—</td></tr>').join("");
 const groupInputIds=batteryRestGroups.flatMap(g=>["share","cap","margin"].map(k=>"bg-"+g.id+"-"+k));
@@ -213,9 +217,12 @@ function renderBatteryEtfs(){
   const warn=el("batteryWeightsWarning");
   const allIds=[...batteryInputs,...companyInputIds,...groupInputIds];
   // 위안화 연 변화(chinaFx)는 '-' 키가 있는 키패드를 쓰려고 text + inputmode=numeric 칸이며, 범위(−15~15%, 0.5 단위)는 HTML pattern을 checkValidity로 검사한다.
-  const invalid=allIds.find(id=>!el(id).checkValidity()||el(id).value.trim()===""||!Number.isFinite(Number(el(id).value)));
+  const invalid=allIds.find(id=>{
+    const node=el(id);
+    return node.dataset?.money!==undefined&&!moneyInputValidate(node)||!node.checkValidity()||node.value.trim()===""||moneyInputNumber(node.value)===null;
+  });
   if(invalid){ warn.textContent="입력값의 범위를 확인하면 계산이 다시 표시됩니다: "+(el(invalid).getAttribute("aria-label")?.trim()||el(invalid).labels?.[0]?.textContent||invalid); return; }
-  const read=id=>Number(el(id).value);
+  const read=id=>moneyInputNumber(el(id).value);
   const year=read("batYear"),years=year-2026, discount=Math.pow(1+read("batRequired")/100,years);
   const demand={ev:read("batCarM")*read("batEvPct")/100*read("batEvKwh"),robot:read("batRobotM")*read("batRobotKwh"),ess:read("batEssGwh")};
   const asp={ev:read("batEvAsp"),robot:read("batRobotAsp"),ess:read("batEssAsp")};
@@ -309,7 +316,7 @@ function renderBatteryEtfs(){
 }));
 document.querySelectorAll("[data-battery-preset]").forEach(button=>button.addEventListener("click",()=>{
   const preset=batteryPresetValues[button.dataset.batteryPreset];
-  for(const [id,value] of Object.entries(preset)) el(id).value=value;
+  for(const [id,value] of Object.entries(preset)){const node=el(id);node.value=node.dataset?.money!==undefined?moneyInputText(value):value;}
   document.querySelectorAll("[data-battery-preset]").forEach(b=>b.classList.toggle("active",b===button));
   el("batteryPresetLabel").textContent=batteryPresetLabels[button.dataset.batteryPreset];
   renderBatteryEtfs();
@@ -409,9 +416,9 @@ const validValues=values=>values&&typeof values==="object"&&!Array.isArray(value
 function collectAssumptions(previous){
   const values={},kept=validValues(previous);
   assumptionIds.forEach(id=>{
-    const node=el(id),value=Number(node.value);
-    if(node.value.trim()===""||!node.checkValidity()||!Number.isFinite(value)){ if(owns(kept,id)) values[id]=kept[id]; return; }
-    if(value!==Number(assumptionDefaults[id])) values[id]=value;
+    const node=el(id),value=moneyInputNumber(node.value), moneyValid=node.dataset?.money===undefined||moneyInputValidate(node);
+    if(node.value.trim()===""||!moneyValid||!node.checkValidity()||value===null){ if(owns(kept,id)) values[id]=kept[id]; return; }
+    if(value!==moneyInputNumber(assumptionDefaults[id])) values[id]=value;
   });
   const presets={};
   for(const [key,control] of Object.entries(presetControls)) presets[key]=document.querySelector(control.selector+".active")?.dataset[control.data]||"";
@@ -423,8 +430,12 @@ function applyAssumptions(saved){
     const node=el(id),fallback=assumptionDefaults[id],value=values[id];
     // 보통 쓰는 값은 드래그로 미세 조정하고, 예전 저장본의 큰 값은 원래 범위를 열어 그대로 복원한다.
     if(node.dataset?.sliderMax) node.max=typeof value==="number"&&Number.isFinite(value)&&value>Number(node.dataset.sliderMax)?node.dataset.savedMax:node.dataset.sliderMax;
-    node.value=owns(values,id)&&typeof value==="number"&&Number.isFinite(value)?String(value):fallback;
-    if(node.value===""||!node.checkValidity()) node.value=fallback;
+    const monetary=node.dataset?.money!==undefined, text=owns(values,id)&&typeof value==="number"&&Number.isFinite(value)?String(value):fallback;
+    node.value=monetary?moneyInputText(text):text;
+    if(node.value===""||(monetary&&!moneyInputValidate(node))||!node.checkValidity()){
+      node.value=monetary?moneyInputText(fallback):fallback;
+      if(monetary)moneyInputValidate(node);
+    }
   });
   // HUMN 프리셋 이전 저장본에는 humn이 없다. HUMN 입력이 모두 기본값이면 기본 시나리오로 본다.
   const presets={...saved?.presets};

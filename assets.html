@@ -16,12 +16,13 @@
   <title>자산 현황</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=375"></script>
+  <script src="js/theme.js?v=376"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=375" />
-  <link rel="stylesheet" href="css/assets.css?v=375" />
-  <script src="js/repo-security.js?v=375" defer></script>
-  <script src="js/gold-estimate.js?v=375" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=376" />
+  <link rel="stylesheet" href="css/assets.css?v=376" />
+  <script src="js/repo-security.js?v=376" defer></script>
+  <script src="js/gold-estimate.js?v=376" defer></script>
+  <script src="js/money-input.js?v=376" defer></script>
 </head>
 <body class="assets-page">
   <header class="top">
@@ -73,7 +74,7 @@
       <label class="field"><span>기준 티커 / 시세 종목 코드 (선택)</span><input name="ticker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼 / BTC-USD" /></label>
       <label class="field"><span>실제 매수 ETF 코드 (추종할 때)</span><input name="tradeTicker" maxlength="12" spellcheck="false" autocomplete="off" placeholder="국내 6자리 / 미국 심볼" /></label>
       <label class="field"><span>보유 수량 (선택)</span><input name="shares" type="number" min="0" step="any" inputmode="decimal" placeholder="넣으면 수량 × 현재가" /></label>
-      <div class="field"><label class="average-price-label" id="averagePriceLabel" for="averagePriceInput">평균매수가 (1주 기준)</label><div class="average-price-inputs"><input id="averagePriceInput" name="averagePrice" type="number" min="0" max="9007199254740991" step="any" inputmode="decimal" autocomplete="off" aria-describedby="averagePriceHint" placeholder="미입력" /><select name="averageCurrency" id="averageCurrencySelect" aria-label="평균매수가 통화" hidden><option value="">달러 (USD)</option><option value="KRW">원화 (KRW)</option></select></div><small class="field-hint" id="averagePriceHint">실제 보유 종목의 통화로 입력하세요. 비우고 저장하면 삭제됩니다.</small></div>
+      <div class="field"><label class="average-price-label" id="averagePriceLabel" for="averagePriceInput">평균매수가 (1주 기준)</label><div class="average-price-inputs"><input id="averagePriceInput" name="averagePrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-max="9007199254740991" data-money-step="any" aria-describedby="averagePriceHint" placeholder="미입력" /><select name="averageCurrency" id="averageCurrencySelect" aria-label="평균매수가 통화" hidden><option value="">달러 (USD)</option><option value="KRW">원화 (KRW)</option></select></div><small class="field-hint" id="averagePriceHint">실제 보유 종목의 통화로 입력하세요. 비우고 저장하면 삭제됩니다.</small></div>
       <div class="dialog-wide item-profit-preview">
         <div class="average-price-holding" id="averagePriceHolding"></div>
         <div class="profit-result average-price-preview" id="averagePricePreview" role="status" aria-live="polite"></div>
@@ -116,7 +117,7 @@
     <div class="dialog-grid">
       <label class="field"><span>증권사·은행</span><input name="place" maxlength="30" autocomplete="off" /></label>
       <label class="field"><span>이름</span><input name="name" required maxlength="40" autocomplete="off" /></label>
-      <label class="field"><span>금액</span><input name="amount" type="number" step="any" inputmode="decimal" /></label>
+      <label class="field"><span>금액</span><input name="amount" type="text" inputmode="numeric" autocomplete="off" data-money data-money-step="any" /></label>
       <label class="field"><span>통화</span><select name="currency"><option value="KRW">원화 (원)</option><option value="USD">달러 ($)</option></select></label>
       <label class="field check-field dialog-wide"><span>빼는 항목</span><span class="check"><input name="minus" type="checkbox" /> 합계에서 뺌 (예: 선물 증거금)</span></label>
     </div>
@@ -150,20 +151,20 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=375" defer></script>
-  <script src="js/split-auto.js?v=375" defer></script>
-  <script src="js/data-validation.js?v=375" defer></script>
-  <script src="js/assets-calc.js?v=375" defer></script>
-  <script src="js/price-collection.js?v=375" defer></script>
-  <script src="js/assets-store.js?v=375" defer></script>
-  <script src="js/member-link.js?v=375" defer></script>
-  <script src="js/stock-names.js?v=375" defer></script>
-  <script src="js/ledger-benchmark.js?v=375" defer></script>
-  <script src="js/assets.js?v=375" defer></script>
-  <script src="js/assets-ledger.js?v=375" defer></script>
-  <script src="js/assets-savings.js?v=375" defer></script>
-  <script src="js/assets-installments.js?v=375" defer></script>
-  <script src="js/split-notices.js?v=375" defer></script>
-  <script src="js/assets-start.js?v=375" defer></script>
+  <script src="js/ma-ladder.js?v=376" defer></script>
+  <script src="js/split-auto.js?v=376" defer></script>
+  <script src="js/data-validation.js?v=376" defer></script>
+  <script src="js/assets-calc.js?v=376" defer></script>
+  <script src="js/price-collection.js?v=376" defer></script>
+  <script src="js/assets-store.js?v=376" defer></script>
+  <script src="js/member-link.js?v=376" defer></script>
+  <script src="js/stock-names.js?v=376" defer></script>
+  <script src="js/ledger-benchmark.js?v=376" defer></script>
+  <script src="js/assets.js?v=376" defer></script>
+  <script src="js/assets-ledger.js?v=376" defer></script>
+  <script src="js/assets-savings.js?v=376" defer></script>
+  <script src="js/assets-installments.js?v=376" defer></script>
+  <script src="js/split-notices.js?v=376" defer></script>
+  <script src="js/assets-start.js?v=376" defer></script>
 </body>
 </html>

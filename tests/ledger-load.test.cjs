@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const root=path.join(__dirname,'..');
-const scripts=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js']
+const scripts=['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/money-input.js','js/assets.js']
   .map(file=>fs.readFileSync(path.join(root,file),'utf8')).join('\n;\n');
 const ledgerScript=fs.readFileSync(path.join(root,'js/assets-ledger.js'),'utf8');
 const SP='data/sp500-tr.json', GOLD='data/gold-etf.json';
