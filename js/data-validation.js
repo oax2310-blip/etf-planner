@@ -133,6 +133,7 @@ const externalData = (()=>{
         records(g.sections,`${k}.sections`,(v,q)=>{strings(v,["name"],q);numbers(v,["target"],q);});
         records(g.items,`${k}.items`,(v,q)=>{
           strings(v,["id","name","ticker","tradeTicker","section","note"],q);numbers(v,["target","amount","shares","base","tradePrice"],q);numbers(v,["averagePrice"],q,Number.MIN_VALUE);
+          if(Object.hasOwn(v,"averageCurrency")&&v.averageCurrency!=="KRW")fail(`${q}.averageCurrency`);
           child(v,"buyPlan",q,(b,t)=>{stages(b.stages,`${t}.stages`);recordMap(b.buys,`${t}.buys`,trade);child(b,"lines",t);child(b,"wait",t);});
         });
       });

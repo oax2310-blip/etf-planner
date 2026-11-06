@@ -47,8 +47,8 @@ function page(data=fixture(),quotes=quoteFixture()){
     nodes.set(id,n);return n;
   }
   const form=node('itemForm');form.elements={};
-  for(const name of ['name','group','section','ticker','tradeTicker','shares','target','done','note','averagePrice']){
-    const input=node(name==='averagePrice'?'averagePriceInput':`item:${name}`);input.tagName=name==='group'?'SELECT':name==='note'?'TEXTAREA':'INPUT';
+  for(const name of ['name','group','section','ticker','tradeTicker','shares','target','done','note','averagePrice','averageCurrency']){
+    const input=node(name==='averagePrice'?'averagePriceInput':name==='averageCurrency'?'averageCurrencySelect':`item:${name}`);input.tagName=['group','averageCurrency'].includes(name)?'SELECT':name==='note'?'TEXTAREA':'INPUT';
     form[name]=input;form.elements[name]=input;
   }
   form.checkValidity=()=>Object.values(form.elements).every(input=>input.checkValidity());
@@ -63,8 +63,95 @@ function page(data=fixture(),quotes=quoteFixture()){
     edit(value){node('averagePriceInput').value=value;node('averagePriceInput').oninput();},
     submit(){form.onsubmit({preventDefault(){}});},cancel(){node('itemCancel').click();},
     field(name,value){form.elements[name].value=value;form.elements[name].oninput?.();},
+    selectCurrency(value){form.elements.averageCurrency.value=value;form.elements.averageCurrency.onchange();},
     refresh(quotes){store.prices=quotes;vm.runInContext('prices=assetStore.prices;render()',ctx);}};
 }
+
+function btcFixture(averageCurrency){
+  const data=fixture(),quotes=quoteFixture(),item=data.allocation.groups[0].items[0];
+  Object.assign(item,{name:'가상 비트코인',ticker:'BTC-USD',shares:.01,averagePrice:70000000});
+  if(averageCurrency)item.averageCurrency=averageCurrency;
+  quotes.stocks['BTC-USD']={kind:'코인',close:60000,asOf:'2026-01-02'};quotes.fx.close=1400;
+  return {data,quotes,item};
+}
+
+test('평균매수가 통화 선택은 실제 거래 종목이 비트코인일 때만 보이며 달러가 기본이다',()=>{
+  const h=page();h.open('a');assert.equal(h.node('averageCurrencySelect').hidden,true);
+  h.field('ticker','BTC-USD');assert.equal(h.node('averageCurrencySelect').hidden,false);assert.equal(h.node('averageCurrencySelect').value,'');
+  assert.equal(h.node('averagePriceLabel').textContent,'평균매수가 (달러 (USD) · 1 BTC 기준)');
+  h.field('tradeTicker','111111');assert.equal(h.node('averageCurrencySelect').hidden,true);
+  h.field('tradeTicker','');assert.equal(h.node('averageCurrencySelect').hidden,false);
+  h.field('ticker','AAA');assert.equal(h.node('averageCurrencySelect').hidden,true);assert.deepEqual(h.writes,[]);
+  const modal=read('assets.html').split('<dialog id="itemDialog"')[1].split('</dialog>')[0];
+  assert.match(modal,/<select name="averageCurrency"[^>]*aria-label="평균매수가 통화"[^>]*hidden>/);
+  assert.match(modal,/<option value="">달러 \(USD\)<\/option><option value="KRW">원화 \(KRW\)<\/option>/);
+});
+
+test('비트코인 원화 선택은 즉시 라벨·환산 현재가·손익을 미리 보여 주고 저장할 때만 필드를 만든다',()=>{
+  const {data,quotes,item}=btcFixture(),h=page(data,quotes),before=JSON.stringify(data);h.open('a');h.selectCurrency('KRW');
+  assert.equal(h.node('averagePriceLabel').textContent,'평균매수가 (원 (KRW) · 1 BTC 기준)');
+  assert.match(h.node('averagePriceHolding').innerHTML,/0\.01 BTC/);assert.match(h.node('averagePriceHolding').innerHTML,/\$60,000.*원화 환산 84,000,000원/);
+  assert.match(h.node('averagePricePreview').innerHTML,/\+140,000원/);assert.match(h.node('averagePricePreview').innerHTML,/\+20%/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);h.submit();
+  assert.equal(item.averageCurrency,'KRW');assert.equal(item.averagePrice,70000000);assert.deepEqual(h.writes,['allocation']);
+  assert.match(h.row('a'),/평균매수가 70,000,000원/);assert.match(h.row('a'),/손익 <b class="profit-gain">\+140,000원/);assert.match(h.row('a'),/0\.01 BTC/);assert.doesNotMatch(h.row('a'),/0\.01주/);
+  assert.match(h.row('a'),/title="Coinbase 달러 시세 \$60,000 × 현재 환율 1,400원 = 84,000,000원 기준 · 국내 거래소 원화 시세와 차이가 날 수 있음"/);
+  const card=h.html().split('<section class="card alloc-profit"')[1].split('</section>')[0];
+  assert.match(card,/원화 \(KRW\)<\/span><strong class="profit-gain">\+148,000원/);
+  assert.match(card,/원화 평균매수가 비트코인은 달러 시세 × 현재 환율로 계산/);
+});
+
+test('비트코인 통화를 달러로 되돌리거나 평균가를 비우거나 종목을 바꾸면 선택 필드를 삭제한다',()=>{
+  for(const action of ['usd','empty','ticker','tradeTicker']){
+    const {data,quotes,item}=btcFixture('KRW'),h=page(data,quotes);h.open('a');
+    if(action==='usd')h.selectCurrency('');
+    if(action==='empty')h.edit('');
+    if(action==='ticker')h.field('ticker','AAA');
+    if(action==='tradeTicker'){h.field('ticker','AAA');h.field('tradeTicker','111111');}
+    h.submit();assert.equal(Object.hasOwn(item,'averageCurrency'),false,action);assert.deepEqual(h.writes,['allocation']);
+    if(action==='empty')assert.equal(Object.hasOwn(item,'averagePrice'),false);else assert.equal(item.averagePrice,70000000);
+  }
+});
+
+test('비트코인 통화 선택을 취소하거나 저장 없이 조회하면 기록을 바꾸지 않는다',()=>{
+  for(const currency of [undefined,'KRW']){
+    const {data,quotes}=btcFixture(currency),h=page(data,quotes),before=JSON.stringify(data);h.open('a');
+    h.selectCurrency(currency?'':'KRW');h.cancel();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+    h.open('a');h.submit();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+  }
+});
+
+test('환율이 없으면 원화 비트코인의 현재가·손익은 환율 대기로 표시하며 BTC 단위를 유지한다',()=>{
+  const {data,quotes}=btcFixture('KRW');delete quotes.fx;delete data.allocation.cashFx;
+  const h=page(data,quotes);h.open('a');assert.match(h.node('averagePriceHolding').innerHTML,/환율 대기/);assert.match(h.node('averagePricePreview').innerHTML,/환율 대기/);
+  assert.match(h.row('a'),/0\.01 BTC/);assert.match(h.row('a'),/asset-profit-result">환율 대기/);
+});
+
+test('원화 비트코인의 그룹·같은 종목 합계는 cashFx를 전달하고 달러 계좌와 섞거나 이중 환산하지 않는다',()=>{
+  const {data,quotes,item}=btcFixture('KRW');delete quotes.fx;data.allocation.cashFx=1400;
+  data.allocation.groups=[{id:'g1',name:'가상 코인 계좌',classId:'stock',items:[item,{...item,id:'krw2'},{...item,id:'usd',averageCurrency:undefined,averagePrice:50000}]}];
+  const h=page(data,quotes);h.open('a');assert.match(h.node('averagePricePreview').innerHTML,/\+140,000원/);
+  assert.equal(h.node('averagePriceTotal').hidden,false);assert.match(h.node('averagePriceTotal').innerHTML,/계산 가능 2 \/ 2개/);assert.match(h.node('averagePriceTotal').innerHTML,/\+280,000원/);assert.doesNotMatch(h.node('averagePriceTotal').innerHTML,/\$/);
+  assert.match(groupHead(h),/\+42만원/);assert.match(groupHead(h),/\+20%/);
+  h.selectCurrency('');assert.match(h.node('averagePriceTotal').innerHTML,/계산 가능 2 \/ 2개/);assert.match(h.node('averagePriceTotal').innerHTML,/\$/);
+});
+
+test('창을 연 뒤 동기화된 통화는 손대지 않은 선택으로 덮어쓰지 않으며 직접 바꾼 선택만 저장한다',()=>{
+  const {data,quotes,item}=btcFixture(),h=page(data,quotes);h.open('a');item.averageCurrency='KRW';h.field('note','가상 새 메모');h.submit();
+  assert.equal(item.averageCurrency,'KRW');assert.equal(item.note,'가상 새 메모');
+  h.open('a');delete item.averageCurrency;h.field('note','가상 다른 메모');h.submit();assert.equal(Object.hasOwn(item,'averageCurrency'),false);
+});
+
+test('금 기준 티커 확인을 취소하면 비트코인 원화 선택과 평균가 변경도 저장하지 않는다',()=>{
+  for(const confirmed of [false,true]){
+    const data=fixture(),item=data.allocation.groups[0].items[0];Object.assign(item,{section:'금',ticker:'GLDM'});
+    const h=page(data),before=JSON.stringify(data),messages=[];h.ctx.confirm=message=>{messages.push(message);return confirmed;};
+    h.open('a');h.field('ticker','BTC-USD');h.selectCurrency('KRW');h.edit('70000000');h.submit();
+    assert.equal(messages.length,1);
+    if(confirmed){assert.equal(item.averageCurrency,'KRW');assert.equal(item.averagePrice,70000000);assert.deepEqual(h.writes,['allocation']);}
+    else{assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('itemDialog').open,true);}
+  }
+});
 
 // 그룹 손익 검증에는 공개 가능한 가상 종목·수량·가격만 쓴다.
 function groupProfitFixture(mixed=false){

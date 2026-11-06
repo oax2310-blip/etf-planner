@@ -78,33 +78,38 @@ function itemValue(item, prices, fx){
   if(amount>0&&p&&plus(item?.base))return {value:amount*p/Number(item.base), how:"ratio", q};
   return {value:amount, how:"amount", q};
 }
-// 평균매수가는 사용자가 실제 거래 종목의 통화로 직접 넣은 averagePrice만 쓴다(금액·base·거래 내역에서 역산하지 않음).
-// 손익률은 (현재가 ÷ 평균매수가 − 1) × 100. 평가손익은 (현재가 − 평균매수가) × 명시된 보유 수량이며 환율을 적용하지 않는다.
+// 평균매수가는 사용자가 직접 넣은 averagePrice만 쓴다(금액·base·거래 내역에서 역산하지 않음). 기본은 실제 거래 종목의 통화이며 환율을 적용하지 않는다.
+// 실제 거래 종목이 코인이고 averageCurrency가 KRW일 때만 달러 현재가 × 전달받은 원/달러 환율(fx)을 원화 현재가로 쓴다. 환율이 없으면 매입금액만 계산하고 평가액·손익·손익률은 null이다.
+// 매입금액은 평균매수가 × 수량, 평가액은 현재가 × 수량, 평가손익은 (현재가 − 평균매수가) × 수량, 손익률은 (현재가 ÷ 평균매수가 − 1) × 100.
 // 수량이 없으면 금액은 null, 가격 둘이 있으면 손익률은 표시할 수 있다. 수량 0은 금액 0이며 합산에서는 제외한다.
-function itemProfit(item, prices){
+function itemProfit(item, prices, fx){
   const averagePrice=plus(item?.averagePrice), quantity=finite(item?.shares), shares=quantity!==null&&quantity>=0?quantity:null;
   const quote=assetTradeQuote(prices,item), q=plus(quote?.close)?quote:null, kind=purchaseQuoteKind(assetTradeTicker(item));
-  const currency=q?.currency||(kind==="국내"?"KRW":kind==="해외"||kind==="코인"?"USD":null);
-  const cost=averagePrice!==null&&shares!==null?averagePrice*shares:null, value=q&&shares!==null?q.close*shares:null;
-  const profit=q&&averagePrice!==null&&shares!==null?(q.close-averagePrice)*shares:null;
-  const rate=q&&averagePrice!==null?finite((q.close/averagePrice-1)*100):null;
-  return {averagePrice,shares,q,currency,cost,value,profit,rate};
+  const krwAverage=item?.averageCurrency==="KRW"&&kind==="코인", usedFx=krwAverage?plus(fx):null;
+  const currency=krwAverage?"KRW":q?.currency||(kind==="국내"?"KRW":kind==="해외"||kind==="코인"?"USD":null);
+  const currentPrice=krwAverage?(q&&usedFx?q.close*usedFx:null):q?.close??null;
+  const cost=averagePrice!==null&&shares!==null?averagePrice*shares:null, value=currentPrice!==null&&shares!==null?currentPrice*shares:null;
+  const profit=currentPrice!==null&&averagePrice!==null&&shares!==null?(currentPrice-averagePrice)*shares:null;
+  const rate=currentPrice!==null&&averagePrice!==null?finite((currentPrice/averagePrice-1)*100):null;
+  return {averagePrice,shares,q,currency,cost,value,profit,rate,...(krwAverage?{currentPriceKRW:currentPrice,fx:usedFx}:{})};
 }
 // 같은 실제 종목의 계좌별 평균매수가·수량을 각각 계산한 뒤 통화별·실제 코드별로 합친다. 합산 수익률은 평가손익 합계 ÷ 매입금액 합계 × 100.
-// 통화끼리 섞거나 환산하지 않는다. 수량·평균매수가·현재가가 모두 있는 양수 보유만 합산하며 count는 전체 보유 항목, eligible은 합산 가능한 항목 수다.
+// 원화 평균가 코인에는 assetFx의 환율을 전달하며, 계산 결과의 통화끼리는 섞거나 다시 환산하지 않는다. 시세와 다른 통화는 코드:통화 키로 분리하고 기본 통화는 기존 코드 키를 유지한다.
+// 수량·평균매수가·현재가가 모두 있는 양수 보유만 합산하며 count는 전체 보유 항목, eligible은 합산 가능한 항목 수다.
 // 금액만 있는 보유는 count에만 포함하고 수량을 추정하지 않는다. 결과의 모든 금액은 만원이 아닌 해당 통화의 원래 단위다. 입력 기록은 변경하지 않는다.
 function allocationProfitSummary(alloc, prices){
-  const items=new Map(), currencies=new Map(), tickers=new Map();let eligible=0,count=0;
+  const items=new Map(), currencies=new Map(), tickers=new Map(), fx=assetFx(prices,alloc);let eligible=0,count=0;
   const add=(map,key,p)=>{
     const row=map.get(key)||{currency:p.currency,cost:0,value:0,profit:0,rate:null,count:0};
     row.cost+=p.cost;row.value+=p.value;row.profit+=p.profit;row.count++;row.rate=row.cost>0?row.profit/row.cost*100:null;map.set(key,row);
   };
   for(const g of alloc?.groups||[])for(const it of g.items||[]){
-    const p=itemProfit(it,prices);items.set(it.id,p);
+    const p=itemProfit(it,prices,fx);items.set(it.id,p);
     if(!(p.shares>0||p.shares===null&&plus(it.amount)))continue;
     count++;
     if(!(p.shares>0&&p.cost>0&&p.profit!==null))continue;
-    eligible++;add(currencies,p.currency,p);add(tickers,linkTicker(assetTradeTicker(it)),p);
+    const code=linkTicker(assetTradeTicker(it)), key=p.currency===p.q.currency?code:`${code}:${p.currency}`;
+    eligible++;add(currencies,p.currency,p);add(tickers,key,p);
   }
   return {items,currencies,tickers,eligible,count};
 }
