@@ -1,4 +1,6 @@
 /* HANDOFF: 공통은 AGENTS.md. 디자인 토큰은 여기, 모바일·창·체크박스 규칙은 해당 선택자 옆. */
+/* 금 추정 문제: 두 페이지의 기존 dialog 모양을 쓰고, 좁은 화면에서도 코드 대신 사유를 읽게 한다. */
+#goldEstimateDialog{max-width:440px}#goldEstimateDialog .hint{line-height:1.75}#goldEstimateProblems .warning{margin:12px 0;line-height:1.75}#goldEstimateDialog .dialog-foot{justify-content:flex-end}
 /* 색·그림자는 아래 변수만 사용한다(:root 밝게, data-theme=dark 어둡게). css/valuation.css의 공유 토큰도 함께 수정.
    --accent 버튼·선택·알림 ON, --good 완료, --warn 도달·지난 시세, --danger 삭제·손실.
    화면 모드·기기별 선택은 js/theme.js, 글꼴은 index.html의 Pretendard(실패 시 시스템 글꼴). */

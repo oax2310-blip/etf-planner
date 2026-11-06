@@ -45,3 +45,4 @@ priceLine();setAssetSync();
 if(location.hash==="#buys")location.replace("index.html#buys");
 else openTab(location.hash.slice(1)||ui.tab);
 splitNotices.initialize();assetStore.start();
+if(typeof goldEstimate==="object")goldEstimate.initialize({prices:()=>assetStore.prices,allocation:()=>assetStore.doc?.allocation,subscribe:fn=>assetStore.subscribe(fn)});

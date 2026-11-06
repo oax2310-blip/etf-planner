@@ -80,6 +80,18 @@ test('추정가 없는 문서는 기존 종가로 돌아가고 금 소분류의 
   const unrelated=goldFixture({section:'금커버드콜'});assert.doesNotMatch(unrelated.html(),/한국장 추정|금 추정 미적용/);
 });
 
+test('금 카드·계획 창은 오류→연속 보류→이번 보류 순서로 경고 하나만 표시한다',()=>{
+  const r=goldFixture(),at=r.prices.updatedAt;
+  const status={at,ran:true,computed:0,holds:{current:1},streak:3,since:at,last:{code:'current',at},lastError:{code:'refresh',at}};
+  r.prices.goldEstimateStatus=status;r.render();
+  assert.match(r.html(),/class="warning">한국장 금 추정 오류\(수집 계산\)/);assert.doesNotMatch(r.html(),/3회 연속 보류|한국장 추정 <b>/);
+  r.edit();assert.match(r.element('lineResult').innerHTML,/class="warning">한국장 금 추정 오류/);
+  delete status.lastError;r.render();assert.match(r.html(),/class="warning">한국장 금 추정 3회 연속 보류/);
+  status.streak=2;r.render();assert.match(r.html(),/class="gold-estimate hint">이번 수집 금 추정 보류 · 최근 30분 시세 없음/);
+  status.holds={unknown:1};r.render();assert.doesNotMatch(r.html(),/금 추정 오류|이번 수집 금 추정 보류|연속 보류/);
+  r.item.section='현금';status.holds={current:1};r.render();assert.doesNotMatch(r.html(),/이번 수집 금 추정 보류/);
+});
+
 function setupImport(confirmed=true){
   const r=setup({realStore:true}),events=[],confirmations=[],restore=r.store.restore;
   r.ctx.confirm=message=>{events.push('confirm');confirmations.push(message);return confirmed;};

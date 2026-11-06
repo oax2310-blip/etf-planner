@@ -15,12 +15,12 @@
   <title>매매 플래너 (독립형)</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=373"></script>
+  <script src="js/theme.js?v=374"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=373" />
-  <link rel="stylesheet" href="css/purchases.css?v=373" />
-  <script src="js/repo-security.js?v=373" defer></script>
-  <script src="js/gold-estimate.js?v=373" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=374" />
+  <link rel="stylesheet" href="css/purchases.css?v=374" />
+  <script src="js/repo-security.js?v=374" defer></script>
+  <script src="js/gold-estimate.js?v=374" defer></script>
 </head>
 <body>
   <header class="top">
@@ -68,6 +68,16 @@
       </div>
     </section>
   </main>
+
+  <dialog id="goldEstimateDialog" aria-labelledby="goldEstimateTitle">
+    <div class="dialog-inner">
+      <div class="dialog-head"><h2 id="goldEstimateTitle">한국장 금 추정 문제</h2></div>
+      <div id="goldEstimateProblems"></div>
+      <p class="hint" id="goldEstimateFallback"></p>
+      <p class="hint" id="goldEstimateHelp"></p>
+      <div class="dialog-foot"><button class="btn primary" type="button" id="goldEstimateConfirm">확인</button></div>
+    </div>
+  </dialog>
 
   <dialog id="purchaseDialog" aria-labelledby="purchaseTitle"><form method="dialog" class="dialog-inner" id="purchaseForm">
     <div class="dialog-head"><h2 id="purchaseTitle">분할매수 계획</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
@@ -311,35 +321,35 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=373" defer></script>
-  <script src="js/split-auto.js?v=373" defer></script>
-  <script src="js/data-validation.js?v=373" defer></script>
-  <script src="js/core.js?v=373" defer></script>
-  <script src="js/price-collection.js?v=373" defer></script>
-  <script src="js/sync.js?v=373" defer></script>
-  <script src="js/prices.js?v=373" defer></script>
-  <script src="js/assets-calc.js?v=373" defer></script>
-  <script src="js/assets-store.js?v=373" defer></script>
-  <script src="js/alloc-link.js?v=373" defer></script>
-  <script src="js/stock-names.js?v=373" defer></script>
-  <script src="js/item-search.js?v=373" defer></script>
-  <script src="js/purchases.js?v=373" defer></script>
-  <script src="js/trade-alerts.js?v=373" defer></script>
-  <script src="js/plans.js?v=373" defer></script>
-  <script src="js/futures.js?v=373" defer></script>
-  <script src="js/futures-plan.js?v=373" defer></script>
-  <script src="js/futures-rebuy.js?v=373" defer></script>
-  <script src="js/rebuy.js?v=373" defer></script>
-  <script src="js/alerts.js?v=373" defer></script>
-  <script src="js/alert-target.js?v=373" defer></script>
-  <script src="js/alert-history-store.js?v=373" defer></script>
-  <script src="js/alert-history.js?v=373" defer></script>
-  <script src="js/push.js?v=373" defer></script>
-  <script src="js/member-link.js?v=373" defer></script>
-  <script src="js/member-go.js?v=373" defer></script>
-  <script src="js/split-adjust.js?v=373" defer></script>
-  <script src="js/split-dialog.js?v=373" defer></script>
-  <script src="js/split-notices.js?v=373" defer></script>
-  <script src="js/start.js?v=373" defer></script>
+  <script src="js/ma-ladder.js?v=374" defer></script>
+  <script src="js/split-auto.js?v=374" defer></script>
+  <script src="js/data-validation.js?v=374" defer></script>
+  <script src="js/core.js?v=374" defer></script>
+  <script src="js/price-collection.js?v=374" defer></script>
+  <script src="js/sync.js?v=374" defer></script>
+  <script src="js/prices.js?v=374" defer></script>
+  <script src="js/assets-calc.js?v=374" defer></script>
+  <script src="js/assets-store.js?v=374" defer></script>
+  <script src="js/alloc-link.js?v=374" defer></script>
+  <script src="js/stock-names.js?v=374" defer></script>
+  <script src="js/item-search.js?v=374" defer></script>
+  <script src="js/purchases.js?v=374" defer></script>
+  <script src="js/trade-alerts.js?v=374" defer></script>
+  <script src="js/plans.js?v=374" defer></script>
+  <script src="js/futures.js?v=374" defer></script>
+  <script src="js/futures-plan.js?v=374" defer></script>
+  <script src="js/futures-rebuy.js?v=374" defer></script>
+  <script src="js/rebuy.js?v=374" defer></script>
+  <script src="js/alerts.js?v=374" defer></script>
+  <script src="js/alert-target.js?v=374" defer></script>
+  <script src="js/alert-history-store.js?v=374" defer></script>
+  <script src="js/alert-history.js?v=374" defer></script>
+  <script src="js/push.js?v=374" defer></script>
+  <script src="js/member-link.js?v=374" defer></script>
+  <script src="js/member-go.js?v=374" defer></script>
+  <script src="js/split-adjust.js?v=374" defer></script>
+  <script src="js/split-dialog.js?v=374" defer></script>
+  <script src="js/split-notices.js?v=374" defer></script>
+  <script src="js/start.js?v=374" defer></script>
 </body>
 </html>
