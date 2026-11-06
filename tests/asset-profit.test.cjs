@@ -24,6 +24,49 @@ test('해외·코인 손익은 원 통화 기준이며 환율 유무·변동에 
   for(const fx of [null,{close:1},{close:5000}])assert.deepEqual(c.itemProfit(item,{...prices,fx}),first);
   const coin=c.itemProfit({ticker:'BTC-USD',shares:.001,averagePrice:50000},prices);
   assert.deepEqual([coin.currency,coin.cost,coin.value,coin.profit],['USD',50,60,10]);near(coin.rate,20);
+  for(const fx of [undefined,null,1,1400,5000]){
+    assert.deepEqual(c.itemProfit(item,prices,fx),first);
+    assert.deepEqual(c.itemProfit({ticker:'BTC-USD',shares:.001,averagePrice:50000},prices,fx),coin);
+  }
+});
+
+test('원화 평균가 BTC는 달러 현재가 × 전달한 환율로 원화 손익을 계산하고 설명용 값을 제공한다',()=>{
+  const item={ticker:'BTC-USD',shares:.01,averagePrice:70000000,averageCurrency:'KRW'},before=JSON.stringify([item,prices]);
+  const p=c.itemProfit(item,prices,1400);
+  assert.deepEqual([p.currency,p.cost,p.value,p.profit,p.currentPriceKRW,p.fx],['KRW',700000,840000,140000,84000000,1400]);near(p.rate,20);
+  assert.equal(p.q.currency,'USD');assert.equal(p.q.close,60000);assert.equal(JSON.stringify([item,prices]),before);
+  const noShares=c.itemProfit({...item,shares:undefined},prices,1400);
+  assert.deepEqual([noShares.cost,noShares.value,noShares.profit],[null,null,null]);near(noShares.rate,20);
+  const zero=c.itemProfit({...item,shares:0},prices,1400);assert.deepEqual([zero.cost,zero.value,zero.profit],[0,0,0]);
+});
+
+test('원화 평균가 BTC는 유효한 환율이 없으면 매입금액만 계산하며 다른 종목에는 선택 필드를 적용하지 않는다',()=>{
+  const item={ticker:'BTC-USD',shares:.01,averagePrice:70000000,averageCurrency:'KRW'};
+  for(const fx of [undefined,null,0,-1,Infinity,'']){
+    const p=c.itemProfit(item,prices,fx);
+    assert.deepEqual([p.currency,p.cost,p.value,p.profit,p.rate,p.currentPriceKRW,p.fx],['KRW',700000,null,null,null,null,null]);
+  }
+  for(const ticker of ['AAA','111111']){
+    const normal={ticker,shares:2,averagePrice:50};
+    assert.deepEqual(c.itemProfit({...normal,averageCurrency:'KRW'},prices,1400),c.itemProfit(normal,prices));
+  }
+  const tracked={ticker:'BTC-USD',tradeTicker:'AAA',shares:2,averagePrice:50,averageCurrency:'KRW'};
+  assert.deepEqual(c.itemProfit(tracked,prices,1400),c.itemProfit({...tracked,averageCurrency:undefined},prices));
+});
+
+test('원화 평균가 BTC 합산은 현물 환율 우선·cashFx 대체를 적용하고 달러 보유와 코드 키를 분리한다',()=>{
+  const krw={id:'krw',ticker:'BTC-USD',shares:.01,averagePrice:70000000,averageCurrency:'KRW'},usd={id:'usd',ticker:'BTC-USD',shares:.01,averagePrice:50000};
+  for(const items of [[krw,usd],[usd,krw]]){
+    const alloc={cashFx:1400,groups:[{items}]},quotes={...prices,fx:null},before=JSON.stringify([alloc,quotes]);
+    const s=c.allocationProfitSummary(alloc,quotes);
+    assert.deepEqual([s.count,s.eligible,s.tickers.size],[2,2,2]);
+    assert.deepEqual([s.tickers.get('BTC-USD').currency,s.tickers.get('BTC-USD').cost,s.tickers.get('BTC-USD').profit],['USD',500,100]);
+    assert.deepEqual([s.tickers.get('BTC-USD:KRW').currency,s.tickers.get('BTC-USD:KRW').cost,s.tickers.get('BTC-USD:KRW').profit],['KRW',700000,140000]);
+    assert.deepEqual(s.currencies.get('KRW'),s.tickers.get('BTC-USD:KRW'));assert.equal(JSON.stringify([alloc,quotes]),before);
+    const spot=c.allocationProfitSummary(alloc,{...quotes,fx:{close:1500}});assert.equal(spot.items.get('krw').value,900000);
+    const missing=c.allocationProfitSummary({...alloc,cashFx:null},quotes);assert.equal(missing.eligible,1);assert.equal(missing.items.get('krw').profit,null);
+  }
+  assert.equal(c.allocationProfitSummary({groups:[{items:[usd]}]},prices).tickers.has('BTC-USD'),true);
 });
 
 test('실제 ETF의 가격·통화를 사용하며 기존 직접 입력 시세 대체와 자동 시세 우선을 유지한다',()=>{

@@ -141,3 +141,53 @@ test('평균매수가: 잘못된 원격 값과 백업을 거부하고 현재 계
   assert.equal(h.store.status.state,'error');assert.equal(h.uploads.length,0);assert.deepEqual(clone(h.store.doc),original);assert.equal(h.storage.get(KEY),before);
   assert.throws(()=>h.store.restore(remote),/averagePrice/);assert.deepEqual(clone(h.store.doc),original);assert.equal(h.storage.get(KEY),before);
 });
+
+test('평균매수가 통화: 누락·KRW만 원본 그대로 허용하며 다른 타입과 값은 거부한다',()=>{
+  const validate=vm.runInNewContext(fs.readFileSync(path.join(root,'js/data-validation.js'),'utf8')+'\nexternalData');
+  for(const averageCurrency of [undefined,'KRW']){
+    const data=fake();if(averageCurrency!==undefined)item(data,'a').averageCurrency=averageCurrency;
+    const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
+  }
+  for(const averageCurrency of ['USD','','krw','<img src=x>',0,1,true,null,{},[],['KRW'],{currency:'KRW'},undefined]){
+    const data=fake();item(data,'a').averageCurrency=averageCurrency;const before=JSON.stringify(data);
+    assert.throws(()=>validate.assets(data),/averageCurrency/);assert.equal(JSON.stringify(data),before);
+  }
+});
+
+test('평균매수가 통화: 로딩·다른 필드 저장은 새 선택을 만들지 않으며 KRW는 재로딩·복원에서 보존한다',()=>{
+  const original=fake(),h=setup(original);h.store.start();item(h.store.doc,'a').note='가상 변경';h.store.saveSection('allocation');
+  assert.equal(Object.hasOwn(item(h.store.doc,'a'),'averageCurrency'),false);
+  Object.assign(item(h.store.doc,'a'),{ticker:'BTC-USD',shares:.01,averagePrice:70000000,averageCurrency:'KRW'});h.store.saveSection('allocation');
+  const reloaded=setup(null,{shared:h.storage});reloaded.store.start();assert.equal(item(reloaded.store.doc,'a').averageCurrency,'KRW');assert.equal(item(reloaded.store.doc,'a').averagePrice,70000000);
+  const restored=setup(fake());restored.store.restore(JSON.parse(h.storage.get(KEY)));assert.equal(item(restored.store.doc,'a').averageCurrency,'KRW');
+});
+
+test('평균매수가 통화: 로컬·원격 선택과 다른 계좌 변경을 동기화해 보존하고 명시적 삭제도 병합한다',async()=>{
+  for(const localChoice of [true,false]){
+    const original=fake();Object.assign(item(original,'a'),{ticker:'BTC-USD',shares:.01,averagePrice:70000000});
+    const remote=clone(original);remote.allocation.savedAt='2099-01-01';
+    if(!localChoice)item(remote,'a').averageCurrency='KRW';else item(remote,'b').note='가상 원격 변경';
+    const h=setup(original,{remote});h.connect(original);
+    if(localChoice)item(h.store.doc,'a').averageCurrency='KRW';else item(h.store.doc,'b').note='가상 로컬 변경';
+    h.store.saveSection('allocation');await h.store.sync();assert.equal(h.store.status.state,'done');
+    assert.equal(item(h.store.doc,'a').averageCurrency,'KRW');assert.equal(item(h.uploads.at(-1),'a').averageCurrency,'KRW');assert.equal(item(h.store.doc,'a').averagePrice,70000000);
+    assert.equal(item(h.store.doc,'b').note,localChoice?'가상 원격 변경':'가상 로컬 변경');
+  }
+  for(const localDelete of [true,false]){
+    const original=fake();Object.assign(item(original,'a'),{ticker:'BTC-USD',shares:.01,averagePrice:70000000,averageCurrency:'KRW'});
+    const remote=clone(original);remote.allocation.savedAt='2099-01-01';if(!localDelete)delete item(remote,'a').averageCurrency;
+    const h=setup(original,{remote});h.connect(original);if(localDelete)delete item(h.store.doc,'a').averageCurrency;
+    item(h.store.doc,'b').note='가상 메모';h.store.saveSection('allocation');await h.store.sync();
+    assert.equal(h.store.status.state,'done');assert.equal(Object.hasOwn(item(h.store.doc,'a'),'averageCurrency'),false);assert.equal(item(h.store.doc,'a').averagePrice,70000000);
+    assert.equal(Object.hasOwn(item(h.uploads.at(-1),'a'),'averageCurrency'),false);
+  }
+});
+
+test('평균매수가 통화: 잘못된 원격·백업은 현재 기록을 바꾸지 않는다',async()=>{
+  for(const averageCurrency of ['USD','<img src=x>',42,{},[],null]){
+    const original=fake(),remote=clone(original);item(remote,'a').averageCurrency=averageCurrency;
+    const h=setup(original,{remote});h.connect(original);const before=h.storage.get(KEY);await h.store.sync();
+    assert.equal(h.store.status.state,'error');assert.equal(h.uploads.length,0);assert.deepEqual(clone(h.store.doc),original);assert.equal(h.storage.get(KEY),before);
+    assert.throws(()=>h.store.restore(remote),/averageCurrency/);assert.deepEqual(clone(h.store.doc),original);assert.equal(h.storage.get(KEY),before);
+  }
+});
