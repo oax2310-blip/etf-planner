@@ -206,8 +206,24 @@ function renderAlloc(tab="alloc"){
       <span class="asset-val">${man(r.value)}</span>${meta?`<small class="asset-meta">${meta}</small>`:""}<span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>${itemGap(it).html}`:""}</span>
       ${chips||it.note?`<div class="asset-extra">${chips}${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}</div>`:""}
       ${p.averagePrice===null?"":`<div class="asset-profit"><span class="average-price-value">평균매수가 ${profitMoneyA(p.averagePrice,p.currency)}</span>${profitLineA(p)}</div>`}</div></div>`; };
+  // 소분류 손익은 검색과 무관하게 이 그룹의 같은 section만 allocationProfitSummary의 통화별 원래 단위 합계로 계산한다.
+  // 환율은 평가액과 같은 s.fx(assetFx: 시세 파일의 현물 환율, 없으면 직접 넣은 cashFx)를 쓴다.
+  // 매수 당시 환율 기록이 없어 달러 매입금액·손익 모두 현재 환율로 원화 환산하며 환차손익은 제외한다. 손익률은 합산 손익 ÷ 합산 매입금액 × 100.
+  // 환율이 없으면 달러는 합산에서 빼고 미합산 개수·환율 없음을 표시한다. 계산 가능한 보유가 0개면 안내도 표시하지 않는다.
+  const sectionProfit=(g,name)=>{
+    const p=allocationProfitSummary({groups:[{items:g.items.filter(it=>it.section===name)}]},prices);
+    let cost=0,profit=0,count=0,missingFx=false;
+    for(const row of p.currencies.values()){
+      if(row.currency==="USD"&&!s.fx){missingFx=true;continue;}
+      const fx=row.currency==="USD"?s.fx:row.currency==="KRW"?1:null;if(fx===null)continue;
+      cost+=row.cost*fx;profit+=row.profit*fx;count+=row.count;
+    }
+    if(!count)return "";
+    const rate=profit/cost*100,tip=p.currencies.has("USD")?(missingFx?"환율 없음 · 달러 종목 합산 제외":`달러 종목은 현재 환율 ${nf2.format(s.fx)}원으로 환산 · 환차손익 제외`):"평가손익 · 손익률";
+    return `<span class="sub-profit" title="${escA(tip)}">손익 <b class="${profitColorA(profit)}">${profitMoneyA(profit,"KRW",true)}</b><b class="${profitColorA(rate)}">${profitRateA(rate)}</b>${count<p.count?` · ${count}/${p.count}개 합산`:""}${missingFx?" · 환율 없음":""}</span>`;
+  };
   const groupCard=g=>{ const v=s.groups.get(g.id)||0, target=s.targets.groups.get(g.id),t=target.target, plain=g.items.filter(it=>!it.section), names=[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(it=>it.section).filter(Boolean)])];
-    const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
+    const sec=name=>{const meta=(g.sections||[]).find(x=>x.name===name)||{},sv=s.section(g.id,name),st=s.targets.section(g.id,name);return `<div class="sub-head"><b>${escA(name)}</b><span>${man(sv)} · ${pc(s.pct(sv))}${st.target!==null?` / 목표 ${pc(st.target)}${st.linked?" · 종목 합산":""}`:""}</span>${sectionProfit(g,name)}${meta.note?`<small title="${escA(meta.note)}">${noteLineA(meta.note)}</small>`:""}</div>`;};
     const key=`group:${g.id}`,bodyId=`allocGroup-${encodeURIComponent(g.id)}`;
     return `<section class="card group-card"><div class="group-head"><div class="title-row"><h3>${foldButton(key,bodyId,`${g.name} 상세`,`<span>${escA(g.name)}</span>`)}</h3><button class="btn icon-btn" type="button" data-group="${escA(g.id)}" aria-label="${escA(g.name)} 그룹 수정" title="그룹 수정">${PEN}</button></div>
       <p><b>${man(v)}</b> · ${pc(s.pct(v))}${t!==null?` / 목표 ${pc(t)} · <span class="group-gap">목표 대비 ${gapHtml(allocTargetGap(s.pct(v),t,g.items.length>0&&g.items.every(it=>itemGap(it).gray)),{why:"종목마다 1.0%p 이내이거나 매수중·매도중이라"})}</span>`:""}</p>${t!==null?`<small class="group-target">목표 금액 ${man(t/100*s.base)}${target.linked?" · 하위 합산":""}</small>`:""}</div>
