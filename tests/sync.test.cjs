@@ -18,6 +18,17 @@ test('동기화의 slimPrices 결과는 검증된 금 추정가만 보관하고 
   vm.runInContext('acceptPlannerPrices({},raw,"new-etag")',h.context);
   assert.equal(read().stocks.GLDM.estimate,undefined);
 });
+
+test('플래너 시세 acceptPlannerPrices는 상태를 검증하고 상태 없는 문서로 받으면 제거한다',()=>{
+  const h=harness({connect:false}),at='2026-11-06T10:12:00+09:00';
+  const status={at,ran:true,computed:0,holds:{source:1},streak:1,since:at,last:{code:'source',at}};
+  h.context.raw={updatedAt:at,stocks:{},futures:{},goldEstimateStatus:status};
+  const accept=()=>vm.runInContext('acceptPlannerPrices({},raw,"fake-etag")',h.context);
+  const read=()=>JSON.parse(h.items.get('etf-planner-prices'));
+  accept();assert.deepEqual(read().goldEstimateStatus,status);
+  h.context.raw.goldEstimateStatus={...status,computed:-1};accept();assert.equal(read().goldEstimateStatus,undefined);
+  delete h.context.raw.goldEstimateStatus;accept();assert.equal(read().goldEstimateStatus,undefined);
+});
 const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js/ma-ladder.js'), 'utf8') + '\n;\n' + fs.readFileSync(require('node:path').join(__dirname, '../js/prices.js'), 'utf8'); // 브라우저처럼 시세 채우기(prices.js)도 함께
 if (!source.includes('async function syncNow(')) throw Error('동기화 구현을 찾지 못했습니다.');
 

@@ -75,6 +75,8 @@ const lineEntry=it=>{const e=stockEntry(priceDoc(),it?.ticker);return e&&e.kind=
 const goldNote=it=>{
   if(typeof goldEstimate!=="object")return "";
   if(goldEstimate.unsupported(it))return '<p class="gold-estimate hint">금 추정 미적용(실물 금 ETF 아님)</p>';
+  const issue=goldEstimate.notice(priceDoc(),it,doc.allocation);
+  if(issue)return issue.kind==='hold'?`<p class="gold-estimate hint">${escA(issue.text)}</p>`:`<div class="warning">${escA(issue.text)}</div>`;
   const e=goldEstimate.info(priceDoc(),it,doc.allocation);if(!e)return "";
   const time=new Date(e.at).toLocaleTimeString("ko-KR",{timeZone:"Asia/Seoul",hour:"2-digit",minute:"2-digit",hour12:false});
   return `<p class="gold-estimate">한국장 추정 <b>${priceText(e.close,"USD")}</b> · 금선물 기준 · ${escA(time)}<span>실제 종가 ${priceText(e.baseClose,"USD")}</span></p>`;
@@ -164,6 +166,7 @@ function waitCard({g,it},s){
     <div class="control-grid">${memoPanel(it)}</div><p class="footnote">현재가가 ${escA(movingLineText(info.line)||"선택한 이동평균선")} 이하가 되면 알림을 받고 매수를 결정합니다. 같은 조건에 머무는 동안에는 알림을 반복하지 않으며, 대기만으로 보유량은 바뀌지 않습니다.</p></div>`;
 }
 function renderPurchases(){
+  if(typeof goldEstimate==="object")goldEstimate.check();
   // 수량 입력 중 화살표를 누르면 blur의 체결 저장을 먼저 마친다. click이 끝날 때까지 다시 그리기를 미뤄 한 번의 입력이 사라지지 않게 한다.
   if(priorityPointerDown){redrawLater=true;return;}redrawLater=false;
   doc=assetStore.doc;prices=assetStore.prices;

@@ -8,6 +8,7 @@ const A_REPO_KEY="etf-planner-data-repo", A_TOKEN_KEY="etf-planner-github-token"
 const readJson=(k,d)=>{try{return JSON.parse(localStorage.getItem(k)||"null")??d;}catch{return d;}};
 const writeJson=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch{return false;}};
 let doc=cleanAssets(readJson(A_KEY,null))||{version:1}, prices=readJson(A_PRICE_KEY,null), priceMessage="", priceRefreshBusy=false, started=false;
+if(prices&&typeof goldEstimate==="object")prices=goldEstimate.attachStatus(prices,prices);
 let actionsCache=typeof splitAuto==="object"?splitAuto.load(localStorage):null;
 const corporateActions=()=>typeof splitAuto==="object"?splitAuto.cached(actionsCache,assetConfig()?.repo||localStorage.getItem(A_REPO_KEY),prices?.etag)||[]:[];
 let lastLocal=JSON.parse(JSON.stringify(doc)); // 같은 브라우저의 다른 페이지가 바꾼 기록도 공통 기준으로 병합
@@ -99,6 +100,8 @@ function acceptPrices(cfg,d,etag="",notify=true){
   let next=null;
   if(d){const stocks={};for(const [k,e] of Object.entries(d.stocks||{})){if(!e||typeof e!=="object")continue;stocks[k]=Number(e.close)>0?{kind:e.kind,asOf:e.asOf,close:Number(e.close),...(e.stale?{stale:true}:{})}:{error:true};}
     const fx=d.fx?.USDKRW;next={format:A_PRICE_FORMAT,repo:cfg.repo,etag,updatedAt:String(d.updatedAt||""),stocks,fx:fx&&Number(fx.close)>0?{close:Number(fx.close),asOf:fx.asOf,ma:{"125개월선":plus(fx.ma?.["125개월선"])},...(fx.maAsOf?{maAsOf:fx.maAsOf}:{}),...(fx.maStale?{maStale:true}:{})}:null};}
+  // 원본 상태를 검증해 자산 페이지 축약 시세에도 붙인다. 평가 종가는 바꾸지 않는다.
+  if(next&&typeof goldEstimate==="object")next=goldEstimate.attachStatus(next,d);
   if(typeof splitAuto==="object")actionsCache=splitAuto.remember(localStorage,cfg.repo,etag,d);
   const changed=JSON.stringify({...prices,etag:""})!==JSON.stringify({...next,etag:""});prices=next;
   if(next)writeJson(A_PRICE_KEY,next);else localStorage.removeItem(A_PRICE_KEY);

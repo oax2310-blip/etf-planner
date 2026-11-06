@@ -22,11 +22,24 @@ function setup(initial,fetcher,shared){
       }
       return r;
     }};
-  const code=['js/repo-security.js','js/ma-ladder.js','js/split-auto.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+  const code=['js/repo-security.js','js/gold-estimate.js','js/ma-ladder.js','js/split-auto.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
   return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY}),pageshow:persisted=>listeners.get('pageshow')?.({persisted})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
+
+test('자산 시세 acceptPrices와 초기 캐시는 검증된 goldEstimateStatus만 보존한다',()=>{
+  const at='2026-11-06T10:12:00+09:00',status={at,ran:true,computed:0,holds:{base:1},streak:1,since:at,last:{code:'base',at}};
+  const h=setup(),raw={updatedAt:at,stocks:{GLDM:{kind:'해외',close:80,asOf:'2026-11-05'}},goldEstimateStatus:status};
+  h.storage.set('etf-planner-data-repo','example/private-data');h.storage.set('etf-planner-github-token','fake-token');
+  assert.equal(h.store.acceptPrices({repo:'example/private-data',token:'fake-token'},raw),true);
+  assert.deepEqual(clone(h.store.prices.goldEstimateStatus),status);assert.equal(h.store.prices.stocks.GLDM.close,80);
+  const cached=setup(null,null,h.storage);assert.deepEqual(clone(cached.store.prices.goldEstimateStatus),status);
+  raw.goldEstimateStatus={...status,holds:{attacker:1}};h.store.acceptPrices({repo:'example/private-data',token:'fake-token'},raw);
+  assert.equal(h.store.prices.goldEstimateStatus,undefined);
+  const invalidCache=JSON.parse(h.storage.get('etf-planner-assets-prices'));invalidCache.goldEstimateStatus={...status,at:'bad'};
+  h.storage.set('etf-planner-assets-prices',JSON.stringify(invalidCache));assert.equal(setup(null,null,h.storage).store.prices.goldEstimateStatus,undefined);
+});
 
 test('기록 보정의 구역 교체는 저장에 성공해야 doc을 바꾸며 입력한 매수 금액을 다시 계산하지 않는다',()=>{
   const original=fake(),h=setup(original),replacement=clone(original.allocation);

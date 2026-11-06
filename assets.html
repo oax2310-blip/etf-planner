@@ -16,12 +16,12 @@
   <title>자산 현황</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=373"></script>
+  <script src="js/theme.js?v=374"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=373" />
-  <link rel="stylesheet" href="css/assets.css?v=373" />
-  <script src="js/repo-security.js?v=373" defer></script>
-  <script src="js/gold-estimate.js?v=373" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=374" />
+  <link rel="stylesheet" href="css/assets.css?v=374" />
+  <script src="js/repo-security.js?v=374" defer></script>
+  <script src="js/gold-estimate.js?v=374" defer></script>
 </head>
 <body class="assets-page">
   <header class="top">
@@ -52,6 +52,16 @@
     <section id="savingsView" class="hidden"></section>
     <section id="installmentsView" class="hidden"></section>
   </main>
+
+  <dialog id="goldEstimateDialog" aria-labelledby="goldEstimateTitle">
+    <div class="dialog-inner">
+      <div class="dialog-head"><h2 id="goldEstimateTitle">한국장 금 추정 문제</h2></div>
+      <div id="goldEstimateProblems"></div>
+      <p class="hint" id="goldEstimateFallback"></p>
+      <p class="hint" id="goldEstimateHelp"></p>
+      <div class="dialog-foot"><button class="btn primary" type="button" id="goldEstimateConfirm">확인</button></div>
+    </div>
+  </dialog>
 
   <dialog id="itemDialog" aria-labelledby="itemTitle"><form method="dialog" class="dialog-inner" id="itemForm">
     <div class="dialog-head"><h2 id="itemTitle">종목</h2><button class="btn ghost" type="button" data-close>닫기</button></div>
@@ -140,20 +150,20 @@
     <p class="file-tools">JSON 파일 <button class="text-link" id="exportBtn" type="button">백업</button> · <label class="text-link" for="importInput">복원<input id="importInput" type="file" accept="application/json" hidden /></label></p>
   </div></dialog>
 
-  <script src="js/ma-ladder.js?v=373" defer></script>
-  <script src="js/split-auto.js?v=373" defer></script>
-  <script src="js/data-validation.js?v=373" defer></script>
-  <script src="js/assets-calc.js?v=373" defer></script>
-  <script src="js/price-collection.js?v=373" defer></script>
-  <script src="js/assets-store.js?v=373" defer></script>
-  <script src="js/member-link.js?v=373" defer></script>
-  <script src="js/stock-names.js?v=373" defer></script>
-  <script src="js/ledger-benchmark.js?v=373" defer></script>
-  <script src="js/assets.js?v=373" defer></script>
-  <script src="js/assets-ledger.js?v=373" defer></script>
-  <script src="js/assets-savings.js?v=373" defer></script>
-  <script src="js/assets-installments.js?v=373" defer></script>
-  <script src="js/split-notices.js?v=373" defer></script>
-  <script src="js/assets-start.js?v=373" defer></script>
+  <script src="js/ma-ladder.js?v=374" defer></script>
+  <script src="js/split-auto.js?v=374" defer></script>
+  <script src="js/data-validation.js?v=374" defer></script>
+  <script src="js/assets-calc.js?v=374" defer></script>
+  <script src="js/price-collection.js?v=374" defer></script>
+  <script src="js/assets-store.js?v=374" defer></script>
+  <script src="js/member-link.js?v=374" defer></script>
+  <script src="js/stock-names.js?v=374" defer></script>
+  <script src="js/ledger-benchmark.js?v=374" defer></script>
+  <script src="js/assets.js?v=374" defer></script>
+  <script src="js/assets-ledger.js?v=374" defer></script>
+  <script src="js/assets-savings.js?v=374" defer></script>
+  <script src="js/assets-installments.js?v=374" defer></script>
+  <script src="js/split-notices.js?v=374" defer></script>
+  <script src="js/assets-start.js?v=374" defer></script>
 </body>
 </html>

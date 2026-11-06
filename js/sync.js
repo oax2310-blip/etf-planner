@@ -12,6 +12,7 @@ const RECOVERY_KEY = "etf-planner-sync-recovery";
 const PRICE_FILE = "etf-planner-prices.json"; // 데이터 저장소 Actions(KIS 시세 수집)가 올리는 시세 파일. 읽기만 한다(채우는 규칙은 prices.js)
 const PRICE_KEY = "etf-planner-prices"; // 마지막으로 읽은 시세(채우기·표시에 쓰는 값과 ETag만). 이 기기에만 두고 동기화 기록에는 넣지 않는다
 let priceData = null; try { priceData = JSON.parse(localStorage.getItem(PRICE_KEY) || "null"); if (!priceData?.stocks || !priceData.futures) priceData = null; } catch {}
+if(priceData&&typeof goldEstimate==="object")priceData=goldEstimate.attachStatus(priceData,priceData);
 let plannerActionsCache=typeof splitAuto==="object"?splitAuto.load(localStorage):null;
 function plannerCorporateActions(){return typeof splitAuto==="object"?splitAuto.cached(plannerActionsCache,sync.repo||localStorage.getItem(REPO_KEY),priceData?.etag)||[]:[];}
 let priceRefreshBusy=false, priceReadMessage="";
