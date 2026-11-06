@@ -7,7 +7,7 @@ const vm=require('node:vm');
 // 가짜 시세·수량만 사용한다. 실제 분할매도 파일의 실시간 입력과 저장 핸들러도 실행한다.
 function load(){
   const nodes=new Map(),node=name=>{
-    if(!nodes.has(name))nodes.set(name,{value:'',dataset:{},readOnly:false,textContent:'',events:{},validityMessage:'',
+    if(!nodes.has(name))nodes.set(name,{value:'',dataset:{},style:{},readOnly:false,textContent:'',events:{},validityMessage:'',
       addEventListener(kind,handler){this.events[kind]=handler;},setCustomValidity(message){this.validityMessage=message;},
       querySelectorAll:()=>[],querySelector:()=>node('close'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}});
     return nodes.get(name);
@@ -660,6 +660,23 @@ test('매도 종목: 이름 옆 보유는 체결 뒤 현재 수량으로 바뀌�
   const many=head();assert.match(many,/purchase-buy-target many/);
   assert.equal((many.match(/class="buy-target-name"/g)||[]).length,2);
   assert.match(many,new RegExp(`buy-target-held">보유 ${r.isa.shares}주</span>`));assert.match(many,/buy-target-held">보유 34주<\/span>/);
+});
+
+test('직접 입력 매도 종목: 체결 뒤 보유가 진행 카드의 남은 수량과 같고 렌더는 기준 수량·체결 기록을 바꾸지 않는다',()=>{
+  for(const [ticker,shares,sold,left] of [['AAA',100,30,'70주'],['BTC-USD',0.0123,0.003,'0.0093 BTC']]){
+    const {ctx,api,node}=load(),p={id:'direct-sale',ticker,title:'가상 직접 입력 ETF',currency:'USD',holdings:[{name:'가상 직접 입력 ETF',shares}],startPrice:100,endPrice:80,stages:2,checked:[false,false],fx:1000,note:''};
+    Object.assign(ctx,{PENCIL:'',memoCount:()=>'',onEdit(){}});
+    ctx.document.createRange=()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})});
+    ctx.state.plans=[p];ctx.state.selectedPlan=p.id;
+    const draw=()=>{const before=JSON.stringify(p);ctx.renderPlans();assert.equal(JSON.stringify(p),before,'render 전후 계획 JSON 동일');return node('planMain').innerHTML;};
+    const held=html=>html.match(/class="buy-target-held">보유 ([^<]+)<\/span>/)?.[1];
+    assert.equal(held(draw()),api.planQuantity(shares,p),'체결 전에는 기준 수량 전체를 보유');
+    api.recordPlanQuantity(p,0,sold,()=>{});const html=draw();
+    assert.equal(held(html),left);assert.equal(api.planQuantity(api.sharesLeft(p),p),left);
+    const card=html.match(/<section class="card buy-track sale-track"[\s\S]*?<\/section>/)?.[0]||'';
+    assert.ok(card.includes(`남은 ${left}`),'진행 카드와 표 위 보유 수량이 같다');
+    assert.equal(p.holdings[0].shares,shares,'계획의 기준 수량은 유지');
+  }
 });
 
 test('매도 종목: 직접 입력·비트코인의 수량 서식과 수량 없음·금액 관리·빈 계좌의 설명을 유지한다',()=>{

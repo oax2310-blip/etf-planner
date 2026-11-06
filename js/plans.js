@@ -223,7 +223,7 @@ const planStageDue = (p, r, now) => now!==null&&!r.done&&r.trade.price>0&&(Numbe
 // 회차를 파는 종목(통합 매도의 계좌·종목, 계좌 선택 매도의 실제 ETF, 직접 입력의 보유 종목 하나) 중 지금 매도 중인 종목만 표 위 '매도 종목'에 둔다(planSaleSellers): 새 체결이 들어갈 회차
 // (미체결 → 부분 체결 → 전체) 중 첫 회차의 종목이며, 그 회차를 여러 계좌로 나눴으면 그 계좌들을 우선순위 순서로 모두. 매도 우선순위를 바꾸거나 앞 계좌를 다 팔면 바뀐다.
 // 표 위 줄이 있으면 미체결 회차에는 종목을 반복하지 않고(뒤 계좌가 팔 회차도 그 계좌 차례가 되면 표 위에 보임), 지금 매도 중이 아닌 종목으로 체결한 완료·부분 체결 회차만 회차 아래 작은 줄에 둔다.
-// 이름 옆 보유는 연결 종목의 현재 shares(직접 입력 하나는 p.holdings[0].shares)를 읽기만 한다. 아래 계좌·코드·현재가·시세 안내는 한 줄이며 계좌만 말줄임, 여러 계좌도 같은 이름·설명 구조다.
+// 이름 옆 보유는 연결 종목의 현재 shares(직접 입력 하나는 남은 수량(sharesLeft))를 읽기만 한다. 아래 계좌·코드·현재가·시세 안내는 한 줄이며 계좌만 말줄임, 여러 계좌도 같은 이름·설명 구조다.
 // 한 회차를 여러 계좌로 나눈 통합 매도 회차는 계좌마다 작은 줄과 입력칸이며
 // 줄 이름은 계좌(굵게)·종목 이름, 종목 이름 끝 괄호(예: '(연저펀)', 규칙은 stock-names.js titleParts)가 있으면 그 꼬리표를 굵게 해 좁은 칸에서 잘려도 구분한다. 체크는 모든 계좌의 잔량까지 완료, 입력·체크·알림 저장 키는 그대로.
 function planSaleRowInfo(p,i){
@@ -245,7 +245,7 @@ const planSellerText = (h,html=false) => {
 };
 function planSellerHead(sellers,p){
   if(!sellers.length)return "";
-  const line=h=>{const item=h.key?allocItemById(planSaleAssets(),h.key):p?.holdings?.length===1?p.holdings[0]:null,shares=finite(item?.shares),info=planSellerText(h,true);
+  const line=h=>{const shares=h.key?finite(allocItemById(planSaleAssets(),h.key)?.shares):p?.holdings?.length===1&&finite(p.holdings[0].shares)!==null?sharesLeft(p):null,info=planSellerText(h,true);
     return `<div class="buy-target-name"><b>${esc(h.name)}</b>${shares!==null?`<span class="buy-target-held">보유 ${esc(planQuantity(shares,{ticker:h.ticker||p?.ticker}))}</span>`:""}</div>${info?`<small class="buy-target-info">${info}</small>`:""}`;};
   if(sellers.length===1)return `<div class="purchase-buy-target"><span>매도 종목</span><div>${line(sellers[0])}</div></div>`;
   return `<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers">${sellers.map(h=>`<li>${line(h)}</li>`).join("")}</ol></div>`;
