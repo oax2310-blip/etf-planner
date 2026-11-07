@@ -1040,6 +1040,96 @@ test('추종 ETF 분할매수: 부분 체결 뒤 실제 ETF 가격이 급등해�
   assert.equal(r.item.buyPlan.buys.end.tradePrice,15000);assert.equal(r.rules().length,1,'이미 고정한 부분 체결의 알림은 현재 ETF 가격과 무관하게 유지');
 });
 
+test('돌파 회차의 부분·완료 체결가만 숫자로 저장하고 기준가·금액·자산·알림은 유지한다',()=>{
+  for(const completed of [false,true]){
+    const r=setup({budget:10});
+    assert.equal(r.input('[data-purchase-exec]'),undefined,'미체결은 체결가 입력 없음');
+    if(completed)r.change('[data-purchase-buy]',true);else r.change('[data-purchase-buy-shares]',7);
+    r.item.averagePrice=8000;r.item.buyPlan.notify={stages:true};r.render();
+    const b=r.item.buyPlan.buys.end,before=JSON.stringify(r.doc),rules=JSON.stringify(r.rules()),sections=[];
+    r.store.saveSection=section=>{sections.push(section);r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));};
+    const input=r.input('[data-purchase-exec]');
+    assert.equal(input.value,'10,000');assert.equal(input.attrs.type,'text');assert.equal(input.attrs.inputmode,'decimal');
+    r.type(input,'9876.54');assert.equal(input.value,'9,876.54');input.onchange();
+    assert.equal(b.execPrice,9876.54);assert.deepEqual(sections,['allocation']);
+    assert.equal(JSON.parse(r.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0].buyPlan.buys.end.execPrice,9876.54);
+    const withoutExec=JSON.parse(JSON.stringify(r.doc));delete withoutExec.allocation.groups[0].items[0].buyPlan.buys.end.execPrice;
+    assert.equal(JSON.stringify(withoutExec),before,'체결가 외 기록은 불변');
+    assert.equal(JSON.stringify(r.rules()),rules);assert.equal(b.price,10000);assert.equal(r.item.averagePrice,8000);
+    assert.match(r.html(),/future-tap-price purchase-exec-price/);assert.match(r.html(),/체결 ₩9876\.54/);
+    const saved=JSON.stringify(r.doc);r.render();r.render();assert.equal(JSON.stringify(r.doc),saved,'조회는 체결가를 만들거나 바꾸지 않음');
+  }
+});
+
+test('돌파·직접 입력의 체결가는 빈칸·기본값 입력 때 선택 필드를 삭제한다',()=>{
+  for(const manual of [false,true]){
+    const r=setup({manual}),record=()=>manual?r.item.buyPlan.stages[0]:r.item.buyPlan.buys.end;
+    r.change(manual?'[data-purchase-shares]':'[data-purchase-buy-shares]',4);
+    assert.equal(Object.hasOwn(record(),'execPrice'),false);
+    for(const reset of ['', '10,000']){
+      r.change('[data-purchase-exec]','12,345.67');assert.equal(record().execPrice,12345.67);
+      r.change('[data-purchase-exec]',reset);assert.equal(Object.hasOwn(record(),'execPrice'),false);
+      assert.equal(r.input('[data-purchase-exec]').value,'10,000');
+    }
+  }
+});
+
+test('체결가 0·음수·문자·숫자 형식 오류는 저장하지 않고 기존 값으로 다시 그린다',()=>{
+  for(const manual of [false,true]){
+    const r=setup({manual});r.change(manual?'[data-purchase-shares]':'[data-purchase-buy-shares]',4);
+    r.change('[data-purchase-exec]',9999);const before=JSON.stringify(r.doc),sections=[];r.store.saveSection=s=>sections.push(s);
+    for(const value of ['0','-1','문자','1e3','Infinity']){
+      const input=r.input('[data-purchase-exec]');input.value=value;input.onchange();
+      assert.equal(JSON.stringify(r.doc),before,value);assert.equal(input.reported,true,value);
+      assert.equal(r.input('[data-purchase-exec]').value,'9,999',value);
+    }
+    assert.deepEqual(sections,[]);
+  }
+});
+
+test('체결 수량 추가·정정은 체결가를 유지하고 0·체크 해제는 체결가도 지운다',()=>{
+  for(const manual of [false,true])for(const cancel of ['zero','uncheck']){
+    const r=setup({manual,manualShares:10,budget:10}),shares=manual?'[data-purchase-shares]':'[data-purchase-buy-shares]',done=manual?'[data-purchase-done]':'[data-purchase-buy]',record=()=>manual?r.item.buyPlan.stages[0]:r.item.buyPlan.buys.end;
+    r.change(shares,4);r.change('[data-purchase-exec]',10100);
+    for(const qty of [6,10,3]){r.change(shares,qty);assert.equal(record().execPrice,10100);}
+    r.change(done,true);assert.equal(record().execPrice,10100);
+    if(cancel==='zero')r.change(shares,0);else r.change(done,false);
+    assert.equal(r.item.shares,10);assert.equal(r.input('[data-purchase-exec]'),undefined);
+    if(manual){assert.equal(record().shares,10);assert.equal(Object.hasOwn(record(),'execPrice'),false);}
+    else assert.equal(r.item.buyPlan.buys,undefined);
+  }
+});
+
+test('추종 ETF 체결가 기본값·통화는 첫 체결의 tradePrice·tradeCurrency를 따른다',()=>{
+  for(const manual of [false,true]){
+    const r=setup({manual,currency:'USD',price:100,budget:135,manualShares:10,manualAmount:135,tracking:true,trackingPrice:15000});
+    r.change(manual?'[data-purchase-shares]':'[data-purchase-buy-shares]',60);
+    const b=manual?r.item.buyPlan.stages[0]:r.item.buyPlan.buys.end;
+    assert.equal(b.price,100);assert.equal(b.tradePrice,15000);assert.equal(r.input('[data-purchase-exec]').value,'15,000');
+    assert.match(r.html(),/체결 ₩15000/);assert.match(r.input('[data-purchase-exec]').attrs['aria-label'],/222222 1주.*KRW/);
+    const actual=b.actual,held=r.item.shares;r.change('[data-purchase-exec]',15100);
+    assert.equal(b.execPrice,15100);assert.equal(b.actual,actual);assert.equal(r.item.shares,held);
+    r.change('[data-purchase-exec]','15,000');assert.equal(Object.hasOwn(b,'execPrice'),false,'기준가 100이 아닌 실제 매수 기본값');
+  }
+  const r=setup({tracking:true,trackingPrice:20,trackingCurrency:'USD',budget:10});r.change('[data-purchase-buy-shares]',2);
+  assert.match(r.html(),/체결 \$20/);assert.match(r.input('[data-purchase-exec]').attrs['aria-label'],/BBB 1주.*USD/);
+});
+
+test('달러 회차는 원화 환산 줄을 체결가로 대체하고 비트코인 체결가는 1 BTC 가격을 보인다',()=>{
+  const r=setup({currency:'USD',price:90,end:120,budget:100,ma:{'25선':100}}),blocks=()=>[...r.html().matchAll(/<div class="stage-price">([\s\S]*?)<\/div>/g)].map(m=>m[1]);
+  assert.ok(blocks().length>1);assert.ok(blocks().every(b=>b.includes('class="krw"')));
+  r.change('[data-purchase-buy-shares]',1);
+  assert.match(blocks()[0],/체결 \$100/);assert.doesNotMatch(blocks()[0],/class="krw"/);
+  assert.ok(blocks().slice(1).every(b=>b.includes('class="krw"')));
+  const btc=setup({manual:true,bitcoin:true,currency:'USD',price:90000.12,manualShares:0.00012345,manualAmount:1});
+  btc.change('[data-purchase-shares]','0.00006');
+  assert.match(btc.html(),/purchase-table[^"\n]* btc"/);assert.match(btc.html(),/체결 \$90000\.12/);
+  assert.match(btc.input('[data-purchase-exec]').attrs['aria-label'],/BTC-USD 1 BTC/);
+  assert.equal(btc.input('[data-purchase-exec]').value,'90,000.12');btc.change('[data-purchase-exec]','90,012.34');
+  assert.equal(btc.item.buyPlan.stages[0].execPrice,90012.34);assert.equal(btc.item.shares,0.01006);
+  assert.match(btc.html(),/purchase-qty"><small class="qty-left">남은<\/small>0\.00006345/);
+});
+
 test('분할매수 직접 입력: 체결 주수만 입력하고 금액은 자동 계산한다',()=>{
   const r=setup({manual:true});r.change('[data-purchase-done]',true);assert.equal(r.item.shares,18);
   assert.equal(r.input('[data-purchase-actual]'),undefined);

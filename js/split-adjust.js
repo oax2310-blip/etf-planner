@@ -31,7 +31,7 @@ const {splitPreview, applySplit, appendSplitLog} = (()=>{
   // plans의 바깥 fill·sourcePrice/referencePrice/sourceQty는 기준 ETF, execution.price/qty는 고정된 실제 ETF 단위다.
   // group execution의 qty/plannedQty는 여러 실제 ETF 행의 합: 해당 종목 행의 증감만 합계에 더한다. 한 회차를 하나의 체결 선택으로 취급한다.
   // allocation.base는 금액 입력 시점의 원화 환산 1주 가격이고 amount는 만원 금액이다. base만 실제 ETF 기준으로 보정한다.
-  // 분할매수 price/lines.end/sourceShares·미체결 직접 입력 shares는 기준 ETF, 체결 shares/plannedShares/tradePrice는 당시 실제 ETF 기준이다.
+  // 분할매수 price/lines.end/sourceShares·미체결 직접 입력 shares는 기준 ETF, 체결 shares/plannedShares/tradePrice/execPrice는 당시 실제 ETF 기준이다.
   // 반영 내역 exact는 shares가 있는 행에서만 수량이다. amount만 있는 행의 exact는 금액이므로 그대로 둔다.
   // 자동값은 기록된 auto 값과 현재 숫자가 같은 칸만 건너뛴다(startPrice는 startAuto=true일 때만). 수동 덮어쓰기는 보정한다.
   // 반환 {ticker,from,to,exDate,items,duplicate,excluded}. 같은 종목·exDate 이력은 경고만 하며 입력·이력을 만들거나 바꾸지 않는다.
@@ -129,9 +129,9 @@ const {splitPreview, applySplit, appendSplitLog} = (()=>{
         if(!object(b))return;
         const target=recorded?[]:item.changes,bt=recorded?buyTicker(it,b,key):basis;
         const visit=changes=>{
-          fields(item,changes,b,where,["price","execPrice"],["sourceShares"],basis);
+          fields(item,changes,b,where,["price"],["sourceShares"],basis);
           fields(item,changes,b,where,[],["shares","plannedShares","qty","plannedQty"],bt);
-          fields(item,changes,b,where,["tradePrice"],[],buyTicker(it,b,key));
+          fields(item,changes,b,where,["tradePrice","execPrice"],[],buyTicker(it,b,key));
         };
         if(recorded)trade(item,key,"분할매수 체결",visit);else visit(target);
       }

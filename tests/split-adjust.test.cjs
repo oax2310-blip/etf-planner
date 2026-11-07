@@ -128,6 +128,27 @@ test('기준 종목과 tradeTicker가 다른 자산의 보유·평단·base는 �
   assert.deepEqual([b.buyPlan.lines.end,b.buyPlan.buys.end.price,b.buyPlan.buys.end.shares,b.buyPlan.buys.end.plannedShares,b.buyPlan.buys.end.tradePrice],[120,120,6,12,30]);
 });
 
+test('분할매수 execPrice는 buys·직접 입력 모두 실제 매수 종목 기준으로만 분할 조정한다',()=>{
+  const tracked={id:'tracked',ticker:'TEST',tradeTicker:'TESTALT',buyPlan:{
+    stages:[{id:'stage',price:90,sourceShares:6,shares:2,plannedShares:4,partial:true,tradeTicker:'TESTALT',tradePrice:45,execPrice:42}],
+    buys:{explicit:{price:90,sourceShares:6,shares:2,tradeTicker:'TESTALT',tradePrice:45,execPrice:42},
+      legacy:{price:90,shares:2,execPrice:42},missing:{price:90,shares:2,execPrice:42,tradeTargetId:'deleted'},empty:{price:90,shares:2}}
+  }};
+  const direct={id:'direct',ticker:'TEST',buyPlan:{stages:[{id:'old',done:true,price:90,shares:2,execPrice:81}],buys:{end:{price:90,shares:2,execPrice:81}}}};
+  const doc=assets([tracked,direct]),before=JSON.stringify(doc),basis=run(planner(),doc).assetsDoc.allocation.groups[0].items;
+  assert.equal(JSON.stringify(doc),before,'미리보기·적용은 원본 불변');
+  const p=basis[0].buyPlan;
+  assert.deepEqual([p.stages[0].price,p.stages[0].sourceShares,p.stages[0].tradePrice,p.stages[0].execPrice],[30,18,45,42]);
+  assert.deepEqual([p.buys.explicit.price,p.buys.explicit.sourceShares,p.buys.explicit.execPrice,p.buys.legacy.execPrice],[30,18,42,42]);
+  assert.equal(basis[1].buyPlan.stages[0].execPrice,27);assert.equal(basis[1].buyPlan.buys.end.execPrice,27);
+  const actual=run(planner(),doc,{...opt,ticker:'TESTALT'}),a=actual.assetsDoc.allocation.groups[0].items[0].buyPlan;
+  assert.deepEqual([a.stages[0].price,a.stages[0].sourceShares,a.stages[0].tradePrice,a.stages[0].execPrice],[90,6,15,14]);
+  assert.deepEqual([a.buys.explicit.price,a.buys.explicit.sourceShares,a.buys.explicit.tradePrice,a.buys.explicit.execPrice,a.buys.legacy.execPrice],[90,6,15,14,14]);
+  assert.equal(a.buys.missing.execPrice,42,'삭제된 명시 계좌의 실제 종목은 추정하지 않음');
+  assert.equal(Object.hasOwn(a.buys.empty,'execPrice'),false);
+  assert.ok(actual.preview.items.some(i=>i.skipped.some(s=>s.path.at(-1)==='execPrice'&&s.reason==='종목 연결 확인 불가')));
+});
+
 test('분할매수는 고정 tradeTicker·반영 계좌·옛 반영 기록을 사용하고 삭제된 명시 계좌는 추정하지 않는다',()=>{
   const owner={id:'owner',ticker:'TESTALT',tradeTicker:'TESTALT',buyPlan:{buys:{
     explicit:{price:90,shares:2,tradeTicker:'TEST',tradeTargetId:'other',tradePrice:60},

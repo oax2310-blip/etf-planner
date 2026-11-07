@@ -61,6 +61,20 @@ test('자산 배분·분할매수·저축의 기존 필드와 체결을 그대�
   const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
 });
 
+test('분할매수 execPrice는 숫자만 검증하고 재매수와 같은 기존 범위를 변경하지 않는다',()=>{
+  for(const execPrice of [123.45,'123.45',0,-1,null,'',undefined]){
+    const trade={price:100,...(execPrice===undefined?{}:{execPrice})};
+    const data={allocation:{groups:[{items:[{ticker:'AAA',buyPlan:{buys:{end:{...trade}},stages:[{...trade,done:true}]}}]}]}};
+    const before=JSON.stringify(data);assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
+    const old=planner();old.rebuy={stages:[{name:'가상 회차',buys:[{...trade}]}]};
+    const oldBefore=JSON.stringify(old);assert.equal(validate.planner(old),old);assert.equal(JSON.stringify(old),oldBefore);
+  }
+  for(const execPrice of ['문자',Infinity,{},true])for(const kind of ['buys','stages']){
+    const buyPlan=kind==='buys'?{buys:{end:{execPrice}}}:{stages:[{done:true,execPrice}]};
+    assert.throws(()=>validate.assets({allocation:{groups:[{items:[{buyPlan}]}]}}),/기록 형식이 맞지 않습니다/);
+  }
+});
+
 test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한다',()=>{
   for(const data of [
     {allocation:{groups:[null]}}, {allocation:{groups:[{items:'not-a-list'}]}},
