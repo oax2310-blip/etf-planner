@@ -77,7 +77,7 @@ function renderInstallments(){
       const key=x.dataset.installment, method=x.dataset.method, source=method?settings.methods?.[method]||{}:settings;
       const value=source[key]??(key==="months"?INSTALLMENT_TERMS.find(t=>t.id===method).months:key==="years"?3:key==="firstMonth"?1:key==="discountRate"||key==="discountCap"?0:"");
       if(x.type==="checkbox")x.checked=source[key]===true;
-      else x.value=x.hasAttribute("data-money")?assetNumberText(value):String(value);
+      else x.value=x.hasAttribute("data-money")?moneyInputText(value):String(value);
       if(method&&(key==="discountRate"||key==="discountCap"))x.disabled=source.discountEnabled!==true;
     });
     for(const [key,status] of [["dates",dateStatus],["reference",referenceStatus],["discounts",discountStatus]])activeEditor.querySelector(`[data-installment-details="${key}"]>summary>span`).textContent=status;

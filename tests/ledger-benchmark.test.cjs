@@ -174,7 +174,7 @@ function ledgerPage(data,now,ui=null,fetcher=null){
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){}});
   if(fetcher)ctx.fetch=fetcher;
   if(ui)storage.set('etf-planner-assets-ui',JSON.stringify({tab:'ledger',...ui}));
-  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
+  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/money-input.js','js/assets.js','js/assets-ledger.js','js/assets-savings.js','js/assets-installments.js','js/assets-start.js'].map(read).join('\n;\n'),ctx);
   return {ctx,storage,node,buttons,get html(){return node('ledgerView').innerHTML;}};
 }
 const ledgerHtml=(data,now,ui=null)=>ledgerPage(data,now,ui).html;
@@ -404,7 +404,7 @@ function ledgerDialog(year,{popover=true}={}){
   const ctx=vm.createContext({Date,document,assetStore:store,splitNotices:{initialize(){}},HTMLElement,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){},innerWidth:393,innerHeight:852,confirm:()=>true,alert:message=>{throw Error(message);}});
-  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/assets.js','js/assets-ledger.js'].map(read).join('\n;\n'),ctx);
+  vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/money-input.js','js/assets.js','js/assets-ledger.js'].map(read).join('\n;\n'),ctx);
   vm.runInContext('render=()=>{}',ctx);ctx.year=year;
   return {ctx,node,saves,query,
     openMonth(n=3){vm.runInContext(`openMonth(year,${n})`,ctx);return node('monthFields').innerHTML;},

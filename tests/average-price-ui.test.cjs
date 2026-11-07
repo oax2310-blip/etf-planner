@@ -6,7 +6,7 @@ const vm=require('node:vm');
 
 // 실제 투자 기록 없이 종목 수정창의 평균매수가 입력·저장 이벤트를 가상 DOM에서 실행한다.
 const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8');
-const source=['js/gold-estimate.js','js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/assets.js'].map(read).join('\n;\n');
+const source=['js/gold-estimate.js','js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/money-input.js','js/assets.js'].map(read).join('\n;\n');
 const fixture=()=>({version:1,allocation:{savedAt:'2026-01-01',total:100,cashFx:1200,memo:'가상 메모',classes:[{id:'stock',region:'미국',name:'주식'}],cash:[],groups:[
   {id:'g1',name:'가상 계좌 1',classId:'stock',items:[{id:'a',name:'가상 해외 ETF',ticker:'AAA',shares:2,amount:20,base:50000,target:10,note:'보존',buyPlan:{stages:[{id:'stage',price:40,shares:1,amount:5,done:true}]}}]},
   {id:'g2',name:'가상 계좌 2',classId:'stock',items:[{id:'b',name:'다른 계좌 ETF',ticker:'AAA',shares:3,averagePrice:100,amount:30,base:60000},{id:'missing',name:'평균가 없는 ETF',ticker:'AAA',shares:1},{id:'domestic',name:'가상 국내 ETF',ticker:'111111',shares:4,averagePrice:10000}]}]}});
@@ -24,13 +24,14 @@ test('체결된 매수의 기준 티커 변경 확인 취소는 저장하지 않
   }
 });
 function page(data=fixture(),quotes=quoteFixture()){
-  const nodes=new Map(),storage=new Map(),writes=[],alerts=[];let itemButtons=[];
-  const document={activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-item]'?itemButtons:sel==='dialog [data-close]'?[node('itemCancel')]:[],addEventListener(){}};
+  const nodes=new Map(),storage=new Map(),writes=[],alerts=[],inputListeners=[];let itemButtons=[];
+  const document={activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-item]'?itemButtons:sel==='dialog [data-close]'?[node('itemCancel')]:[],addEventListener(type,fn){if(type==='input')inputListeners.push(fn);}};
   function node(id){
     if(nodes.has(id))return nodes.get(id);
     let html='',value='';const attrs=new Map();
     const n={id,dataset:{},hidden:false,open:false,textContent:'',style:{},classList:{toggle(){},contains(){return false;}},tagName:'DIV',
       querySelector:sel=>node(`${id}:${sel}`),querySelectorAll:()=>[],setAttribute:(k,v)=>attrs.set(k,String(v)),getAttribute:k=>attrs.get(k),
+      matches:selector=>selector==='input[data-money]'&&attrs.has('data-money'),setSelectionRange(start,end){n.selectionStart=start;n.selectionEnd=end;},
       setCustomValidity(message){n.validationMessage=message;n.validity={valid:!message};},checkValidity:()=>!n.validationMessage,reportValidity(){n.reported=true;},
       focus(){document.activeElement=n;},blur(){if(document.activeElement===n)document.activeElement=null;},
       showModal(){n.open=true;},close(){n.open=false;document.activeElement=null;},closest:sel=>sel==='dialog'?node('itemDialog'):null,
@@ -51,6 +52,10 @@ function page(data=fixture(),quotes=quoteFixture()){
     const input=node(name==='averagePrice'?'averagePriceInput':name==='averageCurrency'?'averageCurrencySelect':`item:${name}`);input.tagName=['group','averageCurrency'].includes(name)?'SELECT':name==='note'?'TEXTAREA':'INPUT';
     form[name]=input;form.elements[name]=input;
   }
+  // HTML의 금액 제한도 실제 화면처럼 공용 검증기에 전달한다.
+  const averageTag=read('assets.html').match(/<input id="averagePriceInput"[^>]*>/)[0];
+  node('averagePriceInput').setAttribute('data-money','');
+  for(const [,key,value] of averageTag.matchAll(/(data-money-(?:min|max|step))="([^"]*)"/g))node('averagePriceInput').setAttribute(key,value);
   form.checkValidity=()=>Object.values(form.elements).every(input=>input.checkValidity());
   const store={doc:data,prices:quotes,saveSection(section){writes.push(section);storage.set('etf-planner-assets-v1',JSON.stringify(store.doc));}};
   const ctx=vm.createContext({document,assetStore:store,URLSearchParams,crypto:require('node:crypto').webcrypto,localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},
@@ -59,8 +64,9 @@ function page(data=fixture(),quotes=quoteFixture()){
   const html=()=>node('allocView').innerHTML;
   const row=id=>{const start=html().indexOf(`data-alloc-item="${id}"`);assert.ok(start>=0,`종목 줄 ${id}`);const rest=html().slice(start),end=rest.search(/class="asset-row|class="group-foot"/);return end<0?rest:rest.slice(0,end);};
   return {ctx,data,store,node,html,row,writes,alerts,storage,input:node('averagePriceInput'),
+    type(input,value){input.value=value;input.selectionStart=input.selectionEnd=value.length;inputListeners.forEach(fn=>fn({target:input}));input.oninput?.();},
     open(id){const b=itemButtons.find(b=>b.dataset.item===id);assert.ok(b?.onclick,'종목 수정 버튼 이벤트');b.click();},
-    edit(value){node('averagePriceInput').value=value;node('averagePriceInput').oninput();},
+    edit(value){const input=node('averagePriceInput');input.value=value;input.selectionStart=input.selectionEnd=value.length;inputListeners.forEach(fn=>fn({target:input}));input.oninput();},
     submit(){form.onsubmit({preventDefault(){}});},cancel(){node('itemCancel').click();},
     field(name,value){form.elements[name].value=value;form.elements[name].oninput?.();},
     selectCurrency(value){form.elements.averageCurrency.value=value;form.elements.averageCurrency.onchange();},
@@ -304,6 +310,30 @@ test('평균매수가 추가·수정·빈칸 삭제는 선택 계좌 필드만 �
   h.open('b');h.submit();assert.equal(h.writes.length,3,'기존 가격 그대로 저장해도 쓰지 않음');
 });
 
+test('평균매수가 12,345.6은 숫자 12345.6으로 저장하고 다시 열면 쉼표를 표시한다',()=>{
+  const h=page();h.open('a');h.edit('12345.6');assert.equal(h.input.value,'12,345.6');h.submit();
+  const saved=JSON.parse(h.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0];
+  assert.equal(saved.averagePrice,12345.6);assert.equal(typeof saved.averagePrice,'number');
+  h.open('a');assert.equal(h.input.value,'12,345.6');
+  const before=JSON.stringify(h.data);h.input.value='9007199254740992';h.submit();
+  assert.equal(JSON.stringify(h.data),before);assert.equal(h.input.checkValidity(),false,'입력 이벤트 없이도 저장 직전 재검사');
+});
+
+test('현금은 원화·달러·음수 금액을 숫자로 저장하고 잘못된 형식은 저장하지 않는다',()=>{
+  const h=page(),f=h.node('cashForm');
+  for(const key of ['place','name','amount','currency','minus'])f[key]=h.node(`cash:${key}`);
+  f.amount.setAttribute('data-money','');f.amount.setAttribute('data-money-step','any');
+  for(const [currency,raw,shown,value] of [['KRW','12345.6','12,345.6',12345.6],['USD','-1234.5','-1,234.5',-1234.5]]){
+    h.ctx.openCash();f.name.value='예시 현금';f.currency.value=currency;h.type(f.amount,raw);
+    assert.equal(f.amount.value,shown);f.onsubmit({preventDefault(){}});
+    const saved=JSON.parse(h.storage.get('etf-planner-assets-v1')).allocation.cash.at(-1);
+    assert.equal(saved.amount,value);assert.equal(typeof saved.amount,'number');assert.equal(saved.currency,currency);
+    h.ctx.openCash(saved.id);assert.equal(f.amount.value,shown);
+    const before=JSON.stringify(h.data);f.amount.value='1e3';f.onsubmit({preventDefault(){}});
+    assert.equal(JSON.stringify(h.data),before);assert.ok(f.amount.validationMessage);assert.equal(h.node('cashDialog').open,true);
+  }
+});
+
 test('평균매수가 0·음수·잘못된 값은 저장을 막고 창과 기존 기록을 유지한다',()=>{
   const data=fixture(),before=JSON.stringify(data),h=page(data);h.open('b');
   for(const value of ['0','-1','-0.5','invalid','Infinity']){
@@ -343,7 +373,7 @@ test('평균매수가 입력은 종목 수정창 안에만 있으며 제거한 �
   assert.doesNotMatch(html,/id="averagePriceDialog"|id="averagePriceForm"/);
   assert.doesNotMatch(modal,/name="(?:amount|tradePrice)"/);
   assert.equal([...html.matchAll(/name="averagePrice"/g)].length,1);
-  assert.equal([...modal.matchAll(/type="button" data-close/g)].length,2);assert.match(modal,/name="averagePrice"[^>]*step="any"[^>]*inputmode="decimal"/);assert.match(modal,/name="averagePrice"[^>]*max="9007199254740991"/);
+  assert.equal([...modal.matchAll(/type="button" data-close/g)].length,2);assert.match(modal,/name="averagePrice" type="text" inputmode="decimal" autocomplete="off" data-money/);assert.match(modal,/data-money-step="any"/);assert.match(modal,/data-money-max="9007199254740991"/);
   assert.match(modal,/aria-describedby="averagePriceHint"/);assert.match(modal,/id="averagePricePreview"[^>]*role="status"[^>]*aria-live="polite"/);
 });
 

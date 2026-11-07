@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const repoSecuritySource = fs.readFileSync(require('node:path').join(__dirname, '../js/repo-security.js'), 'utf8');
+const moneyInputSource = fs.readFileSync(require('node:path').join(__dirname, '../js/money-input.js'), 'utf8');
 const script = fs.readFileSync(require('node:path').join(__dirname, '../js/valuation.js'), 'utf8');
 const start = script.indexOf('// 가정 저장:'), source = script.slice(start);
 if (!source.includes('function applyAssumptions(')) throw Error('가정 저장 구현을 찾지 못했습니다.');
@@ -44,15 +45,18 @@ function githubServer({remote = null, isPrivate = true, raw = null, staleStatus 
 const connectedStorage = (entries = {}) => new Map([['etf-planner-data-repo', REPO], ['etf-planner-github-token', 'test-token'], ...Object.entries(entries).map(([k, v]) => [k, JSON.stringify(v)])]);
 
 // 계산기 입력칸 몇 개만 흉내 낸 가짜 DOM. 범위 입력은 브라우저처럼 min·max로 잘라 준다.
-function control(id, {type = 'range', value, min = 0, max = 1000, options}) {
+function control(id, {type = 'range', value, min = 0, max = 1000, step = 'any', money = false, options}) {
   if (type === 'select') {
     let current = options.find(o => o.selected).value;
     return {id, tagName: 'SELECT', options: options.map(o => ({value: o.value, defaultSelected: !!o.selected})), checkValidity: () => current !== '',
       get value() { return current; }, set value(v) { current = options.some(o => o.value === String(v)) ? String(v) : ''; }};
   }
-  let current = String(value);
-  return {id, tagName: 'INPUT', type, defaultValue: String(value),
-    checkValidity: () => type === 'range' || (current !== '' && Number(current) >= min && Number(current) <= max),
+  let current = String(value),message='';
+  const attrs={'data-money-min':String(min),'data-money-max':String(max),'data-money-step':String(step)};
+  return {id, tagName: 'INPUT', type, defaultValue: String(value),dataset:money?{money:''}:{},
+    getAttribute:key=>money?attrs[key]??null:null,matches:selector=>money&&selector==='input[data-money]',setSelectionRange(){},
+    setCustomValidity(value){message=value;},get validationMessage(){return message;},
+    checkValidity: () => !message&&(type === 'text' || type === 'range' || (current !== '' && Number(current) >= min && Number(current) <= max)),
     get value() { return current; },
     set value(v) { current = type === 'range' ? String(Math.min(max, Math.max(min, Number(v)))) : String(v); }};
 }
@@ -64,6 +68,10 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     control('batYear', {type: 'select', options: [{value: '2030'}, {value: '2035', selected: true}, {value: '2040'}]}),
     control('batCarM', {type: 'number', value: 80, min: 20, max: 150}),
     control('bc-lg-ev', {type: 'number', value: 8, max: 100}),
+    control('riseBasePrice', {type:'text',money:true,value:11175,min:1,max:1000000,step:1}),
+    control('chinaBasePrice', {type:'text',money:true,value:8335,min:1,max:1000000,step:1}),
+    control('bc-lg-cap', {type:'text',money:true,value:82.25,min:.01,max:10000,step:.01}),
+    control('bg-skon-cap', {type:'text',money:true,value:25.3,min:.01,max:10000,step:.01}),
     control('humnUnits', {value: 100, max: 120}),
     control('terPE', {value: 20, max: 40}),
     control('aiInference', {type: 'number', value: defaults.aiInference ?? 4000, max: 100000}),
@@ -94,7 +102,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
   let timerId = 0;
   const renders = {count: 0};
   const context = vm.createContext({
-    el, ids: ['robotM', 'evShare'], batteryInputs: ['batYear', 'batCarM'], companyInputIds: ['bc-lg-ev'], groupInputIds: [], humnControlIds: ['humnUnits'], terControlIds: ['terPE'], aiControlIds: ['aiInference', 'aiPaidRatio', 'aiFixed'],
+    el, ids: ['robotM', 'evShare'], batteryInputs: ['batYear', 'batCarM','riseBasePrice','chinaBasePrice'], companyInputIds: ['bc-lg-ev','bc-lg-cap'], groupInputIds: ['bg-skon-cap'], humnControlIds: ['humnUnits'], terControlIds: ['terPE'], aiControlIds: ['aiInference', 'aiPaidRatio', 'aiFixed'],
     sdiPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
     batteryPresetLabels: {low: '보수적 가정', base: '기본 가정', high: '낙관적 가정'},
     humnPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
@@ -108,7 +116,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
       hidden: false,
       addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
       querySelector: sel => { const base = sel.replace('.active', ''); return presetButtons[base]?.find(b => b.active) || null; },
-      querySelectorAll: sel => presetButtons[sel] || [],
+      querySelectorAll: sel => sel==='input[data-money]'?controls.filter(c=>c.dataset?.money!==undefined):presetButtons[sel] || [],
       createElement: () => generic('')
     },
     window: {addEventListener() {}},
@@ -118,7 +126,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
     fetch: server ? server.fetch : async () => { throw Error('연결하지 않았는데 GitHub에 요청했다'); },
     AbortSignal: {timeout: signalTimeout}, Date, JSON, Number, String, Object, Array, Set, Map, Error, TextEncoder, TextDecoder, Uint8Array, btoa, atob, URL
   });
-  vm.runInContext(repoSecuritySource+'\n'+source, context);
+  vm.runInContext(repoSecuritySource+'\n'+moneyInputSource+'\n'+source, context);
   const fire = (type, target) => (listeners[type] || []).forEach(fn => fn({target, preventDefault() {}}));
   // 계산기 쪽 입력 처리처럼 프리셋 선택을 풀고 input 이벤트를 보낸다.
   const adjust = (id, value) => {
@@ -240,6 +248,36 @@ test('입력 중인 빈칸이나 범위 밖 값은 저장하지 않고 직전 �
   assert.equal(h.stored(CURRENT).values.batCarM, 90);
   const reopened = page({storage: h.storage});
   assert.equal(reopened.el('batCarM').value, '90');
+});
+
+test('시나리오의 쉼표 금액은 숫자로 저장·동기화·복원하고 범위·간격 오류는 직전 값을 지킨다', async () => {
+  const server=githubServer(),h=page({storage:connectedStorage(),server});await h.ready();
+  assert.equal(h.el('riseBasePrice').value,'11,175');
+  h.adjust('riseBasePrice','12,345');h.adjust('bc-lg-cap','1,234.56');h.adjust('bg-skon-cap','2,345.67');h.flush();
+  const expected={riseBasePrice:12345,'bc-lg-cap':1234.56,'bg-skon-cap':2345.67};
+  for(const [id,value] of Object.entries(expected))assert.equal(h.stored(CURRENT).values[id],value);
+  h.submit('예시 금액');await h.sync();
+  for(const [id,value] of Object.entries(expected)){
+    assert.equal(h.stored(LIST)[0].values[id],value);
+    assert.equal(server.data().current.values[id],value);
+  }
+  for(const raw of ['0','1,000,001','12,345.6','1e3','잘못된 금액']){
+    h.el('riseBasePrice').value=raw;h.fire('change',h.el('riseBasePrice'));
+    assert.equal(h.stored(CURRENT).values.riseBasePrice,12345,raw);
+    assert.ok(h.el('riseBasePrice').validationMessage,raw);
+  }
+  const reopened=page({storage:h.storage});
+  assert.equal(reopened.el('riseBasePrice').value,'12,345');
+  assert.equal(reopened.el('bc-lg-cap').value,'1,234.56');
+  assert.equal(reopened.el('bg-skon-cap').value,'2,345.67');
+});
+
+test('범위·간격을 벗어난 옛 금액은 기본값으로 복원하고 오류 상태를 지운다',()=>{
+  const storage=new Map([[CURRENT,JSON.stringify({values:{riseBasePrice:1000001,'bc-lg-cap':-1,'bg-skon-cap':1.001}})]]);
+  const h=page({storage});
+  for(const [id,value] of [['riseBasePrice','11,175'],['bc-lg-cap','82.25'],['bg-skon-cap','25.3']]){
+    assert.equal(h.el(id).value,value);assert.equal(h.el(id).validationMessage,'');
+  }
 });
 
 test('저장된 값이 현재 입력 범위를 벗어나면 기본값으로 연다', () => {

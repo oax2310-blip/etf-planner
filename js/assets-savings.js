@@ -91,8 +91,8 @@ function savingsMarkup(S,sc,stages){
   const stageRow=(st,i)=>{
     const applied=savingsStageApplied(S,sc,st);
     const input=(key,label,money=false)=>{
-      const value=applied?.[key], hint=value===null||value===undefined?"—":money?nf0.format(Math.round(value)):assetNumberText(value);
-      const detail=finite(st[key])===null&&applied?` title="적용값: ${escA(assetNumberText(value))}${money?"원":"%"}"`:"";
+      const value=applied?.[key], hint=value===null||value===undefined?"—":money?nf0.format(Math.round(value)):moneyInputText(value);
+      const detail=finite(st[key])===null&&applied?` title="적용값: ${escA(moneyInputText(value))}${money?"원":"%"}"`:"";
       return `<label><span>${label}</span><input data-stage="${i}" data-k="${key}" ${money?moneyAttrs:signedNumAttrs} value="${money?moneyText(st[key]):escA(st[key]??"")}" placeholder="${escA(hint)}"${detail}></label>`;
     };
     const age=finite(st.age), title=age===null?`${i+1}번째 단계`:`${age}세부터`, remove=age===null?`${i+1}번째 단계 삭제`:`${age}세 단계 삭제`;
@@ -160,7 +160,7 @@ function savingsOnChange(selector,set,read){
       bindSavings(doc.savings,sc);x.onchange();return;
     }
     const changed=set(x.value,x)!==false, value=read(x);
-    x.value=x.hasAttribute("data-money")?assetNumberText(value):String(value??"");
+    x.value=x.hasAttribute("data-money")?moneyInputText(value):String(value??"");
     if(changed){
       const scenario=doc.savings.scenarios.find(s=>s.id===ui.scenario)||doc.savings.scenarios[0];
       const before=[...(scenario?.stages||[])], pending=redrawLater;

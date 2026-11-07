@@ -270,8 +270,8 @@ function openMonth(y, n){
         const fx=plus(rpFx(index)), legacy=rpSaved.get(index).legacy;
         el(`ledgerRpFx${index}`).textContent=usd===null&&legacy!==null?"기존 원화 기록입니다. 달러로 넣으면 125개월 평균 환율로 바꿉니다."
           :!fx?"125개월 평균선을 불러오면 자동 적용됩니다."
-          :rpKeep.has(index)?`125개월 평균 ${assetNumberText(fx)}원 · 기록한 환율`
-          :`125개월 평균 ${assetNumberText(fx)}원${prices?.fx?.maAsOf||prices?.fx?.asOf?` · ${prices.fx.maAsOf||prices.fx.asOf}`:""}${prices?.fx?.maStale?" · 갱신 필요":""}`;
+          :rpKeep.has(index)?`125개월 평균 ${moneyInputText(fx)}원 · 기록한 환율`
+          :`125개월 평균 ${moneyInputText(fx)}원${prices?.fx?.maAsOf||prices?.fx?.asOf?` · ${prices.fx.maAsOf||prices.fx.asOf}`:""}${prices?.fx?.maStale?" · 갱신 필요":""}`;
         el(`ledgerRpWon${index}`).textContent=value!==null?wonA(value):usd!==null?"평균선 필요":"—";
         const hint=el(`ledgerAccountTotal${index}`);hint.hidden=value===null;hint.textContent=value===null?"":`계좌 합계 ${wonA(sum)} (원화추정자산 + RP)`;
       }
@@ -287,10 +287,10 @@ function openMonth(y, n){
   const entries=()=>[...fixed.filter(r=>finite(r.amount)!==null||finite(r.krw)!==null),...extra];
   const update=()=>{
     const rows=entries(), wasAuto=f.pnl.readOnly;f.pnl.readOnly=!!rows.length;
-    if(rows.length){f.pnl.value=assetNumberText(pnlEntriesTotal(rows));f.pnl.setCustomValidity("");}
+    if(rows.length){f.pnl.value=moneyInputText(pnlEntriesTotal(rows));f.pnl.setCustomValidity("");}
     else if(wasAuto)f.pnl.value=manualPnl;
     el("pnlTotalHint").textContent=rows.length?"입력한 손익과 배당의 원화 합계입니다.":"아래 항목을 입력하면 자동 합산합니다. 합계만 직접 기록할 수도 있습니다.";
-    const amount=finite(fixed[4].amount);f.dividendFx.value=assetNumberText(dividendFx);
+    const amount=finite(fixed[4].amount);f.dividendFx.value=moneyInputText(dividendFx);
     el("dividendFxLabel").textContent=dividendBasis===fxLine?"125개월 평균 환율 (원/달러)":"기록된 환율 (원/달러)";
     el("dividendFxHint").textContent=dividendBasis!==fxLine?"기존 기록의 환율입니다. 새 배당은 125개월 평균선을 적용합니다.":dividendFx?`${dividendFxAt?`${dividendFxAt} 기준 · `:""}자동 적용${prices?.fx?.maStale?" · 갱신 필요":""}`:"125개월 평균선을 불러오면 자동 적용됩니다.";
     el("kiwoomDividendWon").textContent=amount!==null?(finite(fixed[4].krw)!==null?wonA(fixed[4].krw):"평균선 필요"):"—";
@@ -344,7 +344,7 @@ function openMonth(y, n){
 }
 function openYear(y){
   const f=el("yearForm"); el("yearTitle").textContent=`${y.year}년 설정`;
-  f.futures.value=assetNumberText(y.futures); f.futures.setCustomValidity(""); f.note.value=y.note||"";
+  f.futures.value=moneyInputText(y.futures); f.futures.setCustomValidity(""); f.note.value=y.note||"";
   // 월별 선물·옵션(월 입력 창)과 달을 모르는 연 합계(이 칸)는 함께 더한다(assets-calc.js yearSummary).
   const monthly=y.months.filter(m=>finite(m.futures)!==null);
   el("yearFuturesHint").textContent=`달마다 넣으려면 월 입력 창의 선물·옵션 칸을 쓰세요. 이 칸 금액은 마지막 기록 달에 더합니다.${monthly.length?` 월별 입력 ${monthly.length}개월 합계 ${wonA(monthly.reduce((t,m)=>t+Number(m.futures),0))}.`:""}`;

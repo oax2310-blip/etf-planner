@@ -22,13 +22,13 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
   const onDisk = ['css', 'js'].flatMap(d => fs.readdirSync(path.join(root, d)).map(f => `${d}/${f}`));
   assert.deepEqual([...new Set([...refs, ...assetRefs, ...valuationRefs].map(r => r[1]))].sort(), onDisk.sort(), '세 HTML에서 불러오지 않는 파일이 있다');
   assert.deepEqual(scripts.slice(-4),['js/split-adjust.js','js/split-dialog.js','js/split-notices.js','js/start.js'],'액면분할 계산·창·대기 안내를 초기화 전에 순서대로 불러온다');
-  assert.deepEqual(assetScripts, ['js/theme.js', 'js/repo-security.js', 'js/gold-estimate.js', 'js/ma-ladder.js', 'js/split-auto.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/price-collection.js', 'js/assets-store.js', 'js/member-link.js', 'js/stock-names.js', 'js/ledger-benchmark.js', 'js/assets.js', 'js/assets-ledger.js', 'js/assets-savings.js', 'js/assets-installments.js', 'js/split-notices.js', 'js/assets-start.js'], 'assets.html은 감지 검증·공유 수집을 assets-store보다 먼저, 종목 이름을 대기 안내보다 먼저, 첫 화면은 마지막에 불러온다');
+  assert.deepEqual(assetScripts, ['js/theme.js', 'js/repo-security.js', 'js/gold-estimate.js', 'js/money-input.js', 'js/ma-ladder.js', 'js/split-auto.js', 'js/data-validation.js', 'js/assets-calc.js', 'js/price-collection.js', 'js/assets-store.js', 'js/member-link.js', 'js/stock-names.js', 'js/ledger-benchmark.js', 'js/assets.js', 'js/assets-ledger.js', 'js/assets-savings.js', 'js/assets-installments.js', 'js/split-notices.js', 'js/assets-start.js'], 'assets.html은 감지 검증·공유 수집을 assets-store보다 먼저, 종목 이름을 대기 안내보다 먼저, 첫 화면은 마지막에 불러온다');
   assert.ok(assetRefs.some(r => r[1] === 'css/app.css'), 'assets.html도 공통 토큰(css/app.css)을 불러야 한다');
   assert.equal(scripts[0], 'js/theme.js', '화면 모드(theme.js)는 head에서 가장 먼저 불러야 첫 화면 색이 맞는다');
-  assert.deepEqual(scripts.slice(3, 9), ['js/ma-ladder.js', 'js/split-auto.js', 'js/data-validation.js', 'js/core.js', 'js/price-collection.js', 'js/sync.js'], '감지 검증·공유 수집 함수를 sync보다 먼저 불러와야 한다');
+  assert.deepEqual(scripts.slice(4, 10), ['js/ma-ladder.js', 'js/split-auto.js', 'js/data-validation.js', 'js/core.js', 'js/price-collection.js', 'js/sync.js'], '감지 검증·공유 수집 함수를 sync보다 먼저 불러와야 한다');
   assert.ok(scripts.indexOf('js/gold-estimate.js') < scripts.indexOf('js/sync.js'));
   assert.equal(scripts.at(-1), 'js/start.js', '초기화(start.js)는 모든 파일 다음에 실행한다');
-  assert.deepEqual(valuationScripts, ['js/theme.js', 'js/repo-security.js', 'js/gold-estimate.js', 'js/valuation.js', 'js/currency-pressure.js'], '시나리오 계산·통화강도는 시나리오에만 불러온다');
+  assert.deepEqual(valuationScripts, ['js/theme.js', 'js/repo-security.js', 'js/gold-estimate.js', 'js/money-input.js', 'js/valuation.js', 'js/currency-pressure.js'], '시나리오 계산·통화강도는 시나리오에만 불러온다');
   const valuation = fs.readFileSync(path.join(root, 'valuation.html'), 'utf8');
   assert.deepEqual([...valuation.matchAll(/src="js\/theme\.js\?v=(\d+)"/g)].map(r => r[1]), [refs[0][2]], 'valuation.html도 같은 버전의 theme.js를 한 번 불러야 한다');
 });
@@ -59,6 +59,11 @@ test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름�
   // 일반 <script>는 맨 위 이름을 함께 쓰므로, 이어 붙여 한 번에 해석하면 겹치는 const·let이 오류로 드러난다.
   for (const list of [scripts, assetScripts, valuationScripts])
     assert.doesNotThrow(() => new vm.Script(list.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
+  for (const list of [scripts, assetScripts, valuationScripts]) {
+    assert.equal(list.filter(f => f === 'js/money-input.js').length, 1, '금액 처리기는 한 번만 불러온다');
+    for (const consumer of ['js/assets.js', 'js/valuation.js']) if (list.includes(consumer))
+      assert.ok(list.indexOf('js/money-input.js') < list.indexOf(consumer), `${consumer}보다 금액 처리기를 먼저 불러온다`);
+  }
 });
 
 test('theme.js만 CSS보다 먼저 바로 실행하고 나머지 script는 defer로 한꺼번에 받는다', () => {

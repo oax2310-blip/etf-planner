@@ -59,7 +59,7 @@ function page(htmlFile, scriptFile) {
     assetStore: {doc: {}, prices: null}, location: {hash: '#unchanged'}, addEventListener() {}
   });
   ctx.save = () => savedTabs.push(vm.runInContext('state.tab', ctx));
-  for (const file of ['js/ma-ladder.js', ...(scriptFile === 'js/assets.js' ? ['js/assets-calc.js'] : []), scriptFile])
+  for (const file of ['js/ma-ladder.js', ...(scriptFile === 'js/assets.js' ? ['js/assets-calc.js', 'js/money-input.js'] : []), scriptFile])
     vm.runInContext(read(file), ctx, {filename: file});
   let renders = 0; ctx.render = () => renders++;
   return {ctx, tabs, navTabs, getNode, storage, savedTabs, renders: () => renders};
