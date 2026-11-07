@@ -38,11 +38,55 @@ function describe(rec){
   }).filter(Boolean);
   return list.length>2?`${list.length}개 계좌`:list.join(" · ");
 }
+// 분할매수('buy:')만 반영 직전의 계좌별 S0(보유)·A0(현재 평균가)·q0(표식 수량)·q0*p0를 기억한다.
+// 이미 반영됐는데 items[].execPrice가 하나도 없는 옛 회차는 건드리지 않는다. 조회·불러오기에서는 호출하지 않는다.
+function buyAverageBefore(a,key){
+  if(!a||typeof key!=="string"||!key.startsWith("buy:"))return null;
+  const rec=a.trades?.[key],items=Array.isArray(rec?.items)?rec.items:[];
+  if(rec&&!items.some(e=>plus(e?.execPrice)!==null))return null;
+  const rows=new Map((a.groups||[]).flatMap(g=>(g.items||[]).map(it=>[it.id,{shares:finite(it.shares)||0,average:plus(it.averagePrice),qty:0,cost:0,fresh:false}])));
+  for(const e of items){
+    const r=rows.get(e?.id),n=finite(e?.shares),p=plus(e?.execPrice);if(!r||e.converted||n===null||p===null)continue;
+    r.qty+=n;r.cost+=n*p;r.fresh||=e.avgFresh===true;
+  }
+  return rows;
+}
+// 반영 뒤 같은 계좌 항목의 평균가만 맞춘다. 수량·금액·기준가·예산은 바꾸지 않는다.
+// 대상은 shares 반영·converted 아님·itemProfit의 통화 = 체결 통화. 금액 관리·비트코인 원화 평균가/달러 체결은 제외한다.
+// 빼기: S'=S0-q0>0이면 A'=(S0*A0-q0*p0)/S', 양의 유한수가 아니거나 S'<=0이면 A'=A0(q0=0도 A0).
+// 더하기: q1은 반영 뒤 이 키의 계좌별 양수 순수량, Sb=max(0,S1-q1). q1>0이면 Sb>0일 때 (Sb*A'+q1*p1)/(Sb+q1), Sb=0이면 p1.
+// p1=execPrice→tradePrice→price(호출부가 trade.execPrice로 전달). A' 없는 기존 보유는 건너뛰며, 첫 표식도 평균가가 있거나 기존 보유 0일 때만 붙인다.
+// 취소(q1=0)는 A', 단 Sb=0이고 이 회차가 평균가를 처음 만든 avgFresh이면 averagePrice를 지운다.
+// 양의 유한수만 유효숫자 12자리로 저장하고, 남은 반영 entry에 p1·avgFresh를 유지한다. 직접 수정한 평균가도 그때의 A0로 쓴다.
+function matchBuyAverage(a,key,before,trade){
+  if(!before)return false;
+  const items=Array.isArray(a.trades?.[key]?.items)?a.trades[key].items:[],after=new Map(),prices=assetStore.prices,fx=assetFx(prices,a),price=plus(trade?.execPrice??trade?.price);
+  for(const e of items){if(!e||e.converted||finite(e.shares)===null)continue;const list=after.get(e.id)||[];list.push(e);after.set(e.id,list);}
+  let changed=false;
+  for(const [id,r] of before){
+    const entries=after.get(id)||[],q1=Math.max(0,entries.reduce((n,e)=>n+finite(e.shares),0)),it=allocItemById(a,id);
+    if(!it||!(r.qty>0||q1>0)||itemProfit(it,prices,fx).currency!==trade?.currency||q1>0&&price===null)continue;
+    const s1=finite(it.shares)||0,sb=Math.max(0,s1-q1);let average=r.average,removed=false;
+    if(r.qty>0&&r.shares-r.qty>0&&average!==null){const rest=(r.shares*average-r.cost)/(r.shares-r.qty);if(Number.isFinite(rest)&&rest>0){average=rest;removed=true;}}
+    const same=removed&&r.qty===q1&&r.cost===q1*price&&r.shares===s1;
+    if(q1>0){
+      if(sb>0&&average===null)continue;
+      average=sb>0?(sb*average+q1*price)/(sb+q1):price;
+      if(!Number.isFinite(average)||!(average>0))continue;
+    }else if(sb===0&&r.fresh){if(Object.hasOwn(it,"averagePrice")){delete it.averagePrice;changed=true;}continue;}
+    if(average!==null&&Number.isFinite(average)&&average>0&&!same){const value=Number(average.toPrecision(12));if(it.averagePrice!==value){it.averagePrice=value;changed=true;}}
+    if(q1>0)for(const e of entries){
+      if(e.execPrice!==price){e.execPrice=price;changed=true;}
+      if((r.fresh||r.average===null&&sb===0)&&e.avgFresh!==true){e.avgFresh=true;changed=true;}
+    }
+  }
+  return changed;
+}
 function apply(key, o, picks){
   const a=allocOf();if(!a)return;
-  const had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,{...o.trade,ticker:o.ticker},o.label,picks);
+  const before=buyAverageBefore(a,key),had=!!a.trades?.[key], rec=applyTrade(a,assetStore.prices,key,{...o.trade,ticker:o.ticker},o.label,picks),average=matchBuyAverage(a,key,before,o.trade);
   if(rec||had)assetStore.saveSection("allocation");
-  if(rec)toast(`자산 배분 반영 · ${describe(rec)}`);
+  if(rec)toast(`자산 배분 반영 · ${describe(rec)}${average?" · 평균매수가 맞춤":""}`);
 }
 // ---------- 계좌 고르는 창 ----------
 let pending=null; // 창에서 고르는 중인 체크 {o, rows}
@@ -121,9 +165,10 @@ function check(o){
   o.redraw?.();
 }
 // 체크를 풀었을 때(출처 기록을 저장한 뒤): 반영한 양을 되돌린다.
-function uncheck(key){
-  const a=allocOf(), rec=a&&revertTrade(a,key);if(!rec)return;
-  assetStore.saveSection("allocation");toast(`자산 배분 되돌림 · ${rec.items.map(e=>allocItemById(a,e.id)?.name).filter(Boolean).slice(0,2).join(" · ")||rec.label}`);
+function uncheck(key,trade){
+  const a=allocOf(),before=buyAverageBefore(a,key),rec=a&&revertTrade(a,key);if(!rec)return;
+  const average=matchBuyAverage(a,key,before,trade);
+  assetStore.saveSection("allocation");toast(`자산 배분 되돌림 · ${rec.items.map(e=>allocItemById(a,e.id)?.name).filter(Boolean).slice(0,2).join(" · ")||rec.label}${average?" · 평균매수가 맞춤":""}`);
 }
 // 체크 기록을 한꺼번에 지울 때(재매수 체크 기록 초기화 — 출처 기록을 저장한 뒤): 반영한 것이 있으면 되돌릴지 묻는다. 되돌리지 않으면 반영 기록만 지운다(자산 배분은 그대로).
 function forget(keys, label){
@@ -135,9 +180,14 @@ function forget(keys, label){
 // 체크 뒤 체결 수량·가격·금액을 고쳤을 때(trade = 새 {qty, price, value}): 반영한 양을 같은 비율로 맞춘다.
 function rescale(key, trade){
   const a=allocOf();if(!a?.trades?.[key])return;
-  const before=JSON.stringify(a.trades[key]), rec=rescaleTrade(a,key,trade);
-  if(JSON.stringify(a.trades[key])!==before)assetStore.saveSection("allocation");
-  if(rec)toast(`자산 배분도 맞춤 · ${describe(rec)}`);
+  const snapshot=buyAverageBefore(a,key),before=JSON.stringify(a.trades[key]),rec=rescaleTrade(a,key,trade),average=matchBuyAverage(a,key,snapshot,trade);
+  if(average||JSON.stringify(a.trades[key])!==before)assetStore.saveSection("allocation");
+  if(rec||average)toast(`자산 배분도 맞춤 · ${describe(rec||a.trades[key])}${average?" · 평균매수가 맞춤":""}`);
+}
+// 체결가만 고칠 때는 자산 수량을 재반영하지 않는다. 호출부가 바꾼 회차 execPrice도 평균가·표식과 같은 저장에 담는다.
+function reprice(key,trade){
+  const a=allocOf(),average=a&&matchBuyAverage(a,key,buyAverageBefore(a,key),trade);
+  assetStore.saveSection("allocation");if(average)toast("자산 배분도 맞춤 · 평균매수가 맞춤");
 }
 // 분할매수 기록 회차의 수량을 고치거나 취소할 때(출처 기록을 저장한 뒤): 바뀐 양만 지금 매수 1순위 계좌(targetId)에 더하거나 뺀다(이어 사기·되팔기 모두 1순위 기준).
 // 처음 반영한 계좌는 그대로 두고, 반영 기록 items에는 계좌별로 실제 더한 양을 합쳐 둔다. 뺄 보유량이 모자라면 0까지만 빼고 알린다.
@@ -145,6 +195,7 @@ function rescale(key, trade){
 // 반영 기록이 없으면(처음에 '반영 안 함') 자산 배분은 그대로 둔다.
 function shift(o){
   const a=allocOf(), rec=a?.trades?.[o.key];if(!rec)return;
+  const before=buyAverageBefore(a,o.key);
   const it=allocItemById(a,o.targetId), row=it&&(plus(o.trade?.qty)||plus(o.trade?.value))?tradeRows(a,assetStore.prices,o.ticker,o.trade,o.targetId).find(r=>r.it.id===it.id):null;
   const dir=o.trade?.sign<0?-1:1, items=Array.isArray(rec.items)?rec.items:[];let done=0,short=false,field="shares";
   if(row?.n){
@@ -158,9 +209,10 @@ function shift(o){
   }
   if(!plus(o.total?.qty)&&!plus(o.total?.value)){delete a.trades[o.key];if(!Object.keys(a.trades).length)delete a.trades;}
   else Object.assign(rec,{qty:plus(o.total.qty),value:plus(o.total.value)});
+  const average=matchBuyAverage(a,o.key,before,o.trade);
   assetStore.saveSection("allocation");
-  if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}`);
+  if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}${average?" · 평균매수가 맞춤":""}`);
   else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
 }
-return {line,holding,account,reflected,check,uncheck,forget,rescale,shift,initialize};
+return {line,holding,account,reflected,check,uncheck,forget,rescale,shift,reprice,initialize};
 })();

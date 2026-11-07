@@ -16,11 +16,11 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
   const inputListeners=[];
-  function element(){return {dataset:{},attrs:{},value:'',classList,validationMessage:'',
+  function element(){return {dataset:{},attrs:{},events:{},children:[],value:'',classList,validationMessage:'',
     setAttribute(k,v){this.attrs[k]=String(v);},getAttribute(k){return this.attrs[k]??null;},
     setCustomValidity(message){this.validationMessage=message;},checkValidity(){return !this.validationMessage;},reportValidity(){this.reported=true;return this.checkValidity();},
     setSelectionRange(){},matches(selector){return selector==='input[data-money]'&&Object.hasOwn(this.attrs,'data-money');},
-    closest(){return null;},append(){},focus(){},textContent:'',addEventListener(){},querySelectorAll:selector=>document.querySelectorAll(selector),querySelector:selector=>document.querySelectorAll(selector)[0]};}
+    closest(selector){return selector==='.link-row'?{classList}:null;},append(child){this.children.push(child);},focus(){},textContent:'',addEventListener(type,fn){this.events[type]=fn;},showModal(){this.open=true;},close(){this.open=false;},querySelectorAll:selector=>document.querySelectorAll(selector),querySelector:selector=>document.querySelectorAll(selector)[0]};}
   // innerHTML로 그린 input·button을 기억해 querySelectorAll로 찾는다. 검색 칸(item-search.js)이 만든 요소도 id로 찾는다.
   function capturing(e){
     let html='';Object.defineProperty(e,'innerHTML',{get:()=>html,set(value){
@@ -60,10 +60,10 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const storage=new Map([['etf-planner-assets-v1',JSON.stringify(doc)]]);
   if(realStore)Object.assign(ctx,{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)},setInterval(){},addEventListener(){}});
   const code=['gold-estimate.js','money-input.js','ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
-  const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets,assetStore})`,ctx);
+  const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets,assetStore,allocLink})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {ctx,doc,item,prices,store:api.assetStore,storage,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector),type(node,value){node.value=value;inputListeners.forEach(fn=>fn({target:node}));node.oninput?.();}};
+  return {ctx,doc,item,prices,store:api.assetStore,link:api.allocLink,storage,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector),type(node,value){node.value=value;inputListeners.forEach(fn=>fn({target:node}));node.oninput?.();}};
 }
 
 test('매수 창의 총 금액·직접 목표가는 숫자로 저장·재표시하고 저장 직전 음수·형식 오류를 막는다',()=>{
@@ -1040,7 +1040,149 @@ test('추종 ETF 분할매수: 부분 체결 뒤 실제 ETF 가격이 급등해�
   assert.equal(r.item.buyPlan.buys.end.tradePrice,15000);assert.equal(r.rules().length,1,'이미 고정한 부분 체결의 알림은 현재 ETF 가격과 무관하게 유지');
 });
 
-test('돌파 회차의 부분·완료 체결가만 숫자로 저장하고 기준가·금액·자산·알림은 유지한다',()=>{
+// 가상 기존 보유 5주·평균가 90, 새 회차 10주·가격 100. 실제 자산 반영·저장·회차 입력을 모두 거친다.
+function averageFixture({manual=false,currency='KRW',shares=5,average=90,...options}={}){
+  const budget=currency==='USD'?100:0.1,r=setup({manual,currency,price:100,budget,manualShares:10,manualAmount:budget,...options});
+  r.item.shares=shares;if(average===null)delete r.item.averagePrice;else r.item.averagePrice=average;
+  const writes=[];r.store.saveSection=section=>{assert.equal(section,'allocation');writes.push(JSON.parse(JSON.stringify(r.doc)));};r.render();
+  return Object.assign(r,{writes,buy:()=>r.change(manual?'[data-purchase-done]':'[data-purchase-buy]',true),fill:n=>r.change(manual?'[data-purchase-shares]':'[data-purchase-buy-shares]',n),cancel:()=>r.change(manual?'[data-purchase-done]':'[data-purchase-buy]',false),
+    record:()=>r.doc.allocation.trades?.[manual?'buy:a:s':'buy:a:end'],execution:()=>manual?r.item.buyPlan.stages[0]:r.item.buyPlan.buys?.end});
+}
+const nearAverage=(actual,expected)=>assert.ok(Math.abs(actual-expected)<1e-8,`${actual} ≈ ${expected}`);
+
+test('분할매수 5주@90 + 10주@100 → 체결가 110 수정 → 취소를 계좌 평균가에 반영한다',()=>{
+  for(const manual of [false,true]){
+    const r=averageFixture({manual});r.buy();
+    assert.equal(r.item.shares,15);nearAverage(r.item.averagePrice,1450/15);assert.equal(r.record().items[0].execPrice,100);
+    assert.equal(Object.hasOwn(r.record().items[0],'avgFresh'),false);
+    const execution=JSON.stringify(r.execution()),holding=r.item.shares;
+    r.change('[data-purchase-exec]',110);nearAverage(r.item.averagePrice,1550/15);assert.equal(r.record().items[0].execPrice,110);assert.equal(r.item.shares,holding);
+    const withoutPrice={...r.execution()};delete withoutPrice.execPrice;assert.equal(JSON.stringify(withoutPrice),execution,'체결가만 바뀌고 회차 기준가·금액·수량은 유지');
+    assert.equal(r.writes.at(-1).allocation.groups[0].items[0].averagePrice,r.item.averagePrice);
+    assert.match(r.ctx.document.body.children.at(-1).textContent,/평균매수가 맞춤/);
+    r.cancel();assert.equal(r.item.shares,5);nearAverage(r.item.averagePrice,90);assert.equal(r.record(),undefined);
+  }
+});
+
+test('회차보다 적은 5주만 남은 뒤 가격을 고치면 남은 보유의 평균가는 새 체결가다',()=>{
+  const r=averageFixture();r.buy();r.item.shares=5;r.render();
+  r.change('[data-purchase-exec]',110);assert.equal(r.item.shares,5);assert.equal(r.item.averagePrice,110);assert.equal(r.record().items[0].execPrice,110);
+});
+
+test('보유 0에서 처음 만든 평균가는 avgFresh로 표시하고 취소 때 삭제한다',()=>{
+  for(const manual of [false,true])for(const emptyShares of [0,undefined]){
+    const r=averageFixture({manual,shares:0,average:null});if(emptyShares===undefined)delete r.item.shares;r.render();
+    r.fill(4);assert.equal(r.item.averagePrice,100);assert.equal(r.record().items[0].avgFresh,true);
+    r.change('[data-purchase-exec]',110);assert.equal(r.item.averagePrice,110);r.fill(7);assert.equal(r.record().items[0].avgFresh,true);
+    r.fill(0);assert.equal(Object.hasOwn(r.item,'averagePrice'),false);assert.equal(r.record(),undefined);
+    if(emptyShares===undefined)assert.equal(Object.hasOwn(r.item,'shares'),false);
+  }
+});
+
+test('기존 보유에 평균가가 없으면 새 체결·가격·수량 수정·취소에도 평균가와 표식을 만들지 않는다',()=>{
+  const r=averageFixture({average:null});r.buy();
+  assert.equal(Object.hasOwn(r.item,'averagePrice'),false);assert.equal(Object.hasOwn(r.record().items[0],'execPrice'),false);
+  r.item.averagePrice=95;r.render();r.change('[data-purchase-exec]',110);r.fill(6);
+  assert.equal(r.item.averagePrice,95,'나중에 평균가를 직접 넣어도 표식 없는 기존 회차는 보호');assert.equal(Object.hasOwn(r.record().items[0],'execPrice'),false);
+  r.cancel();assert.equal(r.item.shares,5);assert.equal(r.item.averagePrice,95);
+});
+
+test('이 기능 전 표식 없는 옛 체결은 가격·수량 정정·취소 시 평균가를 바꾸지 않는다',()=>{
+  const r=averageFixture();r.item.shares=15;
+  r.item.buyPlan.buys={end:{price:100,shares:10,plannedShares:10,actual:0.1}};
+  r.doc.allocation.trades={'buy:a:end':{qty:10,price:100,value:0.1,items:[{id:'a',shares:10}]}};r.render();
+  const before=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),before,'조회는 표식 생성 없음');
+  r.change('[data-purchase-exec]',110);r.fill(6);assert.equal(r.item.averagePrice,90);assert.equal(Object.hasOwn(r.record().items[0],'execPrice'),false);
+  r.link.rescale('buy:a:end',{qty:3,price:100,execPrice:110,currency:'KRW',value:0.03});assert.equal(r.item.averagePrice,90);
+  r.cancel();assert.equal(r.item.averagePrice,90);
+});
+
+test('부분 체결 수량 증감은 평균가를 맞추고 직접 고친 평균가를 다음 A0로 쓴다',()=>{
+  const r=averageFixture();
+  for(const n of [4,7,2,10]){r.fill(n);assert.equal(r.item.shares,5+n);nearAverage(r.item.averagePrice,(450+n*100)/(5+n));}
+  r.item.averagePrice=120;r.render();r.change('[data-purchase-exec]',110);
+  nearAverage(r.item.averagePrice,(15*120-10*100+10*110)/15);
+  r.cancel();nearAverage(r.item.averagePrice,(15*120-10*100)/5);
+});
+
+test('기존 매입분을 뺀 평균가가 양수가 아니면 A0를 쓰고 기존 보유 0이면 새 체결가를 쓴다',()=>{
+  const r=averageFixture();r.buy();r.item.averagePrice=50;r.render();
+  r.link.rescale('buy:a:end',{qty:10,price:100,execPrice:100,currency:'KRW',value:0.1});nearAverage(r.item.averagePrice,1250/15);
+  const all=averageFixture({shares:0});all.buy();all.item.averagePrice=120;all.render();
+  all.link.rescale('buy:a:end',{qty:10,price:100,execPrice:100,currency:'KRW',value:0.1});assert.equal(all.item.averagePrice,100);
+});
+
+function averageDialog(r){
+  const other={id:'b',name:'가상 두 번째 계좌',ticker:r.item.ticker,shares:2,averagePrice:80};r.doc.allocation.groups[0].items.push(other);r.render();
+  // 새 분할매수의 고정 대상만 풀어 실제 check → openDialog → finish → apply를 검사한다.
+  const check=r.link.check;r.link.check=o=>check({...o,targetId:null});r.link.initialize();
+  return {other,submit:()=>r.element('linkForm').events.submit({preventDefault(){}})};
+}
+
+test('비동기 계좌 선택 뒤 두 계좌의 평균가·체결 표식을 각각 저장하고 rescale도 각각 계산한다',()=>{
+  const r=averageFixture(),{other,submit}=averageDialog(r),before=JSON.stringify(r.doc);r.buy();
+  assert.equal(r.element('linkDialog').open,true);assert.equal(JSON.stringify(r.doc),before,'계좌 선택 전에는 원본 불변');
+  const inputs=r.inputs('[data-link-n]');inputs[0].value='4';inputs[1].value='6';submit();
+  assert.equal(r.element('linkDialog').open,false);assert.equal(r.item.shares,9);assert.equal(other.shares,8);
+  nearAverage(r.item.averagePrice,850/9);assert.equal(other.averagePrice,95);assert.equal(r.record().items.length,2);
+  for(const e of r.record().items)assert.equal(e.execPrice,100);
+  r.change('[data-purchase-exec]',110);nearAverage(r.item.averagePrice,890/9);assert.equal(other.averagePrice,102.5);
+  r.link.rescale('buy:a:end',{qty:5,price:100,execPrice:110,currency:'KRW',value:0.05});
+  assert.equal(r.item.shares,7);assert.equal(other.shares,5);nearAverage(r.item.averagePrice,670/7);assert.equal(other.averagePrice,98);
+  const saved=r.writes.at(-1).allocation.groups[0].items;assert.equal(saved[0].averagePrice,r.item.averagePrice);assert.equal(saved[1].averagePrice,98);
+  r.link.uncheck('buy:a:end',{currency:'KRW'});nearAverage(r.item.averagePrice,90);nearAverage(other.averagePrice,80);
+});
+
+test('계좌 선택 창 취소·반영 안 함은 보유·평균가·표식을 바꾸지 않는다',()=>{
+  for(const skip of [false,true]){
+    const r=averageFixture(),{other}=averageDialog(r),before=JSON.stringify(r.doc);r.buy();
+    if(skip)r.element('linkSkip').onclick();else r.element('linkDialog').events.close();
+    assert.equal(r.item.shares,5);assert.equal(r.item.averagePrice,90);assert.equal(other.shares,2);assert.equal(other.averagePrice,80);assert.equal(r.record(),undefined);
+    if(skip){assert.ok(r.execution());r.change('[data-purchase-exec]',110);assert.equal(r.item.averagePrice,90);}
+    else assert.equal(JSON.stringify(r.doc),before);
+  }
+});
+
+test('1순위 변경 후 shift로 이어 사면 새 계좌만 평균가를 맞춘다',()=>{
+  const r=averageFixture(),{other,move}=linkedAccounts(r,{tradeTicker:'111111',price:100});delete other.tradeTicker;other.averagePrice=80;r.render();
+  r.fill(4);const original=r.item.averagePrice;nearAverage(original,850/9);
+  move('b',-1);r.fill(7);assert.equal(r.item.shares,9);assert.equal(r.item.averagePrice,original);assert.equal(other.shares,8);assert.equal(other.averagePrice,87.5);
+  const byId=Object.fromEntries(r.record().items.map(e=>[e.id,e]));assert.equal(byId.a.execPrice,100);assert.equal(byId.b.execPrice,100);
+  r.fill(5);assert.equal(r.item.averagePrice,original);nearAverage(other.averagePrice,500/6);
+});
+
+test('추종 ETF는 기준가 대신 실제 매수 tradePrice로 평균가를 계산한다',()=>{
+  const r=averageFixture({currency:'USD',tracking:true,trackingPrice:20,budget:0.02,average:18});r.buy();
+  assert.equal(r.execution().price,100);assert.equal(r.execution().tradePrice,20);assert.equal(r.record().items[0].execPrice,20);nearAverage(r.item.averagePrice,290/15);
+  const before=JSON.stringify(r.doc);r.render();assert.equal(JSON.stringify(r.doc),before);
+  r.change('[data-purchase-exec]',22);nearAverage(r.item.averagePrice,310/15);r.cancel();nearAverage(r.item.averagePrice,18);
+});
+
+test('달러 평균가·체결은 달러로 맞추고 비트코인 원화 평균가와 금액 관리·환산 항목은 제외한다',()=>{
+  const usd=averageFixture({currency:'USD'});usd.buy();nearAverage(usd.item.averagePrice,1450/15);usd.cancel();nearAverage(usd.item.averagePrice,90);
+  for(const krw of [false,true]){
+    const r=averageFixture({manual:true,bitcoin:true,currency:'USD',shares:0.01,manualShares:0.01,manualAmount:0.1});if(krw)r.item.averageCurrency='KRW';r.render();r.buy();
+    if(krw){assert.equal(r.item.averagePrice,90);assert.equal(Object.hasOwn(r.record().items[0],'execPrice'),false);}
+    else{assert.equal(r.item.averagePrice,95);assert.equal(r.record().items[0].execPrice,100);}
+    r.change('[data-purchase-exec]',110);assert.equal(r.item.averagePrice,krw?90:100);
+  }
+  const money=averageFixture();delete money.item.shares;money.item.amount=100;money.item.base=100;money.render();money.buy();
+  assert.equal(money.item.averagePrice,90);assert.equal(Object.hasOwn(money.record().items[0],'execPrice'),false);
+  const converted=averageFixture();converted.item.tradeTicker='222222';converted.prices.stocks['222222']={kind:'국내',close:100};
+  converted.link.check({ticker:'111111',trade:{sign:1,qty:10,price:100,execPrice:110,currency:'KRW'},picks:[{id:'a',unit:'shares',n:10}],commit:()=> 'buy:a:end'});
+  assert.equal(converted.item.averagePrice,90);assert.equal(converted.record().items[0].converted,true);assert.equal(Object.hasOwn(converted.record().items[0],'execPrice'),false);
+});
+
+test('분할매도·재매수·손절 반영은 새 체결·정정·취소 모두 평균가를 유지한다',()=>{
+  for(const prefix of ['sell','rebuy','cut']){
+    const r=averageFixture(),key=`${prefix}:example:0`,trade={sign:prefix==='rebuy'?1:-1,qty:2,price:100,execPrice:110,currency:'KRW'};
+    r.link.check({ticker:'111111',trade,picks:[{id:'a',unit:'shares',n:2}],commit:()=>key});
+    assert.equal(r.item.averagePrice,90);assert.equal(Object.hasOwn(r.doc.allocation.trades[key].items[0],'execPrice'),false);
+    r.link.rescale(key,{...trade,qty:1});assert.equal(r.item.averagePrice,90);r.link.uncheck(key,trade);assert.equal(r.item.averagePrice,90);
+  }
+});
+
+test('표식 없는 돌파 회차는 체결가만 숫자로 저장하고 기준가·금액·자산·알림은 유지한다',()=>{
   for(const completed of [false,true]){
     const r=setup({budget:10});
     assert.equal(r.input('[data-purchase-exec]'),undefined,'미체결은 체결가 입력 없음');

@@ -315,17 +315,17 @@ function renderPurchases(){
   // 회차의 누적 체결 수량을 저장·반영한다. 첫 체결 때 계획 수량을 고정하고, 추가 체결은 같은 반영 키의 총량을 맞춰 차이만 자산에 반영한다.
   // 반영 키: 'buy:종목 id:회차 키(이동평균선 돌파) 또는 회차 id(직접 입력)'. 수량 없는 옛 기록은 이미 반영한 수량을 먼저 읽고, 사용자가 고칠 때만 shares에 기록한다.
   const stageKey=(id,x)=>{const stage=stageOf(x);return stage?`buy:${id}:${stage.id||`#${x.dataset.stage}`}`:"";};
-  const buyTrade=(it,plan,b)=>({sign:1,qty:finite(b.shares),price:finite(b.tradePrice)??finite(b.price),currency:b.tradeCurrency||planCurrency(plan,it),value:finite(b.actual)});
+  const buyTrade=(it,plan,b={})=>({sign:1,qty:finite(b.shares),price:finite(b.tradePrice)??finite(b.price),execPrice:finite(b.execPrice??execBase(b)),currency:b.tradeCurrency??planCurrency(plan,it),value:finite(b.actual)});
   const keepShares=(key,b)=>{const qty=recordedShares(key,b),rec=doc.allocation?.trades?.[key];if(qty!==null){b.shares=qty;if(rec&&finite(rec.qty)===null)rec.qty=qty;}return qty;};
   const inputRow=(id,x)=>rowData.get(x.dataset.key!==undefined?`buy:${id}:${x.dataset.key}`:stageKey(id,x));
   const oldBuy=(plan,r)=>r.line?purchaseBuys(plan)[r.line.key]:r.stage;
   // 누적 0·체크 해제는 체결과 자산 반영을 되돌린다. 추종 ETF 직접 입력은 sourceShares(원래 기준 티커 주수, null이면 원래 빈칸)를 복원한다.
   function clearFill(id,r){
     const found=findItem(id),plan=found?.it.buyPlan;if(!plan||!r)return;
-    const lead=leadOf(found.it,plan),back=followsLead(r,lead)?{key:r.key,ticker:assetTradeTicker(r.tradeItem),targetId:lead.id,trade:{...buyTrade(found.it,plan,oldBuy(plan,r)),sign:-1,qty:r.shares,value:r.actual},total:{qty:0,value:0}}:null;
+    const trade=buyTrade(found.it,plan,oldBuy(plan,r)),lead=leadOf(found.it,plan),back=followsLead(r,lead)?{key:r.key,ticker:assetTradeTicker(r.tradeItem),targetId:lead.id,trade:{...trade,sign:-1,qty:r.shares,value:r.actual},total:{qty:0,value:0}}:null;
     if(r.line){const buys={...purchaseBuys(plan)};delete buys[r.line.key];if(Object.keys(buys).length)plan.buys=buys;else delete plan.buys;}
     else{const b=r.stage;if(Object.hasOwn(b,"sourceShares")){if(finite(b.sourceShares)!==null)b.shares=b.sourceShares;else delete b.shares;}else if(finite(b.plannedShares)!==null)b.shares=b.plannedShares;for(const key of ["plannedShares","sourceShares","done","partial","actual","execPrice","tradeTicker","tradePrice","tradeCurrency","tradeTargetId"])delete b[key];}
-    saveSection("allocation");if(back)allocLink.shift(back);else allocLink.uncheck(r.key);render();
+    saveSection("allocation");if(back)allocLink.shift(back);else allocLink.uncheck(r.key,trade);render();
   }
   function writeFill(id,r,b,lead=null){
     const found=findItem(id),plan=found?.it.buyPlan;if(!plan)return render();
@@ -373,13 +373,14 @@ function renderPurchases(){
   all("[data-purchase-partial]").forEach(x=>{x.indeterminate=true;});
   // 체결가는 당시 실제 매수 종목(tradeTicker, 없으면 계획 종목) 1주·1 BTC의 회차 평균이며 통화는 tradeCurrency → 계획 통화다.
   // 표시는 execPrice → tradePrice → price. 입력 때만 양수를 execPrice에 저장하고 빈칸·기본값(tradePrice → price)은 delete한다.
-  // 기준가·수량·배분용 금액·자산 보유·평균매수가는 재계산하지 않으며, 수량 정정은 기존 execPrice를 유지한다(fillShares의 old 복사).
+  // 기준가·수량·배분용 금액·자산 보유는 재계산하지 않고 평균매수가만 allocLink.reprice로 맞춘다. 수량 정정은 기존 execPrice를 유지한다(fillShares의 old 복사).
   onChange("[data-purchase-exec]","allocation",(v,x)=>{
     if(!moneyInputValidate(x)){x.reportValidity();return false;}
     const n=numIn(v);if(n!==null&&n<=0){x.setCustomValidity("체결가는 0보다 큰 숫자로 입력해 주세요.");x.reportValidity();return false;}
-    const plan=planOf(x.dataset.purchaseExec),b=x.dataset.key!==undefined?purchaseBuys(plan)[x.dataset.key]:plan?.stages?.[Number(x.dataset.stage)];
+    const id=x.dataset.purchaseExec,found=findItem(id),plan=found?.it.buyPlan,b=x.dataset.key!==undefined?purchaseBuys(plan)[x.dataset.key]:plan?.stages?.[Number(x.dataset.stage)];
     if(!b||x.dataset.key===undefined&&!purchaseStageRecorded(b))return false;
     if(n===null||n===finite(execBase(b)))delete b.execPrice;else b.execPrice=n;
+    allocLink.reprice(`buy:${id}:${x.dataset.key??b.id??`#${x.dataset.stage}`}`,buyTrade(found.it,plan,b));return false;
   });
   // 알림 ON/OFF는 누를 때만 저장(직접 입력은 회차 notify, 이동평균선 돌파는 notify.keys[키], 전체는 계획 notify.stages — 새 회차도 따라감). 규칙은 assets-calc.js purchaseAlertRules.
   onChange("[data-purchase-alert]","allocation",(_,x)=>{const plan=planOf(x.dataset.purchaseAlert);if(!plan)return false;

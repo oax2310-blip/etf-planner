@@ -163,6 +163,20 @@ test('분할매수는 고정 tradeTicker·반영 계좌·옛 반영 기록을 �
   assert.equal(b.missing.shares,2);assert.equal(b.missing.plannedShares,4);assert.ok(r.preview.items.some(i=>i.skipped.some(s=>s.reason==='종목 연결 확인 불가')));
 });
 
+test('분할매수 평균가의 반영 표식 execPrice는 실제 종목으로 조정하고 avgFresh는 유지한다',()=>{
+  const doc=assets([{id:'owner',ticker:'TESTALT',tradeTicker:'TEST',shares:3,averagePrice:81,
+    buyPlan:{buys:{end:{price:90,shares:3,tradeTicker:'TEST',tradePrice:90,execPrice:81}}}},
+    {id:'other',ticker:'TESTALT',shares:2,averagePrice:54}]);
+  doc.allocation.trades={'buy:owner:end':{price:90,qty:3,items:[{id:'owner',shares:3,execPrice:81,avgFresh:true},{id:'other',shares:2,execPrice:54}]}};
+  const before=JSON.stringify(doc),actual=run(planner(),doc).assetsDoc,basis=run(planner(),doc,{...opt,ticker:'TESTALT'}).assetsDoc;
+  assert.equal(JSON.stringify(doc),before);
+  const one=actual.allocation.trades['buy:owner:end'].items,two=basis.allocation.trades['buy:owner:end'].items;
+  assert.deepEqual(plain(one[0]),{id:'owner',shares:9,execPrice:27,avgFresh:true});assert.equal(one[1].execPrice,54);
+  assert.equal(actual.allocation.groups[0].items[0].averagePrice,27);
+  assert.deepEqual(plain(two[0]),{id:'owner',shares:3,execPrice:81,avgFresh:true});assert.equal(two[1].execPrice,18);
+  assert.equal(api.externalData.assets(actual),actual);assert.equal(api.externalData.assets(basis),basis);
+});
+
 test('자산 반영 기록은 출처와 각 항목 종목을 분리하며 exact의 수량/금액 뜻을 보존한다',()=>{
   const doc=assets([{id:'one',ticker:'TEST'},{id:'two',ticker:'TESTALT'}]);
   doc.allocation.trades={

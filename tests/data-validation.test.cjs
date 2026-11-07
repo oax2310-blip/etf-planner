@@ -75,6 +75,18 @@ test('분할매수 execPrice는 숫자만 검증하고 재매수와 같은 기�
   }
 });
 
+test('평균매수가 avgFresh 표식은 불리언만 허용하고 없는 표식은 만들지 않는다',()=>{
+  for(const avgFresh of [true,false,undefined]){
+    const entry={id:'a',shares:3,execPrice:100,...(avgFresh===undefined?{}:{avgFresh})};
+    const data={allocation:{trades:{'buy:a:end':{items:[entry]}}}},before=JSON.stringify(data);
+    assert.equal(validate.assets(data),data);assert.equal(JSON.stringify(data),before);
+  }
+  for(const avgFresh of ['true',1,0,{},[]]){
+    const data={allocation:{trades:{'buy:a:end':{items:[{shares:3,execPrice:100,avgFresh}]}}}};
+    assert.throws(()=>validate.assets(data),/avgFresh/);
+  }
+});
+
 test('자산 JSON의 중첩 구조와 표시되는 숫자 문자열을 검증한다',()=>{
   for(const data of [
     {allocation:{groups:[null]}}, {allocation:{groups:[{items:'not-a-list'}]}},
