@@ -336,6 +336,7 @@ $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeIte
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
 document.addEventListener("visibilitychange",()=>{if(document.hidden){flushPlanner();return;}if(absorbPlanner())redrawIdle();if(connected()&&!sync.blocked)syncNow();});
 addEventListener("pagehide",()=>{flushPlanner();});
+if(typeof pageLeave==="object")pageLeave.register({pending:()=>!sync.failed&&plannerLeavePending(),flush:flushPlanner});
 // 같은 브라우저의 다른 페이지가 저장하면 바로 받고, 그 알림을 받지 못했을 수 있는 뒤로 가기 복원 때도 받는다(그 밖의 놓친 저장은 화면 복귀·동기화 직전에 받음).
 addEventListener("storage",e=>{if(e.key===STORAGE_KEY&&absorbPlanner())redrawIdle();});
 addEventListener("storage",e=>{if(typeof splitAuto==="object"&&(e.key===splitAuto.key||e.key===null)){plannerActionsCache=splitAuto.load(localStorage);if(typeof splitNotices==="object")splitNotices.render();}});

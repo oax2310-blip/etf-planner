@@ -454,6 +454,7 @@ function describeAssumptions(values){
   return parts.length?parts.join(" · ")+" 변경":"모두 기본값";
 }
 const scenarioSync={state:"off",message:"",at:"",checked:"",busy:false,again:false,waitTyping:false,timer:null};
+let scenarioSyncRunning=null; // 페이지 이동에서 진행 중인 읽기·쓰기를 기다린다(저장 데이터에는 포함하지 않음).
 const numericValues=values=>{ const source=validValues(values); return Object.fromEntries(Object.keys(source).sort().filter(id=>typeof source[id]==="number"&&Number.isFinite(source[id])).map(id=>[id,source[id]])); };
 // 추가 프리셋은 있을 때만 남긴다. 옛 저장본·옛 코드 기기가 올린 기록에는 없는 필드를 보태지 않는다.
 const presetChoices=presets=>({sdi:typeof presets?.sdi==="string"?presets.sdi:"",battery:typeof presets?.battery==="string"?presets.battery:"",...(typeof presets?.humn==="string"?{humn:presets.humn}:{}),...(typeof presets?.ai==="string"?{ai:presets.ai}:{})});
@@ -648,6 +649,7 @@ async function syncScenarios(){
   const config=readSyncConfig();
   if(!config){ clearTimeout(scenarioSync.timer); scenarioSync.timer=null; setScenarioSyncState("off"); return; }
   if(scenarioSync.busy){ scenarioSync.again=true; return; }
+  let finish;scenarioSyncRunning=new Promise(resolve=>finish=resolve);
   scenarioSync.busy=true; scenarioSync.again=false; scenarioSync.waitTyping=false; clearTimeout(scenarioSync.timer); scenarioSync.timer=null;
   setScenarioSyncState("busy");
   try {
@@ -667,10 +669,18 @@ async function syncScenarios(){
   } catch (error) {
     setScenarioSyncState("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error));
   } finally {
+    scenarioSyncRunning=null;finish();
     scenarioSync.busy=false;
     if(scenarioSync.again&&!scenarioSync.waitTyping) scheduleScenarioSync(300);
   }
 }
+const scenarioLeavePending=()=>!scenarioSync.waitTyping&&scenarioSync.state!=="error"&&!!(assumptionSaveTimer||scenarioSync.timer||scenarioSync.busy);
+async function flushScenarios(){
+  if(assumptionSaveTimer)saveAssumptions();
+  while(scenarioSyncRunning)await scenarioSyncRunning;
+  if(scenarioLeavePending())await syncScenarios();
+}
+if(typeof pageLeave==="object")pageLeave.register({pending:scenarioLeavePending,flush:flushScenarios});
 document.addEventListener("focusout",event=>{ if(scenarioSync.waitTyping&&!typingAssumption(event.relatedTarget)){ scenarioSync.waitTyping=false; scheduleScenarioSync(300); } }); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 function scheduleScenarioSync(delay){
   if(!readSyncConfig()) return;

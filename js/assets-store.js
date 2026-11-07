@@ -54,6 +54,7 @@ function saveSavingsMilestone(record){
   doc=next;lastLocal=JSON.parse(JSON.stringify(doc));keepMerged(result);scheduleAssetSync(1500);emit("change");return true;
 }
 const aSync = {busy:false, again:false, timer:null, checked:"", state:"off", message:"", at:"", remote:null, choice:false};
+let assetSyncRunning=null; // 진행 중인 syncAssets의 완료를 페이지 이동에서 기다린다(기기에 저장하지 않음).
 function assetConfig(){ try { const repo=(localStorage.getItem(A_REPO_KEY)||"").trim(), token=localStorage.getItem(A_TOKEN_KEY)||""; return token&&/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repo)?{repo,token}:null; } catch { return null; } }
 const sameConfig=cfg=>{const current=assetConfig();return !!current&&current.repo===cfg.repo&&current.token===cfg.token;};
 const toB64A = text => { const bytes=new TextEncoder().encode(text); let bin=""; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); };
@@ -178,10 +179,11 @@ function renderNotice(box,download){
     btn("저장소 기록 사용",()=>choose("remote")),btn("이 기기 기록 사용",()=>choose("local")));
   else show(`다른 기기와 같은 칸을 함께 고친 ${n.count}곳은 나중에 저장한 값을 썼습니다. 이전 값은 이 기기에 보관했습니다.`,btn("보관 기록 내려받기",download),btn("확인",()=>{localStorage.removeItem(A_NOTICE_KEY);emit("recovery");}));
 }
-async function syncAssets(beforePriceCollection=false){
+async function syncAssets(beforePriceCollection=false,{skipPrices=false}={}){
   const cfg=assetConfig();
   if(!cfg){ clearTimeout(aSync.timer); aSync.timer=null; aSync.choice=false; setAssetSync("off"); return; }
   if(aSync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){ aSync.again=true; return; }
+  let finish;assetSyncRunning=new Promise(resolve=>finish=resolve);
   aSync.busy=true; aSync.again=false; clearTimeout(aSync.timer); aSync.timer=null; setAssetSync("busy");
   try{
     if(aSync.checked!==cfg.repo){
@@ -192,7 +194,7 @@ async function syncAssets(beforePriceCollection=false){
       });
       aSync.checked=cfg.repo;
     }
-    let redraw=await readAssetPrices(cfg);
+    let redraw=skipPrices?false:await readAssetPrices(cfg);
     for(let attempt=1;;attempt++){
       const remote=await readAssetRemote(cfg);
       absorbLocal(); // storage 알림을 놓친 페이지(백그라운드에서 멈췄다 돌아온 탭 등)도 다른 페이지 체결을 합친 뒤 비교한다
@@ -210,8 +212,14 @@ async function syncAssets(beforePriceCollection=false){
     if(redraw) emit("change");
     setAssetSync(aSync.timer?"pending":"done");
   }catch(error){ setAssetSync("error",error?.name==="TypeError"&&/fetch|network|load/i.test(error.message)?"네트워크 연결을 확인해 주세요.":error?.message||String(error)); }
-  finally{ aSync.busy=false; emit("status"); if(aSync.again) scheduleAssetSync(300); }
+  finally{ assetSyncRunning=null;finish();aSync.busy=false; emit("status"); if(aSync.again) scheduleAssetSync(300); }
 }
+const assetLeavePending=()=>!aSync.choice&&aSync.state!=="error"&&!!(aSync.busy||aSync.timer||aSync.state==="pending");
+async function flushAssets(){
+  while(assetSyncRunning)await assetSyncRunning;
+  if(assetLeavePending())await syncAssets(false,{skipPrices:true});
+}
+if(typeof pageLeave==="object")pageLeave.register({pending:assetLeavePending,flush:flushAssets});
 function scheduleAssetSync(delay){ if(!assetConfig()) return; clearTimeout(aSync.timer); aSync.timer=setTimeout(()=>{ aSync.timer=null; syncAssets(); },delay); if(!aSync.busy&&!aSync.choice) setAssetSync("pending"); }
 
 function restore(incoming){
