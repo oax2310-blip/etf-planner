@@ -10,17 +10,17 @@ const today=new Date().toISOString().slice(0,10);
 function load(plan){
   const els={},handlers={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',events:{},addEventListener(kind,handler){this.events[kind]=handler;},
-    setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
+    getAttribute(){return null;},setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
   const form=el('planForm'),fields={endLabel:Object.assign(el('field:endLabel'),{value:''})};
   form.elements=fields;form.reset=()=>{fields.endLabel.value='';};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit:(sel,set)=>{handlers[sel]=set;},alert(){},
-    document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
+    document:{addEventListener(){},querySelectorAll:()=>[],createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[plan],futures:{positions:[]},selectedPlan:plan.id},PENCIL:'',memoCount:()=>'',id:()=>'p1',
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),usd:new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
     priceText:(v,c)=>c==='USD'?`$${v}`:`${v}원`,fxText:v=>`≈₩${v}`,
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     priceData:{updatedAt:new Date().toISOString(),stocks:{'BTC-USD':{kind:'코인',asOf:today,close:61000,ma:{'80일선':55555.55}},AAA:{kind:'해외',asOf:today,close:610,ma:{}}},futures:{}}});
-  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
+  for(const f of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const draw=()=>{ctx.renderPlans();return els.planMain.innerHTML;};
   return {ctx,draw,row:i=>(draw().match(/<div class="purchase-row[^"]*"><label class="check"[\s\S]*?(?=<div class="purchase-row|<\/div><\/section>)/g)||[])[i]||'',
     fill:(i,v)=>{draw();handlers['#planMain [data-sale-filled]'](v,{dataset:{saleFilled:String(i)}});}};
@@ -69,7 +69,7 @@ test('비트코인 진행 카드의 현재가·끝 기준가·다음 회차는 �
   assert.match(card,/<em class="buy-track-now [a-z]+"><span>현재 <b>\$61,000<\/b><\/span><\/em>/);
   assert.match(card,/<div class="buy-track-end"><b>\$50,001<\/b>/,'왼쪽 끝 마지막 매도 기준가($50,000.55)');
   assert.match(card,/<span class="next">다음 1회 <b>\$60,000<\/b>/);
-  assert.match(card,/<input id="startPrice"[^>]*value="60000\.00"/,'입력칸은 저장값 그대로');
+  assert.match(card,/<input id="startPrice"[^>]*value="60,000\.00"/,'입력칸은 소수 정밀도를 유지하고 쉼표 표시');
   assert.equal(JSON.stringify(p),before,'화면 표시만 바꾼다');
   const stock=load(btc({id:'stock',ticker:'AAA',startPrice:600,endPrice:500.55,holdings:[{name:'가상 ETF',shares:60}]})).draw();
   assert.match(stock,/<div class="buy-track-end"><b>\$500\.55<\/b>/,'주식은 원래 표시(priceText)');

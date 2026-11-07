@@ -11,16 +11,16 @@ const quote=close=>({updatedAt:new Date().toISOString(),stocks:{AAA:{kind:'해�
 function draw(plan,prices){
   const els={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',events:{},addEventListener(kind,handler){this.events[kind]=handler;},
-    setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
+    getAttribute(){return null;},setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
   const form=el('planForm'),fields={endLabel:Object.assign(el('field:endLabel'),{value:''})};
   form.elements=fields;form.reset=()=>{fields.endLabel.value='';};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit(){},alert(){},
-    document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
+    document:{addEventListener(){},querySelectorAll:()=>[],createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[plan],futures:{positions:[]},selectedPlan:plan.id},PENCIL:'✎',memoCount:()=>'',id:()=>'p1',
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),usd:new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
     priceText:(v,c)=>c==='USD'?`$${v}`:`${v}원`,fxText:v=>`≈₩${v}`,
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),priceData:prices});
-  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
+  for(const f of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const before=JSON.stringify(ctx.state);ctx.renderPlans();
   assert.equal(JSON.stringify(ctx.state),before,'화면을 그려도 기록은 바뀌지 않는다');
   const html=els.planMain.innerHTML,card=html.match(/<section class="card buy-track sale-track"[\s\S]*?<\/section>/)?.[0]||'';
@@ -51,7 +51,7 @@ test('시작 전에는 띠가 모두 차 있고 현재가 이름표가 다음 1�
   assert.match(card,/<div class="buy-track-row"><div class="buy-track-end"><b>\$400<\/b><small>25월선<\/small><small>≈₩520000<\/small><\/div>/);
   assert.match(card,/<p class="sale-track-sub" title="남은 10주 × 현재가 \$520 × 환율 1300">10주 보유 · 평가액 ₩676만원<\/p>/);
   assert.match(card,/<span class="next">다음 1회 <b>\$500<\/b><em class="down">-3\.8%<\/em><\/span>/);
-  assert.match(card,/<input id="planFx"[^>]*value="1300">/);
+  assert.match(card,/<input id="planFx"[^>]*value="1,300">/);
   assert.match(card,/<input type="checkbox" data-sale-alert="0"\s+checked[^>]*><span>첫 매도 알림 ON<\/span>/,'첫 매도 알림 스위치는 맨 아래 줄');
 });
 
@@ -124,7 +124,7 @@ test('시세·기준가가 없으면 이름표·다음 회차 없이 칸만 보�
 
 test('원화 계획은 원화 환산·환율 칸 없이 알림만 맨 아래 줄에 둔다',()=>{
   const {card}=draw(plan({currency:'KRW',ticker:'069500',startPrice:50000,endPrice:40000,startLabel:'직접'}),{updatedAt:new Date().toISOString(),stocks:{'069500':{kind:'국내',asOf:today,close:52000,ma:{}}},futures:{}});
-  assert.match(card,/<input id="startPrice"[^>]*value="50000"[^>]*>원✎<\/label><\/b><small>첫 매도<\/small><\/div>/,'시작선이 이동평균이 아니면 첫 매도로 표시');
+  assert.match(card,/<input id="startPrice"[^>]*value="50,000"[^>]*>원✎<\/label><\/b><small>첫 매도<\/small><\/div>/,'시작선이 이동평균이 아니면 첫 매도로 표시');
   assert.doesNotMatch(card,/planFx|≈₩/);
   assert.match(card,/<div class="buy-wait-alert sale-track-foot"><span><\/span><label class="trade-alert-toggle"/);
 });

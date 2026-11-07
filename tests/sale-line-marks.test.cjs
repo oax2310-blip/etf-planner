@@ -14,16 +14,16 @@ const plan=(extra={})=>({id:'p1',ticker:'AAA',title:'가상 ETF',currency:'USD',
 function draw(p,prices=quote()){
   const els={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',events:{},addEventListener(kind,handler){this.events[kind]=handler;},
-    setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
+    getAttribute(){return null;},setCustomValidity(){},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
   const form=el('planForm'),fields={endLabel:Object.assign(el('field:endLabel'),{value:''})};
   form.elements=fields;form.reset=()=>{fields.endLabel.value='';};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit(){},alert(){},
-    document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
+    document:{addEventListener(){},querySelectorAll:()=>[],createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[p],futures:{positions:[]},selectedPlan:p.id},PENCIL:'✎',memoCount:()=>'',id:()=>'p1',
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
     priceText:(v,c)=>c==='USD'?`$${v}`:`${v}원`,fxText:v=>`≈₩${v}`,
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),priceData:prices});
-  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
+  for(const f of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const before=JSON.stringify(ctx.state);ctx.renderPlans();
   assert.equal(JSON.stringify(ctx.state),before,'선 줄을 그려도 기록은 바뀌지 않는다');
   const rows=els.planMain.innerHTML.match(/<div id="saleRows">[\s\S]*<\/div>(?=<div class="completed-fold-empty">|<\/section>)/)?.[0]||'';

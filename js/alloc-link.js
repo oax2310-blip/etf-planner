@@ -79,9 +79,10 @@ function openDialog(o, rows){
   $("linkHint").textContent=`어느 계좌에서 ${buy?"샀":"팔았"}나요? 계좌 이름을 누르면 그 계좌로 모두 반영합니다. 여러 계좌로 나눴으면 칸을 고치세요(주식은 주, 금액 종목은 지금 평가액 기준 만원).`;
   $("linkRows").innerHTML=rows.map((r,i)=>{const it=r.it, own=finite(it.shares)!==null?qty(finite(it.shares),it):"", n=r===first&&r.n!==null?r.n:"";
     return `<div class="link-row${n!==""?" picked":""}"><button type="button" class="link-pick" data-link-pick="${i}"><strong>${esc(it.name)}</strong><small>${[r.g.name,man(r.value),own].filter(Boolean).map(esc).join(" · ")}</small></button>
-      <label class="link-n"><span aria-hidden="true">${buy?"+":"−"}</span><input type="number" min="0" step="${r.unit==="shares"?r.step<1?"any":"1":"any"}" inputmode="decimal" data-link-n="${i}" value="${n}" aria-label="${esc(it.name)} ${buy?"매수":"매도"} ${r.unit==="shares"?"수량":"금액(만원)"}"><span>${r.unit==="shares"?r.step<1?"BTC":"주":"만원"}</span></label></div>`;}).join("");
-  const inputs=[...$$("[data-link-n]")], mark=()=>inputs.forEach(x=>x.closest(".link-row").classList.toggle("picked",Number(x.value)>0));
-  $$("[data-link-pick]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.linkPick), r=rows[i];inputs.forEach((x,j)=>{x.value=j===i&&r.n!==null?r.n:"";});mark();if(r.n===null)inputs[i].focus();});
+      <label class="link-n"><span aria-hidden="true">${buy?"+":"−"}</span><input ${r.unit==="shares"?`type="number" min="0" step="${r.step<1?"any":"1"}" inputmode="decimal"`:'type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any"'} data-link-n="${i}" value="${esc(r.unit==="shares"?n:moneyInputText(n))}" aria-label="${esc(it.name)} ${buy?"매수":"매도"} ${r.unit==="shares"?"수량":"금액(만원)"}"><span>${r.unit==="shares"?r.step<1?"BTC":"주":"만원"}</span></label></div>`;}).join("");
+  const inputs=[...$$("[data-link-n]")], mark=()=>inputs.forEach(x=>x.closest(".link-row").classList.toggle("picked",moneyInputNumber(x.value)>0));
+  inputs.forEach((x,i)=>{if(rows[i].unit!=="shares")moneyInputValidate(x);});
+  $$("[data-link-pick]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.linkPick), r=rows[i];inputs.forEach((x,j)=>{const n=j===i&&r.n!==null?r.n:"";x.value=rows[j].unit==="shares"?n:moneyInputText(n);if(rows[j].unit!=="shares")moneyInputValidate(x);});mark();if(r.n===null)inputs[i].focus();});
   inputs.forEach(x=>x.oninput=mark);
   if(!d.open)d.showModal();
 }
@@ -94,7 +95,10 @@ function finish(picks){
 function initialize(){
   const d=dialog();if(!d)return;
   $("linkForm").addEventListener("submit",e=>{e.preventDefault();if(!pending)return;
-    const picks=[...$$("[data-link-n]")].map(x=>{const r=pending.rows[Number(x.dataset.linkN)], n=Number(x.value);return r&&n>0?{id:r.it.id,unit:r.unit,n}:null;}).filter(Boolean);
+    const inputs=[...$$("[data-link-n]")].filter(x=>!x.disabled&&!x.hidden);
+    const invalid=inputs.find(x=>(pending.rows[Number(x.dataset.linkN)]?.unit!=="shares"&&!moneyInputValidate(x))||!x.checkValidity());
+    if(invalid){invalid.reportValidity();return;}
+    const picks=inputs.map(x=>{const r=pending.rows[Number(x.dataset.linkN)], n=r?.unit==="shares"?Number(x.value):moneyInputNumber(x.value);return r&&n>0?{id:r.it.id,unit:r.unit,n}:null;}).filter(Boolean);
     finish(picks);});
   $("linkSkip").onclick=()=>finish([]);
   d.querySelectorAll("[data-close-link]").forEach(b=>b.onclick=()=>finish(null));
