@@ -17,7 +17,9 @@ let plannerActionsCache=typeof splitAuto==="object"?splitAuto.load(localStorage)
 function plannerCorporateActions(){return typeof splitAuto==="object"?splitAuto.cached(plannerActionsCache,sync.repo||localStorage.getItem(REPO_KEY),priceData?.etag)||[]:[];}
 let priceRefreshBusy=false, priceReadMessage="";
 // stored: 이 페이지가 마지막으로 읽거나 쓴 플래너 기록 원문(같은 브라우저의 다른 페이지가 그 뒤 저장했는지 비교, storePlanner·absorbPlanner).
-const sync = {token:"",repo:"",sha:"",base:"",busy:false,again:false,blocked:false,failed:false,localFailed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
+// baseSha: base와 내용이 같은 저장소 파일 SHA(markSynced에서만 정함, 떠날 때 바로 올리기 flushPlanner 전용). sha는 충돌 대기·입력 중 보류 때도 최신 원격 값으로 바뀌므로 대신 쓰지 않는다.
+// running: 진행 중인 syncNow·flushPlanner가 끝나면 풀리는 Promise(없으면 null).
+const sync = {token:"",repo:"",sha:"",base:"",baseSha:"",running:null,busy:false,again:false,blocked:false,failed:false,localFailed:false,checked:false,timer:null,redraw:false,waitTyping:false,stored:localStorage.getItem(STORAGE_KEY)};
 // 순서는 plans → futures → actions → rebuy → alerts → alertHistory → splitLog(readRemote도 같음). 미입력 선택 필드는 JSON에서 빠진다.
 // tab·selectedPlan·selectedRebuy는 이 기기에만; 시세 캐시·화면 상태도 동기화 밖.
 function snapshotOf(d){return JSON.stringify({plans:d.plans,futures:d.futures,actions:d.actions,rebuy:d.rebuy,alerts:d.alerts,alertHistory:d.alertHistory,splitLog:d.splitLog});} // 맨 위 initialSnapshot보다 먼저 쓰이므로 함수 선언
@@ -65,7 +67,7 @@ function absorbPlanner(){
     sync.redraw=true;
   }
   const base=!sync.localFailed&&sync.repo&&localStorage.getItem(STORAGE_KEY)===sync.stored?localStorage.getItem(SYNC_BASE_KEY+sync.repo):null;
-  if(base)sync.base=base;
+  if(base){if(base!==sync.base)sync.baseSha="";sync.base=base;} // 다른 페이지가 맞춘 기준이면 그 SHA를 모르므로 바로 올리기를 쓰지 않는다
   return !!theirs;
 }
 // 저장할 때 알림 글자용 종목 이름표(stock-names.js)도 이 기기에만 다시 만든다. 동기화 기록에는 넣지 않는다. 다른 페이지 기록을 합쳤으면 이 작업이 끝난 뒤 다시 그린다.
@@ -209,7 +211,7 @@ function holdForTyping(){if(!typingIn(document.activeElement))return false;sync.
 // 시세가 바뀌어 다시 그릴 때 입력 중인 칸이 있으면 다음 동기화까지 미룬다(쓰던 메모·숫자가 지워지지 않게).
 function redrawIdle(){const el=document.activeElement;if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))return;sync.redraw=false;render();}
 function markSynced(snapshot,sha){
-  sync.base=snapshot;if(sha!==undefined)sync.sha=sha;
+  sync.base=snapshot;if(sha!==undefined)sync.sha=sha;sync.baseSha=sync.sha; // 호출부는 읽은 파일 그대로(sha 전달)이거나 방금 올린 파일(writeRemote가 sha 갱신)이다
   if(!sync.localFailed)try{localStorage.setItem(SYNC_BASE_KEY+sync.repo,snapshot);}catch(error){console.error(error);setLocalSaveFailed(true);}
   try{localStorage.setItem(LAST_REPO_KEY,sync.repo);}catch(error){console.error(error);setLocalSaveFailed(true);}
   syncStatus(`동기화 완료 · ${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}`);
@@ -234,6 +236,7 @@ async function syncNow(beforePriceCollection=false){
   if(!connected())return;
   if(sync.busy||(priceRefreshBusy&&beforePriceCollection!==true)){sync.again=true;return;}
   const repo=sync.repo,token=sync.token,same=()=>sync.repo===repo&&sync.token===token;
+  let finish;sync.running=new Promise(resolve=>finish=resolve);
   sync.busy=true;sync.again=false;sync.failed=false;sync.waitTyping=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
   try{
     absorbPlanner(); // 다른 페이지가 저장·동기화한 기록(알림을 놓쳤어도)부터 받는다
@@ -283,9 +286,28 @@ async function syncNow(beforePriceCollection=false){
       else syncStatus("기록 차이 확인 전 · 이 기기에만 저장 중");
     }
   }catch(error){if(error.stale){sync.again=true;syncStatus("다른 기기 저장 확인 중…");}else{sync.failed=true;syncStatus(`${sync.localFailed?"이 기기 저장 실패":"이 기기 저장됨"} · ${error.message}`);}}
-  finally{sync.busy=false;syncBadge();if(sync.redraw)redrawIdle();if(typeof renderPushSetup==="function")renderPushSetup();if(sync.failed||sync.waitTyping)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
+  finally{sync.running=null;finish();sync.busy=false;syncBadge();if(sync.redraw)redrawIdle();if(typeof renderPushSetup==="function")renderPushSetup();if(sync.failed||sync.waitTyping)return;if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}
 }
-function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.checked=false;sync.blocked=false;}
+// 화면을 숨기거나 떠날 때(visibilitychange hidden·pagehide) 이 기기 수정만 바로 올린다. 일반 동기화처럼 저장소 기록·시세·알림을 먼저 읽지 않고 PUT 한 번.
+// sha는 baseSha만 쓴다: 저장소가 그대로면 '저장소=기준, 이 기기만 수정'이라 일반 동기화도 이 기기 기록을 올린다. 그 뒤 다른 기기가 저장했으면
+// GitHub가 409/422로 거절해 덮어쓰지 않고, 일반 동기화(sync.again → 다시 확인, 화면 복귀)가 기존 병합·충돌 확인 규칙으로 맞춘다.
+// 충돌 대기·저장소 확인 전·기준 SHA 없음·바뀐 것 없음이면 올리지 않는다. 진행 중인 동기화가 있으면 끝난 뒤 다시 판단한다(두 이벤트가 와도 PUT 한 번).
+// 올렸는데 페이지가 닫혀 응답을 못 받으면 다음 동기화가 저장소=이 기기 기록으로 보고 기준만 맞춘다. 올렸으면 true.
+function plannerLeavePending(){return connected()&&!sync.blocked&&(sync.busy||dataSnapshot()!==sync.base);}
+async function flushPlanner(){
+  while(sync.running)await sync.running;
+  if(!connected()||sync.blocked||!sync.checked||!sync.baseSha)return false;
+  try{absorbPlanner();}catch(error){console.error(error);} // 다른 페이지 기록부터 합친다(기기 저장 실패 표시는 absorbPlanner가 한다)
+  const local=dataSnapshot();if(local===sync.base||!sync.baseSha)return false;
+  const repo=sync.repo,token=sync.token,same=()=>sync.repo===repo&&sync.token===token;
+  let finish;sync.running=new Promise(resolve=>finish=resolve);
+  sync.busy=true;sync.failed=false;clearTimeout(sync.timer);syncStatus("동기화 확인 중…");
+  try{await writeRemote(local,sync.baseSha);if(same())markSynced(local);}
+  catch(error){if(!same())return false;if(error.stale){sync.again=true;syncStatus("다른 기기 저장 확인 중…");}else{sync.failed=true;syncStatus(`${sync.localFailed?"이 기기 저장 실패":"이 기기 저장됨"} · ${error.message}`);}}
+  finally{sync.running=null;finish();sync.busy=false;syncBadge();if(!sync.failed){if(sync.again&&!sync.blocked)scheduleSync(300);else if(connected()&&!sync.blocked&&dataSnapshot()!==sync.base)scheduleSync();}}
+  return true;
+}
+function loadConfig(){sync.repo=localStorage.getItem(REPO_KEY)||"";sync.token=localStorage.getItem(TOKEN_KEY)||"";sync.base=sync.repo?localStorage.getItem(SYNC_BASE_KEY+sync.repo)||"":"";sync.sha="";sync.baseSha="";sync.checked=false;sync.blocked=false;}
 function refreshTokenField(){$("githubToken").placeholder=localStorage.getItem(TOKEN_KEY)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 값";}
 function refreshCollectionTokenField(){$("collectionToken").placeholder=localStorage.getItem(repoSecurity.tokenKey)?"저장됨 · 바꿀 때만 붙여넣기":"github_pat_로 시작하는 Issues 전용 토큰";}
 $("syncBtn").onclick=()=>$("syncDialog").showModal();
@@ -308,9 +330,12 @@ $("connectRepo").onclick=()=>{
 $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncStatus("먼저 저장소와 토큰으로 연결해 주세요.");};
 $("refreshPricesBtn").onclick=refreshPrices;$("refreshPricesDialogBtn").onclick=refreshPrices;
 $("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");};
-// 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 자동 동기화를 멈춘다.
+// 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 주기 동기화를 멈춘다.
+// 숨기거나 떠날 때(앱 전환·화면 끔·다른 페이지로 이동)는 대기 중인 이 기기 수정을 바로 올린다(flushPlanner). 입력 칸을 강제로 확정하지는 않는다
+// (일부 칸은 확정할 때 확인·계좌 선택 창을 열어, 숨긴 화면에서 입력이 취소될 수 있음).
 setInterval(()=>{if(connected()&&!sync.blocked&&!document.hidden)syncNow();},45000);
-document.addEventListener("visibilitychange",()=>{if(document.hidden)return;if(absorbPlanner())redrawIdle();if(connected()&&!sync.blocked)syncNow();});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){flushPlanner();return;}if(absorbPlanner())redrawIdle();if(connected()&&!sync.blocked)syncNow();});
+addEventListener("pagehide",()=>{flushPlanner();});
 // 같은 브라우저의 다른 페이지가 저장하면 바로 받고, 그 알림을 받지 못했을 수 있는 뒤로 가기 복원 때도 받는다(그 밖의 놓친 저장은 화면 복귀·동기화 직전에 받음).
 addEventListener("storage",e=>{if(e.key===STORAGE_KEY&&absorbPlanner())redrawIdle();});
 addEventListener("storage",e=>{if(typeof splitAuto==="object"&&(e.key===splitAuto.key||e.key===null)){plannerActionsCache=splitAuto.load(localStorage);if(typeof splitNotices==="object")splitNotices.render();}});
