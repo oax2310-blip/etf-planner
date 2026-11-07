@@ -112,6 +112,32 @@ test('기존 회차 가격·예정액은 쉼표 입력과 자동 재계산을 �
   }
 });
 
+test('기존 회차의 선택 가격·예정액을 비우면 저장 키를 지우고 다시 열어도 만들지 않는다',()=>{
+  const r=setup({manual:true});r.store.saveSection=()=>r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));r.edit();
+  const input=key=>r.inputs('[data-purchase-field]').find(x=>x.dataset.purchaseField===key);
+  for(const key of ['price','amount'])r.type(input(key),'');
+  r.submit();
+  const saved=JSON.parse(r.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0].buyPlan.stages[0];
+  assert.equal(Object.hasOwn(saved,'price'),false);assert.equal(Object.hasOwn(saved,'amount'),false);assert.equal(saved.shares,8);
+  const before=JSON.stringify(r.doc);r.edit();
+  assert.equal(input('price').value,'');assert.equal(input('amount').value,'');assert.equal(JSON.stringify(r.doc),before);
+});
+
+test('기존 회차는 입력 이벤트 없이 넣은 잘못된 금액도 저장 직전에 막고 올바른 값에서는 검증을 갱신한다',()=>{
+  const r=setup({manual:true});r.store.saveSection=()=>r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));r.edit();
+  const input=key=>r.inputs('[data-purchase-field]').find(x=>x.dataset.purchaseField===key),before=r.storage.get('etf-planner-assets-v1');
+  for(const key of ['price','amount']){
+    const x=input(key),valid=x.value;
+    for(const invalid of ['-0.01','1e3','Infinity','1.2.3']){
+      x.value=invalid;r.submit();
+      assert.equal(r.storage.get('etf-planner-assets-v1'),before,key);assert.ok(x.validationMessage,key);assert.equal(x.reported,true,key);
+    }
+    x.value=valid;r.submit();assert.equal(x.validationMessage,'',key);
+    // 유효한 값으로 닫힌 뒤에는 새 창의 실제 입력 핸들러를 다시 검증한다.
+    r.edit();
+  }
+});
+
 // 실제 파일 입력 핸들러·검증기·저장소를 함께 실행하며 확인과 복원의 순서를 기록한다.
 function goldFixture({ticker='GLDM',section='금(골드)',close=81.52}={}){
   const r=setup({currency:'USD',price:80,end:85,ma:{'25선':81,'32선':84},names:['25선','32선'],tracking:true});

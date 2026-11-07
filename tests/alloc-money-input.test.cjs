@@ -71,3 +71,16 @@ test('연동 금액의 음수·형식 오류와 기존 수량 간격 오류는 �
   money.value='';shares.value='1.5';h.submit();assert.equal(shares.reported,true);assert.equal(h.commits(),0);
   shares.value='12345';h.submit();assert.equal(h.commits(),1);assert.equal(h.writes.at(-1).allocation.trades['example-trade'].items[0].shares,12345);
 });
+
+test('연동 창의 숨기거나 비활성화한 잘못된 금액은 검사·반영에서 제외하고 수량만 저장한다',()=>{
+  for(const hidden of [false,true]){
+    const h=setup(),[money,shares]=h.fields;
+    h.type(money,'-1');assert.ok(money.validationMessage);
+    if(hidden)money.hidden=true;else money.disabled=true;
+    shares.value='12345';h.submit();
+    assert.equal(h.commits(),1);
+    const saved=h.writes.at(-1).allocation;
+    assert.deepEqual(saved.trades['example-trade'].items.map(x=>({id:x.id,shares:x.shares})),[{id:'shares',shares:12345}]);
+    assert.equal(saved.groups[0].items[0].amount,20000,'무시한 금액을 반영하지 않는다');
+  }
+});
