@@ -11,7 +11,7 @@ const pricesSource = fs.readFileSync(require('node:path').join(__dirname, '../js
 const {maKey, hourKey, autoKey, usTicker} = vm.runInNewContext(['function maKey\\(', 'function hourKey\\(', 'const autoKey ', 'const isKospi200Ticker ', 'const usTicker ']
   .map(head => pricesSource.match(new RegExp(`^${head}.*$`, 'm'))[0]).join('\n') + '\n({maKey, hourKey, autoKey, usTicker})');
 
-const load = () => { const context = vm.createContext({usTicker}); vm.runInContext(source, context); return context; };
+const load = () => { const context = vm.createContext({...require('./helpers/money-input.cjs'),usTicker}); vm.runInContext(source, context); return context; };
 const plan = (ctx, extra) => ({...vm.runInContext('defaultRebuy()', ctx), lowPrice: 10000, amount: 1000, stages: vm.runInContext('defaultRebuy().stages.slice(0,14)',ctx), ...extra});
 const plain = value => JSON.parse(JSON.stringify(value));
 const hold = (ctx, r) => { ctx.target = r; return vm.runInContext('holdShares(target)', ctx); };
@@ -292,8 +292,8 @@ function ui(state = {}, env = {}) {
   const el = id => els[id] ||= {id, value: '', textContent: '', focus() {}, reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
     classList: {toggle(name, on) { el(id)[name] = on; }}, querySelectorAll: () => [], append() {}, elements: {name: {value: '', focus() {}}, ticker: {value: ''}, holding: {value: ''}}};
   let n = 0;
-  const ctx = vm.createContext({
-    state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = set; }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
+  const ctx = vm.createContext({...require('./helpers/money-input.cjs'),
+    state, save() {}, $: el, $$: () => [], onEdit: (sel, set) => { handlers[sel] = (value,node={})=>set(value,{value,getAttribute:key=>key==='data-money-min'?'0':key==='data-money-step'?'any':null,setCustomValidity(){},reportValidity(){},...node}); }, id: () => `id-${++n}`, PENCIL: '', confirm: () => true,
     document: {createElement: () => ({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     esc: v => String(v ?? ''), money: v => `${v}원`, priceText: (v, currency) => currency === 'USD' ? `$${v}` : `${v}원`,
     usd: new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}), won: new Intl.NumberFormat('ko-KR'), decimal: new Intl.NumberFormat('ko-KR', {maximumFractionDigits: 1}),
@@ -307,9 +307,10 @@ function ui(state = {}, env = {}) {
   const rules = edits => {
     els.rRules.onclick();
     if (!edits) return els.rebuyRuleDialog.innerHTML;
-    els.rebuyRuleForm.elements = Object.fromEntries(Object.entries(edits).map(([key, value]) => [key, {value}]));
+    els.rebuyRuleForm.elements = Object.fromEntries([...els.rebuyRuleDialog.innerHTML.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)].map(([,key,value])=>[key,{value,getAttribute:attr=>key==='lowPrice'?(attr==='data-money-min'?'0':attr==='data-money-step'?'any':null):null,setCustomValidity(message){this.validationMessage=message;},reportValidity(){}}]));
+    for(const [key,value] of Object.entries(edits))els.rebuyRuleForm.elements[key].value=value;
     el('rebuyRuleError').textContent = ''; els.rebuyRuleForm.onsubmit({preventDefault() {}});
-    return !el('rebuyRuleError').textContent;
+    return !el('rebuyRuleError').textContent&&!els.rebuyRuleForm.elements.lowPrice.validationMessage;
   };
   return {ctx, handlers, els, rules, add: (name, ticker) => submit(() => els.addRebuyBtn.onclick(), name, ticker), rename: (name, ticker) => submit(() => els.rEdit.onclick(), name, ticker)};
 }
@@ -340,7 +341,7 @@ test('손절 기준 창: 신저점·하락 간격·회당 손절·표시 회차�
   assert.doesNotMatch(els.rebuyMain.innerHTML, /<h2>신저점 손절 후 재매수<\/h2>/, '위 글자(손절 후 재매수)와 겹치는 구역 제목은 두지 않는다');
   const html = rules();
   assert.equal(els.rebuyRuleDialog.open, true);
-  assert.match(html, /<input id="rCurrent" type="number" value="9500" placeholder="종목 코드 필요" readonly tabindex="-1">/);
+  assert.match(html, /<input id="rCurrent" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="any" value="9,500" placeholder="종목 코드 필요" readonly tabindex="-1">/);
   assert.match(html, /<input id="rHold" type="text" value="800주" placeholder="자산 배분 보유 없음" readonly tabindex="-1">/);
   assert.deepEqual([...html.matchAll(/<input id="r\w+" name="(\w+)"/g)].map(m => m[1]), ['lowPrice', 'stepPct', 'sellPct', 'steps'], '저장하는 칸은 네 개');
   assert.doesNotMatch(html, /id="rFinal"|id="rHoldUnit"|id="rHoldLink"|빈 단계 추정용|가져오기/);
@@ -523,7 +524,7 @@ test('손절 카드: 대기 계획 금액과 실제 누적 수량을 구분하�
   assert.match(html,/data-cut="0"[^>]*aria-checked="mixed"/);
   assert.match(html,/<div class="purchase-qty">10주<\/div>/,'부분 손절도 회차 계획 주수');
   assert.match(html,/data-cut-qty="0"[^>]*value="3"/);
-  assert.match(html,/data-cut-price="0"[^>]*value="9850"/);
+  assert.match(html,/data-cut-price="0"[^>]*value="9,850"/);
   assert.match(html,/<small>남은 7주<\/small>/);assert.match(html,/>부분 손절<\/div>/);
   assert.deepEqual(plain(r),partialBefore);
 });

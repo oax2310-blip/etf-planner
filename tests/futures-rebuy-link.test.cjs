@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const code=['ma-ladder.js','prices.js','rebuy.js','futures.js','futures-plan.js','futures-rebuy.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
-const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(code,ctx);return ctx;};
+const load=()=>{const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000});vm.runInContext(code,ctx);return ctx;};
 const futures=(extra={})=>({targetPrice:1480,baselinePnl:50000,positions:[{month:'202612',contracts:4,settlementPrice:1450}],levels:[],rebuy:{lowPrice:1400,floorPrice:1300,contracts:4,steps:2,...extra}});
 const held=f=>f.positions.reduce((n,p)=>n+p.contracts,0);
 
@@ -291,7 +291,7 @@ test('분할 손절 표는 분할매도 회차표로 그리고, 부분 체결·�
   assert.match(html,/<summary><h2>1\. 분할 손절<\/h2><span>0 \/ 2회 완료<\/span>/);
   assert.match(html,/class="card table-card purchase-table sale-table future-cut-table hide-completed no-alert" id="frCutTable"><div class="purchase-table-head"><span>회차<\/span><span>손절 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div><div id="frCutRows">/);
   assert.match(html,/<div class="purchase-row partial">[^]*data-fcut-partial="true"[^]*<b>1회<\/b><small>남은 1<\/small>[^]*<div class="purchase-qty">2계약<\/div>[^]*data-fcut-qty="0" value="1"/);
-  assert.match(html,/<div class="stage-price"><label class="future-tap-price" title="1회 손절 체결 환율 수정"><span class="price" aria-hidden="true">1,400원<\/span><input data-fcut-price="0"[^>]*value="1400"[^>]*><\/label><span class="krw future-row-warn">202609 보유 없음<\/span><\/div>/,'체결 환율은 그 자리에서 고치고, 기록한 월물이 지금 보유에 없을 때만 작은 줄');
+  assert.match(html,/<div class="stage-price"><label class="future-tap-price" title="1회 손절 체결 환율 수정"><span class="price" aria-hidden="true">1,400원<\/span><input data-fcut-price="0"[^>]*value="1,400"[^>]*><\/label><span class="krw future-row-warn">202609 보유 없음<\/span><\/div>/,'체결 환율은 그 자리에서 고치고, 기록한 월물이 지금 보유에 없을 때만 작은 줄');
   assert.match(html,/<div class="stage-price"><span class="price">1,300원<\/span><\/div>/,'체결 전 회차는 회차 환율만');
   assert.doesNotMatch(html.slice(html.indexOf('id="frCuts"'),html.indexOf('id="frBuys"')),/sale-row|class="table-head"|계획상 남은|purchase-sub/,'회차마다 한 줄, 옛 손절 줄 모양을 쓰지 않는다');
   handlers['[data-fcut-qty]']('2',{dataset:{fcutQty:'1'}});
@@ -335,7 +335,7 @@ test('반등 단계별 재매수 표도 회차마다 한 줄로 그리고, 배�
   const section=()=>{ctx.renderFutureRebuy(f);const html=els.futureRebuyPanel.innerHTML;return html.slice(html.indexOf('id="frBuys"'));};
   let html=section();
   assert.match(html,/<summary><h2>2\. 반등 단계별 재매수<\/h2><button[^>]*id="frBuyEdit"[^>]*>[^]*?<\/button><span>잔여 4계약 · 0 \/ \d+회<\/span><\/summary><section class="card table-card purchase-table sale-table future-rebuy-table hide-completed no-alert" id="frBuyTable"><div class="future-rebuy-start">[^]*?<\/div><div class="purchase-table-head"><span>회차<\/span><span>재매수 환율<\/span><span>계약<\/span><span>체결<\/span><span>상태<\/span><\/div>/);
-  assert.match(html,/<b><span class="tr-name">25선<span class="tr-no">1<\/span><\/span><\/b>[^]*?<label class="future-tap-price" title="25선 기준 환율 수정"><span class="price" aria-hidden="true">1,380원<\/span><input data-fbuy-price="0"[^>]*value="1380"/,'단계 첫 회차 줄의 환율이 그 단계 기준 환율');
+  assert.match(html,/<b><span class="tr-name">25선<span class="tr-no">1<\/span><\/span><\/b>[^]*?<label class="future-tap-price" title="25선 기준 환율 수정"><span class="price" aria-hidden="true">1,380원<\/span><input data-fbuy-price="0"[^>]*value="1,380"/,'단계 첫 회차 줄의 환율이 그 단계 기준 환율');
   assert.match(html,/id="toggleFutureStages"[^>]*><span>다른 단계 <b>\d+개<\/b> · 기준 환율<\/span>[^]*<div id="frStageRows" hidden>[^]*data-fbuy-price="2"/,'배분 없는 단계의 기준 환율은 다른 단계 띠 안에서 고친다');
   assert.match(html,/id="frTimeframes"/);assert.doesNotMatch(html,/sale-row|class="table-head"|25선→32선/,'회차마다 한 줄, 옛 줄 모양을 쓰지 않는다');
   const s=ctx.futureRebuySummary(f),tr=s.tranches.find(x=>x.amount>0);

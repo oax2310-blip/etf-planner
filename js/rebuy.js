@@ -836,11 +836,12 @@ function renderRebuyStageDraft(){
   const s=rebuySummary(r),f=$("rebuyStagesForm").elements,usdMode=rebuyUsd(r),P=v=>priceText(v,usdMode?"USD":"KRW"),range=draft.range;
   draft.lastLine=s.planKeys.at(-1)?.[0]||range.startLine;
   const stage=name=>draft.stages.find(x=>x.name===name),first=stage(range.startLine),last=stage(draft.lastLine),nextIndex=etfNextStage(draft.stages,draft.stages.indexOf(last),true),next=draft.stages[nextIndex];
-  for(const [key,st] of [["startPrice",first],["lastPrice",last],["nextPrice",next]])if(f[key]!==document.activeElement){f[key].value=Number(st?.price)>0?shown(st.price):"";draft.invalid.delete(key);}
+  for(const [key,st] of [["startPrice",first],["lastPrice",last],["nextPrice",next]])if(f[key]!==document.activeElement){f[key].value=Number(st?.price)>0?moneyInputText(shown(st.price)):"";draft.invalid.delete(key);}
   $("rebuyNextPriceLabel").textContent=next?`${movingLineText(next.name)} 기준가 (${usdMode?"달러":"원"} · 계산용)`:`다음 평균선 기준가`;
-  f.nextPrice.disabled=!next;$("rebuyNextPriceField").hidden=!next;$("rebuySamePriceField").hidden=range.startLine===draft.lastLine;
+  f.nextPrice.disabled=!next;$("rebuyNextPriceField").hidden=!next;$("rebuySamePriceField").hidden=range.startLine===draft.lastLine;f.lastPrice.disabled=range.startLine===draft.lastLine;
   f.lastPrice.closest("label").querySelector("span").textContent=`${movingLineText(draft.lastLine)} 기준가 (실제 마지막 선)`;
-  for(const key of ["price1","price2"]){const t=Number(key.slice(5));f[key].closest("label").querySelector("span").textContent=`${movingLineText(draft.lastLine)} ${t+1}회차 가격`;if(f[key]!==document.activeElement){const level=etfTrancheLevels(s.stages,s.est,s.stages.findIndex(x=>x.name===draft.lastLine))[t];f[key].value=Number(last.prices?.[t])>0?shown(last.prices[t]):"";f[key].placeholder=level.price>0?`${shown(level.price)} · 자동`:"직접 입력";f[key].disabled=t>=range.lastRound;draft.invalid.delete(key);}}
+  for(const key of ["price1","price2"]){const t=Number(key.slice(5));f[key].closest("label").querySelector("span").textContent=`${movingLineText(draft.lastLine)} ${t+1}회차 가격`;if(f[key]!==document.activeElement){const level=etfTrancheLevels(s.stages,s.est,s.stages.findIndex(x=>x.name===draft.lastLine))[t];f[key].value=Number(last.prices?.[t])>0?moneyInputText(shown(last.prices[t])):"";f[key].placeholder=level.price>0?`${moneyInputText(shown(level.price))} · 자동`:"직접 입력";f[key].disabled=t>=range.lastRound;draft.invalid.delete(key);}}
+  for(const key of ["startPrice","lastPrice","nextPrice","price1","price2"]){const el=f[key];if(el.disabled||el.hidden||el.closest("[hidden]")){el.setCustomValidity("");draft.invalid.delete(key);}else moneyInputValidate(el);}
   const resume=etfResumeName(s);
   $("rebuyRangeBudget").innerHTML=movingLineText(`<p><b>최대 ${esc(range.startLine)} → ${esc(range.lastLine)} · ${s.cycle?resume?`재이탈 ${esc(resume)}부터 `:"재이탈 · 다음 선 없음 · ":""}실제 ${esc(draft.lastLine)} ${(s.planKeys.at(-1)?.[1]??range.lastRound-1)+1}회차까지</b></p><p>목표 ${P(s.buyTarget)} · 남은 ${P(s.rest)} · ${s.planKeys.length}회</p>`);
   const rows=s.tranches.filter(x=>range.names.includes(s.stages[x.i].name)||x.i===s.cycle?.from);
@@ -854,14 +855,14 @@ function openRebuyStages(index=null){
   const automatic=etfRebuyPlanned(s.stages,s.est,s.sellAvg),names=[...new Set(automatic.map(([i])=>movingLineName(s.stages[i]?.name)).filter(Boolean))],start=range?.startLine||names[0]||movingLineName(original[0]?.name)||"25선",last=range?.lastLine||names.at(-1)||start;
   rebuyStageDraft={source:src,original,base:JSON.stringify(original),originalRange:range?JSON.parse(JSON.stringify(range)):null,rangeBase:JSON.stringify(range),stages:JSON.parse(JSON.stringify(original)),invalid:new Set()};
   f.startPeriod.value=parseInt(start);f.startUnit.value=movingLineUnit(start);f.lastPeriod.value=parseInt(last);f.lastUnit.value=movingLineUnit(last);f.lineSet.value="custom";f.lastRound.value=range?.lastRound||etfRebuyRounds(original.find(st=>st.name===last))||3;f.targetPct.value=etfRebuyTargetPct(src);f.condition.value=range?.condition||"";
-  $("rebuyStagesTitle").textContent="재매수 범위 편집";$("rebuyStagesForm").onsubmit=e=>{e.preventDefault();saveRebuyStageDraft();};
+  $("rebuyStagesTitle").textContent="재매수 범위 편집";$("rebuyStagesForm").onsubmit=e=>{e.preventDefault();const invalid=[...$("rebuyStagesForm").querySelectorAll("input[data-money]")].find(el=>!el.disabled&&!el.hidden&&!el.closest("[hidden]")&&!moneyInputValidate(el));if(invalid){invalid.reportValidity();return;}saveRebuyStageDraft();};
   dialog.querySelectorAll("[data-close-rebuy-stages]").forEach(b=>b.onclick=()=>{rebuyStageDraft=null;dialog.close();});
   for(const key of ["startPeriod","lastPeriod","targetPct"])f[key].oninput=renderRebuyStageDraft;
   for(const key of ["startUnit","lastUnit","lineSet","lastRound","condition"])f[key].onchange=renderRebuyStageDraft;
   f.lineSet.onchange=()=>{const unit={hour:"선",day:"일선",week:"주선",month:"개월선"}[f.lineSet.value];if(unit)f.startUnit.value=f.lastUnit.value=unit;renderRebuyStageDraft();};
   for(const key of ["startPrice","lastPrice","nextPrice","price1","price2"])f[key].oninput=()=>{
     const draft=rebuyStageDraft,range=draft.range,lastLine=draft.lastLine||range.lastLine,lastIndex=draft.stages.findIndex(st=>st.name===lastLine),name=key==="startPrice"?range.startLine:key==="nextPrice"?draft.stages[etfNextStage(draft.stages,lastIndex,true)]?.name:lastLine,st=draft.stages.find(x=>x.name===name);
-    if(!st||setRebuyStageDraftField(st,key==="price1"||key==="price2"?key:"price",f[key].value)===false){draft.invalid.add(key);$("rebuyStagesError").textContent="기준가는 0 이상의 숫자로 입력하세요.";return;}
+    if(!moneyInputValidate(f[key])||!st||setRebuyStageDraftField(st,key==="price1"||key==="price2"?key:"price",f[key].value.trim()===""?"":moneyInputNumber(f[key].value))===false){draft.invalid.add(key);$("rebuyStagesError").textContent="기준가는 0 이상의 숫자로 입력하세요.";return;}
     draft.invalid.delete(key);renderRebuyStageDraft();
   };
   renderRebuyStageDraft();dialog.showModal();if(index!==null)f.lastPeriod.focus();
@@ -923,17 +924,19 @@ function rebuyTrack(r,s,{hold,holdTitle="",cur,nextCut,nextTr,cutDue,buyDue,comp
 // 손절 기준 창(기준 줄 버튼의 연필): 신저점·하락 간격·회당 손절·표시 회차만 고치고, 현재가(시세)·이탈 전 보유(자산 배분)는 읽기 전용으로 보인다.
 // 달러선물 손절 기준 창처럼 저장을 눌러야 바꾼 칸만 저장한다(setRebuyRules). 취소·닫기는 기록을 바꾸지 않는다.
 function openRebuyRuleDialog(v){
-  const dialog=$("rebuyRuleDialog"),initial={lowPrice:v.opt(v.low),stepPct:shown(v.step),sellPct:shown(v.sellPct),steps:String(v.steps)};
-  const field=(key,id,label,attrs,extra="")=>`<label class="field"><span${extra}>${label}</span><input id="${id}" name="${key}" type="number" ${attrs} value="${initial[key]}"></label>`;
+  const dialog=$("rebuyRuleDialog"),initial={lowPrice:moneyInputText(v.opt(v.low)),stepPct:shown(v.step),sellPct:shown(v.sellPct),steps:String(v.steps)};
+  const field=(key,id,label,attrs,extra="")=>`<label class="field"><span${extra}>${label}</span><input id="${id}" name="${key}" ${key==="lowPrice"?'type="text" inputmode="decimal" autocomplete="off" data-money':'type="number"'} ${attrs} value="${initial[key]}"></label>`;
   dialog.innerHTML=`<form id="rebuyRuleForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="rebuyRuleTitle">손절 기준 수정</h2><button class="btn ghost" type="button" data-close-rebuy-rule>닫기</button></div>
     <p class="hint">${v.usdMode?"가격은 미국 시세(달러)입니다.":"가격은 국내 상장 ETF 가격(원)입니다."} 신저점 대비 하락 간격마다 이탈 전 보유의 회당 손절 비율만큼 팝니다. 재매수 뒤 다시 내려가면 그때 보유(재매수 포함)의 같은 비율씩 이어서 손절하고, 그다음 재매수는 이미 산 회차의 다음부터 합니다.</p>
-    <div class="dialog-grid rebuy-rule-grid">${field("lowPrice","rLow",`신저점 가격 (${v.unitWord})`,'min="0" step="any" inputmode="decimal"')}<label class="field"><span>현재가 (${v.unitWord})${v.autoTag()}</span><input id="rCurrent" type="number" value="${v.opt(v.cur)}" placeholder="${v.ticker?"시세 대기":"종목 코드 필요"}" readonly tabindex="-1"></label>${field("stepPct","rStep","하락 간격 (%)",'min="0.1" max="50" step="any" inputmode="decimal"')}${field("sellPct","rSell","회당 손절 (%)",'min="0.1" max="100" step="any" inputmode="decimal" aria-label="회당 손절 비율 (이탈 전 보유 수량의 %)"',' title="이탈 전 보유 수량 기준"')}${field("steps","rSteps","표시 회차",'min="1" step="1" inputmode="numeric"')}<label class="field"><span>이탈 전 보유${v.holdTag}</span><input id="rHold" type="text" value="${v.holdText}" placeholder="자산 배분 보유 없음" readonly tabindex="-1"></label></div>
+    <div class="dialog-grid rebuy-rule-grid">${field("lowPrice","rLow",`신저점 가격 (${v.unitWord})`,'data-money-min="0" data-money-step="any"')}<label class="field"><span>현재가 (${v.unitWord})${v.autoTag()}</span><input id="rCurrent" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="any" value="${moneyInputText(v.opt(v.cur))}" placeholder="${v.ticker?"시세 대기":"종목 코드 필요"}" readonly tabindex="-1"></label>${field("stepPct","rStep","하락 간격 (%)",'min="0.1" max="50" step="any" inputmode="decimal"')}${field("sellPct","rSell","회당 손절 (%)",'min="0.1" max="100" step="any" inputmode="decimal" aria-label="회당 손절 비율 (이탈 전 보유 수량의 %)"',' title="이탈 전 보유 수량 기준"')}${field("steps","rSteps","표시 회차",'min="1" step="1" inputmode="numeric"')}<label class="field"><span>이탈 전 보유${v.holdTag}</span><input id="rHold" type="text" value="${v.holdText}" placeholder="자산 배분 보유 없음" readonly tabindex="-1"></label></div>
     <p class="hint">${v.holdHint}${v.priceHint?`<br>${v.priceHint}`:""}</p>
     <p class="future-plan-error" id="rebuyRuleError" role="alert"></p><div class="dialog-foot"><button class="btn" type="button" data-close-rebuy-rule>취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   dialog.querySelectorAll("[data-close-rebuy-rule]").forEach(b=>b.onclick=()=>dialog.close());
+  for(const el of dialog.querySelectorAll("input[data-money]"))moneyInputValidate(el);
   $("rebuyRuleForm").onsubmit=e=>{
     e.preventDefault();const f=$("rebuyRuleForm").elements,edits={};
-    for(const key of Object.keys(rebuyRuleParse)){const value=f[key]?.value;if(value!=null&&value.trim()!==initial[key])edits[key]=value;}
+    if(!moneyInputValidate(f.lowPrice)){f.lowPrice.reportValidity();return;}
+    for(const key of Object.keys(rebuyRuleParse)){const value=f[key]?.value;if(value!=null&&value.trim()!==initial[key])edits[key]=key==="lowPrice"?(moneyInputNumber(value)??0):value;}
     if(setRebuyRules(edits)===false){$("rebuyRuleError").textContent="신저점은 0 이상, 하락 간격은 0 초과 50% 이하, 회당 손절은 0 초과 100% 이하, 표시 회차는 1 이상 정수로 입력하세요.";return;}
     if(Object.keys(edits).length)save();
     dialog.close();renderRebuy();
@@ -1005,7 +1008,7 @@ function renderRebuy(){
     :`선택 범위의 재매수를 마쳤습니다 · 남은 약 ${wonShort(s.rest)}은 다음 평균선에 자동 배정하지 않습니다${cutTail}`;
   const alerts=typeof tradeAlertToggle==="function", toggle=(...a)=>alerts?tradeAlertToggle(...a):"", alertOn=(...a)=>alerts&&tradeRebuyEnabled(...a); // 알림 스위치는 trade-alerts.js가 있을 때만(서버·테스트는 없음)
   // 점선 가격(눌러서 그 자리에서 수정, 달러선물 .future-tap-price와 같음): attrs = 입력칸 data 속성, value = 기록한 값(빈 칸이면 글자 text만 보임)
-  const tapPrice=(text,attrs,value,label,placeholder="")=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="number" min="0" step="any" inputmode="decimal" value="${value}"${placeholder?` placeholder="${placeholder}"`:""} aria-label="${label}"></label>`;
+  const tapPrice=(text,attrs,value,label,placeholder="")=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${moneyInputText(value)}"${placeholder?` placeholder="${placeholder}"`:""} aria-label="${label}"></label>`;
   const head=(price)=>`<div class="purchase-table-head"><span>회차</span><span>${price}</span><span>수량</span><span>체결</span>${alerts?"<span>알림</span>":""}<span>상태</span></div>`;
   // 손절·재매수 계좌(1·2 표 위 한 줄, 분할매수 '매수 종목'·분할매도 '매도 종목'과 같은 모양): 체크하면 계좌 고르는 창이 먼저 고를 자산 배분 계좌(alloc-link.js account, rebuyPrefer).
   // 이름 옆에 현재 보유 수량·평가액, 아래 한 줄에 그룹·고른 근거(최근 손절·재매수 계좌 → 손절한 계좌, 없으면 평가액이 가장 큰 계좌). 근거만 말줄임하고 연결 계좌가 없으면 줄도 회차 아래 계좌 줄도 없다. 읽기만 한다.
@@ -1088,7 +1091,8 @@ function renderRebuy(){
     if(rec===false){renderRebuy();return;}applyRebuyCut(i,rec);
   });
   onEdit("[data-cut-qty]",(v,el)=>applyRebuyCut(Number(el.dataset.cutQty),rebuyCutRecord(rebuyPick(),Number(el.dataset.cutQty),v)),renderRebuy);
-  onEdit("[data-cut-price]",(v,el)=>{const i=Number(el.dataset.cutPrice),src=rebuyPick(),old=src.cuts?.[i],text=v.trim(),price=text===""?null:Number(text);if(!old||price!==null&&!(Number.isFinite(price)&&price>0))return false;return applyRebuyCut(i,{...old,price});},renderRebuy);
+  $$("#rebuyMain input[data-money]").forEach(el=>moneyInputValidate(el));
+  onEdit("[data-cut-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const i=Number(el.dataset.cutPrice),src=rebuyPick(),old=src.cuts?.[i],text=v.trim(),price=moneyInputNumber(text);if(!old||price!==null&&!(Number.isFinite(price)&&price>0))return false;return applyRebuyCut(i,{...old,price});},renderRebuy);
   $$("[data-tranche-done]").forEach(input=>input.onchange=()=>{const [i,t]=input.dataset.trancheDone.split(":").map(Number),src=rebuyPick(),view=rebuySummary(src),tr=view.tranches.find(x=>x.i===i&&x.t===t);
     if(!input.checked){applyRebuyBuy(i,t,null);return;}
     const px=tr?.execPrice||((tr?.price>0&&!tr.est)?cents(tr.price):Number(src.currentPrice)||tr?.price),qty=tr?.partial?tr.plannedQty:tr?.done?tr.qty:px>0?rebuyPendingShares(tr?.amount,px):0;
@@ -1098,10 +1102,9 @@ function renderRebuy(){
   });
   // 회차 체결 수량·가격: 옛 통째 기록은 단계의 shares·execPrice, 새 기록은 buys[t]의 shares·price
   const fillOf=(key,el)=>{const [i,t]=el.dataset[key].split(":").map(Number),st=editRebuy().stages[i];return !st?null:st.done?[st,"execPrice"]:st.buys?.[t]?[st.buys[t],"price"]:null;};
-  const nonNeg=v=>v===""?0:Number(v)>=0?Number(v):undefined;
-  onEdit("[data-stage-price]",(v,el)=>{v=nonNeg(v.trim());if(v===undefined)return false;editRebuy().stages[Number(el.dataset.stagePrice)].price=v;},renderRebuy);
+  onEdit("[data-stage-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v)??0;editRebuy().stages[Number(el.dataset.stagePrice)].price=v;},renderRebuy);
   const fillKey=(key,el)=>{const [i,t]=el.dataset[key].split(":").map(Number),x=editRebuy();return `rebuy:${x.id}:${x.stages[i]?.name}:${t}`;};
-  onEdit("[data-tranche-exec]",(v,el)=>{v=Number(v);if(!(Number.isFinite(v)&&v>0))return false;const rec=fillOf("trancheExec",el);if(!rec)return false;rec[0][rec[1]]=v;rebuyLink("rescale",fillKey("trancheExec",el),rebuyFill(rebuyPick(),{shares:rec[0].shares,price:rec[0][rec[1]]},1));},renderRebuy);
+  onEdit("[data-tranche-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(!(Number.isFinite(v)&&v>0))return false;const rec=fillOf("trancheExec",el);if(!rec)return false;rec[0][rec[1]]=v;rebuyLink("rescale",fillKey("trancheExec",el),rebuyFill(rebuyPick(),{shares:rec[0].shares,price:rec[0][rec[1]]},1));},renderRebuy);
   onEdit("[data-tranche-qty]",(v,el)=>{const [i,t]=el.dataset.trancheQty.split(":").map(Number);return applyRebuyBuy(i,t,rebuyBuyRecord(rebuyPick(),i,t,v));},renderRebuy);
   $("rTimeframes").onclick=()=>{const r=editRebuy(),stages=completeMovingStages(r.stages);if(stages.length>80){alert("재매수 단계는 80개까지 설정할 수 있습니다.");return;}r.stages=stages;if(priceData)fillPrices({rebuy:r},priceData);save();renderRebuy();};
   $("rStages").onclick=e=>{e?.preventDefault?.();openRebuyStages();};

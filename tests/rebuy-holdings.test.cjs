@@ -34,7 +34,7 @@ function ui(state = {}, {alloc = allocation(), link = true, real = false, prices
   const document = {activeElement: null, body: {append() {}}, createElement() { const e = {value: '', dataset: {}, classList: {add() {}, remove() {}}, setAttribute() {}, append() {}, focus() {}}; Object.defineProperty(e, 'id', {get: () => e._id, set(v) { e._id = v; els[v] = e; }}); return e; }};
   let n = 0, stored = null;
   const assetStore = {doc: {allocation: alloc}, prices, subscribe: fn => { listeners.push(fn); return () => {}; }};
-  const ctx = vm.createContext({
+  const ctx = vm.createContext({...require('./helpers/money-input.cjs'),
     state, save() {}, $: el, $$: () => [], onEdit() {}, id: () => `id-${++n}`, PENCIL: '', confirm: () => true, document,
     esc: v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])),
     money: v => `${v}원`, priceText: (v, c) => c === 'USD' ? `$${v}` : `${v}원`,

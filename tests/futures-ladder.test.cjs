@@ -6,7 +6,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const code=['ma-ladder.js','prices.js','rebuy.js','futures.js','futures-plan.js','futures-rebuy.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
 const plain=v=>JSON.parse(JSON.stringify(v));
-const load=()=>{const ctx=vm.createContext({contractSize:10000,esc:v=>String(v),PENCIL:'',shown:v=>String(v),won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0})});vm.runInContext(code,ctx);return ctx;};
+const load=()=>{const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000,esc:v=>String(v),PENCIL:'',shown:v=>String(v),won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0})});vm.runInContext(code,ctx);return ctx;};
 const open=price=>({price,priceOverride:price,completed:false,executionPrice:null});
 // 25일선 회차 1,410·1,420원(이상 체결), 직접 입력 회차 1,380원(이하 체결), 체결한 1,405원 회차는 계산에서 뺀다.
 const futures=(extra={})=>({targetPrice:1480,baselinePnl:-200000,positions:[{month:'202612',contracts:2,settlementPrice:1400}],
@@ -61,7 +61,7 @@ test('사다리 행은 환율 높은 순이고, 지금보다 위는 분할매수
   assert.equal(by('now').pnl,ctx.futuresSummary(f,1395).current);
   assert.equal(JSON.stringify(f),before,'계산·그리기에서 저장 필드를 만들지 않는다');
   const html=ctx.futureLadderHtml(f,{asOf:'2026-10-16',close:1395,ma:{}});
-  assert.match(html,/id="flossPrice"[^>]*value="1385"/);assert.match(html,/손익분기 · 보유만/);assert.match(html,/분할매수 2계약 \+/);assert.match(html,/손절 1계약 -/);
+  assert.match(html,/id="flossPrice"[^>]*value="1,385"/);assert.match(html,/손익분기 · 보유만/);assert.match(html,/분할매수 2계약 \+/);assert.match(html,/손절 1계약 -/);
   assert.match(html,/--axis-top:26px;--axis-bottom:26px/,'세로선은 첫·끝 행 점 중심에서 시작·끝');
   assert.doesNotMatch(html,/전부 체결/);
   assert.equal(JSON.stringify(f),before);
