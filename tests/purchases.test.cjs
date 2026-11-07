@@ -1107,9 +1107,11 @@ test('부분 체결 수량 증감은 평균가를 맞추고 직접 고친 평균
 
 test('기존 매입분을 뺀 평균가가 양수가 아니면 A0를 쓰고 기존 보유 0이면 새 체결가를 쓴다',()=>{
   const r=averageFixture();r.buy();r.item.averagePrice=50;r.render();
-  r.link.rescale('buy:a:end',{qty:10,price:100,execPrice:100,currency:'KRW',value:0.1});nearAverage(r.item.averagePrice,1250/15);
+  r.link.rescale('buy:a:end',{qty:10,price:100,execPrice:100,currency:'KRW',value:0.1});assert.equal(r.item.averagePrice,50);
+  r.change('[data-purchase-exec]',110);assert.equal(r.item.averagePrice,90);
   const all=averageFixture({shares:0});all.buy();all.item.averagePrice=120;all.render();
-  all.link.rescale('buy:a:end',{qty:10,price:100,execPrice:100,currency:'KRW',value:0.1});assert.equal(all.item.averagePrice,100);
+  all.link.rescale('buy:a:end',{qty:10,price:100,execPrice:100,currency:'KRW',value:0.1});assert.equal(all.item.averagePrice,120);
+  all.change('[data-purchase-exec]',110);assert.equal(all.item.averagePrice,110);
 });
 
 function averageDialog(r){
@@ -1149,6 +1151,21 @@ test('1순위 변경 후 shift로 이어 사면 새 계좌만 평균가를 맞�
   move('b',-1);r.fill(7);assert.equal(r.item.shares,9);assert.equal(r.item.averagePrice,original);assert.equal(other.shares,8);assert.equal(other.averagePrice,87.5);
   const byId=Object.fromEntries(r.record().items.map(e=>[e.id,e]));assert.equal(byId.a.execPrice,100);assert.equal(byId.b.execPrice,100);
   r.fill(5);assert.equal(r.item.averagePrice,original);nearAverage(other.averagePrice,500/6);
+});
+
+test('매도 뒤 회차보다 보유가 적어도 다른 1순위 계좌로 이어 사면 기존 계좌 평균가·표식을 유지한다',()=>{
+  for(const markedPrice of [100,100+Number.EPSILON*100]){
+    const r=averageFixture({budget:0.12}),{other,move}=linkedAccounts(r,{tradeTicker:'111111',price:100});
+    delete other.tradeTicker;other.shares=0;r.render();r.fill(10);
+    const average=r.item.averagePrice;nearAverage(average,1450/15);
+    r.record().items[0].execPrice=markedPrice;const marked=JSON.stringify(r.record().items[0]);
+    r.item.shares=5;r.render();move('b',-1);r.fill(12);
+    assert.equal(r.item.shares,5);assert.equal(r.item.averagePrice,average);
+    const byId=Object.fromEntries(r.record().items.map(e=>[e.id,e]));assert.equal(JSON.stringify(byId.a),marked,'부동소수 오차 이내의 같은 몫은 표식도 유지');
+    assert.equal(other.shares,2);assert.equal(other.averagePrice,100);assert.equal(byId.b.execPrice,100);assert.equal(byId.b.avgFresh,true);
+    const saved=r.writes.at(-1).allocation.groups[0].items;
+    assert.equal(saved[0].averagePrice,average);assert.equal(r.writes.at(-1).allocation.trades['buy:a:end'].items[1].avgFresh,true);
+  }
 });
 
 test('추종 ETF는 기준가 대신 실제 매수 tradePrice로 평균가를 계산한다',()=>{

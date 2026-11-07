@@ -53,6 +53,7 @@ function buyAverageBefore(a,key){
 }
 // 반영 뒤 같은 계좌 항목의 평균가만 맞춘다. 수량·금액·기준가·예산은 바꾸지 않는다.
 // 대상은 shares 반영·converted 아님·itemProfit의 통화 = 체결 통화. 금액 관리·비트코인 원화 평균가/달러 체결은 제외한다.
+// 이 회차의 계좌 몫(수량·체결가)이 그대로면 평균가를 바꾸지 않는다. 표식도 유지하며 가격 합계 비교는 부동소수 오차를 허용한다.
 // 빼기: S'=S0-q0>0이면 A'=(S0*A0-q0*p0)/S', 양의 유한수가 아니거나 S'<=0이면 A'=A0(q0=0도 A0).
 // 더하기: q1은 반영 뒤 이 키의 계좌별 양수 순수량, Sb=max(0,S1-q1). q1>0이면 Sb>0일 때 (Sb*A'+q1*p1)/(Sb+q1), Sb=0이면 p1.
 // p1=execPrice→tradePrice→price(호출부가 trade.execPrice로 전달). A' 없는 기존 보유는 건너뛰며, 첫 표식도 평균가가 있거나 기존 보유 0일 때만 붙인다.
@@ -66,15 +67,16 @@ function matchBuyAverage(a,key,before,trade){
   for(const [id,r] of before){
     const entries=after.get(id)||[],q1=Math.max(0,entries.reduce((n,e)=>n+finite(e.shares),0)),it=allocItemById(a,id);
     if(!it||!(r.qty>0||q1>0)||itemProfit(it,prices,fx).currency!==trade?.currency||q1>0&&price===null)continue;
-    const s1=finite(it.shares)||0,sb=Math.max(0,s1-q1);let average=r.average,removed=false;
-    if(r.qty>0&&r.shares-r.qty>0&&average!==null){const rest=(r.shares*average-r.cost)/(r.shares-r.qty);if(Number.isFinite(rest)&&rest>0){average=rest;removed=true;}}
-    const same=removed&&r.qty===q1&&r.cost===q1*price&&r.shares===s1;
+    const cost=q1*price;
+    if(r.qty===q1&&Math.abs(r.cost-cost)<=Number.EPSILON*Math.max(Math.abs(r.cost),Math.abs(cost))*8)continue;
+    const s1=finite(it.shares)||0,sb=Math.max(0,s1-q1);let average=r.average;
+    if(r.qty>0&&r.shares-r.qty>0&&average!==null){const rest=(r.shares*average-r.cost)/(r.shares-r.qty);if(Number.isFinite(rest)&&rest>0)average=rest;}
     if(q1>0){
       if(sb>0&&average===null)continue;
       average=sb>0?(sb*average+q1*price)/(sb+q1):price;
       if(!Number.isFinite(average)||!(average>0))continue;
     }else if(sb===0&&r.fresh){if(Object.hasOwn(it,"averagePrice")){delete it.averagePrice;changed=true;}continue;}
-    if(average!==null&&Number.isFinite(average)&&average>0&&!same){const value=Number(average.toPrecision(12));if(it.averagePrice!==value){it.averagePrice=value;changed=true;}}
+    if(average!==null&&Number.isFinite(average)&&average>0){const value=Number(average.toPrecision(12));if(it.averagePrice!==value){it.averagePrice=value;changed=true;}}
     if(q1>0)for(const e of entries){
       if(e.execPrice!==price){e.execPrice=price;changed=true;}
       if((r.fresh||r.average===null&&sb===0)&&e.avgFresh!==true){e.avgFresh=true;changed=true;}
