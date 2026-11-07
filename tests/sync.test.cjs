@@ -1059,3 +1059,79 @@ test('save(next)는 기기 저장 성공을 반환하고 실패한 새 사본으
   assert.equal(vm.runInContext('save(candidate)',h.context),false);assert.equal(h.context.state,before);assert.equal(Object.hasOwn(h.context.state,'splitLog'),false);
   h.context.localStorage.setItem=write;assert.equal(vm.runInContext('save(candidate)',h.context),true);assert.equal(h.context.state.splitLog.length,1);
 });
+
+// 화면을 숨기거나 떠날 때 바로 올리기(flushPlanner). 이벤트는 핸들러가 기다리지 않으므로 sync.running이 풀릴 때까지 기다린다.
+const hidePage = h => {const d=h.context.document;d.hidden=true;(d.on.visibilitychange||[]).forEach(fn=>fn());};
+const syncIdle = async h => {for(let p;(p=vm.runInContext('sync.running',h.context));)await p;};
+const leaveLocal = () => ({...empty(),plans:[{id:'fake-plan',note:'처음 가상 메모'}]});
+const editNote = (h,note='방금 쓴 가상 메모') => {h.context.state.plans[0].note=note;vm.runInContext('save()',h.context);};
+
+test('화면을 숨기면 대기 중인 이 기기 수정을 다시 읽지 않고 마지막 동기화 SHA로 한 번에 올린다',async()=>{
+  const local=leaveLocal(),h=harness({local,remote:local,base:snap(local)});await h.restored();
+  assert.equal(vm.runInContext('sync.baseSha',h.context),'sha-1');
+  editNote(h);const before=h.server.requests;
+  hidePage(h);await syncIdle(h);
+  assert.equal(h.server.requests-before,1,'저장소 기록·시세·알림을 다시 읽지 않는다');
+  assert.equal(h.server.puts.length,1);assert.equal(h.server.puts[0].sha,'sha-1');
+  assert.equal(h.remoteData().plans[0].note,'방금 쓴 가상 메모');
+  assert.equal(h.items.get('etf-planner-sync-base:'+REPO),vm.runInContext('dataSnapshot()',h.context));
+  assert.equal(vm.runInContext('sync.baseSha',h.context),h.server.file.sha);
+  assert.match(h.status(),/동기화 완료/);
+});
+
+test('숨김과 pagehide가 잇달아 와도 한 번만 올린다',async()=>{
+  const local=leaveLocal(),h=harness({local,remote:local,base:snap(local)});await h.restored();
+  editNote(h);hidePage(h);h.fire('pagehide',{persisted:false});await syncIdle(h);
+  assert.equal(h.server.puts.length,1);assert.equal(h.server.writes,1);
+});
+
+test('다른 기기 기록 적용을 입력 중이라 미룬 뒤 숨겨도 최신 원격 SHA로 덮어쓰지 않는다',async()=>{
+  const local={...empty(),plans:[{id:'p',note:''}]},h=harness({local,remote:local,base:snap(local)}),doc=h.context.document;await h.restored();
+  h.server.file={sha:'sha-other',text:JSON.stringify({...empty(),plans:[{id:'p',note:''},{id:'other-device'}]})};
+  doc.activeElement={tagName:'TEXTAREA',closest:()=>null};await h.run();
+  assert.match(h.status(),/입력 중 · 끝나면 동기화/);assert.equal(vm.runInContext('sync.sha',h.context),'sha-other');
+  h.context.state.plans[0].note='가상 메모';vm.runInContext('save()',h.context);
+  hidePage(h);await syncIdle(h);
+  assert.equal(h.server.puts.at(-1).sha,'sha-1','마지막 동기화 기준 SHA만 쓴다');
+  assert.equal(h.server.writes,0);assert.deepEqual(h.remoteData().plans.map(p=>p.id),['p','other-device']);
+  assert.equal(vm.runInContext('sync.again',h.context),true);assert.equal(vm.runInContext('sync.failed',h.context),false);
+  assert.match(h.status(),/다른 기기 저장 확인/);
+});
+
+test('바뀐 것 없음·충돌 대기·저장소 확인 전·연결 안 됨이면 숨겨도 올리지 않는다',async()=>{
+  const local=leaveLocal();
+  const same=harness({local,remote:local,base:snap(local)});await same.restored();
+  let n=same.server.requests;hidePage(same);await syncIdle(same);assert.equal(same.server.requests,n,'바뀐 것 없음');
+  const blocked=harness({local,remote:local,base:snap(local)});await blocked.restored();
+  vm.runInContext('sync.blocked=true',blocked.context);editNote(blocked);n=blocked.server.requests;hidePage(blocked);await syncIdle(blocked);
+  assert.equal(blocked.server.requests,n,'충돌 대기');
+  const fresh=harness({local,remote:local,base:snap(local)});await fresh.restored();
+  vm.runInContext('loadConfig()',fresh.context);editNote(fresh);n=fresh.server.requests;hidePage(fresh);await syncIdle(fresh);
+  assert.equal(fresh.server.requests,n,'다시 연결해 저장소 확인·기준 SHA가 없다');
+  const off=harness({local,connect:false});await off.restored();editNote(off);hidePage(off);await syncIdle(off);
+  assert.equal(off.server.requests,0,'연결 안 됨');
+});
+
+test('같은 브라우저의 다른 페이지가 맞춘 기준을 받으면 그 SHA를 모르므로 바로 올리지 않는다',async()=>{
+  const local=leaveLocal(),h=harness({local,remote:local,base:snap(local)});await h.restored();
+  editNote(h);h.items.set('etf-planner-sync-base:'+REPO,snap({...empty(),plans:[{id:'fake-plan',note:'다른 페이지 기준'}]}));
+  hidePage(h);await syncIdle(h);
+  assert.equal(h.server.puts.length,0);assert.equal(vm.runInContext('sync.baseSha',h.context),'');
+});
+
+test('진행 중인 동기화가 있으면 끝난 뒤 다시 판단해 두 번 올리지 않는다',async()=>{
+  const local=leaveLocal(),h=harness({local,remote:local,base:snap(local)});await h.restored();
+  editNote(h);const work=h.run();hidePage(h);await work;await syncIdle(h);
+  assert.equal(h.server.puts.length,1);assert.equal(h.server.writes,1);assert.match(h.status(),/동기화 완료/);
+});
+
+test('바로 올린 뒤 응답을 받기 전에 끊겨도 다음 동기화는 묻지 않고 기준만 맞춘다',async()=>{
+  let lose=false;const local=leaveLocal();
+  const h=harness({local,remote:local,base:snap(local),fetcher:async(url,options,request)=>{const response=await request(url,options);if(lose&&options?.method==='PUT'){lose=false;throw new TypeError('Failed to fetch');}return response;}});
+  await h.restored();editNote(h);lose=true;hidePage(h);await syncIdle(h);
+  assert.equal(h.server.writes,1,'저장소에는 올라감');assert.equal(vm.runInContext('sync.failed',h.context),true);
+  h.context.document.hidden=false;const puts=h.server.puts.length;await h.run();
+  assert.equal(h.server.puts.length,puts,'저장소가 이미 이 기기 기록이라 다시 올리지 않는다');
+  assert.notEqual(h.elements.get('conflictDialog')?.open,true,'충돌 창을 열지 않는다');
+  assert.equal(h.items.get('etf-planner-sync-base:'+REPO),vm.runInContext('dataSnapshot()',h.context));assert.match(h.status(),/동기화 완료/);
+});
