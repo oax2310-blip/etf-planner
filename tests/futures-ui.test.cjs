@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const source=['ma-ladder.js','prices.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
-const load=()=>{const ctx=vm.createContext({contractSize:10000});vm.runInContext(source,ctx);return ctx;};
+const load=()=>{const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const clone=value=>JSON.parse(JSON.stringify(value));
 const level=(days,price,contracts=3)=>({days,unit:'일선',price,confirmed:true,contracts,tranches:Array.from({length:contracts},(_,slot)=>({price,completed:false,executionPrice:null,slot}))});
 
@@ -90,7 +90,7 @@ test('기준선 전체 알림을 직접 선택하면 같은 기본값도 회차 
 });
 
 test('환율 사다리 지금 행은 보유 근월물 선물 시세와 수집 시각·지연·조회 실패를 구분한다',()=>{
-  const ctx=vm.createContext({contractSize:10000,esc:v=>String(v)});
+  const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000,esc:v=>String(v)});
   vm.runInContext(['prices.js','ma-ladder.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n'),ctx);
   const at='2026-10-16T01:40:00Z',now=new Date('2026-10-16T02:05:00Z'),fe={kind:'선물',asOf:'2026-10-16',close:1385.2,ma:{}};
   assert.deepEqual({...ctx.futureQuoteTime(fe,at,now)},{text:'10/16 10:40 수집 · 25분 전',old:false,delayed:false});
@@ -163,17 +163,17 @@ test('환율 사다리 지금 행은 보유 근월물 선물 시세와 수집 �
 });
 
 test('달러선물 가격 글자·입력칸은 소수 첫째 자리까지만 보이고 기록한 가격은 그대로 둔다',()=>{
-  const ctx=vm.createContext({contractSize:10000,esc:v=>String(v),PENCIL:'',decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),money:v=>`${Math.round(v)}원`});
+  const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000,esc:v=>String(v),PENCIL:'',decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),money:v=>`${Math.round(v)}원`});
   vm.runInContext(source,ctx);
   const run=expr=>vm.runInContext(expr,ctx);
   assert.equal(run('fmtPrice(1378.3333333333333)'),'1,378.3');assert.equal(run('fmtPrice(1401.6666666666667)'),'1,401.7');assert.equal(run('fmtPrice(1385.2)'),'1,385.2');assert.equal(run('fmtPrice(1371.649)'),'1,371.6');assert.equal(run('fmtPrice(1380)'),'1,380');
-  assert.equal(run('futureShown(1378.3333333333333)'),'1378.3');assert.equal(run('futureShown(1401.6666666666667)'),'1401.7');assert.equal(run('futureShown(1385.2)'),'1385.2');
+  assert.equal(run('futureShown(1378.3333333333333)'),'1,378.3');assert.equal(run('futureShown(1401.6666666666667)'),'1,401.7');assert.equal(run('futureShown(1385.2)'),'1,385.2');
   // 25일선 1,370 → 다음 32일선 1,375의 ⅓ 회차(1,371.6666…)는 매수가 칸과 체크한 회차 모두 첫째 자리까지
   const f={targetPrice:1480,positions:[{month:'202612',contracts:3,settlementPrice:1372.3333333333333}],levels:[level(25,1370),level(32,1375)]};
   ctx.refreshFutureBuyPrices(f);Object.assign(f.levels[0].tranches[2],{completed:true,executionPrice:f.levels[0].tranches[2].price,mergedMonth:'202612'});
   const before=JSON.stringify(f),html=ctx.futureBuyTable(f);
   assert.equal(JSON.stringify(f),before,'표시는 기록을 바꾸지 않는다');
-  assert.match(html,/data-tranche-price="0:1"[^>]*value="1371\.7"/);assert.match(html.replace(/<[^>]*>/g,''),/1,373\.3원 · 1계약/);
+  assert.match(html,/data-tranche-price="0:1"[^>]*value="1,371\.7"/);assert.match(html.replace(/<[^>]*>/g,''),/1,373\.3원 · 1계약/);
   assert.doesNotMatch(html,/\d\.\d{2}/,'둘째 자리 이상 숫자를 보이지 않는다');
   assert.equal(f.levels[0].tranches[1].price,1370+5/3);
 });
@@ -298,7 +298,7 @@ test('분할매수 표의 산 회차는 체결가를 점선으로 보이고 그 
   const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]);
   Object.assign(f.levels[0].tranches[0],{completed:true,executionPrice:1396.25,mergedMonth:'202612'});
   let html=ctx.futureBuyTable(f),done=buyTableRow(html,'0:0').html,open=buyTableRow(html,'0:1').html;
-  assert.match(done,/<label class="future-tap-price" title="[^"]*체결가 수정"><span class="price" aria-hidden="true">1,396\.3원<\/span><input data-future-exec="0:0"[^>]*value="1396\.3"/);
+  assert.match(done,/<label class="future-tap-price" title="[^"]*체결가 수정"><span class="price" aria-hidden="true">1,396\.3원<\/span><input data-future-exec="0:0"[^>]*value="1,396\.3"/);
   assert.doesNotMatch(done,/data-tranche-price/);assert.match(open,/data-tranche-price="0:1"/);assert.doesNotMatch(open,/data-future-exec/);
   f.buyPlan={startLine:'25일선',endPrice:1450,contracts:2,units:['일선']};
   html=ctx.futureBuyTable(f);open=buyTableRow(html,'0:1').html;

@@ -61,7 +61,7 @@ test('js 파일을 차례로 이어도 문법 오류·겹치는 맨 위 이름�
     assert.doesNotThrow(() => new vm.Script(list.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n;\n')));
   for (const list of [scripts, assetScripts, valuationScripts]) {
     assert.equal(list.filter(f => f === 'js/money-input.js').length, 1, '금액 처리기는 한 번만 불러온다');
-    for (const consumer of ['js/assets.js', 'js/valuation.js']) if (list.includes(consumer))
+    for (const consumer of ['js/assets.js', 'js/valuation.js', 'js/plans.js', 'js/purchases.js', 'js/futures.js', 'js/futures-plan.js', 'js/futures-rebuy.js', 'js/rebuy.js']) if (list.includes(consumer))
       assert.ok(list.indexOf('js/money-input.js') < list.indexOf(consumer), `${consumer}보다 금액 처리기를 먼저 불러온다`);
   }
 });
@@ -102,7 +102,7 @@ test('토큰을 쓰는 세 페이지는 같은 보안 정책(CSP)을 맨 앞에 
 test('달러선물·시나리오의 음수 가능 칸은 \'-\'·\'.\' 키가 있는 키패드(inputmode=numeric)를 쓴다', () => {
   // 삼성 키보드는 inputmode=decimal·type=number 키패드에 '-' 키가 없다. 자산 현황 칸은 ledger-benchmark·savings-ui 테스트가 확인한다.
   const futures = fs.readFileSync(path.join(root, 'js/futures.js'), 'utf8');
-  for (const id of ['fpnl', 'frollSpread']) assert.match(futures, new RegExp(`<input id="${id}" type="text" inputmode="numeric" autocomplete="off" value=`), id);
+  for (const id of ['fpnl', 'frollSpread']) assert.match(futures, new RegExp(`<input id="${id}" type="text" inputmode="numeric" autocomplete="off" data-money data-money-step="any" value=`), id);
   const china = valuationHtml.match(/<input id="chinaFx" type="text" inputmode="numeric" autocomplete="off" pattern="([^"]+)" value="0">/);
   assert.ok(china, '위안화 연 변화');
   // 범위(−15~15%)와 0.5 단위는 pattern이 checkValidity로 검사한다(브라우저는 v 플래그로 전체 일치).

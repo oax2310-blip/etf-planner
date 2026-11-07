@@ -181,13 +181,13 @@ const futureFloorAbove=(line,floor)=>`손절 하단 ${movingLineText(line)}(${fm
 // 하단선은 setFutureRebuyField('floorLine')로 저장하며, 직접 가격 칸은 선을 고른 동안 비활성이라 바꾼 칸에 들어가지 않는다.
 function openFutureRebuyDialog(){
   const f=state.futures,r=futureRebuyOf(f),s=futureRebuySummary(f),fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?futureShown(v):"";
-  const field=(key,label,value,attrs,off=s.started)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" type="number" ${attrs} value="${value}"${off?" disabled":""}></label>`;
+  const field=(key,label,value,attrs,off=s.started)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" ${key.endsWith("Price")?'type="text" inputmode="decimal" autocomplete="off" data-money':'type="number"'} ${attrs} value="${key.endsWith("Price")?moneyInputText(value):value}"${off?" disabled":""}></label>`;
   const floorLine=futureFloorLine(r.floorLine),lock=s.started?" disabled":"",floorUnits=[["","원"],["일선","일선"],["주선","주선"],["개월선","월선"]];
-  const floorField=`<div class="field future-floor"><span>손절 하단</span><div class="hold-input"><input data-fr-field="floorPrice" type="number" min="0" step="any" inputmode="decimal" value="${opt(r.floorPrice)}" aria-label="손절 하단 (원)"${floorLine?" hidden disabled":lock}><input id="frFloorPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(floorLine)||60}" required aria-label="손절 하단 이동평균 기간"${floorLine?lock:" hidden disabled"}><select id="frFloorUnit" aria-label="손절 하단 단위"${lock}>${floorUnits.map(([v,label])=>`<option value="${v}"${movingLineUnit(floorLine)===v?" selected":""}>${label}</option>`).join("")}</select></div><small id="frFloorPrice"></small></div>`;
+  const floorField=`<div class="field future-floor"><span>손절 하단</span><div class="hold-input"><input data-fr-field="floorPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${opt(r.floorPrice)}" aria-label="손절 하단 (원)"${floorLine?" hidden disabled":lock}><input id="frFloorPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(floorLine)||60}" required aria-label="손절 하단 이동평균 기간"${floorLine?lock:" hidden disabled"}><select id="frFloorUnit" aria-label="손절 하단 단위"${lock}>${floorUnits.map(([v,label])=>`<option value="${v}"${movingLineUnit(floorLine)===v?" selected":""}>${label}</option>`).join("")}</select></div><small id="frFloorPrice"></small></div>`;
   const hint=s.started?"재매수 시작 후 손절 기준은 재매수 체크를 모두 해제한 뒤 바꿀 수 있습니다.":locked?"기준을 바꿔도 체크한 손절의 계약 수·환율은 그대로 두고 남은 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":"손절 비중은 0~100%로 입력합니다(기본 50%). 손절 계약 수보다 많은 분할 횟수는 자동으로 줄입니다.";
   dialog.innerHTML=`<form id="futureRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyTitle">손절 기준 수정</h2><button class="btn ghost" type="button" data-close-future-rebuy>닫기</button></div>
     <p class="hint">신저점부터 정한 하단까지 환율을 고르게 나눕니다. 설정한 비중만큼 손절하고, 하단 아래의 손절 회차는 만들지 않습니다. 하단은 직접 가격(원)이나 일선·주선·월선으로 정하며, 선을 고르면 그 선의 시세를 따라 남은 회차가 다시 나뉩니다.</p>
-    <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'min="0" step="any" inputmode="decimal"')}${floorField}${field("contracts","이탈 전 계약 수",s.hold||"",'min="0" step="1" inputmode="numeric"')}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${field("steps","분할 횟수",futureRebuyQty(r.steps)||10,'min="1" max="60" step="1" inputmode="numeric"')}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'min="0" step="any" inputmode="decimal" placeholder="시세 없음"',false)}</div>
+    <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'data-money-min="0" data-money-step="any"')}${floorField}${field("contracts","이탈 전 계약 수",s.hold||"",'min="0" step="1" inputmode="numeric"')}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${field("steps","분할 횟수",futureRebuyQty(r.steps)||10,'min="1" max="60" step="1" inputmode="numeric"')}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'data-money-min="0" data-money-step="any" placeholder="시세 없음"',false)}</div>
     <p class="hint">${hint}${s.cuts.length===1?" 한 번만 손절하는 계획은 하단에서 실행합니다.":""}${fe?"":" 보유 근월물 시세가 없어 현재 환율은 직접 넣습니다."}</p>
     <p class="future-plan-error" id="futureRebuyError" role="alert"></p><div class="dialog-foot"><button class="btn" type="button" data-close-future-rebuy>취소</button><button class="btn primary" type="submit">저장</button></div></form>`;
   const inputs=[...dialog.querySelectorAll("[data-fr-field]")],initial=Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.value])),error=$("futureRebuyError");
@@ -202,18 +202,19 @@ function openFutureRebuyDialog(){
       :short?`${movingLineText(line)}은 보유 근월물 봉 ${short.have}개로 계산할 수 없습니다 · ${short.max}까지 고를 수 있습니다`:`${movingLineText(line)} 시세 대기`;
     floorNote.classList.toggle("warn",last||!!short);
   };
+  inputs.filter(el=>el.hasAttribute("data-money")&&!el.disabled&&!el.hidden).forEach(el=>moneyInputValidate(el));
   syncFloor();
   dialog.querySelectorAll("[data-close-future-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
   inputs.forEach(el=>el.oninput=()=>{error.textContent="";});
   period.oninput=unit.onchange=()=>{error.textContent="";syncFloor();};
   $("futureRebuyForm").onsubmit=e=>{
     e.preventDefault();
-    const open=inputs.filter(el=>!el.disabled),invalid=[...open,period].find(el=>!el.disabled&&!el.checkValidity());if(invalid){invalid.reportValidity();return;}
-    const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.value])),line=chosenLine();
+    const open=inputs.filter(el=>!el.disabled&&!el.hidden),invalid=[...open,period].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
+    const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
     if(!s.started&&line!==floorLine)edits.floorLine=line;
     if(!Object.keys(edits).length){dialog.close();return;}
     const latest=state.futures,g=applyFutureRebuyEdits(latest,edits);
-    if(!g){error.textContent=futureRebuyEditError(latest,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})});return;}
+    if(!g){error.textContent=futureRebuyEditError(latest,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})});return;}
     const priced=priceData&&Object.keys(edits).some(key=>key!=="currentPrice");if(priced)fillPrices({futures:g},priceData);
     const gl=futureFloorLine(g.rebuy.floorLine),floor=Number(g.rebuy.floorPrice)||0; // 새로 고른 하단선·신저점은 지금 시세로 하단이 신저점보다 낮은지 확인한다
     if(gl&&(Object.hasOwn(edits,"floorLine")||Object.hasOwn(edits,"lowPrice"))&&floor>0&&Number(g.rebuy.lowPrice)>0&&floor>=Number(g.rebuy.lowPrice)){error.textContent=futureFloorAbove(gl,floor);return;}
@@ -229,7 +230,7 @@ const futureRebuyModeField = direct => `<label class="field"><span>재매수 방
 function openFutureRebuyStartDialog(mode){
   if(mode!=="average"&&futureRebuyOf(state.futures).directPlan)return openFutureDirectRebuyDialog();
   const dialog=$("futureRebuyStartDialog"),f=state.futures,r=futureRebuyOf(f),initial=movingLineName(r.startLine)||movingLineName(futureRebuyStages(r)[0]?.name)||"25선";
-  const initialLine=movingLineName(r.endLine),initialEnd=initialLine||(Number(r.endPrice)>0?String(r.endPrice):""),kind=initialLine?movingLineUnit(initialLine):initialEnd?"direct":"auto";
+  const initialLine=movingLineName(r.endLine),initialEnd=initialLine||(Number(r.endPrice)>0?Number(r.endPrice):""),kind=initialLine?movingLineUnit(initialLine):initialEnd?"direct":"auto";
   const units=[["선","시선 · 60분봉"],["일선","일선"],["주선","주선"],["개월선","월선"]],endUnits=[["direct","직접 가격"],...units,["auto","평균 손절 환율 · 자동"]];
   const options=(list,value)=>list.map(([key,label])=>`<option value="${key}"${value===key?" selected":""}>${label}</option>`).join("");
   dialog.innerHTML=`<form id="futureRebuyStartForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyStartTitle">재매수 기준 수정</h2><button class="btn mini ghost" type="button" data-close-rebuy-start>닫기</button></div>
@@ -242,11 +243,13 @@ function openFutureRebuyStartDialog(mode){
   $("futureRebuyMode").onchange=()=>openFutureDirectRebuyDialog();
   let lastKind=kind,directValue=initialLine?"":initialEnd,lineValue=String(parseInt(initialLine)||Math.max(25,parseInt(initial)));
   const line=()=>movingLineName(`${Number(period.value)}${unit.value}`);
-  const endChoice=()=>endUnit.value==="auto"?"":endUnit.value==="direct"?end.value:`${Number(end.value)}${endUnit.value}`;
+  const endChoice=()=>endUnit.value==="auto"?"":endUnit.value==="direct"?(moneyInputNumber(end.value)??""):`${Number(end.value)}${endUnit.value}`;
   const syncEnd=()=>{
     const mode=endUnit.value,direct=mode==="direct",auto=mode==="auto";
-    end.disabled=auto;end.required=!direct&&!auto;end.min=direct?"0.0001":"1";end.step=direct?"any":"1";
-    if(direct||auto)end.removeAttribute("max");else end.max="400";
+    end.disabled=auto;end.required=!direct&&!auto;end.setCustomValidity("");
+    end.type=direct?"text":"number";end.inputMode=direct?"decimal":"numeric";
+    if(direct){end.setAttribute("autocomplete","off");end.setAttribute("data-money","");end.setAttribute("data-money-min","0.0001");end.setAttribute("data-money-step","any");for(const attr of ["min","max","step"])end.removeAttribute(attr);end.value=moneyInputText(end.value);moneyInputValidate(end);}
+    else{for(const attr of ["data-money","data-money-min","data-money-step","autocomplete"])end.removeAttribute(attr);end.min="1";end.step="1";if(auto)end.removeAttribute("max");else end.max="400";}
     end.placeholder=auto?"자동":direct?"가격 (원)":"기간 (1~400)";end.setAttribute("aria-label",direct?"재매수 종료가격 (원)":"재매수 종료 이동평균 기간");
   };
   const update=()=>{
@@ -260,10 +263,10 @@ function openFutureRebuyStartDialog(mode){
     $("futureRebuyStartPreview").innerHTML=`<div class="future-auto-preview-head"><strong>${esc(futureRebuyLineText(line()))}${s.endLine?` → ${esc(futureRebuyLineText(s.endLine))}`:"부터 재매수"}</strong><span>${rows.length}회 · 남은 ${s.rest}계약</span></div>${s.above&&!hint?`<p class="hint">평균 손절 ${fmtPrice(s.sellAvg)}원 위 ${s.tranches.filter(x=>x.above).length}회 · ${s.above}계약은 제외합니다.</p>`:""}${hint?`<p class="hint">${hint}</p>`:`<div class="future-auto-preview-table"><div class="future-auto-preview-row head"><span>기준선 · 회차</span><span>재매수 환율</span><span>계약 수</span></div>${rows.map(x=>`<div class="future-auto-preview-row"><span>${esc(s.stages[x.i].rebuyEnd?"종료가격":futureRebuyLineText(s.stages[x.i].name))}${x.i===s.endIndex?' <small>종료</small>':` <small>${x.t+1}차</small>`}</span><span>${x.price>0?`${x.est?"≈":""}${fmtPrice(x.price)}원`:"시세 대기"}</span><strong>${x.amount}계약</strong></div>`).join("")}</div>`}`;
   };
   period.oninput=end.oninput=unit.onchange=update;
-  endUnit.onchange=()=>{if(lastKind==="direct")directValue=end.value;else if(lastKind!=="auto")lineValue=end.value;lastKind=endUnit.value;end.value=lastKind==="auto"?"":lastKind==="direct"?directValue:lineValue;syncEnd();update();};
+  endUnit.onchange=()=>{if(lastKind==="direct")directValue=end.value;else if(lastKind!=="auto")lineValue=end.value;lastKind=endUnit.value;end.type=lastKind==="direct"?"text":"number";end.value=lastKind==="auto"?"":lastKind==="direct"?directValue:lineValue;syncEnd();update();};
   dialog.querySelectorAll("[data-close-rebuy-start]").forEach(b=>b.onclick=()=>dialog.close());
   $("futureRebuyStartForm").onsubmit=e=>{
-    e.preventDefault();const invalid=[period,end].find(el=>!el.checkValidity());if(invalid){invalid.reportValidity();return;}
+    e.preventDefault();const invalid=[period,end].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
     const latest=state.futures,summary=futureRebuySummary(latest);
     if(!futureRebuyOf(latest).directPlan&&line()===initial&&endChoice()===initialEnd&&!summary.rangeError&&!summary.waitingEnd){dialog.close();return;}
     const g=futureRebuyWithStart(latest,line(),futuresEntry(priceData,latest),endChoice());
@@ -277,16 +280,16 @@ function openFutureDirectRebuyDialog(){
   const qty=p?Math.min(s.rest,Math.max(0,p.contracts-(s.directBought||0)))||s.rest:s.rest,value=v=>v>0?esc(shown(v)):"";
   dialog.innerHTML=`<form id="futureDirectRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyStartTitle">재매수 기준 수정</h2><button class="btn mini ghost" type="button" data-close-rebuy-start>닫기</button></div>
     ${futureRebuyModeField(true)}<p class="hint future-direct-basis">손절 평균 <b>${s.sellAvg?`${fmtPrice(s.sellAvg)}원`:"—"}</b> · 현재 <b>${cur?`${fmtPrice(cur)}원`:"—"}</b> · 미복원 <b>${s.rest}계약</b></p>
-    <div class="future-auto-grid future-direct-grid"><label class="field"><span>시작 환율 (원)</span><input id="futureDirectStart" type="number" min="0.01" step="0.01" inputmode="decimal" required value="${value(p?.startPrice||cur)}"></label><label class="field"><span>종료 환율 (원)</span><input id="futureDirectEnd" type="number" min="0.01" step="0.01" inputmode="decimal" required value="${value(p?.endPrice)}"></label>
+    <div class="future-auto-grid future-direct-grid"><label class="field"><span>시작 환율 (원)</span><input id="futureDirectStart" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0.01" data-money-step="0.01" required value="${moneyInputText(value(p?.startPrice||cur))}"></label><label class="field"><span>종료 환율 (원)</span><input id="futureDirectEnd" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0.01" data-money-step="0.01" required value="${moneyInputText(value(p?.endPrice))}"></label>
     <label class="field"><span>분할 횟수</span><input id="futureDirectRounds" type="number" min="1" max="60" step="1" inputmode="numeric" required value="${p?.rounds||Math.min(3,qty)||1}"></label><label class="field"><span>이번 복원 계약 수</span><input id="futureDirectQty" type="number" min="1" max="${s.rest}" step="1" inputmode="numeric" required value="${value(qty)}"></label>
     <label class="field future-direct-condition"><span>매수 조건</span><select id="futureDirectCondition"><option value="up"${p?.condition==="down"?"":" selected"}>올라오면 매수 · 환율 이상</option><option value="down"${p?.condition==="down"?" selected":""}>내려오면 매수 · 환율 이하</option></select></label></div>
     <p class="hint future-auto-hint">손절 평균가 위 회차는 저장해도 매수·알림에서 제외합니다. 선택한 계약만 새 계획에 배분하고 기존 체결은 보존합니다. 나머지 계약은 대기로 남습니다.</p>
     <div id="futureRebuyStartPreview" class="future-auto-preview" aria-live="polite"></div><p class="future-plan-error" id="futureRebuyStartError" role="alert"></p><div class="dialog-foot"><button class="btn" type="button" data-close-rebuy-start>취소</button><button class="btn primary" type="submit" id="futureDirectSave">저장</button></div></form>`;
   const ids=["futureDirectStart","futureDirectEnd","futureDirectRounds","futureDirectQty","futureDirectCondition"],inputs=ids.map(id=>$(id)),error=$("futureRebuyStartError");
-  const values=()=>({startPrice:inputs[0].value,endPrice:inputs[1].value,rounds:inputs[2].value,contracts:inputs[3].value,condition:inputs[4].value});
+  const values=()=>({startPrice:moneyInputNumber(inputs[0].value)??0,endPrice:moneyInputNumber(inputs[1].value)??0,rounds:inputs[2].value,contracts:inputs[3].value,condition:inputs[4].value});
   const initial=JSON.stringify(values());
   const update=()=>{
-    error.textContent="";const latest=futureRebuySummary(state.futures),v=values(),g=futureRebuyWithDirect(state.futures,v);$("futureDirectSave").disabled=!g;
+    error.textContent="";const valid=inputs.slice(0,2).map(el=>moneyInputValidate(el)).every(Boolean),latest=futureRebuySummary(state.futures),v=values(),g=valid&&futureRebuyWithDirect(state.futures,v);$("futureDirectSave").disabled=!g;
     if(!g){$("futureRebuyStartPreview").innerHTML=`<p class="hint">${!latest.rest?"손절 후 남은 미복원 계약이 있어야 설정할 수 있습니다.":Number(v.contracts)>latest.rest?`이번 복원 계약 수는 미복원 ${latest.rest}계약 이하여야 합니다.`:Number(v.rounds)>Number(v.contracts)?"분할 횟수는 이번 복원 계약 수 이하여야 합니다.":Number(v.startPrice)>0&&Number(v.endPrice)>0&&Number(v.rounds)>=1&&Number(v.rounds)<=60&&(v.condition==="down"?Number(v.startPrice)>=Number(v.endPrice):Number(v.startPrice)<=Number(v.endPrice))?"기존 체결을 포함한 재매수 단계는 80개까지입니다. 분할 횟수를 줄여 주세요.":v.condition==="down"?"시작·종료 환율을 입력하세요. 내려오면 매수는 종료 환율을 시작 환율 이하로 정하세요.":"시작·종료 환율을 입력하세요. 올라오면 매수는 종료 환율을 시작 환율 이상으로 정하세요."}</p>`;return;}
     const view=futureRebuySummary(g),rows=view.tranches.filter(x=>!x.done&&x.amount>0),now=Number(futureRebuyOf(state.futures).currentPrice)||0,due=rows.filter(x=>futureRebuyReached(x,now)).length;
     $("futureRebuyStartPreview").innerHTML=`<div class="future-auto-preview-head"><strong>직접 ${rows.length}회 · 이번 ${v.contracts}계약</strong><span>대기 ${view.unplannedRest}계약</span></div>${view.above?`<p class="hint">손절 평균 ${fmtPrice(view.sellAvg)}원 위 ${view.tranches.filter(x=>x.above).length}회 · ${view.above}계약은 제외합니다.</p>`:""}${due?`<p class="hint future-direct-due">현재 환율에서 이미 ${due}개 회차가 도달 상태입니다. 시작 환율과 매수 조건을 확인하세요.</p>`:""}<div class="future-auto-preview-table"><div class="future-auto-preview-row head"><span>회차</span><span>재매수 환율</span><span>계약 수</span></div>${rows.map(x=>`<div class="future-auto-preview-row"><span>${esc(futureRebuyStageText(view.stages[x.i]))}</span><span>${fmtPrice(x.price)}원 ${v.condition==="down"?"이하":"이상"}</span><strong>${x.amount}계약</strong></div>`).join("")}</div>`;
@@ -295,7 +298,7 @@ function openFutureDirectRebuyDialog(){
   $("futureRebuyMode").onchange=()=>openFutureRebuyStartDialog("average");
   dialog.querySelectorAll("[data-close-rebuy-start]").forEach(b=>b.onclick=()=>dialog.close());
   $("futureDirectRebuyForm").onsubmit=e=>{
-    e.preventDefault();const invalid=inputs.find(el=>!el.checkValidity());if(invalid){invalid.reportValidity();return;}
+    e.preventDefault();const invalid=inputs.find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
     const latest=state.futures,now=futureRebuySummary(latest);
     if(futureRebuyOf(latest).directPlan&&now.directBought===0&&initial===JSON.stringify(values())){dialog.close();return;}
     const g=futureRebuyWithDirect(latest,values());if(!g){error.textContent="미복원 계약 수·환율·분할 횟수를 확인하세요. 기존 체결을 포함한 재매수 단계는 80개까지 설정할 수 있습니다.";return;}
@@ -407,7 +410,7 @@ function renderFutureRebuy(f){
   const cutRecs=Array.isArray(r.cuts)?r.cuts:[],heldMonth=m=>futureHeld(f,m);
   const cutWarn=rec=>{if(!rec?.month)return rec&&!rec.manual?"보유 미반영":"";const gone=futureCutLegs(rec).map(l=>l.month).filter(m=>!heldMonth(m));return gone.length?`${esc(gone.join("·"))} 보유 없음`:"";};
   // 점선 환율(눌러서 그 자리에서 수정): attrs = 입력칸 data 속성, value = 기록한 값(빈 칸이면 글자 text만 보임)
-  const tapPrice=(text,attrs,value,label)=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="number" min="0" step="any" inputmode="decimal" value="${value}" aria-label="${label}"></label>`;
+  const tapPrice=(text,attrs,value,label)=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${moneyInputText(value)}" aria-label="${label}"></label>`;
   const cutAlerts=typeof futureRebuyAlertEnabled==="function",cutDone=s.cuts.filter(c=>c.done);
   const cutMonths=[...new Set(s.cuts.filter(c=>c.recorded).flatMap(c=>futureCutLegs(cutRecs[c.k-1]).map(l=>l.month)).filter(m=>m&&heldMonth(m)))].sort();
   const cutRows=s.cuts.map(c=>{
@@ -489,7 +492,8 @@ function renderFutureRebuy(f){
     if(!Number.isInteger(qty)||qty<0){alert(cutFail);return false;}
     const detach=cutBack(i,qty);if(detach===null)return false;
     const done=setFutureCutCount(f,i,t,detach);if(done===false){alert(cutFail);return false;}if(done==="unlinked")alert(cutUnlinked);},renderFutures);
-  onEdit("[data-fcut-price]",(v,el)=>setFutureCutPrice(f,Number(el.dataset.fcutPrice),v),renderFutures);
+  $$("#futureRebuyPanel input[data-money]").forEach(el=>moneyInputValidate(el));
+  onEdit("[data-fcut-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}return setFutureCutPrice(f,Number(el.dataset.fcutPrice),moneyInputNumber(v));},renderFutures);
   const trKey=v=>String(v).split(":").map(Number);
   $$("[data-fbuy]").forEach(input=>input.onchange=()=>{const [i,t]=trKey(input.dataset.fbuy),fill=futureFillOf(f,i,t),rec=fill?.[0];let detach=false;
     if(!input.checked&&rec?.month){const qty=futureRebuyQty(rec.contracts),month=futureHeldMonth(f,qty,rec.month);
@@ -499,8 +503,8 @@ function renderFutureRebuy(f){
     else{save();if(done==="unlinked")alert("보유 월물이 없어 재매수 기록만 했습니다. 보유 월물을 입력한 뒤 '보유 월물에 반영'을 누르세요.");}
     renderFutures();});
   onEdit("[data-fbuy-qty]",(v,el)=>{if(setFutureBuyCount(f,...trKey(el.dataset.fbuyQty),v)===false){alert("계약 수는 1 이상 정수로, 판 계약 수 안에서 입력하세요. 보유 월물에서 뺄 계약이 없으면 줄일 수 없습니다.");return false;}},renderFutures);
-  onEdit("[data-fbuy-price]",(v,el)=>{const n=v.trim()===""?0:Number(v);if(!Number.isFinite(n)||n<0)return false;editFutureRebuy(f).stages[Number(el.dataset.fbuyPrice)].price=n;},renderFutures);
-  onEdit("[data-fbuy-exec]",(v,el)=>setFutureBuyExec(f,...trKey(el.dataset.fbuyExec),v),renderFutures);
+  onEdit("[data-fbuy-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const n=moneyInputNumber(v)??0;editFutureRebuy(f).stages[Number(el.dataset.fbuyPrice)].price=n;},renderFutures);
+  onEdit("[data-fbuy-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}return setFutureBuyExec(f,...trKey(el.dataset.fbuyExec),moneyInputNumber(v));},renderFutures);
   if($("frLink"))$("frLink").onclick=()=>{const g=futureRebuyLinked(f),held=x=>x.positions.reduce((n,p)=>n+(Number(p.contracts)||0),0);
     if(!g){alert("반영할 보유 월물 계약이 부족하거나 단순평균가·체결 환율이 없습니다. 보유 월물과 체결 기록을 확인하세요.");return;}
     if(!confirm(`보유 ${held(f)}계약 → ${held(g)}계약, 누적 정산손익 ${money(Number(f.baselinePnl)||0)} → ${money(g.baselinePnl)}으로 고칩니다.\n계좌 기준으로 이미 직접 고쳤다면 취소하고 '직접 반영함'을 누르세요.`))return;
