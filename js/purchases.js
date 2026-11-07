@@ -6,7 +6,7 @@ const nf1=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}),nf2=new Intl.
 const man=v=>`${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`;
 const pc=v=>v===null||v===undefined||!Number.isFinite(Number(v))?"—":`${(Math.abs(v)<1?nf2:nf1).format(Number(v))}%`;
 const PEN=PENCIL,dlg=el;
-const numIn=v=>String(v??"").trim()===""?null:finite(v);
+const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,priorityPointerDown=false;
@@ -473,6 +473,7 @@ function renderLines(){
   f.lineStartPeriod.disabled=f.lineStartUnit.disabled=f.lineLastUnit.disabled=!lines;
   f.lineLastPeriod.hidden=priced;f.lineLastPeriod.disabled=!lines||priced;
   f.lineEnd.hidden=!priced;f.lineEnd.disabled=!lines||!priced;f.lineEnd.placeholder=`목표 가격 (${cur==="USD"?"$":"원"})`;
+  f.lineBudget.disabled=!lines;
   el("manualCurrencyField").hidden=!picked||!!q;
   const box=el("lineResult"), list=el("linePreview"), hint=t=>`<p class="hint">${t}</p>`;list.innerHTML="";
   el("lineEndNote").textContent=q?`${lastMa?`${startText(last)} ${priceText(lastMa,cur)} · `:""}현재가 ${priceText(q.close,cur)} · ${q.asOf.slice(5)}`:"";
@@ -484,7 +485,9 @@ function renderLines(){
   const target=holding.target, value=holding.value;
   const spent=Object.values(purchaseBuys(purchaseDraft)).reduce((n,b)=>n+Math.max(0,finite(b?.actual)||0),0), goal=target!==null?target/100*s.base:null;
   const auto=purchaseAutoBudget(purchaseDraft,holding,target);
-  if(budgetAuto&&auto!==null)f.lineBudget.value=auto;
+  if(budgetAuto&&auto!==null)f.lineBudget.value=moneyInputText(auto);
+  const moneyValid=[f.lineBudget,...(priced?[f.lineEnd]:[])].map(x=>moneyInputValidate(x)).every(Boolean);
+  if(!moneyValid){box.innerHTML=hint("금액과 가격의 입력 범위를 확인해 주세요.");return;}
   el("lineBudgetNote").textContent=goal===null?"자산 배분에 목표 비중을 넣으면 계산합니다":`목표 ${pc(target)} ${man(goal)} − 전체 계좌 보유 ${man(value)}${spent?` + 체결 ${man(spent)}`:""} = ${man(auto)}${numIn(f.lineBudget.value)!==auto?" · 직접 고친 금액":""}`;
   const draft=linesDraft(), entry=lineEntry(it), {rows,skipped}=purchaseLineSelection({lines:draft,buys:purchaseDraft.buys},entry,{...lineOptions(it,purchaseDraft),currency:cur}), open=rows.filter(r=>!r.done), known=lineKnown(draft,entry);
   const skippedKeys=new Set(skipped.map(r=>r.key));
@@ -515,20 +518,24 @@ function renderLines(){
 function renderPurchaseDraft(){
   const stages=purchaseDraft.stages||[], it=pickedItem()?.it, cur=draftCurrency(), unit=unitOf(it);
   el("purchaseStageRows").innerHTML=stages.map((stage,i)=>tradeStageEditorCard(`${i+1}차${purchaseStageRecorded(stage)?`<small>${stage.done?"매수 완료":"부분 체결"}</small>`:""}`,
-    `<label>${tracksETF(it)?"기준 티커 가격":"매수 가격"} (${cur==="USD"?"$":"원"})<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="price" data-stage="${i}" value="${finite(stage.price)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
+    `<label>${tracksETF(it)?"기준 티커 가격":"매수 가격"} (${cur==="USD"?"$":"원"})<input type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" data-purchase-field="price" data-stage="${i}" value="${escA(moneyInputText(finite(stage.price)))}"${purchaseStageRecorded(stage)?" readonly":""}></label>
     <label>${tracksETF(it)?purchaseStageRecorded(stage)?"실제 ETF 계획 수량":"기준 티커 수량":"계획 수량"} (${qtyUnit(it).trim()})<input type="number" min="0" step="${unit<1?"any":"1"}" inputmode="decimal" data-purchase-field="shares" data-stage="${i}" value="${purchasePlannedShares(stage)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
-    <label>예정액 (만원)<input type="number" min="0" step="any" inputmode="decimal" data-purchase-field="amount" data-stage="${i}" value="${finite(stage.amount)??""}"${purchaseStageRecorded(stage)?" readonly":""}></label>
+    <label>예정액 (만원)<input type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" data-purchase-field="amount" data-stage="${i}" value="${escA(moneyInputText(finite(stage.amount)))}"${purchaseStageRecorded(stage)?" readonly":""}></label>
     <label class="date-field">매수 예정일<input type="date" data-purchase-field="date" data-stage="${i}" value="${escA(stage.date||"")}"></label>
     <label class="condition-field">매수 조건<input maxlength="100" placeholder="예: 기준가 도달" data-purchase-field="condition" data-stage="${i}" value="${escA(stage.condition||"")}"></label>`,
     `<button class="btn mini ghost" type="button" data-purchase-remove="${i}" aria-label="${i+1}차 회차 삭제">삭제</button>`,stage.done?"done":"")).join("");
   form().manualCurrency.disabled=stages.some(purchaseStageRecorded);
   // 가격·수량을 고치면 예정액 = 가격 × 수량(달러는 × 지금 환율)으로 맞춘다. 예정액만 따로 고쳐도 된다.
-  all("[data-purchase-field]").forEach(x=>x.oninput=()=>{const i=Number(x.dataset.stage),stage=stages[i],key=x.dataset.purchaseField;
+  all("[data-purchase-field]").forEach(x=>{
+    x.disabled=mode()!=="manual";
+    if(!x.disabled&&["price","amount"].includes(x.dataset.purchaseField))moneyInputValidate(x);
+    x.oninput=()=>{const i=Number(x.dataset.stage),stage=stages[i],key=x.dataset.purchaseField;
     if(purchaseStageRecorded(stage)&&["amount","actual","price","shares"].includes(key))return;
+    if(["price","amount"].includes(key)&&!moneyInputValidate(x))return;
     if(["amount","actual","price","shares"].includes(key))setNum(stage,key,x.value);else setText(stage,key,x.value);
     const rate=draftCurrency()==="USD"?assetFx(prices,doc.allocation):1;
-    if((key==="price"||key==="shares")&&finite(stage.price)!==null&&finite(stage.shares)!==null&&rate){stage.amount=Math.round(stage.price*stage.shares*rate/100)/100;const a=el("purchaseStageRows").querySelector(`[data-purchase-field=amount][data-stage="${i}"]`);if(a)a.value=stage.amount;}
-  });
+    if((key==="price"||key==="shares")&&finite(stage.price)!==null&&finite(stage.shares)!==null&&rate){stage.amount=Math.round(stage.price*stage.shares*rate/100)/100;const a=el("purchaseStageRows").querySelector(`[data-purchase-field=amount][data-stage="${i}"]`);if(a){a.value=moneyInputText(stage.amount);moneyInputValidate(a);}}
+  };});
   all("[data-purchase-remove]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.purchaseRemove);if(purchaseStageRecorded(stages[i])&&!confirm(`${i+1}차의 체결 기록과 잔량도 삭제할까요?`))return;stages.splice(i,1);renderPurchaseDraft();});
 }
 function openPurchase(id){
@@ -542,7 +549,7 @@ function openPurchase(id){
   originalMode=purchaseMode(purchaseDraft);f.mode.value=originalMode;
   const waitLine=purchaseWaitLine(purchaseDraft)||"25개월선";
   f.waitPeriod.value=parseInt(waitLine);f.waitUnit.value=movingLineUnit(waitLine);f.waitNotify.checked=purchaseDraft.wait?purchaseAlertOn(purchaseDraft,{key:"wait"}):true;
-  f.lineSet.value=lineSetOf(purchaseLineNames(lines),!plus(lines?.end));f.lineEnd.value=finite(lines?.end)??"";f.lineBudget.value=finite(lines?.budget)??"";budgetAuto=!lines;openedBudget=finite(lines?.budget);
+  f.lineSet.value=lineSetOf(purchaseLineNames(lines),!plus(lines?.end));f.lineEnd.value=moneyInputText(finite(lines?.end));f.lineBudget.value=moneyInputText(finite(lines?.budget));budgetAuto=!lines;openedBudget=finite(lines?.budget);
   const start=purchaseLineName(lines?.startLine)||purchaseLineNames(lines)[0]||PURCHASE_LINES[0];
   f.lineStartPeriod.value=parseInt(start);f.lineStartUnit.value=movingLineUnit(start);
   const names=purchaseLineNames(lines),last=names[names.length-1]||start;
@@ -556,6 +563,8 @@ function openPurchase(id){
     if(!editing&&linkedPlans(item,allocationSummary(doc.allocation,prices)).length){alert("같은 종목의 다른 계좌 줄에 분할매수 계획이 있습니다. 기존 계획을 수정하세요.");return;}
     const draft=purchaseDraft;
     if(mode()!==originalMode&&(Object.keys(purchaseBuys(draft)).length||(draft.stages||[]).some(purchaseStageRecorded))){alert("체결 기록이 있어 방식을 바꿀 수 없습니다.");return;}
+    const invalid=[...d.querySelectorAll("input[data-money]")].find(x=>!x.disabled&&!x.hidden&&!x.closest("[hidden]")&&!moneyInputValidate(x));
+    if(invalid){invalid.reportValidity();return;}
     if(mode()==="lines"){
       const kind=purchaseQuoteKind(item.ticker),l=linesDraft();
       if(!lineMarket(item)){alert("이동평균선 돌파는 자산 배분에서 국내·미국 시세 종목 코드나 비트코인(BTC-USD)을 넣은 종목만 쓸 수 있습니다.");return;}

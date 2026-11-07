@@ -6,26 +6,61 @@ const vm=require('node:vm');
 
 // 가짜 시세·수량만 사용한다. 실제 분할매도 파일의 실시간 입력과 저장 핸들러도 실행한다.
 function load(){
-  const nodes=new Map(),node=name=>{
-    if(!nodes.has(name))nodes.set(name,{value:'',dataset:{},style:{},readOnly:false,textContent:'',events:{},validityMessage:'',
-      addEventListener(kind,handler){this.events[kind]=handler;},setCustomValidity(message){this.validityMessage=message;},
+  const inputListeners=[],writes=[],nodes=new Map(),node=name=>{
+    if(!nodes.has(name))nodes.set(name,{value:'',attrs:{},dataset:{},style:{},readOnly:false,textContent:'',events:{},validityMessage:'',
+      addEventListener(kind,handler){this.events[kind]=handler;},getAttribute(key){return this.attrs[key]??null;},setCustomValidity(message){this.validityMessage=message;},
+      matches(selector){return selector==='input[data-money]'&&Object.hasOwn(this.attrs,'data-money');},setSelectionRange(){},
+      reportValidity(){this.reported=true;return !this.validityMessage;},
       querySelectorAll:()=>[],querySelector:()=>node('close'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}});
     return nodes.get(name);
   };
   const fields=Object.fromEntries(Object.entries({ticker:'비트코인',title:'테스트 계획',cardName:'',currency:'USD',shares:'0.01234567',
     fx:'1000',startUnit:'',startN:'60',startLabel:'직접',startPrice:'60000',endLabel:'',endN:'25',endUnit:'개월선',endPrice:'50000',stages:'3',salePct:'100',valueKrw:''})
-    .map(([key,value])=>[key,Object.assign(node('field:'+key),{value})]));
+    .map(([key,value])=>[key,Object.assign(node('field:'+key),{value,name:key})]));
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  for(const name of ['fx','startPrice','endPrice','valueKrw']){
+    const tag=html.match(new RegExp(`<input name="${name}"[^>]*>`))[0];
+    fields[name].attrs=Object.fromEntries([...tag.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,value??'']));
+    fields[name].defaultValue=fields[name].attrs.value??'';
+  }
   const form=node('planForm');form.elements=fields;form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage&&(!f.required||f.disabled||f.readOnly||String(f.value??'')!==''));
   form.reset=()=>{for(const [key,value] of Object.entries({ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1354.91',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endLabel:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''}))fields[key].value=value;};
-  const ctx=vm.createContext({$:node,$$:()=>[],addEventListener(){},document:{createElement(){const e={value:'',dataset:{},setAttribute(){},append(){},focus(){}};let id='';Object.defineProperty(e,'id',{get:()=>id,set(v){id=v;nodes.set(v,e);}});return e;}},state:{plans:[],futures:{positions:[]}},save(){},render(){},
+  const ctx=vm.createContext({$:node,$$:()=>[],addEventListener(){},document:{addEventListener(type,fn){if(type==='input')inputListeners.push(fn);},querySelectorAll:selector=>selector==='input[data-money]'?Object.values(fields).filter(x=>x.matches(selector)):[],createElement(){const e={value:'',dataset:{},setAttribute(){},append(){},focus(){}};let id='';Object.defineProperty(e,'id',{get:()=>id,set(v){id=v;nodes.set(v,e);}});return e;}},state:{plans:[],futures:{positions:[]}},save(){writes.push(JSON.stringify(ctx.state));},render(){},
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),
     priceData:{updatedAt:'2026-10-02T12:00:00Z',stocks:{'BTC-USD':{kind:'코인',asOf:'2026-10-02',close:60000,ma:{'25개월선':50000}},
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
     id:()=> 'test-plan',priceText:v=>String(v),fxText:v=>String(v),esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
-  for(const file of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
+  for(const file of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
   const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stagePrice,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,movePlanSalePriority,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
-  return {ctx,api,fields,node,submit:()=>form.events.submit({target:form,preventDefault(){}})};
+  return {ctx,api,fields,node,writes,submit:()=>form.events.submit({target:form,preventDefault(){}}),type(name,value){const input=fields[name];input.value=value;input.form=form;inputListeners.forEach(fn=>fn({target:input}));form.events.input({target:input});}};
 }
+
+test('매도 창의 환율·시작가·종료가·평가액은 쉼표로 입력하고 숫자로 저장·재표시한다',()=>{
+  const r=load();r.ctx.priceData=null;
+  Object.assign(r.fields.ticker,{value:'AAA'});r.fields.shares.value='';r.fields.endUnit.value='';r.fields.endLabel.value='직접 종료';
+  const values={fx:['1354.91','1,354.91',1354.91],startPrice:['12345','12,345',12345],endPrice:['1354.91','1,354.91',1354.91],valueKrw:['12345','12,345',12345]};
+  for(const [name,[raw,shown]] of Object.entries(values)){r.type(name,raw);assert.equal(r.fields[name].value,shown,name);}
+  r.submit();const saved=r.ctx.state.plans[0];
+  for(const [name,[,,value]] of Object.entries(values)){assert.equal(saved[name],value,name);assert.equal(typeof saved[name],'number');}
+  const snapshot=JSON.stringify(saved);r.api.openPlanDialog(saved);
+  for(const [name,[,shown]] of Object.entries(values))assert.equal(r.fields[name].value,shown,name);
+  assert.equal(JSON.stringify(saved),snapshot,'창을 여는 동안 기록·필드를 만들지 않는다');
+  for(const [name,[,shown]] of Object.entries(values)){
+    for(const invalid of ['잘못된 금액','1e3','Infinity']){
+      r.fields[name].value=invalid;r.submit();assert.equal(JSON.stringify(saved),snapshot,name);assert.ok(r.fields[name].validityMessage,name);
+    }
+    r.type(name,shown);
+  }
+});
+
+test('자동 평균선·환율·보유 평가액도 쉼표를 표시하며 평가액은 숫자로 계산한다',()=>{
+  const r=load();r.fields.ticker.value='111111';r.fields.currency.value='KRW';r.fields.shares.value='1000';r.fields.startUnit.value='일선';
+  r.ctx.priceData.stocks['111111']={kind:'국내',asOf:'2026-10-02',close:123450,ma:{'60일선':12345,'25개월선':11000}};
+  r.api.planLive(['start','end']);
+  assert.equal(r.fields.startPrice.value,'12,345');assert.equal(r.fields.endPrice.value,'11,000');assert.equal(r.fields.valueKrw.value,'12,345');
+  r.fields.shares.value='';r.api.planLive();assert.equal(r.fields.valueKrw.value,'','자동 평가액으로 직접 입력을 덮어쓰지 않는다');
+  r.ctx.priceData=null;r.api.openPlanDialog();assert.equal(r.fields.fx.value,'1,354.91','시세 없는 새 창의 기본 환율도 쉼표');
+});
 
 test('자동 기준가는 시세 없이 저장·수정하고 두 기준가를 채운 뒤에만 체결할 수 있다',()=>{
   const {ctx,api,fields,node,submit}=load();ctx.priceData=null;
@@ -60,7 +95,7 @@ test('이미 있는 자동 시세는 빈 칸을 바로 채우고 직접 고친 �
   const {ctx,api,fields,submit}=load();
   ctx.priceData={updatedAt:'2026-10-09T01:00:00Z',stocks:{AAA:{kind:'해외',asOf:'2026-10-09',close:105,ma:{'60일선':110,'25개월선':90}}}};
   fields.ticker.value='AAA';fields.shares.value='10';fields.startUnit.value='일선';fields.startPrice.value='';fields.endPrice.value='';
-  api.planLive();assert.equal(fields.startPrice.value,110);assert.equal(fields.endPrice.value,90);
+  api.planLive();assert.equal(fields.startPrice.value,'110');assert.equal(fields.endPrice.value,'90');
   fields.startPrice.value='107';fields.endPrice.value='87';submit();const p=ctx.state.plans[0];
   assert.equal(p.startPrice,107);assert.equal(p.endPrice,87);assert.equal(ctx.fillPrices({plans:[p]},ctx.priceData),false);
   api.openPlanDialog(p);fields.startPrice.value='';delete ctx.priceData.stocks.AAA.ma['60일선'];submit();
@@ -116,8 +151,8 @@ test('검색해서 고르면 국내 코드·통화·여러 계좌 수량·기준
   search.onkeydown({key:'Enter',preventDefault(){}});
   assert.equal(r.fields.ticker.value,'123456');assert.equal(r.fields.title.value,'가상 국내 ETF');
   assert.equal(r.fields.currency.value,'KRW');assert.equal(r.fields.currency.disabled,false);
-  assert.equal(Number(r.fields.shares.value),15);assert.equal(Number(r.fields.valueKrw.value),15);
-  assert.equal(Number(r.fields.fx.value),1500);assert.equal(Number(r.fields.endPrice.value),8000);
+  assert.equal(Number(r.fields.shares.value),15);assert.equal(r.ctx.moneyInputNumber(r.fields.valueKrw.value),15);
+  assert.equal(r.ctx.moneyInputNumber(r.fields.fx.value),1500);assert.equal(r.ctx.moneyInputNumber(r.fields.endPrice.value),8000);
   assert.equal(r.fields.startPrice.value,'','직접 시작 기준가는 새로 만들지 않는다');
   assert.equal(r.node('planPicked').hidden,false);assert.equal(r.node('planSearchBox').hidden,true);
   assert.match(r.node('planPicked').innerHTML,/가상 국내 ETF/);assert.match(r.node('planPicked').innerHTML,/data-repick/);
@@ -142,8 +177,8 @@ test('수정 창은 목록에 있는 종목을 고른 상태로 열고 이미 �
 test('추종 ETF와 직접 보유를 함께 불러올 때 기준 종목과 달러 통화를 쓰고 거래 단위가 다른 주수를 합치지 않는다',()=>{
   const r=linkedPlanDialog();r.api.openPlanDialog();r.api.fillPlanAllocTicker('123456');r.api.fillPlanAllocTicker('AAA');
   assert.equal(r.fields.ticker.value,'AAA');assert.equal(r.fields.currency.value,'USD');assert.equal(r.fields.shares.value,'');
-  assert.equal(r.fields.valueKrw.readOnly,false);assert.equal(Number(r.fields.valueKrw.value),64,'추종 ETF 8만원+20만원과 직접 보유 36만원');
-  assert.equal(Number(r.fields.endPrice.value),80);r.fields.startPrice.value='110';r.submit();
+  assert.equal(r.fields.valueKrw.readOnly,false);assert.equal(r.ctx.moneyInputNumber(r.fields.valueKrw.value),64,'추종 ETF 8만원+20만원과 직접 보유 36만원');
+  assert.equal(r.ctx.moneyInputNumber(r.fields.endPrice.value),80);r.fields.startPrice.value='110';r.submit();
   const p=r.ctx.state.plans[0];assert.equal(p.ticker,'AAA');assert.equal(p.holdings.length,0);assert.equal(p.valueKrw,64);assert.equal(p.valueBase,100);
 });
 
@@ -201,7 +236,7 @@ test('완료 체크의 남은 비트코인 수량을 정확히 빼고 전량 완
 test('비트코인 소수점 입력은 평가액을 계산하고 원래 정밀도로 BTC-USD에 저장한다',()=>{
   const {api,ctx,fields,node,submit}=load();fields.currency.value='KRW';fields.endPrice.value='1';api.planLive();
   assert.equal(fields.currency.value,'USD');assert.equal(fields.currency.disabled,true);
-  assert.equal(fields.endPrice.value,50000,'USD로 전환한 뒤 달러 기준가를 채운다');
+  assert.equal(fields.endPrice.value,'50,000','USD로 전환한 뒤 달러 기준가를 채운다');
   assert.equal(fields.shares.step,'0.00000001');assert.equal(fields.shares.inputMode,'decimal');
   assert.equal(node('sharesLabel').textContent,'보유 수량 (BTC)');assert.equal(fields.valueKrw.readOnly,true);
   assert.equal(Number(fields.valueKrw.value),74.1);

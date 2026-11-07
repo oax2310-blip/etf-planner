@@ -394,7 +394,7 @@ function planTrackCard(p,{status,value,valueTitle,startText,fxAuto,px,label}){
   const cell=x=>x.r.done?'<i class="sold"></i>':x.r.recorded?`<i class="partial" style="--left:${left(x)}%"></i>`:due(x)?'<i class="due"></i>':x===next?'<i class="next"></i>':'<i class="hold"></i>';
   const dueRows=rows.filter(x=>!x.r.recorded&&due(x)),partialRows=rows.filter(x=>x.r.recorded&&!x.r.done),qtyOf=n=>planQuantity(Number(Math.max(0,n).toFixed(8)),p);
   const lineName=(name,fallback)=>movingLineName(name)?movingLineText(name):fallback,krw=v=>usd?`<small>${v>0?fxText(v*p.fx):"시세 대기"}</small>`:"";
-  const startEdit=`<label class="metric-edit" title="첫 매도 기준가 — 눌러서 수정">${usd&&p.startPrice>0?"$":""}<input id="startPrice" type="number" min="0" step="any" inputmode="decimal" placeholder="대기" value="${esc(startText)}" aria-label="첫 매도 기준가">${usd||!(p.startPrice>0)?"":"원"}${PENCIL}</label>`;
+  const startEdit=`<label class="metric-edit" title="첫 매도 기준가 — 눌러서 수정">${usd&&p.startPrice>0?"$":""}<input id="startPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" placeholder="대기" value="${esc(moneyInputText(startText))}" aria-label="첫 매도 기준가">${usd||!(p.startPrice>0)?"":"원"}${PENCIL}</label>`;
   const ends=[`<div class="buy-track-end"><b>${p.endPrice>0?pt(p.endPrice):"—"}</b><small>${esc(lineName(p.endLabel,planEndPct(p)?pctEndLabel(planEndPct(p)):"마지막 매도"))}</small>${krw(p.endPrice)}</div>`,
     `<div class="buy-track-end r"><b>${startEdit}</b><small>${esc(lineName(p.startLabel,"첫 매도"))}</small>${krw(p.startPrice)}</div>`];
   const chips=`<span class="buy-track-chip${{"전량 매도 완료":" done","계획 매도 완료":" done","기준가 대기":" muted"}[status]||""}">${esc(status)}</span>${dueRows.length?`<span class="buy-track-chip warn">도달 ${dueRows.length}회</span>`:""}${partialRows.length?`<span class="buy-track-chip warn">부분 체결 ${partialRows.length}회</span>`:""}`;
@@ -402,7 +402,7 @@ function planTrackCard(p,{status,value,valueTitle,startText,fxAuto,px,label}){
   const notes=partialRows.length===1?(x=>[`${x.i+1}회 부분 체결 · ${x.r.target!==null&&x.r.remaining!==null?`${qtyOf(x.r.amount)} 매도, ${qtyOf(x.r.remaining)} 남음`:"남은 수량은 아래 회차표에서 확인하세요"}`])(partialRows[0]):partialRows.length?[`부분 체결 ${partialRows.length}회 · 아래 회차표에서 남은 수량을 확인하세요`]:[];
   const gap=next?(next.price/now-1)*100:null,gapText=gap===null?"":`${gap>0?"+":""}${new Intl.NumberFormat("ko-KR",{maximumFractionDigits:Math.abs(gap)<1?2:1}).format(gap)}%`;
   const legend=`${done?`<span class="sold">매도 ${done}</span>`:""}${partialRows.length?`<span class="partial">부분 ${partialRows.length}</span>`:""}${dueRows.length?`<span class="due">도달 ${dueRows.length}</span>`:""}${next?`<span class="next">다음 ${next.i+1}회 <b>${pt(next.price)}</b><em class="${gap>0?"up":gap<0?"down":""}">${gapText}</em></span>`:""}`;
-  const fx=usd?`<label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="number" min="0" step="any" inputmode="decimal" aria-label="달러/원 환율" value="${esc(String(p.fx))}">${PENCIL}</label>`:"";
+  const fx=usd?`<label class="metric-edit fx-edit" title="${esc(fxAuto)}환율 — 눌러서 수정">환율 <input id="planFx" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" aria-label="달러/원 환율" value="${esc(moneyInputText(p.fx))}">${PENCIL}</label>`:"";
   const toggle=typeof tradeAlertToggle==="function"?tradeAlertToggle(tradePlanEnabled(p,0),'data-sale-alert="0"',"첫 매도",p.checked[0],"첫 매도"):"";
   const dense=p.stages>120?" tight":p.stages>60?" dense":"";
   return `<section class="card buy-track sale-track" aria-label="${esc(label)}"><div class="buy-track-cells${at<0?"":" with-now"}${dense}" role="img" aria-label="${esc(p.stages)}회 중 ${done}회 매도 완료${now!==null?`, 현재 ${pt(now)}`:""}">${rows.map(x=>(x.i===at?nowTag:"")+cell(x)).join("")}${at===rows.length?nowTag:""}</div>
@@ -451,9 +451,9 @@ function renderPlans(){
   // 첫 매도 기준가·달러 환율은 수정 창과 같은 필드. 카드에서 Enter/blur 저장·Esc 취소; 0 이하·빈 값은 원복, 폭은 글자 수.
   bindSaleAccount(p);
   bindSalePriority(p);
-  const inlineEdit=(id,text,key)=>{const el=$(id);if(!el)return;const fit=()=>el.style.width=`${Math.max(3,el.value.length-(el.value.split(".").length-1)*.6)+.4}ch`; fit(); el.oninput=fit;
-    el.onkeydown=e=>{if(e.key==="Enter")el.blur();if(e.key==="Escape"){el.value=text;fit();el.blur();}};
-    onEdit("#"+id,v=>{v=Number(v);if(!(v>0)||v===p[key])return false;p[key]=v;if(key==="startPrice"&&planEndPct(p))p.endPrice=pctEndPrice(v,planEndPct(p),p.ticker,p.currency);},renderPlans);};
+  const inlineEdit=(id,text,key)=>{const el=$(id);if(!el)return;moneyInputValidate(el);const fit=()=>el.style.width=`${Math.max(3,el.value.length-(el.value.split(".").length-1)*.6)+.4}ch`; fit(); el.oninput=fit;
+    el.onkeydown=e=>{if(e.key==="Enter")el.blur();if(e.key==="Escape"){el.value=moneyInputText(text);moneyInputValidate(el);fit();el.blur();}};
+    onEdit("#"+id,v=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(!(v>0)||v===p[key])return false;p[key]=v;if(key==="startPrice"&&planEndPct(p))p.endPrice=pctEndPrice(v,planEndPct(p),p.ticker,p.currency);},renderPlans);};
   inlineEdit("startPrice",startText,"startPrice"); inlineEdit("planFx",String(p.fx),"fx");
   const note=$("planNote"); note.oninput=()=>$("memoCount").textContent=memoCount(note.value); $("saveNote").onclick=()=>{p.note=note.value;save();renderPlans();};
   // 체크는 잔량까지 전량 체결, 입력칸은 누적 실제 체결. 부분 체결은 중간 체크 상태로 표시하며 완료 수에는 넣지 않는다.
@@ -506,14 +506,14 @@ function renderPlanAllocPicker(locked){
 function fillPlanAllocHolding(hold){
   const f=$("planForm").elements;
   if(hold.shares>0)f.shares.value=String(hold.shares);
-  else{f.shares.value="";f.valueKrw.dataset.typed=String(hold.value);if(!f.valueKrw.readOnly)f.valueKrw.value=String(hold.value);}
+  else{f.shares.value="";f.valueKrw.dataset.typed=moneyInputText(hold.value);if(!f.valueKrw.readOnly)f.valueKrw.value=moneyInputText(hold.value);}
 }
 function fillPlanAllocTicker(ticker){
   if(planAllocLocked())return;
   const option=planAllocOptions().find(o=>o.ticker===ticker),hold=option&&planLink("holding",ticker);if(!hold)return;
   const f=$("planForm").elements;planPick=ticker;
   f.ticker.value=ticker;f.title.value=option.name;f.currency.value=purchaseQuoteKind(ticker)==="국내"?"KRW":"USD";
-  const fx=priceRound(fxEntry(priceData)?.close||hold.fx,2);if(fx)f.fx.value=fx;
+  const fx=priceRound(fxEntry(priceData)?.close||hold.fx,2);if(fx)f.fx.value=moneyInputText(fx);
   f.valueKrw.readOnly=false;f.valueKrw.value="";f.valueKrw.dataset.typed="";
   fillPlanAllocHolding(hold);planLive(["start","end"]);
 }
@@ -549,27 +549,28 @@ function planLive(fill=[]){
   for(const k of ["start","end"]){
     const price=f[k+"Price"], note=$(k+"Note");
     price.required=!f[k+"Unit"].value;
-    if(k==="end"&&pctMode){const v=Number(f.startPrice.value)>0&&endPct>0&&endPct<100?pctEndPrice(f.startPrice.value,endPct,f.ticker.value,currency):null;price.value=v??"";note.textContent=v!=null?`시작 기준가 −${decimal.format(endPct)}% 자동`:"";continue;}
+    if(k==="end"&&pctMode){const start=moneyInputNumber(f.startPrice.value),v=start>0&&endPct>0&&endPct<100?pctEndPrice(start,endPct,f.ticker.value,currency):null;price.value=moneyInputText(v);note.textContent=v!=null?`시작 기준가 −${decimal.format(endPct)}% 자동`:"";continue;}
     if(price.required){note.textContent="";continue;}
     const label=lineOf(f,k), v=q?priceRound(maValue(q,label),quoteDigits(f.ticker.value,currency)):null;
-    if(fill.includes(k)||price.value===""&&v!=null)price.value=v??dialogBase[k]??"";
-    note.textContent=v!=null&&Number(price.value)===v?auto:planTicker(f.ticker.value)&&maKey(label)&&v==null?"다음 시세 수집 때 자동":"";
+    if(fill.includes(k)||price.value===""&&v!=null)price.value=moneyInputText(v??dialogBase[k]);
+    note.textContent=v!=null&&moneyInputNumber(price.value)===v?auto:planTicker(f.ticker.value)&&maKey(label)&&v==null?"다음 시세 수집 때 자동":"";
   }
-  const shares=Number(f.shares.value), held=hasPlanShares(f.ticker.value,shares), worth=held?planWorth(shares,q?.close,currency,f.fx.value):null, el=f.valueKrw;
+  const shares=Number(f.shares.value), held=hasPlanShares(f.ticker.value,shares), worth=held?planWorth(shares,q?.close,currency,moneyInputNumber(f.fx.value)):null, el=f.valueKrw;
   f.shares.step=btc?"0.00000001":"1";f.shares.inputMode=btc?"decimal":"numeric";
   $("sharesLabel").textContent=btc?"보유 수량 (BTC)":"보유 수량 (주)";
   $("tickerNote").textContent=btc?"달러(USD) 자동":"";
   f.shares.setCustomValidity(f.shares.value!==""&&shares!==0&&!held?btc?"비트코인 수량은 소수점 8자리까지 입력해 주세요.":"보유 수량은 정수로 입력해 주세요.":"");
-  if(held!==el.readOnly){if(held)el.dataset.typed=el.value;else el.value=el.dataset.typed||"";el.readOnly=held;}
-  if(held)el.value=worth!=null?Math.round(worth*10)/10:"";
+  if(held!==el.readOnly){if(held)el.dataset.typed=el.value;else el.value=moneyInputText(el.dataset.typed);el.readOnly=held;}
+  if(held)el.value=moneyInputText(worth!=null?Math.round(worth*10)/10:null);
   el.placeholder=held?"시세 대기":"수량 없을 때";
   $("worthNote").textContent=worth!=null?"보유 수량 × 현재가 자동":"";
   // 매도 비중: 비우면 100%(전량). 100% 아래면 매도·남길 수량(평가액만 넣은 계획은 매도 금액)을 칸 이름 옆에 보여 준다.
   const pctText=String(f.salePct.value).trim(), pct=pctText===""?100:Number(pctText), pctOk=Number.isInteger(pct)&&pct>=1&&pct<=100, plan={ticker:f.ticker.value,salePct:pct};
-  const sale=held&&pctOk?saleShares(shares,plan):null, value=Number(el.value);
+  const sale=held&&pctOk?saleShares(shares,plan):null, value=moneyInputNumber(el.value);
   f.salePct.setCustomValidity(!pctOk?"매도 비중은 1~100 사이 정수(%)로 입력해 주세요.":sale===0?"매도할 수량이 없습니다. 매도 비중을 올려 주세요.":"");
   $("saleNote").textContent=!pctOk||pct===100?"":sale?`${planQuantity(sale,plan)} 매도 · ${planQuantity(Math.round((shares-sale)*1e8)/1e8,plan)} 남김`:!held&&value>0?`약 ${decimal.format(value*pct/100)}만원 매도`:"";
   // 자산 배분 보유량 가져오기(alloc-link.js holding): 같은 종목 코드 계좌가 모두 수량이면 보유 수량 합, 아니면 평가액 합(만원). 매도 체크가 있으면 계획 기준 보유량이라 바꾸지 않는다.
+  for(const name of ["fx","startPrice","endPrice","valueKrw"])if(!f[name].disabled&&!f[name].hidden)moneyInputValidate(f[name]);
   const hold=planLink("holding",planTicker(f.ticker.value)), box=$("planAllocHold"), locked=planAllocLocked();
   renderPlanAllocPicker(locked);
   for(const name of ["ticker","shares","stages","salePct"])f[name].readOnly=locked||name==="salePct"&&pctMode||name==="ticker"&&!!planPick;
@@ -582,10 +583,11 @@ $("planForm").addEventListener("input",e=>{if(e.target===planPicker().input)retu
   planLive(n==="ticker"||n==="currency"?["start","end"]:n==="startN"||n==="startUnit"?["start"]:n==="endN"||n==="endUnit"?["end"]:[]);});
 function openPlanDialog(p){editingId=p?.id||null; const form=$("planForm"), f=form.elements;form.reset();planPicker().clear();planPick=p&&planAllocOptions().some(o=>o.ticker===linkTicker(p.ticker))?linkTicker(p.ticker):null;$("dialogTitle").textContent=p?`${p.ticker} 계획 수정`:"새 분할매도 계획";$("deletePlanBtn").classList.toggle("hidden",!p);
   f.valueKrw.readOnly=false;f.valueKrw.dataset.typed="";
-  if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,cardName:p.cardName??"",currency:p.currency,startLabel:p.startLabel,startPrice:p.startPrice??"",endPrice:p.endPrice??"",stages:p.stages,valueKrw:p.valueKrw??"",fx:p.fx})){if(f[k])f[k].value=v;}f.shares.value=p.holdings[0]?.shares||"";f.salePct.value=planSalePct(p);
+  if(p){for(const [k,v] of Object.entries({ticker:p.ticker,title:p.title,cardName:p.cardName??"",currency:p.currency,startLabel:p.startLabel,startPrice:p.startPrice??"",endPrice:p.endPrice??"",stages:p.stages,valueKrw:p.valueKrw??"",fx:p.fx})){if(f[k])f[k].value=["fx","startPrice","endPrice","valueKrw"].includes(k)?moneyInputText(v):v;}f.shares.value=p.holdings[0]?.shares||"";f.salePct.value=planSalePct(p);
     const m=/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.endLabel));f.endN.value=m?m[1]:"";f.endUnit.value=m?m[2]:"";if(planEndPct(p)){f.endN.value=planEndPct(p);f.endUnit.value="pct";}else if(!m)f.endLabel.value=p.endLabel??"";
     const s=p.startAuto&&/^(\d+)(일선|주선|개월선)$/.exec(maKey(p.startLabel));if(s){f.startN.value=s[1];f.startUnit.value=s[2];}}
-  else{const fx=priceRound(fxEntry(priceData)?.close,2);if(fx)f.fx.value=fx;} // 새 달러 계획 환율은 현물 USD/KRW로
+  else{const fx=priceRound(fxEntry(priceData)?.close,2);if(fx)f.fx.value=moneyInputText(fx);} // 새 달러 계획 환율은 현물 USD/KRW로
+  for(const name of ["fx","startPrice","endPrice","valueKrw"])f[name].value=moneyInputText(f[name].value);
   startMode(f);endMode(f);dialogBase={start:f.startPrice.value,end:f.endPrice.value};planLive();planDialog.showModal();
   if(!p&&typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches)planPicker().focus();} // 새 계획은 분할매수 창처럼 PC에서만 검색 칸에
 $("addPlanBtn").onclick=()=>openPlanDialog();
@@ -602,12 +604,12 @@ $("planForm").addEventListener("submit",e=>{
   e.preventDefault();planLive();if(!e.target.reportValidity())return;
   const f=new FormData(e.target), val=k=>String(f.get(k)||"").trim(), ticker=planTicker(val("ticker")), stages=Math.max(2,Math.min(250,Number(val("stages"))||30)), old=editingId?state.plans.find(p=>p.id===editingId):null;
   const endPct=val("endUnit")==="pct"?Number(val("endN")):null, shares=Number(val("shares")), held=hasPlanShares(ticker,shares), endLabel=endPct?pctEndLabel(endPct):!val("endUnit")?val("endLabel"):lineOf(e.target.elements,"end"), startAuto=!endPct&&!!val("startUnit"), startLabel=startAuto?lineOf(e.target.elements,"start"):val("startLabel"), currency=val("currency")==="KRW"?"KRW":"USD", moved=old&&(old.ticker!==ticker||old.endLabel!==endLabel||old.currency!==currency||!!old.startAuto!==startAuto||startAuto&&old.startLabel!==startLabel);
-  const valueKrw=held||val("valueKrw")===""?null:Number(val("valueKrw")), locked=old&&(old.checked.some(Boolean)||Object.keys(old.fills||{}).length>0);
+  const valueKrw=held?null:moneyInputNumber(val("valueKrw")), locked=old&&(old.checked.some(Boolean)||Object.keys(old.fills||{}).length>0);
   if(locked&&(ticker!==old.ticker||currency!==old.currency||stages!==old.stages||shares!==Number(old.holdings[0]?.shares||0)||planSalePct({salePct:Number(val("salePct"))})!==planSalePct(old)||valueKrw!==(old.valueKrw??null))){
     alert("체결 기록이 있어 종목·통화·보유량·분할 횟수·매도 비중은 유지합니다. 체결 수량은 계획 화면에서 수정하세요.");return;
   }
   const rebase=valueKrw!=null&&(!old||old.valueKrw!==valueKrw||old.ticker!==ticker||old.currency!==currency), p=old||defaultPlan(ticker,val("title"),{});
-  Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:Number(val("startPrice")),endPrice:Number(val("endPrice")),stages,valueKrw,fx:Number(val("fx"))||1354.91,holdings:locked?old.holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;const salePct=planSalePct({salePct:Number(val("salePct"))});if(salePct<100)p.salePct=salePct;else delete p.salePct;if(startAuto)p.startAuto=true;else delete p.startAuto;if(endPct)p.endPct=endPct;else delete p.endPct;
+  Object.assign(p,{ticker,title:val("title"),currency,startLabel,endLabel,startPrice:moneyInputNumber(val("startPrice")),endPrice:moneyInputNumber(val("endPrice")),stages,valueKrw,fx:moneyInputNumber(val("fx"))||1354.91,holdings:locked?old.holdings:held?[{name:val("title"),shares}]:[],checked:Array.from({length:stages},(_,i)=>old?.checked?.[i]===true),note:old?.note||""});const cardName=val("cardName");if(cardName)p.cardName=cardName;else delete p.cardName;const salePct=planSalePct({salePct:Number(val("salePct"))});if(salePct<100)p.salePct=salePct;else delete p.salePct;if(startAuto)p.startAuto=true;else delete p.startAuto;if(endPct)p.endPct=endPct;else delete p.endPct;
   for(const key of ["startPrice","endPrice"])if(val(key)===""){delete p[key];if(p.auto)delete p.auto[key];}
   if(rebase||valueKrw==null){const base=valueKrw==null?null:priceRound(planQuote(ticker,currency)?.close,currency==="KRW"?0:2);if(base)p.valueBase=base;else delete p.valueBase;} // 평가액 기준 가격(규칙은 stageWorth 위 주석)
   if(moved||!old){delete p.auto;const mark=JSON.parse(JSON.stringify(p));if(fillPrices({plans:[mark],futures:state.futures},priceData))p.auto=mark.auto;}

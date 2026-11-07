@@ -15,14 +15,19 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const prices={fx:{close:fx,asOf:'2026-01-02'},stocks:{[ticker]:{kind:bitcoin?'코인':currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
   if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
-  function element(){return {dataset:{},value:'',classList,setAttribute(){},append(){},focus(){},textContent:'',addEventListener(){},querySelectorAll:selector=>document.querySelectorAll(selector)};}
+  const inputListeners=[];
+  function element(){return {dataset:{},attrs:{},value:'',classList,validationMessage:'',
+    setAttribute(k,v){this.attrs[k]=String(v);},getAttribute(k){return this.attrs[k]??null;},
+    setCustomValidity(message){this.validationMessage=message;},checkValidity(){return !this.validationMessage;},reportValidity(){this.reported=true;return this.checkValidity();},
+    setSelectionRange(){},matches(selector){return selector==='input[data-money]'&&Object.hasOwn(this.attrs,'data-money');},
+    closest(){return null;},append(){},focus(){},textContent:'',addEventListener(){},querySelectorAll:selector=>document.querySelectorAll(selector),querySelector:selector=>document.querySelectorAll(selector)[0]};}
   // innerHTML로 그린 input·button을 기억해 querySelectorAll로 찾는다. 검색 칸(item-search.js)이 만든 요소도 id로 찾는다.
   function capturing(e){
     let html='';Object.defineProperty(e,'innerHTML',{get:()=>html,set(value){
       html=value;
       rendered.set(e,[...value.matchAll(/<(input|button)\b([^>]*)>/g)].map(([,tag,attrs])=>{
         const node=element();node.checked=/(?:^|\s)checked(?:\s|$)/.test(attrs);node.disabled=/(?:^|\s)disabled(?:\s|$)/.test(attrs);
-        node.attrs=Object.fromEntries([...attrs.matchAll(/([\w-]+)="([^"]*)"/g)].map(([,key,val])=>[key,val]));
+        node.attrs=Object.fromEntries([...attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,val])=>[key,val??'']));
         node.value=node.attrs.value||'';
         for(const [key,val] of Object.entries(node.attrs))if(key.startsWith('data-'))node.dataset[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())]=val;
         if(node.attrs.id)elements.set(node.attrs.id,node);
@@ -34,11 +39,19 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const document={body:element(),createElement(){const e=capturing(element());let id='';Object.defineProperty(e,'id',{get:()=>id,set(v){id=v;elements.set(v,e);}});return e;},getElementById(id){
     if(!elements.has(id))elements.set(id,capturing(element()));
     return elements.get(id);
-  },addEventListener(){},querySelectorAll(selector){return [...rendered.values()].flat().filter(node=>selector.split(',').some(s=>{
-    const attr=/^\s*\[([\w-]+)\]\s*$/.exec(s);return attr&&Object.hasOwn(node.attrs,attr[1]);
-  }));}};
+  },addEventListener(type,fn){if(type==='input')inputListeners.push(fn);},querySelectorAll(selector){
+    const staticMoney=selector==='input[data-money]'?[purchaseForm?.lineBudget,purchaseForm?.lineEnd].filter(Boolean):[];
+    return [...staticMoney,...[...rendered.values()].flat().filter(node=>selector.split(',').some(s=>{
+      const attrs=[...s.matchAll(/\[([\w-]+)(?:="?([^"\]]+)"?)?\]/g)];
+      return attrs.length&&attrs.every(([,key,value])=>Object.hasOwn(node.attrs,key)&&(value===undefined||node.attrs[key]===value));
+    }))];}};
   const purchaseForm=document.getElementById('purchaseForm');
   for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','cardName','note'])purchaseForm[name]=element();
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  for(const name of ['lineBudget','lineEnd']){
+    const tag=html.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`))[0],node=purchaseForm[name];
+    node.attrs=Object.fromEntries([...tag.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,value??'']));node.dataset.money='';
+  }
   const dialog=document.getElementById('purchaseDialog');dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dialog.open=false;};
   const listeners=new Set(),store={doc,prices,status:{state:'off'},saveSection(){},recovery:()=>[],start(){},subscribe:fn=>listeners.add(fn)};
   let warningRenders=0;
@@ -46,12 +59,58 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const storage=new Map([['etf-planner-assets-v1',JSON.stringify(doc)]]);
   if(realStore)Object.assign(ctx,{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)},setInterval(){},addEventListener(){}});
-  const code=['gold-estimate.js','ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
+  const code=['gold-estimate.js','money-input.js','ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets,assetStore})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {ctx,doc,item,prices,store:api.assetStore,storage,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector)};
+  return {ctx,doc,item,prices,store:api.assetStore,storage,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector),type(node,value){node.value=value;inputListeners.forEach(fn=>fn({target:node}));node.oninput?.();}};
 }
+
+test('매수 창의 총 금액·직접 목표가는 숫자로 저장·재표시하고 저장 직전 음수·형식 오류를 막는다',()=>{
+  const r=setup({budget:10,end:20000});r.store.saveSection=()=>r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));r.initialize();r.edit();
+  assert.equal(r.form.lineEnd.value,'20,000');r.type(r.form.lineBudget,'12345');r.type(r.form.lineEnd,'1354.91');
+  assert.equal(r.form.lineBudget.value,'12,345');assert.equal(r.form.lineEnd.value,'1,354.91');r.submit();
+  const saved=JSON.parse(r.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0].buyPlan;
+  assert.equal(saved.lines.budget,12345);assert.equal(saved.lines.end,1354.91);
+  r.edit();assert.equal(r.form.lineBudget.value,'12,345');assert.equal(r.form.lineEnd.value,'1,354.91');
+  const before=r.storage.get('etf-planner-assets-v1');
+  for(const [name,valid] of [['lineBudget','12,345'],['lineEnd','1,354.91']]){
+    for(const invalid of ['-1','1e3','잘못된 금액']){
+      r.form[name].value=invalid;r.submit();assert.equal(r.storage.get('etf-planner-assets-v1'),before,name);assert.ok(r.form[name].validationMessage,name);assert.equal(r.form[name].reported,true);
+    }
+    r.type(r.form[name],valid);
+  }
+});
+
+test('총 매수 금액 다시 계산은 큰 자동 예산도 쉼표로 넣고 오류 상태를 지운다',()=>{
+  const r=setup();r.doc.allocation.total=24710;r.item.target=50;r.initialize();r.render();r.edit();
+  r.type(r.form.lineBudget,'-1');assert.ok(r.form.lineBudget.validationMessage);
+  r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,'12,345');assert.equal(r.form.lineBudget.validationMessage,'');r.submit();assert.equal(r.item.buyPlan.lines.budget,12345);
+});
+
+test('평균선 목표·매수대기의 숨긴 금액칸은 검사하지 않으며 기존 숫자·기록을 유지한다',()=>{
+  const r=setup();r.initialize();r.edit();r.type(r.form.lineEnd,'-1');
+  r.form.lineLastUnit.value='선';r.form.lineLastPeriod.value='25';r.form.lineLastUnit.onchange();
+  assert.equal(r.form.lineEnd.disabled,true);assert.equal(r.form.lineEnd.hidden,true);r.submit();assert.equal(r.item.buyPlan.lines.end,undefined);assert.deepEqual(r.alerts,[]);
+  r.edit();r.type(r.form.lineBudget,'-1');r.form.mode.value='wait';r.form.lineLastUnit.onchange();
+  assert.equal(r.form.lineBudget.disabled,true);r.submit();assert.equal(r.item.buyPlan.wait.line,'25개월선');assert.equal(r.item.buyPlan.lines,undefined);assert.deepEqual(r.alerts,[]);
+});
+
+test('기존 회차 가격·예정액은 쉼표 입력과 자동 재계산을 숫자로 저장하며 수량 칸은 number를 유지한다',()=>{
+  const r=setup({manual:true,manualShares:10000});r.store.saveSection=()=>r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));r.edit();
+  const input=key=>r.inputs('[data-purchase-field]').find(x=>x.dataset.purchaseField===key);
+  for(const key of ['price','amount']){assert.equal(input(key).attrs.type,'text');assert.equal(input(key).attrs['data-money-min'],'0');assert.equal(input(key).attrs['data-money-step'],'any');}
+  assert.equal(input('shares').attrs.type,'number');assert.equal(input('shares').attrs.min,'0');assert.equal(input('shares').attrs.step,'1');
+  r.type(input('price'),'1354.91');assert.equal(input('price').value,'1,354.91');assert.equal(input('amount').value,'1,354.91','가격 × 수량 자동 계산');
+  r.type(input('amount'),'12345');assert.equal(input('amount').value,'12,345');r.submit();
+  const saved=JSON.parse(r.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0].buyPlan.stages[0];
+  assert.equal(saved.price,1354.91);assert.equal(saved.amount,12345);assert.equal(saved.shares,10000);
+  r.edit();assert.equal(input('price').value,'1,354.91');assert.equal(input('amount').value,'12,345');
+  const before=r.storage.get('etf-planner-assets-v1');
+  for(const key of ['price','amount']){
+    const valid=input(key).value;r.type(input(key),'-1');r.submit();assert.equal(r.storage.get('etf-planner-assets-v1'),before);assert.ok(input(key).validationMessage);r.type(input(key),valid);
+  }
+});
 
 // 실제 파일 입력 핸들러·검증기·저장소를 함께 실행하며 확인과 복원의 순서를 기록한다.
 function goldFixture({ticker='GLDM',section='금(골드)',close=81.52}={}){
@@ -491,7 +550,7 @@ test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 �
   const other={id:'b',ticker:'111111',tradeTicker:'222222',amount:15};r.doc.allocation.groups[0].items.push(other);
   r.initialize();r.edit();assert.equal(r.form.lineTarget.value,40,'자산 배분 그룹 목표를 읽기 전용으로 표시');assert.match(r.element('lineTargetNote').innerHTML,/그룹 목표.*assets\.html#alloc/);
   assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
-  r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,15);assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
+  r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,'15');assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
   assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(r.html(),/현재 40% \/ 목표 40%/);
   r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(other.amount,15);assert.match(r.html(),/현재 25%/);
@@ -509,7 +568,7 @@ test('자산 배분 목표 21%→21.5%: 분할매수 제목·총 매수 금액·
   assert.match(r.html(),/현재 2% \/ 목표 21\.5% · 목표까지 195만원/);
   assert.ok(open()>planned,'미체결 회차 수량이 새 목표만큼 늘어남');assert.equal(r.rules().length,rules);
   assert.equal(JSON.stringify(r.item.buyPlan.buys),buys,'부분 체결 기록 유지');assert.equal(JSON.stringify(r.doc.allocation.trades),trades,'자산 반영 기록 유지');
-  r.edit();assert.equal(r.form.lineTarget.value,21.5);assert.equal(r.form.lineBudget.value,205);assert.match(r.element('lineBudgetNote').textContent,/목표 21\.5%/);assert.doesNotMatch(r.element('lineBudgetNote').textContent,/직접 고친 금액/);
+  r.edit();assert.equal(r.form.lineTarget.value,21.5);assert.equal(r.form.lineBudget.value,'205');assert.match(r.element('lineBudgetNote').textContent,/목표 21\.5%/);assert.doesNotMatch(r.element('lineBudgetNote').textContent,/직접 고친 금액/);
   r.submit();assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false,'계획 창 저장은 목표를 계획에 따로 저장하지 않음');assert.equal(r.item.buyPlan.lines.budget,205);assert.equal(JSON.stringify(r.item.buyPlan.buys),buys);
 });
 test('계획 창 목표는 자산 배분 목표를 읽기만 하고 옛 계획 목표는 자산 배분 목표가 없을 때만 유지한다',()=>{
@@ -518,13 +577,13 @@ test('계획 창 목표는 자산 배분 목표를 읽기만 하고 옛 계획 �
   r.edit();assert.equal(r.form.lineTarget.value,30);assert.match(r.element('lineTargetNote').innerHTML,/옛 목표/);r.submit();assert.equal(r.item.buyPlan.lines.target,30,'자산 배분 목표가 없으면 기존 목표 유지');
   r.item.target=25;r.render();assert.match(r.html(),/목표 25% · 목표까지/);assert.doesNotMatch(r.html(),/계획 목표/);
   r.edit();assert.equal(r.form.lineTarget.value,25);assert.match(r.element('lineTargetNote').innerHTML,/종목 목표.*분할매도·재매수와 함께/);
-  assert.equal(r.form.lineBudget.value,50,'기존 계획의 저장 예산은 창을 열어도 바꾸지 않음');
+  assert.equal(r.form.lineBudget.value,'50','기존 계획의 저장 예산은 창을 열어도 바꾸지 않음');
   r.submit();assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false,'자산 배분 목표가 있으면 옛 목표를 지워 중복 저장을 없앰');assert.equal(r.item.buyPlan.lines.budget,50);
   delete r.item.target;r.edit();assert.equal(r.form.lineTarget.value,'');assert.match(r.element('lineTargetNote').innerHTML,/목표가 없습니다/);
 });
 test('계획 창을 연 동안 다른 탭에서 목표가 바뀌면 고치지 않은 총 매수 금액은 새 금액을 유지하고 직접 고친 금액은 저장한다',()=>{
   const r=setup({budget:200});r.doc.allocation.total=1000;r.item.target=21;r.initialize();r.render();
-  r.edit();assert.equal(r.form.lineBudget.value,200);
+  r.edit();assert.equal(r.form.lineBudget.value,'200');
   const before=JSON.parse(JSON.stringify(r.doc.allocation));r.item.target=21.5;r.sync(before);assert.equal(r.item.buyPlan.lines.budget,205);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,205,'창에 남은 옛 금액으로 되돌리지 않음');
   r.edit();r.form.lineBudget.value='150';r.form.lineBudget.oninput();r.submit();assert.equal(r.item.buyPlan.lines.budget,150,'직접 고친 금액은 그대로 저장');
@@ -839,7 +898,7 @@ test('마지막 목표: 직접 입력 가격 계획도 단위 선택을 숨기�
   const r=setup({names:day,end:20000,budget:100,price:9000,ma:{'25일선':10000,'32일선':11000,'42일선':12000,'60일선':13000,'80일선':14000,'125일선':15000,'150일선':16000,'60주선':18000}});
   r.initialize();r.change('[data-purchase-buy-shares]',7);
   const record=()=>JSON.stringify({buys:r.item.buyPlan.buys,trades:r.doc.allocation.trades,shares:r.item.shares}),kept=record();
-  r.edit();assert.equal(r.form.lineLastUnit.value,'');assert.equal(r.form.lineEnd.value,20000);
+  r.edit();assert.equal(r.form.lineLastUnit.value,'');assert.equal(r.form.lineEnd.value,'20,000');
   assert.equal(r.form.lineEnd.hidden,false);assert.equal(r.form.lineLastPeriod.hidden,true);assert.equal(r.form.lineLastPeriod.disabled,true);assert.equal(r.form.lineLastUnit.disabled,false,'목표 가격이 있어도 마지막 목표 단위를 고를 수 있음');
   r.form.lineLastPeriod.value='60';r.form.lineLastUnit.value='주선';r.form.lineLastUnit.onchange();
   assert.equal(r.form.lineLastPeriod.hidden,false);assert.equal(r.form.lineEnd.hidden,true);assert.equal(r.form.lineEnd.disabled,true);

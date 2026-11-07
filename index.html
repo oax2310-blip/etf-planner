@@ -15,13 +15,13 @@
   <title>매매 플래너 (독립형)</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=376"></script>
+  <script src="js/theme.js?v=377"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=376" />
-  <link rel="stylesheet" href="css/purchases.css?v=376" />
-  <script src="js/repo-security.js?v=376" defer></script>
-  <script src="js/gold-estimate.js?v=376" defer></script>
-  <script src="js/money-input.js?v=376" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=377" />
+  <link rel="stylesheet" href="css/purchases.css?v=377" />
+  <script src="js/repo-security.js?v=377" defer></script>
+  <script src="js/gold-estimate.js?v=377" defer></script>
+  <script src="js/money-input.js?v=377" defer></script>
 </head>
 <body>
   <header class="top">
@@ -92,13 +92,13 @@
     <section class="purchase-ladder" id="purchaseLines">
       <div class="purchase-line-bounds">
         <label class="field"><span id="lineStartLabel">매수 시작 이동평균선</span><div class="hold-input"><input name="lineStartPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-labelledby="lineStartLabel" placeholder="기간 (1~400)" /><select name="lineStartUnit" aria-label="매수 시작 이동평균선 시간 단위"><option value="선">시선 · 60분봉</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option></select></div><small class="field-hint">선택한 선부터 매수합니다. 변경해도 기존 체결 기록과 부분 체결 잔량은 유지합니다.</small></label>
-        <div class="field"><span id="lineLastLabel">마지막 목표</span><div class="hold-input"><input name="lineLastPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-labelledby="lineLastLabel" placeholder="기간 (1~400)" /><input name="lineEnd" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineLastLabel" placeholder="목표 가격" hidden disabled /><select name="lineLastUnit" aria-label="마지막 목표 기준"><option value="선">시선 · 60분봉</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option><option value="">직접 입력</option></select></div><small class="field-hint" id="lineEndNote"></small></div>
+        <div class="field"><span id="lineLastLabel">마지막 목표</span><div class="hold-input"><input name="lineLastPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" list="purchasePeriods" aria-labelledby="lineLastLabel" placeholder="기간 (1~400)" /><input name="lineEnd" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" aria-labelledby="lineLastLabel" placeholder="목표 가격" hidden disabled /><select name="lineLastUnit" aria-label="마지막 목표 기준"><option value="선">시선 · 60분봉</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선">월선</option><option value="">직접 입력</option></select></div><small class="field-hint" id="lineEndNote"></small></div>
       </div>
       <datalist id="purchasePeriods"><option value="25"></option><option value="32"></option><option value="42"></option><option value="60"></option><option value="80"></option><option value="125"></option><option value="150"></option></datalist>
       <div class="purchase-ladder-grid">
         <label class="field purchase-line-set"><span>단계</span><select name="lineSet"><option value="all">시선 + 일선 + 주선 + 월선</option><option value="hour">시선 · 60분봉만</option><option value="day">일선만</option><option value="week">주선만</option><option value="month">월선만</option><option value="legacy">시선 + 일선</option><option value="custom">기존 선택 유지</option></select></label>
         <label class="field purchase-line-target"><span>목표 비중 (%)<small class="auto-tag">(자산 배분)</small></span><input name="lineTarget" type="number" readonly tabindex="-1" placeholder="목표 없음" aria-describedby="lineTargetNote" /><small class="field-hint" id="lineTargetNote"></small></label>
-        <div class="field purchase-line-budget"><span class="purchase-field-heading"><label id="lineBudgetLabel" for="lineBudgetInput">총 매수 금액 (만원)</label><button class="text-link" type="button" id="lineBudgetReset">다시 계산</button></span><input id="lineBudgetInput" name="lineBudget" type="number" min="0" step="any" inputmode="decimal" aria-labelledby="lineBudgetLabel" /><small class="field-hint" id="lineBudgetNote"></small></div>
+        <div class="field purchase-line-budget"><span class="purchase-field-heading"><label id="lineBudgetLabel" for="lineBudgetInput">총 매수 금액 (만원)</label><button class="text-link" type="button" id="lineBudgetReset">다시 계산</button></span><input id="lineBudgetInput" name="lineBudget" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" aria-labelledby="lineBudgetLabel" /><small class="field-hint" id="lineBudgetNote"></small></div>
       </div>
       <div id="lineResult" class="purchase-ladder-result" aria-live="polite"></div>
       <div id="linePreview" class="purchase-line-preview"></div>
@@ -132,7 +132,7 @@
       <label class="field"><span>종목 코드</span><input name="ticker" required autocomplete="off" spellcheck="false" placeholder="예: SPY / 비트코인" /><small class="field-hint" id="tickerNote"></small></label>
       <label class="field"><span>계획 이름</span><input name="title" required autocomplete="off" placeholder="예: S&amp;P500 ETF" /></label>
       <label class="field"><span>통화</span><select name="currency"><option value="USD">달러(USD)</option><option value="KRW">원화(KRW)</option></select></label>
-      <label class="field"><span>달러/원 환율</span><input name="fx" type="number" step="any" inputmode="decimal" value="1354.91" required /></label>
+      <label class="field"><span>달러/원 환율</span><input name="fx" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="any" value="1354.91" required /></label>
     </div>
     <label class="field"><span>카드 이름 (선택)</span><input name="cardName" maxlength="40" autocomplete="off" placeholder="저장된 계획 목록에 표시, 비우면 종목명" /></label>
     <section class="purchase-ladder plan-ladder">
@@ -141,10 +141,10 @@
         <div class="field"><span id="endLineName">종료 기준선</span><div class="hold-input"><input name="endLabel" placeholder="기준 이름 (예: 전고점)" aria-labelledby="endLineName" hidden /><input name="endN" type="number" min="1" max="400" step="1" inputmode="numeric" required value="25" aria-labelledby="endLineName" /><select name="endUnit" aria-label="종료 기준선 단위"><option value="">직접</option><option value="일선">일선</option><option value="주선">주선</option><option value="개월선" selected>월선</option><option value="pct">% 하락 · 기준선 없음</option></select></div></div>
       </div>
       <div class="purchase-ladder-grid">
-        <label class="field"><span>시작 기준가</span><input name="startPrice" type="number" step="any" inputmode="decimal" required /><small class="field-hint" id="startNote"></small></label>
-        <label class="field"><span>종료 기준가</span><input name="endPrice" type="number" step="any" inputmode="decimal" required /><small class="field-hint" id="endNote"></small></label>
+        <label class="field"><span>시작 기준가</span><input name="startPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="any" required /><small class="field-hint" id="startNote"></small></label>
+        <label class="field"><span>종료 기준가</span><input name="endPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="any" required /><small class="field-hint" id="endNote"></small></label>
         <label class="field"><span id="sharesLabel">보유 수량 (주)</span><input name="shares" type="number" min="0" step="1" inputmode="numeric" placeholder="비우면 평가액" /></label>
-        <label class="field"><span>평가액 (만원)</span><input name="valueKrw" type="number" step="any" inputmode="decimal" /><small class="field-hint" id="worthNote"></small></label>
+        <label class="field"><span>평가액 (만원)</span><input name="valueKrw" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="any" /><small class="field-hint" id="worthNote"></small></label>
         <label class="field"><span>분할 횟수</span><input name="stages" type="number" min="2" max="250" step="1" inputmode="numeric" value="30" required /></label>
         <label class="field"><span>매도 비중 (%)</span><input name="salePct" type="number" min="1" max="100" step="1" inputmode="numeric" value="100" placeholder="100 = 전량" /><small class="field-hint" id="saleNote"></small></label>
       </div>
@@ -322,35 +322,35 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=376" defer></script>
-  <script src="js/split-auto.js?v=376" defer></script>
-  <script src="js/data-validation.js?v=376" defer></script>
-  <script src="js/core.js?v=376" defer></script>
-  <script src="js/price-collection.js?v=376" defer></script>
-  <script src="js/sync.js?v=376" defer></script>
-  <script src="js/prices.js?v=376" defer></script>
-  <script src="js/assets-calc.js?v=376" defer></script>
-  <script src="js/assets-store.js?v=376" defer></script>
-  <script src="js/alloc-link.js?v=376" defer></script>
-  <script src="js/stock-names.js?v=376" defer></script>
-  <script src="js/item-search.js?v=376" defer></script>
-  <script src="js/purchases.js?v=376" defer></script>
-  <script src="js/trade-alerts.js?v=376" defer></script>
-  <script src="js/plans.js?v=376" defer></script>
-  <script src="js/futures.js?v=376" defer></script>
-  <script src="js/futures-plan.js?v=376" defer></script>
-  <script src="js/futures-rebuy.js?v=376" defer></script>
-  <script src="js/rebuy.js?v=376" defer></script>
-  <script src="js/alerts.js?v=376" defer></script>
-  <script src="js/alert-target.js?v=376" defer></script>
-  <script src="js/alert-history-store.js?v=376" defer></script>
-  <script src="js/alert-history.js?v=376" defer></script>
-  <script src="js/push.js?v=376" defer></script>
-  <script src="js/member-link.js?v=376" defer></script>
-  <script src="js/member-go.js?v=376" defer></script>
-  <script src="js/split-adjust.js?v=376" defer></script>
-  <script src="js/split-dialog.js?v=376" defer></script>
-  <script src="js/split-notices.js?v=376" defer></script>
-  <script src="js/start.js?v=376" defer></script>
+  <script src="js/ma-ladder.js?v=377" defer></script>
+  <script src="js/split-auto.js?v=377" defer></script>
+  <script src="js/data-validation.js?v=377" defer></script>
+  <script src="js/core.js?v=377" defer></script>
+  <script src="js/price-collection.js?v=377" defer></script>
+  <script src="js/sync.js?v=377" defer></script>
+  <script src="js/prices.js?v=377" defer></script>
+  <script src="js/assets-calc.js?v=377" defer></script>
+  <script src="js/assets-store.js?v=377" defer></script>
+  <script src="js/alloc-link.js?v=377" defer></script>
+  <script src="js/stock-names.js?v=377" defer></script>
+  <script src="js/item-search.js?v=377" defer></script>
+  <script src="js/purchases.js?v=377" defer></script>
+  <script src="js/trade-alerts.js?v=377" defer></script>
+  <script src="js/plans.js?v=377" defer></script>
+  <script src="js/futures.js?v=377" defer></script>
+  <script src="js/futures-plan.js?v=377" defer></script>
+  <script src="js/futures-rebuy.js?v=377" defer></script>
+  <script src="js/rebuy.js?v=377" defer></script>
+  <script src="js/alerts.js?v=377" defer></script>
+  <script src="js/alert-target.js?v=377" defer></script>
+  <script src="js/alert-history-store.js?v=377" defer></script>
+  <script src="js/alert-history.js?v=377" defer></script>
+  <script src="js/push.js?v=377" defer></script>
+  <script src="js/member-link.js?v=377" defer></script>
+  <script src="js/member-go.js?v=377" defer></script>
+  <script src="js/split-adjust.js?v=377" defer></script>
+  <script src="js/split-dialog.js?v=377" defer></script>
+  <script src="js/split-notices.js?v=377" defer></script>
+  <script src="js/start.js?v=377" defer></script>
 </body>
 </html>

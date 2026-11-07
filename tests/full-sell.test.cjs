@@ -12,21 +12,21 @@ const quote=(close,extra={})=>({updatedAt:new Date().toISOString(),stocks:{AAA:{
 function load({prices=null,allocation=null}={}){
   const els={},handlers={};
   const el=id=>els[id]??={id,value:'',dataset:{},style:{},innerHTML:'',textContent:'',readOnly:false,disabled:false,events:{},validityMessage:'',
-    addEventListener(kind,handler){this.events[kind]=handler;},setCustomValidity(m){this.validityMessage=m;},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
+    addEventListener(kind,handler){this.events[kind]=handler;},getAttribute(){return null;},setCustomValidity(m){this.validityMessage=m;},querySelectorAll:()=>[],querySelector:()=>el('inner'),classList:{toggle(){}},close(){},showModal(){},focus(){},append(){}};
   const defaults={ticker:'',title:'',cardName:'',currency:'USD',shares:'',fx:'1300',startUnit:'',startN:'60',startLabel:'60일선',startPrice:'',endLabel:'',endN:'25',endUnit:'개월선',endPrice:'',stages:'30',salePct:'100',valueKrw:''};
   const fields=Object.fromEntries(Object.entries(defaults).map(([k,v])=>[k,Object.assign(el('field:'+k),{name:k,value:v})]));
   const form=el('planForm');form.elements=fields;
   form.reportValidity=()=>Object.values(fields).every(f=>!f.validityMessage&&(!f.required||f.disabled||f.readOnly||String(f.value??'')!==''));
   form.reset=()=>{for(const [k,v] of Object.entries(defaults))fields[k].value=v;};
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit:(sel,set)=>{handlers[sel]=set;},alert(){},
-    document:{createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
+    document:{addEventListener(){},querySelectorAll:()=>[],createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({value:'',dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:[],futures:{positions:[]},selectedPlan:null},PENCIL:'',memoCount:()=>'',id:()=>'p1',
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),usd:new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
     priceText:(v,c)=>c==='USD'?`$${v}`:`${v}원`,fxText:v=>String(v),
     esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     FormData:class{constructor(f){this.fields=f.elements;}get(k){return this.fields[k]?.disabled?null:this.fields[k]?.value;}},
     priceData:prices,...(allocation?{assetStore:{doc:{allocation},prices,subscribe(){}}}:{})});
-  for(const f of ['ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
+  for(const f of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read(f),ctx);
   const submit=()=>{ctx.planLive();form.events.submit({target:form,preventDefault(){}});};
   const input=name=>form.events.input({target:Object.assign(fields[name],{form})});
   return {ctx,els,handlers,fields,submit,input};
@@ -40,6 +40,24 @@ function draw(plans,prices){
   return {...t,main:t.els.planMain.innerHTML,list:t.els.planList.innerHTML};
 }
 
+test('진행 카드의 첫 매도가·환율은 쉼표를 숫자로 저장하고 음수는 거부한다',()=>{
+  const r=load(),p=pctPlan(),writes=[];r.ctx.state.plans=[p];r.ctx.state.selectedPlan=p.id;r.ctx.save=()=>writes.push(plain(p));
+  const edit=(id,value)=>{
+    r.ctx.renderPlans();const input=r.els[id],tag=r.els.planMain.innerHTML.match(new RegExp(`<input id="${id}"[^>]*>`))[0];
+    const attrs=Object.fromEntries([...tag.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,k,v])=>[k,v??'']));
+    assert.equal(attrs.type,'text');assert.equal(attrs['data-money-min'],'0');assert.equal(attrs['data-money-step'],'any');
+    input.getAttribute=k=>attrs[k]??null;input.reportValidity=()=>{input.reported=true;};input.value=value;
+    const changed=r.handlers['#'+id](value,input);if(changed!==false)r.ctx.save();return input;
+  };
+  edit('startPrice','12,345');assert.equal(p.startPrice,12345);assert.equal(p.endPrice,9876);
+  edit('planFx','1,354.91');assert.equal(p.fx,1354.91);assert.equal(writes.at(-1).fx,1354.91);
+  r.ctx.renderPlans();assert.match(r.els.planMain.innerHTML,/id="startPrice"[^>]*value="12,345\.00"/);assert.match(r.els.planMain.innerHTML,/id="planFx"[^>]*value="1,354\.91"/);
+  for(const id of ['startPrice','planFx']){
+    const before=JSON.stringify(p),count=writes.length,input=edit(id,'-1');
+    assert.equal(JSON.stringify(p),before);assert.equal(writes.length,count);assert.ok(input.validityMessage);assert.equal(input.reported,true);
+  }
+});
+
 test('종료 직접은 이름과 가격만 필수이며 시세·창을 열 때 가격으로 빈 칸을 복원하지 않는다',()=>{
   const {ctx,fields,els,input,submit}=load({prices:quote(520)});
   ctx.openPlanDialog();
@@ -48,7 +66,7 @@ test('종료 직접은 이름과 가격만 필수이며 시세·창을 열 때 �
   ctx.openPlanDialog(maPlan());fields.endUnit.value='';input('endUnit');
   assert.deepEqual([fields.endLabel.hidden,fields.endLabel.required,fields.endN.hidden,fields.endN.required,fields.endN.disabled],[false,true,true,false,true]);
   assert.equal(fields.endLabel.value,'','이동평균 이름을 직접 이름 칸으로 복사하지 않는다');
-  assert.equal(fields.endPrice.value,400);assert.equal(fields.endPrice.readOnly,false);assert.equal(fields.endPrice.required,true);
+  assert.equal(fields.endPrice.value,'400');assert.equal(fields.endPrice.readOnly,false);assert.equal(fields.endPrice.required,true);
   assert.equal(els.endNote.textContent,'');
   submit();assert.equal(ctx.state.plans.length,0,'이름을 비우면 저장하지 않는다');
   fields.endLabel.value='전고점';fields.endPrice.value='';input('ticker');
@@ -64,10 +82,10 @@ test('직접 종료 이름·가격만 저장하고 시세 갱신 뒤에도 유�
   assert.deepEqual(Object.keys(p).sort(),['id','ticker','title','currency','holdings','startLabel','endLabel','startPrice','endPrice','stages','checked','valueKrw','fx','note'].sort(),'직접 여부를 저장하는 새 필드가 없다');
   const prices=quote(530);prices.stocks.AAA.ma['25개월선']=250;
   assert.equal(ctx.fillPrices({plans:[p]},prices),false);assert.equal(p.endPrice,375.25);
-  ctx.openPlanDialog(p);assert.deepEqual([fields.endUnit.value,fields.endLabel.value,fields.endPrice.value],['','전고점',375.25]);
+  ctx.openPlanDialog(p);assert.deepEqual([fields.endUnit.value,fields.endLabel.value,fields.endPrice.value],['','전고점','375.25']);
   fields.endN.value='25';fields.endUnit.value='개월선';input('endUnit');
   assert.deepEqual([fields.endLabel.hidden,fields.endLabel.required,fields.endN.hidden,fields.endN.required,fields.endN.disabled],[true,false,false,true,false]);
-  assert.equal(fields.endPrice.required,false);assert.equal(fields.endPrice.readOnly,false);assert.equal(fields.endPrice.value,300);
+  assert.equal(fields.endPrice.required,false);assert.equal(fields.endPrice.readOnly,false);assert.equal(fields.endPrice.value,'300');
   submit();assert.equal(p.endLabel,'25개월선');assert.equal(p.endPrice,300);assert.equal(p.auto.endPrice,300,'기준선 변경 시 auto도 현재 시세로 다시 표시한다');
 });
 
@@ -98,7 +116,7 @@ test('% 하락·직접·이동평균 전환은 입력 잠금·숫자 범위·검
   assert.equal('endPct' in p,false);assert.equal(p.endPrice,375);assert.equal(p.salePct,50);
   for(const unit of ['일선','주선','개월선']){
     fields.endUnit.value='pct';fields.endN.value='20';input('endUnit');
-    assert.equal(fields.startUnit.disabled,true);assert.equal(fields.salePct.readOnly,true);assert.equal(fields.salePct.value,'100');assert.equal(fields.endPrice.value,400);
+    assert.equal(fields.startUnit.disabled,true);assert.equal(fields.salePct.readOnly,true);assert.equal(fields.salePct.value,'100');assert.equal(fields.endPrice.value,'400');
     fields.endUnit.value=unit;fields.endN.value='25';input('endUnit');
     assert.equal(fields.startUnit.disabled,false);assert.equal(fields.salePct.readOnly,false);assert.equal(fields.endPrice.readOnly,false);assert.equal(fields.endPrice.required,false);
     assert.equal(fields.endN.min,'1');assert.equal(fields.endN.max,'400');
@@ -114,7 +132,7 @@ test('endPct 없는 옛 비이동평균 기록은 직접으로 열고 월선 별
   const {ctx,fields}=load({prices:quote(520)});
   for(const name of ['전고점','직접','시작가 −20%']){
     const p=maPlan({endLabel:name}),before=JSON.stringify(p);ctx.openPlanDialog(p);
-    assert.deepEqual([fields.endUnit.value,fields.endLabel.value,fields.endPrice.value],['',name,400]);
+    assert.deepEqual([fields.endUnit.value,fields.endLabel.value,fields.endPrice.value],['',name,'400']);
     assert.equal(fields.endLabel.required,true);assert.equal(JSON.stringify(p),before,'창을 열어도 옛 기록에 필드를 만들지 않는다');
   }
   for(const name of ['25월선','25달선','25개월선']){
@@ -127,7 +145,7 @@ test('% 하락으로 만든 계획은 시작 기준가에서 하락률만큼 내
   const {ctx,fields,submit}=load({prices:quote(520)});
 fields.ticker.value='AAA';fields.title.value='가상 ETF';fields.shares.value='10';fields.startPrice.value='500';fields.stages.value='5';
   fields.endUnit.value='pct';fields.endN.value='20';fields.salePct.value='50';ctx.planLive();
-  assert.equal(fields.endPrice.value,400);assert.equal(fields.endPrice.readOnly,true);assert.equal(fields.salePct.value,'100');assert.equal(fields.salePct.readOnly,true);
+  assert.equal(fields.endPrice.value,'400');assert.equal(fields.endPrice.readOnly,true);assert.equal(fields.salePct.value,'100');assert.equal(fields.salePct.readOnly,true);
   assert.equal(fields.startUnit.disabled,true);assert.equal(ctx.$('endNote').textContent,'시작 기준가 −20% 자동');
   submit();const p=ctx.state.plans[0];
   assert.deepEqual([p.endPct,p.startPrice,p.endPrice,p.endLabel,'salePct' in p,'startAuto' in p],[20,500,400,'시작가 −20%',false,false]);
@@ -145,7 +163,7 @@ test('하락률 계획은 시작을 직접 입력으로 고정하고 잘못된 �
   submit();assert.equal(ctx.state.plans.length,0,'시작 기준가가 없거나 하락률이 100%면 저장하지 않는다');
   fields.startPrice.value='500';fields.endN.value='0';submit();assert.equal(ctx.state.plans.length,0);
   fields.endN.value='12.5';submit();const p=ctx.state.plans[0];assert.equal(p.endPct,12.5);assert.equal(p.endPrice,437.5);assert.equal(p.endLabel,'시작가 −12.5%');
-  ctx.openPlanDialog(p);assert.equal(fields.endUnit.value,'pct');assert.equal(Number(fields.endN.value),12.5);assert.equal(fields.endPrice.value,437.5);
+  ctx.openPlanDialog(p);assert.equal(fields.endUnit.value,'pct');assert.equal(Number(fields.endN.value),12.5);assert.equal(fields.endPrice.value,'437.5');
   // 기준선으로 되돌리면 하락률 필드를 지우고 기존처럼 이동평균으로 종료 기준가를 채운다.
   fields.endUnit.value='개월선';fields.endN.value='25';ctx.planLive(['end']);assert.equal(fields.startUnit.disabled,false);assert.equal(fields.endPrice.readOnly,false);
   submit();assert.equal('endPct' in p,false);assert.equal(p.endLabel,'25개월선');assert.equal(p.endPrice,300);
