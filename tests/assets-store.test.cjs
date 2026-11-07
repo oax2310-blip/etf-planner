@@ -7,10 +7,10 @@ const root=path.join(__dirname,'..'),KEY='etf-planner-assets-v1',BASE='etf-plann
 const fake=()=>({version:1,allocation:{savedAt:'2026-01-01',classes:[],cash:[],groups:[{id:'g',items:[{id:'a',amount:100,target:10,buyPlan:{stages:[{id:'s',amount:30}]}}]}]},ledger:{savedAt:'2026-01-01',years:[]}});
 function setup(initial,fetcher,shared){
   const storage=shared||new Map(initial?[[KEY,JSON.stringify(initial)]]:[]),listeners=new Map();
-  const collection={id:'',dispatches:[]};
+  const collection={id:'',dispatches:[]},leave=[];
   storage.set('etf-planner-collection-request-token','fake-issues-token');
   storage.set('etf-planner-collection-data-repo','example/private-data');
-  const context={localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
+  const context={pageLeave:{register:handler=>leave.push(handler)},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
     TextEncoder,TextDecoder,btoa:s=>Buffer.from(s,'binary').toString('base64'),atob:s=>Buffer.from(s,'base64').toString('binary'),
     AbortController,AbortSignal,crypto:require('node:crypto').webcrypto,setTimeout:(fn,ms)=>{if(ms===5000)queueMicrotask(fn);return 1;},clearTimeout(){},setInterval(){},document:{hidden:false,addEventListener(){}},addEventListener:(type,fn)=>listeners.set(type,fn),
     async fetch(url,options){
@@ -24,7 +24,7 @@ function setup(initial,fetcher,shared){
     }};
   const code=['js/repo-security.js','js/gold-estimate.js','js/ma-ladder.js','js/split-auto.js','js/data-validation.js','js/assets-calc.js','js/price-collection.js','js/assets-store.js'].map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
   const store=vm.runInNewContext(`${code}\nassetStore`,context);
-  return {store,storage,context,collection,event:()=>listeners.get('storage')?.({key:KEY}),pageshow:persisted=>listeners.get('pageshow')?.({persisted})};
+  return {store,storage,context,collection,leave,event:()=>listeners.get('storage')?.({key:KEY}),pageshow:persisted=>listeners.get('pageshow')?.({persisted})};
 }
 const clone=v=>JSON.parse(JSON.stringify(v));
 
@@ -704,4 +704,70 @@ test('storage 알림을 놓친 페이지의 자산 동기화도 다른 페이지
   assert.equal(remote.allocation.groups[0].items[0].shares,918,'옛 화면의 동기화가 저장소 보유량을 되돌리지 않는다');
   assert.equal(stale.store.doc.allocation.groups[0].items[0].shares,918);
   assert.equal(stale.store.recovery().length,0,'다른 페이지만 바꾼 기록은 충돌로 보관하지 않는다');
+});
+
+function assetLeaveHarness({base=true,remote=fake()}={}){
+  const server={doc:clone(remote),version:1,prices:0,puts:[],hold:null,fail:false,onPut:null};
+  const h=setup(fake(),async(url,options={})=>{
+    if(url.endsWith('/repos/example/private-data'))return json({private:true});
+    if(url.endsWith('/contents/etf-planner-prices.json')){server.prices++;return new Response(null,{status:404});}
+    assert.ok(url.endsWith('/contents/etf-planner-assets.json'));
+    if(server.hold){const hold=server.hold;server.hold=null;await hold();}
+    if(server.fail)return json({message:'synthetic failure'},500);
+    if(options.method==='PUT'){
+      const body=JSON.parse(options.body);server.puts.push(body);
+      if(server.onPut){const hook=server.onPut;server.onPut=null;hook();}
+      if(body.sha!==`sha-${server.version}`)return json({message:'conflict'},409);
+      server.doc=JSON.parse(Buffer.from(body.content,'base64').toString());server.version++;
+      return json({content:{sha:`sha-${server.version}`}});
+    }
+    return json({sha:`sha-${server.version}`,encoding:'base64',content:Buffer.from(JSON.stringify(server.doc)).toString('base64')});
+  });
+  connect(h.storage);if(base)h.storage.set(BASE,JSON.stringify(fake()));
+  return {h,server,handler:h.leave[0]};
+}
+
+test('공유 자산 저장자는 한 번 등록하고 이동 때 시세를 생략해 기존 SHA 쓰기로 대기를 올린다',async()=>{
+  const {h,server,handler}=assetLeaveHarness();await h.store.sync();
+  assert.equal(h.leave.length,1);assert.equal(handler.pending(),false);
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');
+  assert.equal(handler.pending(),true);const prices=server.prices;
+  await handler.flush();assert.equal(server.prices,prices);assert.equal(server.puts.length,1);
+  assert.equal(server.puts[0].sha,'sha-1');assert.equal(server.doc.allocation.groups[0].items[0].target,20);
+  assert.equal(handler.pending(),false);assert.deepEqual(JSON.parse(h.storage.get(BASE)),server.doc);
+});
+
+test('공유 자산 flush는 진행 중 동기화를 기다리고 중복 업로드하지 않는다',async()=>{
+  const {h,server,handler}=assetLeaveHarness();await h.store.sync();
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');
+  let release;server.hold=()=>new Promise(resolve=>release=resolve);
+  const work=h.store.sync();await waitFor(()=>release);assert.equal(handler.pending(),true);
+  let finished=false;const leaving=handler.flush().then(()=>finished=true);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+  release();await work;await leaving;assert.equal(server.puts.length,1);assert.equal(handler.pending(),false);
+});
+
+test('공유 자산 이동 중 SHA가 달라지면 기존 재읽기·병합을 거쳐 다른 구역과 함께 올린다',async()=>{
+  const {h,server,handler}=assetLeaveHarness();await h.store.sync();
+  h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');
+  server.onPut=()=>{server.doc.ledger={savedAt:'2026-01-02',years:[{year:2026,accounts:[],months:[{m:1,pnl:100}]}]};server.version++;};
+  await handler.flush();assert.equal(server.puts.length,2);
+  assert.equal(server.puts[0].sha,'sha-1');assert.equal(server.puts[1].sha,'sha-2');
+  assert.equal(server.doc.allocation.groups[0].items[0].target,20);assert.equal(server.doc.ledger.years[0].months[0].pnl,100);
+});
+
+test('공유 자산의 선택 대기·오류는 예약이 남아도 이동을 기다리지 않으며 flush도 재시도하지 않는다',async()=>{
+  const different=fake();different.allocation.groups[0].items[0].target=30;
+  const choice=assetLeaveHarness({base:false,remote:different});await choice.h.store.sync();
+  choice.h.store.doc.allocation.groups[0].items[0].target=20;choice.h.store.saveSection('allocation');
+  assert.equal(choice.h.store.status.choice,true);assert.ok(choice.h.store.status.timer);
+  assert.equal(choice.handler.pending(),false);await choice.handler.flush();assert.equal(choice.server.puts.length,0);
+  const failed=assetLeaveHarness();await failed.h.store.sync();
+  let release;failed.server.fail=true;failed.server.hold=()=>new Promise(resolve=>release=resolve);
+  const work=failed.h.store.sync();await waitFor(()=>release);
+  let finished=false;const leaving=failed.handler.flush().then(()=>finished=true);
+  failed.h.store.doc.allocation.groups[0].items[0].target=20;failed.h.store.saveSection('allocation');
+  assert.equal(finished,false);release();await work;await leaving;
+  assert.equal(failed.h.store.status.state,'error');assert.ok(failed.h.store.status.timer);
+  assert.equal(failed.handler.pending(),false);assert.equal(failed.server.puts.length,0);
 });

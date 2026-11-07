@@ -97,11 +97,12 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
   };
   const presetAttrs = {'[data-preset]': 'preset', '[data-battery-preset]': 'batteryPreset', '[data-humn-preset]': 'humnPreset', '[data-ai-preset]': 'aiPreset'};
   const presetButtons = Object.fromEntries(Object.entries(presetAttrs).map(([sel, attr]) => [sel, ['low', 'base', 'high'].map(k => button(attr, k))]));
-  const confirms = [];
+  const confirms = [],leave=[];
   const timers = new Map();
   let timerId = 0;
   const renders = {count: 0};
   const context = vm.createContext({
+    pageLeave:{register:handler=>leave.push(handler)},
     el, ids: ['robotM', 'evShare'], batteryInputs: ['batYear', 'batCarM','riseBasePrice','chinaBasePrice'], companyInputIds: ['bc-lg-ev','bc-lg-cap'], groupInputIds: ['bg-skon-cap'], humnControlIds: ['humnUnits'], terControlIds: ['terPE'], aiControlIds: ['aiInference', 'aiPaidRatio', 'aiFixed'],
     sdiPresetLabels: {low: '보수적 시나리오', base: '기본 시나리오', high: '낙관적 시나리오'},
     batteryPresetLabels: {low: '보수적 가정', base: '기본 가정', high: '낙관적 가정'},
@@ -144,7 +145,7 @@ function page({storage = new Map(), defaults = {}, confirmAnswer = true, brokenS
   };
   const saveFn = vm.runInContext('saveAssumptions', context);
   const settle = async () => { for (let i = 0; i < 100 && vm.runInContext('scenarioSync.busy', context); i++) await new Promise(r => setImmediate(r)); };
-  return {context, el, storage, confirms, renders, adjust, clickPreset, submit, listAction, fire, presetButtons, timers,
+  return {context, el, storage, confirms, renders, adjust, clickPreset, submit, listAction, fire, presetButtons, timers, leave,
     // 자동 저장 대기만 실행한다. 동기화 예약은 pendingSync로 확인하고 sync()로 직접 돌린다.
     flush: () => { for (const [id, t] of timers) if (t.fn === saveFn) { timers.delete(id); t.fn(); } },
     pendingSync: () => [...timers.values()].some(t => t.fn !== saveFn),
@@ -644,4 +645,65 @@ test('한글 이름이 저장소를 거쳐도 그대로 돌아온다', async () 
   await b.ready();
   assert.deepEqual(b.stored(LIST).map(s => s.name), ['로봇 1억 대 · 낙관 🚀']);
   assert.equal(b.el('robotM').value, '150');
+});
+
+test('시나리오는 자동 저장 타이머를 확정한 뒤 기존 동기화로 올리며 입력 칸을 강제 확정하지 않는다',async()=>{
+  const server=githubServer(),h=page({server,storage:connectedStorage()});await h.ready();
+  assert.equal(h.leave.length,1);const [handler]=h.leave;assert.equal(handler.pending(),false);
+  h.adjust('aiInference',6000);h.context.document.activeElement=h.el('aiInference');
+  h.el('aiInference').blur=()=>assert.fail('이동 대기는 blur하지 않는다');
+  assert.equal(handler.pending(),true);assert.equal(h.storage.has(CURRENT),false);
+  await handler.flush();
+  assert.equal(h.stored(CURRENT).values.aiInference,6000);assert.equal(server.data().current.values.aiInference,6000);
+  assert.equal(server.puts.length,1);assert.equal(handler.pending(),false);assert.equal(h.confirms.length,0);
+});
+
+test('연결하지 않은 시나리오도 이동 전에 자동 저장 타이머의 기기 기록은 저장한다',async()=>{
+  const h=page();await h.ready();h.adjust('robotM',120);
+  assert.equal(h.leave[0].pending(),true);await h.leave[0].flush();
+  assert.equal(h.stored(CURRENT).values.robotM,120);assert.equal(h.leave[0].pending(),false);
+});
+
+test('시나리오의 동기화 예약·진행 중 요청을 기다리고 중복 업로드하지 않는다',async()=>{
+  const server=githubServer(),request=server.fetch;let hold=false,release;
+  server.fetch=async(url,options)=>{
+    if(hold&&options?.method==='PUT'){hold=false;await new Promise(resolve=>release=resolve);}return request(url,options);
+  };
+  const h=page({server,storage:connectedStorage()});await h.ready();h.adjust('robotM',120);h.flush();
+  assert.equal(h.leave[0].pending(),true);hold=true;const work=vm.runInContext('syncScenarios()',h.context);
+  for(let i=0;i<100&&!release;i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(release);
+  let finished=false;const leaving=h.leave[0].flush().then(()=>finished=true);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+  release();await work;await leaving;
+  assert.equal(server.puts.length,1);assert.equal(server.data().current.values.robotM,120);assert.equal(h.leave[0].pending(),false);
+});
+
+test('시나리오의 입력 중 적용 대기·오류는 타이머·busy가 있어도 이동을 기다리지 않는다',async()=>{
+  for(const state of ['typing','error']){
+    const h=page();await h.ready();h.adjust('robotM',120);
+    vm.runInContext(`scenarioSync.state='${state}';scenarioSync.waitTyping=${state==='typing'};scenarioSync.timer=999;scenarioSync.busy=true`,h.context);
+    assert.equal(h.leave[0].pending(),false,state);
+  }
+});
+
+test('진행 중인 시나리오 동기화가 오류·입력 대기로 끝나면 이동 flush가 다시 요청하지 않는다',async()=>{
+  for(const state of ['error','typing']){
+    const server=githubServer(),request=server.fetch;let hold=false,release;
+    server.fetch=async(url,options)=>{
+      if(hold&&new URL(url).pathname===FILE){hold=false;await new Promise(resolve=>release=resolve);
+        if(state==='error')return reply(500,{message:'synthetic failure'});
+      }
+      return request(url,options);
+    };
+    const h=page({server,storage:connectedStorage()});await h.ready();h.adjust('robotM',120);h.flush();
+    if(state==='typing'){
+      server.file={sha:'remote-newer',text:JSON.stringify({version:1,current:{values:{robotM:140},presets:{},savedAt:'2099-01-01T00:00:00Z'},scenarios:[],deleted:{}})};
+      h.context.document.activeElement=h.el('aiInference');
+    }
+    hold=true;const work=vm.runInContext('syncScenarios()',h.context);
+    for(let i=0;i<100&&!release;i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(release);
+    const leaving=h.leave[0].flush();release();await work;await leaving;
+    assert.equal(vm.runInContext('scenarioSync.state',h.context),state);
+    assert.equal(server.puts.length,0);assert.equal(h.leave[0].pending(),false);
+  }
 });

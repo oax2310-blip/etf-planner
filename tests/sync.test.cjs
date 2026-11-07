@@ -52,7 +52,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
     items.set('etf-planner-collection-data-repo',REPO);
     if (base) items.set('etf-planner-sync-base:' + REPO, base);
   }
-  const elements = new Map(), intervals = [], windowOn = {}, storageErrors = [];
+  const elements = new Map(), intervals = [], windowOn = {}, storageErrors = [], leave=[];
   let version = 1;
   const server = sharedServer || {file: remote ? {sha: 'sha-1', text: JSON.stringify(remote, null, 2)} : null, writes: 0, requests: 0, auth: [], puts: [], beforePut: null,
     prices: prices && {etag: '"p1"', text: JSON.stringify(prices)}, priceStatus, priceAsks: [], dispatches: [], requestId: ''};
@@ -62,6 +62,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   };
   const reply = (status, body, headers = {}) => ({ok: status >= 200 && status < 300, status, headers: {get: name => headers[name.toLowerCase()] ?? null}, async json() { return body; }, async text() { return typeof body === 'string' ? body : JSON.stringify(body); }});
   const context = vm.createContext({
+    pageLeave:{register:handler=>leave.push(handler)},
     state: structuredClone(local), STORAGE_KEY: 'test-state', hadStoredState,
     localStorage: {getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, String(value)), removeItem: key => items.delete(key)},
     $: element, $$:()=>[], esc:value=>String(value??""), document: {on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, hidden: false, createElement: () => ({children: [], append(...c) { this.children.push(...c); }})},
@@ -112,7 +113,7 @@ function harness({local = empty(), remote = null, base = '', hadStoredState = tr
   vm.runInContext('var restored = startSync();', context); // js/start.js처럼 모든 파일을 불러온 뒤 시작
   const remoteData = () => server.file && JSON.parse(server.file.text);
   const fire = (type, event = {}) => (windowOn[type] || []).forEach(fn => fn(event));
-  return {context, server, items, elements, intervals, storageErrors, remoteData, fire, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
+  return {context, server, items, elements, intervals, storageErrors, remoteData, fire, leave, restored: () => vm.runInContext('restored', context), run: () => vm.runInContext('syncNow()', context), status: () => element('syncStatus').textContent};
 }
 test('save는 기기 저장 예외를 알리고 메모리 입력·동기화 예약·이름표 갱신을 유지하며 다음 저장 성공 때 회복한다',async()=>{
   const local={...empty(),plans:[{id:'fake-plan',note:'이전 가상 메모'}]},raw=JSON.stringify(local);
@@ -1134,4 +1135,35 @@ test('바로 올린 뒤 응답을 받기 전에 끊겨도 다음 동기화는 �
   assert.equal(h.server.puts.length,puts,'저장소가 이미 이 기기 기록이라 다시 올리지 않는다');
   assert.notEqual(h.elements.get('conflictDialog')?.open,true,'충돌 창을 열지 않는다');
   assert.equal(h.items.get('etf-planner-sync-base:'+REPO),vm.runInContext('dataSnapshot()',h.context));assert.match(h.status(),/동기화 완료/);
+});
+
+test('플래너는 기존 flushPlanner를 등록하고 대기 중 수정만 바로 올린다',async()=>{
+  const local=leaveLocal(),h=harness({local,remote:local,base:snap(local)});await h.restored();
+  assert.equal(h.leave.length,1);const [handler]=h.leave;
+  assert.equal(handler.flush,vm.runInContext('flushPlanner',h.context));assert.equal(handler.pending(),false);
+  editNote(h);assert.equal(handler.pending(),true);const requests=h.server.requests;
+  await handler.flush();assert.equal(h.server.requests-requests,1);
+  assert.equal(h.remoteData().plans[0].note,'방금 쓴 가상 메모');assert.equal(handler.pending(),false);
+});
+
+test('플래너 충돌 대기·오류 상태는 수정·진행 중 요청이 있어도 이동 대기로 등록하지 않는다',async()=>{
+  const local=leaveLocal(),h=harness({local,remote:local,base:snap(local)});await h.restored();editNote(h);
+  for(const flag of ['blocked','failed']){
+    vm.runInContext(`sync.${flag}=true;sync.busy=true`,h.context);
+    assert.equal(h.leave[0].pending(),false,flag);
+    vm.runInContext(`sync.${flag}=false;sync.busy=false`,h.context);
+  }
+  assert.equal(h.leave[0].pending(),true);
+});
+
+test('등록된 플래너 flush는 진행 중인 동기화가 끝날 때까지 기다리고 중복 업로드하지 않는다',async()=>{
+  let release,hold=false;const local=leaveLocal();
+  const h=harness({local,remote:local,base:snap(local),fetcher:async(url,options,request)=>{
+    if(hold&&options?.method==='PUT'){hold=false;await new Promise(resolve=>release=resolve);}return request(url,options);
+  }});
+  await h.restored();editNote(h);hold=true;const work=h.run();
+  for(let i=0;i<100&&!release;i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(release);
+  let finished=false;const leaving=h.leave[0].flush().then(()=>finished=true);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);
+  release();await work;await leaving;assert.equal(h.server.puts.length,1);assert.equal(h.leave[0].pending(),false);
 });
