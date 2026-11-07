@@ -137,7 +137,7 @@ const externalData = (()=>{
           child(v,"buyPlan",q,(b,t)=>{stages(b.stages,`${t}.stages`);recordMap(b.buys,`${t}.buys`,trade);child(b,"lines",t);child(b,"wait",t);});
         });
       });
-      recordMap(a.trades,`${p}.trades`,v=>records(v.items,`${p}.trades.items`,(x,q)=>{trade(x,q);numbers(x,["exact"],q);}));
+      recordMap(a.trades,`${p}.trades`,v=>records(v.items,`${p}.trades.items`,(x,q)=>{trade(x,q);numbers(x,["exact"],q);flags(x,["avgFresh"],q);}));
     });
     child(data,"ledger","자산",(v,p)=>records(v.years,`${p}.years`,(y,k)=>{
       numbers(y,["year"],k,1,9999,true);

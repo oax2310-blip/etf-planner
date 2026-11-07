@@ -128,6 +128,27 @@ test('기준 종목과 tradeTicker가 다른 자산의 보유·평단·base는 �
   assert.deepEqual([b.buyPlan.lines.end,b.buyPlan.buys.end.price,b.buyPlan.buys.end.shares,b.buyPlan.buys.end.plannedShares,b.buyPlan.buys.end.tradePrice],[120,120,6,12,30]);
 });
 
+test('분할매수 execPrice는 buys·직접 입력 모두 실제 매수 종목 기준으로만 분할 조정한다',()=>{
+  const tracked={id:'tracked',ticker:'TEST',tradeTicker:'TESTALT',buyPlan:{
+    stages:[{id:'stage',price:90,sourceShares:6,shares:2,plannedShares:4,partial:true,tradeTicker:'TESTALT',tradePrice:45,execPrice:42}],
+    buys:{explicit:{price:90,sourceShares:6,shares:2,tradeTicker:'TESTALT',tradePrice:45,execPrice:42},
+      legacy:{price:90,shares:2,execPrice:42},missing:{price:90,shares:2,execPrice:42,tradeTargetId:'deleted'},empty:{price:90,shares:2}}
+  }};
+  const direct={id:'direct',ticker:'TEST',buyPlan:{stages:[{id:'old',done:true,price:90,shares:2,execPrice:81}],buys:{end:{price:90,shares:2,execPrice:81}}}};
+  const doc=assets([tracked,direct]),before=JSON.stringify(doc),basis=run(planner(),doc).assetsDoc.allocation.groups[0].items;
+  assert.equal(JSON.stringify(doc),before,'미리보기·적용은 원본 불변');
+  const p=basis[0].buyPlan;
+  assert.deepEqual([p.stages[0].price,p.stages[0].sourceShares,p.stages[0].tradePrice,p.stages[0].execPrice],[30,18,45,42]);
+  assert.deepEqual([p.buys.explicit.price,p.buys.explicit.sourceShares,p.buys.explicit.execPrice,p.buys.legacy.execPrice],[30,18,42,42]);
+  assert.equal(basis[1].buyPlan.stages[0].execPrice,27);assert.equal(basis[1].buyPlan.buys.end.execPrice,27);
+  const actual=run(planner(),doc,{...opt,ticker:'TESTALT'}),a=actual.assetsDoc.allocation.groups[0].items[0].buyPlan;
+  assert.deepEqual([a.stages[0].price,a.stages[0].sourceShares,a.stages[0].tradePrice,a.stages[0].execPrice],[90,6,15,14]);
+  assert.deepEqual([a.buys.explicit.price,a.buys.explicit.sourceShares,a.buys.explicit.tradePrice,a.buys.explicit.execPrice,a.buys.legacy.execPrice],[90,6,15,14,14]);
+  assert.equal(a.buys.missing.execPrice,42,'삭제된 명시 계좌의 실제 종목은 추정하지 않음');
+  assert.equal(Object.hasOwn(a.buys.empty,'execPrice'),false);
+  assert.ok(actual.preview.items.some(i=>i.skipped.some(s=>s.path.at(-1)==='execPrice'&&s.reason==='종목 연결 확인 불가')));
+});
+
 test('분할매수는 고정 tradeTicker·반영 계좌·옛 반영 기록을 사용하고 삭제된 명시 계좌는 추정하지 않는다',()=>{
   const owner={id:'owner',ticker:'TESTALT',tradeTicker:'TESTALT',buyPlan:{buys:{
     explicit:{price:90,shares:2,tradeTicker:'TEST',tradeTargetId:'other',tradePrice:60},
@@ -140,6 +161,20 @@ test('분할매수는 고정 tradeTicker·반영 계좌·옛 반영 기록을 �
   const r=run(planner(),doc),b=r.assetsDoc.allocation.groups[0].items[0].buyPlan.buys;
   assert.deepEqual([b.explicit.shares,b.explicit.tradePrice,b.explicit.price],[6,20,90]);assert.equal(b.target.shares,6);assert.equal(b.target.plannedShares,12);assert.equal(b.legacy.shares,6);
   assert.equal(b.missing.shares,2);assert.equal(b.missing.plannedShares,4);assert.ok(r.preview.items.some(i=>i.skipped.some(s=>s.reason==='종목 연결 확인 불가')));
+});
+
+test('분할매수 평균가의 반영 표식 execPrice는 실제 종목으로 조정하고 avgFresh는 유지한다',()=>{
+  const doc=assets([{id:'owner',ticker:'TESTALT',tradeTicker:'TEST',shares:3,averagePrice:81,
+    buyPlan:{buys:{end:{price:90,shares:3,tradeTicker:'TEST',tradePrice:90,execPrice:81}}}},
+    {id:'other',ticker:'TESTALT',shares:2,averagePrice:54}]);
+  doc.allocation.trades={'buy:owner:end':{price:90,qty:3,items:[{id:'owner',shares:3,execPrice:81,avgFresh:true},{id:'other',shares:2,execPrice:54}]}};
+  const before=JSON.stringify(doc),actual=run(planner(),doc).assetsDoc,basis=run(planner(),doc,{...opt,ticker:'TESTALT'}).assetsDoc;
+  assert.equal(JSON.stringify(doc),before);
+  const one=actual.allocation.trades['buy:owner:end'].items,two=basis.allocation.trades['buy:owner:end'].items;
+  assert.deepEqual(plain(one[0]),{id:'owner',shares:9,execPrice:27,avgFresh:true});assert.equal(one[1].execPrice,54);
+  assert.equal(actual.allocation.groups[0].items[0].averagePrice,27);
+  assert.deepEqual(plain(two[0]),{id:'owner',shares:3,execPrice:81,avgFresh:true});assert.equal(two[1].execPrice,18);
+  assert.equal(api.externalData.assets(actual),actual);assert.equal(api.externalData.assets(basis),basis);
 });
 
 test('자산 반영 기록은 출처와 각 항목 종목을 분리하며 exact의 수량/금액 뜻을 보존한다',()=>{
