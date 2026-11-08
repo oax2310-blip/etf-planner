@@ -31,8 +31,10 @@ function load(){
       BTC:{kind:'해외',asOf:'2026-10-02',close:30,ma:{}}}},
     id:()=> 'test-plan',priceText:v=>String(v),fxText:v=>String(v),esc:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),FormData:class{constructor(f){this.fields=f.elements;}get(key){return this.fields[key]?.disabled?null:this.fields[key]?.value;}}});
   for(const file of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','plans.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),ctx);
+  // 미연결 테스트는 그대로 두고 체결 대역에는 실제 alloc-link.js의 표시 함수를 함께 넣는다.
+  const link=vm.runInContext(`(()=>{${fs.readFileSync(path.join(__dirname,'../js/alloc-link.js'),'utf8')}\n;return allocLink;})()`,ctx);
   const api=vm.runInContext('({sharesAt,sharesLeft,hasPlanShares,planQuantity,planQuote,planLive,planSalePct,saleShares,stagePrice,stageWorth,planTrade,planLink,planStageProgress,recordPlanFill,planQuantityProgress,planSourceQuantityProgress,planSaleExecution,planSaleAccountView,recordPlanQuantity,planSaleRow,planLinkedSaleSchedule,movePlanSalePriority,recordPlanGroupFill,planAllocOptions,fillPlanAllocTicker,openPlanDialog,applyTrade,revertTrade,rescaleTrade})',ctx);
-  return {ctx,api,fields,node,writes,submit:()=>form.events.submit({target:form,preventDefault(){}}),type(name,value){const input=fields[name];input.value=value;input.form=form;inputListeners.forEach(fn=>fn({target:input}));form.events.input({target:input});}};
+  return {ctx,api,link,fields,node,writes,submit:()=>form.events.submit({target:form,preventDefault(){}}),type(name,value){const input=fields[name];input.value=value;input.form=form;inputListeners.forEach(fn=>fn({target:input}));form.events.input({target:input});}};
 }
 
 test('매도 창의 환율·시작가·종료가·평가액은 쉼표로 입력하고 숫자로 저장·재표시한다',()=>{
@@ -312,10 +314,10 @@ test('자산 배분 연동: 회차 체결은 매도 비중을 적용한 회차 �
 });
 
 function partialSale({bitcoin=false,valueOnly=false}={}){
-  const {api,ctx}=load(),ticker=bitcoin?'BTC-USD':'111111',qty=bitcoin?0.02:20;
+  const {api,ctx,link}=load(),ticker=bitcoin?'BTC-USD':'111111',qty=bitcoin?0.02:20;
   const p={id:'sale',title:'가상 매도 계획',ticker,currency:'KRW',holdings:valueOnly?[]:[{shares:qty}],valueKrw:valueOnly?20:null,startPrice:10000,endPrice:9000,stages:2,checked:[false,false]};
   const it={id:'asset',ticker,...(valueOnly?{amount:20}:{shares:qty})},alloc={groups:[{items:[it]}]},prices={stocks:{[ticker]:{kind:bitcoin?'코인':'국내',close:10000,asOf:'2026-01-02'}}};
-  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},prices,saveSection(){}};ctx.allocLink={
+  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},prices,saveSection(){}};ctx.allocLink={...link,
     check(o){const key=o.commit();if(key)api.applyTrade(alloc,prices,key,o.trade,o.label,[{id:it.id,unit:valueOnly?'amount':'shares',n:valueOnly?o.trade.value:o.trade.qty}]);o.redraw?.();},
     rescale(key,trade){api.rescaleTrade(alloc,key,trade);},uncheck(key){api.revertTrade(alloc,key);}
   };
@@ -323,11 +325,11 @@ function partialSale({bitcoin=false,valueOnly=false}={}){
 }
 
 function accountSale(){
-  const {api,ctx}=load(),p={id:'sale',title:'가상 기준 ETF',ticker:'AAA',currency:'USD',fx:1500,holdings:[{shares:4}],startPrice:100,endPrice:90,stages:2,checked:[false,false],sellAccountId:'isa',sellTargetId:'isa-etf'};
+  const {api,ctx,link}=load(),p={id:'sale',title:'가상 기준 ETF',ticker:'AAA',currency:'USD',fx:1500,holdings:[{shares:4}],startPrice:100,endPrice:90,stages:2,checked:[false,false],sellAccountId:'isa',sellTargetId:'isa-etf'};
   const isa={id:'isa-etf',name:'가상 추종 ETF',ticker:'111111',shares:100},pension={id:'pension-etf',name:'가상 추종 ETF',ticker:'222222',shares:80},alloc={groups:[{id:'isa',name:'예시 ISA',items:[isa]},{id:'pension',name:'예시 연저펀',items:[pension]}]};
   const prices={fx:{close:1500},stocks:{'111111':{kind:'국내',close:10000,asOf:'2026-10-08'},'222222':{kind:'국내',close:15000,asOf:'2026-10-08'}}};
   ctx.priceData.stocks.AAA={kind:'해외',close:100,asOf:'2026-10-08'};
-  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},prices,saveSection(){}};ctx.allocLink={
+  ctx.state.plans=[p];ctx.assetStore={doc:{allocation:alloc},prices,saveSection(){}};ctx.allocLink={...link,
     check(o){assert.equal(o.ownId,o.targetId);const key=o.commit();if(key)api.applyTrade(alloc,prices,key,{...o.trade,ticker:o.ticker},o.label,o.picks||[{id:o.targetId,unit:'shares',n:o.trade.qty}]);o.redraw?.();},
     rescale(key,trade){api.rescaleTrade(alloc,key,trade);},uncheck(key){api.revertTrade(alloc,key);}
   };
@@ -471,6 +473,26 @@ test('매도 보유 목록은 실제 ETF 평가액과 전체 자산 비중을 �
   r.member(0,r.native.id,1);const saved=JSON.stringify([r.p,r.alloc]);assert.match(r.api.planSaleAccountView(r.p),/현재 23.5%/);assert.equal(JSON.stringify([r.p,r.alloc]),saved,'조회가 고정 회차·보유량을 바꾸지 않음');
   r.api.recordPlanQuantity(r.p,0,0,()=>{});assert.match(r.api.planSaleAccountView(r.p),/현재 29.5%/);
   r.alloc.total=200;assert.match(r.api.planSaleAccountView(r.p),/현재 14.8%/);
+});
+
+test('분할매도 연결 카드 손익은 실제 자산 시세·평균가와 자산 환율로 합산하고 화면 조회로 기록을 바꾸지 않는다',()=>{
+  const r=groupSale({a:10,b:5,native:2});r.alloc.total=100;r.isa.averagePrice=9000;r.pension.averagePrice=8000;r.native.averagePrice=40;
+  r.prices.fx.close=1200;r.prices.stocks.AAA={kind:'해외',close:50,asOf:'2026-10-08'};r.p.fx=2500;
+  r.ctx.priceText=(v,cur)=>cur==='USD'?`$${v.toFixed(2)}`:`${new Intl.NumberFormat('ko-KR').format(v)}원`;
+  const before=JSON.stringify([r.p,r.alloc]),view=r.api.planSaleAccountView(r.p);
+  assert.match(view,/<div class="sale-linked-overview"><p class="hint sale-linked-summary">/);
+  assert.match(view,/보유 3개 중 3개 합산 · 달러 종목은 현재 환율 1,200원으로 환산 · 환차손익 제외/);
+  assert.match(view,/손익 <b class="profit-gain">\+4.4만원<\/b> <b class="profit-gain">\+19.47%<\/b>/);
+  assert.match(view,/평균 9,000원 · 손익 <b class="profit-gain">\+1만원<\/b> <b class="profit-gain">\+11.11%<\/b>/);
+  assert.match(view,/평균 \$40.00 · 손익 <b class="profit-gain">\+2.4만원<\/b> <b class="profit-gain">\+25%<\/b>/);
+  assert.equal(JSON.stringify([r.p,r.alloc]),before);
+});
+test('분할매도 연결 손익은 평균가 미입력·손실과 환율 없는 달러의 제외 개수를 표시한다',()=>{
+  const r=groupSale({a:10,b:5,native:2});r.isa.averagePrice=12000;r.native.averagePrice=40;
+  r.prices.stocks.AAA={kind:'해외',close:50,asOf:'2026-10-08'};r.prices.fx=null;
+  const view=r.api.planSaleAccountView(r.p);
+  assert.match(view,/평균매수가 미입력/);assert.match(view,/손익 환율 대기 <b class="profit-gain">\+25%<\/b>/);
+  assert.match(view,/손익 <b class="profit-loss">−2만원<\/b> <b class="profit-loss">−16.67%<\/b> · 1\/3개 · 환율 없음/);
 });
 
 test('매도 보유 목록은 시세·환율 누락을 평가 대기로 표시하며 금액 보유의 평가액을 예정 주수로 대체하지 않는다',()=>{
