@@ -309,7 +309,7 @@ test('목표 가격 없는 분할매수는 마지막 선택 평균선의 도달 
     assert.equal(JSON.stringify(plan),before,'읽기만 할 때 목표 가격이나 체결 필드를 만들지 않음');
   }
   const rows=c.purchaseLineLevels({names:['25선','32선']},{ma:{'25선':1400,'32선':1350,'42선':1600}});
-  assert.deepEqual(rows.map(r=>[r.key,r.price]),[['25선:0',1400],['32선:0',1350]],'역전된 선도 선택 순서대로 매수하고 선택 뒤의 선은 제외');
+  assert.deepEqual(rows.map(r=>[r.key,r.price]),[['32선:0',1350]],'마지막 선보다 위인 앞 선(시작선 포함)은 빼고 선택 뒤의 선도 제외');
 });
 
 test('목표 가격 없는 분할매수는 종료선 시세가 없으면 기다리고 부분 체결 잔량은 보존한다', () => {

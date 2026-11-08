@@ -10,11 +10,12 @@ const {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseSummary
 return {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseSummary,purchaseInOrderSelection,movingLineRange,MA_LINES};})()`);
 const item=(id='a',ticker='111111',buyPlan=linePlan())=>({id,ticker,buyPlan});
 const assets=(...items)=>({version:1,allocation:{groups:[{id:'test-group',items}]}});
-const linePlan=()=>({lines:{names:['42선','150주선'],startLine:'42선',budget:100},notify:{stages:true}});
+// 목표가 없이 마지막 선까지 사면 마지막 선보다 위인 앞 선은 빠지므로, 앞 선 미도달·뒤 선 도달의 선행 관계는 목표가 계획으로 검증한다.
+const linePlan=()=>({lines:{names:['42선','150주선'],startLine:'42선',end:13000,budget:100},notify:{stages:true}});
 const quotes=(close=11000)=>({stocks:{'111111':{kind:'국내',asOf:'2026-01-02',close,ma:{'42선':12000,'150주선':10000}}}});
 const chain=rules=>rules.map(r=>[r.id,r.after??null]);
 
-const screenPlan=()=>({lines:{names:['25일선','32일선','60개월선'],budget:100},notify:{stages:true}});
+const screenPlan=()=>({lines:{names:['25일선','32일선','60개월선'],end:14000,budget:100},notify:{stages:true}});
 const screenQuote=(close=11000)=>({kind:'국내',asOf:'2026-01-02',close,ma:{'25일선':12000,'32일선':13000,'60개월선':10000}});
 const keys=rows=>rows.map(r=>r.key);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} ≠ ${b}`);
@@ -195,8 +196,9 @@ test('현재가가 장기선 아래로 내려오거나 앞 회차를 모두 넘�
   for(const [close,reached] of [[9500,false],[13500,true],[10000,true]]){
     const entry=screenQuote(close),selected=purchaseLineSelection(plan,entry,{inOrder:true});
     if(close===10000){assert.deepEqual(keys(selected.skipped),['60개월선:0'],'선과 같은 가격도 도달이므로 순서 밖이면 제외');continue;}
-    assert.deepEqual(selected.skipped,[]);assert.equal(selected.rows.at(-1).key,'60개월선:0');
-    assert.equal(close>=selected.rows.at(-1).price,reached);near(selected.rows.reduce((sum,r)=>sum+r.amount,0),100);
+    const long=selected.rows.find(r=>r.key==='60개월선:0');
+    assert.deepEqual(selected.skipped,[]);assert.ok(long,'장기선 회차를 다시 넣는다');
+    assert.equal(close>=long.price,reached);near(selected.rows.reduce((sum,r)=>sum+r.amount,0),100);
   }
   assert.deepEqual(keys(purchaseLineSelection(plan,screenQuote(),{inOrder:true}).skipped),['60개월선:0']);
   assert.equal(JSON.stringify(plan),before);
@@ -212,7 +214,8 @@ test('완료·부분 체결은 지난 회차로 보고 잔량 예산을 보존�
   assert.equal(JSON.stringify({plan,entry}),before);
   for(const r of selected.rows.slice(1))plan.buys[r.key]={price:r.price,actual:1};
   before=JSON.stringify({plan,entry});selected=purchaseLineSelection(plan,entry,{inOrder:true});
-  assert.deepEqual(selected.skipped,[]);assert.equal(selected.rows.at(-1).key,'60개월선:0');assert.ok(entry.close>=selected.rows.at(-1).price);
+  const long=selected.rows.find(r=>r.key==='60개월선:0');
+  assert.deepEqual(selected.skipped,[]);assert.ok(long&&!long.done);assert.ok(entry.close>=long.price);
   near(selected.rows.filter(r=>!r.done).reduce((sum,r)=>sum+r.amount,0),100-selected.rows.reduce((sum,r)=>sum+(r.actual||0),0));
   assert.equal(JSON.stringify({plan,entry}),before,'부분 체결이 남아도 새 기록 없이 재편입한다');
 });
@@ -247,9 +250,10 @@ test('앞선 42선 미도달·뒤 150주선 도달: 시세와 무관하게 선�
   const rules=purchaseAlertRules(doc,prices);
   assert.deepEqual(rules.map(r=>[r.id,r.targetPrice,r.revision]),[
     ['trade:buy:a:42선:0',12000,'["42선",0,null]'],
-    ['trade:buy:a:150주선:0',10000,'["150주선",0,null]']
+    ['trade:buy:a:150주선:0',10000,'["150주선",0,null]'],
+    ['trade:buy:a:end',13000,'["end",13000]']
   ]);
-  assert.deepEqual(chain(rules),[['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0']]);
+  assert.deepEqual(chain(rules),[['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0'],['trade:buy:a:end','trade:buy:a:150주선:0']]);
   assert.equal(JSON.stringify({doc,prices}),before,'순서 계산은 입력에 도달 기록이나 새 필드를 만들지 않는다');
   for(const close of [13000,9000,null]){
     const next=quotes(close);
@@ -266,11 +270,11 @@ test('부분 체결 회차는 선행 관계에 남고 전량 완료하면 다음
   const plan=linePlan(),doc=assets(item('a','111111',plan)),prices=quotes();
   plan.buys={'42선:0':{plannedShares:10,shares:4,plannedActual:12,actual:4.8,price:12000}};
   const before=JSON.stringify(doc),partial=purchaseAlertRules(doc,prices,true);
-  assert.deepEqual(chain(partial),[['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0']]);
+  assert.deepEqual(chain(partial),[['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0'],['trade:buy:a:end','trade:buy:a:150주선:0']]);
   assert.equal(partial[0].targetPrice,12000);
   assert.equal(JSON.stringify(doc),before,'부분 체결 수량과 잔량 예산을 그대로 둔다');
   Object.assign(plan.buys['42선:0'],{shares:10,actual:12});
-  assert.deepEqual(chain(purchaseAlertRules(doc,prices,true)),[['trade:buy:a:150주선:0',null]]);
+  assert.deepEqual(chain(purchaseAlertRules(doc,prices,true)),[['trade:buy:a:150주선:0',null],['trade:buy:a:end','trade:buy:a:150주선:0']]);
   Object.assign(plan.buys['42선:0'],{shares:4,actual:4.8});
   assert.deepEqual(chain(purchaseAlertRules(doc,prices,true)),chain(partial),'완료를 되돌리면 선행 관계도 다시 생긴다');
 });
@@ -280,7 +284,7 @@ test('앞 회차 알림 OFF도 순서에서 건너뛰지 않고 quiet 규칙으�
   const doc=assets(item('a','111111',plan)),prices=quotes(),before=JSON.stringify(doc);
   const normal=purchaseAlertRules(doc,prices),quiet=purchaseAlertRules(doc,prices,true);
   assert.deepEqual(chain(normal),[['trade:buy:a:150주선:0','trade:buy:a:42선:0']]);
-  assert.deepEqual(chain(quiet),[['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0']]);
+  assert.deepEqual(chain(quiet),[['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0'],['trade:buy:a:end','trade:buy:a:150주선:0']]);
   assert.equal(quiet[0].notify,false);
   assert.deepEqual(quiet.filter(r=>r.notify!==false),normal);
   assert.equal(JSON.stringify(doc),before);
@@ -331,10 +335,33 @@ test('계획마다 선행 관계를 새로 시작하고 체결 없는 매수대�
   );
   const prices=quotes(),before=JSON.stringify({doc,prices}),rules=purchaseAlertRules(doc,prices,true);
   assert.deepEqual(chain(rules),[
-    ['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0'],
+    ['trade:buy:a:42선:0',null],['trade:buy:a:150주선:0','trade:buy:a:42선:0'],['trade:buy:a:end','trade:buy:a:150주선:0'],
     ['trade:buy:b:first',null],['trade:buy:b:last','trade:buy:b:first'],['trade:buy:wait:wait',null]
   ]);
   const wait=rules.at(-1);
   assert.equal(wait.condition,'down');assert.equal(wait.revision,'["wait","150주선","down"]');
   assert.equal(JSON.stringify({doc,prices}),before);
+});
+
+test('목표가 없이 마지막 선까지 사면 마지막 선 가격 이상인 앞 선(시작선 포함)은 회차·⅓·⅔ 연결·알림에서 빼고 남은 선끼리 잇는다',()=>{
+  const plan=()=>({lines:{names:['25일선','32일선','42일선','60주선','60개월선'],startLine:'25일선',budget:100},notify:{stages:true}});
+  const quote=(ma={})=>({kind:'국내',asOf:'2026-01-02',close:98,ma:{'25일선':106,'32일선':99,'42일선':112,'60주선':96,'60개월선':100,...ma}});
+  const p=plan(),entry=quote(),doc=assets(item('a','111111',p)),prices={stocks:{'111111':entry}},before=JSON.stringify({doc,prices});
+  const rows=purchaseLineRows(p,entry);
+  assert.deepEqual(rows.map(r=>[r.key,Number(r.price.toFixed(4))]),[['32일선:0',99],['60주선:0',96],['60주선:1',97.3333],['60주선:2',98.6667],['60개월선:0',100]]);
+  assert.ok(rows.every(r=>r.price<=100),'마지막 선 가격보다 비싼 회차가 없다');
+  near(rows.reduce((sum,r)=>sum+r.amount,0),100);
+  const rules=purchaseAlertRules(doc,prices);
+  assert.deepEqual(rules.map(r=>r.id),rows.map(r=>`trade:buy:a:${r.key}`));
+  assert.equal(rules.some(r=>/25일선|42일선/.test(r.id)),false);
+  assert.equal(JSON.stringify({doc,prices}),before,'계획·시세에 필드를 만들지 않는다');
+  assert.deepEqual(keys(purchaseLineRows(p,quote({'42일선':100}))),keys(rows),'마지막 선과 같은 가격도 뺀다');
+  assert.ok(keys(purchaseLineRows(p,quote({'42일선':97}))).includes('42일선:0'),'이동평균이 마지막 선 아래로 내려오면 다시 넣는다');
+  assert.deepEqual(keys(purchaseLineRows(p,quote({'25일선':120,'32일선':101,'60주선':130}))),['60개월선:0'],'모두 위면 마지막 선 1차만');
+  p.buys={'42일선:0':{shares:1,actual:1.12,price:112}};
+  const recorded=purchaseLineRows(p,entry);
+  assert.deepEqual(keys(recorded),['32일선:0','42일선:0',...keys(rows).slice(1)],'이미 체결한 회차 기록은 names 순서 자리에 유지한다');
+  near(recorded.filter(r=>!r.done).reduce((sum,r)=>sum+r.amount,0),100-1.12);
+  const target=plan();target.lines.end=150;
+  assert.ok(['25일선:0','42일선:0'].every(key=>keys(purchaseLineRows(target,entry)).includes(key)),'목표 가격 계획은 그 가격 아래 회차를 그대로 쓴다');
 });
