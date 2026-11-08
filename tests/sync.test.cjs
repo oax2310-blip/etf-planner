@@ -1171,13 +1171,15 @@ test('등록된 플래너 flush는 진행 중인 동기화가 끝날 때까지 �
 test('백업·복구본 내려받기 파일 이름은 Asia/Seoul 기준 YYYY-MM-DD 날짜를 쓰고 잘못된 시각은 record로 대체한다',()=>{
   const records=[
     {...empty(),plans:[{id:'bad'}],recoveryReason:'시각 오류',exportedAt:'invalid'},
-    {...empty(),plans:[{id:'kst'}],recoveryReason:'자정 직전 UTC',exportedAt:'2026-11-07T22:00:00Z'}
+    {...empty(),plans:[{id:'kst'}],recoveryReason:'UTC 22시(한국 다음 날 07시)',exportedAt:'2026-11-07T22:00:00Z'}
   ];
   const h=harness({connect:false,stored:{'etf-planner-sync-recovery':JSON.stringify(records)}});
   const files=[];h.context.downloadJson=(value,name)=>files.push({value,name});
+  // 지금 시각을 한국 2026-11-08 07:00으로 고정한다. UTC 날짜(11-07)를 쓰면 실패한다.
+  const now=Date.parse('2026-11-07T22:00:00Z');h.context.Date=class extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}};
   h.elements.get('exportBtn').onclick();
-  assert.match(files[0].name,/^etf-planner-backup-\d{4}-\d{2}-\d{2}\.json$/);
-  assert.equal(files[0].name,`etf-planner-backup-${h.context.backupFileDay(Date.now())}.json`);
+  assert.equal(files[0].name,'etf-planner-backup-2026-11-08.json');
+  assert.equal(files[0].value.exportedAt,'2026-11-07T22:00:00.000Z','JSON 안의 백업 시각은 UTC ISO 그대로');
   const box=h.elements.get('syncRecoveryList');
   box.children[1].children[0].onclick();
   box.children[2].children[0].onclick();

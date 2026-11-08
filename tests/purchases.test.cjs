@@ -1611,3 +1611,11 @@ test('localStorage 읽기·쓰기 예외에도 안내 닫기와 조건 초기화
   const r=setup({storageFailure:true});assert.doesNotThrow(()=>dismissPurchaseNote(r,'noKnown'));r.render();assert.equal(purchaseNote(r,'noKnown'),undefined);
   r.prices.stocks['111111'].ma={'25선':9000};assert.doesNotThrow(()=>r.render());r.prices.stocks['111111'].ma={};r.render();assert.ok(purchaseNote(r,'noKnown'));assert.equal(r.storage.has(dismissedPurchaseNoteKey),false);
 });
+test('분할매수 화면 JSON 백업·보관 기록 파일 이름은 한국 날짜를 쓴다',()=>{
+  const r=setup(),now=Date.parse('2026-11-07T22:00:00Z'),files=[];
+  r.ctx.Date=class extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}};
+  r.ctx.downloadJson=(value,name)=>files.push({value,name});r.initialize();
+  r.element('purchaseExport').onclick();r.element('purchaseRecovery').onclick();
+  assert.deepEqual(files.map(f=>f.name),['etf-planner-assets-2026-11-08.json','etf-planner-assets-recovery-2026-11-08.json']);
+  assert.equal(files[0].value.exportedAt,'2026-11-07T22:00:00.000Z');
+});
