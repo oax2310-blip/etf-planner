@@ -3,14 +3,15 @@
 #goldEstimateDialog{max-width:440px}#goldEstimateDialog .hint{line-height:1.75}#goldEstimateProblems .warning{margin:12px 0;line-height:1.75}#goldEstimateDialog .dialog-foot{justify-content:flex-end}
 /* 색·그림자는 아래 변수만 사용한다(:root 밝게, data-theme=dark 어둡게). css/valuation.css의 공유 토큰도 함께 수정.
    --accent 버튼·선택·알림 ON, --good 완료, --warn 도달·지난 시세, --danger 삭제·손실.
+   --danger-line 매수 편입 칩 테두리(--accent-line과 같은 진하기).
    화면 모드·기기별 선택은 js/theme.js, 글꼴은 index.html의 Pretendard(실패 시 시스템 글꼴). */
 :root{color-scheme:light;--bg:#f5f6f8;--surface:#fff;--surface-2:#f3f4f7;--surface-3:#e9ecf1;--field:#fff;--tab-on:#fff;--line:#e5e8ee;--line-strong:#d2d7e0;--text:#0f1729;--text-2:#4a5468;--text-3:#6f798c;
-  --accent:#3d55e0;--accent-hover:#2f46c8;--accent-soft:#edf0fd;--accent-line:#c3cbf7;--on-accent:#fff;--completed-fold-bg:rgba(61,85,224,.1);--good:#0f8a5f;--good-soft:#e6f4ed;--on-good:#fff;--done-row:#f7faf8;--warn:#b25a06;--warn-soft:#fdf3e4;--warn-line:#f0d2a4;--danger:#d43a2f;--danger-soft:#fdeeec;
+  --accent:#3d55e0;--accent-hover:#2f46c8;--accent-soft:#edf0fd;--accent-line:#c3cbf7;--on-accent:#fff;--completed-fold-bg:rgba(61,85,224,.1);--good:#0f8a5f;--good-soft:#e6f4ed;--on-good:#fff;--done-row:#f7faf8;--warn:#b25a06;--warn-soft:#fdf3e4;--warn-line:#f0d2a4;--danger:#d43a2f;--danger-soft:#fdeeec;--danger-line:#f3c1bc;
   --top:rgba(255,255,255,.84);--shadow:0 1px 2px rgba(15,23,41,.04),0 2px 10px -4px rgba(15,23,41,.07);--shadow-lg:0 24px 60px -12px rgba(15,23,41,.3);--radius:16px;--radius-sm:10px;
   --font:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
   --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236f798c' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")}
 @media screen{:root[data-theme=dark]{color-scheme:dark;--bg:#0a0c10;--surface:#12151b;--surface-2:#181c23;--surface-3:#20252e;--field:#0d1015;--tab-on:#272d38;--line:#232832;--line-strong:#303643;--text:#e8ecf2;--text-2:#a9b2c1;--text-3:#7d8798;
-  --accent:#8597ff;--accent-hover:#9daaff;--accent-soft:rgba(133,151,255,.14);--accent-line:rgba(133,151,255,.42);--on-accent:#0b1020;--completed-fold-bg:rgba(133,151,255,.1);--good:#3ecf8e;--good-soft:rgba(62,207,142,.13);--on-good:#04170e;--done-row:rgba(62,207,142,.045);--warn:#f0a43a;--warn-soft:rgba(240,164,58,.12);--warn-line:rgba(240,164,58,.38);--danger:#ff7b72;--danger-soft:rgba(255,123,114,.12);
+  --accent:#8597ff;--accent-hover:#9daaff;--accent-soft:rgba(133,151,255,.14);--accent-line:rgba(133,151,255,.42);--on-accent:#0b1020;--completed-fold-bg:rgba(133,151,255,.1);--good:#3ecf8e;--good-soft:rgba(62,207,142,.13);--on-good:#04170e;--done-row:rgba(62,207,142,.045);--warn:#f0a43a;--warn-soft:rgba(240,164,58,.12);--warn-line:rgba(240,164,58,.38);--danger:#ff7b72;--danger-soft:rgba(255,123,114,.12);--danger-line:rgba(255,123,114,.42);
   --top:rgba(10,12,16,.82);--shadow:none;--shadow-lg:0 24px 60px rgba(0,0,0,.6);
   --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8798' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")}}
 /* 기본 */

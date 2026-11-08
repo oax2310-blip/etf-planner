@@ -156,9 +156,10 @@ function renderAlloc(tab="alloc"){
     return `<span class="alloc-links" role="group" aria-label="${escA(it.name)} 플래너 편입 상태">${memberLink.TABS.map(({key,name})=>{
       const list=m[key];
       if(!list.length)return "";
+      const kind=key==="plans"?"sell":"buy";
       const guess=list.some(x=>x.how==="name"||x.how==="fuzzy"), many=list.length>1;
       const tip=`${name} 탭 · ${list.map(x=>x.label).join(" · ")}${many?" (눌러서 첫 번째로 이동)":" (눌러서 이동)"}${guess?" · 이름이 비슷해 같은 종목으로 추정했습니다. 확인하세요.":""}`;
-      return `<a class="alloc-chip on${guess?" guess":""}" href="${escA(memberLink.href(key,list[0].id))}" title="${escA(tip)}" aria-label="${escA(`${name} 편입됨${many?` ${list.length}개`:""}${guess?" 추정":""}, 누르면 ${name} 탭으로 이동`)}"><span aria-hidden="true">✓</span>${name}${many?`<b class="chip-count">${list.length}</b>`:""}${guess?'<i class="chip-guess">추정</i>':""}</a>`;
+      return `<a class="alloc-chip on ${kind}${guess?" guess":""}" href="${escA(memberLink.href(key,list[0].id))}" title="${escA(tip)}" aria-label="${escA(`${name} 편입됨${many?` ${list.length}개`:""}${guess?" 추정":""}, 누르면 ${name} 탭으로 이동`)}"><span aria-hidden="true">✓</span>${name}${many?`<b class="chip-count">${list.length}</b>`:""}${guess?'<i class="chip-guess">추정</i>':""}</a>`;
     }).join("")}</span>`;
   };
   const memberPanel=()=>{

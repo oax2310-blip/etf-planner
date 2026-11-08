@@ -16,7 +16,8 @@
 .bar{grid-column:1/-1;position:relative;height:5px;border-radius:99px;background:var(--surface-3);margin-top:4px}.bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}.bar em{position:absolute;top:-3px;width:2px;height:11px;margin-left:-1px;border-radius:2px;background:var(--text-2)}
 .gap{grid-column:1/-1;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}.gap.up{color:var(--accent)}.gap.over{color:var(--warn)}.gap.ok{color:var(--good)}.group-head .gap{margin-left:6px}
 /* 자산 배분 목표 대비(%p, js/assets.js allocTargetGap): ±1.0%p 이내는 둘레 글자색, 초과(+)는 빨강·미달(−)은 파랑(가격 등락 표시와 같은 방향 색). 연결 계좌 합계 기준은 gap-line에 '합계 N%'를 앞에 둔다.
-   매수중(빨강)·매도중(파랑) 꼬리표(trade-state)는 차이 글자와 따로 그리며, 진행 중인 종목의 차이는 경고 색 없이 둔다. */
+   매수중(빨강)·매도중(파랑) 꼬리표(trade-state)는 차이 글자와 따로 그리며, 진행 중인 종목의 차이는 경고 색 없이 둔다.
+   편입 칩도 같은 방향 색으로 분할매수·재매수는 빨강, 분할매도는 파랑이다. */
 .target-gap{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:inherit}.target-gap.over{color:var(--danger)}.target-gap.under{color:var(--accent)}.group-gap{white-space:nowrap}.gap-line{display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap}
 .trade-state{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:10.5px;font-weight:700;line-height:1.45;letter-spacing:0;white-space:nowrap;vertical-align:1px}
 .trade-state.buy{background:var(--danger-soft);color:var(--danger)}.trade-state.sell{background:var(--accent-soft);color:var(--accent)}
@@ -265,12 +266,16 @@ html:has(.installment-settings[open]),body:has(.installment-settings[open]){over
 .alloc-links{display:flex;flex-wrap:wrap;gap:4px}
 .alloc-chip{position:relative;display:inline-flex;align-items:center;gap:2px;min-height:18px;padding:0 7px;border:1px solid var(--line-strong);border-radius:99px;font-size:10px;font-weight:600;line-height:1.2;white-space:nowrap;text-decoration:none;-webkit-tap-highlight-color:transparent}
 .alloc-chip.on{border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
+.alloc-chip.on.buy{border-color:var(--danger-line);background:var(--danger-soft);color:var(--danger)}
 .alloc-chip.on.guess{border-style:dashed;border-color:var(--warn-line)}
 .chip-count{display:inline-grid;place-items:center;min-width:12px;height:12px;padding:0 3px;border-radius:6px;background:var(--accent);color:var(--on-accent);font-size:9px;font-weight:700}
+.alloc-chip.buy .chip-count{background:var(--danger);color:var(--on-accent)}
 .chip-guess{padding:0 3px;border-radius:3px;background:var(--warn-soft);color:var(--warn);font-size:8.5px;font-style:normal;font-weight:700}
 a.alloc-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media(hover:hover) and (pointer:fine){a.alloc-chip.on:hover{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}a.alloc-chip.on:hover .chip-count{background:var(--on-accent);color:var(--accent)}}
+a.alloc-chip.buy:focus-visible{outline-color:var(--danger)}
+@media(hover:hover) and (pointer:fine){a.alloc-chip.on:hover{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}a.alloc-chip.on.buy:hover{background:var(--danger);border-color:var(--danger);color:var(--on-accent)}a.alloc-chip.on:hover .chip-count{background:var(--on-accent);color:var(--accent)}a.alloc-chip.on.buy:hover .chip-count{color:var(--danger)}a.alloc-chip.on.guess:hover{border-color:var(--warn-line)}}
 a.alloc-chip.on:active{background:var(--accent-line)}
+a.alloc-chip.on.buy:active{background:var(--danger-line)}
 @media(pointer:coarse){a.alloc-chip::after{content:"";position:absolute;inset:-6px -2px}}
 .alloc-members{margin:0 0 12px;padding:0}
 .alloc-members>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;min-height:44px;padding:11px 16px;cursor:pointer;list-style:none}.alloc-members>summary::-webkit-details-marker{display:none}

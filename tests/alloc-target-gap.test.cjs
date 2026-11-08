@@ -74,11 +74,11 @@ test('자산 배분 종목·그룹은 금액 대신 %p 차이를 표시하고 �
   assert.deepEqual(gapOf('sell'), ['', '+5.0%']);assert.match(row('sell'), /<span class="trade-state sell" title="분할매도 진행 중 · SELL 매도">매도중<\/span>/);assert.doesNotMatch(row('sell'), /trade-state buy/);
   assert.deepEqual(gapOf('both'), ['', '-6.0%']);assert.match(row('both'), /종목 both<span class="trade-state buy"[^>]*>매수중<\/span><span class="trade-state sell"[^>]*>매도중<\/span><\/strong>/, '매수대기와 분할매도가 함께 있으면 둘 다');
   // 끝난 계획은 매수중·매도중이 아니므로 경고 색을 쓴다. 편입 칩은 그대로 둔다.
-  assert.deepEqual(gapOf('bought'), [' under', '-5.0%']);assert.doesNotMatch(row('bought'), /trade-state/);assert.match(row('bought'), /alloc-chip on[^>]*>.*분할매수/);
-  assert.deepEqual(gapOf('sold'), [' over', '+5.0%']);assert.doesNotMatch(row('sold'), /trade-state/);assert.match(row('sold'), /alloc-chip on[^>]*>.*분할매도/);
+  assert.deepEqual(gapOf('bought'), [' under', '-5.0%']);assert.doesNotMatch(row('bought'), /trade-state/);assert.match(row('bought'), /alloc-chip on buy(?: guess)?"[^>]*>.*분할매수/);
+  assert.deepEqual(gapOf('sold'), [' over', '+5.0%']);assert.doesNotMatch(row('sold'), /trade-state/);assert.match(row('sold'), /alloc-chip on sell(?: guess)?"[^>]*>.*분할매도/);assert.doesNotMatch(row('sold'), /class="alloc-chip [^"]*\bbuy\b/);
   assert.equal(gapOf('notarget'), undefined, '목표가 없으면 차이를 표시하지 않는다');
   // 편입 칩은 편입된 탭만 보이고, 어느 탭에도 없으면 칩 묶음을 두지 않는다(미편입은 '플래너 편입 점검'에서 확인).
-  assert.match(row('over'), /alloc-chip on[^>]*>.*재매수/);assert.doesNotMatch(row('over'), /미편입|alloc-chip off|>분할매수</);assert.doesNotMatch(row('notarget'), /alloc-links|alloc-chip/);
+  assert.match(row('over'), /alloc-chip on buy(?: guess)?"[^>]*>.*재매수/);assert.doesNotMatch(row('over'), /미편입|alloc-chip off|>분할매수</);assert.doesNotMatch(row('notarget'), /alloc-links|alloc-chip/);
   assert.match(row('xss'), /&lt;b&gt;이름&lt;\/b&gt;<span class="trade-state sell" title="분할매도 진행 중 · &lt;img src=x onerror=1&gt;">매도중/);assert.doesNotMatch(html, /<img|<b>이름<\/b>/);
   // 그룹: 합계 1,345만원(134.5%) / 종목 목표 합 131.54% → +3.0%p. 그룹은 매수중·매도중 종목이 있어도 경고 색.
   assert.match(html, /<p><b>1,345만원<\/b> · 134\.5% \/ 목표 131\.5% · <span class="group-gap">목표 대비 <b class="target-gap over"[^>]*>\+3\.0%<\/b><\/span><\/p><div class="group-sub"><small class="group-target">목표 금액 1,315\.4만원 · 하위 합산<\/small><\/div>/);
