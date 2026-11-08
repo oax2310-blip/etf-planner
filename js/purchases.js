@@ -148,7 +148,7 @@ function cleanDismissedNotes(current){
   }
   if(changed)saveDismissedNotes();
 }
-const purchaseNoteButtons=(it,notes)=>notes.filter(n=>dismissedNotes[it.id]?.[n.kind]!==n.sig).map(n=>`<button type="button" class="buy-track-note muted purchase-note-dismiss" data-purchase-note="${escA(it.id)}" data-note-kind="${escA(n.kind)}" title="눌러서 닫기"><span>${escA(n.text)}</span><span class="purchase-note-close" aria-hidden="true">×</span></button>`).join("");
+const purchaseNoteButtons=(it,notes)=>notes.filter(n=>dismissedNotes[it.id]?.[n.kind]!==n.sig).map(n=>`<button type="button" class="buy-track-note muted purchase-note-dismiss" data-purchase-note="${escA(it.id)}" data-note-kind="${escA(n.kind)}" title="눌러서 닫기">${escA(n.text)}</button>`).join("");
 // 분할매도와 같은 보유 목록·상태·메모 순서(계산 요약 카드 없음). 조회는 계산에 쓰는 연결 항목 그대로 읽으며 보유 수량·자산 이름·계획 기록을 바꾸지 않는다.
 function linkedHoldings({g,it},s){
   const wait=!!it.buyPlan.wait,ordered=targetsOf(it,it.buyPlan,s),infos=new Map(ordered.map(r=>[r.it.id,allocationHoldingInfo(r.it,s)])),total=allocationHoldingTotal(infos.values(),s);
@@ -350,7 +350,18 @@ function renderPurchases(){
   all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
   all("[data-purchase-note]").forEach(b=>b.onclick=()=>{
     const id=b.dataset.purchaseNote,note=currentNotes.get(id)?.find(n=>n.kind===b.dataset.noteKind);if(!note)return;
-    (dismissedNotes[id]||=Object.create(null))[note.kind]=note.sig;saveDismissedNotes();b.remove();
+    const dialog=el("purchaseNoteDialog");
+    el("purchaseNoteCancel").onclick=()=>dialog.close();
+    el("purchaseNoteConfirm").onclick=()=>{
+      // 확인창을 연 동안 시세·계획이 바뀌었으면 새 조건의 안내는 닫지 않는다.
+      const it=findItem(id)?.it,current=it?.buyPlan?purchaseNotes(it.buyPlan,it).find(n=>n.kind===note.kind):null;
+      if(current?.sig===note.sig){
+        (dismissedNotes[id]||=Object.create(null))[note.kind]=note.sig;saveDismissedNotes();
+        all("[data-purchase-note]").forEach(n=>{if(n.dataset.purchaseNote===id&&n.dataset.noteKind===note.kind)n.remove();});
+      }
+      dialog.close();
+    };
+    dialog.showModal();
   });
   if(selected){
     bindPurchasePriority(selected.it);

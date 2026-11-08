@@ -775,7 +775,7 @@ test('순서 밖 도달은 회차표·도달 칩·띠 양 끝에서 빼고 안�
   const before=JSON.stringify({doc:r.doc,prices:r.prices}),card=()=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','32일선:0','60개월선:2','80개월선:0']);
   assert.match(card(),trackStatus('매수 전',0,4));assert.doesNotMatch(card(),/도달 \d|class="due"|예산에 맞춰 회차 간격|매수 회차에서 뺐습니다/);
-  assert.match(card(),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>현재가가 이미 위에 있는 뒤 단계 60월선은 빼고 나눴습니다\. 현재가가 그 선 아래로 내려오거나 앞 회차가 모두 도달하면 다시 넣습니다\.<\/span><span[^>]*>×<\/span><\/button>/,'중복된 단계 회차의 선 이름은 한 번만 표시');
+  assert.match(card(),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*>현재가가 이미 위에 있는 뒤 단계 60월선은 빼고 나눴습니다\. 현재가가 그 선 아래로 내려오거나 앞 회차가 모두 도달하면 다시 넣습니다\.<\/button>/,'중복된 단계 회차의 선 이름은 한 번만 표시');
   assert.match(card(),/<span class="next">다음 25일선 1차 <b>₩14000<\/b>/);
   assert.match(card(),/<div class="buy-track-end r"><b>₩15000<\/b><small>80월선<\/small>/);
   assert.equal((card().match(/<i class=/g)||[]).length,4);
@@ -800,7 +800,7 @@ test('목표가 없이 마지막 선까지 사면 마지막 선 가격 이상인
   const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
   const before=JSON.stringify({doc:r.doc,prices:r.prices}),card=()=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['60개월선:0','60개월선:1','60개월선:2','80개월선:0'],'마지막 선 위의 25일선·32일선은 넣지 않는다');
-  assert.match(card(),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/span><span[^>]*>×<\/span><\/button>/);
+  assert.match(card(),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*>마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/button>/);
   assert.doesNotMatch(card(),/현재가가 이미 위에 있는 뒤 단계/);
   r.edit();
   assert.match(r.element('lineResult').innerHTML,/<small>마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/small>/);
@@ -926,12 +926,12 @@ test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도
 test('매수대기: 이동평균 시세가 없으면 도달·알림을 만들지 않으며 새 선 값은 같은 알림을 갱신한다',()=>{
   const r=setup({wait:'25개월선'});assert.equal(r.rules().length,0);
   assert.match(waitCard(r),/<div class="buy-wait-track wait"[^>]*><i><\/i><\/div><div class="buy-track-row"><div class="buy-track-end"><b>—<\/b><small>25월선<\/small><\/div><div class="buy-track-main"><div class="buy-track-chips"><span class="buy-track-chip muted">시세 대기<\/span><\/div><\/div><div class="buy-track-end r"><b>₩10000<\/b><small>현재가<\/small>/,'시세 대기에는 가운데 %·안내 글자를 비운다');
-  assert.match(waitCard(r),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>선택한 이동평균선의 시세를 기다리는 중입니다\./);assert.doesNotMatch(waitCard(r),/buy-track-count/);
+  assert.match(waitCard(r),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*>선택한 이동평균선의 시세를 기다리는 중입니다\./);assert.doesNotMatch(waitCard(r),/buy-track-count/);
   r.prices.stocks['111111'].ma={'25개월선':9000};r.render();const first=r.rules()[0];
   r.prices.stocks['111111'].ma['25개월선']=9500;r.render();assert.equal(r.rules()[0].targetPrice,9500);assert.equal(r.rules()[0].revision,first.revision);
   r.item.buyPlan.wait.line='60일선';r.prices.stocks['111111'].ma['60일선']=9500;r.render();assert.notEqual(r.rules()[0].revision,first.revision);
   r.prices.stocks['111111'].kind='해외';r.render();assert.equal(r.rules().length,0);assert.doesNotMatch(r.html(),/기준선 도달/);
-  r.item.ticker='';r.render();assert.match(waitCard(r),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>자산 배분에서 국내·미국 시세 종목 코드를 확인하세요\.<\/span><span[^>]*>×<\/span><\/button><\/section>/);assert.doesNotMatch(waitCard(r),/buy-wait-alert|data-purchase-alert/,'알림을 켤 수 없으면 스위치 줄을 뺀다');
+  r.item.ticker='';r.render();assert.match(waitCard(r),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*>자산 배분에서 국내·미국 시세 종목 코드를 확인하세요\.<\/button><\/section>/);assert.doesNotMatch(waitCard(r),/buy-wait-alert|data-purchase-alert/,'알림을 켤 수 없으면 스위치 줄을 뺀다');
 });
 
 test('분할매수 설정: 기존 목표 가격 계획의 사용자 지정 단계는 다시 저장해도 늘리지 않는다',()=>{
@@ -1539,29 +1539,46 @@ test('추종 ETF: 금액으로 관리하는 기존 항목은 평가액을 표시
 const dismissedPurchaseNoteKey='etf-planner-purchase-note-dismissed';
 const purchaseNote=(r,kind)=>r.inputs('[data-purchase-note]').find(n=>n.dataset.noteKind===kind);
 const dismissedPurchaseNotes=r=>JSON.parse(r.storage.get(dismissedPurchaseNoteKey)||'{}');
+const dismissPurchaseNote=(r,kind)=>{purchaseNote(r,kind).onclick();r.element('purchaseNoteConfirm').onclick();};
 test('매수 안내 닫기는 요소만 지우고 다시 그리기·새 페이지에서도 같은 조건을 숨긴다',()=>{
   const r=setup(),note=purchaseNote(r,'noKnown'),before=JSON.stringify(r.doc),stored=r.storage.get('etf-planner-assets-v1'),writes=r.htmlWrites();
-  assert.equal(note.attrs.type,'button');assert.equal(note.attrs.title,'눌러서 닫기');assert.match(r.html(),/class="purchase-note-close" aria-hidden="true">×/);
-  note.onclick();assert.equal(note.removed,true);assert.equal(r.htmlWrites(),writes,'닫을 때 화면을 다시 그리지 않음');assert.doesNotMatch(r.html(),/이동평균 시세를 기다리는 중입니다/);
+  assert.equal(note.attrs.type,'button');assert.equal(note.attrs.title,'눌러서 닫기');assert.doesNotMatch(r.html(),/purchase-note-close|×/);
+  note.onclick();assert.equal(r.element('purchaseNoteDialog').open,true);assert.equal(note.removed,undefined);assert.deepEqual(dismissedPurchaseNotes(r),{});
+  r.element('purchaseNoteConfirm').onclick();assert.equal(r.element('purchaseNoteDialog').open,false);assert.equal(note.removed,true);assert.equal(r.htmlWrites(),writes,'닫을 때 화면을 다시 그리지 않음');assert.doesNotMatch(r.html(),/이동평균 시세를 기다리는 중입니다/);
   assert.deepEqual(dismissedPurchaseNotes(r),{a:{noKnown:JSON.stringify('noKnown')}});r.render();assert.equal(purchaseNote(r,'noKnown'),undefined);
   assert.equal(JSON.stringify(r.doc),before);assert.equal(r.storage.get('etf-planner-assets-v1'),stored,'자산·계획·동기화 문서는 저장하지 않음');
   const reopened=setup({dismissed:dismissedPurchaseNotes(r)});assert.equal(purchaseNote(reopened,'noKnown'),undefined);
 });
+test('안내 닫기 확인창에서 취소하면 유지하고 닫기를 눌러도 다른 안내는 남긴다',()=>{
+  const r=setup({wait:'25일선'});r.item.ticker='';r.render();
+  const line=purchaseNote(r,'waitLine'),ticker=purchaseNote(r,'waitTicker'),writes=r.htmlWrites();
+  line.onclick();r.element('purchaseNoteCancel').onclick();
+  assert.equal(r.element('purchaseNoteDialog').open,false);assert.equal(line.removed,undefined);assert.equal(ticker.removed,undefined);assert.deepEqual(dismissedPurchaseNotes(r),{});
+  dismissPurchaseNote(r,'waitLine');assert.equal(line.removed,true);assert.equal(ticker.removed,undefined);assert.equal(purchaseNote(r,'waitTicker'),ticker);
+  assert.equal(r.htmlWrites(),writes);assert.deepEqual(Object.keys(dismissedPurchaseNotes(r).a),['waitLine']);
+});
+test('닫기 확인 중 다시 그려도 같은 안내만 지우고 조건이 바뀐 안내는 남긴다',()=>{
+  const r=setup({wait:'25일선'});purchaseNote(r,'waitLine').onclick();r.render();const redrawn=purchaseNote(r,'waitLine');
+  r.element('purchaseNoteConfirm').onclick();assert.equal(redrawn.removed,true);assert.equal(purchaseNote(r,'waitLine'),undefined);
+  r.item.buyPlan.wait.line='32일선';r.render();purchaseNote(r,'waitLine').onclick();r.item.buyPlan.wait.line='42일선';r.render();
+  const changed=purchaseNote(r,'waitLine');r.element('purchaseNoteConfirm').onclick();
+  assert.equal(changed.removed,undefined);assert.equal(purchaseNote(r,'waitLine'),changed);assert.deepEqual(dismissedPurchaseNotes(r),{});
+});
 test('뺀 선 안내는 가격만 바뀌면 계속 숨기고 빠진 선 목록이 바뀌면 다시 표시한다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
-  purchaseNote(r,'aboveLast').onclick();assert.deepEqual(JSON.parse(dismissedPurchaseNotes(r).a.aboveLast),['25일선','32일선']);
+  dismissPurchaseNote(r,'aboveLast');assert.deepEqual(JSON.parse(dismissedPurchaseNotes(r).a.aboveLast),['25일선','32일선']);
   for(const key of Object.keys(r.prices.stocks['111111'].ma))r.prices.stocks['111111'].ma[key]*=1.1;
   r.render();assert.equal(purchaseNote(r,'aboveLast'),undefined,'가격은 sig에 넣지 않음');
   r.prices.stocks['111111'].ma['32일선']=10000;r.render();assert.ok(purchaseNote(r,'aboveLast'));assert.match(r.html(),/이미 위에 있는 25일선은 매수 회차에서 뺐습니다/);assert.equal(dismissedPurchaseNotes(r).a,undefined);
 });
 test('순서 밖 뒤 단계 안내도 빠진 선 목록만 sig로 사용한다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선','100개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000,'100개월선':15000}});
-  purchaseNote(r,'skipped').onclick();assert.deepEqual(JSON.parse(dismissedPurchaseNotes(r).a.skipped),['60개월선','80개월선']);
+  dismissPurchaseNote(r,'skipped');assert.deepEqual(JSON.parse(dismissedPurchaseNotes(r).a.skipped),['60개월선','80개월선']);
   r.prices.stocks['111111'].close=11500;r.render();assert.equal(purchaseNote(r,'skipped'),undefined);
   r.prices.stocks['111111'].ma['80개월선']=13000;r.render();assert.ok(purchaseNote(r,'skipped'));assert.equal(dismissedPurchaseNotes(r).a,undefined);
 });
 test('매수 안내 조건이 사라졌다 돌아오면 같은 sig도 다시 표시한다',()=>{
-  const r=setup();purchaseNote(r,'noKnown').onclick();r.prices.stocks['111111'].ma={'25선':9000};r.render();
+  const r=setup();dismissPurchaseNote(r,'noKnown');r.prices.stocks['111111'].ma={'25선':9000};r.render();
   assert.equal(purchaseNote(r,'noKnown'),undefined);assert.deepEqual(dismissedPurchaseNotes(r),{});
   r.prices.stocks['111111'].ma={};r.render();assert.ok(purchaseNote(r,'noKnown'));
 });
@@ -1569,28 +1586,28 @@ test('선택하지 않은 매수 계획의 안내도 조건 변경·계획 삭�
   const r=setup(),other={id:'b',name:'가상 대기 종목',ticker:'222222',shares:5,buyPlan:{wait:{line:'60일선'}}};
   r.doc.allocation.groups[0].items.push(other);r.prices.stocks['222222']={kind:'국내',close:10000,asOf:'2026-01-02'};r.render();
   const select=id=>r.inputs('[data-purchase-select]').find(n=>n.dataset.purchaseSelect===id).onclick();
-  select('b');purchaseNote(r,'waitLine').onclick();select('a');assert.ok(dismissedPurchaseNotes(r).b);
+  select('b');dismissPurchaseNote(r,'waitLine');select('a');assert.ok(dismissedPurchaseNotes(r).b);
   r.prices.stocks['222222'].ma={'60일선':9000};r.render();assert.equal(dismissedPurchaseNotes(r).b,undefined);
   r.prices.stocks['222222'].ma={};r.render();select('b');assert.ok(purchaseNote(r,'waitLine'));
-  purchaseNote(r,'waitLine').onclick();select('a');delete other.buyPlan;r.render();assert.equal(dismissedPurchaseNotes(r).b,undefined);
+  dismissPurchaseNote(r,'waitLine');select('a');delete other.buyPlan;r.render();assert.equal(dismissedPurchaseNotes(r).b,undefined);
 });
 test('시세 대기 안내 sig는 시작선·마지막 선·시세 없는 선 목록과 예산만 구분한다',()=>{
-  const start=setup({names:['25일선','32일선'],end:15000});start.item.buyPlan.lines.startLine='25일선';start.render();purchaseNote(start,'waitingStart').onclick();
+  const start=setup({names:['25일선','32일선'],end:15000});start.item.buyPlan.lines.startLine='25일선';start.render();dismissPurchaseNote(start,'waitingStart');
   assert.equal(JSON.parse(dismissedPurchaseNotes(start).a.waitingStart),'25일선');start.item.buyPlan.lines.startLine='32일선';start.render();assert.ok(purchaseNote(start,'waitingStart'));
-  const last=setup({names:['25일선','32일선'],end:null});purchaseNote(last,'waitingLast').onclick();assert.equal(JSON.parse(dismissedPurchaseNotes(last).a.waitingLast),'32일선');
+  const last=setup({names:['25일선','32일선'],end:null});dismissPurchaseNote(last,'waitingLast');assert.equal(JSON.parse(dismissedPurchaseNotes(last).a.waitingLast),'32일선');
   last.item.buyPlan.lines.names.push('42일선');last.render();assert.ok(purchaseNote(last,'waitingLast'));
-  const missing=setup({names:['25일선','32일선','42일선'],end:15000,ma:{'25일선':10000}});purchaseNote(missing,'missing').onclick();
+  const missing=setup({names:['25일선','32일선','42일선'],end:15000,ma:{'25일선':10000}});dismissPurchaseNote(missing,'missing');
   assert.deepEqual(JSON.parse(dismissedPurchaseNotes(missing).a.missing),['32일선','42일선']);missing.prices.stocks['111111'].ma['32일선']=11000;missing.render();assert.ok(purchaseNote(missing,'missing'));
-  const spaced=setup({names:['25일선','32일선','42일선'],budget:3,end:20000,price:9000,ma:{'25일선':10000,'32일선':12000,'42일선':15000}});purchaseNote(spaced,'spaced').onclick();
+  const spaced=setup({names:['25일선','32일선','42일선'],budget:3,end:20000,price:9000,ma:{'25일선':10000,'32일선':12000,'42일선':15000}});dismissPurchaseNote(spaced,'spaced');
   assert.deepEqual(JSON.parse(dismissedPurchaseNotes(spaced).a.spaced),[3,['25일선','32일선','42일선']]);spaced.item.buyPlan.lines.budget=4;spaced.render();assert.ok(purchaseNote(spaced,'spaced'));
 });
 test('매수대기 두 안내는 기준선·종목 코드가 달라지면 다시 표시하고 하단 주석은 유지한다',()=>{
-  const r=setup({wait:'25일선'});purchaseNote(r,'waitLine').onclick();r.render();assert.equal(purchaseNote(r,'waitLine'),undefined);assert.match(r.html(),/class="footnote">현재가가 25일선 이하가 되면/);
+  const r=setup({wait:'25일선'});dismissPurchaseNote(r,'waitLine');r.render();assert.equal(purchaseNote(r,'waitLine'),undefined);assert.match(r.html(),/class="footnote">현재가가 25일선 이하가 되면/);
   r.item.buyPlan.wait.line='60일선';r.render();assert.ok(purchaseNote(r,'waitLine'));assert.equal(dismissedPurchaseNotes(r).a,undefined);
-  r.item.ticker='';r.render();purchaseNote(r,'waitTicker').onclick();assert.equal(JSON.parse(dismissedPurchaseNotes(r).a.waitTicker),'');r.render();assert.equal(purchaseNote(r,'waitTicker'),undefined);
+  r.item.ticker='';r.render();dismissPurchaseNote(r,'waitTicker');assert.equal(JSON.parse(dismissedPurchaseNotes(r).a.waitTicker),'');r.render();assert.equal(purchaseNote(r,'waitTicker'),undefined);
   r.item.ticker='가상 <코드>';r.render();assert.ok(purchaseNote(r,'waitTicker'));assert.doesNotMatch(r.html(),/가상 <코드>/);
 });
 test('localStorage 읽기·쓰기 예외에도 안내 닫기와 조건 초기화는 현재 페이지 메모리에서 동작한다',()=>{
-  const r=setup({storageFailure:true});assert.doesNotThrow(()=>purchaseNote(r,'noKnown').onclick());r.render();assert.equal(purchaseNote(r,'noKnown'),undefined);
+  const r=setup({storageFailure:true});assert.doesNotThrow(()=>dismissPurchaseNote(r,'noKnown'));r.render();assert.equal(purchaseNote(r,'noKnown'),undefined);
   r.prices.stocks['111111'].ma={'25선':9000};assert.doesNotThrow(()=>r.render());r.prices.stocks['111111'].ma={};r.render();assert.ok(purchaseNote(r,'noKnown'));assert.equal(r.storage.has(dismissedPurchaseNoteKey),false);
 });
