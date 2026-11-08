@@ -526,8 +526,8 @@ test('분할매수 제목·목록 카드·이름 창은 매수 우선순위 첫 
 });
 test('분할매수 제목 아래 시세 줄: 현재가를 맨 앞에 두고 상태·완료/전체 회차·다음 기준까지 %를 방향과 함께 구분한다',()=>{
   const line=r=>(r.html().match(/<p class="quote-line">.*?<\/p>/)||[''])[0];
-  assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.2},names:['42일선','60일선'],end:null,budget:5000})),
-    '<p class="quote-line"><strong class="quote-now">$57.61</strong><span class="quote-state">이동평균선 돌파</span><span class="quote-round"><b>0</b>/1회 분할매수</span><span class="quote-gap up">다음 42일선 1차까지 <b>+0.17%</b></span></p>');
+  assert.equal(line(setup({currency:'USD',price:57.61,ma:{'42일선':57.71,'60일선':57.9},names:['42일선','60일선'],end:null,budget:5000})),
+    '<p class="quote-line"><strong class="quote-now">$57.61</strong><span class="quote-state">이동평균선 돌파</span><span class="quote-round"><b>0</b>/4회 분할매수</span><span class="quote-gap up">다음 42일선 1차까지 <b>+0.17%</b></span></p>');
   assert.equal(line(setup({manual:true,price:10500})),'<p class="quote-line"><strong class="quote-now">₩10500</strong><span class="quote-state">직접 입력</span><span class="quote-round"><b>0</b>/1회 분할매수</span></p>');
   assert.match(line(setup({legacy:true})),/<span class="quote-round"><b>1<\/b>\/1회 분할매수<\/span>/,'완료 회차 수는 목록 카드(1/1)와 같은 표기');
   const r=setup({manual:true,price:10500});
@@ -719,29 +719,46 @@ test('계획 목록: 선택한 계획만 표시하고 체결은 그 종목에만
 });
 
 test('순서 밖 도달은 회차표·도달 칩·띠 양 끝에서 빼고 안내하며 다음 회차는 가장 가까운 가격보다 계획 순서를 따른다',()=>{
-  const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
+  // 25일선 1회(14000) + 32일선 1회(12000) + 60개월선 3회(9000·11000·13000) + 80개월선 1회(15000). 현재가 11000이면 60월선 1·2차가 순서 밖 도달.
+  const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':15000}});
   const before=JSON.stringify({doc:r.doc,prices:r.prices}),card=()=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
-  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','32일선:0']);
-  assert.match(card(),trackStatus('매수 전',0,2));assert.doesNotMatch(card(),/도달 \d|class="due"|예산에 맞춰 회차 간격/);
-  assert.match(card(),/<p class="buy-track-note muted">현재가가 이미 위에 있는 뒤 단계 60월선·80월선은 빼고 나눴습니다\. 현재가가 그 선 아래로 내려오거나 앞 회차가 모두 도달하면 다시 넣습니다\.<\/p>/,'중복된 단계 회차의 선 이름은 한 번만 표시');
+  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','32일선:0','60개월선:2','80개월선:0']);
+  assert.match(card(),trackStatus('매수 전',0,4));assert.doesNotMatch(card(),/도달 \d|class="due"|예산에 맞춰 회차 간격|매수 회차에서 뺐습니다/);
+  assert.match(card(),/<p class="buy-track-note muted">현재가가 이미 위에 있는 뒤 단계 60월선은 빼고 나눴습니다\. 현재가가 그 선 아래로 내려오거나 앞 회차가 모두 도달하면 다시 넣습니다\.<\/p>/,'중복된 단계 회차의 선 이름은 한 번만 표시');
   assert.match(card(),/<span class="next">다음 25일선 1차 <b>₩14000<\/b>/);
-  assert.match(card(),/<div class="buy-track-end r"><b>₩12000<\/b><small>32일선<\/small>/);
-  assert.equal((card().match(/<i class=/g)||[]).length,2);
-  assert.match(r.html(),/<span class="plan-count[^"]*">0\/2/,'목록도 같은 화면 회차 수를 사용');
+  assert.match(card(),/<div class="buy-track-end r"><b>₩15000<\/b><small>80월선<\/small>/);
+  assert.equal((card().match(/<i class=/g)||[]).length,4);
+  assert.match(r.html(),/<span class="plan-count[^"]*">0\/4/,'목록도 같은 화면 회차 수를 사용');
   r.edit();
-  assert.match(r.element('lineResult').innerHTML,/<b>2회<\/b>/);
-  assert.match(r.element('lineResult').innerHTML,/<small>현재가 아래인 뒤 단계 60월선·80월선은 빼고 나눴습니다\./);
-  assert.doesNotMatch(r.element('lineResult').innerHTML,/예산에 맞춰 회차 간격/);
-  assert.doesNotMatch(r.element('linePreview').innerHTML,/60월선|80월선|class="due"/);
+  assert.match(r.element('lineResult').innerHTML,/<b>4회<\/b>/);
+  assert.match(r.element('lineResult').innerHTML,/<small>현재가 아래인 뒤 단계 60월선은 빼고 나눴습니다\./);
+  assert.doesNotMatch(r.element('lineResult').innerHTML,/예산에 맞춰 회차 간격|매수 회차에서 뺐습니다/);
+  assert.doesNotMatch(r.element('linePreview').innerHTML,/60월선 [12]차|class="due"/);
   assert.equal(JSON.stringify({doc:r.doc,prices:r.prices}),before,'렌더·계획 미리보기는 입력 기록을 바꾸지 않는다');
   r.prices.stocks['111111'].close=8500;r.render();
   assert.equal(r.inputs('[data-purchase-buy]').length,6);assert.doesNotMatch(card(),/빼고 나눴습니다|도달 \d/);
-  r.prices.stocks['111111'].close=15000;r.render();
+  r.prices.stocks['111111'].close=16000;r.render();
   assert.equal(r.inputs('[data-purchase-buy]').length,6);assert.match(card(),/도달 6회/);assert.doesNotMatch(card(),/빼고 나눴습니다/);
   r.prices.stocks['111111'].close=11000;r.render();assert.equal(JSON.stringify({doc:r.doc,prices:r.prices}),before);
-  const reached=setup({budget:100,end:null,names:['25일선','32일선','60개월선'],price:12500,ma:{'25일선':12000,'32일선':13000,'60개월선':10000}});
+  const reached=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:12500,ma:{'25일선':12000,'32일선':13000,'60개월선':10000,'80개월선':14000}});
   assert.match(reached.html(),/도달 2회/,'앞 회차의 정상 도달만 세고 순서 밖 장기선 도달은 세지 않는다');
   assert.doesNotMatch(reached.html(),/도달 3회/);
+});
+
+test('목표가 없이 마지막 선까지 사면 마지막 선 가격 이상인 앞 선은 회차·알림에서 빼고 카드와 계획 창에 안내한다',()=>{
+  const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
+  const before=JSON.stringify({doc:r.doc,prices:r.prices}),card=()=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
+  assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['60개월선:0','60개월선:1','60개월선:2','80개월선:0'],'마지막 선 위의 25일선·32일선은 넣지 않는다');
+  assert.match(card(),/<p class="buy-track-note muted">마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/p>/);
+  assert.doesNotMatch(card(),/현재가가 이미 위에 있는 뒤 단계/);
+  r.edit();
+  assert.match(r.element('lineResult').innerHTML,/<small>마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/small>/);
+  assert.doesNotMatch(r.element('linePreview').innerHTML,/25일선|32일선/);
+  assert.equal(JSON.stringify({doc:r.doc,prices:r.prices}),before,'안내만 붙이고 계획·시세는 바꾸지 않는다');
+  const many=setup({budget:100,end:null,names:['25일선','32일선','42일선','60일선','80일선','60개월선'],price:9000,ma:{'25일선':12000,'32일선':12500,'42일선':13000,'60일선':13500,'80일선':14000,'60개월선':10000}});
+  assert.match(many.html(),/마지막 목표 60월선\(₩10000\)보다 이미 위에 있는 25일선·32일선·42일선 등 5개 선은 매수 회차에서 뺐습니다\./,'많으면 앞 3개와 개수만');
+  const target=setup({budget:100,end:15000,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
+  assert.doesNotMatch(target.html(),/매수 회차에서 뺐습니다/,'마지막 목표 가격을 직접 넣으면 기존처럼 그 가격 아래 회차를 모두 쓴다');
 });
 
 test('직접 입력의 다음 회차는 기존처럼 현재가에 가장 가까운 미도달 가격을 사용한다',()=>{
