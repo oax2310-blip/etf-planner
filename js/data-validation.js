@@ -177,3 +177,8 @@ const externalData = (()=>{
   }
   return {planner,assets};
 })();
+// 백업·복구 파일 이름 날짜(Asia/Seoul 기준 YYYY-MM-DD, 해석할 수 없는 시각은 빈 문자열).
+function backupFileDay(at){
+  const t=typeof at==="number"?at:typeof at==="string"&&at.trim()?Date.parse(at):Object.prototype.toString.call(at)==="[object Date]"?at.getTime():NaN,d=new Date(t);
+  return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).format(d):"";
+}

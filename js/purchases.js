@@ -714,8 +714,8 @@ function initialize(){
   document.addEventListener("pointercancel",releasePriorityPointer);
   assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;updateStatus();if(type==="local-save"&&typeof renderLocalSaveWarning==="function")renderLocalSaveWarning();if(type==="change")redrawIdle();});
   for(const key of ["connectRepo","syncNow","disconnectRepo"]){const button=el(key),previous=button.onclick;button.onclick=e=>{previous?.call(button,e);assetStore.refreshConfig();};}
-  el("purchaseExport").onclick=()=>downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${new Date().toISOString().slice(0,10)}.json`);
-  el("purchaseRecovery").onclick=()=>downloadJson(assetStore.recovery(),`etf-planner-assets-recovery-${new Date().toISOString().slice(0,10)}.json`);
+  el("purchaseExport").onclick=()=>downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${backupFileDay(Date.now())}.json`);
+  el("purchaseRecovery").onclick=()=>downloadJson(assetStore.recovery(),`etf-planner-assets-recovery-${backupFileDay(Date.now())}.json`);
   el("purchaseImport").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;
     try{const incoming=cleanAssets(externalData.assets(JSON.parse(await file.text())));if(!incoming||assetsBlank(incoming))throw Error("분할매수·자산 백업 형식이 아닙니다.");
       const names=ASSET_SECTIONS.filter(s=>incoming[s]).map(s=>({allocation:"분할매수·자산 배분",ledger:"월별 손익",savings:"저축 계획",installments:"할부 계산"}[s]));
