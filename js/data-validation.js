@@ -1,5 +1,6 @@
 // 백업·동기화의 JSON 경계. 검증만 하며 기본값·id·필드를 만들거나 원본을 고치지 않는다.
 // 옛 숫자 문자열·빈 선택값과 알 수 없는 호환 필드는 보존한다. 오류에는 입력값을 넣지 않는다.
+// 끝의 backupFileDay는 세 화면 공용으로 백업·복구 파일 이름의 한국 날짜만 만들며 기록은 읽거나 바꾸지 않는다.
 const externalData = (()=>{
   const object=v=>v!==null&&typeof v==="object"&&!Array.isArray(v);
   const absent=v=>v===undefined||v===null;
@@ -177,3 +178,8 @@ const externalData = (()=>{
   }
   return {planner,assets};
 })();
+// 백업·복구 파일 이름 날짜(Asia/Seoul 기준 YYYY-MM-DD, 해석할 수 없는 시각은 빈 문자열).
+function backupFileDay(at){
+  const t=typeof at==="number"?at:typeof at==="string"&&at.trim()?Date.parse(at):Object.prototype.toString.call(at)==="[object Date]"?at.getTime():NaN,d=new Date(t);
+  return Number.isFinite(d.getTime())?new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).format(d):"";
+}

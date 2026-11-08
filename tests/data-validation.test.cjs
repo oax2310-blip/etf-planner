@@ -220,3 +220,13 @@ test('여러 월물에서 판 손절의 월물별 내역(legs)은 기록·계약
     assert.throws(()=>validate.planner(bad),/legs/,JSON.stringify(legs));
   }
 });
+
+test('backupFileDay는 입력 시각을 Asia/Seoul 기준 YYYY-MM-DD로 바꾸고 잘못된 값은 빈 문자열을 돌려준다',()=>{
+  const backupFileDay=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../js/data-validation.js'),'utf8')+'\nbackupFileDay');
+  assert.equal(backupFileDay('2026-11-07T22:00:00Z'),'2026-11-08');
+  assert.equal(backupFileDay('2026-11-08T14:59:59Z'),'2026-11-08');
+  assert.equal(backupFileDay('2026-11-08T15:00:00Z'),'2026-11-09');
+  assert.equal(backupFileDay(new Date('2026-11-07T22:00:00Z')),'2026-11-08');
+  assert.equal(backupFileDay(Date.parse('2026-11-07T22:00:00Z')),'2026-11-08');
+  for(const bad of ['','abc',undefined,null,NaN])assert.equal(backupFileDay(bad),'');
+});

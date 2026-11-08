@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8');
 
 // 실제 자산 기록 없이 공유 저장소의 상태 알림과 화면 초기화를 연결한다.
-function assetsPage(failed=false){
+function assetsPage(failed=false,extra={}){
   const nodes=new Map(),listeners=[];
   const node=id=>{
     if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',className:'',click(){return this.onclick?.();},showModal(){this.open=true;}});
@@ -15,8 +15,8 @@ function assetsPage(failed=false){
   const store={doc:{version:1},prices:null,status:{state:'off'},localSaveFailed:failed,priceRefreshing:false,
     config:()=>null,recovery:()=>[],subscribe:fn=>listeners.push(fn),start(){}};
   const context=vm.createContext({assetStore:store,splitNotices:{initialize(){}},el:node,all:()=>[],doc:store.doc,prices:null,nf2:new Intl.NumberFormat('ko-KR'),
-    location:{hash:'#alloc'},history:{replaceState(){}},openTab(){},addEventListener(){},scrollTo(){},priceCollectionLate:()=>false});
-  vm.runInContext(read('js/assets-start.js'),context);
+    location:{hash:'#alloc'},history:{replaceState(){}},openTab(){},addEventListener(){},scrollTo(){},priceCollectionLate:()=>false,...extra});
+  for(const file of ['js/data-validation.js','js/assets-start.js'])vm.runInContext(read(file),context);
   return {store,node,emit:type=>listeners.forEach(fn=>fn(type))};
 }
 
@@ -49,4 +49,13 @@ test('두 페이지의 저장 경고는 접히는 머리 밖 본문 처음에 �
   const css=read('css/app.css'),warningCss=css.slice(css.indexOf('.save-warning{'),css.indexOf('\n',css.indexOf('.save-warning{')));
   assert.deepEqual([...new Set([...warningCss.matchAll(/var\((--[^)]+)\)/g)].map(m=>m[1]))].sort(),['--warn','--warn-line']);
   assert.doesNotMatch(warningCss,/#[\da-f]{3,8}\b|rgb\(/i,'밝고 어두운 테마의 기존 경고 토큰만 사용');
+});
+
+test('자산 화면 JSON 백업·보관 기록 파일 이름은 한국 날짜를 쓴다',()=>{
+  const now=Date.parse('2026-11-07T22:00:00Z'),names=[];
+  const h=assetsPage(false,{Date:class extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}},
+    Blob:class{},URL:{createObjectURL:()=>'blob:test',revokeObjectURL(){}},setTimeout:()=>1,
+    document:{createElement:()=>({click(){names.push(this.download);}})}});
+  h.node('exportBtn').click();h.node('downloadRecovery').click();
+  assert.deepEqual(names,['etf-planner-assets-2026-11-08.json','etf-planner-assets-recovery-2026-11-08.json']);
 });

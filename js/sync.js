@@ -114,7 +114,7 @@ function renderRecovery(){
   const box=$("syncRecoveryList"),list=recoveryList().reverse();box.hidden=!list.length;
   box.replaceChildren(...(list.length?[Object.assign(document.createElement("p"),{className:"sync-details",textContent:`플래너 보관 기록 (이 기기에만 최근 ${RECOVERY_LIMIT}개까지 · 내려받아 JSON 파일 복원으로 되돌릴 수 있음)`})]:[]),...list.map(r=>{
     const row=Object.assign(document.createElement("p"),{className:"sync-details sync-recovery-row",textContent:`${recordTime(r.exportedAt)||"시각 없음"} · ${typeof r.recoveryReason==="string"?r.recoveryReason:"보관한 기록"} · ${recordSummary(r)} `});
-    row.append(Object.assign(document.createElement("button"),{type:"button",className:"btn mini",textContent:"내려받기",onclick:()=>downloadJson(r,`etf-planner-recovery-${String(r.exportedAt||"").slice(0,10)||"record"}.json`)}));
+    row.append(Object.assign(document.createElement("button"),{type:"button",className:"btn mini",textContent:"내려받기",onclick:()=>downloadJson(r,`etf-planner-recovery-${backupFileDay(r.exportedAt)||"record"}.json`)}));
     return row;
   }));
 }
@@ -343,7 +343,7 @@ addEventListener("storage",e=>{if(typeof splitAuto==="object"&&(e.key===splitAut
 addEventListener("pageshow",e=>{if(e.persisted&&absorbPlanner())redrawIdle();});
 document.addEventListener("focusout",e=>{if(sync.waitTyping&&!typingIn(e.relatedTarget)){sync.waitTyping=false;scheduleSync(300);}}); // 입력 칸에서 나오면 미룬 동기화를 이어 간다
 loadConfig();refreshTokenField();refreshCollectionTokenField();
-$("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${new Date().toISOString().slice(0,10)}.json`);
+$("exportBtn").onclick=()=>downloadJson({...state,exportedAt:new Date().toISOString()},`etf-planner-backup-${backupFileDay(Date.now())}.json`);
 // JSON 복원: 검사 → 백업 시각·계획 수를 보여 주고 확인 → 지금 기록을 복구본에 남긴 뒤 바꾼다(남기지 못하면 바꾸지 않음). 백업·복구본의 시각·사유는 기록에 넣지 않는다.
 $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{
   const {exportedAt,recoveryReason,...incoming}=externalData.planner(JSON.parse(await file.text())),at=recordTime(exportedAt);
