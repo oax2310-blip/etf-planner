@@ -977,3 +977,71 @@ test('분할매수 quiet 계산은 알림을 끈 미완료 회차를 notify:fals
   lines.notify={stages:true};stages.stages[1].notify=true;
   assert.deepEqual(all.map(({notify,...r})=>r),c.purchaseAlertRules(assets,prices),'알림을 켜고 꺼도 같은 id·기준·이력');
 });
+
+test('소분류별 투자구성 분류 지정: 한 그룹 안의 지정 소분류만 다른 분류로 평가액·목표가 나뉘고 그룹·지역 합계와 옛 기록은 유지된다', () => {
+  const make = (secClass, groupOnly = false) => ({
+    total: 1000,
+    classes: [
+      {id: 'c-btc', region: '외화·원자재', name: '디지털자산'},
+      {id: 'c-raw', region: '외화·원자재', name: '원자재', ...(groupOnly ? {target: 88} : {})},
+    ],
+    groups: [{
+      id: 'g-alt', name: '가상 대체자산 카드', classId: 'c-btc', target: 25,
+      sections: groupOnly ? [{name: '가상 코인'}, {name: '금(골드)', ...(secClass !== undefined ? {classId: secClass} : {})}] : [
+        {name: '가상 코인', target: 10},
+        {name: '금(골드)', target: 6, ...(secClass !== undefined ? {classId: secClass} : {})},
+      ],
+      items: [
+        {id: 'i1', name: '가상 코인 ETF', section: '가상 코인', amount: 100},
+        {id: 'i2', name: '가상 골드 ETF', section: '금(골드)', amount: 60},
+        {id: 'i3', name: '가상 미분류', amount: 40, ...(groupOnly ? {} : {target: 4})},
+      ],
+    }],
+    cash: [],
+  });
+  const baseAlloc = make(undefined), splitAlloc = make('c-raw'), beforeSplit = JSON.stringify(splitAlloc);
+  const baseSum = c.allocationSummary(baseAlloc, prices), splitSum = c.allocationSummary(splitAlloc, prices);
+  near(splitSum.classes.get('c-btc'), 140, '지정 없는 소분류(100) + 소분류 없는 종목(40)은 그룹 분류');
+  near(splitSum.classes.get('c-raw'), 60, '지정한 소분류(60)만 지정 분류로 합산');
+  near(splitSum.targets.classes.get('c-btc').target, 14, '나머지 목표(10 + 4)만 그룹 분류');
+  near(splitSum.targets.classes.get('c-raw').target, 6, '지정 소분류 목표(6)는 지정 분류');
+  assert.equal(splitSum.targets.classes.get('c-btc').linked, true);
+  assert.equal(splitSum.targets.classes.get('c-raw').linked, true);
+  near(splitSum.groups.get('g-alt'), baseSum.groups.get('g-alt'), '그룹 카드 평가액(200)은 그대로');
+  near(splitSum.targets.groups.get('g-alt').target, baseSum.targets.groups.get('g-alt').target, '그룹 카드 목표(20)는 그대로');
+  assert.deepEqual(splitSum.regions, baseSum.regions, '지역 합계(외화·원자재 200 / 목표 20)는 그대로');
+  assert.equal(JSON.stringify(splitAlloc), beforeSplit, '계산은 저장된 데이터와 상위 목표를 바꾸지 않는다');
+
+  // 지정한 소분류에만 목표가 있고 나머지에는 목표가 없을 때 그룹 분류에는 옛 그룹 직접 목표(25)가 섞이지 않는다.
+  const onlySplitTarget = make('c-raw');
+  delete onlySplitTarget.groups[0].sections[0].target;
+  delete onlySplitTarget.groups[0].items[2].target;
+  const onlyTargets = c.allocationTargets(onlySplitTarget);
+  near(onlyTargets.groups.get('g-alt').target, 6, '그룹 목표는 하위 합계 6');
+  near(onlyTargets.classes.get('c-raw').target, 6, '지정 분류 목표 6');
+  assert.equal(onlyTargets.classes.get('c-btc').target, null, '나머지 하위 목표가 없으면 그룹 직접 목표(25)를 넣지 않음');
+  assert.equal(onlyTargets.classes.get('c-btc').linked, false, '해당 분류에 속한 하위 목표가 없으므로 linked 아님');
+
+  // 지정이 없거나 빈 문자열·그룹 분류와 같은 id·없는 분류 id면 기존 결과와 같다.
+  for (const invalid of [undefined, '', 'c-btc', 'no-such-class']) {
+    const s = c.allocationSummary(make(invalid), prices);
+    assert.deepEqual([...s.classes], [...baseSum.classes], `평가액 동일 (${invalid})`);
+    assert.deepEqual([...s.targets.classes], [...baseSum.targets.classes], `목표 동일 (${invalid})`);
+  }
+
+  // 그룹에 하위 목표가 없고 직접 입력 목표만 있으면 전체가 그룹 분류로 간다.
+  const directSum = c.allocationSummary(make('c-raw', true), prices);
+  near(directSum.targets.groups.get('g-alt').target, 25, '그룹 직접 목표 25');
+  near(directSum.targets.classes.get('c-btc').target, 25, '직접 목표만 있으면 전체가 그룹 분류');
+  near(directSum.targets.classes.get('c-raw').target, 88, '지정 분류는 하위 목표가 없어 자체 목표 유지');
+  assert.equal(directSum.targets.classes.get('c-raw').linked, false);
+
+  // cleanAssets·mergeAssets에서 sections[].classId를 새로 만들지 않고 기존 선택 필드는 그대로 보존한다.
+  const rawDoc = {version: 1, allocation: {savedAt: 'T1', classes: baseAlloc.classes, groups: [{id: 'g1', classId: 'c-btc', sections: [{name: '가상 코인'}, {name: '금(골드)', classId: 'c-raw'}], items: []}], cash: []}};
+  const cleaned = c.cleanAssets(structuredClone(rawDoc));
+  assert.equal(Object.hasOwn(cleaned.allocation.groups[0].sections[0], 'classId'), false, '불러오기에서 빈 classId를 새로 만들지 않는다');
+  assert.equal(cleaned.allocation.groups[0].sections[1].classId, 'c-raw', '저장된 classId는 보존');
+  const merged = c.mergeAssets({version: 1}, cleaned, {version: 1}).doc;
+  assert.equal(Object.hasOwn(merged.allocation.groups[0].sections[0], 'classId'), false);
+  assert.equal(merged.allocation.groups[0].sections[1].classId, 'c-raw');
+});

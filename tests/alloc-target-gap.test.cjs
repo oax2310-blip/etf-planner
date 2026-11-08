@@ -135,3 +135,84 @@ test('현금 합계는 한 분류에만 더한다: 다른 분류에 체크하면
   assert.equal(s.regions.find(r => r.name === '현금').value, 100, '지역 합계에 현금 100만원이 한 번만');
   vm.runInContext('openClass("c1")', ctx); assert.equal(f.cash.checked, false); assert.equal(hint.hidden, true);
 });
+
+test('소분류 투자구성 분류: 그룹 수정 창에서 지정·해제하고 카드 소분류 표시·투자구성 합산·분류 삭제 차단에 반영한다', () => {
+  const data = {
+    version: 1,
+    allocation: {
+      savedAt: '', total: 1000, cashFx: 1400, memo: '',
+      classes: [
+        {id: 'c-btc', region: '외화·원자재', name: '디지털자산'},
+        {id: 'c-raw', region: '외화·원자재', name: '원자재'},
+      ],
+      groups: [
+        {
+          id: 'g-alt', name: '대체자산', classId: 'c-btc',
+          sections: [{name: '가상 코인', target: 10}, {name: '금(골드)', target: 5}],
+          items: [
+            {id: 'i1', name: '가상 코인 ETF', section: '가상 코인', amount: 100, target: 10},
+            {id: 'i2', name: '가상 골드 ETF', section: '금(골드)', amount: 50, target: 5},
+          ],
+        },
+        {id: 'g-other', name: '원자재 전용', classId: 'c-raw', items: [{id: 'i3', name: '가상 은 ETF', amount: 30, target: 3}]},
+      ],
+      cash: [],
+    },
+  };
+  const saved = [], alerts = [];
+  const {ctx, node} = page(data, planner, '#alloc', name => saved.push(name));
+  ctx.alert = msg => alerts.push(msg);
+  const gf = node('groupForm'), st = node('sectionTargets');
+  Object.assign(gf, {name: {value: ''}, classId: {innerHTML: '', value: ''}, target: {value: '', disabled: false, placeholder: ''}, note: {value: ''}});
+  vm.runInContext('openGroup("g-alt")', ctx);
+  assert.match(st.innerHTML, /<option value="">그룹 분류 따름<\/option>/, '첫 선택지는 그룹 분류 따름');
+  assert.match(st.innerHTML, /<option value="c-raw">외화·원자재 · 원자재<\/option>/, '분류 목록 표시');
+  assert.match(st.innerHTML, />해외 · 중국<\/option>/, '중국 임시 분류 포함');
+  const cnId = /<option value="([^"]+)">해외 · 중국<\/option>/.exec(st.innerHTML)?.[1];
+  assert.ok(cnId, '중국 임시 분류 id');
+
+  // 금(골드) 소분류를 원자재(c-raw)로 지정해 저장
+  const secInputs = {0: { value: '10', disabled: true }, 1: { value: '5', disabled: true }};
+  const secSelects = {0: { value: '' }, 1: { value: 'c-raw' }};
+  gf.querySelector = sel => {
+    const mSec = /^\[data-sec="(\d+)"\]$/.exec(sel);
+    if (mSec) return secInputs[mSec[1]];
+    const mCls = /^\[data-sec-class="(\d+)"\]$/.exec(sel);
+    if (mCls) return secSelects[mCls[1]];
+    return node(`groupForm:${sel}`);
+  };
+  gf.onsubmit({preventDefault() {}});
+  assert.equal(Object.hasOwn(data.allocation.groups[0].sections[0], 'classId'), false, '그룹 분류 따름은 classId를 만들지 않는다');
+  assert.equal(data.allocation.groups[0].sections[1].classId, 'c-raw', '다를 때만 classId 저장');
+
+  // 자산 배분 카드: 소분류 제목에 투자구성 표시가 붙고 카드 순서(대체자산 → 원자재 전용)는 그룹 분류 기준 그대로 유지
+  const allocHtml = node('allocView').innerHTML;
+  assert.match(allocHtml, /<div class="sub-head"><b>금\(골드\)<\/b><span>50만원 · 5% \/ 목표 5% · 종목 합산<\/span><small class="sub-class">투자구성 · 외화·원자재 · 원자재<\/small><\/div>/);
+  assert.doesNotMatch(allocHtml, /<b>가상 코인<\/b>[^<]*<span>[^<]*<\/span><small class="sub-class">/);
+  assert.ok(allocHtml.indexOf('<span>대체자산</span>') < allocHtml.indexOf('<span>원자재 전용</span>'), '카드 위치·순서는 그룹 분류 기준 유지');
+
+  // 투자구성 탭: 디지털자산은 100만원(목표 10%), 원자재는 50+30=80만원(목표 8%)으로 합산
+  const {html: stratHtml} = page(data, planner, '#strategy');
+  assert.match(stratHtml, /<span class="class-name">디지털자산<\/span><span class="class-val">100만원<\/span><span class="class-pct">10%<small>목표 10% · 합산<\/small><\/span>/);
+  assert.match(stratHtml, /<span class="class-name">원자재<\/span><span class="class-val">80만원<\/span><span class="class-pct">8%<small>목표 8% · 합산<\/small><\/span>/);
+
+  // 분류 삭제 검사: 소분류가 가리키는 분류(c-raw)는 그룹을 비워도 삭제를 막고 안내한다
+  data.allocation.groups[1].classId = 'c-btc';
+  const cf = node('classForm'), cDel = node('classDelete');
+  Object.assign(cf, {name: {value: ''}, region: {value: ''}, target: {value: '', disabled: false}, cash: {checked: false}});
+  vm.runInContext('openClass("c-raw")', ctx);
+  cDel.onclick();
+  assert.equal(alerts.length, 1);
+  assert.match(alerts[0], /소분류 1개/);
+  assert.equal(data.allocation.classes.some(c => c.id === 'c-raw'), true, '소분류가 쓰면 삭제 차단');
+
+  // 중국 임시 분류를 소분류 분류로 고르면 a.classes에 추가되고, 다시 그룹 분류와 같게 고르면 classId를 delete한다
+  vm.runInContext('openGroup("g-alt")', ctx);
+  const nextCnId = /<option value="([^"]+)">해외 · 중국<\/option>/.exec(st.innerHTML)?.[1];
+  secSelects[0].value = nextCnId;
+  secSelects[1].value = 'c-btc';
+  gf.onsubmit({preventDefault() {}});
+  assert.equal(data.allocation.classes.some(c => c.id === nextCnId && c.name === '중국'), true, '임시 분류 선택 시 classes에 추가');
+  assert.equal(data.allocation.groups[0].sections[0].classId, nextCnId);
+  assert.equal(Object.hasOwn(data.allocation.groups[0].sections[1], 'classId'), false, '그룹 분류와 같아지면 delete');
+});

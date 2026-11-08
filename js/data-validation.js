@@ -131,7 +131,7 @@ const externalData = (()=>{
       for(const key of ["classes","cash"])records(a[key],`${p}.${key}`,(v,k)=>{strings(v,["id","name","region","currency"],k);numbers(v,["target","amount"],k);});
       records(a.groups,`${p}.groups`,(g,k)=>{
         strings(g,["id","name","classId"],k);numbers(g,["target"],k);
-        records(g.sections,`${k}.sections`,(v,q)=>{strings(v,["name"],q);numbers(v,["target"],q);});
+        records(g.sections,`${k}.sections`,(v,q)=>{strings(v,["name","classId"],q);numbers(v,["target"],q);});
         records(g.items,`${k}.items`,(v,q)=>{
           strings(v,["id","name","ticker","tradeTicker","section","note"],q);numbers(v,["target","amount","shares","base","tradePrice"],q);numbers(v,["averagePrice"],q,Number.MIN_VALUE);
           if(Object.hasOwn(v,"averageCurrency")&&v.averageCurrency!=="KRW")fail(`${q}.averageCurrency`);

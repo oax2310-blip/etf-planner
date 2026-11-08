@@ -131,23 +131,34 @@ function resetBase(it, prices, alloc){
 }
 // 현금(만원): 원화는 그대로, 달러는 × 환율(시세 → 직접 넣은 환율), minus는 빼는 항목(예: 선물 증거금)
 function cashValue(c, fx){ const a=finite(c?.amount)||0, krw=c?.currency==="USD"?a*(fx||0):a; return (c?.minus?-krw:krw)/1e4; }
+// 소분류에 유효한 classId가 지정되어 있으면 그 분류, 없거나 없는 분류 id면 그룹 분류(g.classId)를 쓴다.
+function sectionClassId(alloc, g, name){
+  const id=name&&(g?.sections||[]).find(s=>s.name===name)?.classId;
+  return id&&(alloc?.classes||[]).some(c=>c.id===id)?id:g?.classId;
+}
 // 목표 비중은 모두 기준 총자산 대비 %. 종목 → 소분류 → 그룹 → 큰 분류 순서로 합산한다.
 // 하위 목표가 하나라도 있으면 그 합계가 우선이고, 전부 비어 있으면 기존 직접 입력 목표를 쓴다.
+// 그룹 목표는 하위 전체 합계로 두고, 큰 분류 목표는 분류를 따로 지정한 소분류 목표는 그 분류로 보내며
+// 나머지(소분류 없는 종목 + 지정 없는 소분류)의 합만 그룹 분류에 넣는다(그룹에 하위 목표가 없고 직접 목표만 있으면 전체를 그룹 분류에 넣음).
 // 저장된 상위 목표는 건드리지 않는다(읽기만 해도 동기화 기록이 달라지거나 기존 목표가 사라지지 않게).
 function allocationTargets(alloc){
-  const groups=new Map(), classes=new Map(), sections=new Map();
+  const groups=new Map(), classes=new Map(), sections=new Map(), classParts=new Map();
   const total=values=>values.some(v=>v!==null)?Math.round(values.reduce((s,v)=>s+(v??0),0)*1e8)/1e8:null;
   const resolve=(values,fallback)=>{const sum=total(values);return {target:sum??finite(fallback),linked:sum!==null};};
+  const addClass=(id,v)=>{if(!classParts.has(id))classParts.set(id,[]);classParts.get(id).push(v);};
   for(const g of alloc?.groups||[]){
     const names=[...new Set([...(g.sections||[]).map(s=>s.name),...(g.items||[]).map(it=>it.section).filter(Boolean)])];
-    const values=(g.items||[]).filter(it=>!it.section).map(it=>finite(it.target));
+    const values=(g.items||[]).filter(it=>!it.section).map(it=>finite(it.target)), own=[...values];
     for(const name of names){
       const result=resolve((g.items||[]).filter(it=>it.section===name).map(it=>finite(it.target)),(g.sections||[]).find(s=>s.name===name)?.target);
+      const classId=sectionClassId(alloc,g,name);
       sections.set(`${g.id}\u0000${name}`,result);values.push(result.target);
+      if(classId===g.classId)own.push(result.target);else addClass(classId,result.target);
     }
-    groups.set(g.id,resolve(values,g.target));
+    const group=resolve(values,g.target);groups.set(g.id,group);
+    addClass(g.classId,group.linked?total(own):group.target);
   }
-  for(const c of alloc?.classes||[])classes.set(c.id,resolve((alloc?.groups||[]).filter(g=>g.classId===c.id).map(g=>groups.get(g.id).target),c.target));
+  for(const c of alloc?.classes||[])classes.set(c.id,resolve(classParts.get(c.id)||[],c.target));
   return {groups,classes,section:(gid,name)=>sections.get(`${gid}\u0000${name}`)||{target:null,linked:false}};
 }
 // ---------- 분할매수(플래너 js/purchases.js) ----------
@@ -399,17 +410,20 @@ function purchaseAlertRules(assets, prices, quiet=false){
   }
   return rules;
 }
-// 화면에 쓰는 합계. base = 비중 기준(직접 넣은 기준 총자산, 없으면 종목+현금 합계)
+// 화면에 쓰는 합계. base = 비중 기준(직접 넣은 기준 총자산, 없으면 종목+현금 합계).
+// 종목 평가액은 해당 소분류의 classId가 유효하면 그 분류에, 아니면 그룹 classId에 더한다(그룹·소분류·전체·지역 합계 규칙은 그대로).
 function allocationSummary(alloc, prices){
   const fx=assetFx(prices,alloc), items=new Map(), groups=new Map(), classes=new Map(), sections=new Map(), targets=allocationTargets(alloc);
   let invest=0;
   for(const g of alloc?.groups||[]){
     let sum=0;
+    if(!classes.has(g.classId))classes.set(g.classId,0);
     for(const it of g.items||[]){
-      const r=itemValue(it,prices,fx);items.set(it.id,r);sum+=r.value;
+      const r=itemValue(it,prices,fx), classId=sectionClassId(alloc,g,it.section);
+      items.set(it.id,r);sum+=r.value;classes.set(classId,(classes.get(classId)||0)+r.value);
       if(it.section){const k=`${g.id}\u0000${it.section}`;sections.set(k,(sections.get(k)||0)+r.value);}
     }
-    groups.set(g.id,sum);invest+=sum;classes.set(g.classId,(classes.get(g.classId)||0)+sum);
+    groups.set(g.id,sum);invest+=sum;
   }
   const cash=(alloc?.cash||[]).reduce((s,c)=>s+cashValue(c,fx),0);
   for(const c of alloc?.classes||[])if(c.cash)classes.set(c.id,(classes.get(c.id)||0)+cash);
