@@ -974,7 +974,7 @@ test('분할매수: 1주도 살 수 없는 예산은 0주로 표시하고 체크
   r.item.buyPlan.notify={stages:true};assert.equal(r.rules().length,0,'총예산으로도 살 수 없는 회차는 매수 알림을 보내지 않는다');
 });
 
-test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선까지 분산하고 순차 체결·취소에도 같은 간격을 유지한다',()=>{
+test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선까지 분산하고 순차 체결·취소를 반영한다',()=>{
   const names=['25일선','32일선','42일선','60일선','80일선'];
   for(const currency of ['KRW','USD']){
     const scale=currency==='KRW'?100000:100,ma=Object.fromEntries(names.map((n,i)=>[n,(i+1)*scale]));
@@ -985,10 +985,11 @@ test('고가주 분할매수: 회차·미리보기·합계·알림을 종료선�
     assert.doesNotMatch(r.html(),/purchase-qty">0주<|· 매수 0주|1주를 살 수 없습니다/);assert.match(r.html(),/회차 간격을 넓혀/);
     r.edit();assert.equal(JSON.stringify(r.doc),before,'미리보기만으로 기록을 바꾸지 않는다');
     assert.equal((r.html().match(/purchase-qty">1주</g)||[]).length,5);
+    const progressed=['25일선:0','32일선:0','32일선:2','60일선:0','80일선:0'];
     for(let i=0;i<keys.length;i++){
-      const input=r.inputs('[data-purchase-buy]').find(x=>!x.checked);assert.equal(input.dataset.key,keys[i]);
+      const input=r.inputs('[data-purchase-buy]').find(x=>!x.checked);assert.equal(input.dataset.key,(i<2?keys:progressed)[i]);
       input.checked=true;input.onchange();
-      assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),keys);
+      assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),i===0?keys:progressed);
       assert.equal(r.item.shares,11+i);assert.equal(r.rules().length,4-i);
       assert.doesNotMatch(r.html(),/purchase-qty">0주<|· 매수 0주|1주를 살 수 없습니다/);
     }

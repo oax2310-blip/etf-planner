@@ -6,8 +6,8 @@ const vm=require('node:vm');
 
 // 공개 계산을 DOM 없이 실행한다. 도달 이력은 서버가 관리하므로 여기서는
 // 현재 시세에 관계없이 회차와 선행 관계가 유지되는지를 검증한다.
-const {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseInOrderSelection,movingLineRange,MA_LINES}=vm.runInThisContext(`(function(){${['ma-ladder.js','assets-calc.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n')}
-return {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseInOrderSelection,movingLineRange,MA_LINES};})()`);
+const {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseSummary,purchaseInOrderSelection,movingLineRange,MA_LINES}=vm.runInThisContext(`(function(){${['ma-ladder.js','assets-calc.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n')}
+return {purchaseAlertRules,purchaseLineRows,purchaseLineSelection,purchaseSummary,purchaseInOrderSelection,movingLineRange,MA_LINES};})()`);
 const item=(id='a',ticker='111111',buyPlan=linePlan())=>({id,ticker,buyPlan});
 const assets=(...items)=>({version:1,allocation:{groups:[{id:'test-group',items}]}});
 const linePlan=()=>({lines:{names:['42선','150주선'],startLine:'42선',budget:100},notify:{stages:true}});
@@ -18,6 +18,88 @@ const screenPlan=()=>({lines:{names:['25일선','32일선','60개월선'],budget
 const screenQuote=(close=11000)=>({kind:'국내',asOf:'2026-01-02',close,ma:{'25일선':12000,'32일선':13000,'60개월선':10000}});
 const keys=rows=>rows.map(r=>r.key);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} ≠ ${b}`);
+
+const progressPlan=()=>({lines:{names:['60선','80선','80일선','100일선'],budget:1,end:200},notify:{stages:true}});
+const progressQuote=()=>({kind:'국내',asOf:'2026-01-02',close:150,ma:{'60선':100,'80선':100.008,'80일선':140,'100일선':170}});
+
+test('60선 1·2차 뒤 일선 체결이 있으면 시선 역전으로 지난 미체결 회차를 화면·합계·알림에 되살리지 않는다',()=>{
+  for(const shares of [4,10])for(const second of [false,true])for(const t of [0,1,2])for(const budget of [0.2,1]){
+    const plan=progressPlan();plan.lines.budget=budget;plan.buys={
+      '60선:0':{plannedShares:10,shares,plannedActual:0.1,actual:shares/100,price:100},
+      ...(second?{'60선:1':{shares:1,actual:0.01,price:100}}:{}),
+      [`80일선:${t}`]:{plannedShares:2,shares:1,plannedActual:0.028,actual:0.014,price:140}
+    };
+    const entry=progressQuote(),doc=assets(item('a','111111',plan)),prices={stocks:{'111111':entry}},before=JSON.stringify({doc,prices});
+    for(const trade of [{},{inOrder:true}]){
+      const selected=purchaseLineSelection(plan,entry,trade),rows=purchaseLineRows(plan,entry,trade);
+      assert.equal(keys(rows).includes('60선:2'),false);
+      assert.equal(keys(selected.skipped).includes('60선:2'),false,'순서 판정 전에 제외한다');
+      assert.deepEqual(keys(rows).filter(key=>key.startsWith('60선:')),second?['60선:0','60선:1']:['60선:0']);
+      assert.equal(purchaseSummary(plan,entry,trade).count,rows.length);
+      near(rows.reduce((sum,r)=>sum+(r.actual||0)+(r.done?0:r.amount),0),budget);
+    }
+    for(const quiet of [false,true]){
+      const rules=purchaseAlertRules(doc,prices,quiet);
+      assert.equal(rules.some(r=>r.id==='trade:buy:a:60선:2'),false);
+      assert.equal(rules.some(r=>r.id==='trade:buy:a:60선:1'),false);
+      assert.equal(rules.some(r=>r.after==='trade:buy:a:60선:2'),false);
+    }
+    assert.equal(JSON.stringify({doc,prices}),before,'부분 체결을 포함한 조회도 계획·buys에 필드를 만들거나 지우지 않는다');
+  }
+});
+
+test('names의 뒤 선 체결이 없으면 60선의 남은 2·3차를 유지하고 범위 밖·목표가 체결은 진행으로 보지 않는다',()=>{
+  for(const extra of [{},{'150주선:0':{shares:1,actual:0.02,price:200}},{end:{shares:1,actual:0.02,price:200}}]){
+    const plan=progressPlan();plan.buys={'60선:0':{shares:1,actual:0.01,price:100},...extra};
+    const entry=progressQuote(),doc=assets(item('a','111111',plan)),prices={stocks:{'111111':entry}},before=JSON.stringify({doc,prices});
+    assert.deepEqual(keys(purchaseLineRows(plan,entry)).slice(0,3),['60선:0','60선:1','60선:2']);
+    assert.deepEqual(purchaseAlertRules(doc,prices).slice(0,2).map(r=>r.id),['trade:buy:a:60선:1','trade:buy:a:60선:2']);
+    assert.equal(JSON.stringify({doc,prices}),before);
+  }
+  const plan=progressPlan();plan.lines.names=['80일선','60선','80선','100일선'];
+  plan.buys={'80일선:0':{shares:1,actual:0.014,price:140},'60선:0':{shares:1,actual:0.01,price:100}};
+  const before=JSON.stringify(plan),rows=purchaseLineRows(plan,progressQuote());
+  assert.ok(keys(rows).includes('60선:1')&&keys(rows).includes('60선:2'),'시·일 단위 순서가 아닌 names 순서에서 뒤 선인지 판정한다');
+  assert.equal(JSON.stringify(plan),before);
+});
+
+test('같은 선 안의 남은 회차와 1차를 체결하지 않은 앞 선의 회차·목표가는 유지한다',()=>{
+  const plan=progressPlan();plan.buys={'60선:1':{shares:1,actual:0.01,price:100},'80일선:0':{shares:1,actual:0.014,price:140}};
+  const entry=progressQuote(),doc=assets(item('a','111111',plan)),prices={stocks:{'111111':entry}},before=JSON.stringify({doc,prices});
+  const rows=purchaseLineRows(plan,entry,{inOrder:true});
+  assert.deepEqual(keys(rows),[
+    '60선:0','60선:1','60선:2','80선:0','80선:1','80선:2','80일선:0','80일선:1','80일선:2','100일선:0','end'
+  ]);
+  assert.deepEqual(purchaseAlertRules(doc,prices).map(r=>r.id),rows.filter(r=>!r.done).map(r=>`trade:buy:a:${r.key}`));
+  near(rows.reduce((sum,r)=>sum+(r.actual||0)+(r.done?0:r.amount),0),1);
+  assert.equal(JSON.stringify({doc,prices}),before);
+});
+
+test('지난 선의 이미 체결한 2·3차 기록과 부분 체결 잔량·알림은 선이 다시 뒤집혀도 유지한다',()=>{
+  for(const next of [90,100.008]){
+    const plan=progressPlan();plan.buys={
+      '60선:0':{shares:1,actual:0.01,price:100},
+      '60선:1':{plannedShares:5,shares:5,plannedActual:0.05,actual:0.05,price:100,next:'80선'},
+      '60선:2':{plannedShares:10,shares:4,plannedActual:0.1,actual:0.04,price:100,next:'80선'},
+      '80일선:0':{shares:1,actual:0.014,price:140}
+    };
+    const entry=progressQuote();entry.ma['80선']=next;
+    const doc=assets(item('a','111111',plan)),prices={stocks:{'111111':entry}},before=JSON.stringify({doc,prices});
+    const rows=purchaseLineRows(plan,entry,{inOrder:true});
+    assert.deepEqual(rows.slice(1,3).map(({amount,...row})=>row),[
+      {key:'60선:1',line:'60선',t:1,price:100,shares:5,done:true,actual:0.05,plannedShares:5,remainingShares:0,next:'80선'},
+      {key:'60선:2',line:'60선',t:2,price:100,shares:4,done:false,actual:0.04,plannedShares:10,remainingShares:6,next:'80선'}
+    ]);
+    near(rows[1].amount,0);near(rows[2].amount,0.06);
+    for(const quiet of [false,true]){
+      const rules=purchaseAlertRules(doc,prices,quiet);
+      assert.equal(rules[0].id,'trade:buy:a:60선:2');assert.equal(rules[0].targetPrice,100);
+      assert.equal(rules.some(r=>r.id==='trade:buy:a:60선:1'),false,'완료 회차는 표시하되 알림은 만들지 않는다');
+    }
+    near(rows.reduce((sum,r)=>sum+(r.actual||0)+(r.done?0:r.amount),0),1);
+    assert.equal(JSON.stringify({doc,prices}),before);
+  }
+});
 
 const rangePlan=(start='25일선',last='25개월선')=>({lines:{names:movingLineRange(MA_LINES,start,last),startLine:start,budget:100},notify:{stages:true}});
 const rangeQuote=plan=>({kind:'국내',asOf:'2026-01-02',close:50,ma:Object.fromEntries(plan.lines.names.map((name,i)=>[name,100+i*30]))});
