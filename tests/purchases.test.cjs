@@ -5,7 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
-function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false}={}){
+function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false,storageFailure=false,dismissed=null}={}){
   const ticker=bitcoin?'BTC-USD':currency==='USD'?'AAA':'111111',item={id:'a',name:'테스트 종목',ticker,shares:bitcoin?0.01:legacy?19:10,amount:0,
     buyPlan:wait?{wait:{line:wait},notify:{stages:true}}:manual?{stages:[{id:'s',price,...(manualShares===null?{}:{shares:manualShares}),amount:manualAmount}]}:{lines:{names,...(end===null?{}:{end}),budget}}};
   if(currency==='USD')item.buyPlan.currency='USD';
@@ -15,7 +15,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const prices={fx:{close:fx,asOf:'2026-01-02'},stocks:{[ticker]:{kind:bitcoin?'코인':currency==='USD'?'해외':'국내',close:price,asOf:'2026-01-02',...(ma?{ma}:{})}},futures:{}};
   if(tracking&&!missingTracking)prices.stocks[item.tradeTicker]={kind:trackingCurrency==='USD'?'해외':'국내',close:trackingPrice,asOf:'2026-01-02'};
   const elements=new Map(),rendered=new Map(),classList={add(){},remove(){},toggle(){}};
-  const inputListeners=[];
+  const inputListeners=[];let htmlWrites=0;
   function element(){return {dataset:{},attrs:{},events:{},children:[],value:'',classList,validationMessage:'',
     setAttribute(k,v){this.attrs[k]=String(v);},getAttribute(k){return this.attrs[k]??null;},
     setCustomValidity(message){this.validationMessage=message;},checkValidity(){return !this.validationMessage;},reportValidity(){this.reported=true;return this.checkValidity();},
@@ -24,13 +24,15 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   // innerHTML로 그린 input·button을 기억해 querySelectorAll로 찾는다. 검색 칸(item-search.js)이 만든 요소도 id로 찾는다.
   function capturing(e){
     let html='';Object.defineProperty(e,'innerHTML',{get:()=>html,set(value){
-      html=value;
-      rendered.set(e,[...value.matchAll(/<(input|button)\b([^>]*)>/g)].map(([,tag,attrs])=>{
+      html=value;htmlWrites++;
+      rendered.set(e,[...value.matchAll(/<(input|button)\b([^>]*)>/g)].map(match=>{
+        const [,tag,attrs]=match;
         const node=element();node.checked=/(?:^|\s)checked(?:\s|$)/.test(attrs);node.disabled=/(?:^|\s)disabled(?:\s|$)/.test(attrs);
         node.attrs=Object.fromEntries([...attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,val])=>[key,val??'']));
         node.value=node.attrs.value||'';
         for(const [key,val] of Object.entries(node.attrs))if(key.startsWith('data-'))node.dataset[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())]=val;
         if(node.attrs.id)elements.set(node.attrs.id,node);
+        node.remove=()=>{node.removed=true;const outer=value.slice(match.index).match(/^<button\b[^>]*>[\s\S]*?<\/button>/)?.[0];if(outer)html=html.replace(outer,'');};
         return node;
       }));
     }});
@@ -43,7 +45,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
     const staticMoney=selector==='input[data-money]'?[purchaseForm?.lineBudget,purchaseForm?.lineEnd].filter(Boolean):[];
     return [...staticMoney,...[...rendered.values()].flat().filter(node=>selector.split(',').some(s=>{
       const attrs=[...s.matchAll(/\[([\w-]+)(?:="?([^"\]]+)"?)?\]/g)];
-      return attrs.length&&attrs.every(([,key,value])=>Object.hasOwn(node.attrs,key)&&(value===undefined||node.attrs[key]===value));
+      return !node.removed&&attrs.length&&attrs.every(([,key,value])=>Object.hasOwn(node.attrs,key)&&(value===undefined||node.attrs[key]===value));
     }))];}};
   const purchaseForm=document.getElementById('purchaseForm');
   for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','cardName','note'])purchaseForm[name]=element();
@@ -58,12 +60,14 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const alerts=[],renameDialogs=[],ctx={document,assetStore:store,renderLocalSaveWarning:()=>warningRenders++,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const storage=new Map([['etf-planner-assets-v1',JSON.stringify(doc)]]);
-  if(realStore)Object.assign(ctx,{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)},setInterval(){},addEventListener(){}});
+  if(dismissed)storage.set('etf-planner-purchase-note-dismissed',JSON.stringify(dismissed));
+  ctx.localStorage={getItem:key=>{if(storageFailure)throw Error('storage read blocked');return storage.get(key)??null;},setItem:(key,value)=>{if(storageFailure)throw Error('storage write blocked');storage.set(key,String(value));},removeItem:key=>storage.delete(key)};
+  if(realStore)Object.assign(ctx,{setInterval(){},addEventListener(){}});
   const code=['gold-estimate.js','money-input.js','ma-ladder.js','prices.js','data-validation.js','assets-calc.js',...(realStore?['assets-store.js']:[]),'alloc-link.js','stock-names.js','item-search.js','purchases.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
   const api=vm.runInNewContext(`${code}\n;({purchasePlanner,purchaseAlertRules,syncPurchaseTargets,assetStore,allocLink})`,ctx);
   const before=JSON.stringify(doc);api.purchasePlanner.render();assert.equal(JSON.stringify(doc),before,'화면을 여는 것만으로 기록을 바꾸지 않음');
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
-  return {ctx,doc,item,prices,store:api.assetStore,link:api.allocLink,storage,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector),type(node,value){node.value=value;inputListeners.forEach(fn=>fn({target:node}));node.oninput?.();}};
+  return {ctx,doc,item,prices,store:api.assetStore,link:api.allocLink,storage,htmlWrites:()=>htmlWrites,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector),type(node,value){node.value=value;inputListeners.forEach(fn=>fn({target:node}));node.oninput?.();}};
 }
 
 test('매수 창의 총 금액·직접 목표가는 숫자로 저장·재표시하고 저장 직전 음수·형식 오류를 막는다',()=>{
@@ -462,6 +466,53 @@ test('연결 보유 목록은 금액 보유를 주수로 오인하지 않고 0�
   const before=JSON.stringify(r.doc);r.render();assert.match(r.html(),/금액으로 보유 관리/);assert.match(r.html(),/보유 0주/);assert.match(r.html(),/보유 3주 · 시세 대기/);assert.match(r.html(),/보유 0\.125주 · 시세 대기/);assert.match(r.html(),/평가 대기/);assert.match(r.html(),/전체 계좌 4개 항목 · 현재 7%/);
   assert.doesNotMatch(r.html(),/보유 7주|NaN|undefined|data-purchase-buy=/);assert.equal(JSON.stringify(r.doc),before);
 });
+
+const purchaseLinkedCard=r=>r.html().match(/<section class="card panel sale-account sale-linked purchase-linked">[\s\S]*?<\/section>/)[0];
+test('연결 보유 손익은 itemProfit의 평균가·현재가로 합산하고 이익 색·손익률을 표시하며 기록을 바꾸지 않는다',()=>{
+  const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});
+  r.ctx.priceText=(v,cur)=>cur==='USD'?`$${v.toFixed(2)}`:`${new Intl.NumberFormat('ko-KR').format(v)}원`;
+  const before=JSON.stringify(r.doc);r.render();const card=purchaseLinkedCard(r);
+  assert.match(card,/<div class="sale-linked-overview"><p class="hint sale-linked-summary">/);
+  assert.match(card,/class="sale-linked-profit" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">손익 <b class="profit-gain">\+1.4만원<\/b> <b class="profit-gain">\+1.66%<\/b>/);
+  assert.match(card,/<small class="sale-holding-profit">평균 10,000원 · 손익 <b class="profit-gain">\+1.4만원<\/b> <b class="profit-gain">\+1.66%<\/b>/);
+  assert.equal(JSON.stringify(r.doc),before);
+});
+test('연결 보유 손익은 손실을 파랑으로 표시하고 0으로 반올림되는 금액은 부호·색을 뺀다',()=>{
+  const r=setup({price:9800,end:12000});r.item.averagePrice=10000;r.render();
+  assert.match(purchaseLinkedCard(r),/손익 <b class="profit-loss">−0.2만원<\/b> <b class="profit-loss">−2%<\/b>/);
+  for(const [close,tone,rate] of [[10001,'gain','+0.01'],[9999,'loss','−0.01']]){
+    r.prices.stocks['111111'].close=close;r.render();
+    assert.ok(purchaseLinkedCard(r).includes(`손익 <b class="">0만원</b> <b class="profit-${tone}">${rate}%</b>`));
+  }
+});
+test('연결 보유 손익은 평균매수가 미입력·시세 대기와 일부만 합산한 1/2개를 구분한다',()=>{
+  const r=setup();r.render();assert.match(purchaseLinkedCard(r),/평균매수가 미입력/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
+  const other={id:'b',name:'가상 다른 계좌',ticker:'111111',shares:5};r.doc.allocation.groups[0].items.push(other);
+  r.item.averagePrice=9000;r.render();assert.match(purchaseLinkedCard(r),/ · 1\/2개<\/span>/);assert.match(purchaseLinkedCard(r),/보유 2개 중 1개 합산/);
+  delete r.prices.stocks['111111'];r.render();assert.match(purchaseLinkedCard(r),/평균 ₩9000 · 손익 시세 대기/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
+  r.item.shares=0;delete other.shares;other.amount=5;r.render();assert.doesNotMatch(purchaseLinkedCard(r),/sale-holding-profit|평균매수가 미입력/,'0주·금액 관리 항목은 평균가 줄을 만들지 않음');
+});
+test('연결 보유 달러 손익은 현재 환율로 원화 환산하고 매입금액 합으로 손익률을 가중한다',()=>{
+  const r=setup({currency:'USD',price:110,fx:1200});r.item.averagePrice=100;r.doc.allocation.cashFx=2500;
+  r.doc.allocation.groups[0].items.push({id:'b',name:'가상 원화 추종 ETF',ticker:'AAA',tradeTicker:'111111',shares:10,averagePrice:10000});
+  r.prices.stocks['111111']={kind:'국내',close:10100,asOf:'2026-01-02'};r.render();const card=purchaseLinkedCard(r);
+  assert.match(card,/현재 환율 1,200원으로 환산 · 환차손익 제외/);
+  assert.match(card,/손익 <b class="profit-gain">\+12.1만원<\/b> <b class="profit-gain">\+9.31%<\/b>/);
+  assert.match(card,/평균 \$100 · 손익 <b class="profit-gain">\+12만원<\/b> <b class="profit-gain">\+10%<\/b>/);
+});
+test('연결 보유 달러 환율이 없으면 손익률만 보이고 달러는 합계에서 제외한다',()=>{
+  const r=setup({currency:'USD',price:110,fx:null});r.item.averagePrice=100;r.render();
+  assert.match(purchaseLinkedCard(r),/평균 \$100 · 손익 환율 대기 <b class="profit-gain">\+10%<\/b>/);
+  assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
+  r.doc.allocation.groups[0].items.push({id:'b',name:'가상 원화 추종 ETF',ticker:'AAA',tradeTicker:'111111',shares:10,averagePrice:10000});
+  r.prices.stocks['111111']={kind:'국내',close:10100,asOf:'2026-01-02'};r.render();
+  assert.match(purchaseLinkedCard(r),/환율 없음 · 달러 종목 합산 제외/);assert.match(purchaseLinkedCard(r),/\+0.1만원<\/b> <b class="profit-gain">\+1%<\/b> · 1\/2개 · 환율 없음/);
+});
+test('연결 보유 원화 평균가 비트코인은 itemProfit의 원화 손익을 다시 환산하지 않는다',()=>{
+  const r=setup({bitcoin:true,currency:'USD',price:100,fx:1000});Object.assign(r.item,{shares:1,averagePrice:90000,averageCurrency:'KRW'});r.render();
+  assert.match(purchaseLinkedCard(r),/평균 ₩90000 · 손익 <b class="profit-gain">\+1만원<\/b> <b class="profit-gain">\+11.11%<\/b>/);
+  r.prices.fx=null;r.render();assert.match(purchaseLinkedCard(r),/평균 ₩90000 · 손익 환율 대기/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
+});
 test('계획을 지우면 반영 기록도 지우고, 같은 종목의 새 계획에서 같은 회차를 체크해도 이전 체결 수량을 빼지 않는다',()=>{
   const r=setup();r.ctx.confirm=()=>true;const box=()=>r.input('[data-purchase-buy]');
   assert.equal(box().dataset.key,'end');box().checked=true;box().onchange();assert.equal(r.item.shares,18);assert.ok(r.doc.allocation.trades['buy:a:end']);
@@ -724,7 +775,7 @@ test('순서 밖 도달은 회차표·도달 칩·띠 양 끝에서 빼고 안�
   const before=JSON.stringify({doc:r.doc,prices:r.prices}),card=()=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['25일선:0','32일선:0','60개월선:2','80개월선:0']);
   assert.match(card(),trackStatus('매수 전',0,4));assert.doesNotMatch(card(),/도달 \d|class="due"|예산에 맞춰 회차 간격|매수 회차에서 뺐습니다/);
-  assert.match(card(),/<p class="buy-track-note muted">현재가가 이미 위에 있는 뒤 단계 60월선은 빼고 나눴습니다\. 현재가가 그 선 아래로 내려오거나 앞 회차가 모두 도달하면 다시 넣습니다\.<\/p>/,'중복된 단계 회차의 선 이름은 한 번만 표시');
+  assert.match(card(),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>현재가가 이미 위에 있는 뒤 단계 60월선은 빼고 나눴습니다\. 현재가가 그 선 아래로 내려오거나 앞 회차가 모두 도달하면 다시 넣습니다\.<\/span><span[^>]*>×<\/span><\/button>/,'중복된 단계 회차의 선 이름은 한 번만 표시');
   assert.match(card(),/<span class="next">다음 25일선 1차 <b>₩14000<\/b>/);
   assert.match(card(),/<div class="buy-track-end r"><b>₩15000<\/b><small>80월선<\/small>/);
   assert.equal((card().match(/<i class=/g)||[]).length,4);
@@ -749,7 +800,7 @@ test('목표가 없이 마지막 선까지 사면 마지막 선 가격 이상인
   const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
   const before=JSON.stringify({doc:r.doc,prices:r.prices}),card=()=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track'),html.indexOf('<div class="control-grid">'));};
   assert.deepEqual(r.inputs('[data-purchase-buy]').map(x=>x.dataset.key),['60개월선:0','60개월선:1','60개월선:2','80개월선:0'],'마지막 선 위의 25일선·32일선은 넣지 않는다');
-  assert.match(card(),/<p class="buy-track-note muted">마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/p>/);
+  assert.match(card(),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/span><span[^>]*>×<\/span><\/button>/);
   assert.doesNotMatch(card(),/현재가가 이미 위에 있는 뒤 단계/);
   r.edit();
   assert.match(r.element('lineResult').innerHTML,/<small>마지막 목표 80월선\(₩10000\)보다 이미 위에 있는 25일선·32일선은 매수 회차에서 뺐습니다\.<\/small>/);
@@ -875,12 +926,12 @@ test('매수대기: 선 위에서 기다리고 선에 닿거나 내려가면 도
 test('매수대기: 이동평균 시세가 없으면 도달·알림을 만들지 않으며 새 선 값은 같은 알림을 갱신한다',()=>{
   const r=setup({wait:'25개월선'});assert.equal(r.rules().length,0);
   assert.match(waitCard(r),/<div class="buy-wait-track wait"[^>]*><i><\/i><\/div><div class="buy-track-row"><div class="buy-track-end"><b>—<\/b><small>25월선<\/small><\/div><div class="buy-track-main"><div class="buy-track-chips"><span class="buy-track-chip muted">시세 대기<\/span><\/div><\/div><div class="buy-track-end r"><b>₩10000<\/b><small>현재가<\/small>/,'시세 대기에는 가운데 %·안내 글자를 비운다');
-  assert.match(waitCard(r),/<p class="buy-track-note muted">선택한 이동평균선의 시세를 기다리는 중입니다\./);assert.doesNotMatch(waitCard(r),/buy-track-count/);
+  assert.match(waitCard(r),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>선택한 이동평균선의 시세를 기다리는 중입니다\./);assert.doesNotMatch(waitCard(r),/buy-track-count/);
   r.prices.stocks['111111'].ma={'25개월선':9000};r.render();const first=r.rules()[0];
   r.prices.stocks['111111'].ma['25개월선']=9500;r.render();assert.equal(r.rules()[0].targetPrice,9500);assert.equal(r.rules()[0].revision,first.revision);
   r.item.buyPlan.wait.line='60일선';r.prices.stocks['111111'].ma['60일선']=9500;r.render();assert.notEqual(r.rules()[0].revision,first.revision);
   r.prices.stocks['111111'].kind='해외';r.render();assert.equal(r.rules().length,0);assert.doesNotMatch(r.html(),/기준선 도달/);
-  r.item.ticker='';r.render();assert.match(waitCard(r),/<p class="buy-track-note muted">자산 배분에서 국내·미국 시세 종목 코드를 확인하세요\.<\/p><\/section>/);assert.doesNotMatch(waitCard(r),/buy-wait-alert|data-purchase-alert/,'알림을 켤 수 없으면 스위치 줄을 뺀다');
+  r.item.ticker='';r.render();assert.match(waitCard(r),/<button[^>]*class="buy-track-note muted purchase-note-dismiss"[^>]*><span>자산 배분에서 국내·미국 시세 종목 코드를 확인하세요\.<\/span><span[^>]*>×<\/span><\/button><\/section>/);assert.doesNotMatch(waitCard(r),/buy-wait-alert|data-purchase-alert/,'알림을 켤 수 없으면 스위치 줄을 뺀다');
 });
 
 test('분할매수 설정: 기존 목표 가격 계획의 사용자 지정 단계는 다시 저장해도 늘리지 않는다',()=>{
@@ -1483,4 +1534,63 @@ test('추종 ETF: 금액으로 관리하는 기존 항목은 평가액을 표시
   assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].amount,90);
   r.change('[data-purchase-buy]',true);assert.equal(r.item.amount,235);assert.equal(r.item.base,15000);
   r.change('[data-purchase-buy]',false);assert.equal(r.item.amount,100);assert.equal(r.item.shares,undefined);
+});
+
+const dismissedPurchaseNoteKey='etf-planner-purchase-note-dismissed';
+const purchaseNote=(r,kind)=>r.inputs('[data-purchase-note]').find(n=>n.dataset.noteKind===kind);
+const dismissedPurchaseNotes=r=>JSON.parse(r.storage.get(dismissedPurchaseNoteKey)||'{}');
+test('매수 안내 닫기는 요소만 지우고 다시 그리기·새 페이지에서도 같은 조건을 숨긴다',()=>{
+  const r=setup(),note=purchaseNote(r,'noKnown'),before=JSON.stringify(r.doc),stored=r.storage.get('etf-planner-assets-v1'),writes=r.htmlWrites();
+  assert.equal(note.attrs.type,'button');assert.equal(note.attrs.title,'눌러서 닫기');assert.match(r.html(),/class="purchase-note-close" aria-hidden="true">×/);
+  note.onclick();assert.equal(note.removed,true);assert.equal(r.htmlWrites(),writes,'닫을 때 화면을 다시 그리지 않음');assert.doesNotMatch(r.html(),/이동평균 시세를 기다리는 중입니다/);
+  assert.deepEqual(dismissedPurchaseNotes(r),{a:{noKnown:JSON.stringify('noKnown')}});r.render();assert.equal(purchaseNote(r,'noKnown'),undefined);
+  assert.equal(JSON.stringify(r.doc),before);assert.equal(r.storage.get('etf-planner-assets-v1'),stored,'자산·계획·동기화 문서는 저장하지 않음');
+  const reopened=setup({dismissed:dismissedPurchaseNotes(r)});assert.equal(purchaseNote(reopened,'noKnown'),undefined);
+});
+test('뺀 선 안내는 가격만 바뀌면 계속 숨기고 빠진 선 목록이 바뀌면 다시 표시한다',()=>{
+  const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000}});
+  purchaseNote(r,'aboveLast').onclick();assert.deepEqual(JSON.parse(dismissedPurchaseNotes(r).a.aboveLast),['25일선','32일선']);
+  for(const key of Object.keys(r.prices.stocks['111111'].ma))r.prices.stocks['111111'].ma[key]*=1.1;
+  r.render();assert.equal(purchaseNote(r,'aboveLast'),undefined,'가격은 sig에 넣지 않음');
+  r.prices.stocks['111111'].ma['32일선']=10000;r.render();assert.ok(purchaseNote(r,'aboveLast'));assert.match(r.html(),/이미 위에 있는 25일선은 매수 회차에서 뺐습니다/);assert.equal(dismissedPurchaseNotes(r).a,undefined);
+});
+test('순서 밖 뒤 단계 안내도 빠진 선 목록만 sig로 사용한다',()=>{
+  const r=setup({budget:100,end:null,names:['25일선','32일선','60개월선','80개월선','100개월선'],price:11000,ma:{'25일선':14000,'32일선':12000,'60개월선':9000,'80개월선':10000,'100개월선':15000}});
+  purchaseNote(r,'skipped').onclick();assert.deepEqual(JSON.parse(dismissedPurchaseNotes(r).a.skipped),['60개월선','80개월선']);
+  r.prices.stocks['111111'].close=11500;r.render();assert.equal(purchaseNote(r,'skipped'),undefined);
+  r.prices.stocks['111111'].ma['80개월선']=13000;r.render();assert.ok(purchaseNote(r,'skipped'));assert.equal(dismissedPurchaseNotes(r).a,undefined);
+});
+test('매수 안내 조건이 사라졌다 돌아오면 같은 sig도 다시 표시한다',()=>{
+  const r=setup();purchaseNote(r,'noKnown').onclick();r.prices.stocks['111111'].ma={'25선':9000};r.render();
+  assert.equal(purchaseNote(r,'noKnown'),undefined);assert.deepEqual(dismissedPurchaseNotes(r),{});
+  r.prices.stocks['111111'].ma={};r.render();assert.ok(purchaseNote(r,'noKnown'));
+});
+test('선택하지 않은 매수 계획의 안내도 조건 변경·계획 삭제 때 닫기 기록을 정리한다',()=>{
+  const r=setup(),other={id:'b',name:'가상 대기 종목',ticker:'222222',shares:5,buyPlan:{wait:{line:'60일선'}}};
+  r.doc.allocation.groups[0].items.push(other);r.prices.stocks['222222']={kind:'국내',close:10000,asOf:'2026-01-02'};r.render();
+  const select=id=>r.inputs('[data-purchase-select]').find(n=>n.dataset.purchaseSelect===id).onclick();
+  select('b');purchaseNote(r,'waitLine').onclick();select('a');assert.ok(dismissedPurchaseNotes(r).b);
+  r.prices.stocks['222222'].ma={'60일선':9000};r.render();assert.equal(dismissedPurchaseNotes(r).b,undefined);
+  r.prices.stocks['222222'].ma={};r.render();select('b');assert.ok(purchaseNote(r,'waitLine'));
+  purchaseNote(r,'waitLine').onclick();select('a');delete other.buyPlan;r.render();assert.equal(dismissedPurchaseNotes(r).b,undefined);
+});
+test('시세 대기 안내 sig는 시작선·마지막 선·시세 없는 선 목록과 예산만 구분한다',()=>{
+  const start=setup({names:['25일선','32일선'],end:15000});start.item.buyPlan.lines.startLine='25일선';start.render();purchaseNote(start,'waitingStart').onclick();
+  assert.equal(JSON.parse(dismissedPurchaseNotes(start).a.waitingStart),'25일선');start.item.buyPlan.lines.startLine='32일선';start.render();assert.ok(purchaseNote(start,'waitingStart'));
+  const last=setup({names:['25일선','32일선'],end:null});purchaseNote(last,'waitingLast').onclick();assert.equal(JSON.parse(dismissedPurchaseNotes(last).a.waitingLast),'32일선');
+  last.item.buyPlan.lines.names.push('42일선');last.render();assert.ok(purchaseNote(last,'waitingLast'));
+  const missing=setup({names:['25일선','32일선','42일선'],end:15000,ma:{'25일선':10000}});purchaseNote(missing,'missing').onclick();
+  assert.deepEqual(JSON.parse(dismissedPurchaseNotes(missing).a.missing),['32일선','42일선']);missing.prices.stocks['111111'].ma['32일선']=11000;missing.render();assert.ok(purchaseNote(missing,'missing'));
+  const spaced=setup({names:['25일선','32일선','42일선'],budget:3,end:20000,price:9000,ma:{'25일선':10000,'32일선':12000,'42일선':15000}});purchaseNote(spaced,'spaced').onclick();
+  assert.deepEqual(JSON.parse(dismissedPurchaseNotes(spaced).a.spaced),[3,['25일선','32일선','42일선']]);spaced.item.buyPlan.lines.budget=4;spaced.render();assert.ok(purchaseNote(spaced,'spaced'));
+});
+test('매수대기 두 안내는 기준선·종목 코드가 달라지면 다시 표시하고 하단 주석은 유지한다',()=>{
+  const r=setup({wait:'25일선'});purchaseNote(r,'waitLine').onclick();r.render();assert.equal(purchaseNote(r,'waitLine'),undefined);assert.match(r.html(),/class="footnote">현재가가 25일선 이하가 되면/);
+  r.item.buyPlan.wait.line='60일선';r.render();assert.ok(purchaseNote(r,'waitLine'));assert.equal(dismissedPurchaseNotes(r).a,undefined);
+  r.item.ticker='';r.render();purchaseNote(r,'waitTicker').onclick();assert.equal(JSON.parse(dismissedPurchaseNotes(r).a.waitTicker),'');r.render();assert.equal(purchaseNote(r,'waitTicker'),undefined);
+  r.item.ticker='가상 <코드>';r.render();assert.ok(purchaseNote(r,'waitTicker'));assert.doesNotMatch(r.html(),/가상 <코드>/);
+});
+test('localStorage 읽기·쓰기 예외에도 안내 닫기와 조건 초기화는 현재 페이지 메모리에서 동작한다',()=>{
+  const r=setup({storageFailure:true});assert.doesNotThrow(()=>purchaseNote(r,'noKnown').onclick());r.render();assert.equal(purchaseNote(r,'noKnown'),undefined);
+  r.prices.stocks['111111'].ma={'25선':9000};assert.doesNotThrow(()=>r.render());r.prices.stocks['111111'].ma={};r.render();assert.ok(purchaseNote(r,'noKnown'));assert.equal(r.storage.has(dismissedPurchaseNoteKey),false);
 });

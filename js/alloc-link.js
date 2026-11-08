@@ -22,6 +22,40 @@ function holding(ticker){
   const who=s.rows.length>1?`${s.rows.length}개 계좌`:s.rows[0].it.name;
   return {shares:s.shares,value:Math.round(s.value*10)/10,fx:s.fx,text:`${who} ${s.shares!==null?qty(s.shares,s.rows[0].it):man(s.value)}`};
 }
+// 연결 보유 카드의 화면 전용 손익. itemProfit의 실제 종목·평균가 통화를 그대로 사용한다.
+// 그룹 손익(assets.js)처럼 양수 보유만 합산하고, 수량 없는 금액 보유는 전체 개수에만 넣는다.
+// 달러 매입금액·손익은 화면 allocationSummary의 현재 환율로 원화 환산(환차손익 제외), 환율이 없으면 달러를 뺀다.
+// 손익률은 합산 손익 ÷ 합산 매입금액. 만원 소수 첫째 자리에서 0이 되는 금액은 부호·색을 뺀다.
+const profitColor=v=>v>0?"profit-gain":v<0?"profit-loss":"";
+const profitRate=v=>v===null?"—":`${v>0?"+":v<0?"−":""}${nf2.format(Math.abs(v))}%`;
+const profitAmount=v=>Math.sign(v)*Math.round(Math.abs(v)/1e4*10)/10||0;
+const profitMoney=v=>`<b class="${profitColor(v)}">${v>0?"+":v<0?"−":""}${man(Math.abs(v))}</b>`;
+const profitPercent=v=>`<b class="${profitColor(v)}">${profitRate(v)}</b>`;
+function holdingsProfitLine(items,fx){
+  let count=0,eligible=0,cost=0,profit=0,missingFx=false,hasUsd=false;
+  for(const it of items){
+    const p=itemProfit(it,assetStore.prices,fx);
+    if(!(p.shares>0||p.shares===null&&plus(it.amount)))continue;
+    count++;
+    if(!(p.shares>0&&p.cost>0&&p.profit!==null))continue;
+    if(p.currency==="USD"){hasUsd=true;if(!plus(fx)){missingFx=true;continue;}}
+    const rate=p.currency==="USD"?fx:p.currency==="KRW"?1:null;if(rate===null)continue;
+    cost+=p.cost*rate;profit+=p.profit*rate;eligible++;
+  }
+  if(!eligible)return "";
+  const tip=[`평균매수가·수량·현재가가 있는 보유 ${count}개 중 ${eligible}개 합산`];
+  if(missingFx)tip.push("환율 없음 · 달러 종목 합산 제외");
+  else if(hasUsd)tip.push(`달러 종목은 현재 환율 ${nf2.format(fx)}원으로 환산 · 환차손익 제외`);
+  return `<span class="sale-linked-profit" title="${esc(tip.join(" · "))}">손익 ${profitMoney(profitAmount(profit))} ${profitPercent(cost>0?profit/cost*100:null)}${eligible<count?` · ${eligible}/${count}개`:""}${missingFx?" · 환율 없음":""}</span>`;
+}
+// 보유 수량이 없거나 0이면 줄을 만들지 않는다. 달러는 원화 손익과 현지 통화 손익률을 함께 보인다.
+function holdingProfitLine(it,fx){
+  const p=itemProfit(it,assetStore.prices,fx);if(!(p.shares>0))return "";
+  if(p.averagePrice===null)return '<small class="sale-holding-profit">평균매수가 미입력</small>';
+  const average=`평균 ${esc(priceText(p.averagePrice,p.currency))}`,rate=p.currency==="USD"?plus(fx):1;
+  const result=p.profit===null?`손익 ${p.q&&p.fx===null?"환율":"시세"} 대기`:rate===null?`손익 환율 대기 ${profitPercent(p.rate)}`:`손익 ${profitMoney(profitAmount(p.profit*rate))} ${profitPercent(p.rate)}`;
+  return `<small class="sale-holding-profit">${average} · ${result}</small>`;
+}
 // ---------- 알림 줄 ----------
 let toastEl=null,toastTimer=0;
 function toast(text){
@@ -216,5 +250,5 @@ function shift(o){
   if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}${average?" · 평균매수가 맞춤":""}`);
   else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
 }
-return {line,holding,account,reflected,check,uncheck,forget,rescale,shift,reprice,initialize};
+return {line,holding,holdingsProfitLine,holdingProfitLine,account,reflected,check,uncheck,forget,rescale,shift,reprice,initialize};
 })();

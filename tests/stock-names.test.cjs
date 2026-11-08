@@ -201,7 +201,7 @@ test('분할매도 목록은 카드 이름이 없으면 종목명을 굵게·코
   const ctx=vm.createContext({$:el,$$:()=>[],addEventListener(){},save(){},render(){},onEdit(){},document:{addEventListener(){},querySelectorAll:()=>[],createRange:()=>({selectNodeContents(){},getBoundingClientRect:()=>({width:0})}),createElement:()=>({dataset:{},setAttribute(){},append(){},focus(){}})},
     state:{plans:list,futures:{positions:[]},selectedPlan:'auto'},assetStore:{doc:{allocation:{groups:groups()}},subscribe(){}},PENCIL:'',memoCount:()=>'',id:()=>'n',esc,
     won:new Intl.NumberFormat('ko-KR'),decimal:new Intl.NumberFormat('ko-KR'),usd:new Intl.NumberFormat('en-US'),priceText:v=>String(v),fxText:v=>String(v),priceData:null,FormData:class{}});
-  for(const f of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read('js/'+f),ctx);
+  for(const f of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','alloc-link.js','stock-names.js','item-search.js','rebuy.js','trade-alerts.js','plans.js'])vm.runInContext(read('js/'+f),ctx);
   const before=JSON.stringify(ctx.state);ctx.renderPlans();assert.equal(JSON.stringify(ctx.state),before,'목록을 그려도 기록은 그대로');
   const html=els.planList.innerHTML,card=id=>new RegExp(`<button class="([^"]*)" type="button" data-plan="${id}"[^>]*>(.*?)</button>`).exec(html)?.slice(1).join(' | ')||'';
   assert.match(card('auto'),/^plan-item active \| <span class="plan-row"><strong>가상 미국500 ETF<\/strong><span class="plan-count">0\/3.*<span class="plan-title">360750<\/span>/,'계획 이름이 비면 자산 배분의 종목 이름');
