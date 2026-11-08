@@ -206,7 +206,13 @@ async function syncAssets(beforePriceCollection=false,{skipPrices=false}={}){
       if(JSON.stringify(merged)!==JSON.stringify(doc)){ doc=JSON.parse(JSON.stringify(merged)); writeLocal(); redraw=true; } // 복사: 화면에서 고칠 때 받아 둔 저장소 기록(aSync.remote)이 같이 바뀌지 않게
       if(doc.allocation&&prices&&fillBases(doc.allocation,prices)){ doc.allocation.savedAt=new Date().toISOString(); writeLocal(); redraw=true; }
       if(remote.doc?JSON.stringify(doc)===JSON.stringify(remote.doc):assetsBlank(doc)){ writeBase(cfg.repo,doc); break; }
-      try{ await writeAssetRemote(cfg,doc,remote.sha); writeBase(cfg.repo,doc); break; }
+      // PUT 중 입력으로 doc이 바뀌어도 실제 전송한 사본만 기준으로 남기고, 새 입력은 다음 동기화로 올린다.
+      const sent=JSON.parse(JSON.stringify(doc));
+      try{
+        await writeAssetRemote(cfg,sent,remote.sha); writeBase(cfg.repo,sent);
+        if(JSON.stringify(doc)!==JSON.stringify(sent))aSync.again=true;
+        break;
+      }
       catch(error){ if(!error.stale||attempt>=3) throw error; aSync.remote=null; }
     }
     if(redraw) emit("change");

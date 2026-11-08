@@ -413,6 +413,43 @@ test('분할매수 저장도 공개 데이터 저장소에는 업로드하지 �
   assert.equal(JSON.parse(storage.get(KEY)).allocation.groups[0].items[0].buyPlan.stages[0].done,true,'실패해도 기기 기록 유지');
 });
 
+test('자산 PUT 중 저장한 점검완료·입력은 전송 기준에 섞이지 않고 후속 동기화 한 번으로 보존된다',async()=>{
+  for(const timerFired of [false,true]){
+    const original=fake(),uploads=[],timers=new Map();let remote=clone(original),release,nextTimer=0;
+    const h=setup(original,async(url,options)=>{
+      if(url.endsWith('/repos/example/private-data'))return json({private:true});
+      if(url.endsWith('/contents/etf-planner-prices.json'))return new Response(null,{status:404});
+      if(options.method==='PUT'){
+        remote=JSON.parse(Buffer.from(JSON.parse(options.body).content,'base64').toString());uploads.push(clone(remote));
+        if(uploads.length===1)await new Promise(resolve=>release=resolve);
+        return json({content:{sha:`saved-${uploads.length}`}});
+      }
+      return contents(remote);
+    });
+    h.context.setTimeout=(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,ms});return id;};
+    h.context.clearTimeout=id=>timers.delete(id);
+    connect(h.storage);h.storage.set(BASE,JSON.stringify(original));
+    h.store.doc.allocation.groups[0].items[0].target=20;h.store.saveSection('allocation');
+    const pending=h.store.sync();await waitFor(()=>release);
+    const item=h.store.doc.allocation.groups[0].items[0];item.done=true;item.amount=120;h.store.saveSection('allocation');
+    if(timerFired){const id=h.store.status.timer,task=timers.get(id);timers.delete(id);task.fn();}
+    release();await pending;
+    assert.equal(uploads.length,1);
+    assert.equal(JSON.parse(h.storage.get(BASE)).allocation.groups[0].items[0].done,undefined,'전송하지 않은 체크를 기준에 넣지 않는다');
+    assert.deepEqual(JSON.parse(h.storage.get(BASE)),uploads[0]);
+    assert.deepEqual(clone(h.store.status.remote.doc),uploads[0],'원격 캐시도 실제 전송한 사본이다');
+    assert.equal(h.store.doc.allocation.groups[0].items[0].done,true);
+    assert.equal(h.store.status.state,'pending');assert.equal(timers.size,1,'기존 저장 예약과 후속 예약을 하나로 합친다');
+    assert.equal(timers.get(h.store.status.timer).ms,300);
+    await h.store.sync();
+    assert.equal(uploads.length,2);assert.equal(timers.size,0,'직접 동기화해도 후속 예약이 중복 실행되지 않는다');
+    for(const value of [h.store.doc,JSON.parse(h.storage.get(KEY)),remote]){
+      const saved=value.allocation.groups[0].items[0];assert.equal(saved.done,true);assert.equal(saved.amount,120);assert.equal(saved.target,20);
+    }
+    assert.deepEqual(JSON.parse(h.storage.get(BASE)),remote);assert.equal(h.store.status.state,'done');
+  }
+});
+
 test('분할매수 기기 간 동기화는 저장 중 409를 다시 병합하고 다른 구역을 덮어쓰지 않는다',async()=>{
   const original=fake();let remote=clone(original),writes=0;
   const {store,storage}=setup(original,async(url,options)=>{
