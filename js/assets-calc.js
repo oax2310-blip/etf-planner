@@ -243,7 +243,8 @@ function purchaseInOrderSelection(rows, current){
 // 해석 불가 선은 목표가 바로 앞, 목표가(end)는 맨 끝. 정렬 중 계획·체결 기록은 바꾸지 않는다.
 // 부분 체결의 잔량 예산을 먼저 남겨 두고, 나머지 예산만 새 회차에 나눈다. 시세·단계·예산이 바뀌어도 부분 체결 잔량은 사라지지 않는다.
 // names 순서에서 1차 체결 기록(부분 체결 포함)이 있고 뒤 선의 체결 기록이 하나라도 있는 선은 지난 선이다.
-// 지난 선의 기록 없는 2·3차는 간격 선택·예산 배분·inOrder 판정 전에 levels에서 뺀다. 기존 기록·목표가는 유지하며, 뒤 선 체결이 없거나 1차 미체결인 선의 남은 회차는 유지한다.
+// 지난 선의 기록 없는 2·3차는 간격 선택이 끝난 뒤, 예산 배분·inOrder 판정 전에 뺀다(간격은 전체 levels 기준이라 체결할 때마다 다른 회차가 바뀌지 않는다).
+// 뺀 회차의 예산은 남은 새 회차에 다시 나눈다. 기존 기록·목표가는 유지하며, 뒤 선 체결이 없거나 1차 미체결인 선의 남은 회차는 유지한다.
 // 각 회차에 최소 1주(실제 추종 ETF도 같은 단위)를 남길 수 있는 최대 회차 수를 고른다. 부족하면 시작~종료 전체 구간에서 회차 간격을 고르게 넓힌다.
 // 체결한 회차도 간격 계산에 포함해 건너뛴 앞 회차를 다시 만들지 않는다. 금액은 최소 매수액을 먼저 확보하고 나머지를 가능한 한 같게 나눈다.
 // trade는 화면·알림이 쓰는 실제 종목·시세·환율·계획 통화. 필요한 시세나 환율이 없으면 기존 균등 예산을 유지하며 수량을 추정하지 않는다.
@@ -264,7 +265,7 @@ function purchaseLineSelection(plan, entry, trade={}){
   const passedLines=new Set(records.filter(r=>r.t===0&&names.indexOf(r.line)>=0&&names.indexOf(r.line)<lastRecorded).map(r=>r.line));
   const budget=purchaseBudget(plan,trade), spent=records.reduce((s,r)=>s+r.actual,0), reserved=records.filter(r=>!r.done).reduce((s,r)=>s+r.amount,0), left=Math.max(0,budget-spent-reserved);
   const target=trade.target||(trade.item&&trade.allocation?purchaseTargets(trade.allocation,trade.prices,trade.item,plan)[0]?.it:null)||trade.item;
-  const levels=purchaseLineLevels(lines,entry).filter(r=>r.t===0||buys[r.key]||!passedLines.has(r.line)), currency=trade.currency||plan?.currency||(["해외","코인"].includes(entry?.kind)?"USD":"KRW"), step=target?linkStep(target):1;
+  const levels=purchaseLineLevels(lines,entry), currency=trade.currency||plan?.currency||(["해외","코인"].includes(entry?.kind)?"USD":"KRW"), step=target?linkStep(target):1;
   let open=left>0?levels.filter(x=>!buys[x.key]):[];
   const amounts=new Map(), costs=new Map(open.map(r=>{
     const fill=trade.item?purchaseTrackingFill({...r,amount:left},trade.item,trade.prices,trade.fx,currency,target):purchaseFill({...r,amount:left},currency,trade.fx,step);
@@ -283,6 +284,7 @@ function purchaseLineSelection(plan, entry, trade={}){
     // 총예산으로도 1주를 못 사거나 체결 뒤 종료선 가격이 올라 더 살 수 없으면 한 회차에서 실제 부족액을 보여 준다.
     open=selected??[!records.length?open.reduce((a,b)=>costs.get(a.key)<=costs.get(b.key)?a:b):open[open.length-1]];
   }
+  open=open.filter(r=>r.t===0||!passedLines.has(r.line));
   let skipped=[];
   if(trade.inOrder===true){
     const quoteCurrency=["해외","코인"].includes(entry?.kind)?"USD":"KRW";

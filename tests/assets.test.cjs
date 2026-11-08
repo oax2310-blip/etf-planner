@@ -270,19 +270,14 @@ test('분할매수는 부족한 예산을 앞에서 소진하지 않고 최대�
     assert.ok(rows.every(r=>c.purchaseFill(r,'KRW',null).shares===1));
     near(rows.reduce((sum,r)=>sum+r.amount,0),150);
     assert.equal(c.purchaseSummary(plan,entry).count,5);
-    let current=rows;
-    for(let i=0;i<rows.length;i++){
-      const row=current.find(r=>!r.done);
+    for(const row of rows){
       (plan.buys??={})[row.key]=c.purchaseFill(row,'KRW',null);
       const next=c.purchaseLineRows(plan,entry);
-      assert.deepEqual(next.map(r=>r.key),i===0?rows.map(r=>r.key):['25일선:0','32일선:0','32일선:2','60일선:0',end?'end':'80일선:0']);
+      assert.deepEqual(next.map(r=>r.key),rows.map(r=>r.key),'체결 뒤에도 건너뛴 앞 회차를 다시 만들지 않는다');
       assert.ok(next.filter(r=>!r.done).every(r=>c.purchaseFill(r,'KRW',null).shares>0));
       assert.ok(next.reduce((sum,r)=>sum+(r.done?r.actual:r.amount),0)<=150+1e-8);
-      current=next;
     }
-    const {actual,remaining,...summary}=c.purchaseSummary(plan,entry);
-    assert.deepEqual(summary,{count:5,done:5,planned:150});
-    near(actual,146.6667,'표시된 회차의 반올림 가격으로 체결한 금액');near(remaining,150-actual,'체결 뒤 잔여 예산');
+    assert.deepEqual(c.purchaseSummary(plan,entry),{count:5,done:5,planned:150,actual:150,remaining:0});
   }
 });
 
