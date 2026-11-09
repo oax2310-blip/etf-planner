@@ -78,6 +78,26 @@ addEventListener("pageshow",memberRefresh);
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden)memberRefresh(); });
 // 그룹·현금·메모는 기본 접기. 펼침은 현재 화면 메모리에만 두며 다시 그려도 유지하고, 새로 열면 접는다.
 const allocOpenCards = new Set();
+// 투자구성 분류 줄의 편입 목록 펼침도 현재 화면 메모리에만 두며 다시 그려도 유지하고, 새로 열면 접는다.
+const strategyOpenClasses = new Set();
+// 이 분류에 합산되는 그룹: 그룹 분류가 같거나, 소분류 지정으로 종목 일부가 이 분류에 들어오는 그룹(기록 순서).
+function classGroups(a,id){ return (a?.groups||[]).filter(g=>g.classId===id||(g.items||[]).some(it=>sectionClassId(a,g,it.section)===id)); }
+// 투자구성 → 자산 배분: 이 분류의 그룹 카드(현금 분류면 현금 카드도)를 펼치고 화면에서 가장 위의 카드로 옮긴다.
+// 검색어는 비워 모든 카드가 보이게 한다. 기록·저장은 바꾸지 않는다. 고정된 윗줄(.top)이 가리지 않게 보이는 높이만큼 띄운다.
+function showClassInAlloc(id,keyboard=false){
+  const a=doc.allocation,c=a?.classes.find(x=>x.id===id);if(!c)return;
+  const groups=classGroups(a,id);
+  for(const g of groups)allocOpenCards.add(`group:${g.id}`);
+  if(c.cash)allocOpenCards.add("cash");
+  allocQuery="";openTab("alloc");history.replaceState(null,"","#alloc");
+  const cards=[...groups.map(g=>el(`allocGroup-${encodeURIComponent(g.id)}`)?.closest(".group-card")),c.cash?el("allocCashBody")?.closest(".cash-card"):null].filter(Boolean);
+  if(!cards.length){scrollTo(0,0);return;}
+  const card=cards.reduce((x,y)=>y.getBoundingClientRect().top<x.getBoundingClientRect().top?y:x), block=card.closest(".alloc-class");
+  const target=block?.dataset.classBlock===id&&block.querySelector(".group-card")===card?block:card;
+  const bar=document.querySelector(".top"), stuck=bar?bar.offsetHeight+Math.min(0,parseFloat(getComputedStyle(bar).top)||0):0;
+  scrollTo(0,Math.max(0,target.getBoundingClientRect().top+scrollY-stuck-12));
+  if(keyboard)card.querySelector("[data-alloc-fold]")?.focus({preventScroll:true});
+}
 function setAllocCardOpen(button,open){
   const body=el(button.getAttribute("aria-controls"));if(!body)return;
   body.hidden=!open;button.setAttribute("aria-expanded",String(open));
@@ -147,8 +167,26 @@ function renderAlloc(tab="alloc"){
   const foldButton=(key,id,label,title)=>{const open=allocOpenCards.has(key);return `<button class="alloc-fold" type="button" data-alloc-fold="${escA(key)}" data-fold-label="${escA(label)}" aria-expanded="${open}" aria-controls="${escA(id)}" aria-label="${escA(label)} ${open?"접기":"펼치기"}">${title}<span class="alloc-fold-action" data-alloc-fold-action>${open?"접기":"펼치기"}</span></button>`;};
   const foldAllButton=(id,extra="")=>`<button class="btn mini${extra}" type="button" id="${id}" data-alloc-fold-all aria-expanded="false" aria-controls="allocItems allocCashBody allocMemoBody">전체 펼치기</button>`;
   const classLabels=new Map(s.regions.flatMap(r=>r.classes.map(c=>[c.id,`${r.name} · ${c.name}`])));
+  // 투자구성 분류 줄을 누르면 아래에 이 분류에 합산되는 그룹·종목과 현금을 펼친다(읽기 전용, 펼침은 strategyOpenClasses).
+  // 종목은 allocationSummary와 같은 sectionClassId 기준: 소분류를 다른 분류로 지정한 종목은 그 분류에, 나머지는 그룹 분류에 넣는다.
+  // 그룹 분류가 이 분류면 종목이 없어도 그룹을 보이고, 일부 소분류만 들어오면 '일부 소분류'로 표시한다. 순서는 자산 배분 기록 순서 그대로.
+  // 현금 분류는 현금 목록을 자산 배분 현금 줄처럼 보인다(빼는 항목은 '차감'과 − 금액).
+  const classMembers=c=>{
+    const groups=classGroups(a,c.id).map(g=>({g,items:g.items.filter(it=>sectionClassId(a,g,it.section)===c.id)}));
+    const line=(name,sub,value,target,sign="")=>`<div class="class-member"><span class="class-member-name">${escA(name)}${sub?`<small>${escA(sub)}</small>`:""}</span><span class="class-member-val">${sign}${man(value)}</span><span class="class-member-pct">${sign}${pc(s.pct(value))}${target!==null?` <small>/ 목표 ${pc(target)}</small>`:""}</span></div>`;
+    const head=(name,value,part="")=>`<div class="class-member-head"><b>${escA(name)}</b>${part}<span>${man(value)} · ${pc(s.pct(value))}</span></div>`;
+    const blocks=groups.map(({g,items})=>{
+      const sum=items.reduce((n,it)=>n+(s.items.get(it.id)?.value||0),0), part=items.length<g.items.length?'<small class="class-member-part" title="나머지 소분류는 다른 투자구성 분류에 합산합니다.">일부 소분류</small>':"";
+      return `<div class="class-member-group">${head(g.name,sum,part)}${items.map(it=>line(it.name,it.section,s.items.get(it.id)?.value||0,finite(it.target))).join("")||'<p class="class-member-empty">종목 없음</p>'}</div>`;
+    });
+    if(c.cash)blocks.push(`<div class="class-member-group">${head("현금",s.cash)}${a.cash.map(x=>line(x.name,[x.place,x.minus?"차감":""].filter(Boolean).join(" · "),Math.abs(cashValue(x,s.fx)),null,x.minus?"−":"")).join("")||'<p class="class-member-empty">현금 항목 없음</p>'}</div>`);
+    const count=groups.reduce((n,x)=>n+x.items.length,0), tag=`${escA(c.name)} 분류`;
+    return `<div class="class-members" id="classMembers-${escA(encodeURIComponent(c.id))}" role="region" aria-label="${tag} 편입 목록"${strategyOpenClasses.has(c.id)?"":" hidden"}>
+      ${blocks.join("")||'<p class="class-member-empty">편입된 그룹·종목이 없습니다. 자산 배분의 그룹 수정 창에서 이 분류를 고르면 여기에 표시됩니다.</p>'}
+      <div class="class-members-foot"><span>${groups.length?`그룹 ${groups.length}개 · 종목 ${count}개`:""}${c.cash?`${groups.length?" · ":""}현금 ${a.cash.length}개`:""}</span>${blocks.length?`<button class="btn mini" type="button" data-class-go="${escA(c.id)}" aria-label="${tag}를 자산 배분에서 보기">자산 배분에서 보기</button>`:""}<button class="btn mini ghost" type="button" data-class="${escA(c.id)}" aria-label="${tag} 수정">분류 수정</button></div></div>`;
+  };
   const regionCards=s.regions.map(r=>`<div class="card region-card"><div class="region-head"><h3>${escA(r.name)}</h3><b>${man(r.value)}</b><span>${pc(s.pct(r.value))}${r.target!==null?` <small>/ 목표 ${pc(r.target)}</small>`:""}</span></div>
-    ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id);return `<button class="class-row" type="button" data-class="${escA(c.id)}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span>${bar(cur,t.target)}${gap(t.target,v)}</button>`;}).join("")}</div>`).join("");
+    ${r.classes.map(c=>{const v=s.classes.get(c.id)||0,cur=s.pct(v),t=s.targets.classes.get(c.id),open=strategyOpenClasses.has(c.id);return `<div class="class-item"><button class="class-row" type="button" data-class-toggle="${escA(c.id)}" aria-expanded="${open}" aria-controls="classMembers-${escA(encodeURIComponent(c.id))}" title="편입 종목 ${open?"접기":"펼치기"}"><span class="class-name">${escA(c.name)}${c.cash?` <small>현금</small>`:""}</span><span class="class-val">${man(v)}</span><span class="class-pct">${pc(cur)}<small>${t.target!==null?`목표 ${pc(t.target)}${t.linked?" · 합산":""}`:"목표 없음"}</small></span><span class="class-fold" aria-hidden="true"></span>${bar(cur,t.target)}${gap(t.target,v)}</button>${classMembers(c)}</div>`;}).join("")}</div>`).join("");
   // 분할매수·분할매도·재매수 편입 표시(읽기 전용, member-link.js). 계산이 실패해도 자산 배분 화면은 그대로 그린다.
   const members=strategy?null:memberInfo(a);
   const memberChips=it=>{
@@ -248,7 +286,7 @@ function renderAlloc(tab="alloc"){
     otherBlocks.splice(india+1,0,...chinaBlocks);
     detailBlocks.splice(0,detailBlocks.length,...otherBlocks);
   }
-  const detail=detailBlocks.map(b=>`<div class="alloc-class"><div class="class-label">${escA(b.label)}</div>${b.groups.map(groupCard).join("")}</div>`).join("");
+  const detail=detailBlocks.map(b=>`<div class="alloc-class" data-class-block="${escA(b.classId)}"><div class="class-label">${escA(b.label)}</div>${b.groups.map(groupCard).join("")}</div>`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
   const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(s.grand), totalWidth=v=>`${Math.max(3,v.replace(/[억만원]/g,"00").length)+.6}ch`;
   view.innerHTML=`<div class="heading${strategy?"":" alloc-heading"}"><div><div class="eyebrow">${strategy?"지역과 자산군별 배분":"종목과 현금"}</div>${strategy?"<h1>투자구성</h1>":`<div class="title-row"><h1>자산 배분</h1>${foldAllButton("toggleAllocAll")}</div>`}<p>${strategy?"지역·자산 분류별 현재 비중과 목표를 한눈에 확인합니다. 목표 비중은 종목별에서 수정하면 소분류·그룹·분류에 자동 합산됩니다.":"금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 점검을 끝냈다는 직접 표시입니다."}</p></div></div>
@@ -313,6 +351,14 @@ function renderAlloc(tab="alloc"){
   all("[data-add-item]").forEach(b=>b.onclick=()=>openItem(null,b.dataset.addItem));
   all("[data-group]").forEach(b=>b.onclick=()=>openGroup(b.dataset.group));
   all("[data-class]").forEach(b=>b.onclick=()=>openClass(b.dataset.class));
+  // 분류 줄 펼치기: 입력 저장으로 다시 그려져 클릭이 사라지지 않게 자산 배분 접기 버튼과 같이 누를 때 초점을 옮기지 않는다.
+  view.querySelectorAll("[data-class-toggle]").forEach(b=>{
+    b.onpointerdown=e=>{if(e.button===0)e.preventDefault();};
+    b.onclick=()=>{const id=b.dataset.classToggle,open=b.getAttribute("aria-expanded")!=="true",body=el(b.getAttribute("aria-controls"));
+      if(open)strategyOpenClasses.add(id);else strategyOpenClasses.delete(id);
+      b.setAttribute("aria-expanded",String(open));b.title=`편입 종목 ${open?"접기":"펼치기"}`;if(body)body.hidden=!open;};
+  });
+  view.querySelectorAll("[data-class-go]").forEach(b=>b.onclick=e=>showClassInAlloc(b.dataset.classGo,!e?.detail));
   all("[data-cash]").forEach(b=>b.onclick=()=>openCash(b.dataset.cash));
   if(el("addGroup"))el("addGroup").onclick=()=>openGroup(null); if(el("addClass"))el("addClass").onclick=()=>openClass(null); if(el("addCash"))el("addCash").onclick=()=>openCash(null);
   const panel=el("allocMembers");if(panel)panel.ontoggle=()=>{memberPanelOpen=panel.open;};
