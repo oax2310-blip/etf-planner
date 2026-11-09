@@ -216,3 +216,47 @@ test('소분류 투자구성 분류: 그룹 수정 창에서 지정·해제하�
   assert.equal(data.allocation.groups[0].sections[0].classId, nextCnId);
   assert.equal(Object.hasOwn(data.allocation.groups[0].sections[1], 'classId'), false, '그룹 분류와 같아지면 delete');
 });
+
+test('투자구성 분류 줄을 누르면 이 분류에 합산되는 그룹·종목·현금을 펼치고, 자산 배분에서 보기는 그 그룹 카드를 펼쳐 이동한다', () => {
+  const data = {version: 1, allocation: {savedAt: '', total: 1000, cashFx: 1400, memo: '',
+    classes: [{id: 'c-btc', region: '외화·원자재', name: '디지털자산'}, {id: 'c-raw', region: '외화·원자재', name: '원자재'}, {id: 'c-cash', region: '현금', name: '현금', cash: true}, {id: 'c-none', region: '미국', name: '빈 분류'}],
+    groups: [
+      {id: 'g-alt', name: '대체자산', classId: 'c-btc', sections: [{name: '가상 코인'}, {name: '금(골드)', classId: 'c-raw'}],
+        items: [{id: 'i1', name: '가상 코인 ETF', section: '가상 코인', amount: 100, target: 10}, {id: 'i2', name: '<b>가상 골드</b>', section: '금(골드)', amount: 50}]},
+      {id: 'g-raw', name: '원자재 전용', classId: 'c-raw', items: [{id: 'i3', name: '가상 은 ETF', amount: 30, target: 3}]},
+      {id: 'g-empty', name: '빈 그룹', classId: 'c-btc', items: []}],
+    cash: [{id: 'w', place: '가상은행', name: '예금', amount: 1000000}, {id: 'm', name: '증거금', amount: 200000, minus: true}]}};
+  const before = JSON.stringify(data), {html, ctx, node} = page(data, planner, '#strategy');
+  const panel = id => { const i = html.indexOf(`id="classMembers-${id}"`); assert.ok(i >= 0, id); return html.slice(i, html.indexOf('class-members-foot', i)); };
+  assert.match(html, /<button class="class-row" type="button" data-class-toggle="c-raw" aria-expanded="false" aria-controls="classMembers-c-raw"/);
+  assert.match(html, /id="classMembers-c-raw" role="region" aria-label="원자재 분류 편입 목록" hidden>/, '처음에는 접혀 있다');
+  // 원자재: 소분류만 지정된 대체자산(일부 소분류, 50만원) + 원자재 전용(30만원). 이름은 이스케이프.
+  const raw = panel('c-raw');
+  assert.match(raw, /<b>대체자산<\/b><small class="class-member-part"[^>]*>일부 소분류<\/small><span>50만원 · 5%<\/span>/);
+  assert.match(raw, /<span class="class-member-name">&lt;b&gt;가상 골드&lt;\/b&gt;<small>금\(골드\)<\/small><\/span><span class="class-member-val">50만원<\/span><span class="class-member-pct">5%<\/span>/);
+  assert.match(raw, /<b>원자재 전용<\/b><span>30만원 · 3%<\/span>.*가상 은 ETF.*<span class="class-member-pct">3% <small>\/ 목표 3%<\/small><\/span>/s);
+  assert.ok(raw.indexOf('대체자산') < raw.indexOf('원자재 전용'), '자산 배분 기록 순서');
+  // 디지털자산: 금(골드) 종목은 빠지고, 종목 없는 그룹도 보인다.
+  const btc = panel('c-btc');
+  assert.match(btc, /<b>대체자산<\/b><small class="class-member-part"/);assert.match(btc, /가상 코인 ETF/);assert.doesNotMatch(btc, /가상 골드/);
+  assert.match(btc, /<b>빈 그룹<\/b><span>0만원 · 0%<\/span><\/div><p class="class-member-empty">종목 없음<\/p>/);
+  // 현금 분류: 현금 항목(빼는 항목은 − 표시)과 합계
+  const cash = panel('c-cash');
+  assert.match(cash, /<b>현금<\/b><span>80만원 · 8%<\/span>/);assert.match(cash, /예금<small>가상은행<\/small><\/span><span class="class-member-val">100만원/);assert.match(cash, /증거금<small>차감<\/small><\/span><span class="class-member-val">−20만원<\/span><span class="class-member-pct">−2%<\/span>/);
+  assert.match(html, /<span>그룹 2개 · 종목 2개<\/span><button class="btn mini" type="button" data-class-go="c-raw" aria-label="원자재 분류를 자산 배분에서 보기">자산 배분에서 보기<\/button><button class="btn mini ghost" type="button" data-class="c-raw" aria-label="원자재 분류 수정">분류 수정<\/button>/);
+  assert.match(html, /<span>현금 2개<\/span><button[^>]*data-class-go="c-cash"/);
+  // 편입이 없는 분류는 안내만 두고 이동 버튼은 숨긴다(분류 수정은 유지).
+  const none = html.slice(html.indexOf('id="classMembers-c-none"'));
+  assert.match(none, /편입된 그룹·종목이 없습니다/);assert.match(none, /<span><\/span><button class="btn mini ghost" type="button" data-class="c-none"/);
+  // 자산 배분에서 보기: 탭을 바꾸고 그룹 카드를 펼치며 검색어를 비운다. 기록은 바꾸지 않는다.
+  const card = top => ({getBoundingClientRect: () => ({top}), closest: () => null, querySelector: () => null});
+  node(`allocGroup-g-alt`).closest = () => card(300);node(`allocGroup-g-raw`).closest = () => card(100);
+  node('.top').offsetHeight = 50;ctx.getComputedStyle = () => ({top: '0px'});ctx.scrollY = 0;
+  let scrolled = null;ctx.scrollTo = (x, y) => { scrolled = y; };
+  vm.runInContext('allocQuery="은"; showClassInAlloc("c-raw")', ctx);
+  assert.equal(vm.runInContext('ui.tab', ctx), 'alloc');assert.equal(vm.runInContext('allocQuery', ctx), '');
+  assert.equal(vm.runInContext('[...allocOpenCards].join()', ctx), 'group:g-alt,group:g-raw');
+  assert.equal(scrolled, 100 - 50 - 12, '화면에서 가장 위 카드로, 윗줄 높이만큼 띄워 이동');
+  assert.match(node('allocView').innerHTML, /<div class="alloc-class" data-class-block="c-raw">/);
+  assert.equal(JSON.stringify(data), before);
+});
