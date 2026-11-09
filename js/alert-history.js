@@ -75,7 +75,7 @@ function alertHistoryCondition(item){
   if(item.trigger==="cross")return `${item.line} · 기준선을 ${item.direction==="up"?"아래에서 위로":item.direction==="down"?"위에서 아래로":"위·아래로"} 통과`;
   return item.body||`${item.line||"기준선"} 알림 · 상세 조건을 발송 내용에서 확인할 수 없습니다.`;
 }
-function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});}
+function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false});}
 // 표시 이름·종류는 화면에서만 정한다(stock-names.js). 저장된 name·type은 받은 그대로 두고, 이름이 코드뿐이면 이 기기의 계획·자산 이름을 보인다.
 // 기준선 글자는 화면에서만 'N개월선'→'N월선'(stock-names.js lineText). 저장된 line·body는 받은 그대로 둔다.
 const alertHistoryText=v=>typeof stockNames==="object"?stockNames.lineText(v):String(v??"");
@@ -89,10 +89,9 @@ function alertHistoryCard(item,names=null){
       <span class="alert-history-meta"><span class="alert-history-type">${esc(type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
       <span class="alert-history-name">${esc(name)}${name!==item.ticker?`<small>${esc(item.ticker)}</small>`:""}<span aria-hidden="true">↗</span></span>
       <span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span>
-      <span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span>
       ${item.krOpenReminder&&item.observedAt?`<span class="alert-history-note">미국 신호 ${esc(alertHistoryTime(item.observedAt))}${item.asOf?` · 시세 기준일 ${esc(item.asOf)}`:""}</span>`:""}
       ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.firstOccurredAt||item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}
-    </button><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(name)} 알림 삭제">삭제</button></div>
+    </button><div class="alert-history-bottom"><span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(name)} 알림 삭제">삭제</button></div></div>
   </article>`;
 }
 // 재알림 푸시는 최초 알림 ID(alertKey)로 온다. 최초 항목을 지운 뒤 새로 만든 회차 항목은 alertKey로 찾는다.
