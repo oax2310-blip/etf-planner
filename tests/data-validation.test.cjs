@@ -230,3 +230,9 @@ test('backupFileDay는 입력 시각을 Asia/Seoul 기준 YYYY-MM-DD로 바꾸�
   assert.equal(backupFileDay(Date.parse('2026-11-07T22:00:00Z')),'2026-11-08');
   for(const bad of ['','abc',undefined,null,NaN])assert.equal(backupFileDay(bad),'');
 });
+
+test('소분류 sections[].classId는 선택 문자열만 허용하고 다른 타입을 거부한다',()=>{
+  const sec=classId=>({allocation:{groups:[{sections:[{name:'금(골드)',...(classId===undefined?{}:{classId})}]}]}});
+  for(const classId of [undefined,null,'','c-raw'])assetsUnchanged(sec(classId));
+  for(const classId of [123,true,false,{},['c-raw']])assetsRejected(sec(classId),'자산.allocation.groups[0].sections[0].classId');
+});
