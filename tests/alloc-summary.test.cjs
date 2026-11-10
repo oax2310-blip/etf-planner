@@ -47,12 +47,20 @@ test('요약 카드는 두 탭에 같은 모양으로 그리고 옛 세 칸 지�
   assert.match(list, /<p class="footnote">금액은 만원 단위, 비중은 기준 총자산 대비입니다\. 종목 이름을 눌러 목표를 수정하세요\./);
 });
 
-test('지역 구성 막대는 금액 비례 칸·기준 대비 %·남은 기준 칸을 그리고 범례는 칸 순서의 이름만 둔다', () => {
+test('지역 구성 막대는 금액 비례 칸·기준 대비 %·남은 기준 칸을 그리고 범례는 칸 순서대로 같은 색 꼬리표에 이름과 비중을 둔다', () => {
   const card = summary(page(alloc(), null));
   assert.match(card, /<div class="region-bar" role="img" aria-label="지역 구성: 미국 40%, 국내 20%, 현금 10%, 기준까지 30%">/);
   assert.deepEqual([...card.matchAll(/<i class="([^"]+)" style="flex:([\d.]+)" title="([^"]+)">(?:<span[^>]*>([^<]+)<\/span>)?<\/i>/g)].map(m => m.slice(1)),
     [['region-1', '400', '미국 400만원 · 40%', '40%'], ['region-2', '200', '국내 200만원 · 20%', '20%'], ['region-4', '100', '현금 100만원 · 10%', '10%'], ['rest', '300', '기준까지 300만원 · 30%', '30%']]);
-  assert.match(card, /<ul class="region-legend" aria-hidden="true"><li><i class="region-1"><\/i>미국<\/li><li><i class="region-2"><\/i>국내<\/li><li><i class="region-4"><\/i>현금<\/li><li><i class="rest"><\/i>기준까지<\/li><\/ul>/);
+  // 범례는 작은 색 점이 아니라 막대 칸과 같은 색 바탕의 꼬리표(이름 + 비중)다: 브라우저의 강제 다크 색 변환이 큰 바탕과 작은 점을 다르게 바꿔도 막대와 색이 어긋나지 않게.
+  assert.match(card, /<ul class="region-legend" aria-hidden="true"><li class="region-1">미국<b>40%<\/b><\/li><li class="region-2">국내<b>20%<\/b><\/li><li class="region-4">현금<b>10%<\/b><\/li><li class="rest">기준까지<b>30%<\/b><\/li><\/ul>/);
+  // 막대에 숫자를 넣지 못한 좁은 칸(5% 미만)도 범례에서 이름과 비중을 읽는다.
+  const thin = summary(page(alloc({groups: [group('a', 'us', 400), group('b', 'kr', 29)]}), null));
+  assert.match(thin, /<i class="region-2" style="flex:29" title="국내 29만원 · 2\.9%"><\/i>/);
+  assert.match(thin, /<li class="region-2">국내<b>2\.9%<\/b><\/li>/);
+  const css = read('css/assets.css');
+  assert.match(css, /\.region-legend li\{[^}]*min-width:42px;min-height:20px/, '꼬리표는 좁은 막대 칸보다 작지 않게');
+  assert.doesNotMatch(css, /\.region-legend i\{/, '범례에 작은 색 점을 두지 않는다');
 });
 
 test('기준을 비우거나 합계가 기준을 넘으면 남은 기준 칸이 없고 안내 문구가 바뀐다', () => {
@@ -101,7 +109,7 @@ test('달러 환율 안내: 현물 기준일을 월/일로 붙이고 기준일�
       const html = page(alloc(usd), quotes({close: 1400, asOf}), hash);
       assert.ok(html.includes('환율 1,400원 (현물)<span class="quote-status" title="현물 환율 기준일을 확인할 수 없습니다. 오래된 환율일 수 있습니다."><span aria-hidden="true">!</span> 기준일 없음</span></span>'), `${hash} 기준일 ${asOf}`);
       assert.doesNotMatch(html, /NaN/, `${hash} 기준일 ${asOf}: NaN을 보이지 않는다`);
-      assert.doesNotMatch(summary(html), /<b>/, `${hash} 기준일 ${asOf}: 깨진 기준일 원문을 넣지 않는다`);
+      assert.doesNotMatch(summary(html), /현물[^)]*<b>|title="[^"]*<b>/, `${hash} 기준일 ${asOf}: 깨진 기준일 원문을 넣지 않는다`);
     }
   }
   const card = summary(page(alloc(usd), quotes({close: 1400, asOf: fresh})));

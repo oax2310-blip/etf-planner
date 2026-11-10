@@ -16,8 +16,11 @@
 .region-bar>i{container-type:inline-size;display:flex;align-items:center;min-width:3px;border-radius:4px;overflow:hidden;color:var(--region-ink);font-size:11px;font-style:normal;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}.region-bar span{padding-left:6px}
 @container (max-width:33px){.region-bar span{display:none}}
 @container (min-width:24px){.region-bar span.s{display:inline}}
-.region-bar>.rest{background:var(--surface-3);color:var(--text-3);font-weight:600}.region-bar>.region-6{color:var(--region-ink-6)}.region-bar>.region-7{color:var(--region-ink-7)}
-.region-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 0 0;padding:0;list-style:none;font-size:11.5px;color:var(--text-2)}.region-legend li{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}.region-legend i{flex:none;width:8px;height:8px;border-radius:3px}.region-legend .rest{background:var(--surface-3);box-shadow:inset 0 0 0 1px var(--line-strong)}
+/* 범례: 막대 칸과 같은 색 바탕의 꼬리표(이름 + 비중)를 칸 순서대로 둔다. 작은 색 점은 쓰지 않는다.
+   삼성 인터넷의 웹페이지 다크 색 변환은 큰 바탕은 어둡게, 작은 점은 밝게 바꿔 같은 색이 막대와 범례에서 달라진다. 그래서 꼬리표를 좁은 막대 칸보다 작지 않게 둔다(최소 42×20px). */
+.region-legend{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 0;padding:0;list-style:none}
+.region-legend li{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:42px;min-height:20px;padding:0 7px;border-radius:4px;color:var(--region-ink);font-size:11px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.region-legend b{font-weight:700}
+.region-bar>.rest,.region-legend>.rest{background:var(--surface-3);color:var(--text-2);font-weight:600}.region-bar>.region-6,.region-legend>.region-6{color:var(--region-ink-6)}.region-bar>.region-7,.region-legend>.region-7{color:var(--region-ink-7)}
 .region-1{background:var(--region-1)}.region-2{background:var(--region-2)}.region-3{background:var(--region-3)}.region-4{background:var(--region-4)}.region-5{background:var(--region-5)}.region-6{background:var(--region-6)}.region-7{background:var(--region-7)}.region-8{background:var(--region-8)}.region-x{background:var(--text-3)}
 .alloc-summary-note{display:flex;flex-wrap:wrap;gap:1px 14px;margin:10px 0 0;font-size:11.5px;line-height:1.5;color:var(--text-3);font-variant-numeric:tabular-nums}
 .assets-page .section-heading>.btn{margin-left:auto}.field>.unit-input{font-size:15px;font-weight:400;color:var(--text)}.field-hint{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.group-head .gap{white-space:nowrap}

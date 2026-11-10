@@ -305,8 +305,11 @@ function renderAlloc(tab="alloc"){
   const barParts=s.regions.filter(r=>r.value>0), barFilled=barParts.reduce((n,r)=>n+r.value,0), barRest=Math.max(0,s.base-barFilled), barWhole=barFilled+barRest;
   const barCell=(cls,name,value)=>{ const p=s.pct(value), text=`${Math.round(p)}%`;
     return `<i class="${cls}" style="flex:${Math.round(value*100)/100}" title="${escA(`${name} ${man(value)} · ${pc(p)}`)}">${value/barWhole>=.05?`<span${text.length<3?' class="s"':""}>${text}</span>`:""}</i>`; };
+  // 범례는 막대 칸과 같은 색 바탕의 꼬리표(이름 + 기준 대비 %)를 칸 순서대로 둔다. 숫자를 넣지 못한 좁은 칸도 여기서 이름과 비중을 읽는다.
+  // 작은 색 점을 쓰지 않는 이유: 삼성 인터넷처럼 브라우저가 페이지 색을 강제로 어둡게 바꾸면 큰 바탕과 작은 점을 서로 다르게 바꿔 막대와 범례 색이 어긋난다.
+  const barKey=(cls,name,value)=>`<li class="${cls}">${escA(name)}<b>${pc(s.pct(value))}</b></li>`;
   const regionBar=barFilled>0?`<div class="region-bar" role="img" aria-label="${escA(`지역 구성: ${[...barParts.map(r=>`${r.name} ${pc(s.pct(r.value))}`),...(barRest>0?[`기준까지 ${pc(s.pct(barRest))}`]:[])].join(", ")}`)}">${barParts.map(r=>barCell(regionClass(r.name),r.name,r.value)).join("")}${barRest>0?barCell("rest","기준까지",barRest):""}</div>
-      <ul class="region-legend" aria-hidden="true">${barParts.map(r=>`<li><i class="${regionClass(r.name)}"></i>${escA(r.name)}</li>`).join("")}${barRest>0?'<li><i class="rest"></i>기준까지</li>':""}</ul>`:"";
+      <ul class="region-legend" aria-hidden="true">${barParts.map(r=>barKey(regionClass(r.name),r.name,r.value)).join("")}${barRest>0?barKey("rest","기준까지",barRest):""}</ul>`:"";
   const totalDiff=s.grand-s.base, totalGap=!plus(a.total)?"기준 미입력 · 합계 기준":Math.abs(totalDiff)<.05?"기준과 같음":`기준보다 ${man(Math.abs(totalDiff))} ${totalDiff<0?"적음":"많음"}`;
   view.innerHTML=`<div class="heading alloc-heading"><h1>${strategy?"투자구성":"자산 배분"}</h1></div>
     <section class="card alloc-summary" aria-label="자산 요약"><div class="alloc-summary-head"><label for="allocTotal">기준 총자산</label><span>투자 ${man(s.invest)} · 현금 ${man(s.cash)}</span></div>
