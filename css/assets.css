@@ -1,9 +1,12 @@
 /* 자산 현황 전용 스타일. 공통 토큰·레이아웃 규칙은 app.css, 작업 규칙은 AGENTS.md. */
 .assets-page .neg{color:var(--danger)}
 /* 맨 위 요약(js/assets.js renderAlloc, 투자구성·자산 배분 공통): 기준 총자산(수정) · 지역 구성 막대 · 합계·시세·환율 안내.
-   지역 색은 지역에 고정한 8색(밝은·어두운 화면을 각각 고른 값). 칸 안 글자는 대비가 더 큰 쪽(먹색 --region-ink, 6번과 밝은 화면의 7번은 흰색). */
-:root{--region-1:#2a78d6;--region-2:#eb6834;--region-3:#1baf7a;--region-4:#eda100;--region-5:#e87ba4;--region-6:#008300;--region-7:#6250d6;--region-8:#e34948;--region-ink:#0b1020;--region-ink-6:#fff;--region-ink-7:#fff}
-@media screen{:root[data-theme=dark]{--region-1:#3987e5;--region-2:#d95926;--region-3:#199e70;--region-4:#c98500;--region-5:#d55181;--region-7:#9085e9;--region-8:#e66767;--region-ink-7:#0b1020}}
+   지역 색은 지역에 고정한 8색(밝은·어두운 화면을 각각 고른 값): 1 파랑 · 2 주황 · 3 청록 · 4 보라 · 5 하늘 · 6 진보라 · 7 노랑 · 8 분홍. 칸 안 글자는 대비가 더 큰 쪽(먹색 --region-ink, 밝은 화면의 6번만 흰색).
+   밝은 화면 값은 삼성 인터넷의 웹페이지 다크 색 변환도 함께 고려했다. 그 변환은 큰 바탕의 색조는 두고 밝기만 아주 어둡게 낮춰서(대략 각 채널에서 밝기를 뺀 값만 남는다)
+   노랑·분홍은 주황과 같은 검붉은색이 된다. 그래서 자주 쓰는 앞 5색은 변환 뒤에도 남색·빨강·초록·보라·청파랑으로 갈리는 색을 쓰고, 노랑·분홍은 드물게 쓰는 뒤 번호로 보냈다.
+   밝은 화면 색을 바꿀 때는 변환 뒤 구분도 다시 확인한다(실제 기기 캡처로만 확인 가능). */
+:root{--region-1:#2a78d6;--region-2:#eb6834;--region-3:#1baf7a;--region-4:#bf45cb;--region-5:#04c4f0;--region-6:#8a2be2;--region-7:#eda100;--region-8:#e87ba4;--region-ink:#0b1020;--region-ink-6:#fff}
+@media screen{:root[data-theme=dark]{--region-1:#3987e5;--region-2:#d95926;--region-3:#199e70;--region-4:#b943cc;--region-5:#209fbc;--region-6:#9e6de7;--region-7:#c98500;--region-8:#d55181;--region-ink-6:#0b1020}}
 .alloc-heading{margin-bottom:14px}
 .alloc-summary{margin-bottom:16px;padding:14px 16px}
 .alloc-summary-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0 10px;font-size:12.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.alloc-summary-head label{font-weight:500}.alloc-summary-head>span{white-space:nowrap}
@@ -20,7 +23,7 @@
    삼성 인터넷의 웹페이지 다크 색 변환은 큰 바탕은 어둡게, 작은 점은 밝게 바꿔 같은 색이 막대와 범례에서 달라진다. 그래서 꼬리표를 좁은 막대 칸보다 작지 않게 둔다(최소 42×20px). */
 .region-legend{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 0;padding:0;list-style:none}
 .region-legend li{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:42px;min-height:20px;padding:0 7px;border-radius:4px;color:var(--region-ink);font-size:11px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.region-legend b{font-weight:700}
-.region-bar>.rest,.region-legend>.rest{background:var(--surface-3);color:var(--text-2);font-weight:600}.region-bar>.region-6,.region-legend>.region-6{color:var(--region-ink-6)}.region-bar>.region-7,.region-legend>.region-7{color:var(--region-ink-7)}
+.region-bar>.rest,.region-legend>.rest{background:var(--surface-3);color:var(--text-2);font-weight:600}.region-bar>.region-6,.region-legend>.region-6{color:var(--region-ink-6)}
 .region-1{background:var(--region-1)}.region-2{background:var(--region-2)}.region-3{background:var(--region-3)}.region-4{background:var(--region-4)}.region-5{background:var(--region-5)}.region-6{background:var(--region-6)}.region-7{background:var(--region-7)}.region-8{background:var(--region-8)}.region-x{background:var(--text-3)}
 .alloc-summary-note{display:flex;flex-wrap:wrap;gap:1px 14px;margin:10px 0 0;font-size:11.5px;line-height:1.5;color:var(--text-3);font-variant-numeric:tabular-nums}
 .assets-page .section-heading>.btn{margin-left:auto}.field>.unit-input{font-size:15px;font-weight:400;color:var(--text)}.field-hint{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.group-head .gap{white-space:nowrap}

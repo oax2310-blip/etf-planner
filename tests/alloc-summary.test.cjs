@@ -120,3 +120,24 @@ test('달러 환율 안내: 현물 기준일을 월/일로 붙이고 기준일�
   assert.doesNotMatch(manual, /quote-status/, '직접 넣은 환율은 경고 대상이 아니다');
   assert.match(page(alloc(usd), null), /달러 \$100 · 환율 없음/, '환율이 전혀 없을 때');
 });
+
+// 삼성 인터넷의 웹페이지 다크 색 변환(밝은 화면을 브라우저가 어둡게 바꿈)을 실제 기기 캡처에 맞춰 어림한 식:
+// 큰 바탕은 색차를 유지한 채 밝기 Y만 31·(Y/255)²로 낮추고 범위를 자른다. 노랑·분홍처럼 밝기에 가까운 채널만 있는 색은 주황과 같은 검붉은색이 된다.
+// 자주 쓰는 앞 5개 지역 색(밝은 화면 값)은 이 변환 뒤에도 서로 구분돼야 한다. 식은 어림이므로 색을 바꾸면 실제 기기에서도 확인한다.
+test('밝은 화면의 앞 5개 지역 색은 삼성 다크 색 변환 뒤에도 서로 구분된다', () => {
+  const root = read('css/assets.css').match(/:root\{(--region-1:[^}]*)\}/)[1];
+  const light = [1, 2, 3, 4, 5].map(n => root.match(new RegExp(`--region-${n}:#([0-9a-f]{6})`))[1]).map(h => [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)));
+  const converted = c => { const y = .299 * c[0] + .587 * c[1] + .114 * c[2], dark = 31 * (y / 255) ** 2; return c.map(v => Math.max(0, Math.min(255, v - y + dark))); };
+  const lin = v => (v /= 255) <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+  const oklab = c => { const [r, g, b] = c.map(lin), [l, m, s] = [.4122214708 * r + .5363325363 * g + .0514459929 * b, .2119034982 * r + .6806995451 * g + .1073969566 * b, .0883024619 * r + .2817188376 * g + .6299787005 * b].map(Math.cbrt);
+    return [.2104542553 * l + .793617785 * m - .0040720468 * s, 1.9779984951 * l - 2.428592205 * m + .4505937099 * s, .0259040371 * l + .7827717662 * m - .808675766 * s]; };
+  const distance = (a, b) => 100 * Math.hypot(...oklab(a).map((v, i) => v - oklab(b)[i]));
+  // 식 확인: 캡처에서 잰 값(주황 → 검붉은색, 옛 노랑·분홍도 같은 검붉은색)
+  assert.deepEqual(converted([235, 104, 52]).map(Math.round), [107, 0, 0]);
+  assert.ok(distance(converted([237, 161, 0]), converted([235, 104, 52])) < 6 && distance(converted([232, 123, 164]), converted([235, 104, 52])) < 6, '옛 노랑·분홍은 변환 뒤 주황과 구분되지 않았다');
+  const dark = light.map(converted);
+  for (let i = 0; i < dark.length; i++) for (let j = i + 1; j < dark.length; j++)
+    assert.ok(distance(dark[i], dark[j]) >= 10, `지역 색 ${i + 1}·${j + 1}번이 변환 뒤 너무 가깝다(${distance(dark[i], dark[j]).toFixed(1)})`);
+  for (let i = 0; i < light.length; i++) for (let j = i + 1; j < light.length; j++)
+    assert.ok(distance(light[i], light[j]) >= 15, `지역 색 ${i + 1}·${j + 1}번이 밝은 화면에서 너무 가깝다`);
+});
