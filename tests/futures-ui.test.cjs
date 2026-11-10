@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
 const source=['ma-ladder.js','prices.js','futures.js','futures-plan.js','futures-rebuy.js'].map(name=>fs.readFileSync(path.join(__dirname,'../js',name),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000});vm.runInContext(source,ctx);return ctx;};
 const clone=value=>JSON.parse(JSON.stringify(value));
@@ -195,6 +196,25 @@ const assertBuyTableDue=(html,key,due,note='')=>{
   assert.equal(row.classes.includes('due'),due,`${key} 회차 도달 강조${note?` · ${note}`:''}`);
   assert.equal(/<small class="future-buy-due">도달<\/small>/.test(row.html),due,`${key} 회차 도달 글자${note?` · ${note}`:''}`);
 };
+
+for(const completed of [[],[2],[0,2]])test(`달러선물 분할매수 완료 ${completed.length}회: 자동 계획은 가격 정렬 뒤 마지막 완료 줄만 남긴다`,()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1440,1),level(32,1410,1),level(42,1420,1),level(60,1450,1)]);
+  // 원래 목록에서는 42일선(2)이 뒤지만, 가격 정렬 후에는 25일선(0)이 마지막 완료 줄이다.
+  f.buyPlan={startLine:'25일선',endPrice:1500,contracts:4,units:['일선']};
+  for(const i of completed)Object.assign(f.levels[i].tranches[0],{completed:true,executionPrice:f.levels[i].price,mergedMonth:'202612'});
+  const before=JSON.stringify(f),html=ctx.futureBuyTable(f),rows=renderedRows(html,'futureBuyTable','data-tranche-check','future-buy-row');
+  assert.deepEqual(rows.map(r=>r.key),['1:0','2:0','0:0','3:0']);
+  assertLastDone(rows,completed.length===2?'0:0':completed.length?'2:0':null);
+  assert.equal(JSON.stringify(f),before,'그리거나 정렬해도 회차·보유 JSON은 바뀌지 않는다');
+});
+
+test('달러선물 직접 분할매수는 저장된 화면 순서의 마지막 완료 줄만 남긴다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1440,1),level(32,1410,1),level(42,1420,1)]);
+  for(const i of [0,2])Object.assign(f.levels[i].tranches[0],{completed:true,executionPrice:f.levels[i].price});
+  const before=JSON.stringify(f),rows=renderedRows(ctx.futureBuyTable(f),'futureBuyTable','data-tranche-check','future-buy-row');
+  assert.deepEqual(rows.map(r=>r.key),['0:0','1:0','2:0']);assertLastDone(rows,'2:0');
+  assert.equal(JSON.stringify(f),before);
+});
 
 test('분할매수 도달은 평균선·종료가 이상과 직접 매수가 이하를 포함하며 알림 선택·완료와 구분한다',()=>{
   const ctx=buyTableContext(),manual=price=>({label:'가상 직접 매수',price,contracts:1,tranches:[{price,completed:false}]}),f=buyTableFutures([

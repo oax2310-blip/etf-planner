@@ -46,8 +46,16 @@ test('상승 계획은 회차 기준가가 선 이상이 되는 회차 앞에 �
   assert.equal(draw(waiting).some(x=>x.startsWith('|')),false);
 });
 
-test('바로 다음 회차가 매도 완료면 선 줄도 완료로 표시해 완료 회차와 함께 접힌다',()=>{
+test('바로 다음 회차가 매도 완료면 선 줄도 완료로 표시하고 마지막 완료 회차 앞의 선 줄은 함께 남긴다',()=>{
   const p=plan({checked:[true,true,false,false,false],fills:{0:{price:100,plannedQty:2,qty:2},1:{price:95,plannedQty:2,qty:2}}});
-  assert.deepEqual(draw(p).filter(x=>x.startsWith('|')),['|(done) 80일선 $97.5','|25주선 $94, 125일선 $93, 150일선 $92.9']);
-  assert.match(fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8'),/\.purchase-table\.hide-completed \.sale-line-mark\.done\{display:none\}/);
+  assert.deepEqual(draw(p).filter(x=>x.startsWith('|')),['|(done last-done) 80일선 $97.5','|25주선 $94, 125일선 $93, 150일선 $92.9']);
+  assert.deepEqual(draw(plan({checked:[true,true,true,false,false]})).filter(x=>x.startsWith('|')),['|(done) 80일선 $97.5','|(done last-done) 25주선 $94, 125일선 $93, 150일선 $92.9']);
+  assert.match(fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8'),/\.purchase-table\.hide-completed \.sale-line-mark\.done:not\(\.last-done\)\{display:none\}/);
+});
+
+test('접기 CSS는 세 종류의 마지막 완료 줄만 숨김 대상에서 뺀다',()=>{
+  const css=name=>fs.readFileSync(path.join(__dirname,'../css',name),'utf8');
+  assert.ok(css('purchases.css').includes('.purchase-table.hide-completed .purchase-row.done:not(.last-done){display:none}'));
+  assert.ok(css('purchases.css').includes('.purchase-table.hide-completed .sale-line-mark.done:not(.last-done){display:none}'));
+  assert.ok(css('app.css').includes('.future-buy-table.hide-completed .future-buy-row.done:not(.last-done){display:none}'));
 });

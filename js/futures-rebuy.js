@@ -406,18 +406,18 @@ function renderFutureRebuy(f){
   // 체크는 남은 계약까지 완료, 체결 칸은 실제 누적 체결이며 계획보다 적으면 부분 체결(체크 '−')로 그 회차에 남는다.
   // 회차마다 한 줄: 체결한 회차의 손절 환율 칸은 실제 체결 환율(점선, 눌러서 그 자리에서 수정)이다. 반영한 월물은 '손절 완료' 띠에 모아 보이고,
   // 기록한 월물이 지금 보유에 없거나(월물교체 등) 보유에 반영하지 못한 회차만 환율 아래 작은 주황 줄을 둔다. 직접 반영함은 표시하지 않는다.
-  // 완료 회차는 '손절 완료' 띠로 접는다(futureCutsOpen, 화면 상태). 재매수 뒤에도 미완료 회차·부분 체결의 남은 계약을 표시한다.
+  // 완료 회차는 '손절 완료' 띠로 접되 표 순서의 마지막 완료 1개(last-done)는 그릴 때마다 골라 남긴다(futureCutsOpen, 화면 상태). 재매수 뒤에도 미완료 회차·부분 체결의 남은 계약을 표시한다.
   const cutRecs=Array.isArray(r.cuts)?r.cuts:[],heldMonth=m=>futureHeld(f,m);
   const cutWarn=rec=>{if(!rec?.month)return rec&&!rec.manual?"보유 미반영":"";const gone=futureCutLegs(rec).map(l=>l.month).filter(m=>!heldMonth(m));return gone.length?`${esc(gone.join("·"))} 보유 없음`:"";};
   // 점선 환율(눌러서 그 자리에서 수정): attrs = 입력칸 data 속성, value = 기록한 값(빈 칸이면 글자 text만 보임)
   const tapPrice=(text,attrs,value,label)=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${moneyInputText(value)}" aria-label="${label}"></label>`;
-  const cutAlerts=typeof futureRebuyAlertEnabled==="function",cutDone=s.cuts.filter(c=>c.done);
+  const cutAlerts=typeof futureRebuyAlertEnabled==="function",cutDone=s.cuts.filter(c=>c.done),lastDoneCut=cutDone.at(-1);
   const cutMonths=[...new Set(s.cuts.filter(c=>c.recorded).flatMap(c=>futureCutLegs(cutRecs[c.k-1]).map(l=>l.month)).filter(m=>m&&heldMonth(m)))].sort();
   const cutRows=s.cuts.map(c=>{
     const i=c.k-1,rest=futureCutRest(c),due=s.ready&&rest>0&&cur>0&&cur<=c.price,state=c.done?"done":c.partial?"partial":due?"due":"",blocked=!c.recorded&&!c.qty;
     const flag=c.partial?`남은 ${rest}`:due?"도달":"",rec=cutRecs[i],warn=c.recorded?cutWarn(rec):"";
     const price=c.recorded?`${tapPrice(cutPx(c.execPrice||c.price),`data-fcut-price="${i}"`,opt(c.execPrice),`${c.k}회 손절 체결 환율`)}${warn?`<span class="krw future-row-warn">${warn}</span>`:""}`:`<span class="price">${cutPx(c.price)}</span>`;
-    return `<div class="purchase-row${state?` ${state}`:""}"><label class="check" title="남은 계약까지 손절 완료"><input type="checkbox" data-fcut="${i}"${c.done?" checked":""}${c.partial?' data-fcut-partial="true" aria-checked="mixed"':""}${blocked?" disabled":""} aria-label="${c.k}회 손절 완료"><span class="purchase-round"><b>${c.k}회</b>${flag?`<small>${flag}</small>`:""}</span></label>
+    return `<div class="purchase-row${state?` ${state}`:""}${c===lastDoneCut?" last-done":""}"><label class="check" title="남은 계약까지 손절 완료"><input type="checkbox" data-fcut="${i}"${c.done?" checked":""}${c.partial?' data-fcut-partial="true" aria-checked="mixed"':""}${blocked?" disabled":""} aria-label="${c.k}회 손절 완료"><span class="purchase-round"><b>${c.k}회</b>${flag?`<small>${flag}</small>`:""}</span></label>
       <div class="stage-price">${price}</div><div class="purchase-qty">${c.recorded?c.plannedQty:c.qty}계약</div><div class="purchase-fill"><input type="number" min="0" step="1" inputmode="numeric" data-fcut-qty="${i}" value="${c.recorded?c.qty:""}" placeholder="0"${blocked?" disabled":""} aria-label="${c.k}회 손절 누적 체결 계약 수"></div>${cutAlerts?`<div class="purchase-alert">${notify("cuts",i,`${c.k}회 손절`,c.done)}</div>`:""}
       <div class="status${state?` ${state}`:""}">${c.done?"손절 완료":c.partial?"부분 체결":due?"손절 시점":"대기"}</div></div>`;
   }).join("")||'<div class="empty">기준을 입력하면 손절 회차가 계산됩니다.</div>';
@@ -426,7 +426,7 @@ function renderFutureRebuy(f){
   // 평균 손절 환율 위(배분한 뒤 뺀 회차 above 포함)·추정 환율·계획 밖 회차는 흐린 '제외' 줄, 배정 0인 회차는 흐린 줄. 산 회차는 환율 칸이 체결 환율(점선)이고 체결 칸에서 계약 수를 고친다.
   // 평균 손절 위로 뺀 회차만 있는 단계는 알림을 보내지 않으므로 알림 스위치를 두지 않는다.
   // 반영 월물은 '재매수 완료' 띠에 모으고 보유에 없는 월물·미반영만 작은 주황 줄. 배분 없는 단계와 첫 회차를 산 단계의 기준 환율·알림은
-  // 맨 아래 '다른 단계' 띠를 펼쳐 고친다(futureBuyStagesOpen). 완료 회차 접기(futureBuysOpen)와 함께 화면 상태라 저장·동기화하지 않는다.
+  // 맨 아래 '다른 단계' 띠를 펼쳐 고친다(futureBuyStagesOpen). 완료 회차는 접혀도 표 순서의 마지막 완료 1개(last-done)를 그릴 때마다 골라 남기며, 펼침 상태(futureBuysOpen)도 저장·동기화하지 않는다.
   const buyAlerts=cutAlerts,buyDone=s.tranches.filter(x=>x.done),fillRec=x=>futureFillOf(f,x.i,x.t)?.[0];
   const buyMonths=[...new Set(buyDone.map(x=>fillRec(x)?.month).filter(m=>m&&heldMonth(m)))].sort();
   const stageName=i=>esc(futureRebuyStageText(s.stages[i])),basePx=i=>Number(s.stages[i].price)>0?px(s.stages[i].price):s.est[i]?`≈${px(s.est[i])}`:"기준가";
@@ -435,12 +435,13 @@ function renderFutureRebuy(f){
   const order=[...s.stageOrder,...s.stages.map((_,i)=>i).filter(i=>!s.stageOrder.includes(i))];
   const groups=order.map(i=>{const own=s.tranches.filter(y=>y.i===i);return {i,own,rows:[...own,...s.skipped.filter(y=>y.i===i).map(y=>({...y,skip:true}))].sort((a,b)=>a.t-b.t)};});
   const used=s.sold?groups.filter(g=>g.own.some(y=>y.done||y.amount>0||y.above)):[],others=groups.filter(g=>!s.stages[g.i].directRebuy&&(!used.includes(g)||g.rows[0]?.done));
+  const lastDoneBuy=used.flatMap(g=>g.rows).filter(y=>y.done&&!y.skip&&!y.above).at(-1);
   const buyRow=(g,y,k)=>{
     const i=g.i,skip=y.skip||y.above,due=!skip&&futureRebuyReached(y,cur),nextUp=y===nextTr,dim=skip||!y.done&&!y.partial&&!y.amount,state=y.done?"done":y.partial?"partial":due?"due":"",bought=y.done||y.partial,rec=bought?fillRec(y):null,warn=rec?cutWarn(rec):"";
     const price=bought?`${tapPrice(px(y.execPrice||y.price),`data-fbuy-exec="${i}:${y.t}"`,opt(y.execPrice),`${trText(y)} 재매수 체결 환율`)}${warn?`<span class="krw future-row-warn">${warn}</span>`:""}`
       :s.stages[i].directRebuy?`<span class="price">${px(y.price)}</span><span class="krw">${futureRebuyCondition(y)==="down"?"이하":"이상"}</span>`:k===0?baseInput(i):`<span class="price">${y.price>0?`${y.est?"≈":""}${px(y.price)}`:"—"}</span>`;
     const why=y.above?"평균 손절 환율 위":y.skip?y.est?"추정 환율이라 제외":s.endPrice&&y.price>=s.endPrice?"종료가격 범위 밖":!s.endPrice&&s.sellAvg&&y.price>s.sellAvg?"평균 손절 환율 위":"계획 밖":"";
-    return `<div class="purchase-row${state?` ${state}`:""}${dim?" future-buy-dim":""}"${why?` title="${why}"`:""}><label class="check" title="재매수 완료"><input type="checkbox" data-fbuy="${i}:${y.t}"${y.done?" checked":""}${y.partial?' data-fbuy-partial="true" aria-checked="mixed"':""}${dim?" disabled":""} aria-label="${trText(y)} 재매수 완료"><span class="purchase-round"><b>${trName(y)}</b>${skip?'<small class="future-buy-skip">제외</small>':y.partial?`<small>남은 ${y.amount}</small>`:due?"<small>도달</small>":""}</span></label>
+    return `<div class="purchase-row${state?` ${state}`:""}${y===lastDoneBuy?" last-done":""}${dim?" future-buy-dim":""}"${why?` title="${why}"`:""}><label class="check" title="재매수 완료"><input type="checkbox" data-fbuy="${i}:${y.t}"${y.done?" checked":""}${y.partial?' data-fbuy-partial="true" aria-checked="mixed"':""}${dim?" disabled":""} aria-label="${trText(y)} 재매수 완료"><span class="purchase-round"><b>${trName(y)}</b>${skip?'<small class="future-buy-skip">제외</small>':y.partial?`<small>남은 ${y.amount}</small>`:due?"<small>도달</small>":""}</span></label>
       <div class="stage-price">${price}</div><div class="purchase-qty">${dim?"—":`${y.done?y.qty:y.partial?y.qty+y.amount:y.amount}계약`}</div><div class="purchase-fill">${bought?`<input type="number" min="1" step="1" inputmode="numeric" data-fbuy-qty="${i}:${y.t}" value="${y.qty}" aria-label="${trText(y)} 재매수 계약 수">`:""}</div>${buyAlerts?`<div class="purchase-alert">${k===0&&!g.own.every(x=>x.above)?stageAlert(i,g.own):""}</div>`:""}
       <div class="status${state?` ${state}`:due||nextUp?" due":""}">${y.done?"재매수 완료":y.partial?"부분 체결":due?"재매수 시점":nextUp?"다음 신호":skip?"안 삼":dim?"배분 없음":"대기"}</div></div>`;
   };

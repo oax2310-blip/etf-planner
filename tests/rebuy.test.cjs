@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
 
 const source = ['ma-ladder.js', 'item-search.js', 'rebuy.js'].map(f => fs.readFileSync(require('node:path').join(__dirname, '../js', f), 'utf8')).join('\n;\n');
 if (!source.includes('function cutPlan(')) throw Error('손절 후 재매수 계산 구현을 찾지 못했습니다.');
@@ -592,11 +593,51 @@ test('완료 회차 자동 접기·수동 펼치기: 전체 완료 때 다시 �
   handlers['[data-tranche-qty]']('4',{dataset:{trancheQty:'0:0'}});
   handlers['[data-tranche-qty]']('10',{dataset:{trancheQty:'0:0'}});
   assert.match(els.rebuyMain.innerHTML,/id="toggleRebuyCuts"[^>]*aria-expanded="false"/);
-  assert.match(els.rebuyMain.innerHTML,/id="rebuyBuyRows" hidden/);
+  assert.doesNotMatch(els.rebuyMain.innerHTML,/id="rebuyBuyRows" hidden/);
+  assertLastDone(renderedRows(els.rebuyMain.innerHTML,'rebuyBuyTable','data-tranche-done'),'0:0');
   els.toggleRebuyBuys.onclick();assert.match(els.rebuyMain.innerHTML,/id="toggleRebuyBuys"[^>]*aria-expanded="true"/);
   handlers['[data-tranche-qty]']('5',{dataset:{trancheQty:'0:0'}});
   assert.doesNotMatch(els.rebuyMain.innerHTML,/id="rebuyBuyRows" hidden/);
   ctx.renderRebuy();assert.match(els.rebuyMain.innerHTML,/부분 재매수/);
+});
+
+for(const completed of [[],[2],[0,2]])test(`ETF 분할 손절 완료 ${completed.length}회: 뒤의 부분 손절을 빼고 마지막 완료 줄만 남긴다`,()=>{
+  const r={...fillFixture(),steps:5,currentPrice:20000};
+  r.cuts=Array.from({length:4},(_,i)=>completed.includes(i)?{shares:10,price:9900-i*100}:i===3?{shares:3,price:9600,partial:true,plannedShares:10}:null);
+  const state={rebuy:{items:[r]}},before=JSON.stringify(state),{els}=ui(state);
+  const rows=renderedRows(els.rebuyMain.innerHTML,'rebuyCutTable','data-cut');
+  assertLastDone(rows,completed.length?'2':null);assert.ok(rows.find(x=>x.key==='3').classes.includes('partial'));
+  assert.equal(JSON.stringify(state),before);
+});
+
+for(const completed of [[],[2],[0,2]])test(`ETF 재매수 완료 ${completed.length}회: 뒤의 부분 체결·흐린 제외 줄에 last-done을 붙이지 않는다`,()=>{
+  const r={...fillFixture(),cuts:[{shares:50,price:10000}],currentPrice:20000,
+    stages:['25선','32선','42선','60선','80선'].map((name,i)=>({name,price:i===4?20000:9000+i*50,rounds:1,
+      ...(completed.includes(i)?{done:true,shares:1,execPrice:9000+i*50}:i===3?{buys:[{shares:1,price:9150,partial:true,plannedShares:2}]}:{})})),
+    planned:['25선','32선','42선','60선','80선'].map(name=>[name,0])};
+  const state={rebuy:{items:[r]}},before=JSON.stringify(state),{els}=ui(state);
+  const rows=renderedRows(els.rebuyMain.innerHTML,'rebuyBuyTable','data-tranche-done');
+  assertLastDone(rows,completed.length?'2:0':null);assert.ok(rows.find(x=>x.key==='3:0').classes.includes('partial'));
+  assert.ok(rows.some(x=>x.classes.includes('future-buy-dim')),'평균 손절가 위 제외 줄도 함께 그린다');
+  assert.equal(JSON.stringify(state),before);
+});
+
+test('ETF 전체 재매수 완료·접힘은 줄 묶음에 hidden 없이 마지막 완료 줄만 그리고 펼치면 제외·대기 줄도 복원한다',()=>{
+  const r={...fillFixture(),cuts:[{shares:2,price:10000}],stages:[
+    {name:'25선',price:9000,rounds:3,prices:[9000,9500,11000],buys:[{shares:1,price:10000},{shares:1,price:10000}]},
+    {name:'32선',price:0,rounds:1}],planned:[['25선',0],['25선',1],['25선',2],['32선',0]]};
+  const state={rebuy:{items:[r]}},before=JSON.stringify(state),{ctx,els}=ui(state);
+  const html=()=>els.rebuyMain.innerHTML,inside=()=>html().split('<div id="rebuyBuyRows">')[1]?.split('<div class="completed-fold-empty">')[0];
+  assert.doesNotMatch(html(),/id="rebuyBuyRows"[^>]*\bhidden\b/);
+  assert.match(html(),/id="toggleRebuyBuys"[^>]*aria-expanded="false"/);
+  let rows=renderedRows(html(),'rebuyBuyTable','data-tranche-done').filter(row=>row.key!==undefined);
+  assert.equal(rows.length,1);assertLastDone(rows,'0:1');
+  assert.doesNotMatch(inside(),/future-buy-dim|data-tranche-done="(?:0:2|1:0)"/,'접힌 전체 완료 표에는 제외·대기를 그리지 않는다');
+  els.toggleRebuyBuys.onclick();
+  assert.match(html(),/id="toggleRebuyBuys"[^>]*aria-expanded="true"/);
+  rows=renderedRows(html(),'rebuyBuyTable','data-tranche-done');
+  assertLastDone(rows,'0:1');assert.ok(rows.length>2);assert.ok(rows.some(row=>row.classes.includes('future-buy-dim')));
+  ctx.renderRebuy();assert.equal(JSON.stringify(state),before,'접기·펼치기·재렌더 모두 기록 JSON을 바꾸지 않는다');
 });
 
 test('옛 완료·단일 종목 기록은 조회·화면 복원 때 바꾸지 않고 새 필드를 생성하지 않는다', () => {

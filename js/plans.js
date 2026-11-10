@@ -250,7 +250,7 @@ function planSellerHead(sellers,p){
   if(sellers.length===1)return `<div class="purchase-buy-target"><span>매도 종목</span><div>${line(sellers[0])}</div></div>`;
   return `<div class="purchase-buy-target many"><span>매도 종목</span><ol class="sale-sellers">${sellers.map(h=>`<li>${line(h)}</li>`).join("")}</ol></div>`;
 }
-function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
+function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i),lastDone=false){
   const {r,e,group,price,priced,members,holder}=info,partial=r.recorded&&!r.done,due=!r.recorded&&planStageDue(p,r,planNow(p)),state=r.done?"done":partial?"partial":due?"due":"";
   const digits=e?0:planShareDigits(p),unit=digits?"BTC":"주",qty=n=>group?`${won.format(n)}주`:planQuantity(n,p),shown=r.done?r.amount:r.target;
   const left=digits&&partial&&r.remaining!==null,flag=partial?r.remaining!==null&&!left?`남은 ${qty(r.remaining)}`:"부분 체결":due?"도달":"",priceLabel=priced?planRowPrice(price,p):"—";
@@ -265,7 +265,7 @@ function planSaleRow(p,i,sellers=[],info=planSaleRowInfo(p,i)){
     :e?e.plannedQty===null?"실제 ETF 가격·환율·보유량을 확인하세요.":e.capped?"보유량으로 제한":""
     :r.pendingAccount?"계좌의 보유 ETF를 먼저 선택하세요.":r.target===null?"보유량 입력 필요":!r.recorded&&p.holdings.length>1?p.holdings.map(h=>`${h.name} ${planQuantity(sharesAt(saleShares(h.shares,p),i,p.stages,digits),p)}`).join(" · "):""].filter(Boolean);
   const disabled=group?!info.ready:!priced||(e||r.pendingAccount)&&!(r.target>0);
-  return `<div class="purchase-row${state?` ${state}`:""}"><label class="check" title="${group?"모든 연결 계좌의 잔량까지 매도 완료":"잔량까지 매도 완료"}"><input type="checkbox" data-stage="${i}"${r.done?" checked":""}${partial?' data-sale-partial="true" aria-checked="mixed"':""}${disabled?" disabled":""} aria-label="${i+1}회 ${group?"전체 계좌 ":""}매도 완료"><span class="purchase-round"><b>${i+1}회</b>${flag?`<small>${esc(flag)}</small>`:""}</span></label>
+  return `<div class="purchase-row${state?` ${state}`:""}${r.done&&lastDone?" last-done":""}"><label class="check" title="${group?"모든 연결 계좌의 잔량까지 매도 완료":"잔량까지 매도 완료"}"><input type="checkbox" data-stage="${i}"${r.done?" checked":""}${partial?' data-sale-partial="true" aria-checked="mixed"':""}${disabled?" disabled":""} aria-label="${i+1}회 ${group?"전체 계좌 ":""}매도 완료"><span class="purchase-round"><b>${i+1}회</b>${flag?`<small>${esc(flag)}</small>`:""}</span></label>
     <div class="stage-price"><span class="price${priceLabel.length>9?" xlong":priceLabel.length>7?" long":""}">${esc(priceLabel)}</span>${p.currency==="USD"?`<span class="krw">${priced?fxText(price*p.fx):"시세 대기"}</span>`:""}</div>
     <div class="purchase-qty">${left?`<small class="qty-left">남은</small>${esc(fractionalQuantity.format(r.remaining))}`:shown===null?"—":digits?esc(fractionalQuantity.format(shown)):esc(qty(shown))}</div><div class="purchase-fill">${input}</div>${typeof tradeAlertToggle==="function"?`<div class="purchase-alert">${tradeAlertToggle(tradePlanEnabled(p,i),`data-sale-alert="${i}"`,`${i+1}회 매도`,r.done)}</div>`:""}
     <div class="status${state?` ${state}`:""}">${r.done?"매도 완료":partial?"부분 체결":due?"도달":"대기"}</div>${notes.length?`<small class="purchase-sub">${esc(notes.join(" · "))}</small>`:""}${lines}</div>`;
@@ -285,8 +285,8 @@ function planLineMarks(p,rows){
   for(const list of out.values())list.sort((x,y)=>up?x.price-y.price:y.price-x.price);
   return out;
 }
-// 선 줄은 바로 다음 회차가 매도 완료면 그 회차와 함께 접힌다(완료 회차 접기).
-const planLineMark = (p,list,done) => `<div class="sale-line-mark${done?" done":""}" role="note" aria-label="${esc(list.map(m=>`${movingLineText(m.name)} ${planRowPrice(m.price,p)}`).join(", "))} 위치">${list.map(m=>`<span><b>${esc(movingLineText(m.name))}</b>${esc(planRowPrice(m.price,p))}</span>`).join("")}</div>`;
+// 선 줄의 done은 바로 다음 회차의 완료 상태. 접혀도 남기는 마지막 완료 회차 바로 위 선 줄은 last-done으로 함께 남긴다.
+const planLineMark = (p,list,done,lastDone=false) => `<div class="sale-line-mark${done?" done":""}${done&&lastDone?" last-done":""}" role="note" aria-label="${esc(list.map(m=>`${movingLineText(m.name)} ${planRowPrice(m.price,p)}`).join(", "))} 위치">${list.map(m=>`<span><b>${esc(movingLineText(m.name))}</b>${esc(planRowPrice(m.price,p))}</span>`).join("")}</div>`;
 function planSaleAccountView(p){
   if(isBitcoinTicker(p.ticker))return "";
   const schedule=planLinkedSaleSchedule(p),summary=allocationSummary(planSaleAssets(),typeof assetStore==="object"?assetStore.prices:null);
@@ -374,7 +374,7 @@ function planShownName(p){
 // 수정 창의 카드 이름 칸과 같은 값(비우면 cardName을 지워 종목명으로). 카드가 button이라 연필은 바깥(.plan-cell)에 둔다.
 // 모바일 카드 한 줄·'회' 숨김. 상태는 실제 체결/완료 수로: 시작 전 → 진행 중 → 전량(비중<100이면 계획) 매도 완료.
 // 옛 currentPrice·started·asOf·basisPrice는 값만 보존하며 계산·새 계획·수정 창에 쓰지 않는다.
-// 완료 회차는 기본 접기. 계획별 펼침 상태는 이 화면에서만 유지하고 거래 기록·동기화에는 저장하지 않는다.
+// 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 계획별 펼침 상태도 거래 기록·동기화에는 저장하지 않는다.
 const openCompletedSales=new Set();
 // 계획 진행 카드: 분할매수 진행 카드(purchases.js statusCard, CSS purchases.css .buy-track)와 같은 띠·양 끝·가운데 구성. 띠는 회차마다 한 칸이며 오른쪽이 1회다(CSS row-reverse).
 // 매도라 처음에는 모든 칸이 가득 차 있고(남은 매도 초록) 매도 완료 회차는 오른쪽부터 빈 칸, 부분 체결은 남은 비율만큼만 채운다(도달·부분 주황, 다음 파랑).
@@ -432,7 +432,7 @@ function renderPlans(){
   const linkedSchedule=planLinkedSaleSchedule(p),linkedHeld=linkedSchedule?.rows.reduce((n,r)=>n+(r.held||0),0);
   const started=done>0||Object.keys(p.fills||{}).length>0, pct=planSalePct(p), status=done===p.stages?pct<100||linkedHeld>0?"계획 매도 완료":"전량 매도 완료":started?"진행 중":ready?"시작 전":"기준가 대기";
   const startText=!(p.startPrice>0)?"":p.currency==="USD"&&Number.isInteger(Math.round(p.startPrice*1e6)/1e4)?Number(p.startPrice).toFixed(2):String(p.startPrice); // 달러는 소수 둘째 자리까지면 $80.00처럼
-  const saleRows=Array.from({length:p.stages},(_,i)=>planSaleRowInfo(p,i)),sellers=planSaleSellers(saleRows),saleAlerts=typeof tradeAlertToggle==="function";
+  const saleRows=Array.from({length:p.stages},(_,i)=>planSaleRowInfo(p,i)),lastDone=saleRows.filter(x=>x.r.done).at(-1),sellers=planSaleSellers(saleRows),saleAlerts=typeof tradeAlertToggle==="function";
   const px=planQuote(p.ticker,p.currency); // 시세: 기준일은 제목 위에 작게, 현재 가격은 제목 아래 공통 시세 줄 맨 앞에
   const fxe=fxEntry(priceData), fxAuto=fxe&&p.auto?.fx===p.fx&&p.fx===priceRound(fxe.close,2)?`현물 USD/KRW(시세 ${fxe.asOf}${fxe.stale?" · 마지막 조회 실패":""}${priceOld(fxe)?" · 지난 시세":""})로 자동 · `:""; // 달러 계획 환율(prices.js)
   const left=sharesLeft(p), worth=shares?planWorth(left,px?.close,p.currency,p.fx):null; // 평가액: 남은 수량 × 현재가(× 환율), 수량 없이 평가액만 넣은 계획은 그 값
@@ -442,7 +442,7 @@ function renderPlans(){
     ${planSaleAccountView(p)}
     ${planTrackCard(p,{status,value:`${!linkedSchedule&&p.sellTargetId?`${esc(p.ticker)} 기준 `:""}${value}`,valueTitle:worth!=null&&!linkedSchedule?` title="${esc(`남은 ${planQuantity(left,p)} × 현재가 ${priceText(Number(px.close),p.currency)}${p.currency==="USD"?` × 환율 ${p.fx}`:""}`)}"`:"",startText,fxAuto,px,label:linkedSchedule?"전체 계좌 계획 진행":p.sellTargetId?"기준 ETF 계획 진행":"계획 진행"})}
     <div class="control-grid"><section class="card panel memo"><div class="memo-head"><h2>메모</h2><span id="memoCount" class="memo-count">${memoCount(p.note)}</span><button class="btn mini" id="saveNote">저장</button></div><textarea id="planNote" maxlength="4000" rows="3" aria-label="메모">${esc(p.note||"")}</textarea></section></div>
-    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card purchase-table sale-table${completedOpen?"":" hide-completed"}${saleAlerts?"":" no-alert"}${isBitcoinTicker(p.ticker)?" btc":""}" id="saleTable">${planSellerHead(sellers,p)}<div class="purchase-table-head"><span>회차</span><span>기준가</span>${isBitcoinTicker(p.ticker)?"<span>매도 / 체결 <small>BTC</small></span>":"<span>매도</span><span>체결</span>"}${saleAlerts?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${(marks=>saleRows.map(x=>(marks.has(x.i)?planLineMark(p,marks.get(x.i),x.r.done):"")+planSaleRow(p,x.i,sellers,x)).join(""))(planLineMarks(p,saleRows))}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section>`;
+    <div class="section-heading"><h2>분할매도 체크</h2>${typeof tradeAlertAllButtons==="function"?tradeAlertAllButtons("data-sale-alert-all"):""}<span>${done} / ${esc(p.stages)}회 완료</span></div><section class="card table-card purchase-table sale-table${completedOpen?"":" hide-completed"}${saleAlerts?"":" no-alert"}${isBitcoinTicker(p.ticker)?" btc":""}" id="saleTable">${planSellerHead(sellers,p)}<div class="purchase-table-head"><span>회차</span><span>기준가</span>${isBitcoinTicker(p.ticker)?"<span>매도 / 체결 <small>BTC</small></span>":"<span>매도</span><span>체결</span>"}${saleAlerts?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" id="toggleCompletedSales" type="button" aria-expanded="${completedOpen}" aria-controls="saleRows"><span>매도 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="saleRows">${(marks=>saleRows.map(x=>(marks.has(x.i)?planLineMark(p,marks.get(x.i),x.r.done,x===lastDone):"")+planSaleRow(p,x.i,sellers,x,x===lastDone)).join(""))(planLineMarks(p,saleRows))}</div>${done===p.stages?'<div class="completed-fold-empty">모든 회차의 매도가 완료되었습니다.</div>':""}</section>`;
   const completedToggle=$("toggleCompletedSales");
   if(completedToggle)completedToggle.onclick=()=>{
     const open=!openCompletedSales.has(p.id);if(open)openCompletedSales.add(p.id);else openCompletedSales.delete(p.id);

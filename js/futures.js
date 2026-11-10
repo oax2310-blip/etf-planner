@@ -213,7 +213,7 @@ function futureLadderHtml(f,fe){
     :`<div class="future-ladder-row is-${r.kind}"><i></i><div class="future-ladder-l"><b>${price(r)}</b><small>${label(r)}</small></div><div class="future-ladder-r"><strong${Math.round(r.pnl)<0?' class="neg"':""}>${sign(r.pnl)}원</strong>${sub(r.sub)}</div></div>`;
   return `<section class="card future-ladder" id="futureLadder"><div class="future-ladder-head"><h2>환율별 총손익</h2><span>누적 정산 포함</span></div>${futureQuote(f,fe)}<div class="future-ladder-rows" style="--axis-top:${half(rows[0])}px;--axis-bottom:${half(rows.at(-1))}px">${rows.map(row).join("")}</div>${unpriced?`<p class="future-ladder-hint">가격 미입력 ${unpriced}계약은 분할매수 계산에서 뺍니다.</p>`:""}</section>`;
 }
-// 매수 완료 접기는 화면 상태만 유지하며 저장·동기화하지 않는다.
+// 매수 완료는 기본 접기하되 정렬한 표 순서의 마지막 완료 1개(last-done)는 그릴 때마다 골라 남긴다. 펼침 상태도 저장·동기화하지 않는다.
 let futureCompletedOpen=false;
 
 const FUTURE_QUOTE_DELAY_MIN = 60;
@@ -259,7 +259,9 @@ function futureBuyTable(f){
   const bell='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>';
   const allAlerts=typeof tradeAlertAllButtons==="function"?`<span class="trade-alert-actions future-buy-alert-actions"><span class="future-buy-bell" aria-hidden="true">${bell}</span><button class="btn mini ghost" type="button" data-level-alert-all="on" aria-label="분할매수 전체 알림 켜기">전체 ON</button><button class="btn mini ghost" type="button" data-level-alert-all="off" aria-label="분할매수 전체 알림 끄기">OFF</button></span>`:"";
   if(auto)rows.sort((a,b)=>Number(a.t.completed?(a.t.executionPrice??a.t.price):a.t.price)-Number(b.t.completed?(b.t.executionPrice??b.t.price):b.t.price)||a.li-b.li||a.ti-b.ti);
-  const row=({l,li,t,ti})=>{
+  const lastDone=rows.filter(x=>x.t.completed).at(-1);
+  const row=x=>{
+    const {l,li,t,ti}=x;
     const line=futureLineName(l),name=movingLineText(line||l.label||`추가 ${li+1}`),slot=futureTrancheSlot(l,t,ti),part=line?futureBuyPrices(f.levels,li).length>1?slot:0:ti,key=`${li}:${ti}`,price=Number(t.completed?(t.executionPrice??t.price):t.price),title=`${name} ${part+1}회차 ${ti+1}번째 계약`;
     const due=!t.completed&&!(f.buyPlan?.endLine&&(auto?.error||auto?.waiting))&&Number.isFinite(current)&&current>0&&Number.isFinite(price)&&price>0&&(f.buyPlan?.endLine||line||l.planEnd?current>=price:current<=price);
     const tag=`<span class="future-buy-name">${esc(name)}</span><span class="tr-no">${part+1}</span>`,priceText=price>0?`${fmtPrice(price)}원`:"—";
@@ -268,7 +270,7 @@ function futureBuyTable(f){
     const pricePart=t.completed?`<strong>${execPart}<span class="future-buy-qty"> · 1계약</span></strong>`:auto?`<strong>${priceText}<span class="future-buy-qty"> · 1계약</span></strong>`:`<label class="future-buy-price"><input data-tranche-price="${key}" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${futureShown(price)}" aria-label="${esc(title)} 매수가">원<span class="future-buy-qty"> · 1계약</span></label>`;
     const monthPart=t.completed?t.mergedMonth?`<span class="future-buy-month-state" title="${esc(t.mergedMonth)} 보유 월물에 편입">${esc(t.mergedMonth)}</span>`:'<span class="future-buy-month-state outside" title="보유 월물 밖에서 따로 계산하는 예전 매수">월물 밖</span>':`<label class="future-buy-month"><input data-tranche-month="${key}" list="posMonths" inputmode="numeric" maxlength="6" placeholder="YYYYMM" title="합칠 보유 월물" value="${esc(t.month||near)}" aria-label="${esc(title)} 편입 월물"></label>`;
     const alert=!t.completed&&typeof tradeAlertToggle==="function"?tradeAlertToggle(tradeFutureTrancheEnabled(f,l,t),`data-tranche-alert="${key}"`,`${title} 매수`):"";
-    return `<div class="future-buy-row${t.completed?" done":due?" due":""}"><label class="check"><input type="checkbox" data-tranche-check="${key}"${t.completed?" checked":f.buyPlan?.endLine&&(auto?.error||auto?.waiting)?" disabled":""} aria-label="${esc(title)} 매수 완료"><span class="future-buy-round"><b class="tr-name" title="${esc(title)}">${tag}</b>${due?'<small class="future-buy-due">도달</small>':""}</span></label><div class="future-buy-condition">${pricePart}<small>기대손익 ${price>0?money((f.targetPrice-price)*contractSize):"—"}</small></div>${monthPart}<div class="future-buy-alert">${alert}</div></div>`;
+    return `<div class="future-buy-row${t.completed?" done":due?" due":""}${x===lastDone?" last-done":""}"><label class="check"><input type="checkbox" data-tranche-check="${key}"${t.completed?" checked":f.buyPlan?.endLine&&(auto?.error||auto?.waiting)?" disabled":""} aria-label="${esc(title)} 매수 완료"><span class="future-buy-round"><b class="tr-name" title="${esc(title)}">${tag}</b>${due?'<small class="future-buy-due">도달</small>':""}</span></label><div class="future-buy-condition">${pricePart}<small>기대손익 ${price>0?money((f.targetPrice-price)*contractSize):"—"}</small></div>${monthPart}<div class="future-buy-alert">${alert}</div></div>`;
   };
   const count=rows.length,planned=Number(auto?.config?.contracts)||Number(f.buyPlan?.contracts)||count,done=planned>0&&completed===planned,summary=planned?`${done?"매수 완료":auto?.waiting?"추가 매수 대기":completed?"매수 진행":"매수 대기"} · ${completed}/${planned}계약`:"계획 미입력";
   const autoInfo=auto?.config?`<p class="purchase-ladder-line"><b>자동 배분</b> ${esc(movingLineText(auto.config.startLine))} → ${auto.config.endLine?`${esc(movingLineText(auto.config.endLine))}${futureEndSpot(prices,futuresEntry(prices,f),f.buyPlan)?"(현물)":""} · `:""}${fmtPrice(auto.config.endPrice)}원 · 총 ${planned}계약</p><div class="future-auto-breakdown">${futureAutoBreakdown(f)}</div>${auto.waiting?`<p class="hint future-auto-hint">${esc(auto.waiting)}</p>`:""}`:"";

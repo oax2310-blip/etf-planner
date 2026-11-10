@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
 function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false,storageFailure=false,dismissed=null}={}){
@@ -69,6 +70,17 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   function change(selector,value){const node=document.querySelectorAll(selector)[0];assert.ok(node,selector);if(typeof value==='boolean')node.checked=value;else node.value=String(value);node.onchange();}
   return {ctx,doc,item,prices,store:api.assetStore,link:api.allocLink,storage,htmlWrites:()=>htmlWrites,warningRenders:()=>warningRenders,change,alerts,names:renameDialogs,form:purchaseForm,edit:()=>document.querySelectorAll('[data-purchase-edit]')[0].onclick(),submit:()=>purchaseForm.onsubmit({preventDefault(){}}),rules:()=>api.purchaseAlertRules(doc,prices),sync:before=>api.syncPurchaseTargets(before,doc.allocation,prices),render:api.purchasePlanner.render,initialize:api.purchasePlanner.initialize,emit:(type='change')=>listeners.forEach(fn=>fn(type)),element:document.getElementById.bind(document),html:()=>document.getElementById('buysView').innerHTML,input:selector=>document.querySelectorAll(selector)[0],inputs:selector=>document.querySelectorAll(selector),type(node,value){node.value=value;inputListeners.forEach(fn=>fn({target:node}));node.oninput?.();}};
 }
+
+for(const completed of [[],[2],[0,2]])test(`분할매수 완료 ${completed.length}회: 부분 체결 뒤에도 마지막 완료 줄만 남기며 기록은 바꾸지 않는다`,()=>{
+  const r=setup({manual:true,price:20000});
+  r.item.buyPlan.stages=Array.from({length:5},(_,i)=>({id:`fake-${i}`,price:10000+i*100,shares:8,amount:8,
+    ...(completed.includes(i)?{done:true,actual:8}:i===3?{shares:3,plannedShares:8,partial:true,actual:3}:{})}));
+  const before=JSON.stringify(r.doc);r.render();
+  const rows=renderedRows(r.html(),'purchaseTable','data-stage');
+  assert.equal(rows.length,5);assertLastDone(rows,completed.length?'2':null);
+  assert.ok(rows.find(x=>x.key==='3').classes.includes('partial'));
+  assert.equal(JSON.stringify(r.doc),before,'회차를 다시 그려도 자산·체결 JSON은 같다');
+});
 
 test('매수 창의 총 금액·직접 목표가는 숫자로 저장·재표시하고 저장 직전 음수·형식 오류를 막는다',()=>{
   const r=setup({budget:10,end:20000});r.store.saveSection=()=>r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));r.initialize();r.edit();

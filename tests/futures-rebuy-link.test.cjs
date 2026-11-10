@@ -4,10 +4,38 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
 const code=['ma-ladder.js','prices.js','rebuy.js','futures.js','futures-plan.js','futures-rebuy.js'].map(f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8')).join('\n;\n');
 const load=()=>{const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000});vm.runInContext(code,ctx);return ctx;};
 const futures=(extra={})=>({targetPrice:1480,baselinePnl:50000,positions:[{month:'202612',contracts:4,settlementPrice:1450}],levels:[],rebuy:{lowPrice:1400,floorPrice:1300,contracts:4,steps:2,...extra}});
 const held=f=>f.positions.reduce((n,p)=>n+p.contracts,0);
+
+function futureTableView(f){
+  const ctx=load(),els={};
+  const el=id=>els[id]||(els[id]={id,innerHTML:'',open:true,classList:{toggle(){}},setAttribute(){},querySelector:()=>({textContent:'',addEventListener(){}}),addEventListener(){}});
+  Object.assign(ctx,{$:el,$$:()=>[],onEdit(){},esc:v=>String(v),money:v=>`${Math.round(v)}원`,shown:v=>String(v),PENCIL:'',priceData:null,decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),save(){},renderFutures(){}});
+  vm.runInContext('futureRebuyExpanded=true',ctx);
+  const before=JSON.stringify(f);ctx.renderFutureRebuy(f);assert.equal(JSON.stringify(f),before,'손절·재매수 표를 그려도 기록 JSON은 같다');
+  return els.futureRebuyPanel.innerHTML;
+}
+
+for(const completed of [[],[2],[0,2]])test(`달러선물 손절 완료 ${completed.length}회: 뒤의 부분 체결을 빼고 마지막 완료 줄만 남긴다`,()=>{
+  const f=futures({contracts:20,sellPct:100,steps:5,currentPrice:2000});
+  f.rebuy.cuts=Array.from({length:4},(_,i)=>completed.includes(i)?{contracts:4,price:1400-i*25,targetPrice:1400-i*25}:i===3?{contracts:1,price:1325,targetPrice:1325,partial:true,plannedQty:4}:null);
+  const rows=renderedRows(futureTableView(f),'frCutTable','data-fcut');
+  assertLastDone(rows,completed.length?'2':null);assert.ok(rows.find(x=>x.key==='3').classes.includes('partial'));
+});
+
+for(const completed of [[],[2],[0,2]])test(`달러선물 재매수 완료 ${completed.length}회: 뒤의 부분 체결·흐린 제외 줄에 last-done을 붙이지 않는다`,()=>{
+  const names=['25선','32선','42선','60선','80선'],f=futures({contracts:20,sellPct:100,steps:2,currentPrice:2000,
+    cuts:[{contracts:10,price:1400,targetPrice:1400},{contracts:10,price:1380,targetPrice:1380}],
+    stages:names.map((name,i)=>({name,price:i===4?1600:1300+i*20,
+      ...(completed.includes(i)?{done:true,contracts:1,execPrice:1300+i*20}:i===3?{buys:[{contracts:1,price:1360,partial:true,plannedQty:2}]}:{})})),
+    planned:names.map(name=>[name,0])});
+  const rows=renderedRows(futureTableView(f),'frBuyTable','data-fbuy');
+  assertLastDone(rows,completed.length?'2:0':null);assert.ok(rows.find(x=>x.key==='3:0').classes.includes('partial'));
+  assert.ok(rows.some(x=>x.classes.includes('future-buy-dim')),'평균 손절 환율 위 제외 줄도 함께 그린다');
+});
 
 test('손절 체크는 근월물 계약을 빼고 실현 손익을 누적 정산손익에 더해 기대수익·도달 손익에 반영한다',()=>{
   const ctx=load(),f=futures(),before=ctx.futuresSummary(f).current;

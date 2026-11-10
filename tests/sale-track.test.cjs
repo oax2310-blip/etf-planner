@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
 
 // 분할매도 계획 진행 카드(plans.js planTrackCard). 가짜 종목·가격·수량만 사용한다.
 const read=f=>fs.readFileSync(path.join(__dirname,'../js',f),'utf8');
@@ -82,7 +83,7 @@ test('회차표는 진행 카드와 같은 기준으로 도달 회차를 강조�
   // 완료·부분 체결 회차는 도달보다 체결 상태를 먼저 보인다.
   const fills={0:{price:500,plannedQty:2,qty:2},1:{price:475,plannedQty:2,qty:1}};
   const mixed=draw(plan({fills,checked:[true,false,false,false,false]}),quote(440));
-  assert.deepEqual(rows(mixed.html),['done','partial','due','','']);
+  assert.deepEqual(rows(mixed.html),['done last-done','partial','due','','']);
   assert.match(mixed.html,/aria-label="3회 매도 완료"><span class="purchase-round"><b>3회<\/b><small>도달<\/small>/);
   assert.match(mixed.html,/aria-label="2회 매도 완료"><span class="purchase-round"><b>2회<\/b><small>남은 1주<\/small>/,'부분 체결은 회차 아래 남은 수량');
   assert.equal((mixed.html.match(/<small>도달<\/small>/g)||[]).length,1);
@@ -96,7 +97,15 @@ test('분할매도 체크는 분할매수 회차표와 같은 표(매도 종목 
   assert.match(table,/^<section class="card table-card purchase-table sale-table hide-completed" id="saleTable"><div class="purchase-buy-target"><span>매도 종목<\/span><div><div class="buy-target-name"><b>가상 ETF<\/b><span class="buy-target-held">보유 8주<\/span><\/div><small class="buy-target-info"><span>AAA<\/span><\/small><\/div><\/div><div class="purchase-table-head"><span>회차<\/span><span>기준가<\/span><span>매도<\/span><span>체결<\/span><span>알림<\/span><span>상태<\/span><\/div><button class="completed-fold-bar"/);
   assert.doesNotMatch(table,/m-head|class="table-head"|sale-row|누적 체결 <input|purchase-sub/,'모바일 머리줄·회차마다 반복하는 종목 이름을 두지 않는다');
   assert.match(table,/<div class="stage-price"><span class="price">\$475<\/span><span class="krw">≈₩617500<\/span><\/div>\s*<div class="purchase-qty">2주<\/div><div class="purchase-fill"><input type="number" min="0" max="2" step="1" inputmode="numeric" data-sale-filled="1" value="0" placeholder="0" aria-label="2회 매도 누적 체결 수량 \(주\)"><\/div><div class="purchase-alert"><label class="trade-alert-toggle"/);
-  assert.match(table,/<div class="purchase-row done">[\s\S]*?<div class="purchase-qty">2주<\/div>[\s\S]*?<label class="trade-alert-toggle completed"/,'완료 회차는 판 수량·완료 표시');
+  assert.match(table,/<div class="purchase-row done last-done">[\s\S]*?<div class="purchase-qty">2주<\/div>[\s\S]*?<label class="trade-alert-toggle completed"/,'완료 회차는 판 수량·완료 표시');
+});
+
+for(const completed of [[],[2],[0,2]])test(`분할매도 완료 ${completed.length}회: 마지막 완료 회차만 남기고 뒤의 부분 체결은 제외한다`,()=>{
+  const checked=Array.from({length:5},(_,i)=>completed.includes(i)),fills={3:{price:425,plannedQty:2,qty:1}};
+  for(const i of completed)fills[i]={price:500-i*25,plannedQty:2,qty:2};
+  const rows=renderedRows(draw(plan({checked,fills}),quote(600)).html,'saleTable','data-stage');
+  assert.equal(rows.length,5);assertLastDone(rows,completed.length?'2':null);
+  assert.ok(rows.find(x=>x.key==='3').classes.includes('partial'));
 });
 
 test('오르며 파는 계획은 현재가 이상을 도달로 보고 모두 팔면 이름표가 띠 끝으로 간다',()=>{
