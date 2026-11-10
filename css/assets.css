@@ -1,5 +1,5 @@
 /* 자산 현황 전용 스타일. 공통 토큰·레이아웃 규칙은 app.css, 작업 규칙은 AGENTS.md. */
-.assets-page .neg{color:var(--danger)}.assets-page .metric strong.neg{color:var(--danger)}
+.assets-page .neg{color:var(--danger)}
 .metric .cash-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px}.cash-value>span{white-space:nowrap}.cash-value .cash-pct{font-size:13px;letter-spacing:0}
 .assets-page .section-heading>.btn{margin-left:auto}.field>.unit-input{font-size:15px;font-weight:400;color:var(--text)}.field-hint{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.group-head .gap{white-space:nowrap}
 /* 종목 창: 설명 유무에 따라 입력칸이 늘어나지 않게 위쪽부터 배치한다. */
@@ -129,7 +129,6 @@
 .benchmark-ytd-cells{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px}.benchmark-ytd-cells>span{min-width:0;padding:0 12px}.benchmark-ytd-cells small{display:block;font-size:11px;color:var(--text-3)}.benchmark-ytd-cells b{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pnl-broker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.pnl-broker{min-width:0;display:grid;align-content:start;gap:8px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pnl-broker h3,.pnl-balance-title{margin:0;font-size:14px;font-weight:700}.pnl-broker .field{gap:4px}.pnl-broker .field>input{min-height:40px}.pnl-other>summary{padding:6px 0;cursor:pointer;color:var(--text-2);font-size:13px}.pnl-other[open]>#pnlEntryRows{margin-top:10px}
 .pnl-entry{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);margin-bottom:8px}.pnl-entry-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text-3)}.pnl-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pnl-balance-title{margin-top:6px}.assets-page input[data-money]{font-variant-numeric:tabular-nums}
-#savingsView .metric strong{overflow-wrap:anywhere;font-size:clamp(22px,2.3vw,28px)}
 .pnl-entry-grid>.dialog-wide{grid-column:1/-1}
 /* RP는 계좌 합계에 포함하되 별도 입력한다. 안내는 dialog 위 top layer에 띄우고 기존 색 토큰만 쓴다. */
 .pnl-balance-title{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 12px}.pnl-balance-title output{margin-left:auto;font-size:12px;font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}

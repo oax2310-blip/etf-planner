@@ -158,7 +158,9 @@ function renderAlloc(tab="alloc"){
   const hasKrwBtcAverage=[...profits.items.values()].some(p=>p.currentPriceKRW!==undefined);
   const cashPct=pc(s.pct(s.cash));
   const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
-  const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
+  // 현물 환율 기준일은 날짜 형식이 맞을 때만 붙인다(시세 파일에 기준일이 없거나 깨져도 'NaN/NaN'을 보이지 않게).
+  const fxDay=/^\d{4}-\d{2}-\d{2}$/.test(String(prices?.fx?.asOf))?` ${Number(prices.fx.asOf.slice(5,7))}/${Number(prices.fx.asOf.slice(8))}`:"";
+  const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물${fxDay})`:" (직접 넣은 값)"}`:"달러 환율 없음";
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
   const gapHtml=(g,{why="매수중·매도중 종목이라",basis="현재 비중 − 목표 비중"}={})=>{ if(!g)return "";
     const tip=`목표 대비 ${g.text}p (${basis})${g.state==="over"?" · 목표 초과":g.state==="under"?" · 목표 미달":g.muted?` · ${why} 경고 색을 쓰지 않습니다`:" · 1.0%p 이내"}`;
