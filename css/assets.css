@@ -1,6 +1,25 @@
 /* 자산 현황 전용 스타일. 공통 토큰·레이아웃 규칙은 app.css, 작업 규칙은 AGENTS.md. */
-.assets-page .neg{color:var(--danger)}.assets-page .metric strong.neg{color:var(--danger)}
-.metric .cash-value{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px}.cash-value>span{white-space:nowrap}.cash-value .cash-pct{font-size:13px;letter-spacing:0}
+.assets-page .neg{color:var(--danger)}
+/* 맨 위 요약(js/assets.js renderAlloc, 투자구성·자산 배분 공통): 기준 총자산(수정) · 지역 구성 막대 · 합계·시세·환율 안내.
+   지역 색은 지역에 고정한 8색(밝은·어두운 화면을 각각 고른 값). 칸 안 글자는 대비가 더 큰 쪽(먹색 --region-ink, 6번과 밝은 화면의 7번은 흰색). */
+:root{--region-1:#2a78d6;--region-2:#eb6834;--region-3:#1baf7a;--region-4:#eda100;--region-5:#e87ba4;--region-6:#008300;--region-7:#6250d6;--region-8:#e34948;--region-ink:#0b1020;--region-ink-6:#fff;--region-ink-7:#fff}
+@media screen{:root[data-theme=dark]{--region-1:#3987e5;--region-2:#d95926;--region-3:#199e70;--region-4:#c98500;--region-5:#d55181;--region-7:#9085e9;--region-8:#e66767;--region-ink-7:#0b1020}}
+.alloc-heading{margin-bottom:14px}
+.alloc-summary{margin-bottom:16px;padding:14px 16px}
+.alloc-summary-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0 10px;font-size:12.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.alloc-summary-head label{font-weight:500}.alloc-summary-head>span{white-space:nowrap}
+.alloc-total-edit{display:inline-flex;align-items:baseline;max-width:100%;margin-top:2px;color:var(--text);font-size:23px;font-weight:700;letter-spacing:-.03em;line-height:1.35;cursor:text}
+/* 입력 칸 너비는 같은 글자를 담은 보이지 않는 칸(::after, data-value)에 맞춰 밑줄이 글자보다 길어지지 않게 한다. */
+.alloc-total-size{display:inline-grid;min-width:3ch}.alloc-total-size::after{content:attr(data-value);visibility:hidden;white-space:pre;padding:0 1px;border-bottom:1.5px solid transparent}.alloc-total-size>input,.alloc-total-size::after{grid-area:1/1}.alloc-total-size>input{width:0;min-width:100%}
+.alloc-total-hint{display:none;margin-top:4px;font-size:11.5px;color:var(--text-3)}.alloc-total-edit:focus-within+.alloc-total-hint{display:block}
+/* 지역 구성 막대: 칸 사이 2px, 칸 안 숫자는 칸이 좁으면 숨긴다(두 글자 's'는 24px, 그 밖은 34px부터 표시). */
+.region-bar{display:flex;gap:2px;height:28px;margin-top:12px}
+.region-bar>i{container-type:inline-size;display:flex;align-items:center;min-width:3px;border-radius:4px;overflow:hidden;color:var(--region-ink);font-size:11px;font-style:normal;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}.region-bar span{padding-left:6px}
+@container (max-width:33px){.region-bar span{display:none}}
+@container (min-width:24px){.region-bar span.s{display:inline}}
+.region-bar>.rest{background:var(--surface-3);color:var(--text-3);font-weight:600}.region-bar>.region-6{color:var(--region-ink-6)}.region-bar>.region-7{color:var(--region-ink-7)}
+.region-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 0 0;padding:0;list-style:none;font-size:11.5px;color:var(--text-2)}.region-legend li{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}.region-legend i{flex:none;width:8px;height:8px;border-radius:3px}.region-legend .rest{background:var(--surface-3);box-shadow:inset 0 0 0 1px var(--line-strong)}
+.region-1{background:var(--region-1)}.region-2{background:var(--region-2)}.region-3{background:var(--region-3)}.region-4{background:var(--region-4)}.region-5{background:var(--region-5)}.region-6{background:var(--region-6)}.region-7{background:var(--region-7)}.region-8{background:var(--region-8)}.region-x{background:var(--text-3)}
+.alloc-summary-note{display:flex;flex-wrap:wrap;gap:1px 14px;margin:10px 0 0;font-size:11.5px;line-height:1.5;color:var(--text-3);font-variant-numeric:tabular-nums}
 .assets-page .section-heading>.btn{margin-left:auto}.field>.unit-input{font-size:15px;font-weight:400;color:var(--text)}.field-hint{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}.group-head .gap{white-space:nowrap}
 /* 종목 창: 설명 유무에 따라 입력칸이 늘어나지 않게 위쪽부터 배치한다. */
 #itemDialog .dialog-grid{row-gap:12px}
@@ -36,8 +55,6 @@
 .trade-state{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:10.5px;font-weight:700;line-height:1.45;letter-spacing:0;white-space:nowrap;vertical-align:1px}
 .trade-state.buy{background:var(--danger-soft);color:var(--danger)}.trade-state.sell{background:var(--accent-soft);color:var(--accent)}
 /* 종목별: 분류 이름 · 그룹 카드 · 종목 줄 */
-.alloc-heading>div{width:100%;min-width:0}.alloc-heading .title-row{justify-content:space-between}.alloc-heading .title-row>.btn{flex:none;min-height:36px;white-space:nowrap}
-@media(pointer:coarse){.alloc-heading .title-row>.btn{min-height:44px}}
 .alloc-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;order:3;margin-left:auto}.alloc-actions>.btn{white-space:nowrap}.alloc-actions>.btn:disabled{opacity:.45;cursor:default}
 .alloc-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;margin-bottom:16px}.alloc-search .field{min-width:0}.alloc-search input{min-width:0}.alloc-search>.btn{align-self:end;min-height:40px}.alloc-search-meta{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}.alloc-search-meta>.hint{margin:0}
 .class-label{margin:18px 4px 8px;font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.01em}.class-label:first-of-type{margin-top:0}
@@ -129,7 +146,6 @@
 .benchmark-ytd-cells{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px}.benchmark-ytd-cells>span{min-width:0;padding:0 12px}.benchmark-ytd-cells small{display:block;font-size:11px;color:var(--text-3)}.benchmark-ytd-cells b{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pnl-broker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.pnl-broker{min-width:0;display:grid;align-content:start;gap:8px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pnl-broker h3,.pnl-balance-title{margin:0;font-size:14px;font-weight:700}.pnl-broker .field{gap:4px}.pnl-broker .field>input{min-height:40px}.pnl-other>summary{padding:6px 0;cursor:pointer;color:var(--text-2);font-size:13px}.pnl-other[open]>#pnlEntryRows{margin-top:10px}
 .pnl-entry{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);margin-bottom:8px}.pnl-entry-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text-3)}.pnl-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pnl-balance-title{margin-top:6px}.assets-page input[data-money]{font-variant-numeric:tabular-nums}
-#savingsView .metric strong{overflow-wrap:anywhere;font-size:clamp(22px,2.3vw,28px)}
 .pnl-entry-grid>.dialog-wide{grid-column:1/-1}
 /* RP는 계좌 합계에 포함하되 별도 입력한다. 안내는 dialog 위 top layer에 띄우고 기존 색 토큰만 쓴다. */
 .pnl-balance-title{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 12px}.pnl-balance-title output{margin-left:auto;font-size:12px;font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
@@ -152,7 +168,7 @@
 /* 저축 계획: 실제 기록 요약과 작은 목표 바를 중심으로 둔다. */
 :root{--savings-goal-track:#202d40;--savings-goal-fill:#315ed0;--savings-goal-text:#f3f6ff}
 #savingsView{max-width:900px;margin-inline:auto}
-.savings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.savings-heading h1{margin:0;font-size:23px;line-height:1.4;letter-spacing:-.035em}
+.savings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.savings-heading h1,.alloc-heading h1{margin:0;font-size:23px;line-height:1.4;letter-spacing:-.035em}
 .savings-summary svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .savings-summary{padding:12px 14px;border-radius:12px;margin-bottom:14px}.savings-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .savings-summary-head select{max-width:calc(100% - 44px);min-height:36px;padding:4px 28px 4px 0;border:0;border-radius:4px;background:var(--chev) no-repeat right 6px center;color:var(--text);font-size:15px;font-weight:600;appearance:none}.savings-summary-head select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.savings-summary-head option{background:var(--surface);color:var(--text)}
@@ -174,7 +190,7 @@
 .savings-details{margin-top:18px;border-block:1px solid var(--line)}.savings-details summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:10px 0;list-style:none;cursor:pointer;font-size:14px}.savings-details summary::-webkit-details-marker{display:none}.savings-details summary i{flex:none;width:6px;height:6px;margin-right:3px;border-right:1.5px solid var(--text-2);border-bottom:1.5px solid var(--text-2);transform:rotate(45deg)}.savings-details details[open] summary i{transform:rotate(225deg)}.savings-details summary:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}.savings-details p{margin:0;padding:0 0 14px;font-size:12px;line-height:1.7;color:var(--text-2);word-break:keep-all}
 .savings-milestone-age{white-space:nowrap}.savings-milestone-record{display:flex;align-items:center;flex-wrap:wrap;gap:10px 8px;padding:14px;border-radius:12px;font-size:13px}.savings-milestone-record h2{flex-basis:100%;margin:0;font-size:15px}.savings-milestone-record b{display:block;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}.savings-milestone-record small{display:block;margin-top:3px;color:var(--text-2);font-size:11px}.savings-milestone-record .btn{min-height:40px;margin-left:auto;font-size:12px}.savings-milestone-record p{flex-basis:100%;margin:0;color:var(--text-2);font-size:11px;line-height:1.6;word-break:keep-all}
 .assets-page:has(#savingsView:not(.hidden)) .price-refresh{display:none}
-@media(max-width:700px){.savings-heading h1{font-size:22px}.savings-summary{padding:10px 12px}.savings-balance strong{font-size:21px}.savings-balance>span{font-size:12.5px}}
+@media(max-width:700px){.savings-heading h1,.alloc-heading h1{font-size:22px}.savings-summary{padding:10px 12px}.savings-balance strong{font-size:21px}.savings-balance>span{font-size:12.5px}}
 @media(max-width:360px){.savings-balance strong{font-size:19px}.savings-goal{font-size:11px}.savings-goal-label-group{gap:6px}.savings-balance{gap:4px 6px}}
 .param-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 6px}.unit-input{position:relative;display:block}.unit-input input{padding-right:34px!important}.unit-input em{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-style:normal;font-size:12.5px;color:var(--text-3);pointer-events:none}
 .sub-title{margin:20px 0 8px;font-size:14.5px;font-weight:700}.sub-title small{margin-left:6px;font-size:12px;font-weight:500;color:var(--text-3)}
@@ -195,7 +211,6 @@
 .savings-year-results{display:none}.savings-year-body{padding:4px 18px 16px}.savings-year-body[hidden]{display:none}.savings-year-exact{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 5px;margin:12px 0 0;font-size:13px;color:var(--text-2);word-break:keep-all}.savings-year-exact b{color:var(--text);font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.savings-year-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 0;margin-bottom:14px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}.savings-year-totals>div{display:grid;gap:5px;min-width:0}.savings-year-totals span{font-size:11.5px;color:var(--text-3)}.savings-year-totals b{font-size:13px;font-weight:600;white-space:nowrap}.savings-record-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin-top:14px}.savings-record-heading h3{margin:0;font-size:14px}.savings-record-heading>span{font-size:11px;color:var(--text-3)}.savings-year-body>.hint{margin:8px 0 14px;line-height:1.6;word-break:keep-all}.savings-month-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 12px}.savings-month{align-content:start;min-width:0}.savings-month .field-hint{word-break:keep-all;overflow-wrap:normal}.savings-month>span{display:flex;justify-content:space-between;gap:6px}.savings-month>span>small{font-weight:400;color:var(--text-3)}.savings-month input{min-width:0;min-height:42px;font-variant-numeric:tabular-nums}
 @media(max-width:900px){.param-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* 검색창 아래 첫 분류 오른쪽의 전체 접기·펼치기 위치를 PC와 모바일에서 공유한다. */
-.alloc-heading .title-row>[data-alloc-fold-all]{display:none}
 .alloc-search{margin-bottom:-2px}
 .alloc-search:has(>#allocSearchClear.hidden){grid-template-columns:minmax(0,1fr)}
 .alloc-search-meta>.alloc-fold-all-mobile{display:inline-flex;flex:none;position:relative;top:9px;min-height:28px;padding:4px 8px;font-size:12px;white-space:nowrap}

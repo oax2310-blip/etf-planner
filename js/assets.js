@@ -158,7 +158,12 @@ function renderAlloc(tab="alloc"){
   const hasKrwBtcAverage=[...profits.items.values()].some(p=>p.currentPriceKRW!==undefined);
   const cashPct=pc(s.pct(s.cash));
   const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
-  const fxNote=s.fx?`달러 환율 ${nf2.format(s.fx)}원${plus(prices?.fx?.close)?` (현물 ${Number(prices.fx.asOf?.slice(5,7))}/${Number(prices.fx.asOf?.slice(8))})`:" (직접 넣은 값)"}`:"달러 환율 없음";
+  // 달러 환율 안내. 현물 환율은 기준일을 '현물 M/D'로 붙인다. 기준일이 없거나 형식이 깨졌으면 날짜 대신 '기준일 없음',
+  // A_STALE_DAYS보다 오래됐으면 '갱신 필요' 경고 꼬리표를 붙인다(종목 시세 quoteText와 같은 기준). 직접 넣은 환율(cashFx)은 경고 대상이 아니다.
+  const fxSpot=plus(prices?.fx?.close), fxAsOf=/^\d{4}-\d{2}-\d{2}$/.test(String(prices?.fx?.asOf))?prices.fx.asOf:"", fxDays=fxAsOf?priceDays(fxAsOf):NaN;
+  const fxFlag=(text,detail)=>`<span class="quote-status" title="${escA(detail)}"><span aria-hidden="true">!</span> ${text}</span>`;
+  const fxWarn=!fxSpot?"":!Number.isFinite(fxDays)?fxFlag("기준일 없음","현물 환율 기준일을 확인할 수 없습니다. 오래된 환율일 수 있습니다."):fxDays>A_STALE_DAYS?fxFlag("갱신 필요",`현물 환율이 ${A_STALE_DAYS}일 넘게 갱신되지 않았습니다. 마지막 기준일: ${fxAsOf}`):"";
+  const fxText=s.fx?`<span class="nowrap">환율 ${nf2.format(s.fx)}원${fxSpot?` (현물${fxAsOf?` ${Number(fxAsOf.slice(5,7))}/${Number(fxAsOf.slice(8))}`:""})${fxWarn}`:" (직접 넣은 값)"}</span>`:"환율 없음", fxNote=`달러 ${fxText}`;
   const gap=(t,v)=>{ if(finite(t)===null)return ""; const d=t/100*s.base-v; return Math.abs(d)<.5?`<span class="gap ok">목표 도달</span>`:d>0?`<span class="gap up">목표까지 +${man(d)}</span>`:`<span class="gap over">목표 초과 ${man(-d)}</span>`; };
   const gapHtml=(g,{why="매수중·매도중 종목이라",basis="현재 비중 − 목표 비중"}={})=>{ if(!g)return "";
     const tip=`목표 대비 ${g.text}p (${basis})${g.state==="over"?" · 목표 초과":g.state==="under"?" · 목표 미달":g.muted?` · ${why} 경고 색을 쓰지 않습니다`:" · 1.0%p 이내"}`;
@@ -288,21 +293,38 @@ function renderAlloc(tab="alloc"){
   }
   const detail=detailBlocks.map(b=>`<div class="alloc-class" data-class-block="${escA(b.classId)}"><div class="class-label">${escA(b.label)}</div>${b.groups.map(groupCard).join("")}</div>`).join("");
   const cashRows=a.cash.map(c=>`<button class="cash-row" type="button" data-cash="${escA(c.id)}"><span class="cash-place">${escA(c.place||"")}</span><strong>${escA(c.name)}${c.minus?` <small>차감</small>`:""}</strong><span class="cash-amt">${c.currency==="USD"?`$${nf2.format(finite(c.amount)||0)}`:wonA(c.amount)}</span><b>${c.minus?"−":""}${man(Math.abs(cashValue(c,s.fx)))}</b></button>`).join("");
-  const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(s.grand), totalWidth=v=>`${Math.max(3,v.replace(/[억만원]/g,"00").length)+.6}ch`;
-  view.innerHTML=`<div class="heading${strategy?"":" alloc-heading"}"><div><div class="eyebrow">${strategy?"지역과 자산군별 배분":"종목과 현금"}</div>${strategy?"<h1>투자구성</h1>":`<div class="title-row"><h1>자산 배분</h1>${foldAllButton("toggleAllocAll")}</div>`}<p>${strategy?"지역·자산 분류별 현재 비중과 목표를 한눈에 확인합니다. 목표 비중은 종목별에서 수정하면 소분류·그룹·분류에 자동 합산됩니다.":"금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 점검을 끝냈다는 직접 표시입니다."}</p></div></div>
-    <div class="card metrics"><div class="metric"><label for="allocTotal">기준 총자산 (비중 기준)</label><label class="metric-edit"><input id="allocTotal" type="text" enterkeyhint="done" autocomplete="off" spellcheck="false" value="${totalText}" placeholder="${totalPlaceholder}" aria-describedby="allocTotalHint" style="width:${totalWidth(totalText||totalPlaceholder)}">${PEN}</label><small id="allocTotalHint">억·만원으로 입력 · 숫자만 넣으면 만원</small><small>종목 + 현금 합계 ${man(s.grand)}${plus(a.total)?` · 차이 ${s.grand>=a.total?"+":"−"}${man(Math.abs(s.grand-a.total))}`:" · 비우면 합계 기준"}</small></div>
-      <div class="metric"><label>투자 평가액</label><strong>${man(s.invest)}</strong><small>시세 반영 ${live} / ${count}개 종목${prices?.updatedAt?` · 시세 파일 ${new Date(prices.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}</small></div>
-      <div class="metric"><label>현금</label><strong class="cash-value"><span>${man(s.cash)}</span><span class="cash-pct" title="기준 총자산 대비 비중">(${cashPct})</span></strong><small>${usd?`달러 $${nf2.format(usd)} · `:""}${fxNote}</small></div></div>
+  // 기준을 비웠을 때 보이는 합계(placeholder)는 화면의 다른 금액처럼 만원 소수 첫째 자리로 반올림한다.
+  const totalText=allocationTotalText(a.total), totalPlaceholder=allocationTotalText(Math.round(s.grand*10)/10);
+  // 맨 위 요약(투자구성·자산 배분 공통): 기준 총자산(수정) · 지역 구성 막대 · 합계와 시세·환율 안내.
+  // 막대 전체 = 기준 총자산과 지역 합계 중 큰 값. 칸 너비는 금액 비례이고 칸 안 숫자는 지역 카드와 같은 기준 총자산 대비 %(반올림)다.
+  // 평가액이 0 이하인 지역은 그리지 않고, 기준이 합계보다 크면 남은 만큼 '기준까지' 칸을 둔다. 막대의 5% 미만인 칸은 숫자를 넣지 않고, 그보다 넓어도 좁은 칸의 숫자는 CSS(@container)가 숨긴다.
+  // 지역 색은 순위가 아니라 지역에 고정한다: ASSET_REGIONS 순서대로 1~6, 그 밖의 지역은 나온 순서대로 7·8, 더 많으면 중립색(region-x). 색 값은 css/assets.css --region-N.
+  const regionClass=(()=>{ let extra=ASSET_REGIONS.length; const map=new Map();
+    for(const r of s.regions){ const i=ASSET_REGIONS.indexOf(r.name), n=i>=0?i+1:++extra; map.set(r.name,n<=8?`region-${n}`:"region-x"); }
+    return name=>map.get(name); })();
+  const barParts=s.regions.filter(r=>r.value>0), barFilled=barParts.reduce((n,r)=>n+r.value,0), barRest=Math.max(0,s.base-barFilled), barWhole=barFilled+barRest;
+  const barCell=(cls,name,value)=>{ const p=s.pct(value), text=`${Math.round(p)}%`;
+    return `<i class="${cls}" style="flex:${Math.round(value*100)/100}" title="${escA(`${name} ${man(value)} · ${pc(p)}`)}">${value/barWhole>=.05?`<span${text.length<3?' class="s"':""}>${text}</span>`:""}</i>`; };
+  const regionBar=barFilled>0?`<div class="region-bar" role="img" aria-label="${escA(`지역 구성: ${[...barParts.map(r=>`${r.name} ${pc(s.pct(r.value))}`),...(barRest>0?[`기준까지 ${pc(s.pct(barRest))}`]:[])].join(", ")}`)}">${barParts.map(r=>barCell(regionClass(r.name),r.name,r.value)).join("")}${barRest>0?barCell("rest","기준까지",barRest):""}</div>
+      <ul class="region-legend" aria-hidden="true">${barParts.map(r=>`<li><i class="${regionClass(r.name)}"></i>${escA(r.name)}</li>`).join("")}${barRest>0?'<li><i class="rest"></i>기준까지</li>':""}</ul>`:"";
+  const totalDiff=s.grand-s.base, totalGap=!plus(a.total)?"기준 미입력 · 합계 기준":Math.abs(totalDiff)<.05?"기준과 같음":`기준보다 ${man(Math.abs(totalDiff))} ${totalDiff<0?"적음":"많음"}`;
+  view.innerHTML=`<div class="heading alloc-heading"><h1>${strategy?"투자구성":"자산 배분"}</h1></div>
+    <section class="card alloc-summary" aria-label="자산 요약"><div class="alloc-summary-head"><label for="allocTotal">기준 총자산</label><span>투자 ${man(s.invest)} · 현금 ${man(s.cash)}</span></div>
+      <label class="metric-edit alloc-total-edit"><span class="alloc-total-size" data-value="${escA(totalText||totalPlaceholder)}"><input id="allocTotal" type="text" enterkeyhint="done" autocomplete="off" spellcheck="false" value="${totalText}" placeholder="${totalPlaceholder}" aria-describedby="allocTotalHint"></span>${PEN}</label>
+      <small class="alloc-total-hint" id="allocTotalHint">억·만원으로 입력 · 숫자만 넣으면 만원 · 비우면 종목 + 현금 합계 기준</small>
+      ${regionBar}
+      <p class="alloc-summary-note"><span>종목 + 현금 합계 ${man(s.grand)} · ${totalGap}</span><span>시세 반영 ${live} / ${count}개 · ${usd?`달러 $${nf2.format(usd)} · ${fxText}`:fxNote}</span></p></section>
     ${strategy?"":`<section class="card alloc-profit" aria-label="보유 평가손익 합계"><div class="alloc-profit-head"><h2>보유 평가손익</h2><span>${hasKrwBtcAverage?"평균매수가 통화 기준":"현지 통화 기준 · 환율 변동 제외"}</span></div><div class="alloc-profit-totals">${[...profits.currencies.values()].map(p=>`<div><span>${p.currency==="USD"?"달러 (USD)":"원화 (KRW)"}</span><strong class="${profitColorA(p.profit)}">${profitMoneyA(p.profit,p.currency,true)}</strong><b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></div>`).join("")||'<p class="hint">종목별 평균매수가와 보유 수량을 입력하면 합산 손익을 확인할 수 있습니다.</p>'}</div><p class="hint">계산 가능 ${profits.eligible} / 보유 ${profits.count}개 · 평균매수가·수량·현재가가 있는 항목만 합산${hasKrwBtcAverage?"<br>원화 평균매수가 비트코인은 달러 시세 × 현재 환율로 계산":""}</p></section>`}
     ${strategy?`<div class="section-heading"><h2>배분 개요</h2><span>지역별 합계와 목표 · 목표 합계 ${pc(s.regions.some(r=>r.target!==null)?s.regions.reduce((n,r)=>n+(r.target??0),0):null)}</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
-    <p class="footnote">모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
+    <p class="footnote">목표 비중은 자산 배분의 종목에서 수정하면 소분류·그룹·분류에 자동 합산됩니다. 모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
     ${memberPanel()}
     <div class="alloc-search"><label class="field"><span>종목 검색</span><input id="allocSearch" type="search" value="${escA(allocQuery)}" placeholder="종목명 · 코드 · 그룹 · 소분류" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="allocItems" aria-describedby="allocSearchStatus"></label><button class="btn hidden" id="allocSearchClear" type="button">초기화</button><div class="alloc-search-meta"><p class="hint" id="allocSearchStatus" role="status" aria-live="polite" aria-atomic="true"></p>${foldAllButton("toggleAllocAllMobile"," alloc-fold-all-mobile")}</div></div>
     <div id="allocItems">${detail||`<div class="card empty">그룹이 없습니다</div>`}</div>
     <div class="card empty assets-empty hidden" id="allocSearchEmpty"><h2>검색 결과가 없습니다</h2><p>종목명이나 코드를 확인하거나 검색어를 줄여보세요.</p></div>
     <div class="section-heading"><h2>현금</h2><span>${fxNote}</span><button class="btn mini" type="button" id="addCash">＋ 현금</button></div>
-    <section class="card cash-card"><div class="cash-total">${foldButton("cash","allocCashBody","현금 상세",`<span>합계</span><b><span>${man(s.cash)}</span><small class="cash-pct" title="기준 총자산 대비 비중">(${cashPct})</small></b>`)}</div><div class="alloc-fold-body" id="allocCashBody"${allocOpenCards.has("cash")?"":" hidden"}>${cashRows||`<p class="group-empty">현금 항목 없음</p>`}</div></section>`}
+    <section class="card cash-card"><div class="cash-total">${foldButton("cash","allocCashBody","현금 상세",`<span>합계</span><b><span>${man(s.cash)}</span><small class="cash-pct" title="기준 총자산 대비 비중">(${cashPct})</small></b>`)}</div><div class="alloc-fold-body" id="allocCashBody"${allocOpenCards.has("cash")?"":" hidden"}>${cashRows||`<p class="group-empty">현금 항목 없음</p>`}</div></section>
+    <p class="footnote">금액은 만원 단위, 비중은 기준 총자산 대비입니다. 종목 이름을 눌러 목표를 수정하세요. 체크는 점검을 끝냈다는 직접 표시입니다.</p>`}
     <section class="card panel memo assets-memo"><div class="memo-head"><h2>${strategy?'<label for="allocMemo">배분 메모</label>':foldButton("memo","allocMemoBody","배분 메모","<span>배분 메모</span>")}</h2></div><div class="alloc-fold-body" id="allocMemoBody"${strategy||allocOpenCards.has("memo")?"":" hidden"}><textarea id="allocMemo" aria-label="배분 메모" maxlength="4000">${escA(a.memo||"")}</textarea></div></section>`;
   view.querySelectorAll("[data-alloc-fold]").forEach(button=>{
     // 입력 저장으로 화면이 다시 그려져 클릭이 사라지지 않게, 접힘을 먼저 바꾼 뒤 포커스를 옮긴다.
@@ -333,7 +355,7 @@ function renderAlloc(tab="alloc"){
     };
   });
   const totalInput=el("allocTotal");
-  totalInput.oninput=()=>{totalInput.setCustomValidity("");totalInput.style.width=totalWidth(totalInput.value||totalPlaceholder);};
+  totalInput.oninput=()=>{totalInput.setCustomValidity("");totalInput.parentNode.dataset.value=totalInput.value||totalPlaceholder;};
   totalInput.onchange=()=>{const n=parseAllocationTotal(totalInput.value);
     if(Number.isNaN(n)){totalInput.setCustomValidity("0 이상의 금액을 억·만원 단위로 입력하세요. 숫자만 넣으면 만원입니다.");totalInput.reportValidity();return;}
     const next=plus(n);if(next!==(doc.allocation.total??null)){doc.allocation.total=next;saveSection("allocation");}render();};
