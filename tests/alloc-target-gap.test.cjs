@@ -7,11 +7,11 @@ const vm = require('node:vm');
 // 자산 배분 탭의 목표 대비(%p)·경고 색·매수중/매도중 표시. assets.js를 가상 DOM으로 불러 그리며 종목·금액은 모두 테스트용 가짜 값이다.
 const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 const PLANNER_KEY = 'etf-exit-planner-standalone-v1';
-function page(data, planner, hash = '#alloc', save = null) {
+function page(data, planner, hash = '#alloc', save = null, prices = null) {
   const nodes = new Map(), storage = new Map([[PLANNER_KEY, JSON.stringify(planner)]]);
   const node = id => { if (!nodes.has(id)) nodes.set(id, {dataset: {}, hidden: false, value: '', innerHTML: '', textContent: '', style: {}, classList: {toggle() {}}, querySelector: sel => node(`${id}:${sel}`), querySelectorAll: () => [], setAttribute() {}, getAttribute() {}, showModal() {}, close() {}}); return nodes.get(id); };
   const document = {hidden: false, activeElement: null, getElementById: node, querySelector: node, querySelectorAll: () => [], addEventListener() {}};
-  const store = {doc: data, prices: null, status: {state: 'off'}, config: () => null, recovery: () => [], subscribe() {}, start() {}, saveSection(name) { if (!save) throw Error('조회만으로 저장하면 안 된다'); save(name); }};
+  const store = {doc: data, prices, status: {state: 'off'}, config: () => null, recovery: () => [], subscribe() {}, start() {}, saveSection(name) { if (!save) throw Error('조회만으로 저장하면 안 된다'); save(name); }};
   const ctx = vm.createContext({document, assetStore: store, splitNotices:{initialize(){}}, URLSearchParams, crypto: require('node:crypto').webcrypto,
     localStorage: {getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v))}, addEventListener() {}, setInterval() {}, setTimeout: fn => { fn(); return 1; },
     location: {hash}, history: {replaceState() {}}, scrollTo() {}});
@@ -261,36 +261,102 @@ test('투자구성 분류 줄을 누르면 이 분류에 합산되는 그룹·�
   assert.equal(JSON.stringify(data), before);
 });
 
-test('투자구성의 긴 종목명은 끝 괄호 구분을 따로 남기고 전체 이름·소분류·옛 기록을 보존한다', () => {
-  const names = ['가상 반도체 지수 ETF(ISA)', '가상 반도체 지수 ETF (퇴직금)', '가상 반도체 지수 ETF (개인 ISA)', '가상 헬스케어 ETF(연금)', '가상 (중간) 이름 ETF', '가상 ETF(괄호(중첩))', 'AAA'];
-  const data = {version: 1, allocation: {savedAt: '', total: 1000, memo: '', classes: [{id: 'c', region: '미국', name: '가상 분류'}],
-    groups: [{id: 'g', name: '가상 그룹', classId: 'c', items: names.map((name, i) => ({id: `i${i}`, name, amount: 10, ...(i === 0 ? {section: '가상 소분류', target: 0} : {})}))}], cash: []}};
-  const before = JSON.stringify(data), {html} = page(data, {}, '#strategy');
-  for (const [i, suffix] of ['(ISA)', '(퇴직금)', '(개인 ISA)', '(연금)'].entries()) {
-    const full = names[i] + (i === 0 ? ' · 가상 소분류' : '');
-    assert.ok(html.includes(`class="class-member-name" title="${full}"`), '말줄임 전 전체 이름을 남긴다');
-    assert.ok(html.includes(`<small class="class-member-suffix">${suffix}</small>`), `끝 구분을 줄이지 않는다: ${suffix}`);
+const compositionRows = html => html.match(/<div class="class-member">.*?<\/div>/g) || [];
+const composition = items => ({version: 1, allocation: {savedAt: '가상 저장 시각', total: 1000, memo: '', classes: [{id: 'c', region: '미국', name: '가상 분류'}], groups: [{id: 'g', name: '가상 그룹', classId: 'c', items}], cash: []}});
+
+test('투자구성은 같은 거래 종목의 계좌를 합산하고 계좌명·원본 개수 대신 종목별 한 줄을 보인다', () => {
+  const names = ['가상 반도체 ETF(ISA)', '가상 반도체 ETF (퇴직금)', '가상 반도체 ETF (개인 ISA)'];
+  const data = composition([
+    {id: 'a', name: names[0], ticker: 'AAA', tradeTicker: 'A900001', section: '가상 소분류', amount: 20, target: 2},
+    {id: 'b', name: names[1], ticker: 'aaa', tradeTicker: '900001', section: '가상 소분류', amount: 30},
+    {id: 'c', name: names[2], ticker: 'AAA', tradeTicker: '900001', section: '가상 소분류', amount: 10, target: 1},
+    {id: 'd', name: 'AAA', ticker: 'AAA', amount: 40}
+  ]);
+  const before = JSON.stringify(data), {html} = page(data, {}, '#strategy'), rows = compositionRows(html);
+  assert.equal(rows.length, 2, '추종 ETF 3계좌를 한 줄로, 기준 ETF는 별도');
+  assert.match(rows[0], /title="가상 반도체 ETF · 가상 소분류"/);
+  assert.match(rows[0], /class="class-member-label">가상 반도체 ETF<\/span><small>가상 소분류<\/small>/);
+  assert.match(rows[0], /class="class-member-val">60만원<\/span><span class="class-member-pct">6% <small>\/ 목표 3%<\/small>/);
+  assert.match(rows[1], /class="class-member-label">AAA<\/span>/, '첫 등장 순서 유지');
+  assert.match(html, /그룹 1개 · 종목 2개/);
+  assert.doesNotMatch(html, /\(ISA\)|\(퇴직금\)|\(개인 ISA\)|class-member-suffix/);
+  const alloc = page(data, {}, '#alloc').html;
+  for (const [i, id] of ['a', 'b', 'c'].entries()) {
+    assert.ok(alloc.includes(`data-alloc-item="${id}"`), '자산 배분은 계좌별 항목 유지');
+    assert.ok(alloc.includes(names[i]), '자산 배분은 저장된 계좌 이름 유지');
   }
-  for (const name of names.slice(4)) assert.ok(html.includes(`<span class="class-member-label">${name}</span>`), `끝 괄호가 아닌 이름: ${name}`);
-  assert.match(html, /class="class-member-suffix">\(ISA\)<\/small><small>가상 소분류<\/small>/, '계좌와 소분류를 각각 남긴다');
-  assert.match(html, /class="class-member-pct">1% <small>\/ 목표 0%<\/small>/, '0% 목표도 원래대로 표시');
   assert.equal(JSON.stringify(data), before, '이름·필드·금액·저장 시각을 고치지 않는 표시 변경');
 });
 
-test('투자구성의 전체 이름 설명과 괄호 구분도 외부 문자열을 이스케이프한다', () => {
+test('투자구성 계좌 합산은 이름이 같아도 실제 거래 코드가 다르면 따로 보인다', () => {
+  const data = composition([
+    {id: 'a', name: '가상 ETF(ISA)', ticker: 'AAA', tradeTicker: '900001', amount: 10},
+    {id: 'b', name: '가상 ETF(IRP)', ticker: 'AAA', tradeTicker: '900002', amount: 20},
+    {id: 'c', name: '가상 ETF(연저펀)', ticker: 'AAA', amount: 30},
+    {id: 'd', name: '가상 ETF(일반계좌)', amount: 40},
+    {id: 'e', name: '가상 ETF (위탁계좌)', amount: 50}
+  ]);
+  const before = JSON.stringify(data), rows = compositionRows(page(data, {}, '#strategy').html);
+  assert.equal(rows.length, 4, '코드 없는 두 옛 항목만 이름으로 합산');
+  for (const [i, amount] of [10, 20, 30, 90].entries()) assert.ok(rows[i].includes(`class="class-member-val">${amount}만원</span>`));
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('투자구성은 상품 구분 괄호와 실제 코드 없는 옛 추종 ETF의 이름을 보존한다', () => {
+  const names = ['가상 ETF(H)(ISA)', '가상 ETF(H) (퇴직연금)', '가상 ETF(합성)(연금저축펀드)', '가상 ETF(괄호(중첩))', 'AAA', '가상 (중간) ETF', '가상 ETF（개인 isa）'];
+  const data = composition(names.map((name, i) => ({id: `i${i}`, name, ticker: 'AAA', amount: 10})));
+  const before = JSON.stringify(data), {html} = page(data, {}, '#strategy'), rows = compositionRows(html);
+  assert.equal(rows.length, 6, '이름까지 같은 두 H 상품 계좌만 합산');
+  for (const name of ['가상 ETF(H)', '가상 ETF(합성)', '가상 ETF(괄호(중첩))', 'AAA', '가상 (중간) ETF', '가상 ETF']) assert.ok(rows.some(row => row.includes(`class="class-member-label">${name}</span>`)), name);
+  assert.match(rows[0], /class="class-member-val">20만원/);
+  assert.doesNotMatch(html, /ISA|isa|퇴직연금|연금저축펀드/);
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('투자구성 계좌 합산은 입력 금액 대신 기존 평가액을 더하고 목표 0%·목표 없음과 반올림을 구분한다', () => {
+  const data = composition([
+    {id: 'a', name: '가상 평가 ETF(ISA)', ticker: 'AAA', tradeTicker: '900001', shares: 1, amount: 999, target: 0},
+    {id: 'b', name: '가상 평가 ETF(IRP)', ticker: 'AAA', tradeTicker: '900001', shares: 2, amount: 999},
+    {id: 'c', name: '가상 소액(ISA)', amount: 0.04}, {id: 'd', name: '가상 소액(IRP)', amount: 0.04}
+  ]);
+  const prices = {stocks: {'900001': {kind: '국내', asOf: '2026-01-02', close: 100000}}};
+  const before = JSON.stringify(data), rows = compositionRows(page(data, {}, '#strategy', null, prices).html);
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /class="class-member-val">30만원<\/span><span class="class-member-pct">3% <small>\/ 목표 0%<\/small>/);
+  assert.match(rows[1], /class="class-member-val">0.1만원<\/span><span class="class-member-pct">0.01%<\/span>/, '0.04+0.04를 반올림 전에 합하고 현재 비중도 합산액으로 계산');
+  assert.doesNotMatch(rows[1], /목표/);
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('투자구성 계좌 합산은 분류·그룹 경계를 지키며 소분류가 다른 분류로 빠진 금액을 중복하지 않는다', () => {
+  const data = composition([{id: 'a', name: '가상 ETF(ISA)', ticker: 'AAA', amount: 10}, {id: 'b', name: '가상 ETF(IRP)', ticker: 'AAA', amount: 20, section: '가상 지정'}]);
+  data.allocation.classes.push({id: 'other', region: '국내', name: '가상 별도'});
+  data.allocation.groups[0].sections = [{name: '가상 지정', classId: 'other'}];
+  data.allocation.groups.push({id: 'g2', name: '가상 두번째 그룹', classId: 'c', items: [{id: 'c', name: '가상 ETF(연금)', ticker: 'AAA', amount: 30}]});
+  const before = JSON.stringify(data), {html} = page(data, {}, '#strategy');
+  const main = compositionRows(html.slice(html.indexOf('id="classMembers-c"'), html.indexOf('id="classMembers-other"'))), other = compositionRows(html.slice(html.indexOf('id="classMembers-other"')));
+  assert.equal(main.length, 2, '각 그룹 안에서 합산');
+  assert.match(main[0], /class="class-member-val">10만원/);
+  assert.match(main[1], /class="class-member-val">30만원/);
+  assert.equal(other.length, 1);
+  assert.match(other[0], /class="class-member-val">20만원/);
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('투자구성의 합산 이름과 전체 이름 설명도 외부 문자열을 이스케이프한다', () => {
   const data = {version: 1, allocation: {savedAt: '', total: 1000, classes: [{id: 'c', region: '미국', name: '가상 분류', cash: true}],
     groups: [{id: 'g', name: '가상 그룹', classId: 'c', items: [{id: 'i', name: '가상 "ETF" (<img src=x>)', section: '<b>가상 소분류</b>', amount: 10}]}],
     cash: [{id: 'w', name: '가상 "예금"', place: '<b>가상 은행</b>', amount: 10000}, {id: 'm', name: '가상 차감', minus: true, amount: 1000}]}};
   const before = JSON.stringify(data), {html} = page(data, {}, '#strategy');
   assert.match(html, /title="가상 &quot;ETF&quot; \(&lt;img src=x&gt;\) · &lt;b&gt;가상 소분류&lt;\/b&gt;"/);
-  assert.match(html, /class="class-member-suffix">\(&lt;img src=x&gt;\)<\/small>/);
+  assert.match(html, /class="class-member-label">가상 &quot;ETF&quot; \(&lt;img src=x&gt;\)<\/span>/);
   assert.match(html, /title="가상 &quot;예금&quot; · &lt;b&gt;가상 은행&lt;\/b&gt;"/);
   assert.match(html, /class="class-member-val">−0.1만원<\/span>/, '현금 차감 계산·부호 유지');
   assert.doesNotMatch(html, /<img|<b>가상 소분류|<b>가상 은행/);
   assert.equal(JSON.stringify(data), before);
 });
 
-test('투자구성 편입 행은 이름만 말줄임하고 괄호 구분·금액·비중을 한 줄로 유지한다', () => {
+test('투자구성 편입 행은 이름만 말줄임하고 합산 금액·비중을 한 줄로 유지한다', () => {
   const css = read('css/assets.css');
   const rule = selector => {
     const start = css.indexOf(`${selector}{`);
@@ -305,6 +371,5 @@ test('투자구성 편입 행은 이름만 말줄임하고 괄호 구분·금액
     assert.match(rule(selector), /overflow:hidden/);
   }
   assert.match(rule('.class-member-label'), /text-overflow:ellipsis/);
-  assert.match(rule('.class-member-name .class-member-suffix'), /flex:none/, '계좌 등 끝 구분은 줄이지 않는다');
   for (const selector of ['.class-member-val', '.class-member-pct']) assert.match(rule(selector), /white-space:nowrap/);
 });
