@@ -319,6 +319,19 @@ test('평균매수가 12,345.6은 숫자 12345.6으로 저장하고 다시 열�
   assert.equal(JSON.stringify(h.data),before);assert.equal(h.input.checkValidity(),false,'입력 이벤트 없이도 저장 직전 재검사');
 });
 
+test('평균매수가 입력칸은 원화 정수·달러 소수 한 자리로 보이고 고치지 않으면 정밀값으로 계산·보존한다',()=>{
+  const data=fixture(),[domestic,usd]=[data.allocation.groups[1].items[2],data.allocation.groups[1].items[0]];
+  domestic.averagePrice=20990.2941177;usd.averagePrice=100.26;
+  const h=page(data),before=JSON.stringify(data);
+  h.open('domestic');assert.equal(h.input.value,'20,990');assert.match(h.node('averagePriceLabel').textContent,/원 \(KRW\)/);
+  assert.match(h.node('averagePricePreview').innerHTML,/−35,961원/,'반올림한 20,990원(−35,960원)이 아닌 저장값으로 계산');h.submit();
+  h.open('b');assert.equal(h.input.value,'100.3');assert.match(h.node('averagePricePreview').innerHTML,/−\$120\.78/);h.submit();
+  assert.equal(JSON.stringify(data),before,'손대지 않고 저장하면 정밀값을 그대로 둔다');assert.deepEqual(h.writes,[]);
+  for(const [value,shown]of [[523.04,'523'],[1234.95,'1,235'],[0.04,'0.04']]){usd.averagePrice=value;h.open('b');assert.equal(h.input.value,shown,String(value));assert.equal(h.input.checkValidity(),true);h.cancel();}
+  domestic.averagePrice=0.3;h.open('domestic');assert.equal(h.input.value,'0.3','반올림해 0이면 원래 값');h.cancel();
+  domestic.averagePrice=20990.2941177;h.open('domestic');h.edit('21,000');h.submit();assert.equal(domestic.averagePrice,21000);assert.deepEqual(h.writes,['allocation']);
+});
+
 test('현금은 원화·달러·음수 금액을 숫자로 저장하고 잘못된 형식은 저장하지 않는다',()=>{
   const h=page(),f=h.node('cashForm');
   for(const key of ['place','name','amount','currency','minus'])f[key]=h.node(`cash:${key}`);
