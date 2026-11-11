@@ -1,10 +1,26 @@
 // 수신 알림의 당시 내용을 로컬 수신함에 저장한다. 토큰·매매 기록을 캐시하거나 네트워크로 보내지 않는다.
-importScripts("js/alert-target.js?v=399","js/alert-history-store.js?v=399","js/stock-names.js?v=399");
+importScripts("js/alert-target.js?v=400","js/alert-history-store.js?v=400","js/stock-names.js?v=400");
 self.addEventListener("install",event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener("activate",event=>event.waitUntil(self.clients.claim()));
+// 수집기가 조건이 풀린 회차의 발송 eventId를 kind "alertClear"로 보내면 같은 tag의 알림만 닫고, 알림내역 저장·새 알림 표시는 하지 않는다.
+async function clearAlertNotifications(data){
+  if(!Array.isArray(data?.clearIds))return;
+  const ids=data.clearIds.filter(id=>typeof id==="string"&&id.length>=1&&id.length<=100).slice(0,50);
+  if(!ids.length)return;
+  const set=new Set(ids);
+  try{
+    const list=await self.registration.getNotifications();
+    for(const n of list||[]){
+      if(set.has(n?.tag)){
+        try{n.close?.();}catch{}
+      }
+    }
+  }catch{}
+}
 self.addEventListener("push",event=>{
   let data={};try{data=event.data?.json()||{};}catch{}
   const text=(value,max)=>typeof value==="string"?value.slice(0,max):"";
+  if(data.kind==="alertClear"){event.waitUntil(clearAlertNotifications(data));return;}
   const historyTask=alertHistoryStore.enqueue(data).catch(()=>alertHistoryStore.record(data)).then(async item=>{
     if(!item)return;
     for(const client of await self.clients.matchAll({type:"window",includeUncontrolled:true}))client.postMessage?.({type:"alert-history-updated",item});
