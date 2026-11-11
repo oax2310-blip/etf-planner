@@ -323,11 +323,12 @@ test('평균매수가 입력칸은 원화 정수·달러 소수 한 자리로 �
   const data=fixture(),[domestic,usd]=[data.allocation.groups[1].items[2],data.allocation.groups[1].items[0]];
   domestic.averagePrice=20990.2941177;usd.averagePrice=100.26;
   const h=page(data),before=JSON.stringify(data);
+  assert.match(h.row('domestic'),/평균매수가 20,990원</);assert.match(h.row('b'),/평균매수가 \$100\.3</);
   h.open('domestic');assert.equal(h.input.value,'20,990');assert.match(h.node('averagePriceLabel').textContent,/원 \(KRW\)/);
   assert.match(h.node('averagePricePreview').innerHTML,/−35,961원/,'반올림한 20,990원(−35,960원)이 아닌 저장값으로 계산');h.submit();
   h.open('b');assert.equal(h.input.value,'100.3');assert.match(h.node('averagePricePreview').innerHTML,/−\$120\.78/);h.submit();
   assert.equal(JSON.stringify(data),before,'손대지 않고 저장하면 정밀값을 그대로 둔다');assert.deepEqual(h.writes,[]);
-  for(const [value,shown]of [[523.04,'523'],[1234.95,'1,235'],[0.04,'0.04']]){usd.averagePrice=value;h.open('b');assert.equal(h.input.value,shown,String(value));assert.equal(h.input.checkValidity(),true);h.cancel();}
+  for(const [value,shown]of [[523.04,'523'],[1234.95,'1,235'],[0.04,'0.04']]){usd.averagePrice=value;h.refresh(h.store.prices);assert.match(h.row('b'),new RegExp(`평균매수가 \\$${shown}<`),String(value));h.open('b');assert.equal(h.input.value,shown,String(value));assert.equal(h.input.checkValidity(),true);h.cancel();}
   domestic.averagePrice=0.3;h.open('domestic');assert.equal(h.input.value,'0.3','반올림해 0이면 원래 값');h.cancel();
   domestic.averagePrice=20990.2941177;h.open('domestic');h.edit('21,000');h.submit();assert.equal(domestic.averagePrice,21000);assert.deepEqual(h.writes,['allocation']);
 });

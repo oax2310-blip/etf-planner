@@ -51,6 +51,8 @@ function quoteText(q){
   return `${q.currency==="USD"?`$${nf2.format(q.close)}`:wonA(q.close)}${q.manual?' <span class="quote-source">직접 입력</span>':""}${status?` <span class="quote-status" title="${escA(detail+(q.asOf?` 마지막 시세: ${q.asOf}`:""))}"><span aria-hidden="true">!</span> ${status}</span>`:""}`;
 }
 const profitColorA = value => value>0?"profit-gain":value<0?"profit-loss":"";
+// 평균매수가 표시: 달러는 소수 첫째 자리까지(반올림해 0이면 원래 자릿수), 원화·기타는 profitMoneyA와 같다. 저장값은 바꾸지 않는다.
+const averageMoneyA = (value,currency) => currency==="USD"?`$${(Math.round(value*10)>0?nf1:nfShares).format(value)}`:profitMoneyA(value,currency);
 const profitMoneyA = (value,currency,signed=false) => value===null?"—":`${signed&&value>0?"+":value<0?"−":""}${currency==="USD"?`$${nf2.format(Math.abs(value))}`:currency==="KRW"?wonA(Math.abs(value)):nfShares.format(Math.abs(value))}`;
 const profitRateA = value => value===null?"—":`${value>0?"+":value<0?"−":""}${nf2.format(Math.abs(value))}%`;
 function profitResultA(p){
@@ -240,7 +242,7 @@ function renderAlloc(tab="alloc"){
       <div class="asset-body"><button class="asset-name" type="button" data-item="${escA(it.id)}"><strong>${escA(it.name)}${tradeBadge(trade.buy,"buy","매수중","분할매수")}${tradeBadge(trade.sell,"sell","매도중","분할매도")}</strong></button>
       <span class="asset-val">${man(r.value)}</span>${meta?`<small class="asset-meta">${meta}</small>`:""}<span class="asset-pct"><span>현재 ${pc(cur)}</span>${t!==null?`<small>목표 ${pc(t)}</small>${itemGap(it).html}`:""}</span>
       ${chips||it.note?`<div class="asset-extra">${chips}${it.note?`<p class="asset-note" title="${escA(it.note)}"><span class="alloc-note-label">메모</span>${noteLineA(it.note)}</p>`:""}</div>`:""}
-      ${p.averagePrice===null?"":`<div class="asset-profit"><span class="average-price-value">평균매수가 ${profitMoneyA(p.averagePrice,p.currency)}</span>${profitLineA(p)}</div>`}</div></div>`; };
+      ${p.averagePrice===null?"":`<div class="asset-profit"><span class="average-price-value">평균매수가 ${averageMoneyA(p.averagePrice,p.currency)}</span>${profitLineA(p)}</div>`}</div></div>`; };
   // 그룹 손익은 검색·소분류 유무와 무관하게 이 그룹의 전체 종목 목록만 allocationProfitSummary의 통화별 원래 단위 합계로 계산한다.
   // 환율은 평가액과 같은 s.fx(assetFx: 시세 파일의 현물 환율, 없으면 직접 넣은 cashFx)를 쓴다.
   // 달러 평균가 보유는 매수 당시 환율 기록이 없어 매입금액·손익 모두 현재 환율로 원화 환산하며 환차손익은 제외한다. 원화 평균가 코인은 이미 원화이므로 다시 환산하지 않는다. 손익률은 합산 손익 ÷ 합산 매입금액 × 100.

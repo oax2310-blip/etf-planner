@@ -484,8 +484,9 @@ test('분할매도 연결 카드 손익은 실제 자산 시세·평균가와 �
   assert.match(view,/보유 3개 중 3개 합산 · 달러 종목은 현재 환율 1,200원으로 환산 · 환차손익 제외/);
   assert.match(view,/손익 <b class="profit-gain">\+4.4만원<\/b> <b class="profit-gain">\+19.47%<\/b>/);
   assert.match(view,/평균 9,000원 · 손익 <b class="profit-gain">\+1만원<\/b> <b class="profit-gain">\+11.11%<\/b>/);
-  assert.match(view,/평균 \$40.00 · 손익 <b class="profit-gain">\+2.4만원<\/b> <b class="profit-gain">\+25%<\/b>/);
+  assert.match(view,/평균 \$40 · 손익 <b class="profit-gain">\+2.4만원<\/b> <b class="profit-gain">\+25%<\/b>/);
   assert.equal(JSON.stringify([r.p,r.alloc]),before);
+  for(const [value,shown]of [[40.26,'40.3'],[1234.95,'1,235'],[0.04,'0.04']]){r.native.averagePrice=value;assert.match(r.api.planSaleAccountView(r.p),new RegExp(`평균 \\$${shown} · 손익`),String(value));}
 });
 test('분할매도 연결 손익은 평균가 미입력·손실과 환율 없는 달러의 제외 개수를 표시한다',()=>{
   const r=groupSale({a:10,b:5,native:2});r.isa.averagePrice=12000;r.native.averagePrice=40;
