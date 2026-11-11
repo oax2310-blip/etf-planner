@@ -179,15 +179,37 @@ function renderAlloc(tab="alloc"){
   // 그룹 분류가 이 분류면 종목이 없어도 그룹을 보이고, 일부 소분류만 들어오면 '일부 소분류'로 표시한다. 순서는 자산 배분 기록 순서 그대로.
   // 현금 분류는 현금 목록을 자산 배분 현금 줄처럼 보인다(빼는 항목은 '차감'과 − 금액).
   const classMembers=c=>{
-    const groups=classGroups(a,c.id).map(g=>({g,items:g.items.filter(it=>sectionClassId(a,g,it.section)===c.id)}));
-    const line=(name,sub,value,target,sign="")=>`<div class="class-member"><span class="class-member-name">${escA(name)}${sub?`<small>${escA(sub)}</small>`:""}</span><span class="class-member-val">${sign}${man(value)}</span><span class="class-member-pct">${sign}${pc(s.pct(value))}${target!==null?` <small>/ 목표 ${pc(target)}</small>`:""}</span></div>`;
+    // 표시만: 알려진 계좌 표기가 든 끝 괄호를 숨긴다. (H)·(합성) 같은 상품 구분은 보존하며 저장 이름은 고치지 않는다.
+    const memberLabel=name=>{
+      let text=String(name??"").trim(), match;
+      while((match=text.match(/^(.*\S)\s*[（(]([^()（）]+)[)）]\s*$/su))&&/(?:ISA|IRP|퇴직금|퇴직연금|연저펀|연금저축(?:펀드)?|연금|일반(?:계좌)?|위탁(?:계좌)?|종합(?:계좌)?|계좌)$/u.test(match[2].normalize("NFKC").replace(/\s+/g,"").toUpperCase()))text=match[1].trimEnd();
+      return text;
+    };
+    // 이 분류·그룹 안에서 실제 거래 코드와 계좌 표기를 뺀 이름이 같은 항목만 합친다. 코드는 linkTicker로 정규화한다.
+    // 이름도 함께 보는 이유: 실제 ETF 코드가 없는 옛 추종 ETF와 기준 미국 ETF는 ticker만 같을 수 있다. 코드 없는 옛 항목은 이름으로만 묶는다.
+    // 평가액은 allocationSummary의 반올림 전 값을 더한 뒤 한 번만 표시하고, 목표는 입력된 값만 합한다(전부 없으면 null, 0% 유지).
+    const memberRows=items=>{
+      const merged=new Map();
+      for(const it of items){
+        const name=memberLabel(it.name), code=linkTicker(assetTradeTicker(it)), key=JSON.stringify([code,name.normalize("NFKC").toUpperCase().replace(/\s+/g,"")||it.id]);
+        if(!merged.has(key))merged.set(key,{name,value:0,target:null,sections:new Set()});
+        const row=merged.get(key), target=finite(it.target);
+        row.value+=s.items.get(it.id)?.value||0;
+        if(target!==null)row.target=(row.target??0)+target;
+        if(it.section)row.sections.add(it.section);
+      }
+      return [...merged.values()];
+    };
+    const groups=classGroups(a,c.id).map(g=>{const items=g.items.filter(it=>sectionClassId(a,g,it.section)===c.id);return {g,items,rows:memberRows(items)};});
+    const memberName=(name,sub)=>`<span class="class-member-name" title="${escA([name,sub].filter(Boolean).join(" · "))}"><span class="class-member-label">${escA(name)}</span>${sub?`<small>${escA(sub)}</small>`:""}</span>`;
+    const line=(name,sub,value,target,sign="")=>`<div class="class-member">${memberName(name,sub)}<span class="class-member-val">${sign}${man(value)}</span><span class="class-member-pct">${sign}${pc(s.pct(value))}${target!==null?` <small>/ 목표 ${pc(target)}</small>`:""}</span></div>`;
     const head=(name,value,part="")=>`<div class="class-member-head"><b>${escA(name)}</b>${part}<span>${man(value)} · ${pc(s.pct(value))}</span></div>`;
-    const blocks=groups.map(({g,items})=>{
+    const blocks=groups.map(({g,items,rows})=>{
       const sum=items.reduce((n,it)=>n+(s.items.get(it.id)?.value||0),0), part=items.length<g.items.length?'<small class="class-member-part" title="나머지 소분류는 다른 투자구성 분류에 합산합니다.">일부 소분류</small>':"";
-      return `<div class="class-member-group">${head(g.name,sum,part)}${items.map(it=>line(it.name,it.section,s.items.get(it.id)?.value||0,finite(it.target))).join("")||'<p class="class-member-empty">종목 없음</p>'}</div>`;
+      return `<div class="class-member-group">${head(g.name,sum,part)}${rows.map(row=>line(row.name,[...row.sections].join(" · "),row.value,row.target)).join("")||'<p class="class-member-empty">종목 없음</p>'}</div>`;
     });
     if(c.cash)blocks.push(`<div class="class-member-group">${head("현금",s.cash)}${a.cash.map(x=>line(x.name,[x.place,x.minus?"차감":""].filter(Boolean).join(" · "),Math.abs(cashValue(x,s.fx)),null,x.minus?"−":"")).join("")||'<p class="class-member-empty">현금 항목 없음</p>'}</div>`);
-    const count=groups.reduce((n,x)=>n+x.items.length,0), tag=`${escA(c.name)} 분류`;
+    const count=groups.reduce((n,x)=>n+x.rows.length,0), tag=`${escA(c.name)} 분류`;
     return `<div class="class-members" id="classMembers-${escA(encodeURIComponent(c.id))}" role="region" aria-label="${tag} 편입 목록"${strategyOpenClasses.has(c.id)?"":" hidden"}>
       ${blocks.join("")||'<p class="class-member-empty">편입된 그룹·종목이 없습니다. 자산 배분의 그룹 수정 창에서 이 분류를 고르면 여기에 표시됩니다.</p>'}
       <div class="class-members-foot"><span>${groups.length?`그룹 ${groups.length}개 · 종목 ${count}개`:""}${c.cash?`${groups.length?" · ":""}현금 ${a.cash.length}개`:""}</span>${blocks.length?`<button class="btn mini" type="button" data-class-go="${escA(c.id)}" aria-label="${tag}를 자산 배분에서 보기">자산 배분에서 보기</button>`:""}<button class="btn mini ghost" type="button" data-class="${escA(c.id)}" aria-label="${tag} 수정">분류 수정</button></div></div>`;

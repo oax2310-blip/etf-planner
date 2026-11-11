@@ -1,5 +1,5 @@
 // 수신 알림의 당시 내용을 로컬 수신함에 저장한다. 토큰·매매 기록을 캐시하거나 네트워크로 보내지 않는다.
-importScripts("js/alert-target.js?v=403","js/alert-history-store.js?v=403","js/stock-names.js?v=403");
+importScripts("js/alert-target.js?v=405","js/alert-history-store.js?v=405","js/stock-names.js?v=405");
 self.addEventListener("install",event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener("activate",event=>event.waitUntil(self.clients.claim()));
 // 수집기가 조건이 풀린 회차의 발송 eventId를 kind "alertClear"로 보내면 같은 tag의 알림만 닫고, 알림내역 저장·새 알림 표시는 하지 않는다.
