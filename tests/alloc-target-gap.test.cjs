@@ -233,7 +233,7 @@ test('투자구성 분류 줄을 누르면 이 분류에 합산되는 그룹·�
   // 원자재: 소분류만 지정된 대체자산(일부 소분류, 50만원) + 원자재 전용(30만원). 이름은 이스케이프.
   const raw = panel('c-raw');
   assert.match(raw, /<b>대체자산<\/b><small class="class-member-part"[^>]*>일부 소분류<\/small><span>50만원 · 5%<\/span>/);
-  assert.match(raw, /<span class="class-member-name">&lt;b&gt;가상 골드&lt;\/b&gt;<small>금\(골드\)<\/small><\/span><span class="class-member-val">50만원<\/span><span class="class-member-pct">5%<\/span>/);
+  assert.match(raw, /<span class="class-member-name" title="&lt;b&gt;가상 골드&lt;\/b&gt; · 금\(골드\)"><span class="class-member-label">&lt;b&gt;가상 골드&lt;\/b&gt;<\/span><small>금\(골드\)<\/small><\/span><span class="class-member-val">50만원<\/span><span class="class-member-pct">5%<\/span>/);
   assert.match(raw, /<b>원자재 전용<\/b><span>30만원 · 3%<\/span>.*가상 은 ETF.*<span class="class-member-pct">3% <small>\/ 목표 3%<\/small><\/span>/s);
   assert.ok(raw.indexOf('대체자산') < raw.indexOf('원자재 전용'), '자산 배분 기록 순서');
   // 디지털자산: 금(골드) 종목은 빠지고, 종목 없는 그룹도 보인다.
@@ -242,7 +242,7 @@ test('투자구성 분류 줄을 누르면 이 분류에 합산되는 그룹·�
   assert.match(btc, /<b>빈 그룹<\/b><span>0만원 · 0%<\/span><\/div><p class="class-member-empty">종목 없음<\/p>/);
   // 현금 분류: 현금 항목(빼는 항목은 − 표시)과 합계
   const cash = panel('c-cash');
-  assert.match(cash, /<b>현금<\/b><span>80만원 · 8%<\/span>/);assert.match(cash, /예금<small>가상은행<\/small><\/span><span class="class-member-val">100만원/);assert.match(cash, /증거금<small>차감<\/small><\/span><span class="class-member-val">−20만원<\/span><span class="class-member-pct">−2%<\/span>/);
+  assert.match(cash, /<b>현금<\/b><span>80만원 · 8%<\/span>/);assert.match(cash, /예금<\/span><small>가상은행<\/small><\/span><span class="class-member-val">100만원/);assert.match(cash, /증거금<\/span><small>차감<\/small><\/span><span class="class-member-val">−20만원<\/span><span class="class-member-pct">−2%<\/span>/);
   assert.match(html, /<span>그룹 2개 · 종목 2개<\/span><button class="btn mini" type="button" data-class-go="c-raw" aria-label="원자재 분류를 자산 배분에서 보기">자산 배분에서 보기<\/button><button class="btn mini ghost" type="button" data-class="c-raw" aria-label="원자재 분류 수정">분류 수정<\/button>/);
   assert.match(html, /<span>현금 2개<\/span><button[^>]*data-class-go="c-cash"/);
   // 편입이 없는 분류는 안내만 두고 이동 버튼은 숨긴다(분류 수정은 유지).
@@ -259,4 +259,52 @@ test('투자구성 분류 줄을 누르면 이 분류에 합산되는 그룹·�
   assert.equal(scrolled, 100 - 50 - 12, '화면에서 가장 위 카드로, 윗줄 높이만큼 띄워 이동');
   assert.match(node('allocView').innerHTML, /<div class="alloc-class" data-class-block="c-raw">/);
   assert.equal(JSON.stringify(data), before);
+});
+
+test('투자구성의 긴 종목명은 끝 괄호 구분을 따로 남기고 전체 이름·소분류·옛 기록을 보존한다', () => {
+  const names = ['가상 반도체 지수 ETF(ISA)', '가상 반도체 지수 ETF (퇴직금)', '가상 반도체 지수 ETF (개인 ISA)', '가상 헬스케어 ETF(연금)', '가상 (중간) 이름 ETF', '가상 ETF(괄호(중첩))', 'AAA'];
+  const data = {version: 1, allocation: {savedAt: '', total: 1000, memo: '', classes: [{id: 'c', region: '미국', name: '가상 분류'}],
+    groups: [{id: 'g', name: '가상 그룹', classId: 'c', items: names.map((name, i) => ({id: `i${i}`, name, amount: 10, ...(i === 0 ? {section: '가상 소분류', target: 0} : {})}))}], cash: []}};
+  const before = JSON.stringify(data), {html} = page(data, {}, '#strategy');
+  for (const [i, suffix] of ['(ISA)', '(퇴직금)', '(개인 ISA)', '(연금)'].entries()) {
+    const full = names[i] + (i === 0 ? ' · 가상 소분류' : '');
+    assert.ok(html.includes(`class="class-member-name" title="${full}"`), '말줄임 전 전체 이름을 남긴다');
+    assert.ok(html.includes(`<small class="class-member-suffix">${suffix}</small>`), `끝 구분을 줄이지 않는다: ${suffix}`);
+  }
+  for (const name of names.slice(4)) assert.ok(html.includes(`<span class="class-member-label">${name}</span>`), `끝 괄호가 아닌 이름: ${name}`);
+  assert.match(html, /class="class-member-suffix">\(ISA\)<\/small><small>가상 소분류<\/small>/, '계좌와 소분류를 각각 남긴다');
+  assert.match(html, /class="class-member-pct">1% <small>\/ 목표 0%<\/small>/, '0% 목표도 원래대로 표시');
+  assert.equal(JSON.stringify(data), before, '이름·필드·금액·저장 시각을 고치지 않는 표시 변경');
+});
+
+test('투자구성의 전체 이름 설명과 괄호 구분도 외부 문자열을 이스케이프한다', () => {
+  const data = {version: 1, allocation: {savedAt: '', total: 1000, classes: [{id: 'c', region: '미국', name: '가상 분류', cash: true}],
+    groups: [{id: 'g', name: '가상 그룹', classId: 'c', items: [{id: 'i', name: '가상 "ETF" (<img src=x>)', section: '<b>가상 소분류</b>', amount: 10}]}],
+    cash: [{id: 'w', name: '가상 "예금"', place: '<b>가상 은행</b>', amount: 10000}, {id: 'm', name: '가상 차감', minus: true, amount: 1000}]}};
+  const before = JSON.stringify(data), {html} = page(data, {}, '#strategy');
+  assert.match(html, /title="가상 &quot;ETF&quot; \(&lt;img src=x&gt;\) · &lt;b&gt;가상 소분류&lt;\/b&gt;"/);
+  assert.match(html, /class="class-member-suffix">\(&lt;img src=x&gt;\)<\/small>/);
+  assert.match(html, /title="가상 &quot;예금&quot; · &lt;b&gt;가상 은행&lt;\/b&gt;"/);
+  assert.match(html, /class="class-member-val">−0.1만원<\/span>/, '현금 차감 계산·부호 유지');
+  assert.doesNotMatch(html, /<img|<b>가상 소분류|<b>가상 은행/);
+  assert.equal(JSON.stringify(data), before);
+});
+
+test('투자구성 편입 행은 이름만 말줄임하고 괄호 구분·금액·비중을 한 줄로 유지한다', () => {
+  const css = read('css/assets.css');
+  const rule = selector => {
+    const start = css.indexOf(`${selector}{`);
+    assert.ok(start >= 0, `${selector} 규칙`);
+    return css.slice(start + selector.length + 1, css.indexOf('}', start));
+  };
+  assert.match(rule('.class-member'), /grid-template-columns:minmax\(0,1fr\) auto minmax\(50px,auto\)/, '남은 너비만 이름에 배정');
+  assert.match(rule('.class-member-name'), /display:flex/);
+  assert.match(rule('.class-member-name'), /white-space:nowrap/);
+  for (const selector of ['.class-member-name', '.class-member-label']) {
+    assert.match(rule(selector), /min-width:0/);
+    assert.match(rule(selector), /overflow:hidden/);
+  }
+  assert.match(rule('.class-member-label'), /text-overflow:ellipsis/);
+  assert.match(rule('.class-member-name .class-member-suffix'), /flex:none/, '계좌 등 끝 구분은 줄이지 않는다');
+  for (const selector of ['.class-member-val', '.class-member-pct']) assert.match(rule(selector), /white-space:nowrap/);
 });

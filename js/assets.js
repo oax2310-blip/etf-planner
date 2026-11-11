@@ -180,7 +180,12 @@ function renderAlloc(tab="alloc"){
   // 현금 분류는 현금 목록을 자산 배분 현금 줄처럼 보인다(빼는 항목은 '차감'과 − 금액).
   const classMembers=c=>{
     const groups=classGroups(a,c.id).map(g=>({g,items:g.items.filter(it=>sectionClassId(a,g,it.section)===c.id)}));
-    const line=(name,sub,value,target,sign="")=>`<div class="class-member"><span class="class-member-name">${escA(name)}${sub?`<small>${escA(sub)}</small>`:""}</span><span class="class-member-val">${sign}${man(value)}</span><span class="class-member-pct">${sign}${pc(s.pct(value))}${target!==null?` <small>/ 목표 ${pc(target)}</small>`:""}</span></div>`;
+    // 표시만: 끝 괄호(계좌 등 구분)는 말줄임에서 빼고, 원래 이름·소분류는 title에도 남긴다. 저장 이름은 고치지 않는다.
+    const memberName=(name,sub)=>{
+      const text=String(name??""), suffix=text.match(/^(.*\S)\s*(\([^()]+\))\s*$/su);
+      return `<span class="class-member-name" title="${escA([text,sub].filter(Boolean).join(" · "))}"><span class="class-member-label">${escA(suffix?suffix[1].trimEnd():text)}</span>${suffix?`<small class="class-member-suffix">${escA(suffix[2])}</small>`:""}${sub?`<small>${escA(sub)}</small>`:""}</span>`;
+    };
+    const line=(name,sub,value,target,sign="")=>`<div class="class-member">${memberName(name,sub)}<span class="class-member-val">${sign}${man(value)}</span><span class="class-member-pct">${sign}${pc(s.pct(value))}${target!==null?` <small>/ 목표 ${pc(target)}</small>`:""}</span></div>`;
     const head=(name,value,part="")=>`<div class="class-member-head"><b>${escA(name)}</b>${part}<span>${man(value)} · ${pc(s.pct(value))}</span></div>`;
     const blocks=groups.map(({g,items})=>{
       const sum=items.reduce((n,it)=>n+(s.items.get(it.id)?.value||0),0), part=items.length<g.items.length?'<small class="class-member-part" title="나머지 소분류는 다른 투자구성 분류에 합산합니다.">일부 소분류</small>':"";
