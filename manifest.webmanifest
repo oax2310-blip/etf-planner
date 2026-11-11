@@ -1,0 +1,25 @@
+{
+  "name": "매매 플래너",
+  "short_name": "플래너",
+  "description": "매매 계획과 자산 현황을 한곳에서 확인하는 플래너",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0c10",
+  "theme_color": "#0a0c10",
+  "icons": [
+    {
+      "src": "icons/planner-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/planner-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
