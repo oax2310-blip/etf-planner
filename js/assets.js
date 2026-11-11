@@ -446,7 +446,10 @@ function openItem(id, groupId){
   f.name.value=it.name||""; f.section.value=it.section||""; f.ticker.value=it.ticker||""; f.shares.value=it.shares??""; f.target.value=it.target??""; f.done.checked=!!it.done; f.note.value=it.note||"";
   f.tradeTicker.value=it.tradeTicker||"";
   const input=f.elements.averagePrice, currencyInput=f.elements.averageCurrency, keys=["name","section","ticker","tradeTicker","shares","target","note","averagePrice","averageCurrency"];
-  input.value=moneyInputText(plus(it.averagePrice));input.setCustomValidity("");
+  // 입력칸은 원화 정수·달러 소수 첫째 자리까지 반올림해 보인다(반올림해 0이 되면 원래 값). draftItem은 고친 칸만 반영하므로 손대지 않으면 저장된 정밀값과 미리보기 손익을 그대로 쓴다.
+  const average=plus(it.averagePrice), averageCurrency=itemProfit(it,prices,assetFx(prices,a)).currency, averageDigits=averageCurrency==="KRW"?0:averageCurrency==="USD"?1:null;
+  const averageShown=average!==null&&averageDigits!==null?Number(average.toFixed(averageDigits)):null;
+  input.value=moneyInputText(averageShown>0?averageShown:average);input.setCustomValidity("");
   currencyInput.value=it.averageCurrency==="KRW"?"KRW":"";
   const initial=Object.fromEntries(keys.map(k=>[k,f.elements[k].value])), initialDone=f.done.checked, initialGroup=f.group.value;
   // 창을 연 뒤 동기화·체결이 갱신한 값은 보존하고 실제로 고친 입력만 최신 종목에 반영한다. 미리보기는 저장하지 않는다.
