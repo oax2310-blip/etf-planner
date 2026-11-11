@@ -263,3 +263,19 @@ test('"읽은 알림 삭제"로 지운 알림은 새로고침·동기화·수신
   assert.equal(h.ctx.acceptAlertHistory([event('one')]),false);
   assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(item=>item.id)),['two']);
 });
+test("읽은 뒤 같은 회차 재알림이 와서 다시 읽지 않음이 된 알림은 '읽은 알림 삭제'로 지우지 않는다",()=>{
+  const h=load(),isUnread=unreadOf(h);
+  let confirmedMessage=null;
+  h.ctx.confirm=msg=>{confirmedMessage=msg;return true;};
+  Object.assign(h.ctx,{navigator:{},document:{addEventListener(){}},addEventListener(){}});h.ctx.initializeAlertHistory();
+  h.ctx.acceptAlertHistory([event(FIRST),event('regular',{occurredAt:'2026-10-14T02:00:00Z'})]);
+  h.ctx.markAlertHistoryRead(FIRST);
+  h.ctx.markAlertHistoryRead('regular');
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),1,'2099-01-01T00:45:00Z')]);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items.find(item=>item.id===FIRST)),true);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items.find(item=>item.id==='regular')),false);
+  h.nodes.get('clearReadAlertHistory').onclick();
+  assert.equal(confirmedMessage,'읽은 알림 1개를 삭제할까요?');
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(item=>item.id)),[FIRST]);
+  assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),true);
+});
