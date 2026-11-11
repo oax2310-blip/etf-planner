@@ -119,7 +119,7 @@ function renderAlertHistory(){
   if(typeof renderPushConnectionStatus==="function")renderPushConnectionStatus(unread.length);
   else $("alertsBtn").ariaLabel=`알림${unread.length?`, 읽지 않은 알림 ${unread.length}개`:""}`;
   for(const button of $$("[data-history-filter]")){const selected=button.dataset.historyFilter===alertHistoryFilter;button.classList.toggle("active",selected);button.setAttribute("aria-pressed",String(selected));}
-  $("readAllHistory").disabled=!unread.length;$("clearAlertHistory").disabled=!all.length;
+  $("readAllHistory").disabled=!unread.length;$("clearReadAlertHistory").disabled=unread.length===all.length;$("clearAlertHistory").disabled=!all.length;
   const names=items.length&&typeof stockNames==="object"?stockNames.alertMap():null;
   list.innerHTML=items.length?items.map(item=>alertHistoryCard(item,names)).join(""):`<div class="alert-history-empty"><span aria-hidden="true"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span><strong>${alertHistoryFilter==="unread"?"읽지 않은 알림이 없습니다":"아직 알림내역이 없습니다"}</strong><p>${alertHistoryFilter==="unread"?"전체 탭에서 지난 알림을 확인하세요.":"기능 적용 이후 발생하는 알림부터 기록합니다.<br>새 알림이 오면 당시 조건과 가격을 이곳에서 확인할 수 있습니다."}</p></div>`;
   $("alertHistoryStatus").textContent=alertHistoryMessage;
@@ -140,6 +140,7 @@ function initializeAlertHistory(){
   $("openAlertSettings").onclick=()=>{$("alertHistoryDialog").close();openAlertSettings();};
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
   $("readAllHistory").onclick=()=>{for(const item of state.alertHistory?.items||[])if(alertHistoryUnread(item))item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();};
+  $("clearReadAlertHistory").onclick=()=>{const items=alertHistoryItems().filter(item=>!alertHistoryUnread(item));if(!items.length||!confirm(`읽은 알림 ${items.length}개를 삭제할까요?`))return;removeAlertHistoryItems(items);};
   $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;removeAlertHistoryItems(items);};
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
