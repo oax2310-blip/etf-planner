@@ -49,10 +49,12 @@ function holdingsProfitLine(items,fx){
   return `<span class="sale-linked-profit" title="${esc(tip.join(" · "))}">손익 ${profitMoney(profitAmount(profit))} ${profitPercent(cost>0?profit/cost*100:null)}${eligible<count?` · ${eligible}/${count}개`:""}${missingFx?" · 환율 없음":""}</span>`;
 }
 // 보유 수량이 없거나 0이면 줄을 만들지 않는다. 달러는 원화 손익과 현지 통화 손익률을 함께 보인다.
+// 달러 평균가는 소수 첫째 자리까지(반올림해 0이면 원래 자릿수) 보인다. 원화는 정수.
 function holdingProfitLine(it,fx){
   const p=itemProfit(it,assetStore.prices,fx);if(!(p.shares>0))return "";
   if(p.averagePrice===null)return '<small class="sale-holding-profit">평균매수가 미입력</small>';
-  const average=`평균 ${esc(priceText(p.averagePrice,p.currency))}`,rate=p.currency==="USD"?plus(fx):1;
+  const averageText=p.currency==="USD"?`$${(Math.round(p.averagePrice*10)>0?nf1:nf8).format(p.averagePrice)}`:priceText(p.averagePrice,p.currency);
+  const average=`평균 ${esc(averageText)}`,rate=p.currency==="USD"?plus(fx):1;
   const result=p.profit===null?`손익 ${p.q&&p.fx===null?"환율":"시세"} 대기`:rate===null?`손익 환율 대기 ${profitPercent(p.rate)}`:`손익 ${profitMoney(profitAmount(p.profit*rate))} ${profitPercent(p.rate)}`;
   return `<small class="sale-holding-profit">${average} · ${result}</small>`;
 }
