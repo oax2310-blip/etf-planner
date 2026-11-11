@@ -15,13 +15,13 @@
   <title>매매 플래너 (독립형)</title>
   <link rel="icon" href="push-icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=400"></script>
+  <script src="js/theme.js?v=401"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/app.css?v=400" />
-  <link rel="stylesheet" href="css/purchases.css?v=400" />
-  <script src="js/repo-security.js?v=400" defer></script>
-  <script src="js/gold-estimate.js?v=400" defer></script>
-  <script src="js/money-input.js?v=400" defer></script>
+  <link rel="stylesheet" href="css/app.css?v=401" />
+  <link rel="stylesheet" href="css/purchases.css?v=401" />
+  <script src="js/repo-security.js?v=401" defer></script>
+  <script src="js/gold-estimate.js?v=401" defer></script>
+  <script src="js/money-input.js?v=401" defer></script>
 </head>
 <body>
   <header class="top">
@@ -256,7 +256,7 @@
   <dialog id="alertHistoryDialog" aria-labelledby="alertHistoryTitle"><div class="dialog-inner">
     <div class="dialog-head"><div><h2 id="alertHistoryTitle">알림내역</h2><p class="hint">알림 당시의 조건과 가격을 확인하세요.</p></div><button class="btn ghost" id="closeAlertHistory" type="button">닫기</button></div>
     <div class="alert-history-toolbar"><div class="alert-history-filters" role="group" aria-label="알림내역 필터"><button type="button" data-history-filter="all" class="active" aria-pressed="true">전체 <span id="historyAllCount">0</span></button><button type="button" data-history-filter="unread" aria-pressed="false">읽지 않음 <span id="historyUnreadCount">0</span></button></div><button class="btn mini" id="openAlertSettings" type="button">알림 설정</button></div>
-    <div class="alert-history-manage"><span>최신 알림순</span><div><button class="text-link" id="readAllHistory" type="button">모두 읽음</button><button class="text-link danger" id="clearAlertHistory" type="button">전체 삭제</button></div></div>
+    <div class="alert-history-manage"><span>최신 알림순</span><div><button class="text-link" id="readAllHistory" type="button">모두 읽음</button><button class="text-link danger" id="clearReadAlertHistory" type="button">읽은 알림 삭제</button><button class="text-link danger" id="clearAlertHistory" type="button">전체 삭제</button></div></div>
     <p class="alert-history-status" id="alertHistoryStatus" role="status"></p>
     <div id="alertHistoryList" class="alert-history-list"></div>
     <p class="alert-history-foot">알림을 누르면 해당 종목으로 이동합니다. 내역은 이 기기에 저장되며, 연결한 비공개 저장소와 JSON 파일 백업에도 포함됩니다.</p>
@@ -328,36 +328,36 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=400" defer></script>
-  <script src="js/split-auto.js?v=400" defer></script>
-  <script src="js/data-validation.js?v=400" defer></script>
-  <script src="js/core.js?v=400" defer></script>
-  <script src="js/price-collection.js?v=400" defer></script>
-  <script src="js/page-leave.js?v=400" defer></script>
-  <script src="js/sync.js?v=400" defer></script>
-  <script src="js/prices.js?v=400" defer></script>
-  <script src="js/assets-calc.js?v=400" defer></script>
-  <script src="js/assets-store.js?v=400" defer></script>
-  <script src="js/alloc-link.js?v=400" defer></script>
-  <script src="js/stock-names.js?v=400" defer></script>
-  <script src="js/item-search.js?v=400" defer></script>
-  <script src="js/purchases.js?v=400" defer></script>
-  <script src="js/trade-alerts.js?v=400" defer></script>
-  <script src="js/plans.js?v=400" defer></script>
-  <script src="js/futures.js?v=400" defer></script>
-  <script src="js/futures-plan.js?v=400" defer></script>
-  <script src="js/futures-rebuy.js?v=400" defer></script>
-  <script src="js/rebuy.js?v=400" defer></script>
-  <script src="js/alerts.js?v=400" defer></script>
-  <script src="js/alert-target.js?v=400" defer></script>
-  <script src="js/alert-history-store.js?v=400" defer></script>
-  <script src="js/alert-history.js?v=400" defer></script>
-  <script src="js/push.js?v=400" defer></script>
-  <script src="js/member-link.js?v=400" defer></script>
-  <script src="js/member-go.js?v=400" defer></script>
-  <script src="js/split-adjust.js?v=400" defer></script>
-  <script src="js/split-dialog.js?v=400" defer></script>
-  <script src="js/split-notices.js?v=400" defer></script>
-  <script src="js/start.js?v=400" defer></script>
+  <script src="js/ma-ladder.js?v=401" defer></script>
+  <script src="js/split-auto.js?v=401" defer></script>
+  <script src="js/data-validation.js?v=401" defer></script>
+  <script src="js/core.js?v=401" defer></script>
+  <script src="js/price-collection.js?v=401" defer></script>
+  <script src="js/page-leave.js?v=401" defer></script>
+  <script src="js/sync.js?v=401" defer></script>
+  <script src="js/prices.js?v=401" defer></script>
+  <script src="js/assets-calc.js?v=401" defer></script>
+  <script src="js/assets-store.js?v=401" defer></script>
+  <script src="js/alloc-link.js?v=401" defer></script>
+  <script src="js/stock-names.js?v=401" defer></script>
+  <script src="js/item-search.js?v=401" defer></script>
+  <script src="js/purchases.js?v=401" defer></script>
+  <script src="js/trade-alerts.js?v=401" defer></script>
+  <script src="js/plans.js?v=401" defer></script>
+  <script src="js/futures.js?v=401" defer></script>
+  <script src="js/futures-plan.js?v=401" defer></script>
+  <script src="js/futures-rebuy.js?v=401" defer></script>
+  <script src="js/rebuy.js?v=401" defer></script>
+  <script src="js/alerts.js?v=401" defer></script>
+  <script src="js/alert-target.js?v=401" defer></script>
+  <script src="js/alert-history-store.js?v=401" defer></script>
+  <script src="js/alert-history.js?v=401" defer></script>
+  <script src="js/push.js?v=401" defer></script>
+  <script src="js/member-link.js?v=401" defer></script>
+  <script src="js/member-go.js?v=401" defer></script>
+  <script src="js/split-adjust.js?v=401" defer></script>
+  <script src="js/split-dialog.js?v=401" defer></script>
+  <script src="js/split-notices.js?v=401" defer></script>
+  <script src="js/start.js?v=401" defer></script>
 </body>
 </html>
