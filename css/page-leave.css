@@ -1,0 +1,8 @@
+/* 세 페이지의 동기화 대기 표시. 저장 상태는 page-leave.js가 판단하며 화면 토큰·글꼴은 각 페이지 것을 쓴다. */
+.page-leave{position:fixed;inset:0;z-index:100;display:grid;place-items:center;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;padding:max(24px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px));background:var(--top);color:var(--text);font-family:var(--font);line-height:1.5;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.page-leave-panel{width:min(320px,100%);padding:28px 24px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:var(--shadow-lg);text-align:center;word-break:keep-all;overflow-wrap:anywhere}
+.page-leave-spinner{display:block;width:32px;height:32px;margin:0 auto 16px;border:3px solid var(--line-strong);border-top-color:var(--accent);border-radius:50%;animation:page-leave-spin .8s linear infinite}
+.page-leave-title{display:block;font-size:18px;font-weight:700;letter-spacing:-.02em}
+.page-leave-hint{margin:8px 0 0;color:var(--text-2);font-size:14px}
+@keyframes page-leave-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.page-leave-spinner{animation:none}}

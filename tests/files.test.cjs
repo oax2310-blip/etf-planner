@@ -39,6 +39,8 @@ test('세 화면은 page-leave.js를 한 번씩 등록자보다 먼저 불러온
     for(const consumer of ['js/sync.js','js/assets-store.js','js/valuation.js'])if(list.includes(consumer))
       assert.ok(list.indexOf('js/page-leave.js')<list.indexOf(consumer),consumer);
   }
+  for(const list of [refs,assetRefs,valuationRefs])
+    assert.equal(list.filter(r=>r[1]==='css/page-leave.css').length,1,'세 화면에서 같은 동기화 대기 표시를 쓴다');
 });
 
 test('push-sw.js의 importScripts는 세 HTML과 같은 버전(?v=)으로 불러온다', () => {

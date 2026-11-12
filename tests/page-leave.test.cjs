@@ -6,11 +6,22 @@ const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../js/page-leave.js'),'utf8');
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
-function page(){
+function page({popover=true}={}){
   const listeners={},timers=new Map(),moves=[];
   let now=0,id=0;
+  function element(tagName){
+    const node={tagName,children:[],attributes:{},className:'',textContent:'',
+      setAttribute(key,value){this.attributes[key]=String(value);},getAttribute(key){return this.attributes[key]??null;},
+      append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},
+      remove(){const parent=this.parentElement;if(parent)parent.children.splice(parent.children.indexOf(this),1);this.parentElement=null;},
+      focus(){document.activeElement=this;}};
+    if(popover)node.showPopover=function(){assert.equal(this.getAttribute('popover'),'manual');this.popoverOpen=true;};
+    return node;
+  }
+  const body=element('body'),initialFocus=element('input');
+  const document={body,activeElement:initialFocus,createElement:element,addEventListener:(type,fn)=>listeners[type]=fn};
   const location={href:'https://example.test/app/index.html',origin:'https://example.test',assign:href=>moves.push(href)};
-  const context=vm.createContext({URL,location,document:{addEventListener:(type,fn)=>listeners[type]=fn},
+  const context=vm.createContext({URL,location,document,
     addEventListener:(type,fn)=>listeners[type]=fn,
     setTimeout:(fn,ms)=>{timers.set(++id,{fn,at:now+ms});return id;},clearTimeout:key=>timers.delete(key)});
   const leave=vm.runInContext(source+'\npageLeave',context);
@@ -25,8 +36,63 @@ function page(){
     for(const [key,timer] of [...timers])if(timer.at<=now){timers.delete(key);timer.fn();}
     await turn();
   }
-  return {leave,click,moves,timers,advance,show:()=>listeners.pageshow({persisted:true})};
+  const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
+  return {leave,click,moves,timers,advance,body,document,initialFocus,waiting:()=>findWaiting(body),show:()=>listeners.pageshow({persisted:true})};
 }
+
+test('동기화 대기 안내를 flush 전에 즉시 표시하고 입력 포커스는 유지한다',async()=>{
+  const h=page(),work=deferred();let calls=0;
+  h.leave.register({pending:()=>true,flush:()=>{calls++;return work.promise;}});
+  h.click();
+  const waiting=h.waiting();assert.ok(waiting,'기다리는 이유가 클릭 직후 보여야 한다');
+  assert.equal(calls,0);assert.equal(waiting.getAttribute('role'),'status');
+  assert.equal(waiting.getAttribute('aria-live'),'polite');assert.equal(waiting.getAttribute('aria-atomic'),'true');
+  const [spinner,title,hint]=waiting.children[0].children;
+  assert.equal(spinner.getAttribute('aria-hidden'),'true');
+  assert.equal(title.textContent,'동기화 대기 중…');assert.equal(hint.textContent,'잠시 후 다음 화면으로 이동합니다.');
+  assert.equal(waiting.popoverOpen,true,'열린 설정 창 위에서도 안내를 표시한다');
+  assert.equal(h.document.activeElement,h.initialFocus,'입력을 강제로 확정하지 않는다');
+  await turn();work.resolve();await turn();
+  assert.equal(h.waiting(),waiting,'새 문서로 바뀔 때까지 안내를 유지한다');
+});
+
+test('대기 없는 이동과 대상 아닌 클릭에는 동기화 안내를 만들지 않는다',()=>{
+  const h=page();
+  h.click();assert.equal(h.body.children.length,0);
+  h.leave.register({pending:()=>false,flush:()=>assert.fail('대기 없음')});
+  h.click();assert.equal(h.body.children.length,0);
+  h.leave.register({pending:()=>true,flush:()=>assert.fail('대상 아님')});
+  h.click({href:'#section'});h.click({href:'assets.html',ctrlKey:true});
+  assert.equal(h.body.children.length,0);
+});
+
+test('열린 대화상자에서 이동하면 안내도 창 안에 두어 접근성을 유지한다',async()=>{
+  const h=page(),dialog=h.document.createElement('dialog'),work=deferred();
+  h.body.append(dialog);dialog.append(h.initialFocus);
+  h.initialFocus.closest=selector=>{assert.equal(selector,'dialog[open]');return dialog;};
+  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click();
+  assert.equal(h.waiting().parentElement,dialog,'모달 밖의 안내는 화면 읽기 도구에서 제외된다');
+  assert.equal(h.waiting().popoverOpen,true);assert.equal(h.document.activeElement,h.initialFocus);
+  await turn();work.resolve();await turn();h.show();assert.equal(h.waiting(),undefined);
+});
+
+test('popover가 없는 브라우저도 동기화 안내와 기존 이동을 유지한다',async()=>{
+  const h=page({popover:false}),work=deferred();
+  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click();
+  assert.ok(h.waiting());assert.equal(h.waiting().getAttribute('popover'),null);
+  await turn();work.resolve();await turn();assert.equal(h.moves.length,1);
+});
+
+test('동기화 대기 안내는 연속 클릭에도 하나이며 뒤로 가기 복원 때 제거한다',async()=>{
+  const h=page(),work=deferred();
+  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click();
+  const first=h.waiting();h.click({href:'valuation.html'});
+  assert.equal(h.body.children.length,1);assert.equal(h.waiting(),first);
+  await turn();work.resolve();await turn();h.show();
+  assert.equal(h.body.children.length,0,'복원된 화면에 이전 안내가 남으면 안 된다');
+  h.click({href:'valuation.html'});assert.ok(h.waiting());assert.notEqual(h.waiting(),first);
+  await turn();assert.equal(h.moves.length,2);
+});
 
 test('pending이 있으면 기본 이동을 막고 4초를 기다리지 않고 flush 완료 즉시 이동한다',async()=>{
   const h=page(),work=deferred();let calls=0;
