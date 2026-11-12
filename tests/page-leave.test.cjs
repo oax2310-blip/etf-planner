@@ -6,28 +6,30 @@ const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../js/page-leave.js'),'utf8');
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
-function page({popover=true,onAssign}={}){
-  const listeners={},timers=new Map(),moves=[];
+function page({popover=true,popoverError,onAssign}={}){
+  const listeners={},timers=new Map(),moves=[],errors=[];
   let now=0,id=0;
   function element(tagName){
     const node={tagName,children:[],attributes:{},className:'',textContent:'',
       setAttribute(key,value){this.attributes[key]=String(value);},getAttribute(key){return this.attributes[key]??null;},
       append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},
       remove(){const parent=this.parentElement;if(parent)parent.children.splice(parent.children.indexOf(this),1);this.parentElement=null;},
+      closest(selector){if(selector==='dialog[open]'&&this.tagName==='dialog'&&Object.hasOwn(this.attributes,'open'))return this;return this.parentElement?.closest(selector)||null;},
       focus(){document.activeElement=this;}};
-    if(popover)node.showPopover=function(){assert.equal(this.getAttribute('popover'),'manual');this.popoverOpen=true;};
+    if(popover)node.showPopover=function(){assert.equal(this.getAttribute('popover'),'manual');if(popoverError)throw popoverError;this.popoverOpen=true;};
     return node;
   }
   const body=element('body'),initialFocus=element('input');
   const document={body,activeElement:initialFocus,createElement:element,addEventListener:(type,fn)=>listeners[type]=fn};
   // 이동이 취소되면 새 문서나 pageshow가 생기지 않는다. assign은 요청만 기록하고 이 문서를 유지한다.
   const location={href:'https://example.test/app/index.html',origin:'https://example.test',assign:href=>{onAssign?.();moves.push(href);}};
-  const context=vm.createContext({URL,location,document,
+  const context=vm.createContext({URL,location,document,console:{error:error=>errors.push(error)},
     addEventListener:(type,fn)=>listeners[type]=fn,
     setTimeout:(fn,ms)=>{timers.set(++id,{fn,at:now+ms});return id;},clearTimeout:key=>timers.delete(key)});
   const leave=vm.runInContext(source+'\npageLeave',context);
-  function click({href='assets.html',attrs={},target, ...options}={}){
-    const attributes={href,...attrs},link={hasAttribute:key=>Object.hasOwn(attributes,key),getAttribute:key=>attributes[key]??null};
+  function click({href='assets.html',attrs={},target,parent=body, ...options}={}){
+    const attributes={href,...attrs},link={hasAttribute:key=>Object.hasOwn(attributes,key),getAttribute:key=>attributes[key]??null,
+      closest:selector=>{assert.equal(selector,'dialog[open]');return parent.closest(selector);}};
     const event={button:0,defaultPrevented:false,target:target||{closest:selector=>{assert.equal(selector,'a[href]');return link;}},
       preventDefault(){this.defaultPrevented=true;},...options};
     listeners.click(event);return event;
@@ -38,7 +40,7 @@ function page({popover=true,onAssign}={}){
     await turn();
   }
   const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
-  return {leave,click,moves,timers,advance,body,document,initialFocus,waiting:()=>findWaiting(body),show:()=>listeners.pageshow({persisted:true})};
+  return {leave,click,moves,timers,advance,body,document,initialFocus,errors,waiting:()=>findWaiting(body),show:()=>listeners.pageshow({persisted:true})};
 }
 
 test('동기화 대기 안내를 flush 전에 즉시 표시하고 입력 포커스는 유지한다',async()=>{
@@ -96,14 +98,32 @@ test('대기 없는 이동과 대상 아닌 클릭에는 동기화 안내를 만
   assert.equal(h.body.children.length,0);
 });
 
-test('열린 대화상자에서 이동하면 안내도 창 안에 두어 접근성을 유지한다',async()=>{
+test('포커스가 body여도 창 안 링크의 대기 안내는 그 창에 붙는다',async()=>{
   const h=page(),dialog=h.document.createElement('dialog'),work=deferred();
-  h.body.append(dialog);dialog.append(h.initialFocus);
-  h.initialFocus.closest=selector=>{assert.equal(selector,'dialog[open]');return dialog;};
-  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click();
+  dialog.setAttribute('open','');h.body.append(dialog);h.document.activeElement=h.body;
+  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click({parent:dialog});
   assert.equal(h.waiting().parentElement,dialog,'모달 밖의 안내는 화면 읽기 도구에서 제외된다');
-  assert.equal(h.waiting().popoverOpen,true);assert.equal(h.document.activeElement,h.initialFocus);
-  await turn();work.resolve();await turn();h.show();assert.equal(h.waiting(),undefined);
+  assert.equal(h.waiting().popoverOpen,true);assert.equal(h.document.activeElement,h.body);
+  await turn();work.resolve();await turn();assert.equal(h.waiting(),undefined);
+});
+
+test('포커스가 창 안에 있어도 창 밖 링크의 대기 안내는 body에 붙는다',async()=>{
+  const h=page(),dialog=h.document.createElement('dialog'),work=deferred();
+  dialog.setAttribute('open','');h.body.append(dialog);dialog.append(h.initialFocus);
+  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click();
+  assert.equal(h.waiting().parentElement,h.body,'포커스 대신 누른 링크의 위치를 따라야 한다');
+  assert.equal(h.document.activeElement,h.initialFocus);
+  await turn();work.resolve();await turn();assert.equal(h.waiting(),undefined);
+});
+
+test('showPopover가 예외를 던져도 오류만 기록하고 flush 뒤 이동한다',async()=>{
+  const error=Error('synthetic popover failure'),h=page({popoverError:error}),work=deferred();let calls=0;
+  h.leave.register({pending:()=>true,flush:()=>{calls++;return work.promise;}});
+  assert.equal(h.click().defaultPrevented,true);assert.deepEqual(h.errors,[error]);
+  assert.equal(h.click({href:'valuation.html'}).defaultPrevented,true);
+  await turn();assert.equal(calls,1);assert.equal(h.moves.length,0);
+  work.resolve();await turn();
+  assert.deepEqual(h.moves,['https://example.test/app/assets.html']);assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
 });
 
 test('popover가 없는 브라우저도 동기화 안내와 기존 이동을 유지한다',async()=>{
@@ -113,15 +133,34 @@ test('popover가 없는 브라우저도 동기화 안내와 기존 이동을 유
   await turn();work.resolve();await turn();assert.equal(h.moves.length,1);
 });
 
-test('동기화 대기 안내는 연속 클릭에도 하나이며 뒤로 가기 복원 때 제거한다',async()=>{
-  const h=page(),work=deferred();
-  h.leave.register({pending:()=>true,flush:()=>work.promise});h.click();
-  const first=h.waiting();h.click({href:'valuation.html'});
-  assert.equal(h.body.children.length,1);assert.equal(h.waiting(),first);
-  await turn();work.resolve();await turn();h.show();
-  assert.equal(h.body.children.length,0,'복원된 화면에 이전 안내가 남으면 안 된다');
-  h.click({href:'valuation.html'});assert.ok(h.waiting());assert.notEqual(h.waiting(),first);
-  await turn();assert.equal(h.moves.length,2);
+test('동기화 대기 안내는 연속 클릭에도 하나이며 뒤로 가기 복원 때 제거한다',async t=>{
+  for(const end of ['flush 완료','4초 경과'])await t.test(end,async()=>{
+    const h=page(),work=deferred();let pending=true;
+    h.leave.register({pending:()=>pending,flush:()=>work.promise});h.click();
+    const first=h.waiting();h.click({href:'valuation.html'});
+    assert.equal(h.body.children.length,1);assert.equal(h.waiting(),first);await turn();
+    h.show();assert.equal(h.body.children.length,0,'flush가 끝나기 전에 복원해도 안내를 제거해야 한다');
+    pending=false;assert.equal(h.click({href:'valuation.html'}).defaultPrevented,false,'복원 시 링크 잠금도 해제해야 한다');
+    if(end==='flush 완료'){work.resolve();await turn();}else await h.advance(4000);
+    assert.deepEqual(h.moves,[],'복원이 무효로 한 대기는 이전 링크로 이동하면 안 된다');assert.equal(h.timers.size,0);
+    work.resolve();await turn();await h.advance(4000);assert.deepEqual(h.moves,[]);
+  });
+});
+
+test('대기 중 복원 뒤 새 대기를 시작하면 앞선 완료·4초 경과가 새 안내와 링크 잠금을 건드리지 않는다',async t=>{
+  for(const end of ['flush 완료','4초 경과'])await t.test(end,async()=>{
+    const h=page(),first=deferred(),second=deferred();let calls=0;
+    h.leave.register({pending:()=>true,flush:()=>++calls===1?first.promise:second.promise});
+    h.click();await turn();await h.advance(1000);h.show();
+    assert.equal(h.waiting(),undefined);h.click({href:'valuation.html'});const waiting=h.waiting();assert.ok(waiting);await turn();
+    if(end==='flush 완료'){first.resolve();await turn();}else await h.advance(3000);
+    assert.equal(h.waiting(),waiting,'앞선 대기의 종료가 새 안내를 지우면 안 된다');assert.deepEqual(h.moves,[]);
+    assert.equal(h.timers.size,1,'새 대기의 타이머만 남아야 한다');
+    h.click({href:'other.html'});await turn();assert.equal(calls,2,'앞선 대기가 새 링크 잠금을 풀면 안 된다');
+    second.resolve();await turn();assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+    assert.deepEqual(h.moves,['https://example.test/app/valuation.html']);
+    first.resolve();await turn();await h.advance(4000);assert.deepEqual(h.moves,['https://example.test/app/valuation.html']);
+  });
 });
 
 test('pending이 있으면 기본 이동을 막고 4초를 기다리지 않고 flush 완료 즉시 이동한다',async()=>{

@@ -1,8 +1,8 @@
 // 앱 안 .html 링크는 대기 중인 저장만 최대 4초 기다리며 이유를 표시한다. 저장·충돌 처리는 각 등록자가 맡고 입력 칸은 강제로 확정하지 않는다.
 const pageLeave = (()=>{
   const handlers=[];
-  let leaving=false,waiting=null;
-  function showWaiting(){
+  let leaving=false,waiting=null,waitId=0;
+  function showWaiting(link){
     waiting=document.createElement("div");waiting.className="page-leave";
     waiting.setAttribute("role","status");waiting.setAttribute("aria-live","polite");waiting.setAttribute("aria-atomic","true");
     const panel=document.createElement("div");panel.className="page-leave-panel";
@@ -11,7 +11,7 @@ const pageLeave = (()=>{
     const hint=document.createElement("p");hint.className="page-leave-hint";hint.textContent="잠시 후 다음 화면으로 이동합니다.";
     panel.append(spinner,title,hint);waiting.append(panel);
     // 모달 밖은 접근성 트리에서 제외되므로, 창에서 이동할 때는 안내도 그 창 안에 둔다.
-    const host=document.activeElement?.closest?.("dialog[open]")||document.body;host.append(waiting);
+    const host=link.closest("dialog[open]")||document.body;host.append(waiting);
     // 입력 포커스를 옮기지 않고 열린 설정 창 위에도 표시한다. popover가 없는 브라우저는 고정 레이어를 쓴다.
     if(typeof waiting.showPopover==="function"){waiting.setAttribute("popover","manual");waiting.showPopover();}
   }
@@ -28,14 +28,16 @@ const pageLeave = (()=>{
     if(leaving){event.preventDefault();return;}
     const pending=handlers.filter(handler=>handler.pending());
     if(!pending.length)return;
-    event.preventDefault();leaving=true;showWaiting();
+    const current=++waitId;
+    event.preventDefault();leaving=true;
+    try{showWaiting(link);}catch(error){console.error(error);}
     let timer;
     Promise.race([
       Promise.allSettled(pending.map(handler=>Promise.resolve().then(()=>handler.flush()))),
       new Promise(resolve=>{timer=setTimeout(resolve,4000);})
-    ]).then(()=>{clearTimeout(timer);clearWaiting();location.assign(url.href);});
+    ]).then(()=>{clearTimeout(timer);if(current!==waitId)return;clearWaiting();location.assign(url.href);});
   });
-  // 뒤로 가기로 복원된 문서는 새 이동을 받을 수 있다.
-  addEventListener("pageshow",event=>{if(event.persisted)clearWaiting();});
+  // 복원 시 이전 대기를 무효로 한다. 그 대기가 나중에 끝나도 새 안내·잠금·이동 주소를 건드리지 않는다.
+  addEventListener("pageshow",event=>{if(event.persisted){waitId++;clearWaiting();}});
   return {register:handler=>{handlers.push(handler);}};
 })();
