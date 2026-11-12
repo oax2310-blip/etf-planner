@@ -1,0 +1,7 @@
+/* 세 페이지의 동기화 대기 표시. 저장 상태는 page-leave.js가 판단하며 화면 토큰·글꼴은 각 페이지 것을 쓴다. */
+.page-leave{position:fixed;inset:0;z-index:100;display:grid;place-items:center;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;padding:max(24px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px));background:var(--top);color:var(--text);font-family:var(--font);line-height:1.5;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.page-leave-content{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.page-leave-message{font-size:15px;font-weight:600;color:var(--text);letter-spacing:-.02em}
+.page-leave-spinner{display:block;width:32px;height:32px;margin:0;border:3px solid var(--line-strong);border-top-color:var(--accent);border-radius:50%;animation:page-leave-spin .8s linear infinite}
+@keyframes page-leave-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.page-leave-spinner{animation:none}}
