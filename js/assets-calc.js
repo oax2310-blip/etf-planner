@@ -244,9 +244,9 @@ function purchaseTrackingFill(row, it, prices, fx, currency="USD", target=it){
   const raw=plus(row?.price), price=raw?currency==="USD"?Math.round(raw*100)/100:Math.round(raw):null;
   return {...fill,price,budget:amount,tradeTicker:assetTradeTicker(target),tradePrice:fill.price,tradeCurrency:q.currency};
 }
-// 화면 전용 순서 판정: 체결 기록이 없는 회차를 계획 순서로 받는다. 첫 미도달(현재가 < 가격) 뒤에서 이미 도달(현재가 ≥ 가격)한 회차만 뺀다.
+// 화면·알림 공통 순서 판정: 체결 기록이 없는 회차를 계획 순서로 받는다. 첫 미도달(현재가 < 가격) 뒤에서 이미 도달(현재가 ≥ 가격)한 회차만 뺀다.
 // 완료·부분 체결은 호출 전에 빠져 지난 회차로 본다. 현재가가 없으면 그대로 두며, 입력·저장 기록을 바꾸지 않고 매번 다시 판정한다.
-// 한계: 현재가만 보므로 순서대로 도달한 뒤 사지 않고 앞 회차 아래로 돌아오면 화면에서는 빠져도 서버의 미체결 재알림은 계속될 수 있다.
+// 제외한 회차는 서버의 최초·재도달·미체결 재알림과 발송 대기에서도 빠진다. 현재가가 그 회차 아래로 내려오거나 앞 회차가 모두 도달하면 다시 편입한다.
 function purchaseInOrderSelection(rows, current){
   const now=plus(current), kept=[], skipped=[];
   let waiting=false;
@@ -267,9 +267,9 @@ function purchaseInOrderSelection(rows, current){
 // 체결한 회차도 간격 계산에 포함해 건너뛴 앞 회차를 다시 만들지 않는다. 금액은 최소 매수액을 먼저 확보하고 나머지를 가능한 한 같게 나눈다.
 // trade는 화면·알림이 쓰는 실제 종목·시세·환율·계획 통화. 필요한 시세나 환율이 없으면 기존 균등 예산을 유지하며 수량을 추정하지 않는다.
 // 기준 item으로 전체 계좌 목표·예산을 유지하고 target(없으면 buyPriority 첫 항목)의 실제 가격·단위로 미체결 회차의 수량·최소 매수액을 계산한다.
-// trade.inOrder === true(화면 전용)일 때만 기존 간격 선택·1회차 대체·비용 미상 경로가 끝난 뒤 순서 밖 도달 회차를 빼고 남은 예산을 다시 나눈다.
-// 현재가는 assetQuote와 같은 유효 종가·기준일 조건 및 시세/계획 통화 일치 조건에서만 읽는다. 간격 선택은 유지해 화면 회차가 알림 회차의 부분집합으로 남는다.
-// 알림은 inOrder를 넘기지 않아 현재가와 무관한 전체 회차·선행 관계를 유지한다. 도달 이력은 저장하지 않으며 재편입 규칙·한계는 purchaseInOrderSelection 주석을 따른다.
+// trade.inOrder === true(화면·알림 공통)일 때만 기존 간격 선택·1회차 대체·비용 미상 경로가 끝난 뒤 순서 밖 도달 회차를 빼고 남은 예산을 다시 나눈다.
+// 현재가는 assetQuote와 같은 유효 종가·기준일 조건 및 시세/계획 통화 일치 조건에서만 읽는다. 간격 선택은 유지하고 화면·알림 모두 같은 회차를 쓴다.
+// 도달 이력은 저장하지 않으며 재편입 규칙은 purchaseInOrderSelection 주석을 따른다.
 function purchaseLineSelection(plan, entry, trade={}){
   const lines=plan?.lines, buys=purchaseBuys(plan), names=purchaseLineNames(lines);
   const parse=key=>{if(key==="end")return {line:"목표가",t:0};const m=/^(.+):([0-2])$/.exec(key);return m&&purchaseLineName(m[1])?{line:m[1],t:Number(m[2])}:null;};
@@ -372,6 +372,7 @@ function purchaseQuoteKind(ticker){
 // 매수 회차는 계획 순서대로 바로 앞 미완료 회차의 id를 after에 넣는다(완료 회차·이동평균선 돌파의 실제 매수 수량 0인 회차는 제외, 알림 OFF는 포함).
 // 수집기는 선행 회차의 가격 도달을 기억한 뒤 후행 최초·재도달·재알림을 허용한다. 전량 체결을 기다리지 않으며 한 시세에서 여러 회차 도달도 가능하다.
 // 도달 후 가격이 되돌아가도 순서 해제 이력은 유지한다. 가격 없는 미완료 회차는 후행을 막으며 매수대기에는 순서 제한을 두지 않는다.
+// 이동평균선 돌파는 화면과 같이 inOrder로 고른 회차만 알린다. 제외한 회차의 과거 도달 이력으로 재알림하지 않으며 남은 회차끼리 선행 관계를 잇는다.
 // 계획 통화(달러 계획만 currency 저장, 없으면 시세 통화 → 원화)가 종목 코드 시장 통화와 다르면 보내지 않는다.
 // 이동평균선 돌파 회차는 지금 이동평균 가격으로(이력은 단계 이름·회차로 이어져 이평선이 움직여도 다시 알리지 않음), 직접 입력 회차는 가격·방향을 바꾸면 이력이 새로.
 // 데이터 저장소의 compile_trade_alerts.cjs가 etf-planner-assets.json에 이 함수를 그대로 실행하고, kis_prices.py가 이동평균선 돌파·매수대기 종목(purchase_line_plans)은 선택한 선의 전체 시세·60분봉을,
@@ -394,7 +395,7 @@ function purchaseAlertRules(assets, prices, quiet=false){
     }
     if(plan.lines){
       const entry=prices?.stocks?.[ticker];
-      const trade={item:it,target:purchaseTargets(assets?.allocation,prices,it,plan)[0]?.it||it,allocation:assets?.allocation,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW"};
+      const trade={item:it,target:purchaseTargets(assets?.allocation,prices,it,plan)[0]?.it||it,allocation:assets?.allocation,prices,fx:assetFx(prices,assets?.allocation),currency:plan.currency||assetQuote(prices,ticker)?.currency||"KRW",inOrder:true};
       for(const r of purchaseLineRows(plan,entry&&entry.kind===kind?entry:null,trade)){
         if(!r.done&&(r.remainingShares>0||purchaseTrackingFill(r,it,prices,trade.fx,trade.currency,trade.target)?.shares!==0))
           addRound(r.key,`분할매수 ${purchaseLineLabel(r)}`,r.price,"up",r.key==="end"?["end",r.price]:[r.line,r.t,r.next],purchaseAlertOn(plan,r));}
