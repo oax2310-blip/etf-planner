@@ -11,8 +11,8 @@ const manifest = JSON.parse(read('manifest.webmanifest'));
 const tags = (html, tag) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'))]
   .map(([text]) => Object.fromEntries([...text.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, key, value]) => [key, value])));
 
-test('홈 화면 앱은 주소창 없는 창으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
-  assert.equal(manifest.display, 'standalone');
+test('홈 화면 앱은 전체화면으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
+  assert.equal(manifest.display, 'fullscreen');
   assert.ok(manifest.name && manifest.short_name);
   assert.equal(manifest.lang, 'ko');
   for (const key of ['start_url', 'scope']) {
