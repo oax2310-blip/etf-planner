@@ -68,6 +68,63 @@ test('세 화면 모두 CSP가 허용한 같은 설치 정보를 읽고 iOS 앱 
   }
 });
 
+for (const name of pages) test(`안전 영역: ${name}은 카메라 영역까지 viewport를 확장한다`, () => {
+  const viewport = tags(read(name), 'meta').filter(tag => tag.name === 'viewport');
+  assert.equal(viewport.length, 1, name);
+  assert.match(viewport[0].content, /(?:^|,)\s*viewport-fit\s*=\s*cover\s*(?:,|$)/, name);
+});
+
+// 같은 선택자가 미디어 쿼리에서 덮어써지는 경우를 구분한다. 이 저장소의 중첩 없는 CSS 선언 블록만 읽는다.
+function cssRule(file, selector, media = '') {
+  const css = read(file).replace(/\/\*[\s\S]*?\*\//g, ''), stack = [], rules = [];
+  for (const match of css.matchAll(/([^{}]+)\{|\}/g)) {
+    if (match[1] !== undefined) stack.push({selector:match[1].trim(), start:match.index + match[0].length});
+    else {
+      const rule = stack.pop();
+      if (!rule || rule.selector.startsWith('@')) continue;
+      rules.push({...rule, media:stack.map(parent => parent.selector).join(''), body:css.slice(rule.start, match.index)});
+    }
+  }
+  const compact = value => value.replace(/\s+/g, '');
+  const found = rules.filter(rule => rule.selector === selector && compact(rule.media) === compact(media));
+  assert.equal(found.length, 1, `${file}: ${selector} ${media || '기본'} 규칙`);
+  return Object.fromEntries(found[0].body.split(';').filter(value => value.includes(':')).map(value => {
+    const colon = value.indexOf(':');
+    return [value.slice(0, colon).trim(), compact(value.slice(colon + 1))];
+  }));
+}
+const inset = edge => `env(safe-area-inset-${edge},0px)`;
+const dialogInset = ['top', 'right', 'bottom', 'left'].map(inset).join('');
+const dialogWidth = `calc(100%-6px-2em-${inset('left')}-${inset('right')})`;
+const safeAreaRules = [
+  ['플래너 기본 헤더 위 여백', 'css/app.css', '.top', '', 'padding', value => assert.ok(value?.startsWith(`calc(11px+${inset('top')})`))],
+  ['플래너 모바일 헤더 위 여백', 'css/app.css', '.top', '@media(max-width:700px)', 'padding', value => assert.ok(value?.startsWith(`calc(10px+${inset('top')})`))],
+  ['플래너 모바일 접힌 탭 위치', 'css/app.css', '.top', '@media(max-width:700px)', 'top', `calc(${inset('top')}-var(--tuck,calc(40px+${inset('top')})))`],
+  ['플래너 입력 창 위치', 'css/app.css', 'dialog', '', 'inset', dialogInset],
+  ['플래너 입력 창 폭', 'css/app.css', 'dialog', '', 'max-width', dialogWidth],
+  ['시나리오 탐색 줄 위 여백', 'css/valuation.css', '.nav', '', 'padding-top', inset('top')],
+  ['시나리오 기본 절 이동 여백', 'css/valuation.css', 'section', '', 'scroll-margin-top', `calc(68px+${inset('top')})`],
+  ['시나리오 모바일 절 이동 여백', 'css/valuation.css', 'section', '@media(max-width:760px)', 'scroll-margin-top', `calc(57px+${inset('top')})`],
+  ['시나리오 모바일 요약 줄 위치', 'css/valuation.css', '.mobile-valuation', '@media(max-width:760px)', 'top', `calc(48px+${inset('top')})`],
+  ['시나리오 입력 창 위치', 'css/valuation.css', '.saves-dialog', '', 'inset', dialogInset],
+  ['시나리오 입력 창 높이', 'css/valuation.css', '.saves-dialog', '', 'max-height', `calc(100dvh-32px-${inset('top')}-${inset('bottom')})`],
+  ['시나리오 입력 창 폭', 'css/valuation.css', '.saves-dialog', '', 'max-width', dialogWidth],
+];
+for (const [name, file, selector, media, property, expected] of safeAreaRules) test(`안전 영역: ${name}`, () => {
+  const value = cssRule(file, selector, media)[property];
+  if (typeof expected === 'function') expected(value);
+  else assert.equal(value, expected, `${file}: ${selector} ${property}`);
+});
+test('안전 영역: 접힌 헤더 덮개가 카메라 영역을 배경으로 가린다', () => {
+  const cover = cssRule('css/app.css', 'body::before', '@media screen');
+  assert.equal(cover.content, '""');
+  assert.equal(cover.position, 'fixed');
+  assert.equal(cover.inset, '00auto');
+  assert.equal(cover.height, inset('top'));
+  assert.equal(cover.background, 'var(--bg)');
+  assert.ok(Number(cover['z-index']) > Number(cssRule('css/app.css', '.top')['z-index']));
+});
+
 // 확장자·선언 크기만 맞고 실제 PNG가 없거나 잘린 경우도 잡는다. 외부 이미지 라이브러리를 쓰지 않는다.
 function pngSize(file) {
   assert.match(file, /^icons\/[\w-]+\.png$/);
