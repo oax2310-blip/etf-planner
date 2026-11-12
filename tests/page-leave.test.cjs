@@ -43,16 +43,19 @@ function page({popover=true,popoverError,onAssign}={}){
   return {leave,click,moves,timers,advance,body,document,initialFocus,errors,waiting:()=>findWaiting(body),show:()=>listeners.pageshow({persisted:true})};
 }
 
-test('동기화 대기는 카드 없이 회전 표시와 읽기 도구용 안내를 즉시 만들고 포커스를 유지한다',async()=>{
+test('동기화 대기는 카드 없이 회전 표시·문구·읽기 도구용 안내를 즉시 만들고 포커스를 유지한다',async()=>{
   const h=page(),work=deferred();let calls=0;
   h.leave.register({pending:()=>true,flush:()=>{calls++;return work.promise;}});
   h.click();
   const waiting=h.waiting();assert.ok(waiting,'기다리는 이유가 클릭 직후 보여야 한다');
   assert.equal(calls,0);assert.equal(waiting.getAttribute('role'),'status');
   assert.equal(waiting.getAttribute('aria-live'),'polite');assert.equal(waiting.getAttribute('aria-atomic'),'true');
-  const [spinner,message]=waiting.children;
-  assert.equal(waiting.children.length,2);assert.equal(spinner.className,'page-leave-spinner');
+  const [group,message]=waiting.children,[spinner,label]=group.children;
+  assert.equal(waiting.children.length,2);assert.equal(group.className,'page-leave-content');
+  assert.equal(group.children.length,2);assert.equal(spinner.className,'page-leave-spinner');
   assert.equal(spinner.getAttribute('aria-hidden'),'true');
+  assert.equal(label.className,'page-leave-message');assert.equal(label.textContent,'동기화 대기 중…');
+  assert.equal(label.getAttribute('aria-hidden'),'true','같은 안내를 읽기 도구에 중복 전달하지 않는다');
   assert.equal(message.className,'sync-status sr-only');assert.equal(message.textContent,'동기화 대기 중… 잠시 후 다음 화면으로 이동합니다.');
   assert.equal(waiting.popoverOpen,true,'열린 설정 창 위에서도 안내를 표시한다');
   assert.equal(h.document.activeElement,h.initialFocus,'입력을 강제로 확정하지 않는다');
