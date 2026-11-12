@@ -80,9 +80,9 @@ function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{
 // 기준선 글자는 화면에서만 'N개월선'→'N월선'(stock-names.js lineText). 저장된 line·body는 받은 그대로 둔다.
 const alertHistoryText=v=>typeof stockNames==="object"?stockNames.lineText(v):String(v??"");
 const alertHistoryView=(item,names)=>typeof stockNames==="object"?{name:stockNames.alertName(item,names),type:stockNames.alertKind(item).text}:{name:item.name,type:item.type};
-// 최근 재알림의 실제 회차·가격을 본문과 이동에 쓰고, 첫 스냅샷은 별도로 펼쳐 본다. 옛 기록에 최근 스냅샷이 없으면 기존 표시를 유지한다.
+// 최근 재알림의 실제 회차·가격을 본문과 이동에 쓰고, 첫 스냅샷은 별도로 펼쳐 본다. 스냅샷이 없거나 마지막 발송보다 오래됐으면 기존 표시를 유지한다.
 // 읽음·삭제·재알림 횟수는 묶음 항목을 기준으로 판단한다.
-const alertHistoryDisplay=item=>item.latestAlert||item;
+const alertHistoryDisplay=item=>item.latestAlert&&!(Date.parse(item.latestAlert.occurredAt)<Date.parse(item.lastSentAt))?item.latestAlert:item;
 function alertHistoryCard(item,names=null){
   const read=!alertHistoryUnread(item),count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0,shown=alertHistoryDisplay(item),recent=shown!==item,{name,type}=alertHistoryView(shown,names);
   const original=recent?`<details class="alert-history-original"><summary>처음 기록된 알림</summary><span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span><span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span></details>`:"";

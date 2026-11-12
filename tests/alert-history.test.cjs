@@ -131,6 +131,22 @@ test('최근 회차 이동도 묶음 항목을 읽음 처리하고 최근 실제
   assert.equal(unreadOf(h)(h.ctx.state.alertHistory.items[0]),false);
 });
 
+test('최근 스냅샷보다 마지막 발송이 새로우면 본문·이동은 기존 표시로 돌아가고 저장 값은 유지한다',()=>{
+  const h=load(),button={dataset:{openHistory:FIRST}};let routed;
+  h.ctx.acceptAlertHistory([event(FIRST),followUp('s'.repeat(64),2,'2026-10-16T00:45:00Z',{
+    ruleId:'trade:buy:two:150일선:0',line:'분할매수 150일선 1차'
+  })]);
+  const item=h.ctx.state.alertHistory.items[0];item.lastSentAt='2026-10-17T00:45:00.000Z';
+  const before=plain(item),card=h.ctx.alertHistoryCard(item);
+  assert.doesNotMatch(card,/최근 재알림|150일선/);assert.match(card,/분할매수 25선 2차/);
+  h.ctx.$$=selector=>selector==='[data-open-history]'?[button]:[];
+  h.ctx.pushAlertTarget=value=>{routed=plain(value);return value;};h.ctx.pushAlertDestination=()=>true;
+  h.ctx.pushAlertHash=()=>'#original';h.ctx.history={replaceState(){}};h.ctx.openPlannerLocation=()=>{};
+  h.ctx.$('alertHistoryDialog').close=()=>{};h.ctx.renderAlertHistory();button.onclick();
+  assert.equal(routed.ruleId,before.ruleId);assert.deepEqual(plain(item.latestAlert),before.latestAlert);
+  assert.equal(item.lastSentAt,before.lastSentAt);
+});
+
 test('옛 알림 조회·병합은 최근 스냅샷을 만들지 않고 잘못된 스냅샷은 제거한다',()=>{
   const h=load(),legacy=h.ctx.store.record(followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z'));
   const before=plain(legacy);

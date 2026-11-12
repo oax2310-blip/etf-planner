@@ -19,7 +19,7 @@ const screenQuote=(close=11000)=>({kind:'국내',asOf:'2026-01-02',close,ma:{'25
 const keys=rows=>rows.map(r=>r.key);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} ≠ ${b}`);
 
-test('화면에서 순서 밖 도달로 빠진 주선 회차는 ON·OFF 모두 알림에서 빼고 남은 선행 관계를 잇는다',()=>{
+test('화면에서 빠진 주선 회차는 ON·OFF 모두 hidden:true로 남고 원래 사슬·서명을 유지한다',()=>{
   for(const on of [false,true]){
     const plan={lines:{names:['150일선','25주선','32주선'],budget:100},notify:{stages:on}};
     const entry={kind:'국내',asOf:'2026-01-02',close:11000,ma:{'150일선':12000,'25주선':10000,'32주선':13000}};
@@ -27,9 +27,11 @@ test('화면에서 순서 밖 도달로 빠진 주선 회차는 ON·OFF 모두 �
     const screen=purchaseLineSelection(plan,entry,{inOrder:true});
     assert.deepEqual(keys(screen.skipped),['25주선:0','25주선:1']);
     const rules=purchaseAlertRules(doc,prices,true),visible=screen.rows.filter(r=>!r.done).map(r=>`trade:buy:a:${r.key}`);
-    assert.deepEqual(rules.map(r=>r.id),visible);
-    assert.equal(rules.some(r=>['trade:buy:a:25주선:0','trade:buy:a:25주선:1'].includes(r.id)),false);
-    assert.deepEqual(chain(rules),visible.map((id,i)=>[id,i?visible[i-1]:null]));
+    assert.deepEqual(rules.filter(r=>!r.hidden).map(r=>r.id),visible);
+    assert.deepEqual(rules.filter(r=>r.hidden).map(r=>r.id),['trade:buy:a:25주선:0','trade:buy:a:25주선:1']);
+    const baseline=purchaseAlertRules(doc,{stocks:{'111111':{...entry,close:9000}}},true);
+    assert.deepEqual(rules.map(({hidden,...r})=>r),baseline,'숨김 전환은 id·label·revision·after를 바꾸지 않는다');
+    assert.deepEqual(chain(rules),rules.map((r,i)=>[r.id,i?rules[i-1].id:null]));
     assert.deepEqual(purchaseAlertRules(doc,prices),on?rules:[]);
     assert.equal(JSON.stringify({doc,prices}),before,'회차 제외는 계획·체결·시세를 저장하거나 수정하지 않는다');
   }
@@ -46,7 +48,9 @@ test('순서 밖 주선에도 부분 체결 기록이 있으면 고정된 잔량
   assert.deepEqual(keys(screen.skipped),['25주선:1']);
   const rules=purchaseAlertRules(doc,prices,true),partial=rules.find(r=>r.id==='trade:buy:a:25주선:0');
   assert.equal(partial.targetPrice,10000);assert.equal(partial.notify,false);
-  assert.deepEqual(rules.map(r=>r.id),screen.rows.map(r=>`trade:buy:a:${r.key}`));
+  assert.equal(Object.hasOwn(partial,'hidden'),false);
+  assert.deepEqual(rules.filter(r=>!r.hidden).map(r=>r.id),screen.rows.map(r=>`trade:buy:a:${r.key}`));
+  assert.equal(rules.find(r=>r.id==='trade:buy:a:25주선:1').hidden,true);
   assert.equal(JSON.stringify({doc,prices}),before);
 });
 
@@ -206,7 +210,7 @@ test('화면 순서 판정은 첫 미도달 뒤의 도달만 빼고 현재가가
   assert.equal(JSON.stringify(rows),before);
 });
 
-test('화면·알림 모두 순서 밖 장기선을 빼고 남은 회차에 예산 전액을 다시 나눈다',()=>{
+test('화면은 순서 밖 장기선을 빼고 예산을 다시 나누며 알림은 숨김으로 전달한다',()=>{
   const plan=screenPlan(),entry=screenQuote(),doc=assets(item('a','111111',plan)),prices={stocks:{'111111':entry}},trade={inOrder:true};
   const before=JSON.stringify({plan,entry,trade}),normal=purchaseLineRows(plan,entry),rules=purchaseAlertRules(doc,prices);
   const selected=purchaseLineSelection(plan,entry,trade);
@@ -217,7 +221,7 @@ test('화면·알림 모두 순서 밖 장기선을 빼고 남은 회차에 예�
   near(selected.rows.reduce((sum,r)=>sum+r.amount,0),plan.lines.budget);
   assert.deepEqual(purchaseLineSelection(plan,entry),{rows:normal,skipped:[]});
   assert.deepEqual(purchaseLineRows(plan,entry,{inOrder:1}),normal,'정확히 true일 때만 제외한다');
-  assert.deepEqual(rules.map(r=>r.id),selected.rows.map(r=>`trade:buy:a:${r.key}`));
+  assert.deepEqual(rules.filter(r=>!r.hidden).map(r=>r.id),selected.rows.map(r=>`trade:buy:a:${r.key}`));
   assert.equal(JSON.stringify({plan,entry,trade}),before,'읽기·계산 중 저장 필드를 만들지 않는다');
 });
 
@@ -292,7 +296,8 @@ test('남은 회차는 현재가 누락·이평선 이동에도 같은 선행 �
     if(close===null)delete next.stocks['111111'].close;
     assert.deepEqual(purchaseAlertRules(doc,next),rules,'순서 밖 도달이 아니면 같은 회차·선행 관계를 유지한다');
   }
-  assert.deepEqual(chain(purchaseAlertRules(doc,quotes())),[['trade:buy:a:42선:0',null],['trade:buy:a:end','trade:buy:a:42선:0']],'순서 밖 도달은 빼고 목표가를 앞 회차에 잇는다');
+  assert.deepEqual(chain(purchaseAlertRules(doc,quotes())),chain(rules),'순서 밖 도달을 숨겨도 원래 선행 관계를 유지한다');
+  assert.equal(purchaseAlertRules(doc,quotes())[1].hidden,true);
   prices.stocks['111111'].ma={'42선':12500,'150주선':10500};
   const moved=purchaseAlertRules(doc,prices);
   assert.deepEqual(chain(moved),chain(rules));
@@ -385,7 +390,7 @@ test('목표가 없이 마지막 선까지 사면 마지막 선 가격 이상인
   assert.ok(rows.every(r=>r.price<=100),'마지막 선 가격보다 비싼 회차가 없다');
   near(rows.reduce((sum,r)=>sum+r.amount,0),100);
   const rules=purchaseAlertRules(doc,prices);
-  assert.deepEqual(rules.map(r=>r.id),purchaseLineRows(p,entry,{inOrder:true}).map(r=>`trade:buy:a:${r.key}`));
+  assert.deepEqual(rules.filter(r=>!r.hidden).map(r=>r.id),purchaseLineRows(p,entry,{inOrder:true}).map(r=>`trade:buy:a:${r.key}`));
   assert.equal(rules.some(r=>/25일선|42일선/.test(r.id)),false);
   assert.equal(JSON.stringify({doc,prices}),before,'계획·시세에 필드를 만들지 않는다');
   assert.deepEqual(keys(purchaseLineRows(p,quote({'42일선':100}))),keys(rows),'마지막 선과 같은 가격도 뺀다');
