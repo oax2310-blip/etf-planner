@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../js/page-leave.js'),'utf8');
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
-function page({popover=true}={}){
+function page({popover=true,onAssign}={}){
   const listeners={},timers=new Map(),moves=[];
   let now=0,id=0;
   function element(tagName){
@@ -20,7 +20,8 @@ function page({popover=true}={}){
   }
   const body=element('body'),initialFocus=element('input');
   const document={body,activeElement:initialFocus,createElement:element,addEventListener:(type,fn)=>listeners[type]=fn};
-  const location={href:'https://example.test/app/index.html',origin:'https://example.test',assign:href=>moves.push(href)};
+  // 이동이 취소되면 새 문서나 pageshow가 생기지 않는다. assign은 요청만 기록하고 이 문서를 유지한다.
+  const location={href:'https://example.test/app/index.html',origin:'https://example.test',assign:href=>{onAssign?.();moves.push(href);}};
   const context=vm.createContext({URL,location,document,
     addEventListener:(type,fn)=>listeners[type]=fn,
     setTimeout:(fn,ms)=>{timers.set(++id,{fn,at:now+ms});return id;},clearTimeout:key=>timers.delete(key)});
@@ -53,7 +54,36 @@ test('동기화 대기 안내를 flush 전에 즉시 표시하고 입력 포커�
   assert.equal(waiting.popoverOpen,true,'열린 설정 창 위에서도 안내를 표시한다');
   assert.equal(h.document.activeElement,h.initialFocus,'입력을 강제로 확정하지 않는다');
   await turn();work.resolve();await turn();
-  assert.equal(h.waiting(),waiting,'새 문서로 바뀔 때까지 안내를 유지한다');
+  assert.equal(h.waiting(),undefined,'동기화 대기가 끝나면 다음 문서의 로딩과 관계없이 안내를 닫는다');
+});
+
+test('완료·실패·4초 경과 뒤 이동이 취소돼도 안내를 닫고 링크를 다시 사용할 수 있다',async t=>{
+  for(const reason of ['완료','거부','동기 예외','4초 경과'])await t.test(reason,async()=>{
+    const work=deferred(),visibleAtAssign=[];
+    const h=page({onAssign:()=>visibleAtAssign.push(!!h.waiting())});let pending=true;
+    h.leave.register({pending:()=>pending,flush:()=>{if(reason==='동기 예외')throw Error('synthetic failure');return work.promise;}});
+    h.click();assert.ok(h.waiting());await turn();
+    if(reason==='완료')work.resolve();
+    else if(reason==='거부')work.reject(Error('synthetic failure'));
+    else if(reason==='4초 경과')await h.advance(4000);
+    await turn();
+    assert.deepEqual(visibleAtAssign,[false],'이동 요청 전에 안내를 닫아야 한다');
+    assert.equal(h.waiting(),undefined);assert.equal(h.moves.length,1);assert.equal(h.timers.size,0);
+    // pageshow 없이도, 대기 없는 다음 클릭은 브라우저가 원래대로 이동할 수 있어야 한다.
+    pending=false;assert.equal(h.click({href:'valuation.html'}).defaultPrevented,false,'이동 취소 뒤 링크 잠금을 풀어야 한다');
+  });
+});
+
+test('4초 뒤 이동을 취소하고 다시 기다릴 때 앞선 동기화의 늦은 완료가 새 안내를 닫지 않는다',async()=>{
+  const h=page(),first=deferred(),second=deferred();let calls=0;
+  h.leave.register({pending:()=>true,flush:()=>++calls===1?first.promise:second.promise});
+  h.click();await turn();await h.advance(4000);
+  assert.equal(h.waiting(),undefined);assert.equal(h.moves.length,1);
+  h.click({href:'valuation.html'});const waiting=h.waiting();assert.ok(waiting);await turn();
+  assert.equal(calls,2,'이동 취소 뒤에도 새 동기화를 기다릴 수 있어야 한다');
+  first.resolve();await turn();assert.equal(h.waiting(),waiting);assert.equal(h.moves.length,1);
+  second.resolve();await turn();assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+  assert.deepEqual(h.moves,['https://example.test/app/assets.html','https://example.test/app/valuation.html']);
 });
 
 test('대기 없는 이동과 대상 아닌 클릭에는 동기화 안내를 만들지 않는다',()=>{

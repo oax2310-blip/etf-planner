@@ -15,6 +15,8 @@ const pageLeave = (()=>{
     // 입력 포커스를 옮기지 않고 열린 설정 창 위에도 표시한다. popover가 없는 브라우저는 고정 레이어를 쓴다.
     if(typeof waiting.showPopover==="function"){waiting.setAttribute("popover","manual");waiting.showPopover();}
   }
+  // 다음 문서 로딩을 취소하면 pageshow가 오지 않으므로, 이동 요청 전에 안내와 잠금을 함께 푼다.
+  function clearWaiting(){waiting?.remove();waiting=null;leaving=false;}
   document.addEventListener("click",event=>{
     if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
     const link=event.target.closest?.("a[href]");
@@ -31,9 +33,9 @@ const pageLeave = (()=>{
     Promise.race([
       Promise.allSettled(pending.map(handler=>Promise.resolve().then(()=>handler.flush()))),
       new Promise(resolve=>{timer=setTimeout(resolve,4000);})
-    ]).then(()=>{clearTimeout(timer);location.assign(url.href);});
+    ]).then(()=>{clearTimeout(timer);clearWaiting();location.assign(url.href);});
   });
   // 뒤로 가기로 복원된 문서는 새 이동을 받을 수 있다.
-  addEventListener("pageshow",event=>{if(event.persisted){leaving=false;waiting?.remove();waiting=null;}});
+  addEventListener("pageshow",event=>{if(event.persisted)clearWaiting();});
   return {register:handler=>{handlers.push(handler);}};
 })();
