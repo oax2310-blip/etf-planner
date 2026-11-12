@@ -4,14 +4,20 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../js/page-leave.js'),'utf8');
+const css=fs.readFileSync(path.join(__dirname,'../css/page-leave.css'),'utf8');
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 function page({popover=true,popoverError,onAssign}={}){
   const listeners={},timers=new Map(),moves=[],errors=[];
   let now=0,id=0;
   function element(tagName){
+    const events=new Map();
     const node={tagName,children:[],attributes:{},className:'',textContent:'',style:{},
       setAttribute(key,value){this.attributes[key]=String(value);},getAttribute(key){return this.attributes[key]??null;},
+      removeAttribute(key){delete this.attributes[key];},get open(){return Object.hasOwn(this.attributes,'open');},
+      addEventListener(type,fn){if(!events.has(type))events.set(type,new Set());events.get(type).add(fn);},
+      removeEventListener(type,fn){events.get(type)?.delete(fn);},listenerCount(type){return events.get(type)?.size||0;},
+      emit(type,extra={}){const event={type,target:this,...extra};for(const fn of [...(events.get(type)||[])])fn(event);},
       append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},
       remove(){const parent=this.parentElement;if(parent)parent.children.splice(parent.children.indexOf(this),1);this.parentElement=null;},
       closest(selector){if(selector==='dialog[open]'&&this.tagName==='dialog'&&Object.hasOwn(this.attributes,'open'))return this;return this.parentElement?.closest(selector)||null;},
@@ -40,8 +46,22 @@ function page({popover=true,popoverError,onAssign}={}){
     await turn();
   }
   const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
-  return {leave,click,moves,timers,advance,body,document,initialFocus,errors,waiting:()=>findWaiting(body),show:()=>listeners.pageshow({persisted:true})};
+  return {leave,click,moves,timers,advance,body,document,initialFocus,errors,waiting:()=>findWaiting(body),show:(persisted=true)=>listeners.pageshow({persisted})};
 }
+
+test('대기 화면 스타일은 CSS에 있고 content·message·spinner 규칙과 대비 배경만 남긴다',()=>{
+  const rule=selector=>{
+    const match=css.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*\\{([^}]+)\\}'));
+    assert.ok(match,`${selector} 규칙이 있어야 한다`);
+    return Object.fromEntries(match[1].split(';').filter(s=>s.trim()).map(s=>{const at=s.indexOf(':');return [s.slice(0,at).trim(),s.slice(at+1).trim()];}));
+  };
+  const content=rule('.page-leave-content'),message=rule('.page-leave-message'),spinner=rule('.page-leave-spinner');
+  assert.equal(content.display,'flex');assert.equal(content['flex-direction'],'column');assert.equal(content['align-items'],'center');assert.equal(content.gap,'16px');
+  assert.equal(message['font-size'],'15px');assert.equal(message['font-weight'],'600');assert.equal(message.color,'var(--text)');assert.equal(message['letter-spacing'],'-.02em');
+  assert.equal(spinner.margin,'0');assert.equal(rule('.page-leave').background,'var(--top)');
+  assert.doesNotMatch(css,/\.page-leave-(?:panel|title|hint)\b/,'사용하지 않는 카드 규칙은 제거한다');
+  assert.doesNotMatch(source,/\b(?:waiting|group|spinner|label)\.style\b/,'CSS를 인라인 스타일로 덮어쓰지 않는다');
+});
 
 test('동기화 대기는 카드 없이 회전 표시·문구·읽기 도구용 안내를 즉시 만들고 포커스를 유지한다',async()=>{
   const h=page(),work=deferred();let calls=0;
@@ -128,6 +148,58 @@ test('showPopover가 예외를 던져도 오류만 기록하고 flush 뒤 이동
   await turn();assert.equal(calls,1);assert.equal(h.moves.length,0);
   work.resolve();await turn();
   assert.deepEqual(h.moves,['https://example.test/app/assets.html']);assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+});
+
+test('모달의 cancel·close·beforetoggle 닫힘은 이동 대기를 취소한다',async t=>{
+  for(const type of ['cancel','close','beforetoggle'])await t.test(type,async()=>{
+    const h=page(),dialog=h.document.createElement('dialog'),work=deferred();let pending=true;
+    dialog.setAttribute('open','');h.body.append(dialog);
+    h.leave.register({pending:()=>pending,flush:()=>work.promise});h.click({parent:dialog});await turn();
+    if(type==='close')dialog.removeAttribute('open');
+    dialog.emit(type,{newState:'closed'});
+    assert.equal(h.waiting(),undefined,'창 닫힘과 함께 대기 표시를 정리해야 한다');
+    for(const event of ['cancel','close','beforetoggle'])assert.equal(dialog.listenerCount(event),0);
+    pending=false;assert.equal(h.click({href:'valuation.html'}).defaultPrevented,false,'창 닫힘 뒤 이동 잠금을 풀어야 한다');
+    work.resolve();await turn();await h.advance(4000);
+    assert.deepEqual(h.moves,[],'창을 닫은 뒤 이전 대기가 자동으로 이동하면 안 된다');assert.equal(h.timers.size,0);
+  });
+});
+
+test('모달 close 이벤트가 오기 전에 닫혀도 완료·4초 경과 시 이동하지 않는다',async t=>{
+  for(const end of ['flush 완료','4초 경과'])await t.test(end,async()=>{
+    const h=page(),dialog=h.document.createElement('dialog'),work=deferred();
+    dialog.setAttribute('open','');h.body.append(dialog);
+    h.leave.register({pending:()=>true,flush:()=>work.promise});h.click({parent:dialog});await turn();
+    dialog.removeAttribute('open'); // close 이벤트는 다음 작업에서 도착할 수 있다.
+    if(end==='flush 완료'){work.resolve();await turn();}else await h.advance(4000);
+    assert.deepEqual(h.moves,[]);assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+    for(const event of ['cancel','close','beforetoggle'])assert.equal(dialog.listenerCount(event),0);
+  });
+});
+
+test('끝난 모달 감시는 제거하고 다시 열린 창의 늦은 close·여는 beforetoggle은 새 대기를 유지한다',async()=>{
+  const h=page(),dialog=h.document.createElement('dialog'),first=deferred(),second=deferred();let calls=0;
+  dialog.setAttribute('open','');h.body.append(dialog);
+  h.leave.register({pending:()=>true,flush:()=>++calls===1?first.promise:second.promise});
+  h.click({parent:dialog});await turn();first.resolve();await turn();
+  for(const event of ['cancel','close','beforetoggle'])assert.equal(dialog.listenerCount(event),0,'종료한 대기의 모달 감시를 해제한다');
+  h.click({parent:dialog,href:'valuation.html'});await turn();const waiting=h.waiting();assert.ok(waiting);
+  dialog.emit('close');dialog.emit('beforetoggle',{newState:'open'});
+  assert.equal(h.waiting(),waiting);assert.equal(h.moves.length,1,'다시 열린 창의 이전 닫힘 이벤트를 무시한다');
+  second.resolve();await turn();assert.equal(h.waiting(),undefined);
+  assert.deepEqual(h.moves,['https://example.test/app/assets.html','https://example.test/app/valuation.html']);
+  for(const event of ['cancel','close','beforetoggle'])assert.equal(dialog.listenerCount(event),0);
+});
+
+test('persisted:false인 pageshow는 안내·잠금·이동 대기를 유지한다',async t=>{
+  for(const end of ['flush 완료','4초 경과'])await t.test(end,async()=>{
+    const h=page(),work=deferred();let calls=0;
+    h.leave.register({pending:()=>true,flush:()=>{calls++;return work.promise;}});h.click();await turn();const waiting=h.waiting();
+    h.show(false);assert.equal(h.waiting(),waiting);assert.deepEqual(h.moves,[]);
+    h.click({href:'valuation.html'});await turn();assert.equal(calls,1,'일반 pageshow가 잠금을 풀면 안 된다');
+    if(end==='flush 완료'){work.resolve();await turn();}else await h.advance(4000);
+    assert.deepEqual(h.moves,['https://example.test/app/assets.html']);assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+  });
 });
 
 test('popover가 없는 브라우저도 동기화 안내와 기존 이동을 유지한다',async()=>{
