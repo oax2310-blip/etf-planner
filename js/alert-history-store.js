@@ -1,13 +1,14 @@
 // 알림 당시의 푸시 내용만 보관한다. 페이지·서비스 워커 공용이며 DOM·토큰·매매 계산을 사용하지 않는다.
 // 이벤트 ID는 발송 재시도·여러 기기의 중복을 구분한다. 읽음·삭제는 기존 플래너 JSON에만 저장한다.
-// 같은 매매 회차의 재알림·재도달 알림은 alertKey(최초 알림 ID)와 reminderCount를 싣고 온다(수집 저장소 trade_reminders.py).
-// 그 알림들은 최초 알림 항목 하나에 재알림 횟수(reminderCount)·마지막 발송 시각(lastSentAt)만 더한다. 그 항목을 지운 뒤 온 재알림은 새 항목 하나로 보인다.
+// 같은 종목·매매 종류의 재알림·재도달 알림은 alertKey(묶음의 최초 알림 ID)와 reminderCount를 싣고 온다(수집 저장소 trade_reminders.py).
+// 최초 스냅샷은 보존하며 새 수신 때만 latestAlert에 최근 실제 회차의 스냅샷을 더한다. 옛 기록을 읽거나 합칠 때 만들지 않는다.
+// 그 항목을 지운 뒤 온 재알림은 새 항목 하나로 보인다.
 const alertHistoryStore = (()=>{
   const retentionMs=90*24*60*60e3;
   const clean=(value,max)=>typeof value==="string"?value.slice(0,max):"";
   const stamp=value=>typeof value==="string"&&/^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(value)&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():"";
   const positive=value=>typeof value==="number"&&Number.isFinite(value)&&value>0?value:null;
-  function record(data,receivedAt){
+  function snapshot(data,receivedAt){
     if(!data||typeof data!=="object")return null;
     const eventId=clean(data.eventId||data.id,128),ticker=clean(data.ticker,32).trim().toUpperCase();
     const occurredAt=stamp(data.occurredAt)||stamp(data.observedAt);
@@ -20,12 +21,36 @@ const alertHistoryStore = (()=>{
     for(const field of ["observedAt","receivedAt","readAt"]){const value=stamp(field==="receivedAt"?receivedAt||data[field]:data[field]);if(value)item[field]=value;}
     if(data.krOpenReminder===true)item.krOpenReminder=true;
     if(/^\d{4}-\d\d-\d\d$/.test(data.asOf||""))item.asOf=data.asOf;
+    return item;
+  }
+  const tradeKind=item=>/^trade:(plan|buy|rebuy|future|future-rebuy):/.exec(item.ruleId)?.[1]||"";
+  const sameTrade=(a,b)=>a.ticker===b.ticker&&!!tradeKind(a)&&tradeKind(a)===tradeKind(b);
+  function latestSnapshot(data){
+    if(!stamp(data?.occurredAt))return null;
+    const item=snapshot(data);if(item){delete item.readAt;delete item.receivedAt;}return item;
+  }
+  function record(data,receivedAt){
+    const item=snapshot(data,receivedAt);if(!item)return null;
     const count=Number.isInteger(data.reminderCount)&&data.reminderCount>0&&data.reminderCount<=100000?data.reminderCount:0,lastSentAt=stamp(data.lastSentAt);
     if(count)item.reminderCount=count;
     if(lastSentAt)item.lastSentAt=lastSentAt;
-    if(count&&typeof data.alertKey==="string"&&/^[0-9a-f]{64}$/.test(data.alertKey)&&data.alertKey!==eventId){
+    if(count&&typeof data.alertKey==="string"&&/^[0-9a-f]{64}$/.test(data.alertKey)&&data.alertKey!==item.id){
       item.alertKey=data.alertKey;const first=stamp(data.firstOccurredAt);if(first)item.firstOccurredAt=first;
     }
+    const last=count&&data.latestAlert?latestSnapshot(data.latestAlert):null;
+    if(last&&sameTrade(item,last)&&last.occurredAt<=(item.lastSentAt||item.occurredAt))item.latestAlert=last;
+    return item;
+  }
+  // 같은 시각·ID의 수신도 합치는 순서에 따라 결과가 달라지지 않게 검증한 스냅샷을 고른다.
+  function mergeLatest(item,last){
+    if(!last||!sameTrade(item,last))return;
+    const old=item.latestAlert;
+    if(!old||last.occurredAt>old.occurredAt||last.occurredAt===old.occurredAt&&(last.id>old.id||last.id===old.id&&JSON.stringify(last)>JSON.stringify(old)))item.latestAlert=last;
+  }
+  // 실제 푸시·발송 이력 유입에서만 새 필드를 만든다. lastSentAt만 있는 옛 합산 기록에서 최근 회차를 추정하지 않는다.
+  function received(data,receivedAt){
+    const item=record(data,receivedAt);
+    if(item?.alertKey&&(!item.lastSentAt||item.lastSentAt===item.occurredAt))mergeLatest(item,latestSnapshot(item));
     return item;
   }
   const follow=(item,count,at)=>{
@@ -49,8 +74,8 @@ const alertHistoryStore = (()=>{
       }
       for(const raw of Array.isArray(history.items)?history.items:[]){const item=record(raw);if(!item)continue;if(item.alertKey){later.push(item);continue;}const old=items.get(item.id);if(!old)items.set(item.id,item);else{
         // 먼저 기록한 당시 정보는 유지하고 더 정확한 발송 스냅샷의 빈 필드만 보충한다.
-        for(const [key,value] of Object.entries(item))if(old[key]===undefined||old[key]===""||(key==="name"&&old.name===old.ticker))old[key]=value;
-        readAt(old,item.readAt);follow(old,item.reminderCount,item.lastSentAt);
+        for(const [key,value] of Object.entries(item))if(key!=="latestAlert"&&(old[key]===undefined||old[key]===""||(key==="name"&&old.name===old.ticker)))old[key]=value;
+        readAt(old,item.readAt);follow(old,item.reminderCount,item.lastSentAt);mergeLatest(old,item.latestAlert);
       }}
     }
     for(const key of deleted)if(deletedAt.has(key)&&Date.parse(deletedAt.get(key))<cutoff){deleted.delete(key);deletedAt.delete(key);}
@@ -58,7 +83,7 @@ const alertHistoryStore = (()=>{
     const covered=new Map();
     for(const key of deleted){const mark=/^([0-9a-f]{64}):(\d{1,6})$/.exec(key);if(mark)covered.set(mark[1],Math.max(covered.get(mark[1])||0,Number(mark[2])));}
     const restarted=new Map();
-    // 후속 알림은 최초 알림 항목의 읽음·스냅샷을 그대로 두고 횟수·마지막 발송 시각만 갱신한다(가장 큰 값, 순서·중복 무관).
+    // 후속 알림은 최초 스냅샷을 보존하고 횟수·마지막 발송·latestAlert를 합친다(가장 최근 값, 순서·중복 무관).
     for(const item of later.sort((a,b)=>a.reminderCount-b.reminderCount||a.occurredAt.localeCompare(b.occurredAt)||a.id.localeCompare(b.id))){
       const {alertKey:key,reminderCount:count,firstOccurredAt:first,...rest}=item;
       const stray=items.get(item.id);
@@ -66,11 +91,11 @@ const alertHistoryStore = (()=>{
       // 회차 항목을 지운 뒤 온 재알림은 가장 앞선 재알림의 ID·당시 스냅샷으로 새 항목 하나를 만든다. alertKey를 남겨 다음 재알림도 이 항목에 합친다.
       if(deleted.has(key)&&!deleted.has(item.id)&&count>(covered.get(key)||0)){
         if(!restarted.has(key))restarted.set(key,{...item});
-        const card=restarted.get(key);readAt(card,item.readAt);follow(card,count,item.lastSentAt||item.occurredAt);continue;
+        const card=restarted.get(key);readAt(card,item.readAt);follow(card,count,item.lastSentAt||item.occurredAt);mergeLatest(card,item.latestAlert);continue;
       }
       let base=items.get(key);
       if(!base){base={...rest,id:key,occurredAt:first||item.occurredAt};delete base.readAt;items.set(key,base);} // 최초 알림을 받지 못한 기기
-      readAt(base,stray?.readAt);follow(base,count,item.lastSentAt||item.occurredAt);
+      readAt(base,stray?.readAt);follow(base,count,item.lastSentAt||item.occurredAt);mergeLatest(base,item.latestAlert);
     }
     const result={items:[...items.values(),...restarted.values()].filter(item=>!deleted.has(item.id)).sort((a,b)=>latest(b).localeCompare(latest(a))||a.id.localeCompare(b.id)),deletedIds:[...deleted].sort()};
     const times=result.deletedIds.filter(key=>deletedAt.has(key)).map(key=>[key,deletedAt.get(key)]);
@@ -103,10 +128,10 @@ const alertHistoryStore = (()=>{
     });
   }
   async function enqueue(data){
-    const item=record(data,new Date().toISOString());if(!item)return null;
+    const item=received(data,new Date().toISOString());if(!item)return null;
     await transaction("readwrite",store=>{const request=store.add(item);request.onerror=event=>{if(request.error?.name==="ConstraintError"){event.preventDefault();event.stopPropagation();}};});return item;
   }
   const pending=()=>transaction("readonly",(store,done)=>{const request=store.getAll();request.onsuccess=()=>done(request.result);});
   const acknowledge=ids=>transaction("readwrite",store=>{for(const key of ids)store.delete(key);});
-  return {retentionMs,record,merge,removal,enqueue,pending,acknowledge};
+  return {retentionMs,record,received,merge,removal,enqueue,pending,acknowledge};
 })();

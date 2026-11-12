@@ -85,6 +85,70 @@ test('앱이 닫혔을 때 누른 알림은 뒤늦게 복원된 내역도 읽음
 // 미완료 매매 재알림(수집 저장소 trade_reminders.py): 같은 회차의 후속 알림은 alertKey=최초 알림 ID로 한 항목에 합친다.
 const FIRST='a'.repeat(64),OTHER='b'.repeat(64);
 const followUp=(id,count,occurredAt,extra={})=>event(id,{alertKey:FIRST,reminderCount:count,firstOccurredAt:'2026-10-14T01:02:10Z',occurredAt,price:99,tradeReminder:true,...extra});
+test('묶음의 재알림 회차가 바뀌면 최근 회차·가격을 표시하고 첫 알림 기록은 보존한다',()=>{
+  const h=load(),first=event(FIRST,{ruleId:'trade:buy:one:25주선:0',line:'분할매수 25주선 1차'});
+  h.ctx.acceptAlertHistory([first]);
+  const original=plain(h.ctx.state.alertHistory.items[0]);
+  h.ctx.acceptAlertHistory([followUp('r'.repeat(64),10,'2026-10-16T00:45:00Z',{
+    ruleId:'trade:buy:two:150일선:0',line:'분할매수 150일선 1차',price:110,ma:105
+  })]);
+  const item=plain(h.ctx.state.alertHistory.items[0]);
+  assert.equal(item.latestAlert?.ruleId,'trade:buy:two:150일선:0');
+  assert.deepEqual([item.line,item.ruleId,item.price,item.ma],[original.line,original.ruleId,original.price,original.ma]);
+  const card=h.ctx.alertHistoryCard(item),main=card.slice(0,card.indexOf('<details'));
+  assert.match(main,/최근 재알림 · 분할매수 150일선 1차/);assert.doesNotMatch(main,/25주선/);
+  assert.match(card,/<details[^>]*>[\s\S]*처음 기록된 알림[\s\S]*25주선 1차/);
+  assert.match(card,/재알림 당시 가격 <strong>\$110<\/strong>.*기준값 <strong>\$105<\/strong>/s);
+  const reopened=load(JSON.parse(h.storage.get('test-state')));
+  assert.deepEqual(plain(reopened.ctx.state.alertHistory),plain(h.ctx.state.alertHistory));
+});
+
+test('최근 재알림은 지연 수신·기기 병합 순서와 무관하며 횟수가 같아도 최신 발송을 고른다',()=>{
+  const h=load(),first=h.ctx.store.record(event(FIRST));
+  const old=h.ctx.store.received(followUp('r'.repeat(64),100000,'2026-10-15T00:45:00Z'));
+  const last=h.ctx.store.received(followUp('s'.repeat(64),100000,'2026-10-16T00:45:00Z',{
+    ruleId:'trade:buy:two:150일선:0',line:'분할매수 150일선 1차',price:110,ma:105
+  }));
+  const oldHistory=h.ctx.store.merge({items:[first,old]}),lastHistory=h.ctx.store.merge({items:[first,last]});
+  const inputs=plain([oldHistory,lastHistory]),a=plain(h.ctx.store.merge(oldHistory,lastHistory)),b=plain(h.ctx.store.merge(lastHistory,oldHistory));
+  assert.deepEqual(a,b);assert.equal(a.items[0].latestAlert.id,last.id);
+  assert.equal(a.items[0].latestAlert.price,110);assert.equal(a.items[0].price,first.price);
+  assert.deepEqual(plain(h.ctx.store.merge(a,oldHistory)),a);
+  assert.deepEqual(plain([oldHistory,lastHistory]),inputs,'입력 기록을 바꾸지 않는다');
+});
+
+test('최근 회차 이동도 묶음 항목을 읽음 처리하고 최근 실제 계좌·회차로 이동한다',()=>{
+  const h=load(),button={dataset:{openHistory:FIRST}};let routed;
+  h.ctx.acceptAlertHistory([event(FIRST),followUp('s'.repeat(64),2,'2026-10-16T00:45:00Z',{
+    ruleId:'trade:buy:two:150일선:0',line:'분할매수 150일선 1차'
+  })]);
+  h.ctx.$$=selector=>selector==='[data-open-history]'?[button]:[];
+  h.ctx.pushAlertTarget=value=>{routed=plain(value);return value;};h.ctx.pushAlertDestination=()=>true;
+  h.ctx.pushAlertHash=()=>'#latest';h.ctx.history={replaceState(){}};h.ctx.openPlannerLocation=()=>{};
+  h.ctx.$('alertHistoryDialog').close=()=>{};
+  h.ctx.renderAlertHistory();button.onclick();
+  assert.deepEqual([routed.ruleId,routed.line,routed.eventId],['trade:buy:two:150일선:0','분할매수 150일선 1차',FIRST]);
+  assert.equal(unreadOf(h)(h.ctx.state.alertHistory.items[0]),false);
+});
+
+test('옛 알림 조회·병합은 최근 스냅샷을 만들지 않고 잘못된 스냅샷은 제거한다',()=>{
+  const h=load(),legacy=h.ctx.store.record(followUp('r'.repeat(64),1,'2026-10-15T00:45:00Z'));
+  const before=plain(legacy);
+  assert.equal(Object.hasOwn(h.ctx.store.merge({items:[legacy]}).items[0],'latestAlert'),false);
+  assert.deepEqual(plain(legacy),before);
+  const child=event('s'.repeat(64),{occurredAt:'2026-10-15T00:45:00Z'});
+  for(const extra of [{ticker:'OTHER'},{ruleId:'trade:plan:one:0'},{occurredAt:'2026-10-16T00:45:00Z'},{occurredAt:'invalid'}]){
+    assert.equal(h.ctx.store.record({...legacy,latestAlert:{...child,...extra}}).latestAlert,undefined);
+  }
+  const cleaned=h.ctx.store.record({...legacy,latestAlert:{...child,latestAlert:child,token:'ignored',readAt:'2026-10-15T01:00:00Z'}});
+  for(const key of ['latestAlert','token','readAt'])assert.equal(Object.hasOwn(cleaned.latestAlert,key),false);
+  h.ctx.acceptAlertHistory([event(FIRST),followUp('t'.repeat(64),2,'2026-10-16T00:45:00Z',{
+    name:'<img onerror="bad">',line:'분할매수 <svg onload="bad">'
+  })]);
+  const card=h.ctx.alertHistoryCard(h.ctx.state.alertHistory.items[0]);
+  assert.doesNotMatch(card,/<img|<svg/);assert.match(card,/&lt;img/);assert.match(card,/&lt;svg/);
+});
+
 test('같은 매매 회차 알림이 세 번 와도 항목 하나에 재알림 횟수·마지막 발송 시각만 더하고 읽음·당시 가격을 유지한다',()=>{
   const h=load();h.ctx.acceptAlertHistory([event(FIRST)]);h.ctx.markAlertHistoryRead(FIRST);
   const readAt=h.ctx.state.alertHistory.items[0].readAt;
