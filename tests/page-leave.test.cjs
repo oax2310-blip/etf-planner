@@ -10,7 +10,7 @@ function page({popover=true,popoverError,onAssign}={}){
   const listeners={},timers=new Map(),moves=[],errors=[];
   let now=0,id=0;
   function element(tagName){
-    const node={tagName,children:[],attributes:{},className:'',textContent:'',
+    const node={tagName,children:[],attributes:{},className:'',textContent:'',style:{},
       setAttribute(key,value){this.attributes[key]=String(value);},getAttribute(key){return this.attributes[key]??null;},
       append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},
       remove(){const parent=this.parentElement;if(parent)parent.children.splice(parent.children.indexOf(this),1);this.parentElement=null;},
@@ -43,16 +43,17 @@ function page({popover=true,popoverError,onAssign}={}){
   return {leave,click,moves,timers,advance,body,document,initialFocus,errors,waiting:()=>findWaiting(body),show:()=>listeners.pageshow({persisted:true})};
 }
 
-test('동기화 대기 안내를 flush 전에 즉시 표시하고 입력 포커스는 유지한다',async()=>{
+test('동기화 대기는 카드 없이 회전 표시와 읽기 도구용 안내를 즉시 만들고 포커스를 유지한다',async()=>{
   const h=page(),work=deferred();let calls=0;
   h.leave.register({pending:()=>true,flush:()=>{calls++;return work.promise;}});
   h.click();
   const waiting=h.waiting();assert.ok(waiting,'기다리는 이유가 클릭 직후 보여야 한다');
   assert.equal(calls,0);assert.equal(waiting.getAttribute('role'),'status');
   assert.equal(waiting.getAttribute('aria-live'),'polite');assert.equal(waiting.getAttribute('aria-atomic'),'true');
-  const [spinner,title,hint]=waiting.children[0].children;
+  const [spinner,message]=waiting.children;
+  assert.equal(waiting.children.length,2);assert.equal(spinner.className,'page-leave-spinner');
   assert.equal(spinner.getAttribute('aria-hidden'),'true');
-  assert.equal(title.textContent,'동기화 대기 중…');assert.equal(hint.textContent,'잠시 후 다음 화면으로 이동합니다.');
+  assert.equal(message.className,'sync-status sr-only');assert.equal(message.textContent,'동기화 대기 중… 잠시 후 다음 화면으로 이동합니다.');
   assert.equal(waiting.popoverOpen,true,'열린 설정 창 위에서도 안내를 표시한다');
   assert.equal(h.document.activeElement,h.initialFocus,'입력을 강제로 확정하지 않는다');
   await turn();work.resolve();await turn();
