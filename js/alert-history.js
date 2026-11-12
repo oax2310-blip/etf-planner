@@ -17,7 +17,7 @@ function alertHistoryApplyTaps(items){
 // 삭제 ID 정리 뒤 오래된 발송의 재등장을 막으며, 동기화로 합치는 기존 items에는 적용하지 않는다.
 function acceptAlertHistory(items){
   const cutoff=Date.now()-alertHistoryStore.retentionMs;
-  const incoming=items.map(item=>alertHistoryStore.record(item)).filter(item=>item&&Date.parse(item.lastSentAt||item.occurredAt)>=cutoff);
+  const incoming=items.map(item=>alertHistoryStore.received(item)).filter(item=>item&&Date.parse(item.lastSentAt||item.occurredAt)>=cutoff);
   const next=alertHistoryStore.merge(state.alertHistory,{items:incoming});
   alertHistoryApplyTaps(next.items);
   if(!next.items.length&&!state.alertHistory)return false;
@@ -80,18 +80,20 @@ function alertHistoryTime(value){return new Date(value).toLocaleString("ko-KR",{
 // 기준선 글자는 화면에서만 'N개월선'→'N월선'(stock-names.js lineText). 저장된 line·body는 받은 그대로 둔다.
 const alertHistoryText=v=>typeof stockNames==="object"?stockNames.lineText(v):String(v??"");
 const alertHistoryView=(item,names)=>typeof stockNames==="object"?{name:stockNames.alertName(item,names),type:stockNames.alertKind(item).text}:{name:item.name,type:item.type};
-// 같은 매매 회차의 재알림은 최초 알림 카드 하나에 횟수·마지막 발송 시각만 보인다. 당시 조건·가격은 최초 알림 그대로이고,
-// 읽은 뒤 재알림이 또 오면 다시 읽지 않음으로 보인다(alertHistoryUnread).
+// 최근 재알림의 실제 회차·가격을 본문과 이동에 쓰고, 첫 스냅샷은 별도로 펼쳐 본다. 스냅샷이 없거나 마지막 발송보다 오래됐으면 기존 표시를 유지한다.
+// 읽음·삭제·재알림 횟수는 묶음 항목을 기준으로 판단한다.
+const alertHistoryDisplay=item=>item.latestAlert&&!(Date.parse(item.latestAlert.occurredAt)<Date.parse(item.lastSentAt))?item.latestAlert:item;
 function alertHistoryCard(item,names=null){
-  const read=!alertHistoryUnread(item),count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0,{name,type}=alertHistoryView(item,names);
+  const read=!alertHistoryUnread(item),count=Number.isInteger(item.reminderCount)&&item.reminderCount>0?item.reminderCount:0,shown=alertHistoryDisplay(item),recent=shown!==item,{name,type}=alertHistoryView(shown,names);
+  const original=recent?`<details class="alert-history-original"><summary>처음 기록된 알림</summary><span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span><span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span></details>`:"";
   return `<article class="alert-history-card${read?" is-read":""}">
-    <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(type)} ${esc(name)} ${esc(alertHistoryText(item.line))} 알림${count?` 재알림 ${count}회`:""} ${read?"읽음":"읽지 않음"}, 종목으로 이동">
-      <span class="alert-history-meta"><span class="alert-history-type">${esc(type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(item.occurredAt)}">${esc(alertHistoryTime(item.occurredAt))}</time></span>
-      <span class="alert-history-name">${esc(name)}${name!==item.ticker?`<small>${esc(item.ticker)}</small>`:""}<span aria-hidden="true">↗</span></span>
-      <span class="alert-history-condition">${esc(alertHistoryText(alertHistoryCondition(item)))}</span>
+    <button type="button" class="alert-history-open" data-open-history="${esc(item.id)}" aria-label="${esc(type)} ${esc(name)} ${esc(alertHistoryText(shown.line))} 알림${count?` 재알림 ${count}회`:""} ${read?"읽음":"읽지 않음"}, 종목으로 이동">
+      <span class="alert-history-meta"><span class="alert-history-type">${esc(type)}</span>${item.krOpenReminder?'<span class="alert-history-reminder">한국장 재알림</span>':""}${count?`<span class="alert-history-reminder">재알림 ${count}회</span>`:""}<span class="alert-history-read">${read?"읽음":"읽지 않음"}</span><time datetime="${esc(shown.occurredAt)}">${esc(alertHistoryTime(shown.occurredAt))}</time></span>
+      <span class="alert-history-name">${esc(name)}${name!==shown.ticker?`<small>${esc(shown.ticker)}</small>`:""}<span aria-hidden="true">↗</span></span>
+      <span class="alert-history-condition">${recent?"최근 재알림 · ":""}${esc(alertHistoryText(alertHistoryCondition(shown)))}</span>
       ${item.krOpenReminder&&item.observedAt?`<span class="alert-history-note">미국 신호 ${esc(alertHistoryTime(item.observedAt))}${item.asOf?` · 시세 기준일 ${esc(item.asOf)}`:""}</span>`:""}
       ${count&&item.lastSentAt?`<span class="alert-history-note">최초 알림 ${esc(alertHistoryTime(item.firstOccurredAt||item.occurredAt))} · 마지막 발송 ${esc(alertHistoryTime(item.lastSentAt))}</span>`:""}
-    </button><div class="alert-history-bottom"><span class="alert-history-prices"><span>당시 가격 <strong>${esc(alertHistoryPrice(item.price,item))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(item.ma,item))}</strong></span></span><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(name)} 알림 삭제">삭제</button></div></div>
+    </button><div class="alert-history-bottom"><span class="alert-history-prices"><span>${recent?"재알림 당시 가격":"당시 가격"} <strong>${esc(alertHistoryPrice(shown.price,shown))}</strong></span><span>기준값 <strong>${esc(alertHistoryPrice(shown.ma,shown))}</strong></span></span><div class="alert-history-actions">${read?"":`<button class="text-link" type="button" data-read-history="${esc(item.id)}">읽음 표시</button>`}<button class="text-link danger" type="button" data-delete-history="${esc(item.id)}" aria-label="${esc(name)} 알림 삭제">삭제</button></div></div>${original}
   </article>`;
 }
 // 재알림 푸시는 최초 알림 ID(alertKey)로 온다. 최초 항목을 지운 뒤 새로 만든 회차 항목은 alertKey로 찾는다.
@@ -125,7 +127,7 @@ function renderAlertHistory(){
   $("alertHistoryStatus").textContent=alertHistoryMessage;
   $$("[data-open-history]").forEach(button=>button.onclick=()=>{
     const item=alertHistoryItems().find(item=>item.id===button.dataset.openHistory);if(!item)return;
-    markAlertHistoryRead(item.id);const target=pushAlertTarget({...item,eventId:item.id});
+    markAlertHistoryRead(item.id);const target=pushAlertTarget({...alertHistoryDisplay(item),eventId:item.id});
     if(!target||!pushAlertDestination(target)){alertHistoryMessage="연결된 종목을 찾을 수 없습니다. 동기화 상태를 확인해 주세요. 삭제된 종목의 알림내역도 계속 확인할 수 있습니다.";renderAlertHistory();return;}
     alertHistoryMessage="";$("alertHistoryDialog").close();history.replaceState(null,"",pushAlertHash(target));openPlannerLocation();
   });
