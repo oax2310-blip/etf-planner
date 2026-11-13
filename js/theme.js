@@ -14,7 +14,10 @@ function themeOf(choice, desktop, systemDark){ return desktop && (choice === "li
   // 고른 값은 이 브라우저 localStorage(etf-planner-theme)에만 저장하고 state·동기화에 넣지 않는다.
   const read = () => { try { const v = localStorage.getItem(THEME_KEY); return CHOICES.includes(v) ? v : "auto"; } catch { return "auto"; } };
   let picks = [];
-  function apply(){ const choice = read(); document.documentElement.dataset.theme = themeOf(choice, desktopQ.matches, darkQ.matches); picks.forEach(p => p(choice)); }
+  // 설치 앱의 상태바도 실제 화면 모드의 헤더 색을 따른다. fullscreen의 OS 임시 검정 막대 대신 standalone의 상태바를 쓴다.
+  function apply(){ const choice = read(), theme = themeOf(choice, desktopQ.matches, darkQ.matches); document.documentElement.dataset.theme = theme;
+    document.querySelectorAll('meta[name="theme-color"]').forEach(meta => meta.content = theme === "dark" ? "#0a0c10" : "#ffffff");
+    picks.forEach(p => p(choice)); }
   apply();
   desktopQ.addEventListener?.("change", apply); darkQ.addEventListener?.("change", apply);
   addEventListener("storage", e => { if (e.key === THEME_KEY) apply(); }); // 다른 탭(플래너↔시나리오)에서 바꾸면 같이

@@ -25,3 +25,22 @@ test('휴대폰(터치)은 PC에서 고른 값이 있어도 늘 기기 설정을
   assert.equal(themeOf('dark', false, false), 'light');
   assert.equal(themeOf('light', false, true), 'dark');
 });
+
+test('설치 상태바는 처음 열기·기기 모드 변경·다른 탭 선택 모두 실제 헤더 색을 따른다', () => {
+  const events = {}, metas = [{content:'#ffffff'}, {content:'#0a0c10'}];
+  let choice = 'light';
+  const desktop = {matches:false, addEventListener:(name, fn) => events.desktop = fn};
+  const dark = {matches:true, addEventListener:(name, fn) => events.dark = fn};
+  const doc = {documentElement:{dataset:{}}, querySelectorAll:() => metas, addEventListener() {}};
+  const ctx = vm.createContext({document:doc, matchMedia:q => q.includes('hover') ? desktop : dark,
+    localStorage:{getItem:() => choice}, addEventListener:(name, fn) => events[name] = fn});
+  vm.runInContext(source, ctx);
+  const check = (theme, color) => {
+    assert.equal(doc.documentElement.dataset.theme, theme);
+    assert.deepEqual(metas.map(meta => meta.content), [color, color]);
+  };
+  check('dark', '#0a0c10'); // 터치에서는 저장한 light보다 기기 dark 우선
+  dark.matches = false; events.dark(); check('light', '#ffffff');
+  desktop.matches = true; choice = 'dark'; events.desktop(); check('dark', '#0a0c10');
+  choice = 'light'; events.storage({key:'etf-planner-theme'}); check('light', '#ffffff');
+});

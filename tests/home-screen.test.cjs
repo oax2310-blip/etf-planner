@@ -12,8 +12,10 @@ const manifest = JSON.parse(read('manifest.webmanifest'));
 const tags = (html, tag) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'))]
   .map(([text]) => Object.fromEntries([...text.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, key, value]) => [key, value])));
 
-test('홈 화면 앱은 전체화면으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
-  assert.equal(manifest.display, 'fullscreen');
+test('홈 화면 앱은 상태바가 보이는 독립 창으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
+  assert.equal(manifest.display, 'standalone');
+  assert.ok(!manifest.display_override?.includes('fullscreen'), '전체화면 우선 설정으로 상태바를 다시 숨기지 않음');
+  assert.equal(manifest.theme_color, '#ffffff', '기본 밝은 헤더와 설치 상태바 색 일치');
   assert.ok(manifest.name && manifest.short_name);
   assert.equal(manifest.lang, 'ko');
   for (const key of ['start_url', 'scope']) {
