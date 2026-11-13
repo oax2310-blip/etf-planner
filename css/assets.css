@@ -324,3 +324,6 @@ a.alloc-chip.on.buy:active{background:var(--danger-line)}
 .alloc-members-body{display:grid;gap:8px;padding:2px 16px 14px;border-top:1px solid var(--line);font-size:12px}
 .alloc-members-body p{margin:8px 0 0;line-height:1.6}.alloc-members-body p b{display:block;font-size:12px}.alloc-members-body p span{color:var(--text-2);overflow-wrap:anywhere}
 .alloc-members-body small{color:var(--text-3);line-height:1.5}
+
+/* 연말 잔액 누락은 월 글자 줄 대신 한 줄 경고 아이콘과 접근 가능한 사유로 표시한다. */
+.ledger-year-warning{color:var(--warn);font-size:12px;vertical-align:1px}
