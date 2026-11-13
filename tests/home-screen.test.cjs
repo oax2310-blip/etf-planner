@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const pages = ['index.html', 'assets.html', 'valuation.html'];
@@ -97,9 +98,9 @@ const inset = edge => `env(safe-area-inset-${edge},0px)`;
 const dialogInset = ['top', 'right', 'bottom', 'left'].map(inset).join('');
 const dialogWidth = `calc(100%-6px-2em-${inset('left')}-${inset('right')})`;
 const safeAreaRules = [
-  ['플래너 기본 헤더 위 여백', 'css/app.css', '.top', '', 'padding', value => assert.ok(value?.startsWith(`calc(11px+${inset('top')})`))],
-  ['플래너 모바일 헤더 위 여백', 'css/app.css', '.top', '@media(max-width:700px)', 'padding', value => assert.ok(value?.startsWith(`calc(10px+${inset('top')})`))],
-  ['플래너 모바일 접힌 탭 위치', 'css/app.css', '.top', '@media(max-width:700px)', 'top', `calc(${inset('top')}-var(--tuck,calc(40px+${inset('top')})))`],
+  ['플래너 기본 헤더 위 여백', 'css/app.css', '.top', '', 'padding', value => { assert.equal(cssRule('css/app.css', '.top')['--top-pad'], '11px'); assert.ok(value?.startsWith(`calc(var(--top-pad)+${inset('top')})`)); }],
+  ['플래너 모바일 헤더 위 여백', 'css/app.css', '.top', '@media(max-width:700px)', 'padding', value => { assert.equal(cssRule('css/app.css', '.top', '@media(max-width:700px)')['--top-pad'], '10px'); assert.ok(value?.startsWith(`calc(var(--top-pad)+${inset('top')})`)); }],
+  ['플래너 모바일 접힌 탭 위치', 'css/app.css', '.top', '@media(max-width:700px)', 'top', 'calc(-1*var(--tuck,40px))'],
   ['플래너 입력 창 위치', 'css/app.css', 'dialog', '', 'inset', dialogInset],
   ['플래너 입력 창 폭', 'css/app.css', 'dialog', '', 'max-width', dialogWidth],
   ['시나리오 탐색 줄 위 여백', 'css/valuation.css', '.nav', '', 'padding-top', inset('top')],
@@ -123,6 +124,94 @@ test('안전 영역: 접힌 헤더 덮개가 카메라 영역을 배경으로 �
   assert.equal(cover.height, inset('top'));
   assert.equal(cover.background, 'var(--bg)');
   assert.ok(Number(cover['z-index']) > Number(cssRule('css/app.css', '.top')['z-index']));
+});
+
+for (const [selector, transition] of [
+  ['.top,.nav', 'padding-top.24sease-out'],
+  ['body::before', 'height.24sease-out'],
+  ['.side,.mobile-valuation', 'top.24sease-out'],
+]) test(`안전 영역 전환: ${selector}는 screen·no-preference 조건에서 0.24초 전환을 선언한다`, () => {
+  assert.equal(cssRule('css/safe-area.css', selector, '@media screen and (prefers-reduced-motion:no-preference)').transition, transition);
+});
+
+// core.js 전체를 실행해 초기 호출과 실제 이벤트 등록을 함께 확인한다. 금융 계산은 이 배치 검사에서 호출하지 않는다.
+function layoutHarness(initial = {}) {
+  const layout = {offsetTop:56, paddingTop:'10px', basePad:'10px', wide:false, visible:true, sideTop:'84px', rectTop:100, ...initial};
+  const listeners = new Map(), frames = new Map();
+  let frameId = 0;
+  const style = () => {
+    const values = new Map();
+    return {setProperty:(key, value) => values.set(key, String(value)), getPropertyValue:key => values.get(key) ?? ''};
+  };
+  const tabs = {get offsetTop() { return layout.offsetTop; }};
+  const bar = {style:style(), querySelector:() => tabs};
+  const side = {style:style(), matches:selector => selector === '.layout>.side',
+    getClientRects:() => layout.visible ? [{}] : [], getBoundingClientRect:() => ({top:layout.rectTop})};
+  const context = vm.createContext({
+    MA_LINES:[], ensureFutureMovingLines() {}, localStorage:{getItem:() => null},
+    document:{querySelector:() => bar, querySelectorAll:selector => selector === '.layout>.side' ? [side] : []},
+    getComputedStyle:element => element === bar
+      ? {paddingTop:layout.paddingTop, getPropertyValue:key => key === '--top-pad' ? layout.basePad : ''}
+      : {top:layout.sideTop},
+    matchMedia:query => { assert.equal(query, '(min-width:1001px)'); return {get matches() { return layout.wide; }}; },
+    addEventListener:(name, handler) => { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(handler); },
+    requestAnimationFrame:handler => { const id = ++frameId; frames.set(id, handler); return id; },
+  });
+  vm.runInContext(read('js/core.js'), context, {filename:'js/core.js'});
+  return {layout, bar, side, frames,
+    emit:(name, event = {}) => (listeners.get(name) || []).forEach(handler => handler(event)),
+    flush:() => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(handler => handler()); },
+  };
+}
+
+test('fitTop 초기 실행은 안전 여백만 빼서 접는 높이를 정한다', () => {
+  for (const initial of [{}, {offsetTop:84, paddingTop:'38px'}])
+    assert.equal(layoutHarness(initial).bar.style.getPropertyValue('--tuck'), '48px');
+  assert.equal(layoutHarness({offsetTop:4}).bar.style.getPropertyValue('--tuck'), '0px', '음수 접힘 높이는 0으로 제한');
+});
+
+test('fitTop resize는 바뀐 탭 위치와 안전 여백을 다시 측정한다', () => {
+  const h = layoutHarness();
+  Object.assign(h.layout, {offsetTop:96, paddingTop:'38px'});
+  h.emit('resize');
+  assert.equal(h.bar.style.getPropertyValue('--tuck'), '60px', '줄 높이가 달라지면 접는 높이도 갱신');
+  h.layout.offsetTop = 84;
+  h.emit('resize');
+  assert.equal(h.bar.style.getPropertyValue('--tuck'), '48px', '28px 안전 여백은 접는 높이에 포함하지 않음');
+});
+
+test('fitTop 전환 중 resize도 반올림된 탭 위치에서 정수 접힘 높이를 유지한다', () => {
+  const h = layoutHarness();
+  Object.assign(h.layout, {offsetTop:68, paddingTop:'21.6455px'});
+  h.emit('resize');
+  assert.equal(h.bar.style.getPropertyValue('--tuck'), '48px');
+});
+
+for (const propertyName of ['padding-top', 'top']) test(`fitSide는 ${propertyName} 전환 완료 뒤 다음 프레임에서 목록 높이 기준을 갱신한다`, () => {
+  const h = layoutHarness({wide:true});
+  h.emit('resize'); h.flush();
+  assert.equal(h.side.style.getPropertyValue('--side-top'), '100px');
+  Object.assign(h.layout, {rectTop:128, sideTop:'112px'});
+  const event = {target:propertyName === 'padding-top' ? h.bar : h.side, propertyName};
+  h.emit('transitionend', event); h.emit('transitionend', event);
+  assert.equal(h.side.style.getPropertyValue('--side-top'), '100px', '측정은 다음 프레임까지 미룸');
+  assert.equal(h.frames.size, 1, '겹친 완료 이벤트는 한 프레임에 한 번 측정');
+  h.flush();
+  assert.equal(h.side.style.getPropertyValue('--side-top'), '128px', '전환 후 실제 목록 시작 위치 반영');
+  h.layout.rectTop = 80;
+  h.emit('transitionend', event); h.flush();
+  assert.equal(h.side.style.getPropertyValue('--side-top'), '112px', '붙은 위치보다 위로 계산하지 않음');
+});
+
+test('fitSide는 좁은 화면·숨겨진 목록과 관련 없는 전환에서 높이 기준을 쓰지 않는다', () => {
+  for (const initial of [{wide:false}, {wide:true, visible:false}]) {
+    const h = layoutHarness(initial);
+    h.emit('transitionend', {target:h.bar, propertyName:'padding-top'}); h.flush();
+    assert.equal(h.side.style.getPropertyValue('--side-top'), '');
+  }
+  const h = layoutHarness({wide:true});
+  h.emit('transitionend', {target:h.bar, propertyName:'opacity'});
+  assert.equal(h.frames.size, 0);
 });
 
 // 확장자·선언 크기만 맞고 실제 PNG가 없거나 잘린 경우도 잡는다. 외부 이미지 라이브러리를 쓰지 않는다.

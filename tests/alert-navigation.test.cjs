@@ -110,7 +110,7 @@ function page(initial={},assets={}){
   const tabs=['plans','buys','futures','rebuy'].map(tab=>{const b=node(tab);b.dataset.tab=tab;b.addEventListener=(_,fn)=>b.onclick=fn;return b;});
   const cards=[],rules=[];
   const ctx=vm.createContext({URL,URLSearchParams,Intl,crypto:require('node:crypto').webcrypto,
-    window:{isSecureContext:false},navigator:{},location:{hash:''},
+    window:{isSecureContext:false},navigator:{},location:{hash:''},getComputedStyle:()=>({getPropertyValue:()=> '0px'}),
     requestAnimationFrame:fn=>{const key=frames.size+1;frames.set(key,fn);return key;},cancelAnimationFrame:key=>frames.delete(key),
     openCompletedSales:new Set(),futureCompletedOpen:false,
     document:{baseURI:scope,readyState:'complete',hidden:false,addEventListener:(name,fn)=>events[name]=fn,getElementById:name=>nodes[name]||null,querySelector:()=>top,
