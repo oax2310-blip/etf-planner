@@ -494,7 +494,8 @@ function openItem(id, groupId){
   // 플래너에서 체크로 반영한 체결(allocation.trades — 규칙은 assets-calc.js '플래너 체결 → 자산 배분 연동'): 이 종목에 더하거나 뺀 양. 체크를 풀면 플래너가 되돌린다.
   const trades=Object.values(a.trades&&typeof a.trades==="object"?a.trades:{}).flatMap(t=>(Array.isArray(t?.items)?t.items:[]).filter(e=>found&&e.id===it.id).map(e=>({t,e}))).sort((x,y)=>String(y.t.at).localeCompare(String(x.t.at)));
   el("itemTrades").hidden=!trades.length;
-  el("itemTrades").innerHTML=trades.length?`<span>플래너 체크로 반영한 체결 <small>${trades.length}건 · 체크를 풀면 되돌립니다</small></span><ul>${trades.slice(0,20).map(({t,e})=>{const d=finite(e.shares)?e.shares:e.amount,sign=d<0?"−":"+";
+  el("itemTrades").open=false; // 종목 창을 열 때마다 접는다. 저장·동기화에는 넣지 않는다.
+  el("itemTrades").innerHTML=trades.length?`<summary><span>플래너 체크로 반영한 체결 <small>${trades.length}건</small></span></summary><p class="hint">체크를 풀면 되돌립니다. 최근 20건까지 표시합니다.</p><ul>${trades.slice(0,20).map(({t,e})=>{const d=finite(e.shares)?e.shares:e.amount,sign=d<0?"−":"+";
     return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{

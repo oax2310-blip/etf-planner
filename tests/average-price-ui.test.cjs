@@ -451,3 +451,14 @@ test('동기화가 수정 중 기록 객체를 교체해도 최신 보유 기록
   assert.equal(h.data.allocation.groups[0].items[0].averagePrice,undefined,'교체 전 객체를 고치지 않음');
   assert.deepEqual(h.writes,['allocation']);
 });
+
+test('종목 창의 플래너 체결은 건수를 남기고 기본 접기하며 다시 열면 접고 기록은 보존한다',()=>{
+  const data=fixture();data.allocation.trades={};
+  for(let i=0;i<25;i++)data.allocation.trades[`buy:a:${i}`]={label:`가상 체결 ${i}`,at:'2026-01-02',items:[{id:'a',shares:1}]};
+  const before=JSON.stringify(data),h=page(data),tag=read('assets.html').match(/<details\b[^>]*id="itemTrades"[^>]*>/)?.[0];
+  assert.ok(tag,'키보드·터치로 여닫는 native details');assert.doesNotMatch(tag,/\sopen(?:\s|>)/);
+  h.open('a');assert.equal(h.node('itemTrades').open,false);assert.equal(h.node('itemTrades').hidden,false);
+  assert.match(h.node('itemTrades').innerHTML,/<summary><span>플래너 체크로 반영한 체결 <small>25건<\/small>/);assert.equal((h.node('itemTrades').innerHTML.match(/<li>/g)||[]).length,20);
+  h.node('itemTrades').open=true;h.cancel();h.open('a');assert.equal(h.node('itemTrades').open,false);assert.equal(JSON.stringify(data),before);assert.equal(h.writes.length,0);
+  h.open('b');assert.equal(h.node('itemTrades').hidden,true);
+});
