@@ -43,8 +43,9 @@ function openPlannerLocation(){
 $$(".tab[data-tab]").forEach(b=>b.addEventListener("click",()=>{ if(typeof clearPushAlertTarget==="function")clearPushAlertTarget(); openTab(b.dataset.tab); history.replaceState(null,"",`#${state.tab}`); scrollTo(0,0); })); // .tab-link(자산 페이지로 가는 링크)는 제외
 addEventListener("hashchange",openPlannerLocation);
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
-// 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 탭 클릭은 위의 핸들러에서 맨 위로 이동.
-function fitTop(){ topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-8)+"px"); }
+// 모바일 top의 음수 top(--tuck): 스크롤하면 탭 줄만 남긴다. 상단 안전 여백은 빼서 상태바 전환 중에도 접는 높이가 바뀌지 않게 한다.
+// 탭 클릭은 위의 핸들러에서 맨 위로 이동한다. 안전 여백은 css/safe-area.css가 세 화면에 같이 적용한다.
+function fitTop(){ const safeTop=parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-safe-top"))||0; topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-safeTop-8)+"px"); }
 fitTop(); addEventListener("resize",fitTop);
 // 알림(push.js)·자산 배분 편입 표시(member-go.js)로 이동한 카드. 모바일에서는 top의 음수 위치로 헤더가 접히므로
 // 높이 전체 대신 현재 보이는 하단을 빼야 카드가 가려지지 않는다. 강조는 화면 상태이며 저장하지 않는다.

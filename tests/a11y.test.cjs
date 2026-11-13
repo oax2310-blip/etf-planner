@@ -51,6 +51,7 @@ function page(htmlFile, scriptFile) {
   const getNode = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
   const top = node(); top.querySelector = () => ({offsetTop: 0});
   const ctx = vm.createContext({
+    getComputedStyle: () => ({getPropertyValue: () => '0px'}),
     document: {
       getElementById: getNode, querySelector: selector => selector === '.top' ? top : getNode(selector), addEventListener() {},
       querySelectorAll: selector => selector === '.tab' ? navTabs : ['.tab[data-tab]', 'nav.tabs .tab[data-tab]'].includes(selector) ? tabs : []

@@ -93,13 +93,13 @@ function cssRule(file, selector, media = '') {
     return [value.slice(0, colon).trim(), compact(value.slice(colon + 1))];
   }));
 }
-const inset = edge => `env(safe-area-inset-${edge},0px)`;
+const inset = edge => edge === 'top' ? 'var(--app-safe-top)' : `env(safe-area-inset-${edge},0px)`;
 const dialogInset = ['top', 'right', 'bottom', 'left'].map(inset).join('');
 const dialogWidth = `calc(100%-6px-2em-${inset('left')}-${inset('right')})`;
 const safeAreaRules = [
   ['플래너 기본 헤더 위 여백', 'css/app.css', '.top', '', 'padding', value => assert.ok(value?.startsWith(`calc(11px+${inset('top')})`))],
   ['플래너 모바일 헤더 위 여백', 'css/app.css', '.top', '@media(max-width:700px)', 'padding', value => assert.ok(value?.startsWith(`calc(10px+${inset('top')})`))],
-  ['플래너 모바일 접힌 탭 위치', 'css/app.css', '.top', '@media(max-width:700px)', 'top', `calc(${inset('top')}-var(--tuck,calc(40px+${inset('top')})))`],
+  ['플래너 모바일 접힌 탭 위치', 'css/app.css', '.top', '@media(max-width:700px)', 'top', 'calc(-1*var(--tuck,40px))'],
   ['플래너 입력 창 위치', 'css/app.css', 'dialog', '', 'inset', dialogInset],
   ['플래너 입력 창 폭', 'css/app.css', 'dialog', '', 'max-width', dialogWidth],
   ['시나리오 탐색 줄 위 여백', 'css/valuation.css', '.nav', '', 'padding-top', inset('top')],

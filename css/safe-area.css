@@ -1,0 +1,5 @@
+/* 상태바 자체의 동작은 OS·브라우저가 맡는다. 세 화면의 상단 안전 여백을 함께 보간해 본문·고정 탭·창이 따로 튀지 않게 한다.
+   @property 미지원 브라우저도 실제 안전 여백은 그대로 적용한다. 첫 화면과 모션 줄이기에서는 즉시 맞춘다. */
+@property --app-safe-top{syntax:"<length>";inherits:true;initial-value:0px}
+:root{--app-safe-top:env(safe-area-inset-top,0px)}
+@media screen and (prefers-reduced-motion:no-preference){:root{transition:--app-safe-top .24s ease-out}}
