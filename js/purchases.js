@@ -149,23 +149,28 @@ function cleanDismissedNotes(current){
   if(changed)saveDismissedNotes();
 }
 const purchaseNoteButtons=(it,notes)=>notes.filter(n=>dismissedNotes[it.id]?.[n.kind]!==n.sig).map(n=>`<button type="button" class="buy-track-note muted purchase-note-dismiss" data-purchase-note="${escA(it.id)}" data-note-kind="${escA(n.kind)}" title="눌러서 닫기">${escA(n.text)}</button>`).join("");
+// 연결은 purchaseAllocationSummary와 같이 기준·실제 매수 코드 중 하나로 한다. 코드 없는 옛 계획은 유지하되 연결되지 않을 계좌를 새로 만들지 않는다.
+const canAddPurchaseAccount=it=>!!(linkTicker(it?.ticker)||linkTicker(it?.tradeTicker));
+const purchaseAccountCodeHint="자산 배분에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하세요.";
 // 분할매도와 같은 보유 목록·상태·메모 순서(계산 요약 카드 없음). 조회는 계산에 쓰는 연결 항목 그대로 읽으며 보유 수량·자산 이름·계획 기록을 바꾸지 않는다.
 function linkedHoldings({g,it},s){
-  const wait=!!it.buyPlan.wait,ordered=targetsOf(it,it.buyPlan,s),infos=new Map(ordered.map(r=>[r.it.id,allocationHoldingInfo(r.it,s)])),total=allocationHoldingTotal(infos.values(),s);
+  const wait=!!it.buyPlan.wait,canAdd=canAddPurchaseAccount(it),ordered=targetsOf(it,it.buyPlan,s),infos=new Map(ordered.map(r=>[r.it.id,allocationHoldingInfo(r.it,s)])),total=allocationHoldingTotal(infos.values(),s);
   const rows=ordered.map((r,j)=>{
     const selected=j===0,path=[r.g.name,r.it.section,assetTradeTicker(r.it)].filter(Boolean).map(escA).join(" · "),info=infos.get(r.it.id),tag=selected?(wait?"계획 종목":"매수 반영 대상"):"";
     return `<div class="sale-linked-holding purchase-linked-holding${selected?" selected":""}" data-purchase-holding="${escA(r.it.id)}"><span class="sale-priority-rank" aria-label="${j+1}순위">${j+1}</span><div class="sale-holding-details"><div class="sale-holding-title"><strong>${escA(r.it.name)}</strong>${tag?`<span class="sale-holding-tag">${tag}</span>`:""}</div><small class="sale-holding-meta">${path}</small><div class="sale-holding-stats"><small class="sale-holding-quantity">${info.quantityText}${info.pending?` · ${info.pending}`:""}</small><span class="sale-holding-value"><strong>${info.valueText}</strong><small>${info.pctText}</small></span></div>${allocLink.holdingProfitLine(r.it,s.fx)}<div class="purchase-account-edit"><label>목표 비중 <input type="number" min="0" max="100" step="any" inputmode="decimal" data-purchase-target="${escA(r.it.id)}" value="${finite(r.it.target)??""}" aria-label="${escA(r.it.name)} 목표 비중 (%)" /> %</label><button class="text-link" type="button" data-purchase-account-delete="${escA(r.it.id)}" aria-label="${escA(r.it.name)} 계좌 삭제">삭제</button></div></div><div class="sale-priority-controls"><button class="btn sale-priority-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="-1"${j===0?" disabled":""} aria-label="${escA(r.g.name)} ${escA(r.it.name)} 매수 우선순위 올리기">↑</button><button class="btn sale-priority-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="1"${j===ordered.length-1?" disabled":""} aria-label="${escA(r.g.name)} ${escA(r.it.name)} 매수 우선순위 내리기">↓</button></div></div>`;
   }).join("");
-  return `<section class="card panel sale-account sale-linked purchase-linked"><div class="sale-linked-heading"><h2>연결된 전체 보유 종목</h2><strong>${total.valueText}</strong></div><div class="sale-linked-overview"><p class="hint sale-linked-summary">전체 계좌 ${ordered.length}개 항목 · 현재 ${total.pctText}${total.pendingCount?` · 평가 대기 ${total.pendingCount}개`:""}</p>${allocLink.holdingsProfitLine(ordered.map(r=>r.it),s.fx)}</div><p class="hint sale-linked-policy">${wait?"화살표로 계획 종목의 우선순위를 바꿉니다.":"매수 우선순위 · 맨 위 종목에 새 회차의 체결을 반영합니다."}</p><div class="sale-linked-holdings" aria-label="매수 우선순위">${rows}</div><button class="btn mini" type="button" id="purchaseAccountAdd">＋ 계좌 추가</button></section>`;
+  return `<section class="card panel sale-account sale-linked purchase-linked"><div class="sale-linked-heading"><h2>연결된 전체 보유 종목</h2><strong>${total.valueText}</strong></div><div class="sale-linked-overview"><p class="hint sale-linked-summary">전체 계좌 ${ordered.length}개 항목 · 현재 ${total.pctText}${total.pendingCount?` · 평가 대기 ${total.pendingCount}개`:""}</p>${allocLink.holdingsProfitLine(ordered.map(r=>r.it),s.fx)}</div><p class="hint sale-linked-policy">${wait?"화살표로 계획 종목의 우선순위를 바꿉니다.":"매수 우선순위 · 맨 위 종목에 새 회차의 체결을 반영합니다."}</p><div class="sale-linked-holdings" aria-label="매수 우선순위">${rows}</div><button class="btn mini" type="button" id="purchaseAccountAdd"${canAdd?"":' disabled aria-describedby="purchaseAccountHint"'}>＋ 계좌 추가</button>${canAdd?"":'<p class="hint" id="purchaseAccountHint"><a href="assets.html#alloc">자산 배분</a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하면 계좌를 추가할 수 있습니다.</p>'}</section>`;
 }
 // 같은 종목의 새 계좌만 추가한다. 보유량·평균가·목표·계획·체결은 복사하지 않고 기존 자산 항목 형식을 쓴다.
 function openPurchaseAccount(id){
   const found=findItem(id);if(!found?.it.buyPlan)return;
+  if(!canAddPurchaseAccount(found.it)){alert(purchaseAccountCodeHint);return;}
   const f=el("purchaseAccountForm"),dialog=el("purchaseAccountDialog");
   f.accountName.value="";f.group.innerHTML=doc.allocation.groups.map(g=>`<option value="${escA(g.id)}">${escA(g.name)}</option>`).join("");f.group.value=found.g.id;
   f.onsubmit=e=>{e.preventDefault();
     const current=findItem(id),g=doc.allocation.groups.find(g=>g.id===f.group.value),account=f.accountName.value.trim();
     if(!current?.it.buyPlan||!g||!account)return;
+    if(!canAddPurchaseAccount(current.it)){alert(purchaseAccountCodeHint);return;}
     const source=current.it,name=`${stockNames.titleParts(source.name).main} (${account})`;
     if(g.items.some(it=>it.name===name&&linkTicker(it.ticker)===linkTicker(source.ticker))){alert("같은 이름의 계좌가 이미 있습니다.");return;}
     const added={id:typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),name,shares:0};

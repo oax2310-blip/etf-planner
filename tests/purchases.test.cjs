@@ -1668,3 +1668,35 @@ test('분할매수에서 대표 계좌 삭제는 확인 후 기존 계획·체�
 test('마지막 계좌 삭제는 계획도 삭제된다는 확인을 거치고 새 계좌 추가 취소는 기록을 만들지 않는다',()=>{
   const r=setup();let message='';r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[0].onclick();assert.match(message,/계획도 삭제됩니다/);assert.equal(r.doc.allocation.groups[0].items.length,0);assert.match(r.html(),/계획 없음/);
 });
+
+test('코드 없는 옛 수동 계획은 계좌 추가를 막고 입력 위치를 안내하며 기존 기록을 보존한다',()=>{
+  for(const codes of [{},{ticker:'',tradeTicker:' '},{ticker:'  '}]){
+    const r=setup({manual:true});delete r.item.ticker;Object.assign(r.item,codes);r.render();
+    const before=JSON.stringify(r.doc),saved=r.storage.get('etf-planner-assets-v1');let writes=0;r.store.saveSection=()=>writes++;
+    assert.equal(r.element('purchaseAccountAdd').disabled,true);
+    assert.match(r.html(),/id="purchaseAccountAdd"[^>]*aria-describedby="purchaseAccountHint"/);
+    assert.match(r.html(),/href="assets.html#alloc">자산 배분<\/a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력/);
+    r.element('purchaseAccountAdd').onclick();
+    assert.ok(!r.element('purchaseAccountDialog').open);assert.match(r.alerts.at(-1),/코드를 먼저 입력/);
+    assert.equal(JSON.stringify(r.doc),before);assert.equal(r.storage.get('etf-planner-assets-v1'),saved);assert.equal(writes,0);
+  }
+});
+
+test('계좌 추가 창을 연 뒤 코드가 사라져도 제출 때 다시 검사해 연결 없는 계좌를 저장하지 않는다',()=>{
+  const r=setup({manual:true});r.element('purchaseAccountAdd').onclick();assert.equal(r.element('purchaseAccountDialog').open,true);
+  const f=r.element('purchaseAccountForm');f.accountName.value='연금저축';delete r.item.ticker;
+  const before=JSON.stringify(r.doc),saved=r.storage.get('etf-planner-assets-v1');let writes=0;r.store.saveSection=()=>writes++;
+  f.onsubmit({preventDefault(){}});
+  assert.equal(JSON.stringify(r.doc),before);assert.equal(r.storage.get('etf-planner-assets-v1'),saved);assert.equal(writes,0);
+  assert.equal(r.element('purchaseAccountDialog').open,true);assert.match(r.alerts.at(-1),/코드를 먼저 입력/);
+});
+
+test('기준 코드 없이 실제 매수 코드만 있는 기존 계획도 새 계좌가 연결되어 비중 편집·삭제할 수 있다',()=>{
+  const r=setup({manual:true});delete r.item.ticker;r.item.tradeTicker='222222';r.prices.stocks['222222']={kind:'국내',close:10000,asOf:'2026-01-02'};r.render();
+  assert.equal(r.element('purchaseAccountAdd').disabled,false);r.element('purchaseAccountAdd').onclick();
+  const f=r.element('purchaseAccountForm');f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});
+  const added=r.doc.allocation.groups[0].items[1];assert.equal(added.tradeTicker,'222222');assert.equal(added.ticker,undefined);assert.equal(added.shares,0);
+  assert.equal(r.inputs('[data-purchase-target]').length,2);assert.match(r.html(),/전체 계좌 2개 항목/);assert.doesNotMatch(r.html(),/id="purchaseAccountHint"/);
+  const target=r.inputs('[data-purchase-target]')[1];target.value='5';target.onchange();assert.equal(added.target,5);
+  r.ctx.confirm=()=>true;r.inputs('[data-purchase-account-delete]')[1].onclick();assert.equal(r.doc.allocation.groups[0].items.length,1);assert.ok(r.item.buyPlan);
+});
