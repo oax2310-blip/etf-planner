@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
-function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false,storageFailure=false,dismissed=null}={}){
+function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false,storageFailure=false,dismissed=null,cachedPrices=false}={}){
   const ticker=bitcoin?'BTC-USD':currency==='USD'?'AAA':'111111',item={id:'a',name:'테스트 종목',ticker,shares:bitcoin?0.01:legacy?19:10,amount:0,
     buyPlan:wait?{wait:{line:wait},notify:{stages:true}}:manual?{stages:[{id:'s',price,...(manualShares===null?{}:{shares:manualShares}),amount:manualAmount}]}:{lines:{names,...(end===null?{}:{end}),budget}}};
   if(currency==='USD')item.buyPlan.currency='USD';
@@ -49,6 +49,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
       return !node.removed&&attrs.length&&attrs.every(([,key,value])=>Object.hasOwn(node.attrs,key)&&(value===undefined||node.attrs[key]===value));
     }))];}};
   const purchaseForm=document.getElementById('purchaseForm');
+  const accountForm=document.getElementById('purchaseAccountForm');for(const name of ['group','accountName'])accountForm[name]=element();
   for(const name of ['item','mode','waitPeriod','waitUnit','waitNotify','lineStartPeriod','lineStartUnit','lineSet','lineTarget','lineEnd','lineLastPeriod','lineLastUnit','lineBudget','manualCurrency','cardName','note'])purchaseForm[name]=element();
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   for(const name of ['lineBudget','lineEnd']){
@@ -61,6 +62,7 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
   const alerts=[],renameDialogs=[],ctx={document,assetStore:store,renderLocalSaveWarning:()=>warningRenders++,priceData:prices,PENCIL:'',id:()=>'',alert:text=>alerts.push(text),openNameDialog:(id,options)=>renameDialogs.push({id,...options}),priceText:(v,cur)=>`${cur==='USD'?'$':'₩'}${v}`,
     tradeAlertToggle:(on,attrs)=>`<label><input type="checkbox" ${attrs}${on?' checked':''}></label>`,esc:v=>String(v),$:document.getElementById.bind(document),$$:document.querySelectorAll.bind(document),setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:false}),state:{tab:'buys'}};
   const storage=new Map([['etf-planner-assets-v1',JSON.stringify(doc)]]);
+  if(cachedPrices)storage.set('etf-planner-assets-prices',JSON.stringify(prices));
   if(dismissed)storage.set('etf-planner-purchase-note-dismissed',JSON.stringify(dismissed));
   ctx.localStorage={getItem:key=>{if(storageFailure)throw Error('storage read blocked');return storage.get(key)??null;},setItem:(key,value)=>{if(storageFailure)throw Error('storage write blocked');storage.set(key,String(value));},removeItem:key=>storage.delete(key)};
   if(realStore)Object.assign(ctx,{setInterval(){},addEventListener(){}});
@@ -1630,4 +1632,39 @@ test('분할매수 화면 JSON 백업·보관 기록 파일 이름은 한국 날
   r.element('purchaseExport').onclick();r.element('purchaseRecovery').onclick();
   assert.deepEqual(files.map(f=>f.name),['etf-planner-assets-2026-11-08.json','etf-planner-assets-recovery-2026-11-08.json']);
   assert.equal(files[0].value.exportedAt,'2026-11-07T22:00:00.000Z');
+});
+
+test('분할매수 계좌 추가는 같은 종목의 0주 계좌만 만들고 계획·보유·평균가·목표·체결을 복사하지 않는다',()=>{
+  const r=setup();r.item.name='가상 ETF (H) (ISA)';r.item.target=20;r.item.averagePrice=500;r.item.note='가상 메모';r.item.section='가상 분류';r.render();
+  const before=JSON.stringify(r.doc);r.element('purchaseAccountAdd').onclick();
+  const f=r.element('purchaseAccountForm');assert.equal(f.group.value,'g');assert.equal(r.element('purchaseAccountDialog').open,true);
+  r.element('purchaseAccountCancel').onclick();assert.equal(JSON.stringify(r.doc),before);
+  r.element('purchaseAccountAdd').onclick();f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});
+  const added=r.doc.allocation.groups[0].items[1];assert.ok(added.id&&added.id!==r.item.id);
+  assert.equal(added.name,'가상 ETF (H) (연금저축)');assert.equal(added.ticker,r.item.ticker);assert.equal(added.section,r.item.section);assert.equal(added.shares,0);
+  for(const key of ['buyPlan','target','averagePrice','note','amount'])assert.equal(added[key],undefined,key);
+  assert.equal(r.item.shares,10);assert.equal(r.item.target,20);assert.match(r.html(),/전체 계좌 2개 항목/);
+  r.element('purchaseAccountAdd').onclick();f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});assert.equal(r.doc.allocation.groups[0].items.length,2);assert.match(r.alerts.at(-1),/이미 있습니다/);
+});
+
+test('계좌 목표 비중은 기존 저장·예산 갱신을 쓰며 잘못된 값은 거부하고 빈 선택 필드는 지운다',()=>{
+  const r=setup({realStore:true,cachedPrices:true});
+  r.change('[data-purchase-target]',25);
+  let saved=JSON.parse(r.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0];
+  assert.equal(saved.target,25);assert.equal(saved.buyPlan.lines.budget,15,'목표 25만원 − 현재 10만원');
+  for(const value of [-1,101,'Infinity','잘못된 비중']){const before=r.storage.get('etf-planner-assets-v1');r.change('[data-purchase-target]',value);assert.equal(r.storage.get('etf-planner-assets-v1'),before);}
+  r.change('[data-purchase-target]','');saved=JSON.parse(r.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0];assert.equal(Object.hasOwn(saved,'target'),false);assert.equal(saved.shares,10);
+});
+
+test('분할매수에서 대표 계좌 삭제는 확인 후 기존 계획·체결 키·목표를 남은 같은 종목으로 이전한다',()=>{
+  const r=setup({legacy:true});const a=r.doc.allocation,other={id:'b',name:'가상 ETF (연금저축)',ticker:r.item.ticker,shares:0};a.groups[0].items.push(other);r.item.target=20;r.render();
+  const before=JSON.stringify(r.doc),plan=r.item.buyPlan;r.ctx.confirm=()=>false;r.inputs('[data-purchase-account-delete]')[0].onclick();assert.equal(JSON.stringify(r.doc),before);
+  let message='';r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[0].onclick();
+  assert.match(message,/현재 보유량을 자산 배분에서도 삭제/);assert.match(message,/기록은 같은 종목의 남은 계좌로/);
+  assert.equal(a.groups[0].items.length,1);assert.equal(other.buyPlan,plan);assert.equal(other.target,20);assert.equal(other.shares,0,'삭제한 계좌의 보유는 복사하지 않음');
+  assert.ok(a.trades['buy:b:end']);assert.equal(a.trades['buy:a:end'],undefined);assert.match(r.html(),/data-purchase-item="b"/);
+});
+
+test('마지막 계좌 삭제는 계획도 삭제된다는 확인을 거치고 새 계좌 추가 취소는 기록을 만들지 않는다',()=>{
+  const r=setup();let message='';r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[0].onclick();assert.match(message,/계획도 삭제됩니다/);assert.equal(r.doc.allocation.groups[0].items.length,0);assert.match(r.html(),/계획 없음/);
 });

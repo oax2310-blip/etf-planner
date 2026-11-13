@@ -430,35 +430,13 @@ const setText = (obj, key, v) => { const t=String(v??"").trim(); if(t) obj[key]=
 // 우선순위에서 지운 줄 id를 뺀다(알림 ID trade:buy:줄 id:…도 새 줄 id가 된다). 남는 같은 종목 줄에 이미 계획이 있거나(중복) 옮길 줄·코드가 없으면 계획도 지운다.
 // dry면 기록을 바꾸지 않고 {moved:[{from,to}], lost:[줄]}만 돌려준다(삭제 확인 문구용).
 function keepBuyPlans(alloc, removed, dry=false){
-  const all=(alloc.groups||[]).flatMap(g=>g.items||[]), ids=new Set([...removed].map(it=>it.id)), taken=new Set(all.filter(it=>it.buyPlan&&!removed.has(it))), out={moved:[],lost:[]};
-  for(const from of all.filter(it=>it.buyPlan&&removed.has(it))){
-    const plan=from.buyPlan, code=linkTicker(from.ticker), trade=linkTicker(assetTradeTicker(from)), rank=new Map();
-    for(const id of [...(Array.isArray(plan.buyPriority)?plan.buyPriority:[]),from.id])if(!rank.has(id))rank.set(id,rank.size);
-    const same=code?all.filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&linkTicker(assetTradeTicker(it))===trade):[];
-    const to=same.some(it=>taken.has(it))?null:same.sort((x,y)=>(rank.get(x.id)??Infinity)-(rank.get(y.id)??Infinity))[0];
-    if(!to){out.lost.push(from);continue;}
-    taken.add(to);out.moved.push({from,to});if(dry)continue;
-    const order=Array.isArray(plan.buyPriority)?plan.buyPriority.filter(id=>!ids.has(id)):[];
-    if(order.length)plan.buyPriority=order;else delete plan.buyPriority;
-    to.buyPlan=plan;delete from.buyPlan;
-    const prefix=`buy:${from.id}:`;
-    for(const key of Object.keys(alloc.trades||{}))if(key.startsWith(prefix)){alloc.trades[`buy:${to.id}:${key.slice(prefix.length)}`]=alloc.trades[key];delete alloc.trades[key];}
-  }
-  return out;
+  return allocLink.keepBuyPlans(alloc, removed, dry);
 }
 // 같은 종목의 목표 비중은 대표 계좌 줄 하나에 둔다. 목표가 있는 줄을 지우면 같은 그룹·소분류에 남는 같은 기준 코드 줄로 목표를 옮긴다
 // (분할매수 계획이 있거나 옮겨 갈 줄이 우선, 없으면 자산 목록 순서). 받는 줄에 목표가 있으면 더해 종목 목표 합계를 유지한다. 옮길 줄이 없으면 목표도 함께 지운다.
 // moved는 keepBuyPlans가 돌려준 계획 이전 목록. dry면 기록을 바꾸지 않고 [{from,to,target}]만 돌려준다.
 function keepTargets(alloc, removed, moved, dry=false){
-  const out=[];
-  for(const g of alloc.groups||[])for(const from of g.items||[]){
-    const target=finite(from.target), code=linkTicker(from.ticker);if(!removed.has(from)||target===null||!code)continue;
-    const same=(g.items||[]).filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&(it.section||"")===(from.section||""));
-    const to=same.find(it=>it.buyPlan||moved.some(m=>m.to===it))||same[0];if(!to)continue;
-    out.push({from,to,target});if(dry)continue;
-    to.target=Math.round(((finite(to.target)||0)+target)*1e8)/1e8;delete from.target;
-  }
-  return out;
+  return allocLink.keepTargets(alloc, removed, moved, dry);
 }
 function openItem(id, groupId){
   const a=doc.allocation, found=id?findItem(id):null, it=found?.it||{}, f=el("itemForm");

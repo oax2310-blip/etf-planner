@@ -79,6 +79,16 @@
     </section>
   </main>
 
+  <dialog id="purchaseAccountDialog" aria-labelledby="purchaseAccountTitle"><form class="dialog-inner" id="purchaseAccountForm">
+    <div class="dialog-head"><h2 id="purchaseAccountTitle">매수 계좌 추가</h2></div>
+    <p class="hint">같은 종목을 보유량 0인 계좌로 추가합니다. 목표 비중은 추가 후 계좌 줄에서 수정하세요.</p>
+    <div class="dialog-grid">
+      <label class="field"><span>그룹</span><select name="group"></select></label>
+      <label class="field"><span>계좌 이름</span><input name="accountName" maxlength="80" required placeholder="예: 연금저축, 퇴직연금" /></label>
+    </div>
+    <div class="dialog-foot"><button class="btn" type="button" id="purchaseAccountCancel">취소</button><button class="btn primary" type="submit">추가</button></div>
+  </form></dialog>
+
   <dialog id="goldEstimateDialog" aria-labelledby="goldEstimateTitle">
     <div class="dialog-inner">
       <div class="dialog-head"><h2 id="goldEstimateTitle">한국장 금 추정 문제</h2></div>
