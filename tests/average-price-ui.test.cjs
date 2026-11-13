@@ -4,9 +4,11 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 
-// 실제 투자 기록 없이 종목 수정창의 평균매수가 입력·저장 이벤트를 가상 DOM에서 실행한다.
+// 실제 투자 기록 없이 종목·그룹 수정창의 입력·저장·삭제 이벤트를 가상 DOM에서 실행한다.
 const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8');
-const source=['js/gold-estimate.js','js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/money-input.js','js/assets.js'].map(read).join('\n;\n');
+// 계산·화면 코드는 assets.html에 실제 등록된 순서로만 읽는다. 저장소는 아래 대역을 쓰며, 빠진 페이지 의존성을 테스트가 대신 주입하지 않는다.
+const exercised=new Set(['js/gold-estimate.js','js/money-input.js','js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/alloc-link.js','js/assets.js']);
+const source=[...read('assets.html').matchAll(/<script\b[^>]*src="(js\/[^"?]+)\?v=\d+"/g)].map(m=>m[1]).filter(file=>exercised.has(file)).map(read).join('\n;\n');
 const fixture=()=>({version:1,allocation:{savedAt:'2026-01-01',total:100,cashFx:1200,memo:'가상 메모',classes:[{id:'stock',region:'미국',name:'주식'}],cash:[],groups:[
   {id:'g1',name:'가상 계좌 1',classId:'stock',items:[{id:'a',name:'가상 해외 ETF',ticker:'AAA',shares:2,amount:20,base:50000,target:10,note:'보존',buyPlan:{stages:[{id:'stage',price:40,shares:1,amount:5,done:true}]}}]},
   {id:'g2',name:'가상 계좌 2',classId:'stock',items:[{id:'b',name:'다른 계좌 ETF',ticker:'AAA',shares:3,averagePrice:100,amount:30,base:60000},{id:'missing',name:'평균가 없는 ETF',ticker:'AAA',shares:1},{id:'domestic',name:'가상 국내 ETF',ticker:'111111',shares:4,averagePrice:10000}]}]}});
@@ -24,8 +26,8 @@ test('체결된 매수의 기준 티커 변경 확인 취소는 저장하지 않
   }
 });
 function page(data=fixture(),quotes=quoteFixture()){
-  const nodes=new Map(),storage=new Map(),writes=[],alerts=[],inputListeners=[];let itemButtons=[];
-  const document={activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-item]'?itemButtons:sel==='dialog [data-close]'?[node('itemCancel')]:[],addEventListener(type,fn){if(type==='input')inputListeners.push(fn);}};
+  const nodes=new Map(),storage=new Map(),writes=[],alerts=[],inputListeners=[];let itemButtons=[],groupButtons=[];
+  const document={activeElement:null,getElementById:node,querySelector:node,querySelectorAll:sel=>sel==='[data-item]'?itemButtons:sel==='[data-group]'?groupButtons:sel==='dialog [data-close]'?[node('itemCancel')]:[],addEventListener(type,fn){if(type==='input')inputListeners.push(fn);}};
   function node(id){
     if(nodes.has(id))return nodes.get(id);
     let html='',value='';const attrs=new Map();
@@ -40,9 +42,12 @@ function page(data=fixture(),quotes=quoteFixture()){
     Object.defineProperty(n,'innerHTML',{get:()=>html,set:v=>{
       html=String(v);
       if(id!=='allocView'&&id!=='strategyView')return;
-      if(!html){itemButtons=[];return;}
+      if(!html){itemButtons=[];groupButtons=[];return;}
       itemButtons=[...html.matchAll(/<button\b[^>]*data-item="([^"]+)"[^>]*>/g)].map(m=>{
         const b=node(`itemButton:${m[1]}`);b.dataset.item=m[1];return b;
+      });
+      groupButtons=[...html.matchAll(/<button\b[^>]*data-group="([^"]+)"[^>]*>/g)].map(m=>{
+        const b=node(`groupButton:${m[1]}`);b.dataset.group=m[1];return b;
       });
     }});
     nodes.set(id,n);return n;
@@ -52,6 +57,7 @@ function page(data=fixture(),quotes=quoteFixture()){
     const input=node(name==='averagePrice'?'averagePriceInput':name==='averageCurrency'?'averageCurrencySelect':`item:${name}`);input.tagName=['group','averageCurrency'].includes(name)?'SELECT':name==='note'?'TEXTAREA':'INPUT';
     form[name]=input;form.elements[name]=input;
   }
+  for(const name of ['name','classId','target','note'])node('groupForm')[name]=node(`group:${name}`);
   // HTML의 금액 제한도 실제 화면처럼 공용 검증기에 전달한다.
   const averageTag=read('assets.html').match(/<input id="averagePriceInput"[^>]*>/)[0];
   node('averagePriceInput').setAttribute('data-money','');
@@ -66,6 +72,7 @@ function page(data=fixture(),quotes=quoteFixture()){
   return {ctx,data,store,node,html,row,writes,alerts,storage,input:node('averagePriceInput'),
     type(input,value){input.value=value;input.selectionStart=input.selectionEnd=value.length;inputListeners.forEach(fn=>fn({target:input}));input.oninput?.();},
     open(id){const b=itemButtons.find(b=>b.dataset.item===id);assert.ok(b?.onclick,'종목 수정 버튼 이벤트');b.click();},
+    openGroup(id){const b=groupButtons.find(b=>b.dataset.group===id);assert.ok(b?.onclick,'그룹 수정 버튼 이벤트');b.click();},
     edit(value){const input=node('averagePriceInput');input.value=value;input.selectionStart=input.selectionEnd=value.length;inputListeners.forEach(fn=>fn({target:input}));input.oninput();},
     submit(){form.onsubmit({preventDefault(){}});},cancel(){node('itemCancel').click();},
     field(name,value){form.elements[name].value=value;form.elements[name].oninput?.();},
@@ -80,6 +87,34 @@ function btcFixture(averageCurrency){
   quotes.stocks['BTC-USD']={kind:'코인',close:60000,asOf:'2026-01-02'};quotes.fx.close=1400;
   return {data,quotes,item};
 }
+
+test('실제 자산 페이지 등록 코드로 종목 삭제를 취소·승인하고 계획·체결 키·목표를 남은 계좌에 이전한다',()=>{
+  const data=fixture(),a=data.allocation,from=a.groups[0].items[0],plan=from.buyPlan,to={id:'a2',name:'가상 남은 계좌',ticker:'AAA',shares:1};
+  a.groups[0].items.push(to);plan.buyPriority=['a','a2','b'];
+  a.trades={'buy:a:stage':{label:'가상 체결',items:[{id:'a',shares:1}]}};
+  const before=JSON.stringify(data),other=JSON.stringify(a.groups[1]),h=page(data);h.open('a');
+  assert.equal(JSON.stringify(data),before,'페이지·종목 창을 여는 것만으로 저장 기록을 바꾸지 않음');
+  h.ctx.confirm=()=>false;h.node('itemDelete').click();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('itemDialog').open,true);
+  h.ctx.confirm=()=>true;h.node('itemDelete').click();
+  assert.deepEqual(a.groups[0].items.map(it=>it.id),['a2']);assert.equal(to.buyPlan,plan);assert.equal(to.target,10);assert.equal(to.shares,1);
+  assert.equal(a.trades['buy:a:stage'],undefined);assert.ok(a.trades['buy:a2:stage']);assert.equal(a.trades['buy:a2:stage'].items[0].id,'a','옛 체결의 반영 대상은 보존');
+  assert.deepEqual([...plan.buyPriority],['a2','b']);assert.equal(JSON.stringify(a.groups[1]),other);
+  assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('itemDialog').open,false);
+  const saved=JSON.parse(h.storage.get('etf-planner-assets-v1'));assert.equal(saved.allocation.groups[0].items[0].id,'a2');assert.ok(saved.allocation.groups[0].items[0].buyPlan);
+});
+
+test('실제 자산 페이지 등록 코드로 그룹 삭제를 취소·승인하고 다른 그룹의 계좌에 계획·체결 키를 이전한다',()=>{
+  const data=fixture(),a=data.allocation,plan=a.groups[0].items[0].buyPlan,to=a.groups[1].items[0];
+  a.trades={'buy:a:stage':{label:'가상 체결',items:[{id:'a',shares:1}]}};
+  const before=JSON.stringify(data),remaining=JSON.parse(JSON.stringify(a.groups[1])),h=page(data);h.openGroup('g1');
+  assert.equal(JSON.stringify(data),before,'그룹 창의 분류 선택지도 저장 전에는 기록에 넣지 않음');
+  h.ctx.confirm=()=>false;h.node('groupDelete').click();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('groupDialog').open,true);
+  h.ctx.confirm=()=>true;h.node('groupDelete').click();
+  assert.deepEqual(a.groups.map(g=>g.id),['g2']);assert.equal(to.buyPlan,plan);assert.ok(a.trades['buy:b:stage']);assert.equal(a.trades['buy:a:stage'],undefined);
+  const expected=remaining;expected.items[0].buyPlan=plan;assert.deepEqual(JSON.parse(JSON.stringify(a.groups[0])),expected);
+  assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('groupDialog').open,false);
+  assert.deepEqual(JSON.parse(h.storage.get('etf-planner-assets-v1')).allocation.groups.map(g=>g.id),['g2']);
+});
 
 test('평균매수가 통화 선택은 실제 거래 종목이 비트코인일 때만 보이며 달러가 기본이다',()=>{
   const h=page();h.open('a');assert.equal(h.node('averageCurrencySelect').hidden,true);
