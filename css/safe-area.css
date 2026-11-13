@@ -1,5 +1,8 @@
-/* 상태바 자체의 동작은 OS·브라우저가 맡는다. 세 화면의 상단 안전 여백을 함께 보간해 본문·고정 탭·창이 따로 튀지 않게 한다.
-   @property 미지원 브라우저도 실제 안전 여백은 그대로 적용한다. 첫 화면과 모션 줄이기에서는 즉시 맞춘다. */
-@property --app-safe-top{syntax:"<length>";inherits:true;initial-value:0px}
-:root{--app-safe-top:env(safe-area-inset-top,0px)}
-@media screen and (prefers-reduced-motion:no-preference){:root{transition:--app-safe-top .24s ease-out}}
+/* 상태바 자체의 동작·앱 창 크기는 OS·브라우저가 맡는다. 상단 안전 여백이 바뀔 때 헤더·고정 탭만 같은 속도로 움직인다.
+   상속되는 변수를 매 프레임 바꾸면 긴 시나리오의 모든 자식 스타일을 다시 계산하므로 실제 위치·여백 속성만 전환한다.
+   입력 창의 안전 여백·키보드 높이 대응, 첫 화면, 모션 줄이기는 즉시 적용한다. */
+@media screen and (prefers-reduced-motion:no-preference){
+  .top,.nav{transition:padding-top .24s ease-out}
+  body::before{transition:height .24s ease-out}
+  .side,.mobile-valuation{transition:top .24s ease-out}
+}

@@ -26,4 +26,4 @@
 - 자산 화면: assets.html·js/assets.js(공통·탭·자산 배분), 탭별 js/assets-ledger.js(월별 손익)·assets-savings.js(저축)·assets-installments.js(할부), 동기화 표시·첫 화면 js/assets-start.js; 월별 손익 S&P 500 비교: js/ledger-benchmark.js(월말 자료 수집 scripts/collect-sp500.cjs → data/sp500-tr.json, 금 collect-gold.cjs → data/gold-etf.json, 끝난 달 판정 month-close.cjs); 시나리오: valuation.html(본문)·css/valuation.css·js/valuation.js(계산, ASSUMPTION_KEY 이후 가정 저장·동기화), 원·달러 js/currency-pressure.js.
 - 알림: js/trade-alerts.js·alerts.js·push.js·alert-target.js·push-sw.js. 서버 공유 계약은 계산 함수 주석 확인.
 - 종목 표시 이름(목록·제목·푸시·알림내역 글자, 기록은 코드 그대로): js/stock-names.js(페이지·push-sw.js 공용).
-- 디자인: css/app.css·assets.css·purchases.css; 공통 상단 안전 여백: css/safe-area.css; 화면 모드: js/theme.js.
+- 디자인: css/app.css·assets.css·purchases.css; 공통 상단 안전 여백 전환: css/safe-area.css; 화면 모드: js/theme.js.
