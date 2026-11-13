@@ -43,6 +43,11 @@ test('세 화면은 page-leave.js를 한 번씩 등록자보다 먼저 불러온
     assert.equal(list.filter(r=>r[1]==='css/page-leave.css').length,1,'세 화면에서 같은 동기화 대기 표시를 쓴다');
 });
 
+test('세 화면은 css/safe-area.css를 한 번씩 불러온다', () => {
+  for (const [name, list] of [['index.html', refs], ['assets.html', assetRefs], ['valuation.html', valuationRefs]])
+    assert.equal(list.filter(r => r[1] === 'css/safe-area.css').length, 1, `${name}: 상단 여백 전환 스타일은 한 번 불러야 한다`);
+});
+
 test('push-sw.js의 importScripts는 세 HTML과 같은 버전(?v=)으로 불러온다', () => {
   const worker = fs.readFileSync(path.join(root, 'push-sw.js'), 'utf8');
   const workerRefs = [...worker.matchAll(/\bimportScripts\s*\(([^)]*)\)/g)]

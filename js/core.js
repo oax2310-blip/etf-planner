@@ -45,7 +45,8 @@ addEventListener("hashchange",openPlannerLocation);
 const topBar=document.querySelector(".top"), topTabs=topBar.querySelector(".tabs");
 // 모바일 top의 음수 top(--tuck): 스크롤하면 탭 위 8px만 남긴다. 실제 padding에서 기본 여백(--top-pad)을 빼면 지금 화면의 안전 여백이다.
 // 전환 중 resize가 와도 최종 env() 값 대신 현재 그려진 padding을 빼서 접는 높이를 유지한다. 탭 클릭은 위의 핸들러에서 맨 위로 이동한다.
-function fitTop(){ const style=getComputedStyle(topBar),safeTop=(parseFloat(style.paddingTop)||0)-(parseFloat(style.getPropertyValue("--top-pad"))||0); topBar.style.setProperty("--tuck",Math.max(0,topTabs.offsetTop-safeTop-8)+"px"); }
+// offsetTop은 정수지만 padding은 소수점일 수 있으므로 차이를 반올림해 전환 뒤에도 소수점 접힘 높이가 남지 않게 한다.
+function fitTop(){ const style=getComputedStyle(topBar),safeTop=(parseFloat(style.paddingTop)||0)-(parseFloat(style.getPropertyValue("--top-pad"))||0); topBar.style.setProperty("--tuck",Math.max(0,Math.round(topTabs.offsetTop-safeTop-8))+"px"); }
 fitTop(); addEventListener("resize",fitTop);
 // 알림(push.js)·자산 배분 편입 표시(member-go.js)로 이동한 카드. 모바일에서는 top의 음수 위치로 헤더가 접히므로
 // 높이 전체 대신 현재 보이는 하단을 빼야 카드가 가려지지 않는다. 강조는 화면 상태이며 저장하지 않는다.
@@ -56,7 +57,7 @@ function flashTarget(node){
   node.addEventListener("animationend",()=>node.classList.remove("push-alert-highlight"),{once:true});
 }
 // PC 왼쪽 목록 칸(.side)의 높이 기준(--side-top, css/app.css): 붙은 위치(top) 또는 페이지 맨 위처럼 아직 아래에 있는 지금 위치.
-// 칸 아래가 화면 밖에 가려지지 않게 스크롤·창 크기·다시 그리기 때 보이는 칸에만 맞춘다. 모바일(1000px 이하)은 계산하지 않는다.
+// 칸 아래가 화면 밖에 가려지지 않게 스크롤·창 크기·상단 여백 전환 완료·다시 그리기 때 보이는 칸에만 맞춘다. 모바일(1000px 이하)은 계산하지 않는다.
 let wideLayout=null, sideFrame=0;
 function fitSide(){
   const side=(wideLayout??=matchMedia("(min-width:1001px)")).matches&&[...$$(".layout>.side")].find(x=>x.getClientRects().length); if(!side)return;
@@ -65,6 +66,7 @@ function fitSide(){
 }
 const fitSideSoon=()=>{ if(!sideFrame)sideFrame=requestAnimationFrame(()=>{sideFrame=0;fitSide();}); };
 addEventListener("scroll",fitSideSoon,{passive:true}); addEventListener("resize",fitSideSoon);
+addEventListener("transitionend",e=>{ if(e.target===topBar&&e.propertyName==="padding-top"||e.target?.matches?.(".layout>.side")&&e.propertyName==="top")fitSideSoon(); });
 // 왼쪽 목록(.plan-list)이 PC에서 따로 스크롤할 때: 다시 그려도(분할매수는 목록을 새로 만든다) 보던 위치를 지키고,
 // 고른 카드가 바뀐 때(처음 열기·카드 선택·알림·자산 배분에서 이동)만 그 카드가 보이게 목록만 움직인다. 페이지 스크롤은 건드리지 않는다.
 const planListSpots={};
