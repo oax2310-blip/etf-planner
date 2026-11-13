@@ -128,6 +128,13 @@ test('안전 영역: 접힌 헤더 덮개가 카메라 영역을 배경으로 �
   assert.ok(Number(cover['z-index']) > Number(cssRule('css/app.css', '.top')['z-index']));
 });
 
+test('자산 모달 동안 html·body 배경 스크롤을 막고 창 내부 스크롤은 유지한다', () => {
+  const lock = cssRule('css/assets.css', 'html:has(body.assets-page dialog:modal),body.assets-page:has(dialog:modal)');
+  assert.equal(lock.overflow, 'hidden', '문서 루트·body의 터치와 휠 스크롤을 함께 막음');
+  assert.equal(lock['overscroll-behavior'], 'none');
+  assert.equal(cssRule('css/assets.css', '.assets-page dialog')['overscroll-behavior'], 'contain', '창 가장자리에서 배경으로 스크롤 전달 차단');
+});
+
 for (const [selector, transition] of [
   ['.top,.nav', 'padding-top.24sease-out'],
   ['body::before', 'height.24sease-out'],
