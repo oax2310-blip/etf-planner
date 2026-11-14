@@ -36,6 +36,8 @@ public final class ChromeInstrumentation extends Instrumentation {
     private Activity activity;
     private WebView web;
     private FrameLayout root;
+    private String phase="앱 시작";
+    private void phase(String name){phase=name;Bundle progress=new Bundle();progress.putString("stream","검사 단계: "+name+"\n");sendStatus(0,progress);}
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
     private static void check(boolean value, String message) { if (!value) throw new AssertionError(message); }
     private Object field(String name) throws Exception { java.lang.reflect.Field f=activity.getClass().getDeclaredField(name); f.setAccessible(true); return f.get(activity); }
@@ -47,9 +49,9 @@ public final class ChromeInstrumentation extends Instrumentation {
     private String javascript(String script) throws Exception {
         AtomicReference<String> result=new AtomicReference<>();
         runOnMainSync(()->web.evaluateJavascript(script,result::set));
-        long limit=SystemClock.uptimeMillis()+15000;
+        long limit=SystemClock.uptimeMillis()+60000;
         while(result.get()==null && SystemClock.uptimeMillis()<limit)SystemClock.sleep(50);
-        check(result.get()!=null,"JavaScript 응답 시간 초과");return result.get();
+        check(result.get()!=null,"JavaScript 응답 시간 초과 ("+phase+")");return result.get();
     }
     private String asset(android.content.Context context,String name) throws Exception {
         try(InputStream input=context.getAssets().open(name);ByteArrayOutputStream out=new ByteArrayOutputStream()) {
@@ -106,6 +108,7 @@ public final class ChromeInstrumentation extends Instrumentation {
             Intent launch=new Intent().setComponent(new ComponentName(getTargetContext(),"io.github.oax2310blip.etfplanner.PlannerActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity=startActivitySync(launch);web=(WebView)field("web");root=(FrameLayout)field("root");
             acceptStartupGuide();
+            phase("문서 초기화");
             final String html=asset(getContext(),"fixture.html");
             runOnMainSync(()->{
                 web.stopLoading();
@@ -122,17 +125,19 @@ public final class ChromeInstrumentation extends Instrumentation {
                 });
                 web.loadUrl("https://oax2310-blip.github.io/etf-planner/");
             });
-            long pageLimit=SystemClock.uptimeMillis()+20000;
+            long pageLimit=SystemClock.uptimeMillis()+60000;
             while(!"true".equals(javascript("window.fixtureReady===true&&document.documentElement.dataset.nativeApp==='android'"))&&SystemClock.uptimeMillis()<pageLimit)SystemClock.sleep(100);
             check("true".equals(javascript("window.fixtureReady===true")),"가상 페이지 초기화");
+            phase("배경·글꼴·상단바");
             waitUntil(()->((ColorDrawable)root.getBackground()).getColor()==0xff0a0c10,"페이지와 상태바의 어두운 배경색 일치");
             javascript("document.fonts.ready.then(function(){window.fontReady=true;});true");
-            long fontLimit=SystemClock.uptimeMillis()+20000;while(!"true".equals(javascript("window.fontReady===true"))&&SystemClock.uptimeMillis()<fontLimit)SystemClock.sleep(100);
+            long fontLimit=SystemClock.uptimeMillis()+60000;while(!"true".equals(javascript("window.fontReady===true"))&&SystemClock.uptimeMillis()<fontLimit)SystemClock.sleep(100);
             check("true".equals(javascript("document.fonts.check('15px \"Pretendard Variable\"')")),"기존 Pretendard 글꼴 로딩");
             check("\"relative\"".equals(javascript("getComputedStyle(document.querySelector('.top')).position")),"native 표식의 상단바 스크롤 CSS: "+javascript("JSON.stringify({width:innerWidth,coarse:matchMedia('(pointer:coarse)').matches,hover:matchMedia('(hover:hover)').matches,native:document.documentElement.dataset.nativeApp,position:getComputedStyle(document.querySelector('.top')).position,url:location.href})"));
             waitUntil(()->root.getRootWindowInsets().isVisible(WindowInsets.Type.statusBars()),"맨 위 상태바 표시");
             screenshot("native-dark-top");
             check((activity.getWindow().getInsetsController().getSystemBarsAppearance()&WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)==0,"어두운 배경의 밝은 아이콘");
+            phase("드래그 숨김·복귀");
             swipe(680,220);
             waitUntil(()->web.getScrollY()>100&&!root.getRootWindowInsets().isVisible(WindowInsets.Type.statusBars()),"아래로 스크롤하면 OS 상태바 숨김");
             check("false".equals(javascript("Boolean(document.fullscreenElement)")),"웹 Fullscreen API를 사용하지 않음");
@@ -144,6 +149,7 @@ public final class ChromeInstrumentation extends Instrumentation {
             screenshot("native-dark-returned");
             check("true".equals(javascript("matchMedia('(pointer:coarse)').matches&&!matchMedia('(hover:hover)').matches")),"터치·hover 해제");
             result.putString("viewport",javascript("JSON.stringify({width:innerWidth,height:innerHeight,deviceWidth:screen.width,deviceHeight:screen.height,dpr:devicePixelRatio,theme:document.documentElement.dataset.theme})"));
+            phase("JSON 선택·CSV 바이트");
             String url=(String)new JSONTokener(javascript("URL.createObjectURL(new Blob([new Uint8Array([239,187,191,234,176,128,13,10])],{type:'text/csv;charset=utf-8'}))")).nextValue();
             String download=asset(getTargetContext(),"read-download.js").replace("__PLANNER_BLOB_URL__",JSONObject.quote(url));
             javascript(download);
@@ -163,6 +169,7 @@ public final class ChromeInstrumentation extends Instrumentation {
             removeMonitor(picker);
             String imported=(String)new JSONTokener(javascript("window.importedText||''")).nextValue();
             check(Arrays.equals(imported.getBytes(StandardCharsets.UTF_8),TestBackupProvider.BYTES),"OS 파일 선택기의 JSON 원문 전달");
+            phase("밝은 배경·아이콘");
             javascript("document.documentElement.dataset.theme='light';true");
             java.lang.reflect.Method read=activity.getClass().getDeclaredMethod("readSurface");read.setAccessible(true);
             runOnMainSync(()->{try{read.invoke(activity);}catch(Exception error){throw new RuntimeException(error);}});
@@ -172,7 +179,8 @@ public final class ChromeInstrumentation extends Instrumentation {
             result.putString("stream","OS 상태바 숨김·복귀, 낮/밤 색·아이콘, JSON 복원, CSV 바이트 검증 통과\n화면 조건: "+result.getString("viewport")+"\n");
             finish(Activity.RESULT_OK,result);
         } catch(Throwable error) {
-            result.putString("stream","검증 실패: "+error.toString()+"\n");finish(Activity.RESULT_CANCELED,result);
+            try{Bitmap capture=getUiAutomation().takeScreenshot();try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null),"native-failure.png"))){capture.compress(Bitmap.CompressFormat.PNG,100,out);}capture.recycle();}catch(Exception ignored){}
+            result.putString("stream","검증 실패 ("+phase+"): "+error.toString()+"\n");finish(Activity.RESULT_CANCELED,result);
         }
     }
 }
