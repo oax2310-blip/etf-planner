@@ -169,10 +169,11 @@ function openPurchaseAccount(id){
   f.accountName.value="";f.group.innerHTML=doc.allocation.groups.map(g=>`<option value="${escA(g.id)}">${escA(g.name)}</option>`).join("");f.group.value=found.g.id;
   f.onsubmit=e=>{e.preventDefault();
     const current=findItem(id),g=doc.allocation.groups.find(g=>g.id===f.group.value),account=f.accountName.value.trim();
-    if(!current?.it.buyPlan||!g||!account)return;
+    if(!current?.it.buyPlan||!g)return;
+    if(!account){alert("계좌 이름을 입력해 주세요.");f.accountName.focus();return;}
     if(!canAddPurchaseAccount(current.it)){alert(purchaseAccountCodeHint);return;}
     const source=current.it,name=`${stockNames.titleParts(source.name).main} (${account})`;
-    if(g.items.some(it=>it.name===name&&linkTicker(it.ticker)===linkTicker(source.ticker))){alert("같은 이름의 계좌가 이미 있습니다.");return;}
+    if(g.items.some(it=>it.name===name&&linkTicker(it.ticker)===linkTicker(source.ticker)&&linkTicker(assetTradeTicker(it))===linkTicker(assetTradeTicker(source)))){alert("같은 이름의 계좌가 이미 있습니다.");return;}
     const added={id:typeof crypto!=="undefined"&&crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),name,shares:0};
     for(const key of ["ticker","section","tradeTicker","tradePrice","tradePriceAt"])if(source[key]!==undefined)added[key]=source[key];
     g.items.push(added);saveSection("allocation");dialog.close();render();

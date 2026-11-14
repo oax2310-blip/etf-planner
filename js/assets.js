@@ -427,12 +427,14 @@ const setNum = (obj, key, v) => { const n=numIn(v); if(n===null) delete obj[key]
 const setText = (obj, key, v) => { const t=String(v??"").trim(); if(t) obj[key]=t; else delete obj[key]; };
 // 분할매수 계획은 한 줄(buyPlan)에 저장하지만 같은 종목 코드의 계좌 줄 전체가 함께 쓴다. 줄·그룹 삭제로 계획이 붙은 줄이 빠지면 기준 코드·실제 매수 코드가 같은
 // 남는 줄 중 매수 우선순위(buyPriority, 없으면 계획 줄 → 자산 목록 순서)가 가장 앞선 줄로 계획을 옮긴다. 체결 반영 키 'buy:줄 id:회차'도 새 줄 id로 바꾸고
+// 기준 코드가 없고 실제 코드만 있는 줄도 두 코드 쌍이 같은 줄로 옮긴다.
 // 우선순위에서 지운 줄 id를 뺀다(알림 ID trade:buy:줄 id:…도 새 줄 id가 된다). 남는 같은 종목 줄에 이미 계획이 있거나(중복) 옮길 줄·코드가 없으면 계획도 지운다.
 // dry면 기록을 바꾸지 않고 {moved:[{from,to}], lost:[줄]}만 돌려준다(삭제 확인 문구용).
 function keepBuyPlans(alloc, removed, dry=false){
   return allocLink.keepBuyPlans(alloc, removed, dry);
 }
 // 같은 종목의 목표 비중은 대표 계좌 줄 하나에 둔다. 목표가 있는 줄을 지우면 같은 그룹·소분류에 남는 같은 기준 코드 줄로 목표를 옮긴다
+// (기준 코드가 모두 비었으면 같은 실제 매수 코드로 구분한다).
 // (분할매수 계획이 있거나 옮겨 갈 줄이 우선, 없으면 자산 목록 순서). 받는 줄에 목표가 있으면 더해 종목 목표 합계를 유지한다. 옮길 줄이 없으면 목표도 함께 지운다.
 // moved는 keepBuyPlans가 돌려준 계획 이전 목록. dry면 기록을 바꾸지 않고 [{from,to,target}]만 돌려준다.
 function keepTargets(alloc, removed, moved, dry=false){
@@ -499,7 +501,7 @@ function openItem(id, groupId){
     return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{
-    const removed=new Set([it]), keep=keepBuyPlans(a,removed,true), to=keep.moved[0]?.to, goal=keepTargets(a,removed,keep.moved,true)[0], code=linkTicker(it.ticker), twins=!!code&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code));
+    const removed=new Set([it]), keep=keepBuyPlans(a,removed,true), to=keep.moved[0]?.to, goal=keepTargets(a,removed,keep.moved,true)[0], code=linkTicker(it.ticker), trade=linkTicker(assetTradeTicker(it)), twins=!!(code||trade)&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code&&(code||linkTicker(assetTradeTicker(x))===trade)));
     const notes=[to?`분할매수 계획과 체결 기록은 같은 종목의 '${to.name}' 줄로 옮겨 유지합니다.`:"",goal?`목표 비중 ${pc(goal.target)}는 '${goal.to.name}' 줄로 옮깁니다.`:twins&&finite(it.target)!==null?`이 줄의 목표 비중 ${pc(it.target)}는 함께 지워집니다.`:""].filter(Boolean);
     if(!confirm(`'${it.name}' 종목${keep.lost.length?"과 분할매수 계획":""}을 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
     keepTargets(a,removed,keepBuyPlans(a,removed).moved); found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };

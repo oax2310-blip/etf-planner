@@ -7,12 +7,13 @@ const man=v=>`${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`, pc=v=>`${(
 const qty=(n,it)=>`${nf8.format(n)}${linkStep(it)<1?" BTC":"주"}`;
 const sign=d=>d<0?"−":"+";
 // 계좌 줄 삭제 시 자산 화면·분할매수가 같은 계획·체결 키·목표 이전 규칙을 쓴다. dry는 확인 문구용 읽기 전용이다.
+// 계획은 기준·실제 코드 쌍이 같은 줄에만 옮긴다. 기준 코드가 없으면 실제 코드가 있는 동일 쌍도 허용하고, 두 코드 모두 없으면 옮기지 않는다.
 function keepBuyPlans(alloc, removed, dry=false){
   const all=(alloc.groups||[]).flatMap(g=>g.items||[]), ids=new Set([...removed].map(it=>it.id)), taken=new Set(all.filter(it=>it.buyPlan&&!removed.has(it))), out={moved:[],lost:[]};
   for(const from of all.filter(it=>it.buyPlan&&removed.has(it))){
     const plan=from.buyPlan, code=linkTicker(from.ticker), trade=linkTicker(assetTradeTicker(from)), rank=new Map();
     for(const id of [...(Array.isArray(plan.buyPriority)?plan.buyPriority:[]),from.id])if(!rank.has(id))rank.set(id,rank.size);
-    const same=code?all.filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&linkTicker(assetTradeTicker(it))===trade):[];
+    const same=(code||trade)?all.filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&linkTicker(assetTradeTicker(it))===trade):[];
     const to=same.some(it=>taken.has(it))?null:same.sort((x,y)=>(rank.get(x.id)??Infinity)-(rank.get(y.id)??Infinity))[0];
     if(!to){out.lost.push(from);continue;}
     taken.add(to);out.moved.push({from,to});if(dry)continue;
@@ -24,11 +25,12 @@ function keepBuyPlans(alloc, removed, dry=false){
   }
   return out;
 }
+// 목표는 같은 그룹·소분류의 같은 기준 코드끼리 합산한다. 기준 코드가 모두 비었을 때만 실제 코드로 구분한다.
 function keepTargets(alloc, removed, moved, dry=false){
   const out=[];
   for(const g of alloc.groups||[])for(const from of g.items||[]){
-    const target=finite(from.target), code=linkTicker(from.ticker);if(!removed.has(from)||target===null||!code)continue;
-    const same=(g.items||[]).filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&(it.section||"")===(from.section||""));
+    const target=finite(from.target), code=linkTicker(from.ticker), trade=linkTicker(assetTradeTicker(from));if(!removed.has(from)||target===null||!(code||trade))continue;
+    const same=(g.items||[]).filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&(code||linkTicker(assetTradeTicker(it))===trade)&&(it.section||"")===(from.section||""));
     const to=same.find(it=>it.buyPlan||moved.some(m=>m.to===it))||same[0];if(!to)continue;
     out.push({from,to,target});if(dry)continue;
     to.target=Math.round(((finite(to.target)||0)+target)*1e8)/1e8;delete from.target;

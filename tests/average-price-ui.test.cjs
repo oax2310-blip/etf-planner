@@ -88,32 +88,45 @@ function btcFixture(averageCurrency){
   return {data,quotes,item};
 }
 
-test('실제 자산 페이지 등록 코드로 종목 삭제를 취소·승인하고 계획·체결 키·목표를 남은 계좌에 이전한다',()=>{
+for(const tradeOnly of [false,true])test(`실제 자산 페이지 등록 코드로 ${tradeOnly?'tradeTicker 단독 ':''}종목 삭제를 취소·승인하고 계획·체결 키·목표를 남은 계좌에 이전한다`,()=>{
   const data=fixture(),a=data.allocation,from=a.groups[0].items[0],plan=from.buyPlan,to={id:'a2',name:'가상 남은 계좌',ticker:'AAA',shares:1};
+  if(tradeOnly)for(const it of [from,to]){delete it.ticker;it.tradeTicker='AAA';}to.target=5;
   a.groups[0].items.push(to);plan.buyPriority=['a','a2','b'];
   a.trades={'buy:a:stage':{label:'가상 체결',items:[{id:'a',shares:1}]}};
   const before=JSON.stringify(data),other=JSON.stringify(a.groups[1]),h=page(data);h.open('a');
   assert.equal(JSON.stringify(data),before,'페이지·종목 창을 여는 것만으로 저장 기록을 바꾸지 않음');
-  h.ctx.confirm=()=>false;h.node('itemDelete').click();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('itemDialog').open,true);
+  let message='';h.ctx.confirm=text=>{message=text;return false;};h.node('itemDelete').click();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('itemDialog').open,true);
+  assert.match(message,/계획과 체결 기록은 같은 종목/);assert.match(message,/목표 비중 10%는 '가상 남은 계좌' 줄로 옮깁니다/);
   h.ctx.confirm=()=>true;h.node('itemDelete').click();
-  assert.deepEqual(a.groups[0].items.map(it=>it.id),['a2']);assert.equal(to.buyPlan,plan);assert.equal(to.target,10);assert.equal(to.shares,1);
+  assert.deepEqual(a.groups[0].items.map(it=>it.id),['a2']);assert.equal(to.buyPlan,plan);assert.equal(to.target,15);assert.equal(to.shares,1);
   assert.equal(a.trades['buy:a:stage'],undefined);assert.ok(a.trades['buy:a2:stage']);assert.equal(a.trades['buy:a2:stage'].items[0].id,'a','옛 체결의 반영 대상은 보존');
   assert.deepEqual([...plan.buyPriority],['a2','b']);assert.equal(JSON.stringify(a.groups[1]),other);
   assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('itemDialog').open,false);
   const saved=JSON.parse(h.storage.get('etf-planner-assets-v1'));assert.equal(saved.allocation.groups[0].items[0].id,'a2');assert.ok(saved.allocation.groups[0].items[0].buyPlan);
 });
 
-test('실제 자산 페이지 등록 코드로 그룹 삭제를 취소·승인하고 다른 그룹의 계좌에 계획·체결 키를 이전한다',()=>{
+for(const tradeOnly of [false,true])test(`실제 자산 페이지 등록 코드로 ${tradeOnly?'tradeTicker 단독 ':''}그룹 삭제를 취소·승인하고 다른 그룹의 계좌에 계획·체결 키를 이전한다`,()=>{
   const data=fixture(),a=data.allocation,plan=a.groups[0].items[0].buyPlan,to=a.groups[1].items[0];
+  if(tradeOnly)for(const it of [a.groups[0].items[0],to]){delete it.ticker;it.tradeTicker='AAA';}to.target=5;
   a.trades={'buy:a:stage':{label:'가상 체결',items:[{id:'a',shares:1}]}};
   const before=JSON.stringify(data),remaining=JSON.parse(JSON.stringify(a.groups[1])),h=page(data);h.openGroup('g1');
   assert.equal(JSON.stringify(data),before,'그룹 창의 분류 선택지도 저장 전에는 기록에 넣지 않음');
   h.ctx.confirm=()=>false;h.node('groupDelete').click();assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.node('groupDialog').open,true);
   h.ctx.confirm=()=>true;h.node('groupDelete').click();
   assert.deepEqual(a.groups.map(g=>g.id),['g2']);assert.equal(to.buyPlan,plan);assert.ok(a.trades['buy:b:stage']);assert.equal(a.trades['buy:a:stage'],undefined);
+  assert.equal(to.target,5,'삭제한 그룹의 목표는 다른 그룹에 합산하지 않음');
   const expected=remaining;expected.items[0].buyPlan=plan;assert.deepEqual(JSON.parse(JSON.stringify(a.groups[0])),expected);
   assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('groupDialog').open,false);
   assert.deepEqual(JSON.parse(h.storage.get('etf-planner-assets-v1')).allocation.groups.map(g=>g.id),['g2']);
+});
+
+test('tradeTicker 단독 종목 삭제의 목표 소멸 문구는 같은 실제 코드가 남아 있을 때 표시한다',()=>{
+  for(const same of [false,true]){
+    const data=fixture(),from=data.allocation.groups[0].items[0],other=data.allocation.groups[1].items[0];
+    delete from.ticker;from.tradeTicker='AAA';delete other.ticker;other.tradeTicker=same?'AAA':'BBB';
+    const h=page(data);h.open('a');let message='';h.ctx.confirm=text=>{message=text;return false;};h.node('itemDelete').click();
+    if(same)assert.match(message,/목표 비중 10%는 함께 지워집니다/);else assert.doesNotMatch(message,/목표 비중 10%는 함께 지워집니다/);
+  }
 });
 
 test('평균매수가 통화 선택은 실제 거래 종목이 비트코인일 때만 보이며 달러가 기본이다',()=>{

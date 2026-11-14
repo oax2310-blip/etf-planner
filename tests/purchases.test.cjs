@@ -1700,3 +1700,59 @@ test('기준 코드 없이 실제 매수 코드만 있는 기존 계획도 새 �
   const target=r.inputs('[data-purchase-target]')[1];target.value='5';target.onchange();assert.equal(added.target,5);
   r.ctx.confirm=()=>true;r.inputs('[data-purchase-account-delete]')[1].onclick();assert.equal(r.doc.allocation.groups[0].items.length,1);assert.ok(r.item.buyPlan);
 });
+
+function tradeOnlyAccounts(){
+  const r=setup({manual:true});delete r.item.ticker;Object.assign(r.item,{name:'가상 ETF (ISA)',tradeTicker:'222222',target:20,section:'가상 분류'});
+  r.item.buyPlan.buyPriority=['a','b'];
+  const other={id:'b',name:'가상 ETF (연금저축)',tradeTicker:'222222',shares:0,target:5,section:'가상 분류'};
+  r.doc.allocation.groups[0].items.push(other);r.doc.allocation.trades={'buy:a:s':{label:'가상 체결',items:[{id:'a',shares:1}]}};
+  r.render();return {r,other};
+}
+
+test('tradeTicker 단독 대표 계좌 삭제는 계획·체결 키·합산 목표를 남은 같은 계좌로 이전한다',()=>{
+  const {r,other}=tradeOnlyAccounts(),plan=r.item.buyPlan,before=JSON.stringify(r.doc);let message='';
+  assert.deepEqual(r.inputs('[data-purchase-account-delete]').map(x=>x.dataset.purchaseAccountDelete),['a','b']);
+  r.ctx.confirm=text=>{message=text;return false;};r.inputs('[data-purchase-account-delete]')[0].onclick();
+  assert.equal(JSON.stringify(r.doc),before);assert.match(message,/계획과 체결 기록은 같은 종목의 남은 계좌로/);assert.match(message,/목표 비중은 같은 그룹·소분류/);
+  r.ctx.confirm=()=>true;r.inputs('[data-purchase-account-delete]')[0].onclick();
+  assert.equal(other.buyPlan,plan);assert.equal(other.target,25);assert.equal(other.shares,0);assert.equal(r.doc.allocation.groups[0].items.length,1);
+  assert.ok(r.doc.allocation.trades['buy:b:s']);assert.equal(r.doc.allocation.trades['buy:a:s'],undefined);assert.equal(r.doc.allocation.trades['buy:b:s'].items[0].id,'a');
+  assert.deepEqual([...plan.buyPriority],['b']);assert.match(r.html(),/data-purchase-item="b"/);
+});
+
+test('tradeTicker 단독 비대표 계좌 삭제도 같은 그룹·소분류의 대표 계좌에 목표를 합산한다',()=>{
+  const {r,other}=tradeOnlyAccounts(),plan=r.item.buyPlan,trades=JSON.stringify(r.doc.allocation.trades);let message='';
+  r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[1].onclick();
+  assert.match(message,/목표 비중은 같은 그룹·소분류/);assert.equal(r.item.target,25);assert.equal(other.target,undefined);assert.equal(r.item.buyPlan,plan);
+  assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.deepEqual(r.doc.allocation.groups[0].items.map(it=>it.id),['a']);
+});
+
+test('tradeTicker 단독 이전은 다른 실제 코드·기준 코드·소분류를 섞지 않고 목표의 그룹 범위를 유지한다',()=>{
+  const {r,other}=tradeOnlyAccounts(),a=r.doc.allocation,removed=new Set([r.item]);
+  const odd={id:'odd',tradeTicker:'999999',shares:0,target:3,section:r.item.section};a.groups[0].items.splice(1,0,odd);
+  assert.equal(r.link.keepBuyPlans(a,removed,true).moved[0].to,other);
+  assert.equal(r.link.keepTargets(a,removed,[],true)[0].to,other);
+  other.section='다른 분류';assert.equal(r.link.keepTargets(a,removed,[],true).length,0);
+  a.groups[0].items=a.groups[0].items.filter(it=>it!==other);a.groups.push({id:'g2',name:'다른 그룹',items:[other]});other.section=r.item.section;
+  assert.equal(r.link.keepBuyPlans(a,removed,true).moved[0].to,other);assert.equal(r.link.keepTargets(a,removed,[],true).length,0,'그룹 밖 목표는 합산하지 않음');
+  other.ticker='222222';assert.equal(r.link.keepBuyPlans(a,removed,true).moved.length,0,'기준 코드가 다른 쌍은 계획을 옮기지 않음');
+  delete other.ticker;other.tradeTicker='999999';assert.equal(r.link.keepBuyPlans(a,removed,true).moved.length,0);
+});
+
+test('동명 계좌 추가는 기준·실제 코드 쌍으로 중복을 판단해 다른 실제 매수 종목을 허용한다',()=>{
+  for(const ticker of [undefined,'111111']){
+    const r=setup({manual:true});delete r.item.ticker;Object.assign(r.item,{name:'가상 ETF (ISA)',tradeTicker:'222222',...(ticker?{ticker}:{})});
+    r.doc.allocation.groups[0].items.push({id:'odd',name:'가상 ETF (연금저축)',tradeTicker:'999999',shares:0,...(ticker?{ticker}:{})});r.render();
+    r.element('purchaseAccountAdd').onclick();const f=r.element('purchaseAccountForm');f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});
+    assert.equal(r.doc.allocation.groups[0].items.length,3);assert.equal(r.doc.allocation.groups[0].items[2].tradeTicker,'222222');
+    r.element('purchaseAccountAdd').onclick();f.accountName.value='연금저축';const before=JSON.stringify(r.doc);f.onsubmit({preventDefault(){}});
+    assert.equal(JSON.stringify(r.doc),before);assert.match(r.alerts.at(-1),/이미 있습니다/);
+  }
+});
+
+test('공백 계좌명은 안내 후 이름 칸에 포커스를 두고 저장하지 않으며 올바른 이름으로 다시 제출할 수 있다',()=>{
+  const r=setup();r.element('purchaseAccountAdd').onclick();const f=r.element('purchaseAccountForm');let focused=0;f.accountName.focus=()=>focused++;
+  f.accountName.value='   ';const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;f.onsubmit({preventDefault(){}});
+  assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0);assert.equal(r.element('purchaseAccountDialog').open,true);assert.match(r.alerts.at(-1),/계좌 이름/);assert.equal(focused,1);
+  f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});assert.equal(r.doc.allocation.groups[0].items.length,2);assert.equal(writes,1);
+});
