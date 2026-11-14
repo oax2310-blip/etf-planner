@@ -15,7 +15,7 @@ const tags = (html, tag) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'
 test('홈 화면 앱은 상태바가 보이는 독립 창으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
   assert.equal(manifest.display, 'standalone');
   assert.ok(!manifest.display_override?.includes('fullscreen'), '전체화면 우선 설정으로 상태바를 다시 숨기지 않음');
-  assert.equal(manifest.theme_color, '#ffffff', '기본 밝은 헤더와 설치 상태바 색 일치');
+  assert.equal(manifest.theme_color, '#f5f6f8', '기본 밝은 본문과 설치 상태바 요청 색 일치');
   assert.ok(manifest.name && manifest.short_name);
   assert.equal(manifest.lang, 'ko');
   for (const key of ['start_url', 'scope']) {
@@ -97,6 +97,38 @@ function cssRule(file, selector, media = '') {
   }));
 }
 const inset = edge => `env(safe-area-inset-${edge},0px)`;
+const installedPlannerMedia = ['standalone', 'fullscreen'].map(mode =>
+  `screen and (max-width:700px) and (hover:none) and (pointer:coarse) and (display-mode:${mode})`).join(',');
+
+test('설치된 터치 플래너의 상단바 전체는 문서와 함께 사라지고 맨 위에서 돌아온다', () => {
+  assert.ok((tags(read('index.html'), 'body')[0].class || '').split(/\s+/).includes('planner-page'));
+  for (const page of ['assets.html', 'valuation.html'])
+    assert.ok(!tags(read(page), 'body')[0].class?.split(/\s+/).includes('planner-page'), page);
+  const bar = cssRule('css/app.css', '.planner-page>.top', `@media ${installedPlannerMedia}`);
+  assert.equal(bar.position, 'relative', '설치 플래너에서는 탭까지 문서와 함께 스크롤');
+  assert.equal(bar.top, '0', '문서 맨 위에서는 접히지 않은 상단바 전체 표시');
+  assert.equal(cssRule('css/app.css', '.top').position, 'sticky', '일반 브라우저·PC의 기존 배치 유지');
+});
+
+test('설치 플래너의 상단바는 본문 배경을 불투명하게 써서 상태바 요청 색과 맞춘다', () => {
+  const bar = cssRule('css/app.css', '.planner-page>.top', `@media ${installedPlannerMedia}`);
+  assert.equal(bar.background, 'var(--bg)');
+  assert.equal(bar['backdrop-filter'], 'none');
+  assert.equal(bar['-webkit-backdrop-filter'], 'none');
+});
+
+test('초기 상태바 요청 색은 세 페이지의 밝은·어두운 본문 배경과 같고 설치 기본 색도 맞춘다', () => {
+  for (const page of pages) {
+    const css = page === 'valuation.html' ? 'css/valuation.css' : 'css/app.css';
+    const colors = tags(read(page), 'meta').filter(meta => meta.name === 'theme-color');
+    for (const theme of ['light', 'dark']) {
+      const bg = theme === 'light' ? cssRule(css, ':root')['--bg'] : cssRule(css, ':root[data-theme=dark]', '@media screen')['--bg'];
+      assert.equal(colors.find(meta => meta.media === `(prefers-color-scheme: ${theme})`)?.content, bg, `${page}: ${theme}`);
+      if (theme === 'light') assert.equal(manifest.theme_color, bg);
+    }
+  }
+});
+
 const dialogInset = ['top', 'right', 'bottom', 'left'].map(inset).join('');
 const dialogWidth = `calc(100%-6px-2em-${inset('left')}-${inset('right')})`;
 const safeAreaRules = [

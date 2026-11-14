@@ -190,12 +190,18 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
 .hidden{display:none!important}@media(max-width:1000px){.layout{grid-template-columns:1fr;gap:16px}.side{position:static}.plan-list{grid-template-columns:repeat(3,minmax(0,1fr))}.table-head,.sale-row{grid-template-columns:var(--round-column,max-content) minmax(120px,1fr) minmax(120px,1.4fr)}.table-head>:last-child,.sale-row>:last-child,.purchase-table-head>:last-child,.purchase-row>.status{display:none}}
 /* 모바일(700px 이하): 그리드 칸은 minmax(0,…)·입력칸은 width:100%로 가로 넘침 방지.
    월물·계산 기준·제목 옆 저장 버튼은 한 줄, 제목·설명·긴 이름은 keep-all.
-   윗줄은 --tuck(fitTop)으로 붙여 스크롤 시 탭만 남고 탭을 누르면 맨 위로. 두 페이지 탭은 한 줄 유지.
+   일반 브라우저의 윗줄은 --tuck(fitTop)으로 붙여 스크롤 시 탭만 남고 탭을 누르면 맨 위로. 두 페이지 탭은 한 줄 유지.
    --tuck은 현재 padding에서 안전 여백을 뺀 접힘 높이이므로 전환 중에도 일정하고, 접힌 탭은 카메라 아래에 남는다. 자산 페이지의 기본 접힘은 로고 28px + 위 10px + 줄 간격 10px - 탭 위 8px = 40px. */
 @media(max-width:700px){main{padding-top:18px}.top{--top-pad:10px;flex-wrap:wrap;gap:10px 8px;padding:calc(var(--top-pad) + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px));top:calc(-1 * var(--tuck,40px))}.tabs{order:3;width:100%}.tab{flex:1;padding:7px 2px;font-size:13.5px;line-height:1.3}.side{padding:8px}.side-head{margin:2px 2px 8px 6px}.plan-list{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-item{background:var(--surface-2)}.plan-item.active{background:var(--accent-soft)}.plan-title,.plan-unit{display:none}.plan-item.show-code .plan-title{display:block}.plan-cell>.plan-item{height:100%}.plan-item strong{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}.plan-heading p{font-size:13px}.plan-row{gap:6px}.plan-item strong{font-size:14px}
   .heading{margin-bottom:16px}.heading .quote-line{gap:3px 8px;font-size:13.5px}.quote-now{font-size:20px}.quote-state,.quote-gap{font-size:12px}.control-grid{grid-template-columns:1fr}.panel{padding:18px}.table-head{display:none}.sale-row{grid-template-columns:max-content auto minmax(0,1fr);gap:10px;min-height:0;padding:12px 14px}.sale-row .shares{text-align:right;font-size:14px;min-width:0}
   .status{justify-self:start}.hide-mobile{display:none}
   .position-row{grid-template-columns:minmax(0,1fr) minmax(0,.7fr) minmax(0,1fr) 40px;gap:6px;padding:9px}.position-row .remove{padding:7px 0}.future-panel .inline-fields{gap:8px}.future-panel .field input{padding:9px 7px;font-size:14px}.merged-tag{font-size:11px;text-align:right}.dialog-inner{padding:20px}.dialog-grid{grid-template-columns:1fr}.dialog-wide{grid-column:auto}.fold-summary{grid-column:1/-1;order:3;min-width:0}}
+/* 설치한 터치 플래너(700px 이하)는 상단바·탭 전체가 문서와 함께 스크롤되고 맨 위에서 다시 보인다.
+   OS의 시계·배터리 상태바는 이 요소가 아니며 웹앱에서 스크롤에 맞춰 숨길 수 없다.
+   본문과 같은 불투명 배경으로 theme-color 요청 색과 맞춘다. 안전 여백은 기존 padding을 유지한다. */
+@media screen and (max-width:700px) and (hover:none) and (pointer:coarse) and (display-mode:standalone),screen and (max-width:700px) and (hover:none) and (pointer:coarse) and (display-mode:fullscreen){
+  .planner-page>.top{position:relative;top:0;background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
+}
 .hold-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.hold-input select{width:auto;padding:9px 8px}
 .field-note{margin-left:6px;color:var(--accent);font-size:11px;font-weight:600}.auto-tag{margin-left:3px;color:var(--text-3);font-size:10px;font-weight:400;opacity:.7}.field input[readonly]{color:var(--text-2);background:var(--surface-2);border-style:dashed}
 /* 알림 창 */
