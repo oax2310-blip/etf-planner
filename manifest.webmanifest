@@ -5,9 +5,9 @@
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "background_color": "#0a0c10",
-  "theme_color": "#0a0c10",
+  "theme_color": "#ffffff",
   "icons": [
     {
       "src": "icons/planner-192.png",

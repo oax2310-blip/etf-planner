@@ -150,3 +150,34 @@ test('ETF·달러선물의 회차 가격 수정은 실제 입력 처리에서 �
     if(kind==='ETF'&&key==='cut'){r.type(selector,'');r.change(selector);assert.equal(source.cuts[0].price,null);}
   }
 });
+
+test('목표환율 이평선 선택은 현재 값을 0.1 단위의 기존 숫자에만 저장하고 월봉 부족만 현물로 보완한다',()=>{
+  const prices={updatedAt:'2026-11-13T01:00:00Z',futures:{'202612':{kind:'달러선물',close:1400,asOf:'2026-11-13',ma:{'25일선':1451.2345}}},fx:{USDKRW:{kind:'현물환율',close:1400,asOf:'2026-11-13',ma:{'25일선':1300,'25개월선':1420.125}}}};
+  const r=setup(future(),etf(),prices);r.c.renderFutures();const before=JSON.stringify(r.f);r.c.renderFutures();assert.equal(JSON.stringify(r.f),before);
+  assert.match(r.el('futuresView').innerHTML,/25월선 · 1,420.1원 · 현물/);
+  r.change('#ftargetLine','25일선');assert.equal(r.f.targetPrice,1451.2);assert.equal(r.saved().futures.targetPrice,1451.2);
+  const expected=JSON.parse(before);expected.targetPrice=1451.2;assert.deepEqual(plain(r.f),expected,'옛 숫자 필드 외 선택 설정·체결은 바꾸지 않음');
+  prices.futures['202612'].ma['25일선']=1499;r.c.renderFutures();assert.equal(r.f.targetPrice,1451.2,'시세 갱신만으로 자동 추종하지 않음');
+  r.change('#ftargetLine','25개월선');assert.equal(r.f.targetPrice,1420.1);assert.equal(r.saved().futures.targetPrice,1420.1);
+  const saved=JSON.stringify(r.f);r.change('#ftargetLine','없는 선');assert.equal(JSON.stringify(r.f),saved);
+});
+
+test('목표환율 이평선 적용 직후 정수·0.1 단위 수동 재입력은 저장되고 단위 밖 입력은 거부된다',()=>{
+  const prices={futures:{'202612':{kind:'달러선물',close:1400,asOf:'2026-11-13',ma:{'25일선':1451.2345}}},fx:{USDKRW:{kind:'현물환율',close:1400,asOf:'2026-11-13',ma:{'25개월선':1420.125}}}};
+  for(const [line,value] of [['25일선',1451.2],['25개월선',1420.1]]){
+    const r=setup(future(),etf(),prices);r.c.renderFutures();r.change('#ftargetLine',line);
+    assert.equal(r.c.moneyInputNumber(r.input('#ftarget').defaultValue),value);assert.equal(r.input('#ftarget').getAttribute('data-money-step'),'0.1');
+    for(const value of [1450,1451.5]){
+      r.type('#ftarget',String(value));assert.equal(r.input('#ftarget').validationMessage,'');r.change('#ftarget');
+      assert.equal(r.f.targetPrice,value);assert.equal(r.saved().futures.targetPrice,value);
+    }
+    rejected(r,'#ftarget',x=>r.change(x),['1354.91']);assert.equal(r.f.targetPrice,1451.5);assert.equal(r.saved().futures.targetPrice,1451.5);
+  }
+});
+
+test('목표환율 이평선에 현물 일선을 선물 대신 쓰지 않고 없는 선·비정상 시세는 선택하지 않는다',()=>{
+  const prices={futures:{'202612':{kind:'달러선물',close:1400,ma:{'25일선':-1,'32일선':Infinity}}},fx:{USDKRW:{kind:'현물환율',close:1400,ma:{'25일선':1300}}}};
+  const r=setup(future(),etf(),prices);r.c.renderFutures();assert.equal(r.el('ftargetLine').disabled,true);
+  assert.equal(r.c.futureTargetLines(prices,null).length,0);
+  const before=JSON.stringify(r.f);r.change('#ftargetLine','25일선');assert.equal(JSON.stringify(r.f),before);
+});

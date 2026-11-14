@@ -6,6 +6,16 @@ function ledgerBalanceGaps(y, m){
   if(!accounts.some(({index})=>finite(bal[index])!==null))return [];
   return accounts.filter(({index})=>finite(bal[index])===null&&(y.months||[]).some(x=>x.m<m.m&&at(x,index))&&(y.months||[]).some(x=>x.m>m.m&&at(x,index)!==null));
 }
+// 종료된 해의 총자산 경고: 12월 기록과 활성 계좌별 잔액이 모두 있어야 완료(0원도 입력).
+// 계좌 없는 옛 총액 기록은 12월 total로 판단하고, loan은 기존 총자산 계산처럼 제외한다. 표시만 하며 연 요약 금액·저장 기록은 보정하지 않는다.
+function ledgerYearEndWarning(y, today=new Date()){
+  if(Number(y.year)>=today.getFullYear())return "";
+  const december=(y.months||[]).find(m=>m.m===12);
+  if(!december)return "12월 기록이 없어 연말 총자산이 미완료입니다.";
+  const missing=ledgerAccounts(y).filter(({index})=>finite(december.balances?.[index])===null);
+  if(missing.length)return `12월 계좌 잔액 ${missing.length}개가 미입력입니다. 연도 설정의 계좌 잔액을 확인하세요.`;
+  return monthTotals(y,december).total===null?"12월 총자산이 미입력입니다.":"";
+}
 // 맨 위 카드 누적 그래프(HTML 글자). 너비는 그릴 때의 카드 안쪽 너비라 PC에서도 낮고 넓게 그린다. 자료는 ledger-benchmark.js ledgerChartData.
 // 선·영역·점만 SVG로 그리고 눈금선·축·월 글자는 HTML로 얹는다(삼성 인터넷 등 웹페이지 다크 색 변환이 SVG 글자·선 색을 바꾸지 않아도 읽히게).
 // won이면 월 손익 누적(원)만, 아니면 내 누적 수익률과 선택한 지수를 그린다. 두 지수 모두 1월부터 이어진 값은 선, 그 밖의 값은 점으로 표시한다.
@@ -83,7 +93,7 @@ function renderLedger(){
   // 선물·옵션을 월별로 넣는 해(한 달이라도 넣음)만 기록한 달 중 비어 있는 달에 '선물·옵션 미입력'을 표시한다. 넣은 값(0원 포함)은 줄에 표시하지 않는다.
   const monthRow=n=>{ const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, pnl=monthPnl(m), f=finite(m?.futures), p=pnl===null&&f===null?null:(pnl||0)+(f||0), r=p!==null&&t.total>0?p/t.total*100:null, gaps=m?ledgerBalanceGaps(y,m).length:0, blanks=ledgerPnlBlanks(m);
     return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${blanks?`<small class="same-tag">빈칸 ${blanks}개 · 확인</small>`:""}${m&&monthFutures&&finite(m.futures)===null?`<small class="same-tag">선물·옵션 미입력</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${gaps?`<small class="same-tag">빈 계좌 ${gaps}개 · 확인</small>`:m&&sameAsPrev(m)?`<small class="same-tag">잔액이 전달과 같음</small>`:""}</span></button>`; };
-  const summaryRows=years.map(x=>{const t=yearSummary(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}"><span>${escA(x.year)}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}</span><span>${t.last?wonA(t.last.total):"—"}<small>${t.last?`${t.last.m}월`:""}</small></span></button>`;}).join("");
+  const summaryRows=years.map(x=>{const t=yearSummary(x),warning=ledgerYearEndWarning(x);return `<button class="ledger-row${x===y?" active":""}" type="button" data-pick-year="${escA(x.year)}"><span>${escA(x.year)}</span><span class="${t.pnl<0?"neg":""}">${wonA(t.pnl)}</span><span class="${t.rate<0?"neg":""}">${pc(t.rate)}</span><span>${t.last?wonA(t.last.total):"—"}${warning?` <span class="ledger-year-warning" role="img" aria-label="${escA(warning)}" title="${escA(warning)}">⚠</span>`:""}</span></button>`;}).join("");
   loadSp500();loadGold();
   // 달을 모르는 선물·옵션(연도 설정)이 있는 해만 표에 그 줄을 둔다. 금액 합계와 월 복리 수익률은 yearSummary를 따른다.
   const chart=ledgerChartData(y,new Date(),sp500Data,goldData), monthFutures=y.months.filter(m=>finite(m.futures)!==null).length, restRate=ys.futuresYear!==null&&ys.last?.total>0?ys.futuresYear/ys.last.total*100:null;

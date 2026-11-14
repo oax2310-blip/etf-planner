@@ -6,6 +6,37 @@ const nf1=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}), nf2=new Intl
 const man=v=>`${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`, pc=v=>`${(Math.abs(v)<1?nf2:nf1).format(v)}%`;
 const qty=(n,it)=>`${nf8.format(n)}${linkStep(it)<1?" BTC":"주"}`;
 const sign=d=>d<0?"−":"+";
+// 계좌 줄 삭제 시 자산 화면·분할매수가 같은 계획·체결 키·목표 이전 규칙을 쓴다. dry는 확인 문구용 읽기 전용이다.
+// 계획은 기준·실제 코드 쌍이 같은 줄에만 옮긴다. 기준 코드가 없으면 실제 코드가 있는 동일 쌍도 허용하고, 두 코드 모두 없으면 옮기지 않는다.
+function keepBuyPlans(alloc, removed, dry=false){
+  const all=(alloc.groups||[]).flatMap(g=>g.items||[]), ids=new Set([...removed].map(it=>it.id)), taken=new Set(all.filter(it=>it.buyPlan&&!removed.has(it))), out={moved:[],lost:[]};
+  for(const from of all.filter(it=>it.buyPlan&&removed.has(it))){
+    const plan=from.buyPlan, code=linkTicker(from.ticker), trade=linkTicker(assetTradeTicker(from)), rank=new Map();
+    for(const id of [...(Array.isArray(plan.buyPriority)?plan.buyPriority:[]),from.id])if(!rank.has(id))rank.set(id,rank.size);
+    const same=(code||trade)?all.filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&linkTicker(assetTradeTicker(it))===trade):[];
+    const to=same.some(it=>taken.has(it))?null:same.sort((x,y)=>(rank.get(x.id)??Infinity)-(rank.get(y.id)??Infinity))[0];
+    if(!to){out.lost.push(from);continue;}
+    taken.add(to);out.moved.push({from,to});if(dry)continue;
+    const order=Array.isArray(plan.buyPriority)?plan.buyPriority.filter(id=>!ids.has(id)):[];
+    if(order.length)plan.buyPriority=order;else delete plan.buyPriority;
+    to.buyPlan=plan;delete from.buyPlan;
+    const prefix=`buy:${from.id}:`;
+    for(const key of Object.keys(alloc.trades||{}))if(key.startsWith(prefix)){alloc.trades[`buy:${to.id}:${key.slice(prefix.length)}`]=alloc.trades[key];delete alloc.trades[key];}
+  }
+  return out;
+}
+// 목표는 같은 그룹·소분류의 같은 기준 코드끼리 합산한다. 기준 코드가 모두 비었을 때만 실제 코드로 구분한다.
+function keepTargets(alloc, removed, moved, dry=false){
+  const out=[];
+  for(const g of alloc.groups||[])for(const from of g.items||[]){
+    const target=finite(from.target), code=linkTicker(from.ticker), trade=linkTicker(assetTradeTicker(from));if(!removed.has(from)||target===null||!(code||trade))continue;
+    const same=(g.items||[]).filter(it=>!removed.has(it)&&linkTicker(it.ticker)===code&&(code||linkTicker(assetTradeTicker(it))===trade)&&(it.section||"")===(from.section||""));
+    const to=same.find(it=>it.buyPlan||moved.some(m=>m.to===it))||same[0];if(!to)continue;
+    out.push({from,to,target});if(dry)continue;
+    to.target=Math.round(((finite(to.target)||0)+target)*1e8)/1e8;delete from.target;
+  }
+  return out;
+}
 function summary(ticker, ownId=null){const a=allocOf();return a?linkSummary(a,assetStore.prices,ticker,ownId):null;}
 // 계획 화면 한 줄: 현재 비중(연결 종목 합계) / 목표 비중 · 목표 도달(±0.5만원)·목표까지·목표 초과 금액. 분할매수 줄(purchases.js purchaseHeading)과 같은 글자이며 계좌별 금액은 title로만 보인다. 연결 종목이 없으면 빈 글자.
 // 목표는 자산 배분 목표(linkSummary — 분할매수와 같은 규칙)를 그릴 때마다 읽으며, 자산 배분이 바뀌면 분할매도·재매수 화면이 다시 그린다(assetStore.subscribe).
@@ -252,5 +283,5 @@ function shift(o){
   if(done)toast(`자산 배분도 맞춤 · ${describe({items:[{id:it.id,[field]:done}]})}${short?" · 보유량이 모자라 일부만 뺐습니다":""}${average?" · 평균매수가 맞춤":""}`);
   else if(row?.n&&dir<0)toast(`자산 배분 · ${it.name} 보유량이 없어 빼지 못했습니다`);
 }
-return {line,holding,holdingsProfitLine,holdingProfitLine,account,reflected,check,uncheck,forget,rescale,shift,reprice,initialize};
+return {keepBuyPlans,keepTargets,line,holding,holdingsProfitLine,holdingProfitLine,account,reflected,check,uncheck,forget,rescale,shift,reprice,initialize};
 })();

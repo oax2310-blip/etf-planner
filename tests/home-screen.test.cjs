@@ -12,8 +12,10 @@ const manifest = JSON.parse(read('manifest.webmanifest'));
 const tags = (html, tag) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'))]
   .map(([text]) => Object.fromEntries([...text.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, key, value]) => [key, value])));
 
-test('홈 화면 앱은 전체화면으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
-  assert.equal(manifest.display, 'fullscreen');
+test('홈 화면 앱은 상태바가 보이는 독립 창으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
+  assert.equal(manifest.display, 'standalone');
+  assert.ok(!manifest.display_override?.includes('fullscreen'), '전체화면 우선 설정으로 상태바를 다시 숨기지 않음');
+  assert.equal(manifest.theme_color, '#ffffff', '기본 밝은 헤더와 설치 상태바 색 일치');
   assert.ok(manifest.name && manifest.short_name);
   assert.equal(manifest.lang, 'ko');
   for (const key of ['start_url', 'scope']) {
@@ -124,6 +126,13 @@ test('안전 영역: 접힌 헤더 덮개가 카메라 영역을 배경으로 �
   assert.equal(cover.height, inset('top'));
   assert.equal(cover.background, 'var(--bg)');
   assert.ok(Number(cover['z-index']) > Number(cssRule('css/app.css', '.top')['z-index']));
+});
+
+test('자산 모달 동안 html·body 배경 스크롤을 막고 창 내부 스크롤은 유지한다', () => {
+  const lock = cssRule('css/assets.css', 'html:has(body.assets-page dialog:modal),body.assets-page:has(dialog:modal)');
+  assert.equal(lock.overflow, 'hidden', '문서 루트·body의 터치와 휠 스크롤을 함께 막음');
+  assert.equal(lock['overscroll-behavior'], 'none');
+  assert.equal(cssRule('css/assets.css', '.assets-page dialog')['overscroll-behavior'], 'contain', '창 가장자리에서 배경으로 스크롤 전달 차단');
 });
 
 for (const [selector, transition] of [
