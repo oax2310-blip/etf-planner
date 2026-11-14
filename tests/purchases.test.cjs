@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
+const visibleText=html=>html.replace(/<[^>]*>/g,'');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
 function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,manual=false,manualShares=8,manualAmount=8.9,ma=null,names=['25선'],wait=null,tracking=false,trackingPrice=10000,trackingCurrency='KRW',missingTracking=false,manualTrackingPrice=null,fx=1000,bitcoin=false,realStore=false,storageFailure=false,dismissed=null,cachedPrices=false}={}){
@@ -606,10 +607,10 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
   const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,{id:'x',name:r.item.name,ticker:'333333',amount:50}]});
   const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
-  assert.match(r.html(),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/purchase-qty">15주</);
-  other.amount=20;r.emit();assert.match(r.html(),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/purchase-qty">10주</);
-  r.prices.stocks['222222'].close=20000;r.emit();assert.match(r.html(),/현재 40% \/ 목표 40% · 목표 도달<\/span>/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
-  r.doc.allocation.total=200;r.emit();assert.match(r.html(),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/purchase-qty">20주</);assert.equal(r.item.buyPlan.lines.budget,50);
+  assert.match(visibleText(r.html()),/현재 25% \/ 목표 40% · 목표까지 15만원/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/purchase-qty">15주</);
+  other.amount=20;r.emit();assert.match(visibleText(r.html()),/현재 30% \/ 목표 40% · 목표까지 10만원/);assert.match(r.html(),/purchase-qty">10주</);
+  r.prices.stocks['222222'].close=20000;r.emit();assert.match(visibleText(r.html()),/현재 40% \/ 목표 40% · 목표 도달/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  r.doc.allocation.total=200;r.emit();assert.match(visibleText(r.html()),/현재 20% \/ 목표 40% · 목표까지 40만원/);assert.match(r.html(),/purchase-qty">20주</);assert.equal(r.item.buyPlan.lines.budget,50);
 });
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
   const r=setup({budget:50,tracking:true});r.doc.allocation.groups[0].target=40;
@@ -618,20 +619,20 @@ test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 �
   assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
   r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,'15');assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
-  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(r.html(),/현재 40% \/ 목표 40%/);
+  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(visibleText(r.html()),/현재 40% \/ 목표 40%/);
   r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(other.amount,15);assert.match(r.html(),/현재 25%/);
 });
 
 test('자산 배분 목표 21%→21.5%: 분할매수 제목·총 매수 금액·회차·알림·계획 창이 함께 바뀌고 체결 기록은 그대로 둔다',()=>{
   const r=setup({budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
   r.doc.allocation.total=1000;r.item.target=21;r.item.buyPlan.lines.target=21;r.item.buyPlan.notify={stages:true};r.initialize();r.render();
-  assert.match(r.html(),/현재 1% \/ 목표 21% · 목표까지 200만원/);
+  assert.match(visibleText(r.html()),/현재 1% \/ 목표 21% · 목표까지 200만원/);
   const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='10';first.onchange();assert.equal(r.item.shares,20);
   const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),rules=r.rules().length,before=JSON.parse(JSON.stringify(r.doc.allocation));
   const open=()=>r.inputs('[data-purchase-buy-shares]').filter(x=>!x.attrs.value||x.attrs.value==='0').map(x=>Number(x.attrs.max)).reduce((n,v)=>n+v,0),planned=open();
   r.item.target=21.5;assert.deepEqual([...r.sync(before)],['a']);r.emit();
   assert.equal(r.item.buyPlan.lines.budget,205,'21.5% × 1,000만원 − 보유 20만원 + 체결 10만원');assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false);
-  assert.match(r.html(),/현재 2% \/ 목표 21\.5% · 목표까지 195만원/);
+  assert.match(visibleText(r.html()),/현재 2% \/ 목표 21\.5% · 목표까지 195만원/);
   assert.ok(open()>planned,'미체결 회차 수량이 새 목표만큼 늘어남');assert.equal(r.rules().length,rules);
   assert.equal(JSON.stringify(r.item.buyPlan.buys),buys,'부분 체결 기록 유지');assert.equal(JSON.stringify(r.doc.allocation.trades),trades,'자산 반영 기록 유지');
   r.edit();assert.equal(r.form.lineTarget.value,21.5);assert.equal(r.form.lineBudget.value,'205');assert.match(r.element('lineBudgetNote').textContent,/목표 21\.5%/);assert.doesNotMatch(r.element('lineBudgetNote').textContent,/직접 고친 금액/);
@@ -641,7 +642,7 @@ test('계획 창 목표는 자산 배분 목표를 읽기만 하고 옛 계획 �
   const r=setup({budget:50});r.item.buyPlan.lines.target=30;r.initialize();r.render();
   assert.match(r.html(),/목표 30% \(계획 목표\)/);
   r.edit();assert.equal(r.form.lineTarget.value,30);assert.match(r.element('lineTargetNote').innerHTML,/옛 목표/);r.submit();assert.equal(r.item.buyPlan.lines.target,30,'자산 배분 목표가 없으면 기존 목표 유지');
-  r.item.target=25;r.render();assert.match(r.html(),/목표 25% · 목표까지/);assert.doesNotMatch(r.html(),/계획 목표/);
+  r.item.target=25;r.render();assert.match(visibleText(r.html()),/목표 25% · 목표까지/);assert.doesNotMatch(r.html(),/계획 목표/);
   r.edit();assert.equal(r.form.lineTarget.value,25);assert.match(r.element('lineTargetNote').innerHTML,/종목 목표.*분할매도·재매수와 함께/);
   assert.equal(r.form.lineBudget.value,'50','기존 계획의 저장 예산은 창을 열어도 바꾸지 않음');
   r.submit();assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false,'자산 배분 목표가 있으면 옛 목표를 지워 중복 저장을 없앰');assert.equal(r.item.buyPlan.lines.budget,50);
@@ -1807,7 +1808,8 @@ test('분할매수 계좌 편집 입력과 버튼은 16px 글꼴·44px 터치 �
   };
   assert.ok(parseFloat(rule('.purchase-account-edit input')['font-size'])>=16);assert.ok(parseFloat(rule('.purchase-account-edit input')['min-height'])>=44);
   assert.ok(parseFloat(rule('.purchase-account-edit button')['min-height'])>=44);assert.ok(parseFloat(rule('.purchase-account-edit button')['min-width'])>=44);
-  assert.ok(parseFloat(rule('#purchaseAccountAdd')['min-height'])>=44);
+  const add=rule('#purchaseAccountAdd');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
+  assert.equal(rule('#purchaseAccountAdd::before').inset,'-6px 0','외형 32px + 위아래 6px = 44px 터치 영역');
 });
 
 // 기본 초점 이동이 차단됐으면 실제 터치처럼 pointerup의 타이머가 먼저 끝나도 change는 click 안의 blur까지 일어나지 않는다.
@@ -1873,4 +1875,35 @@ test('분할매수 본문 밖 입력은 같은 data 속성이 있어도 계좌 �
   const r=setup(),input=r.ctx.document.createElement('input');input.dataset.purchaseTarget='a';input.value='33';r.ctx.document.body.append(input);r.ctx.document.activeElement=input;let blurs=0,prevented=0;input.blur=()=>blurs++;
   const button=r.element('purchaseAccountAdd');button.onpointerdown({button:0,preventDefault(){prevented++;}});button.onclick();
   assert.equal(blurs,0);assert.equal(prevented,0);assert.equal(r.item.target,undefined);assert.equal(r.element('purchaseAccountDialog').open,true);
+});
+
+
+test('제목의 목표 부분만 눌러 기존 목표 입력을 열고 닫으며 열기·취소로 저장하지 않는다',()=>{
+  const r=setup();r.item.target=21.5;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
+  assert.match(r.html(),/<button class="purchase-target-toggle"[^>]*aria-expanded="false"[^>]*>목표 21\.5%<\/button>/);
+  assert.match(r.html(),/id="purchaseTargetFields" hidden/);assert.equal(r.element('purchaseTargetFields').hidden,true);assert.doesNotMatch(r.html().split('sale-linked-holdings')[1],/data-purchase-target=/,'연결 계좌 줄에는 비중 입력을 중복 표시하지 않는다');
+  r.element('purchaseTargetToggle').onclick();assert.equal(r.element('purchaseTargetFields').hidden,false);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'true');
+  const x=r.input('[data-purchase-target]');x.value='33';x.onkeydown({key:'Escape',preventDefault(){}});
+  assert.equal(x.value,'21.5');assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
+  assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0);
+  r.element('purchaseTargetToggle').onclick();r.element('purchaseTargetDone').onclick();assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(writes,0);
+});
+
+test('목표를 편집해 다시 그려도 편집창을 유지하고 여러 계좌 값·상위 목표·체결 기록은 각각 보존한다',()=>{
+  const {r,other}=tradeOnlyAccounts();r.doc.allocation.groups[0].target=60;
+  const trades=JSON.stringify(r.doc.allocation.trades),plan=JSON.stringify(r.item.buyPlan);let writes=0;r.store.saveSection=()=>writes++;
+  r.element('purchaseTargetToggle').onclick();r.change('[data-purchase-target]',21.5);
+  assert.equal(r.element('purchaseTargetFields').hidden,false);assert.match(visibleText(r.html()),/현재 .* \/ 목표 26\.5%/);
+  assert.equal(r.item.target,21.5);assert.equal(other.target,5);assert.equal(r.doc.allocation.groups[0].target,60);
+  assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.equal(JSON.stringify(r.item.buyPlan),plan);assert.equal(writes,1);
+  r.change('[data-purchase-target]','');assert.equal(Object.hasOwn(r.item,'target'),false);assert.equal(other.target,5);assert.equal(writes,2);
+});
+
+test('목표 완료의 첫 탭은 초점 입력을 저장하고 닫으며 다른 계획으로 바꾸면 편집창을 닫는다',()=>{
+  const r=setup(),events=accountPointerEvents(r);r.element('purchaseTargetToggle').onclick();
+  const button=r.element('purchaseTargetDone'),input=r.input('[data-purchase-target]');input.value='25';r.ctx.document.activeElement=input;
+  input.blur=()=>{r.ctx.document.activeElement=null;input.onchange();};button.onpointerdown({button:0,preventDefault(){}});events.fire('pointerup');events.flush();button.onclick();
+  assert.equal(r.item.target,25);assert.equal(r.element('purchaseTargetFields').hidden,true);
+  r.element('purchaseTargetToggle').onclick();r.doc.allocation.groups[0].items.push({id:'next',name:'다른 계획',ticker:'222222',buyPlan:{wait:{line:'25선'}}});r.render();
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='next').onclick();assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
 });
