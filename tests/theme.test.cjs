@@ -26,7 +26,7 @@ test('휴대폰(터치)은 PC에서 고른 값이 있어도 늘 기기 설정을
   assert.equal(themeOf('light', false, true), 'dark');
 });
 
-test('설치 상태바는 처음 열기·기기 모드 변경·다른 탭 선택 모두 실제 헤더 색을 따른다', () => {
+test('상태바 요청 색은 처음 열기·기기 모드 변경·다른 탭 선택 모두 실제 본문 배경색을 따른다', () => {
   const events = {}, metas = [{content:'#ffffff'}, {content:'#0a0c10'}];
   let choice = 'light';
   const desktop = {matches:false, addEventListener:(name, fn) => events.desktop = fn};
@@ -40,7 +40,29 @@ test('설치 상태바는 처음 열기·기기 모드 변경·다른 탭 선택
     assert.deepEqual(metas.map(meta => meta.content), [color, color]);
   };
   check('dark', '#0a0c10'); // 터치에서는 저장한 light보다 기기 dark 우선
-  dark.matches = false; events.dark(); check('light', '#ffffff');
+  dark.matches = false; events.dark(); check('light', '#f5f6f8');
   desktop.matches = true; choice = 'dark'; events.desktop(); check('dark', '#0a0c10');
-  choice = 'light'; events.storage({key:'etf-planner-theme'}); check('light', '#ffffff');
+  choice = 'light'; events.storage({key:'etf-planner-theme'}); check('light', '#f5f6f8');
+});
+
+test('런타임 상태바 요청 색은 CSS 본문 배경을 따르고 저장된 기록과 테마 선택을 바꾸지 않는다', () => {
+  const css = fs.readFileSync(require('node:path').join(__dirname, '../css/app.css'), 'utf8');
+  const colors = {
+    light:css.match(/:root\{[^}]*--bg:([^;]+)/)[1],
+    dark:css.match(/:root\[data-theme=dark\]\{[^}]*--bg:([^;]+)/)[1],
+  };
+  for (const systemDark of [false, true]) {
+    const metas = [{content:'기존 밝은 색'}, {content:'기존 어두운 색'}], saved = new Map([
+      ['etf-planner-theme', systemDark ? 'light' : 'dark'], ['legacy-record', '{"plans":[]}'],
+    ]), before = [...saved];
+    const ctx = vm.createContext({
+      document:{documentElement:{dataset:{}}, querySelectorAll:() => metas, addEventListener() {}},
+      matchMedia:q => ({matches:q.includes('prefers-color-scheme') && systemDark, addEventListener() {}}),
+      localStorage:{getItem:key => saved.get(key), setItem:(key, value) => saved.set(key, value), removeItem:key => saved.delete(key)},
+      addEventListener() {},
+    });
+    vm.runInContext(source, ctx);
+    assert.deepEqual(metas.map(meta => meta.content), [colors[systemDark ? 'dark' : 'light'], colors[systemDark ? 'dark' : 'light']]);
+    assert.deepEqual([...saved], before, '표시 초기화는 저장값을 수정하지 않음');
+  }
 });

@@ -7,10 +7,10 @@
 <head>
   <meta charset="utf-8">
   <!-- 토큰을 쓰는 페이지: 스크립트는 이 사이트 파일만(인라인 script 금지), 통신은 이 사이트·GitHub API만. 이 meta가 브라우저의 미리 받기를 꺼서 theme.js 밖의 script는 defer로 한꺼번에 받는다(tests/files.test.cjs). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:; connect-src 'self' https://api.github.com; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; font-src https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/; img-src 'self' data:; connect-src 'self' https://api.github.com blob:; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6f8">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0c10">
   <link rel="icon" href="push-icon.svg" type="image/svg+xml">
   <!-- 홈 화면에서는 세 페이지를 같은 앱으로 연다. 저장·동기화·푸시 동작은 그대로 둔다. -->
@@ -21,17 +21,17 @@
   <meta name="apple-mobile-web-app-title" content="매매 플래너">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <script src="js/theme.js?v=425"></script>
+  <script src="js/theme.js?v=428"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <title>AI 구독 · 삼성SDI · ETF · 환율 시나리오</title>
   <meta name="description" content="AI 구독사업, 삼성SDI, ETF의 장기 가치와 한미 GDP·M2로 계산한 원·달러 상대 통화압력을 살펴봅니다.">
-  <link rel="stylesheet" href="css/safe-area.css?v=425">
-  <link rel="stylesheet" href="css/currency-pressure.css?v=425">
-  <link rel="stylesheet" href="css/valuation.css?v=425">
-  <link rel="stylesheet" href="css/page-leave.css?v=425">
-  <script src="js/repo-security.js?v=425" defer></script>
-  <script src="js/gold-estimate.js?v=425" defer></script>
-  <script src="js/money-input.js?v=425" defer></script>
+  <link rel="stylesheet" href="css/safe-area.css?v=428">
+  <link rel="stylesheet" href="css/currency-pressure.css?v=428">
+  <link rel="stylesheet" href="css/valuation.css?v=428">
+  <link rel="stylesheet" href="css/page-leave.css?v=428">
+  <script src="js/repo-security.js?v=428" defer></script>
+  <script src="js/gold-estimate.js?v=428" defer></script>
+  <script src="js/money-input.js?v=428" defer></script>
 </head>
 <body>
 <header class="top">
@@ -482,8 +482,8 @@
     <p class="tiny" style="margin:12px 0 0">직접 바꾼 값만 저장합니다. 바꾸지 않은 기준 종가·시총 등은 페이지가 갱신되면 새 기준값을 따릅니다.</p>
   </div>
 </dialog>
-<script src="js/page-leave.js?v=425" defer></script>
-<script src="js/valuation.js?v=425" defer></script>
-<script src="js/currency-pressure.js?v=425" defer></script>
+<script src="js/page-leave.js?v=428" defer></script>
+<script src="js/valuation.js?v=428" defer></script>
+<script src="js/currency-pressure.js?v=428" defer></script>
 </body>
 </html>
