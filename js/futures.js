@@ -2,10 +2,10 @@
 // 시세는 prices.js, 단계는 ma-ladder.js, 손절·재매수 계산은 rebuy.js.
 // DOM 없는 계산 호출을 위해 함수 밖에서 화면을 건드리지 않는다.
 const monthOk = m => /^\d{6}$/.test(m) && Number(m.slice(4)) >= 1 && Number(m.slice(4)) <= 12;
-// 달러선물 가격은 소수 첫째 자리까지만 보인다(계산·저장은 원래 값). fmtPrice는 글자, futureShown은 입력칸 값(futures-plan.js·futures-rebuy.js 공용).
+// 달러선물 가격은 소수 첫째 자리까지만 보인다(기존 기록·계산값은 보존). fmtPrice는 글자, futureShown은 입력칸 값(futures-plan.js·futures-rebuy.js 공용).
 const fmtPrice = v => Number(v).toLocaleString("ko-KR",{maximumFractionDigits:1});
 const futureShown = v => Number.isFinite(Number(v)) ? moneyInputText(Math.round(Number(v)*10)/10) : "";
-// 목표 환율의 이평선 선택은 현재 값을 기존 targetPrice 숫자에 한 번 적용한다. 선택·렌더만으로 기록을 늘리거나 시세를 따라 자동 저장하지 않는다.
+// 목표 환율의 이평선 선택은 현재 값을 표시·수동 입력과 같은 0.1원 단위로 반올림해 기존 targetPrice 숫자에 한 번 적용한다. 렌더·시세 갱신만으로 저장하거나 자동 추종하지 않는다.
 // 기존 종료선과 같이 보유 근월물 우선, 월봉 부족 때만 현물 월선으로 보완한다. 없는 시세는 선택할 수 없다.
 function futureTargetLines(prices,entry){
   const names=[...new Set([...MA_LINES,...Object.keys(entry?.ma||{}),...Object.keys(fxEntry(prices)?.ma||{})].map(movingLineName).filter(Boolean))];
@@ -305,7 +305,7 @@ function renderFutures(){
   const completedToggle=$("toggleCompletedFutureBuys");if(completedToggle)completedToggle.onclick=()=>{futureCompletedOpen=!futureCompletedOpen;$("futureBuyTable").classList.toggle("hide-completed",!futureCompletedOpen);completedToggle.setAttribute("aria-expanded",String(futureCompletedOpen));completedToggle.querySelector("[data-completed-action]").textContent=futureCompletedOpen?"접기":"펼치기";};
   $$("#futuresView input[data-money]").forEach(el=>moneyInputValidate(el));
   onEdit("#ftarget",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}f.targetPrice=moneyInputNumber(v)||f.targetPrice;},renderFutures);onEdit("#fpnl",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}f.baselinePnl=moneyInputNumber(v)??0;},renderFutures);
-  onEdit("#ftargetLine",value=>{const row=futureTargetLines(priceData,futuresEntry(priceData,f)).find(row=>row.name===value);if(!row)return false;f.targetPrice=row.value;},renderFutures);
+  onEdit("#ftargetLine",value=>{const row=futureTargetLines(priceData,futuresEntry(priceData,f)).find(row=>row.name===value);if(!row)return false;f.targetPrice=priceRound(row.value,1);},renderFutures);
   onEdit("#flossPrice",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(!(v>0))delete f.lossPrice;else f.lossPrice=v;},renderFutures);
   onEdit("#frollSpread",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(v===null)delete f.rollSpread;else f.rollSpread=v;},renderFutures);$("fSave").onclick=()=>{f.note=$("fNote").value;save();renderFutures();};$("fNote").oninput=e=>f.note=e.target.value;
   $("addPosition").onclick=()=>{f.positions.push({month:nextFuturePositionMonth(f),contracts:0,settlementPrice:1});save();renderFutures();};
