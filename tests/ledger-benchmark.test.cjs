@@ -1032,3 +1032,22 @@ test('전달과 같은 잔액은 월별·연도별 경고에서 제외하고 실
   year.months.at(-1).balances[1]=null;
   assert.match(ledgerHtml(data,new Date(2026,1,1).getTime()),/12월 계좌 잔액 1개가 미입력/,'실제 연말 누락은 계속 표시한다');
 });
+
+test('월별 카드는 연도 요약과 분리된 영역에서 12달 값·수익률·누락 안내를 유지하고 조회로 저장하지 않는다',()=>{
+  const data={version:1,ledger:{years:[{year:2025,accounts:[{name:'가상 계좌'}],months:[{m:1,pnl:-123456789,balances:[1234567890]},{m:12,pnl:0,balances:[0]}]}]}},before=JSON.stringify(data);
+  const html=ledgerHtml(data,new Date(2026,1,1).getTime());
+  assert.match(html,/<section class="card ledger-table ledger-months" aria-label="월별 기록">/);
+  assert.equal((html.match(/data-month="\d+"/g)||[]).length,12);
+  assert.match(html,/data-month="1"><span>1월<\/span><span class="neg">-123,456,789원<\/span><span class="neg">-10%<\/span><span>1,234,567,890원<\/span>/);
+  assert.match(html,/<section class="card ledger-table years">/);assert.equal(JSON.stringify(data),before);
+});
+
+test('폰 월별 카드의 금액·누락 줄을 분리하고 월 입력은 확대 없이 읽을 수 있는 16px·44px를 확보한다',()=>{
+  const css=read('css/assets.css'),mobile=css.slice(css.indexOf('/* 폰의 월별 카드'));
+  assert.match(mobile,/@media\(max-width:700px\)/);
+  assert.match(mobile,/\.ledger-months>\[data-month\]\{[^}]*grid-template-columns:32px minmax\(0,1fr\) minmax\(0,1fr\)/);
+  assert.match(mobile,/\.ledger-months>\[data-month\]>span\{white-space:nowrap;overflow-wrap:normal\}/);
+  for(const label of ['실현손익','수익률 ','총자산'])assert.ok(mobile.includes(`content:"${label}"`));
+  assert.match(mobile,/\.ledger-months>\[data-month\] small\{[^}]*white-space:normal/);
+  assert.match(mobile,/#monthDialog input\{font-size:16px;min-height:44px\}/);
+});

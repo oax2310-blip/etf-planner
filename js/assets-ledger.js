@@ -98,7 +98,7 @@ function renderLedger(){
   const chart=ledgerChartData(y,new Date(),sp500Data,goldData), monthFutures=y.months.filter(m=>finite(m.futures)!==null).length, restRate=ys.futuresYear!==null&&ys.last?.total>0?ys.futuresYear/ys.last.total*100:null;
   view.innerHTML=`${ledgerTopHtml(y,ys,years,chart)}
     <div class="section-heading ledger-sec"><h2>${escA(y.year)}년 월별</h2><span>줄을 누르면 그 달 기록을 고칩니다 · 계좌 ${accounts.length}개</span><button class="btn mini" type="button" id="editYear">연도 설정</button></div>
-    <section class="card ledger-table"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>
+    <section class="card ledger-table ledger-months" aria-label="월별 기록"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>
       ${Array.from({length:12},(_,i)=>monthRow(i+1)).join("")}
       ${ys.futuresYear!==null?`<button class="ledger-row foot" type="button" id="editFutures" aria-label="${escA(y.year)}년 달을 모르는 선물·옵션 손익 수정"><span>선물·<wbr>옵션<small>수정</small></span><span class="${ys.futuresYear<0?"neg":""}">${wonA(ys.futuresYear)}<small>달을 모르는 금액</small></span><span>${pc(restRate)}</span><span></span></button>`:""}
       <div class="ledger-row foot total"><span>합계</span><span class="${ys.pnl<0?"neg":""}">${wonA(ys.pnl)}</span><span>${pc(ys.rate)}<small>월 복리</small></span><span>${ys.annual!==null?`<small>연환산 ${pc(ys.annual)}</small>`:""}</span></div></section>
