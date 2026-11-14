@@ -536,6 +536,7 @@ test('전체 원화 합산은 원화 평균가 코인을 다시 환산하지 않
   const {data,quotes}=btcFixture('KRW'),before=JSON.stringify(data),h=page(data,quotes);
   // 원화 코인 +140,000, 국내 +8,000, 달러 종목 −120 × 1,400 = −168,000.
   assert.match(profitCard(h),/원화 합계<\/span><strong class="profit-loss">−20,000원/);assert.equal(JSON.stringify(data),before);
+  const head=profitCard(h).split('class="alloc-profit-totals"')[0];assert.match(head,/원화 합산 · 평균매수가 통화 기준/);assert.doesNotMatch(head,/환차손익 제외/);assert.match(profitCard(h),/달러 평균가 보유의 환차손익 제외/);
   delete quotes.fx;delete data.allocation.cashFx;h.refresh(quotes);assert.match(profitCard(h),/환율 대기/);
   const krw=groupProfitFixture();krw.data.allocation.groups[0].items.pop();delete krw.quotes.fx;delete krw.data.allocation.cashFx;
   const only=page(krw.data,krw.quotes);assert.match(profitCard(only),/\+600,000원/);assert.match(profitCard(only),/\+20%/);assert.doesNotMatch(profitCard(only),/환율 대기/);
