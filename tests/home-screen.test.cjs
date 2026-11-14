@@ -117,6 +117,11 @@ test('설치 플래너의 상단바는 본문 배경을 불투명하게 써서 �
   assert.equal(bar['-webkit-backdrop-filter'], 'none');
 });
 
+test('Android WebView는 앱 표식이 있을 때만 전체 상단바가 문서와 함께 스크롤된다', () => {
+  const bar=cssRule('css/app.css', ':root[data-native-app=android] .planner-page>.top', '@media screen and (max-width:700px)');
+  assert.equal(bar.position,'relative');assert.equal(bar.top,'0');assert.equal(bar.background,'var(--bg)');
+});
+
 test('초기 상태바 요청 색은 세 페이지의 밝은·어두운 본문 배경과 같고 설치 기본 색도 맞춘다', () => {
   for (const page of pages) {
     const css = page === 'valuation.html' ? 'css/valuation.css' : 'css/app.css';

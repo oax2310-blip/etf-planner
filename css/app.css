@@ -202,6 +202,10 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
 @media screen and (max-width:700px) and (hover:none) and (pointer:coarse) and (display-mode:standalone),screen and (max-width:700px) and (hover:none) and (pointer:coarse) and (display-mode:fullscreen){
   .planner-page>.top{position:relative;top:0;background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
 }
+/* Android 실행 앱은 OS 상태바를 네이티브에서 제어하며 WebView의 display-mode는 browser다. 표식은 신뢰한 앱 문서에만 붙인다. */
+@media screen and (max-width:700px){
+  :root[data-native-app=android] .planner-page>.top{position:relative;top:0;background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
+}
 .hold-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}.hold-input select{width:auto;padding:9px 8px}
 .field-note{margin-left:6px;color:var(--accent);font-size:11px;font-weight:600}.auto-tag{margin-left:3px;color:var(--text-3);font-size:10px;font-weight:400;opacity:.7}.field input[readonly]{color:var(--text-2);background:var(--surface-2);border-style:dashed}
 /* 알림 창 */

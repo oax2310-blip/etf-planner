@@ -105,7 +105,7 @@ test('토큰을 쓰는 세 페이지는 같은 보안 정책(CSP)을 맨 앞에 
     assert.doesNotMatch(text, /<script(?![^>]*\ssrc=)[^>]*>/, `${name}: 인라인 script는 CSP에 막힌다(초기화는 js 파일로)`);
     assert.deepEqual(policy['script-src'], ["'self'"], `${name}: 이 사이트의 script 파일만 허용한다(해시·외부 script 금지)`);
     assert.deepEqual(policy['default-src'], ["'none'"]);
-    assert.deepEqual(policy['connect-src'], ["'self'", 'https://api.github.com'], '토큰은 이 사이트와 GitHub API로만 보낸다');
+    assert.deepEqual(policy['connect-src'], ["'self'", 'https://api.github.com', 'blob:'], '네트워크는 이 사이트·GitHub API만, 백업은 메모리 blob만 읽는다');
     assert.deepEqual(policy['img-src'], ["'self'", 'data:'], 'CSS·주입 이미지로 외부 주소에 값을 보내지 못하게 한다');
     for (const k of ['base-uri', 'object-src']) assert.ok(policy[k], `${name}: ${k} 필요`);
     assert.doesNotMatch(text, /\son[a-z]+="/, `${name}: 인라인 이벤트 속성은 CSP에 막힌다`);
