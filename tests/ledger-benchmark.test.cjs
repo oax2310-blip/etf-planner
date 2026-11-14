@@ -1011,3 +1011,24 @@ test('그래프 세로축은 표시하는 지수만 포함하고 두 지수·연
   assert.doesNotMatch(won,/class="(?:sp|gold)(?:-dot)?"/);assert.match(won,/월 손익 누적 그래프/);
   assert.equal(JSON.stringify({chart,indices}),before,'그리기만 해서는 입력 배열·좌표 자료를 바꾸지 않는다');
 });
+
+test('전달과 같은 잔액은 월별·연도별 경고에서 제외하고 실제 빈 계좌·손익 누락은 유지한다',()=>{
+  const year={year:2025,accounts:[{name:'가상 A'},{name:'가상 B'}],months:[
+    {m:1,pnl:0,balances:[1000,2000]},
+    {m:2,pnl:0,balances:[1000,2000]},
+    {m:3,pnlEntries:[{broker:'신한',label:'기본계좌+ISA',amount:0}],balances:[1000,null]},
+    {m:4,pnl:0,balances:[1000,2000]},
+    {m:11,pnl:0,balances:[1000,2000]},
+    {m:12,pnl:0,balances:[1000,2000]}
+  ]};
+  const data={version:1,ledger:{savedAt:'',years:[year]}},before=JSON.stringify(data),html=ledgerHtml(data,new Date(2026,1,1).getTime());
+  assert.doesNotMatch(html,/잔액이 전달과 같음/);
+  const row=n=>html.slice(html.indexOf(`data-month="${n}"`),html.indexOf(`data-month="${n+1}"`));
+  assert.doesNotMatch(row(2),/same-tag|확인/);assert.match(row(2),/3,000원/);
+  assert.match(row(3),/빈 계좌 1개 · 확인/);assert.match(row(3),/빈칸 4개 · 확인/);
+  const years=html.slice(html.indexOf('<section class="card ledger-table years">'));
+  assert.doesNotMatch(years,/ledger-year-warning/,'완료된 12월이 11월과 같아도 경고하지 않는다');
+  assert.equal(JSON.stringify(data),before);
+  year.months.at(-1).balances[1]=null;
+  assert.match(ledgerHtml(data,new Date(2026,1,1).getTime()),/12월 계좌 잔액 1개가 미입력/,'실제 연말 누락은 계속 표시한다');
+});
