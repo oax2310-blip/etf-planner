@@ -151,7 +151,7 @@ test('비트코인 원화 선택은 즉시 라벨·환산 현재가·손익을 �
   assert.match(h.row('a'),/평균매수가 70,000,000원/);assert.match(h.row('a'),/손익 <b class="profit-gain">\+140,000원/);assert.match(h.row('a'),/0\.01 BTC/);assert.doesNotMatch(h.row('a'),/0\.01주/);
   assert.match(h.row('a'),/title="Coinbase 달러 시세 \$60,000 × 현재 환율 1,400원 = 84,000,000원 기준 · 국내 거래소 원화 시세와 차이가 날 수 있음"/);
   const card=h.html().split('<section class="card alloc-profit"')[1].split('</section>')[0];
-  assert.match(card,/원화 \(KRW\)<\/span><strong class="profit-gain">\+148,000원/);
+  assert.match(card,/원화 합계<\/span><strong class="profit-loss">−20,000원/);
   assert.match(card,/원화 평균매수가 비트코인은 달러 시세 × 현재 환율로 계산/);
 });
 
@@ -279,13 +279,13 @@ test('그룹 손익은 소분류 유무와 무관하게 그룹 전체를 합산�
   assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
 });
 
-test('그룹 원화 합산을 표시해도 종목 줄과 상단 보유 손익 카드는 현지 통화를 유지한다',()=>{
+test('전체 보유 평가손익은 달러·원화를 현재 환율로 합산하고 종목 줄은 기존 통화를 유지한다',()=>{
   const {data,quotes}=groupProfitFixture(true),before=JSON.stringify(data),h=page(data,quotes);
   assert.match(h.row('other'),/손익 <b class="profit-loss">−\$1,000<\/b><b class="profit-loss">−10%<\/b>/);
   assert.match(h.row('krw-a'),/손익 <b class="profit-gain">\+600,000원/);
-  const totals=h.html().split('<div class="alloc-profit-totals">')[1].split('<p class="hint">')[0];
-  assert.match(totals,/달러 \(USD\)<\/span><strong class="profit-loss">−\$1,000<\/strong>/);
-  assert.match(totals,/원화 \(KRW\)<\/span><strong class="profit-gain">\+600,000원<\/strong>/);assert.doesNotMatch(totals,/−600,000원/);
+  const card=profitCard(h);
+  assert.match(card,/원화 합계<\/span><strong class="profit-loss">−600,000원<\/strong><b class="profit-loss">−4%<\/b>/);
+  assert.match(card,/현재 환율 1,200원으로 환산/);assert.match(card,/원화 합산 · 환차손익 제외/);assert.doesNotMatch(card,/달러 \(USD\)/);
   assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);assert.equal(h.storage.has('etf-planner-assets-v1'),false);
 });
 
@@ -408,7 +408,7 @@ test('평균매수가 0·음수·잘못된 값은 저장을 막고 창과 기존
 
 test('같은 종목 전체 계좌는 매입금액으로 가중한 손익과 누락된 계좌 수를 표시한다',()=>{
   const data=fixture();data.allocation.groups[0].items[0].averagePrice=50;const before=JSON.stringify(data),h=page(data);
-  assert.match(h.html(),/계산 가능 3 \/ 보유 4개/);assert.match(h.html(),/달러 \(USD\)/);assert.match(h.html(),/원화 \(KRW\)/);
+  assert.match(h.html(),/계산 가능 3 \/ 보유 4개/);assert.match(h.html(),/원화 합계/);assert.match(profitCard(h),/현재 환율 1,200원으로 환산/);
   h.open('a');assert.equal(h.node('averagePriceTotal').hidden,false);assert.match(h.node('averagePriceTotal').innerHTML,/계산 가능 2 \/ 3개/);
   assert.match(h.node('averagePriceTotal').innerHTML,/−\$100/);assert.match(h.node('averagePriceTotal').innerHTML,/−25%/,'계좌 수익률 산술평균을 쓰지 않음');
   h.edit('100');assert.match(h.node('averagePriceTotal').innerHTML,/−\$200/);assert.match(h.node('averagePriceTotal').innerHTML,/−40%/);
@@ -509,4 +509,35 @@ test('종목 창의 플래너 체결은 건수를 남기고 기본 접기하며 
   assert.match(h.node('itemTrades').innerHTML,/<summary><span>플래너 체크로 반영한 체결 <small>25건<\/small>/);assert.equal((h.node('itemTrades').innerHTML.match(/<li>/g)||[]).length,20);
   h.node('itemTrades').open=true;h.cancel();h.open('a');assert.equal(h.node('itemTrades').open,false);assert.equal(JSON.stringify(data),before);assert.equal(h.writes.length,0);
   h.open('b');assert.equal(h.node('itemTrades').hidden,true);
+});
+
+
+function profitCard(h){return h.html().split('<section class="card alloc-profit"')[1].split('</section>')[0];}
+
+test('전체 원화 손익은 현물 환율을 우선하고 없으면 기존 cashFx를 쓰며 검색·그룹 접기와 독립적이다',()=>{
+  const {data,quotes}=groupProfitFixture(true);data.allocation.cashFx=1800;const before=JSON.stringify(data),h=page(data,quotes);
+  assert.match(profitCard(h),/−600,000원/);assert.match(profitCard(h),/현재 환율 1,200원/);
+  const card=profitCard(h);vm.runInContext('allocQuery="가상 원화 A";renderAlloc()',h.ctx);assert.equal(profitCard(h),card);
+  delete quotes.fx;h.refresh(quotes);assert.match(profitCard(h),/−1,200,000원/);assert.match(profitCard(h),/현재 환율 1,800원/);
+  assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+});
+
+test('전체 보유에 환율이 필요한데 없으면 일부 원화나 0원·0%를 전체 합계로 표시하지 않는다',()=>{
+  for(const zero of [false,true]){
+    const {data,quotes}=groupProfitFixture(true);delete quotes.fx;delete data.allocation.cashFx;
+    if(zero)quotes.stocks.AAA.close=100;
+    const before=JSON.stringify(data),h=page(data,quotes),card=profitCard(h);
+    assert.match(card,/<strong class="">환율 대기<\/strong><b class="">—<\/b>/);assert.match(card,/전체 원화 합계와 손익률을 기다립니다/);
+    assert.doesNotMatch(card,/\+600,000원|원화 합계<\/span><strong[^>]*>0원/);assert.equal(JSON.stringify(data),before);assert.deepEqual(h.writes,[]);
+  }
+});
+
+test('전체 원화 합산은 원화 평균가 코인을 다시 환산하지 않고 원화만 있거나 보유 0인 때도 구분한다',()=>{
+  const {data,quotes}=btcFixture('KRW'),before=JSON.stringify(data),h=page(data,quotes);
+  // 원화 코인 +140,000, 국내 +8,000, 달러 종목 −120 × 1,400 = −168,000.
+  assert.match(profitCard(h),/원화 합계<\/span><strong class="profit-loss">−20,000원/);assert.equal(JSON.stringify(data),before);
+  delete quotes.fx;delete data.allocation.cashFx;h.refresh(quotes);assert.match(profitCard(h),/환율 대기/);
+  const krw=groupProfitFixture();krw.data.allocation.groups[0].items.pop();delete krw.quotes.fx;delete krw.data.allocation.cashFx;
+  const only=page(krw.data,krw.quotes);assert.match(profitCard(only),/\+600,000원/);assert.match(profitCard(only),/\+20%/);assert.doesNotMatch(profitCard(only),/환율 대기/);
+  for(const it of krw.data.allocation.groups[0].items)it.shares=0;only.ctx.renderAlloc();assert.match(profitCard(only),/평균매수가와 보유 수량을 입력/);assert.doesNotMatch(profitCard(only),/원화 합계/);
 });

@@ -64,6 +64,18 @@ function profitLineA(p){
   const title=p.currentPriceKRW!==undefined?`Coinbase 달러 시세 $${nf2.format(p.q.close)} × 현재 환율 ${nf2.format(p.fx)}원 = ${wonA(p.currentPriceKRW)} 기준 · 국내 거래소 원화 시세와 차이가 날 수 있음`:"평가손익 · 손익률";
   return `<span class="asset-profit-result" title="${escA(title)}">손익 <b class="${profitColorA(p.profit)}">${profitMoneyA(p.profit,p.currency,true)}</b><b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></span>`;
 }
+// 화면의 전체 보유 손익만 원화로 합친다. 달러 매입금액과 손익에 같은 현재 환율(assetFx)을 적용해 환차손익은 제외한다.
+// 원화 평균가 코인은 이미 KRW이므로 다시 환산하지 않는다. 환율이 필요한 보유가 있으면 일부 원화만 전체 합계로 표시하지 않는다. 저장·공유 계산은 바꾸지 않는다.
+function profitTotalA(summary,fx){
+  const missingFx=!plus(fx)&&(summary.currencies.has("USD")||[...summary.items.values()].some(p=>p.fx===null&&p.shares>0&&p.averagePrice>0));
+  if(missingFx)return {profit:null,rate:null,missingFx:true};
+  let profit=0,cost=0;
+  for(const row of summary.currencies.values()){
+    const factor=row.currency==="USD"?fx:1;
+    profit+=row.profit*factor;cost+=row.cost*factor;
+  }
+  return {profit:summary.eligible?profit:null,rate:cost>0?profit/cost*100:null,missingFx:false};
+}
 
 // ---------- 자산 배분 ----------
 // 검색(이름·티커·실제 ETF 코드·그룹·소분류)은 메모리에만 두고 화면 목록만 거른다. 입력칸을 다시 만들지 않아 한글 조합·포커스를 유지하며 기록·합계는 바꾸지 않는다.
@@ -157,7 +169,7 @@ function renderAlloc(tab="alloc"){
   if(!a){ view.innerHTML=emptyCard("자산 배분 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다. 동기화 창의 JSON 복원으로 넣거나 새로 시작할 수 있습니다.",`<button class="btn primary" id="startAlloc" type="button">새로 시작</button>`);
     el("startAlloc").onclick=()=>{ doc.allocation={savedAt:"",total:null,cashFx:null,memo:"",classes:[{id:newId(),region:"미국",name:"주식"},{id:newId(),region:"국내",name:"주식"},{id:newId(),region:"해외",name:"중국"},{id:newId(),region:"현금",name:"현금",cash:true}],groups:[],cash:[]}; saveSection("allocation"); render(); }; return; }
   const s=allocationSummary(a,prices), profits=allocationProfitSummary(a,prices), rows=[...s.items.values()], live=rows.filter(r=>r.how!=="amount").length, count=rows.length, reviewed=a.groups.some(g=>g.items.some(it=>it.done));
-  const hasKrwBtcAverage=[...profits.items.values()].some(p=>p.currentPriceKRW!==undefined);
+  const hasKrwBtcAverage=[...profits.items.values()].some(p=>p.currentPriceKRW!==undefined),profitTotal=profitTotalA(profits,s.fx);
   const cashPct=pc(s.pct(s.cash));
   const usd=a.cash.filter(c=>c.currency==="USD").reduce((t,c)=>t+(finite(c.amount)||0)*(c.minus?-1:1),0);
   // 달러 환율 안내. 현물 환율은 기준일을 '현물 M/D'로 붙인다. 기준일이 없거나 형식이 깨졌으면 날짜 대신 '기준일 없음',
@@ -341,7 +353,7 @@ function renderAlloc(tab="alloc"){
       <small class="alloc-total-hint" id="allocTotalHint">억·만원으로 입력 · 숫자만 넣으면 만원 · 비우면 종목 + 현금 합계 기준</small>
       ${regionBar}
       <p class="alloc-summary-note"><span>종목 + 현금 합계 ${man(s.grand)} · ${totalGap}</span><span>시세 반영 ${live} / ${count}개 · ${usd?`달러 $${nf2.format(usd)} · ${fxText}`:fxNote}</span></p></section>
-    ${strategy?"":`<section class="card alloc-profit" aria-label="보유 평가손익 합계"><div class="alloc-profit-head"><h2>보유 평가손익</h2><span>${hasKrwBtcAverage?"평균매수가 통화 기준":"현지 통화 기준 · 환율 변동 제외"}</span></div><div class="alloc-profit-totals">${[...profits.currencies.values()].map(p=>`<div><span>${p.currency==="USD"?"달러 (USD)":"원화 (KRW)"}</span><strong class="${profitColorA(p.profit)}">${profitMoneyA(p.profit,p.currency,true)}</strong><b class="${profitColorA(p.rate)}">${profitRateA(p.rate)}</b></div>`).join("")||'<p class="hint">종목별 평균매수가와 보유 수량을 입력하면 합산 손익을 확인할 수 있습니다.</p>'}</div><p class="hint">계산 가능 ${profits.eligible} / 보유 ${profits.count}개 · 평균매수가·수량·현재가가 있는 항목만 합산${hasKrwBtcAverage?"<br>원화 평균매수가 비트코인은 달러 시세 × 현재 환율로 계산":""}</p></section>`}
+    ${strategy?"":`<section class="card alloc-profit" aria-label="보유 평가손익 합계"><div class="alloc-profit-head"><h2>보유 평가손익</h2><span>원화 합산 · 환차손익 제외</span></div><div class="alloc-profit-totals">${profits.eligible||profitTotal.missingFx?`<div><span>원화 합계</span><strong class="${profitColorA(profitTotal.profit)}">${profitTotal.missingFx?"환율 대기":profitMoneyA(profitTotal.profit,"KRW",true)}</strong><b class="${profitColorA(profitTotal.rate)}">${profitRateA(profitTotal.rate)}</b></div>`:'<p class="hint">종목별 평균매수가와 보유 수량을 입력하면 합산 손익을 확인할 수 있습니다.</p>'}</div><p class="hint">계산 가능 ${profits.eligible} / 보유 ${profits.count}개 · 평균매수가·수량·현재가가 있는 항목만 합산${profitTotal.missingFx?"<br>달러 보유를 환산할 환율이 없어 전체 원화 합계와 손익률을 기다립니다.":profits.currencies.has("USD")?`<br>달러 손익·매입금액은 현재 환율 ${nf2.format(s.fx)}원으로 환산`:""}${hasKrwBtcAverage?"<br>원화 평균매수가 비트코인은 달러 시세 × 현재 환율로 계산":""}</p></section>`}
     ${strategy?`<div class="section-heading"><h2>배분 개요</h2><span>지역별 합계와 목표 · 목표 합계 ${pc(s.regions.some(r=>r.target!==null)?s.regions.reduce((n,r)=>n+(r.target??0),0):null)}</span><button class="btn mini" type="button" id="addClass">＋ 분류</button></div>
     <div class="region-grid">${regionCards||`<div class="card empty">분류가 없습니다</div>`}</div>
     <p class="footnote">목표 비중은 자산 배분의 종목에서 수정하면 소분류·그룹·분류에 자동 합산됩니다. 모든 목표 비중은 기준 총자산 대비입니다. 하위 목표가 하나라도 있으면 그 합계를 쓰고, 전부 비어 있으면 직접 입력한 목표를 씁니다. 목표 없는 종목 ${a.groups.reduce((n,g)=>n+g.items.filter(it=>finite(it.target)===null).length,0)}개.</p>`:`<div class="section-heading"><h2>종목별</h2><span>그룹 ${a.groups.length}개 · 종목 ${count}개</span><div class="alloc-actions"><button class="btn mini" type="button" id="clearAllocDone" title="검색 결과와 관계없이 모든 종목의 점검완료를 해제합니다."${reviewed?"":" disabled"}>점검완료 일괄해제</button><button class="btn mini" type="button" id="addGroup">＋ 그룹</button></div></div>
