@@ -9,6 +9,7 @@ import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Base64;
 import android.view.DisplayCutout;
 import android.view.MotionEvent;
@@ -41,6 +42,7 @@ import java.util.Set;
 // 안드로이드 표준 API만 사용하는 선택형 실행 앱. WebView의 기존 저장 형식·시세·동기화 코드는 수정하지 않는다.
 public final class PlannerActivity extends Activity {
     private static final int OPEN_FILE = 10, SAVE_FILE = 11;
+    private static final String PENDING_EXPORT_STATE = "pending-export";
     private WebView web;
     private FrameLayout root;
     private ChromeState chrome;
@@ -48,12 +50,13 @@ public final class PlannerActivity extends Activity {
     private int surface, restoreY;
     private WindowInsets targetInsets;
     private ValueCallback<Uri[]> fileCallback;
-    private byte[] pendingDownload;
+    private PendingExport pendingDownload;
     private boolean readingDownload;
     private int downloadSequence;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        restoreDownload(state);
         surface = getResources().getColor(R.color.planner_background, getTheme());
         chrome = new ChromeState(Math.round(12 * getResources().getDisplayMetrics().density));
         Window window = getWindow();
@@ -90,6 +93,10 @@ public final class PlannerActivity extends Activity {
         if (state == null || web.restoreState(state) == null) web.loadUrl(ChromeState.START_URL);
     }
 
+    private void restoreDownload(Bundle state) {
+        pendingDownload = PendingExport.restore(getCacheDir(), state == null ? null : state.getString(PENDING_EXPORT_STATE));
+    }
+
     @SuppressWarnings("deprecation") private void configureWebView() {
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -103,11 +110,23 @@ public final class PlannerActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                if (ChromeState.isPlannerPage(url)) return false;
-                if (ChromeState.isPlannerPage(view.getUrl()) && ChromeState.isAppBlob(url)) return false;
-                if (request.isForMainFrame() && request.hasGesture() && ("https".equals(request.getUrl().getScheme()) || "http".equals(request.getUrl().getScheme()))) openBrowser(url);
-                return true;
+                return routeNavigation(view, request.getUrl().toString(), request.isForMainFrame() && request.hasGesture());
+            }
+            @Override public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (!routeNavigation(view, url, false)) return false;
+                // API 23에는 요청의 gesture/main-frame 정보가 없다. 선택한 링크 대상과 일치할 때만 외부로 보낸다.
+                WebView.HitTestResult hit = view.getHitTestResult();
+                if (hit != null && hit.getType() == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                    // 이미지 hit의 extra는 src다. href는 별도로 받아 이전 페이지·종료 뒤 늦은 응답을 무시한다.
+                    final String page = view.getUrl();
+                    view.requestFocusNodeHref(new Handler(getMainLooper(), message -> {
+                        if (!isFinishing() && !isDestroyed() && page != null && page.equals(view.getUrl()) && url != null && url.equals(message.getData().getString("url"))) routeNavigation(view, url, true);
+                        return true;
+                    }).obtainMessage());
+                    return true;
+                }
+                boolean link = hit != null && hit.getType() == WebView.HitTestResult.SRC_ANCHOR_TYPE;
+                return routeNavigation(view, url, link && url != null && url.equals(hit.getExtra()));
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 if (ChromeState.isAppBlob(url)) return; // 다운로드는 현재 문서를 바꾸지 않고 DownloadListener가 처리한다.
@@ -142,6 +161,14 @@ public final class PlannerActivity extends Activity {
             if (barsVisible != chrome.isVisible()) { barsVisible = chrome.isVisible(); applyBars(); }
         });
         web.setDownloadListener((url, agent, disposition, mime, length) -> prepareDownload(url, disposition, mime));
+    }
+
+    private boolean routeNavigation(WebView view, String url, boolean externalAllowed) {
+        if (ChromeState.isPlannerPage(url)) return false;
+        if (ChromeState.isPlannerPage(view.getUrl()) && ChromeState.isAppBlob(url)) return false;
+        String scheme = url == null ? null : Uri.parse(url).getScheme();
+        if (externalAllowed && ("https".equals(scheme) || "http".equals(scheme))) openBrowser(url);
+        return true;
     }
 
     // Android 15 이상에서도 투명한 OS 상태바 아래를 root 배경으로 칠한다. 카메라·키보드는 안전 영역 안에 둔다.
@@ -256,10 +283,10 @@ public final class PlannerActivity extends Activity {
                 }
                 readingDownload = false;
                 if (!"ready".equals(job.optString("status"))) throw new IllegalArgumentException();
-                pendingDownload = Base64.decode(job.getString("base64"), Base64.DEFAULT);
+                pendingDownload = PendingExport.create(getCacheDir(), Base64.decode(job.getString("base64"), Base64.DEFAULT));
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(type).putExtra(Intent.EXTRA_TITLE, name);
                 startActivityForResult(intent, SAVE_FILE);
-            } catch (Exception ignored) { readingDownload = false; pendingDownload = null; notice("파일을 저장할 수 없습니다. 다시 백업해 주세요."); }
+            } catch (Exception ignored) { readingDownload = false; if (pendingDownload != null) pendingDownload.discard(); pendingDownload = null; notice("파일을 저장할 수 없습니다. 다시 백업해 주세요."); }
         }); } catch (Exception ignored) { readingDownload = false; notice("파일을 읽지 못했습니다. 다시 백업해 주세요."); }
     }
 
@@ -269,17 +296,26 @@ public final class PlannerActivity extends Activity {
             fileCallback.onReceiveValue(result == RESULT_OK && data != null && data.getData() != null ? new Uri[]{data.getData()} : null);
             fileCallback = null;
         } else if (request == SAVE_FILE) {
-            final byte[] bytes = pendingDownload; pendingDownload = null;
-            if (result == RESULT_OK && data != null && data.getData() != null && bytes != null) {
-                final Uri target = data.getData();
-                new Thread(() -> {
-                    try (OutputStream output = getContentResolver().openOutputStream(target)) {
-                        if (output == null) throw new IllegalStateException();
-                        output.write(bytes);
-                        runOnUiThread(() -> notice("파일을 저장했습니다."));
-                    } catch (Exception ignored) { runOnUiThread(() -> notice("저장하지 못했습니다. 원래 기록은 앱에 남아 있습니다.")); }
-                }).start();
+            final PendingExport download = pendingDownload; pendingDownload = null;
+            if (result != RESULT_OK) { if (download != null) download.discard(); return; }
+            if (data == null || data.getData() == null || download == null) {
+                if (download != null) download.discard();
+                notice("백업 내용을 복원하지 못했습니다. 다시 백업해 주세요.");
+                return;
             }
+            final Uri target = data.getData();
+            new Thread(() -> {
+                try {
+                    // 원문을 먼저 연다. 캐시가 없어졌다면 대상 문서를 열거나 성공으로 알리지 않는다.
+                    try (InputStream input = download.open(); OutputStream output = getContentResolver().openOutputStream(target, "wt")) {
+                        if (output == null) throw new IllegalStateException();
+                        byte[] buffer = new byte[8192]; int count;
+                        while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    }
+                    runOnUiThread(() -> notice("파일을 저장했습니다."));
+                } catch (Exception ignored) { runOnUiThread(() -> notice("저장하지 못했습니다. 원래 기록은 앱에 남아 있습니다. 다시 백업해 주세요.")); }
+                finally { download.discard(); }
+            }).start();
         }
     }
 
@@ -289,7 +325,7 @@ public final class PlannerActivity extends Activity {
     }
     private void notice(String message) { if (!isFinishing()) Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }
     @Override public void onWindowFocusChanged(boolean focused) { super.onWindowFocusChanged(focused); if (focused && web != null) { applyBars(); readSurface(); } }
-    @Override protected void onSaveInstanceState(Bundle state) { web.saveState(state); state.putInt("page-scroll", web.getScrollY()); super.onSaveInstanceState(state); }
+    @Override protected void onSaveInstanceState(Bundle state) { state.putString(PENDING_EXPORT_STATE, pendingDownload == null ? null : pendingDownload.id()); web.saveState(state); state.putInt("page-scroll", web.getScrollY()); super.onSaveInstanceState(state); }
     @Override public void onBackPressed() { if (web.canGoBack()) web.goBack(); else super.onBackPressed(); }
-    @Override protected void onDestroy() { if (fileCallback != null) fileCallback.onReceiveValue(null); pendingDownload = null; readingDownload = false; downloadSequence++; web.destroy(); super.onDestroy(); }
+    @Override protected void onDestroy() { if (fileCallback != null) fileCallback.onReceiveValue(null); if (isFinishing() && pendingDownload != null) pendingDownload.discard(); pendingDownload = null; readingDownload = false; downloadSequence++; web.destroy(); super.onDestroy(); }
 }
