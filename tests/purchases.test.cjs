@@ -1879,12 +1879,12 @@ test('분할매수 본문 밖 입력은 같은 data 속성이 있어도 계좌 �
 
 
 test('제목의 목표 부분만 눌러 기존 목표 입력을 열고 닫으며 열기·취소로 저장하지 않는다',()=>{
-  const r=setup();r.item.target=21.5;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
-  assert.match(r.html(),/<button class="purchase-target-toggle"[^>]*aria-expanded="false"[^>]*>목표 21\.5%<\/button>/);
+  const r=setup();r.item.target=18.75;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
+  assert.match(r.html(),/<button class="purchase-target-toggle"[^>]*aria-expanded="false"[^>]*>목표 18\.8%<\/button>/);
   assert.match(r.html(),/id="purchaseTargetFields" hidden/);assert.equal(r.element('purchaseTargetFields').hidden,true);assert.doesNotMatch(r.html().split('sale-linked-holdings')[1],/data-purchase-target=/,'연결 계좌 줄에는 비중 입력을 중복 표시하지 않는다');
   r.element('purchaseTargetToggle').onclick();assert.equal(r.element('purchaseTargetFields').hidden,false);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'true');
   const x=r.input('[data-purchase-target]');x.value='33';x.onkeydown({key:'Escape',preventDefault(){}});
-  assert.equal(x.value,'21.5');assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
+  assert.equal(x.value,'18.75');assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
   assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0);
   r.element('purchaseTargetToggle').onclick();r.element('purchaseTargetDone').onclick();assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(writes,0);
 });
@@ -1892,9 +1892,9 @@ test('제목의 목표 부분만 눌러 기존 목표 입력을 열고 닫으며
 test('목표를 편집해 다시 그려도 편집창을 유지하고 여러 계좌 값·상위 목표·체결 기록은 각각 보존한다',()=>{
   const {r,other}=tradeOnlyAccounts();r.doc.allocation.groups[0].target=60;
   const trades=JSON.stringify(r.doc.allocation.trades),plan=JSON.stringify(r.item.buyPlan);let writes=0;r.store.saveSection=()=>writes++;
-  r.element('purchaseTargetToggle').onclick();r.change('[data-purchase-target]',21.5);
-  assert.equal(r.element('purchaseTargetFields').hidden,false);assert.match(visibleText(r.html()),/현재 .* \/ 목표 26\.5%/);
-  assert.equal(r.item.target,21.5);assert.equal(other.target,5);assert.equal(r.doc.allocation.groups[0].target,60);
+  r.element('purchaseTargetToggle').onclick();r.change('[data-purchase-target]',18.75);
+  assert.equal(r.element('purchaseTargetFields').hidden,false);assert.match(visibleText(r.html()),/현재 .* \/ 목표 23\.8%/);
+  assert.equal(r.item.target,18.75);assert.equal(other.target,5);assert.equal(r.doc.allocation.groups[0].target,60);
   assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.equal(JSON.stringify(r.item.buyPlan),plan);assert.equal(writes,1);
   r.change('[data-purchase-target]','');assert.equal(Object.hasOwn(r.item,'target'),false);assert.equal(other.target,5);assert.equal(writes,2);
 });

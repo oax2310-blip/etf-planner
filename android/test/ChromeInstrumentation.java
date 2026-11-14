@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.MotionEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.WebView;
@@ -62,8 +63,19 @@ public final class ChromeInstrumentation extends Instrumentation {
         File file=new File(getTargetContext().getExternalFilesDir(null),name+".png");
         try(FileOutputStream out=new FileOutputStream(file)){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}
         check(bitmap.getColorSpace()!=null&&bitmap.getColorSpace().isSrgb(),"sRGB 캡처");
-        check(bitmap.getPixel(5,5)==expected,"실제 OS 상태바 배경과 본문 색 일치: "+Integer.toHexString(bitmap.getPixel(5,5))+" / "+Integer.toHexString(expected));
         check(bitmap.getPixel(5,200)==expected,"WebView가 본문을 별도 다크 색으로 변환하지 않음");
+        int barHeight=root.getRootWindowInsets().getInsets(WindowInsets.Type.statusBars()).top;
+        if(barHeight>0){
+            int matches=0,total=0,y=Math.min(bitmap.getHeight()-1,Math.max(1,barHeight/2));
+            android.view.DisplayCutout cutout=root.getRootWindowInsets().getDisplayCutout();
+            for(int x=16;x<bitmap.getWidth()-16;x++){
+                boolean covered=false;
+                if(cutout!=null)for(android.graphics.Rect rect:cutout.getBoundingRects())if(rect.contains(x,y))covered=true;
+                if(covered)continue;
+                total++;if(bitmap.getPixel(x,y)==expected)matches++;
+            }
+            check(matches>=Math.max(1,total/3),"실제 OS 상태바 배경과 본문 색 일치: "+matches+"/"+total);
+        }
         bitmap.recycle();
     }
     private void swipe(int from,int to) {
@@ -74,11 +86,18 @@ public final class ChromeInstrumentation extends Instrumentation {
         SystemClock.sleep(600);
     }
     private void tapImport() throws Exception {
-        JSONArray point=new JSONArray(javascript("(function(){var r=document.querySelector('#importFile').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];})()"));
+        JSONArray point=new JSONArray(javascript("(function(){var r=document.querySelector('#importFile').getBoundingClientRect();return [(r.left+r.width/2)*devicePixelRatio,(r.top+r.height/2)*devicePixelRatio];})()"));
         int[] origin=new int[2];runOnMainSync(()->web.getLocationOnScreen(origin));
         float x=origin[0]+(float)point.getDouble(0),y=origin[1]+(float)point.getDouble(1);long time=SystemClock.uptimeMillis();
         sendPointerSync(MotionEvent.obtain(time,time,MotionEvent.ACTION_DOWN,x,y,0));
         sendPointerSync(MotionEvent.obtain(time,SystemClock.uptimeMillis()+50,MotionEvent.ACTION_UP,x,y,0));
+    }
+    private void acceptStartupGuide(){
+        AccessibilityNodeInfo screen=getUiAutomation().getRootInActiveWindow();
+        if(screen==null)return;
+        for(AccessibilityNodeInfo button:screen.findAccessibilityNodeInfosByText("확인 후 앱 열기")){
+            if(button.performAction(AccessibilityNodeInfo.ACTION_CLICK)){SystemClock.sleep(300);return;}
+        }
     }
     @Override public void onStart() {
         Bundle result=new Bundle();
@@ -86,6 +105,7 @@ public final class ChromeInstrumentation extends Instrumentation {
             getTargetContext().getSharedPreferences("PlannerActivity",0).edit().putBoolean("startup-acknowledged",true).commit();
             Intent launch=new Intent().setComponent(new ComponentName(getTargetContext(),"io.github.oax2310blip.etfplanner.PlannerActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity=startActivitySync(launch);web=(WebView)field("web");root=(FrameLayout)field("root");
+            acceptStartupGuide();
             final String html=asset(getContext(),"fixture.html");
             runOnMainSync(()->{
                 web.stopLoading();
