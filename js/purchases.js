@@ -9,7 +9,7 @@ const PEN=PENCIL,dlg=el;
 const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
-let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,priorityPointerDown=false;
+let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false;
 // 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
 const openCompletedPurchases=new Set();
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
@@ -180,15 +180,21 @@ function openPurchaseAccount(id){
   };
   el("purchaseAccountCancel").onclick=()=>dialog.close();dialog.showModal();
 }
+// 목표 입력 blur가 먼저 저장돼도 pointerdown부터 click까지 버튼 DOM을 유지한다. 터치의 합성 click은 pointerup 타이머 뒤에 올 수 있어 기본 초점 이동을 막고 click에 진입한 뒤 직접 blur 저장한다.
+// 추가 창 열기·삭제 취소처럼 자체 render가 없는 경로도 클릭 뒤 미룬 표시를 마친다.
+function bindPurchaseAccountAction(button,action){
+  button.onpointerdown=e=>{if(e.button===0){purchasePointerDown=true;if(document.activeElement?.dataset?.purchaseTarget!==undefined)e.preventDefault();}};
+  button.onclick=()=>{purchasePointerDown=false;const active=document.activeElement;if(active?.dataset?.purchaseTarget!==undefined)active.blur();try{action();}finally{if(redrawLater)render();}};
+}
 function bindPurchaseAccounts(it){
-  el("purchaseAccountAdd").onclick=()=>openPurchaseAccount(it.id);
+  bindPurchaseAccountAction(el("purchaseAccountAdd"),()=>openPurchaseAccount(it.id));
   all("[data-purchase-target]").forEach(x=>x.onchange=()=>{
     const found=findItem(x.dataset.purchaseTarget),value=x.value.trim(),n=Number(value);
     if(!found||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");render();return;}
     if(value==="")delete found.it.target;else found.it.target=n;
     saveSection("allocation");render();
   });
-  all("[data-purchase-account-delete]").forEach(b=>b.onclick=()=>{
+  all("[data-purchase-account-delete]").forEach(b=>bindPurchaseAccountAction(b,()=>{
     const found=findItem(b.dataset.purchaseAccountDelete);if(!found)return;
     const a=doc.allocation,removed=new Set([found.it]),keep=allocLink.keepBuyPlans(a,removed,true),goals=allocLink.keepTargets(a,removed,keep.moved,true);
     const notes=[keep.moved.length?"분할매수 계획과 체결 기록은 같은 종목의 남은 계좌로 옮깁니다.":keep.lost.length?"연결할 계좌가 없어 분할매수 계획도 삭제됩니다.":"",goals.length?"목표 비중은 같은 그룹·소분류의 남은 계좌로 옮깁니다.":finite(found.it.target)!==null?"이 계좌의 목표 비중도 삭제됩니다.":""].filter(Boolean);
@@ -196,12 +202,12 @@ function bindPurchaseAccounts(it){
     const result=allocLink.keepBuyPlans(a,removed);allocLink.keepTargets(a,removed,result.moved);
     if(selectedPurchaseId===found.it.id)selectedPurchaseId=result.moved[0]?.to.id||null;
     found.g.items=found.g.items.filter(x=>x.id!==found.it.id);saveSection("allocation");render();
-  });
+  }));
 }
 // 순서는 사용자가 화살표를 누를 때만 저장한다. 자산 배열·다른 계획·완료/부분 체결 회차는 그대로 두고 다음 매수 대상만 바꾼다.
 function bindPurchasePriority(it){
-  all("[data-purchase-priority]").forEach(b=>{b.onpointerdown=e=>{if(e.button===0)priorityPointerDown=true;};b.onclick=()=>{
-    priorityPointerDown=false;
+  all("[data-purchase-priority]").forEach(b=>{b.onpointerdown=e=>{if(e.button===0)purchasePointerDown=true;};b.onclick=()=>{
+    purchasePointerDown=false;
     const found=findItem(it.id),direction=Number(b.dataset.purchaseDirection);if(!found?.it.buyPlan||![-1,1].includes(direction))return;
     const ids=targetsOf(found.it).map(r=>r.it.id),at=ids.indexOf(b.dataset.purchasePriority),next=at+direction;if(at<0||next<0||next>=ids.length)return;
     [ids[at],ids[next]]=[ids[next],ids[at]];found.it.buyPlan.buyPriority=ids;saveSection("allocation");render();
@@ -258,8 +264,8 @@ function waitCard({g,it},s,notes){
 }
 function renderPurchases(){
   if(typeof goldEstimate==="object")goldEstimate.check();
-  // 수량 입력 중 화살표를 누르면 blur의 체결 저장을 먼저 마친다. click이 끝날 때까지 다시 그리기를 미뤄 한 번의 입력이 사라지지 않게 한다.
-  if(priorityPointerDown){redrawLater=true;return;}redrawLater=false;
+  // 수량 입력의 우선순위 화살표와 목표 입력의 계좌 버튼은 blur 저장을 먼저 마친다. click이 끝날 때까지 다시 그리기를 미뤄 누른 버튼이 사라지지 않게 한다.
+  if(purchasePointerDown){redrawLater=true;return;}redrawLater=false;
   doc=assetStore.doc;prices=assetStore.prices;
   const view=el("buysView"), items=purchaseItems(), plans=items.filter(({it})=>it.buyPlan), fills=new Map(), rowData=new Map();
   const selected=plans.find(({it})=>it.id===selectedPurchaseId)||plans[0];selectedPurchaseId=selected?.it.id||null;
@@ -750,9 +756,9 @@ function initialize(){
     renderDraft();});
   f.manualCurrency.onchange=()=>{if(f.manualCurrency.value==="USD")purchaseDraft.currency="USD";else delete purchaseDraft.currency;renderPurchaseDraft();};
   document.addEventListener("focusout",()=>setTimeout(()=>{if(redrawLater)redrawIdle();},0));
-  const releasePriorityPointer=()=>{if(!priorityPointerDown)return;priorityPointerDown=false;if(redrawLater)redrawIdle();};
-  document.addEventListener("pointerup",()=>{if(priorityPointerDown)setTimeout(releasePriorityPointer,0);});
-  document.addEventListener("pointercancel",releasePriorityPointer);
+  const releasePurchasePointer=()=>{if(!purchasePointerDown)return;purchasePointerDown=false;if(redrawLater)redrawIdle();};
+  document.addEventListener("pointerup",()=>{if(purchasePointerDown)setTimeout(releasePurchasePointer,0);});
+  document.addEventListener("pointercancel",releasePurchasePointer);
   assetStore.subscribe(type=>{doc=assetStore.doc;prices=assetStore.prices;updateStatus();if(type==="local-save"&&typeof renderLocalSaveWarning==="function")renderLocalSaveWarning();if(type==="change")redrawIdle();});
   for(const key of ["connectRepo","syncNow","disconnectRepo"]){const button=el(key),previous=button.onclick;button.onclick=e=>{previous?.call(button,e);assetStore.refreshConfig();};}
   el("purchaseExport").onclick=()=>downloadJson({...assetStore.doc,exportedAt:new Date().toISOString()},`etf-planner-assets-${backupFileDay(Date.now())}.json`);
