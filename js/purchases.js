@@ -9,11 +9,13 @@ const PEN=PENCIL,dlg=el;
 const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
-let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false;
+let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false;
 // 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
 const openCompletedPurchases=new Set();
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
 const render=()=>renderPurchases(),saveSection=section=>assetStore.saveSection(section);
+// 입력 거부는 이번 blur 뒤의 버튼 동작을 막는 화면 상태다. 저장·동기화 기록에는 넣지 않는다.
+const rejectPurchaseEdit=()=>{purchaseEditRejected=true;render();};
 // 반영 키는 계획이 아니라 종목 id로 만든다('buy:종목 id:회차 키'). 계획을 지우거나 새 계획의 회차를 처음 체크할 때 그 키로 남은 이전 계획의 기록은 자산 배분을 되돌리지 않고 지운다(실제 체결은 보유량에 남김).
 // 남겨 두면 같은 회차(예: 목표가 'end')를 새 계획에서 체크할 때 applyTrade가 이전 계획의 체결 수량을 먼저 빼서 보유량이 줄어든다.
 const dropTrades=match=>{const a=doc.allocation,t=a?.trades;if(!t||typeof t!=="object")return;for(const k of Object.keys(t))if(match(k))delete t[k];if(!Object.keys(t).length)delete a.trades;};
@@ -180,17 +182,25 @@ function openPurchaseAccount(id){
   };
   el("purchaseAccountCancel").onclick=()=>dialog.close();dialog.showModal();
 }
-// 목표 입력 blur가 먼저 저장돼도 pointerdown부터 click까지 버튼 DOM을 유지한다. 터치의 합성 click은 pointerup 타이머 뒤에 올 수 있어 기본 초점 이동을 막고 click에 진입한 뒤 직접 blur 저장한다.
-// 추가 창 열기·삭제 취소처럼 자체 render가 없는 경로도 클릭 뒤 미룬 표시를 마친다.
+// 분할매수 화면의 목표·누적 수량·체결가만 버튼 동작 전에 저장한다. 창 안 입력 등 다른 편집은 가로채지 않는다.
+function focusedPurchaseEdit(){
+  const active=document.activeElement;
+  return active&&el("buysView").contains(active)&&["purchaseTarget","purchaseShares","purchaseBuyShares","purchaseExec"].some(key=>active.dataset?.[key]!==undefined)?active:null;
+}
+// 터치의 합성 click은 pointerup 타이머 뒤에 올 수 있다. 기본 초점 이동을 막고 click 안에서 blur 저장·검증을 마친 뒤 계좌 버튼·화살표 동작을 수행한다.
+// 입력을 거부했거나 체결 계좌를 고르는 창이 열렸으면 후속 동작은 멈춘다. 추가 창 열기·삭제 취소 경로도 미룬 표시를 마친다.
 function bindPurchaseAccountAction(button,action){
-  button.onpointerdown=e=>{if(e.button===0){purchasePointerDown=true;if(document.activeElement?.dataset?.purchaseTarget!==undefined)e.preventDefault();}};
-  button.onclick=()=>{purchasePointerDown=false;const active=document.activeElement;if(active?.dataset?.purchaseTarget!==undefined)active.blur();try{action();}finally{if(redrawLater)render();}};
+  button.onpointerdown=e=>{if(!button.disabled&&e.button===0){purchasePointerDown=true;if(focusedPurchaseEdit())e.preventDefault();}};
+  button.onclick=()=>{if(button.disabled)return;purchasePointerDown=false;purchaseEditRejected=false;
+    try{focusedPurchaseEdit()?.blur();if(purchaseEditRejected||el("linkDialog")?.open)return;action();}
+    finally{if(redrawLater)render();}
+  };
 }
 function bindPurchaseAccounts(it){
   bindPurchaseAccountAction(el("purchaseAccountAdd"),()=>openPurchaseAccount(it.id));
   all("[data-purchase-target]").forEach(x=>x.onchange=()=>{
     const found=findItem(x.dataset.purchaseTarget),value=x.value.trim(),n=Number(value);
-    if(!found||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");render();return;}
+    if(!found||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");rejectPurchaseEdit();return;}
     if(value==="")delete found.it.target;else found.it.target=n;
     saveSection("allocation");render();
   });
@@ -206,14 +216,13 @@ function bindPurchaseAccounts(it){
 }
 // 순서는 사용자가 화살표를 누를 때만 저장한다. 자산 배열·다른 계획·완료/부분 체결 회차는 그대로 두고 다음 매수 대상만 바꾼다.
 function bindPurchasePriority(it){
-  all("[data-purchase-priority]").forEach(b=>{b.onpointerdown=e=>{if(e.button===0)purchasePointerDown=true;};b.onclick=()=>{
-    purchasePointerDown=false;
+  all("[data-purchase-priority]").forEach(b=>bindPurchaseAccountAction(b,()=>{
     const found=findItem(it.id),direction=Number(b.dataset.purchaseDirection);if(!found?.it.buyPlan||![-1,1].includes(direction))return;
     const ids=targetsOf(found.it).map(r=>r.it.id),at=ids.indexOf(b.dataset.purchasePriority),next=at+direction;if(at<0||next<0||next>=ids.length)return;
     [ids[at],ids[next]]=[ids[next],ids[at]];found.it.buyPlan.buyPriority=ids;saveSection("allocation");render();
     const buttons=[...all("[data-purchase-priority]")].filter(x=>x.dataset.purchasePriority===b.dataset.purchasePriority);
     (buttons.find(x=>!x.disabled&&x.dataset.purchaseDirection===b.dataset.purchaseDirection)||buttons.find(x=>!x.disabled))?.focus({preventScroll:true});
-  };});
+  }));
 }
 // 옛 기록에는 반영 대상 id를 자동 추가하지 않는다. 첫 체결의 tradeTargetId 또는 allocation.trades의 항목으로 반영 계좌를 읽는다.
 function recordedTarget(it,b,key){
@@ -452,16 +461,16 @@ function renderPurchases(){
   // 체크 전에도 누적 주수만 입력한다(체결 금액 칸 없음). 기준가가 있어야 새 체결을 기록하고, 예정액이 없는 직접 입력은 가격·수량·환율로 금액을 계산한다.
   // 금액은 양수만 기록하며 잔량은 유지한다. 체크는 잔량까지 전부 체결한 상태만 표시한다. 0·체크 해제는 기준가 없이도 취소한다.
   function fillShares(id,r,n){
-    const found=findItem(id),plan=found?.it.buyPlan;if(!found||!r||n===null||n<0||(unitOf(r.tradeItem)===1?!Number.isSafeInteger(n):Number(n.toFixed(8))!==n))return render();
+    const found=findItem(id),plan=found?.it.buyPlan;if(!found||!r||n===null||n<0||(unitOf(r.tradeItem)===1?!Number.isSafeInteger(n):Number(n.toFixed(8))!==n))return rejectPurchaseEdit();
     if(n===0)return clearFill(id,r);
     const lead=leadOf(found.it,plan),follow=followsLead(r,lead);
-    if(!follow&&r.targetId&&!findItem(r.targetId))return render();
-    if(!r.recorded&&!(r.plannedShares>0))return render();
-    const target=r.plannedShares??n;if(n>target||!(target>0))return render();
-    if(!(r.price>0))return render();
+    if(!follow&&r.targetId&&!findItem(r.targetId))return rejectPurchaseEdit();
+    if(!r.recorded&&!(r.plannedShares>0))return rejectPurchaseEdit();
+    const target=r.plannedShares??n;if(n>target||!(target>0))return rejectPurchaseEdit();
+    if(!(r.price>0))return rejectPurchaseEdit();
     const old=oldBuy(plan,r),fill=fills.get(r.key),qty=r.recorded?r.shares:0,rate=planCurrency(plan,found.it)==="USD"?assetFx(prices,doc.allocation):1;
     const full=qty>0?r.actual*target/qty:r.line?fill?.actual:r.fill?.actual??plus(old.actual)??plus(old.amount);
-    const actual=full!==null&&full!==undefined?full*n/target:r.price>0&&rate?n*r.price*rate/1e4:null;if(!(actual>0))return render();
+    const actual=full!==null&&full!==undefined?full*n/target:r.price>0&&rate?n*r.price*rate/1e4:null;if(!(actual>0))return rejectPurchaseEdit();
     const mapping=fill?.tradeTicker?{tradeTicker:fill.tradeTicker,tradePrice:fill.tradePrice,tradeCurrency:fill.tradeCurrency}:{};
     const b={...old,...mapping,...(!r.recorded&&r.targetId?{tradeTargetId:r.targetId}:follow?{tradeTargetId:lead.id}:{}),plannedShares:target,shares:n,actual:Number(actual.toFixed(8))};
     if(!r.line&&!r.recorded&&fill?.tradeTicker)b.sourceShares=finite(old.shares);
@@ -483,10 +492,10 @@ function renderPurchases(){
   // 표시는 execPrice → tradePrice → price. 입력 때만 양수를 execPrice에 저장하고 빈칸·기본값(tradePrice → price)은 delete한다.
   // 기준가·수량·배분용 금액·자산 보유는 재계산하지 않고 평균매수가만 allocLink.reprice로 맞춘다. 수량 정정은 기존 execPrice를 유지한다(fillShares의 old 복사).
   onChange("[data-purchase-exec]","allocation",(v,x)=>{
-    if(!moneyInputValidate(x)){x.reportValidity();return false;}
-    const n=numIn(v);if(n!==null&&n<=0){x.setCustomValidity("체결가는 0보다 큰 숫자로 입력해 주세요.");x.reportValidity();return false;}
+    if(!moneyInputValidate(x)){purchaseEditRejected=true;x.reportValidity();return false;}
+    const n=numIn(v);if(n!==null&&n<=0){purchaseEditRejected=true;x.setCustomValidity("체결가는 0보다 큰 숫자로 입력해 주세요.");x.reportValidity();return false;}
     const id=x.dataset.purchaseExec,found=findItem(id),plan=found?.it.buyPlan,b=x.dataset.key!==undefined?purchaseBuys(plan)[x.dataset.key]:plan?.stages?.[Number(x.dataset.stage)];
-    if(!b||x.dataset.key===undefined&&!purchaseStageRecorded(b))return false;
+    if(!b||x.dataset.key===undefined&&!purchaseStageRecorded(b)){purchaseEditRejected=true;return false;}
     if(n===null||n===finite(execBase(b)))delete b.execPrice;else b.execPrice=n;
     allocLink.reprice(`buy:${id}:${x.dataset.key??b.id??`#${x.dataset.stage}`}`,buyTrade(found.it,plan,b));return false;
   });
