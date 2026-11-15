@@ -203,13 +203,23 @@ function bindPurchaseAccounts(it){
   bindPurchaseAccountAction(el("purchaseTargetToggle"),()=>showTarget(purchaseTargetEditingId!==it.id));
   bindPurchaseAccountAction(el("purchaseTargetDone"),()=>showTarget(false));
   all("[data-purchase-target]").forEach(x=>{x.onchange=()=>{
-    const found=findItem(x.dataset.purchaseTarget),value=x.value.trim(),n=Number(value);
-    if(!found||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");rejectPurchaseEdit();return;}
-    if(value==="")delete found.it.target;else found.it.target=n;
+    const current=findItem(x.dataset.purchaseTarget),value=x.value.trim(),n=Number(value);
+    if(!current?.it?.buyPlan||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");rejectPurchaseEdit();return;}
+    const {own,holder}=targetEditorState(current.it);if(!holder){rejectPurchaseEdit();return;}
+    if(value===""&&!own.length||value!==""&&own.length===1&&finite(holder.it.target)===n){render();return;}
+    if(own.length>1){
+      const split=own.map(r=>`${itemName(r.it)} ${pc(finite(r.it.target))}`).join(", ");
+      const splitGroups=new Set([...own,holder].map(r=>`${r.g.id}\u0000${r.it.section||""}`)).size>1;
+      const prompt=value===""?`연결된 계좌 ${own.length}개(${split})에 들어 있는 목표 비중을 모두 비울까요?`
+        :`계좌 ${own.length}개에 나뉜 목표 비중(${split})을 '${itemName(holder.it)}' 한 계좌(${pc(n)})로 합치고 나머지 계좌의 목표 입력은 비울까요?${splitGroups?"\n자산 배분의 그룹·소분류 목표 합계도 이 계좌 쪽으로 모입니다.":""}`;
+      if(!confirm(prompt)){rejectPurchaseEdit();return;}
+    }
+    if(value===""){for(const r of own)delete r.it.target;}
+    else{holder.it.target=n;for(const r of own)if(r.it!==holder.it)delete r.it.target;}
     saveSection("allocation");render();
   };x.onkeydown=e=>{
     if(e.key==="Enter"){e.preventDefault();x.blur();}
-    if(e.key==="Escape"){e.preventDefault();x.value=String(finite(findItem(x.dataset.purchaseTarget)?.it.target)??"");showTarget(false);}
+    if(e.key==="Escape"){e.preventDefault();const current=findItem(x.dataset.purchaseTarget);x.value=current?targetEditorState(current.it).value:"";showTarget(false);}
   };});
   all("[data-purchase-account-delete]").forEach(b=>bindPurchaseAccountAction(b,()=>{
     const found=findItem(b.dataset.purchaseAccountDelete);if(!found)return;
@@ -256,11 +266,28 @@ const purchaseMode = plan => plan?.wait?"wait":plan?.lines?"lines":Array.isArray
 const selectPurchase=id=>{selectedPurchaseId=id;};
 // 분할매도와 같은 제목·시세·자산 배분 순서. 자산 배분 줄은 연결된 전체 계좌 합계 비중(아래 보유 목록 요약과 같은 값)이라 꼬리표·계좌 글자 없이 쓰고, 목표 도달·까지·초과 글자는 분할매도·재매수 줄(alloc-link.js line)과 같다. 계획 선택·화면 표시로 저장 필드를 만들지 않는다. 목표 출처 표시는 alloc-link.js 줄과 같다(옛 계획 목표만 '계획 목표').
 const TARGET_SCOPE={group:" (그룹)",section:" (소분류)",plan:" (계획 목표)"};
-// 목표를 누를 때만 기존 계좌별 target 입력을 연다. 여러 계좌의 목표를 임의로 재배분하거나 상위/옛 목표를 바꾸지 않는다.
+const targetSum=list=>Math.round(list.reduce((n,v)=>n+v,0)*1e8)/1e8;
+// 목표를 누를 때만 연결된 전체 계좌(targetsOf)의 종목 목표 입력 한 칸을 연다.
+// 한 계좌에만 목표가 있으면 그 항목(holder)을 수정하고, 비어 있으면 계획 항목(it)에 저장한다. 이미 두 계좌 이상에 나뉜 기존 기록은 합계를 표시하며 수정·비우기 전에 확인 후 holder 한 곳에 합치고 나머지 target을 지운다. 상위·옛 목표를 임의로 바꾸지 않는다.
+function targetEditorState(it,s=allocationSummary(doc.allocation,prices)){
+  const rows=targetsOf(it,it?.buyPlan,s),own=rows.filter(r=>finite(r.it.target)!==null);
+  const planRow=rows.find(r=>r.it===it)||findItem(it?.id)||rows[0];
+  const holder=own.find(r=>r.it===it)||own[0]||planRow;
+  const value=own.length?String(targetSum(own.map(r=>finite(r.it.target)))):"";
+  return {rows,own,holder,value};
+}
 function purchaseTargetEditor(it,s,scope){
-  const rows=targetsOf(it,it.buyPlan,s),open=purchaseTargetEditingId===it.id;
-  const note=["group","section","plan"].includes(scope)?"계좌별 목표를 입력하면 표시된 상위 목표보다 우선합니다. 비워 두면 기존 목표를 따릅니다.":rows.length>1?"입력한 계좌별 목표의 합계를 사용합니다.":"비우면 자산 배분에 설정된 상위 비중을 따릅니다.";
-  return `<div class="purchase-target-fields" id="purchaseTargetFields"${open?"":" hidden"}>${rows.map(r=>`<label class="purchase-account-edit purchase-target-field"><span>${escA(rows.length>1?r.it.name:"목표 비중")}</span><input type="number" min="0" max="100" step="any" inputmode="decimal" data-purchase-target="${escA(r.it.id)}" value="${finite(r.it.target)??""}" aria-label="${escA(r.it.name)} 목표 비중 (%)" /> %</label>`).join("")}<p class="hint">${note}</p><button class="btn mini" id="purchaseTargetDone" type="button">완료</button></div>`;
+  const {rows,own,holder,value}=targetEditorState(it,s),open=purchaseTargetEditingId===it.id;
+  if(!holder)return '<div class="purchase-target-fields" id="purchaseTargetFields" hidden></div>';
+  const label=rows.length>1?"전체 목표 비중":"목표 비중";
+  const holderName=itemName(holder.it),itemTitle=stockNames.titleParts(holderName).main||holderName;
+  const aria=rows.length>1?`${itemTitle} 전체 목표 비중 (%)`:`${holderName} 목표 비중 (%)`;
+  const splitList=own.map(r=>`${escA(itemName(r.it))} ${pc(finite(r.it.target))}`).join(" · ");
+  const note=own.length>1?`계좌 ${own.length}개에 나뉜 목표(${splitList}) 합계입니다. 수정하면 '${escA(holderName)}' 한 곳에 합쳐 저장합니다.`
+    :["group","section","plan"].includes(scope)?"입력하면 표시된 상위 목표보다 우선합니다. 비워 두면 기존 목표를 따릅니다."
+    :rows.length>1?"연결된 전체 계좌의 합계 목표입니다. 비우면 자산 배분의 상위 비중을 따릅니다."
+    :"비우면 자산 배분에 설정된 상위 비중을 따릅니다.";
+  return `<div class="purchase-target-fields" id="purchaseTargetFields"${open?"":" hidden"}><label class="purchase-account-edit purchase-target-field"><span>${label}</span><input type="number" min="0" max="100" step="any" inputmode="decimal" data-purchase-target="${escA(it.id)}" value="${escA(value)}" aria-label="${escA(aria)}" /> %</label><p class="hint">${note}</p><button class="btn mini" id="purchaseTargetDone" type="button">완료</button></div>`;
 }
 function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,target,gap,scope}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
