@@ -52,7 +52,7 @@ for (const [check, title] of [
   ['chrome-insets-clear', '여백 변경 뒤 adjustingInsets를 프레임 후 해제해 후속 플릭을 막지 않는다'],
   ['chrome-prelayout-ime-api29', 'API 29 이하에서 root 높이 0일 때 하단 내비게이션 여백을 키보드로 오인하지 않는다'],
   ['chrome-horizontal-ignored', '가로 스크롤(Y 동일)은 세로 스크롤·플릭 타이머 판단을 흔들지 않는다'],
-  ['chrome-window-and-surface', '투명 상태바·컷아웃 ALWAYS·onPageCommitVisible 및 복원 표면 동기화를 유지한다'],
+  ['chrome-window-and-surface', '투명 상태바·컷아웃 ALWAYS·onPageCommitVisible 표면 동기화를 유지하고 복원 스크롤은 로드 완료 뒤 한 번만 실행한다'],
   ['chrome-mid-drag-resize-offset', '레이아웃 전·후 뷰 오프셋 변화 보정(X·Y), touchSlop 연속성, 탭·취소·다중 포인터·속도 초기화를 검증한다'],
   ['chrome-lifecycle-and-ime', '키보드·페이지 시작·일시 정지 시 상태바·여백 콜백·VelocityTracker를 정리하고 잔여 터치와 비터치 스크롤을 차단한다'],
 ]) test(`Android 상태바·스크롤 콜백: ${title}`, () => run('java', ['-cp', classes, 'io.github.oax2310blip.etfplanner.ActivityCallbacksCheck', check]));

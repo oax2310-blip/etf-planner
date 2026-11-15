@@ -370,7 +370,7 @@ public final class ActivityCallbacksCheck {
     }
     public static final class ChromeWeb {
         String url = ChromeState.START_URL;
-        int scrollY, backgroundColor, loadCount, stopCount, evalCount;
+        int scrollY, backgroundColor, loadCount, stopCount, evalCount, scrollToCount;
         boolean hasRestoredState;
         String evalResult = "[\"rgba(0,0,0,0)\",\"rgb(10, 12, 16)\"]";
         final List<Runnable> postQueue = new ArrayList<>();
@@ -382,7 +382,7 @@ public final class ActivityCallbacksCheck {
         public Object restoreState(Bundle state) { return hasRestoredState && state != null ? this : null; }
         public void loadUrl(String u) { url = u; loadCount++; }
         public void stopLoading() { stopCount++; }
-        public void scrollTo(int x, int y) { int old = scrollY; scrollY = y; if (scrollHook != null) scrollHook.accept(old); }
+        public void scrollTo(int x, int y) { scrollToCount++; int old = scrollY; scrollY = y; if (scrollHook != null) scrollHook.accept(old); }
         public void evaluateJavascript(String script, ValueCallback<String> callback) { evalCount++; callback.onReceiveValue(evalResult); }
         public void post(Runnable r) { postQueue.add(r); }
         public void postDelayed(Runnable r, long delay) { delayedQueue.add(r); }
@@ -802,23 +802,41 @@ public final class ActivityCallbacksCheck {
                 invokeChrome(host, "handlePageCommitVisible", new Class<?>[]{String.class}, ChromeState.START_URL);
                 check(host.web.evalCount == 1 && (Integer)fieldValue(host, "surface") == 0xfff5f6f8, "커밋 시점부터 페이지 실제 배경색 동기화");
                 check((host.window.controller.appearance & WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS) != 0, "밝은 배경에서 어두운 아이콘 전환");
+                // A. 복원 직후 로드 전에는 loadUrl·선스크롤(restoreY 소비)·표면 색 읽기를 실행하지 않음
                 host.web.hasRestoredState = true;
                 host.web.evalResult = "[\"rgba(0,0,0,0)\",\"rgb(10, 12, 16)\"]";
                 setFieldValue(host, "restoreY", 500);
                 Bundle saved = new Bundle();
                 saved.putString("web-state", "1");
+                int evalBeforeRestore = host.web.evalCount;
                 invokeChrome(host, "openPlanner", new Class<?>[]{Bundle.class}, saved);
-                // 복원 scrollTo 실행 직전에 사용자가 플릭 중이더라도 복원 스크롤(programmaticScroll=true)은 상태바를 숨기지 않고 플릭을 멈춰야 함
+                host.web.flushPosts();
+                host.web.flushPosts();
+                check(host.web.loadCount == 0 && host.web.scrollToCount == 0
+                    && (Integer)fieldValue(host, "restoreY") == 500 && host.web.evalCount == evalBeforeRestore,
+                    "복원 직후 로드 완료 전에는 loadUrl·선스크롤(restoreY 소비)·표면 색 읽기를 실행하지 않음");
+                // B. 복원 페이지 로드: 커밋 시 배경색 동기화, 로드 완료 뒤 flushPosts 전에는 scrollY 유지
+                invokeChrome(host, "handlePageStarted", new Class<?>[]{String.class}, ChromeState.START_URL);
+                invokeChrome(host, "handlePageCommitVisible", new Class<?>[]{String.class}, ChromeState.START_URL);
+                check((Integer)fieldValue(host, "surface") == 0xff0a0c10, "복원 페이지 커밋 시 다크 표면 배경 동기화");
+                invokeChrome(host, "handlePageFinished", new Class<?>[]{String.class}, ChromeState.START_URL);
+                check(host.web.scrollY == 0 && host.web.scrollToCount == 0, "handlePageFinished 뒤 flushPosts 전에는 scrollY 유지");
+                // C. 플릭 중 복원: scrollTo 실행 직전에 사용자가 플릭 중이더라도 복원 스크롤(programmaticScroll=true)은 상태바를 유지하고 플릭을 멈춤
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 0));
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 650, 96, 10));
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 640, 96, 15));
                 check((Boolean)fieldValue(host, "flinging") && (Boolean)fieldValue(host, "barsVisible"), "복원 직전 플릭 활성화 상태에서 확인");
                 host.web.flushPosts();
-                host.web.flushPosts();
-                check((Integer)fieldValue(host, "surface") == 0xff0a0c10, "상태 복원 시 다크 표면 배경 재동기화");
-                check(host.web.scrollY == 500 && (Boolean)fieldValue(host, "barsVisible"), "플릭 중 실행돼도 복원 스크롤 이동은 프로그램 스크롤로 상태바 표시 유지");
+                check(host.web.scrollY == 500 && host.web.scrollToCount == 1
+                    && (Integer)fieldValue(host, "restoreY") == 0 && (Boolean)fieldValue(host, "barsVisible"),
+                    "로드 완료 뒤 복원 스크롤은 scrollY=500으로 복원하고 restoreY를 0으로 비우며 상태바 표시 유지");
                 check(!(Boolean)fieldValue(host, "flinging"), "복원 프로그램 스크롤은 잔여 flinging을 종료");
-                check(host.web.loadCount == 0, "상태 복원 시 중복 loadUrl 호출 안 함");
+                // D. 한 번만 복원: handlePageFinished를 다시 불러도 복원 스크롤을 중복 실행하지 않음
+                int scrollToBeforeRepeat = host.web.scrollToCount;
+                invokeChrome(host, "handlePageFinished", new Class<?>[]{String.class}, ChromeState.START_URL);
+                host.web.flushPosts();
+                check(host.web.scrollToCount == scrollToBeforeRepeat && (Integer)fieldValue(host, "restoreY") == 0,
+                    "handlePageFinished 재호출 뒤에도 복원 스크롤은 한 번만 실행");
                 // 손가락을 댄(touching=true) 상태에서 지연된 복원 스크롤이 실행되어도 programmaticScroll 가드로 상태바·gestureScrolled를 오염시키지 않아야 함
                 host.web.scrollY = 0;
                 setFieldValue(host, "restoreY", 300);

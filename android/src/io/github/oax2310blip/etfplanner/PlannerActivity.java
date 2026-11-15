@@ -111,7 +111,6 @@ public final class PlannerActivity extends Activity {
 
     private void openPlanner(Bundle state) {
         if (state == null || web.restoreState(state) == null) web.loadUrl(ChromeState.START_URL);
-        else web.post(() -> { readSurface(); applyRestoreScroll(); });
     }
 
     private void restoreDownload(Bundle state) {
