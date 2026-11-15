@@ -171,7 +171,13 @@
 .plan-form-foot{padding:12px 0 0}
 @media(max-width:700px){.plan-form-grid{gap:12px 10px}}
 
-/* 계좌 편집은 기존 자산 항목을 고친다. 목표 입력은 자동 확대를 피하는 16px, 입력·삭제·추가의 터치 높이는 44px 이상으로 둔다. */
+/* 목표 입력은 제목 아래 목표를 누를 때만 보인다. 16px 입력과 44px 터치 영역을 유지하고 추가 버튼의 외형만 줄인다. */
 .purchase-account-edit{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12px;color:var(--text-3)}
 .purchase-account-edit label{display:flex;align-items:center;gap:5px}.purchase-account-edit input{width:70px;min-height:44px;padding:5px 7px;font-size:16px;background:var(--field);color:var(--text);border:1px solid var(--line-strong);border-radius:7px}.purchase-account-edit button{min-width:44px;min-height:44px;color:var(--danger)}
-#purchaseAccountAdd{margin-top:14px;min-height:44px}
+#purchaseAccountAdd{position:relative;align-self:flex-start;justify-self:start;width:max-content;max-width:100%;margin-top:12px;min-height:32px;padding:5px 10px;font-size:12px}
+#purchaseAccountAdd::before{content:"";position:absolute;inset:-6px 0}
+.purchase-target-toggle{position:relative;display:inline;padding:0;border:0;border-bottom:1px dashed var(--text-3);background:transparent;color:inherit;font:inherit;line-height:inherit;cursor:pointer}
+.purchase-target-toggle::before{content:"";position:absolute;inset:-12px -3px}
+.purchase-target-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+.purchase-target-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;max-width:480px;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.purchase-target-fields .purchase-target-field{margin:0;gap:6px}.purchase-target-field>span{max-width:200px;overflow-wrap:anywhere}.purchase-target-fields>.hint{flex-basis:100%;margin:0;font-size:11px;line-height:1.5}.purchase-target-fields>.btn{min-height:44px;margin-left:auto}

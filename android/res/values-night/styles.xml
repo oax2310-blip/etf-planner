@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="planner_background">#0a0c10</color>
+  <style name="PlannerTheme" parent="android:style/Theme.Material.NoActionBar">
+    <item name="android:windowBackground">@color/planner_background</item>
+    <item name="android:colorAccent">#8597ff</item>
+    <item name="android:windowLightStatusBar">false</item>
+    <item name="android:windowActionModeOverlay">true</item>
+  </style>
+</resources>
