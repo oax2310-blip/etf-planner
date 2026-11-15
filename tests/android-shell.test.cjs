@@ -17,8 +17,10 @@ function run(command, args) {
 }
 before(() => {
   classes = fs.mkdtempSync(path.join(os.tmpdir(), 'etf-native-state-'));
-  run(javaTool('javac'), ['-encoding','UTF-8','-d',classes,
-    path.join(root,'android/src/io/github/oax2310blip/etfplanner/ChromeState.java'), path.join(root,'android/test/ChromeStateCheck.java')]);
+  run(javaTool('javac'), ['--release','8','-encoding','UTF-8','-d',classes,
+    path.join(root,'android/src/io/github/oax2310blip/etfplanner/ChromeState.java'),
+    path.join(root,'android/src/io/github/oax2310blip/etfplanner/PendingExport.java'),
+    path.join(root,'android/test/ChromeStateCheck.java')]);
 });
 after(() => { if (classes) fs.rmSync(classes, {recursive:true, force:true}); });
 for (const [name, check] of [
@@ -29,6 +31,10 @@ for (const [name, check] of [
   ['상태바 전환으로 뷰 높이가 바뀌어도 새 드래그로 판단하지 않는다','resizing'],
   ['키보드·화면 복귀의 표시 요청 뒤 크기 변화가 다시 상태바를 숨기지 않는다','keyboard'],
   ['음수 바운스·큰 좌표와 잘못된 임계값에서도 정상 판단한다','bounds'],
+  ['12dp 미만 터치 뒤 관성 스크롤이 누적 임계값을 넘기면 상태바를 숨긴다','fling-continue'],
+  ['반대 방향 플릭 관성 스크롤이 12dp를 넘기면 상태바를 다시 표시한다','fling-reverse'],
+  ['같은 Y 좌표(가로 스크롤 등)는 방향과 임계값 기준을 흔들지 않는다','horizontal-tick'],
+  ['레이아웃 크기 변화 중 이동 뒤에도 새 임계값 전까지 숨김을 유지한다','resize-preserve'],
   ['세 페이지와 기존 쿼리·해시만 앱 안에서 연다','pages'],
   ['이웃 Pages·위장 출처·다른 포트·파일·스크립트 주소는 앱 문서로 승인하지 않는다','reject-pages'],
   ['파일 내보내기는 현재 출처에서 만든 정상 blob 주소만 받는다','blobs'],
@@ -89,15 +95,26 @@ test('Android 비동기 백업은 세 페이지에서 메모리 blob만 추가�
   }
 });
 
-test('Android 최초 배경은 웹앱의 낮·밤 배경색과 같고 두 테마를 구분한다', () => {
+test('Android 최초 배경은 웹앱의 낮·밤 배경색과 같고 두 테마 모두 투명 상태바를 요청한다', () => {
   const css=source('css/app.css');
-  for(const [directory,color] of [['values',css.match(/:root\{[^}]*--bg:([^;]+)/)[1]],['values-night',css.match(/:root\[data-theme=dark\]\{[^}]*--bg:([^;]+)/)[1]]])
-    assert.equal(source(`android/res/${directory}/styles.xml`).match(/<color name="planner_background">([^<]+)<\/color>/)[1],color);
+  for(const [directory,color] of [['values',css.match(/:root\{[^}]*--bg:([^;]+)/)[1]],['values-night',css.match(/:root\[data-theme=dark\]\{[^}]*--bg:([^;]+)/)[1]]]) {
+    const style = source(`android/res/${directory}/styles.xml`);
+    assert.equal(style.match(/<color name="planner_background">([^<]+)<\/color>/)[1],color);
+    assert.match(style,/<item name="android:statusBarColor">@android:color\/transparent<\/item>/);
+    assert.match(style,/<item name="android:windowDrawsSystemBarBackgrounds">true<\/item>/);
+  }
 });
-test('Android는 상태바만 제어하고 강제 다크·자동 백업·임의 JS 브리지를 사용하지 않는다', () => {
+test('Android는 상태바만 제어하고 컷아웃·플릭·조기 표면 동기화만 추가하며 강제 다크·자동 백업·임의 JS 브리지를 쓰지 않는다', () => {
   const activity=source('android/src/io/github/oax2310blip/etfplanner/PlannerActivity.java'),manifest=source('android/AndroidManifest.xml');
   assert.match(activity,/setAlgorithmicDarkeningAllowed\(false\)/);
   assert.match(activity,/setForceDark\(WebSettings\.FORCE_DARK_OFF\)/);
+  assert.match(activity,/clearFlags\(WindowManager\.LayoutParams\.FLAG_TRANSLUCENT_STATUS\)/);
+  assert.match(activity,/addFlags\(WindowManager\.LayoutParams\.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS\)/);
+  assert.match(activity,/LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS/);
+  assert.match(activity,/LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES/);
+  assert.match(activity,/onPageCommitVisible/);
+  assert.match(activity,/ViewConfiguration\.get/);
+  assert.match(activity,/VelocityTracker\.obtain/);
   assert.match(activity,/controller\.hide\(WindowInsets\.Type\.statusBars\(\)\)/);
   assert.doesNotMatch(activity,/hide\(WindowInsets\.Type\.(systemBars|navigationBars)/);
   assert.match(activity,/setStatusBarContrastEnforced\(false\)/);

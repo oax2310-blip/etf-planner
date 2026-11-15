@@ -20,8 +20,10 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -38,12 +40,31 @@ public final class ActivityCallbacksCheck {
             ClassTree activity = (ClassTree)unit.getTypeDecls().get(0);
             StringBuilder body = new StringBuilder();
             StringBuilder navigation = new StringBuilder();
+            StringBuilder chromeBody = new StringBuilder();
+            java.util.Set<String> chromeFields = new java.util.HashSet<>(Arrays.asList(
+                "chrome", "touching", "keyboardVisible", "barsVisible", "animating", "adjustingInsets",
+                "gestureDragged", "gestureScrolled", "flinging", "programmaticScroll", "surface", "restoreY",
+                "activePointerId", "touchSlop", "minFlingVelocity", "maxFlingVelocity", "downY", "velocity",
+                "targetInsets", "stopFling", "clearAdjusting", "postClearAdjusting"
+            ));
+            java.util.Set<String> chromeMethods = new java.util.HashSet<>(Arrays.asList(
+                "configureWindow", "openPlanner", "handlePageStarted", "handlePageCommitVisible",
+                "handlePageFinished", "applyRestoreScroll", "pointerScreenY", "trackVelocity", "endFling",
+                "scheduleStopFling", "scheduleClearAdjusting", "releaseTouch", "handleTouch", "handleScroll",
+                "applyInsets", "endInsetsAnimation", "applyPadding", "applyBars", "setSurface", "readSurface"
+            ));
             for (Tree member : activity.getMembers()) {
-                if (member instanceof VariableTree && ((VariableTree)member).getName().contentEquals("PENDING_EXPORT_STATE")) body.append(member).append(';');
+                if (member instanceof VariableTree) {
+                    String varName = ((VariableTree)member).getName().toString();
+                    if (varName.equals("PENDING_EXPORT_STATE")) body.append(member).append(';');
+                    if (chromeFields.contains(varName)) chromeBody.append(member).append(';');
+                    continue;
+                }
                 if (!(member instanceof MethodTree)) continue;
                 MethodTree method = (MethodTree)member;
                 String name = method.getName().toString();
                 if (Arrays.asList("restoreDownload", "pollDownload", "onSaveInstanceState", "onActivityResult", "onDestroy").contains(name)) body.append(method);
+                if (chromeMethods.contains(name)) chromeBody.append(method);
                 if (name.equals("routeNavigation")) navigation.append(method);
                 if (name.equals("configureWebView")) new TreeScanner<Void,Void>() {
                     @Override public Void visitMethod(MethodTree callback, Void unused) {
@@ -67,6 +88,9 @@ public final class ActivityCallbacksCheck {
             Path links = out.resolve("NavigationUnderTest.java");
             Files.writeString(links, "package io.github.oax2310blip.etfplanner; import io.github.oax2310blip.etfplanner.ActivityCallbacksCheck.*; public class NavigationUnderTest extends Host {" + navigation + "}");
             check(compiler.run(null, null, null, "-encoding", "UTF-8", "-cp", out.toString(), "-d", out.toString(), links.toString()) == 0, "탐색 콜백 컴파일");
+            Path chromeFile = out.resolve("ChromeUnderTest.java");
+            Files.writeString(chromeFile, "package io.github.oax2310blip.etfplanner; import java.util.*; import io.github.oax2310blip.etfplanner.ActivityCallbacksCheck.*; public class ChromeUnderTest extends ChromeHost {" + chromeBody + "}");
+            check(compiler.run(null, null, null, "-encoding", "UTF-8", "-cp", out.toString(), "-d", out.toString(), chromeFile.toString()) == 0, "상태바·스크롤 콜백 컴파일");
         }
     }
 
@@ -145,8 +169,218 @@ public final class ActivityCallbacksCheck {
         public String optString(String key) { return result.substring(0, result.indexOf('|')); }
         public String getString(String key) { return result.substring(result.indexOf('|') + 1); }
     }
+    public static final class JSONArray {
+        final List<String> items = new ArrayList<>();
+        public JSONArray(String json) {
+            if (json == null) return;
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(json);
+            while (m.find()) items.add(m.group(1));
+        }
+        public String optString(int index) { return index >= 0 && index < items.size() ? items.get(index) : ""; }
+    }
     public interface Callback { void onReceiveValue(Uri[] values); }
+    public interface ValueCallback<T> { void onReceiveValue(T value); }
     public interface JavascriptCallback { void result(String value); }
+    public static final class Build {
+        public static final class VERSION { public static int SDK_INT = 35; }
+    }
+    public static final class Color { public static final int TRANSPARENT = 0; }
+    public static final class View {
+        public static final int SYSTEM_UI_FLAG_LAYOUT_STABLE = 0x00000100;
+        public static final int SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN = 0x00000400;
+        public static final int SYSTEM_UI_FLAG_FULLSCREEN = 0x00000004;
+        public static final int SYSTEM_UI_FLAG_LIGHT_STATUS_BAR = 0x00002000;
+        int systemUiVisibility;
+        public void setSystemUiVisibility(int visibility) { systemUiVisibility = visibility; }
+    }
+    public static final class WindowManager {
+        public static final class LayoutParams {
+            public static final int FLAG_TRANSLUCENT_STATUS = 0x04000000;
+            public static final int FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS = 0x80000000;
+            public static final int LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES = 1;
+            public static final int LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS = 3;
+            public int layoutInDisplayCutoutMode;
+        }
+    }
+    public static final class WindowInsetsController {
+        public static final int APPEARANCE_LIGHT_STATUS_BARS = 8;
+        public static final int BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE = 2;
+        int appearance, behavior, hideCount, showCount;
+        Boolean visibleState;
+        public void setSystemBarsAppearance(int appearance, int mask) { this.appearance = (this.appearance & ~mask) | (appearance & mask); }
+        public void setSystemBarsBehavior(int behavior) { this.behavior = behavior; }
+        public void show(int types) { showCount++; visibleState = true; }
+        public void hide(int types) { hideCount++; visibleState = false; }
+    }
+    public static final class Window {
+        int flags = WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS;
+        int statusBarColor = 0xff000000;
+        boolean contrastEnforced = true, decorFits = true;
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams();
+        final View decor = new View();
+        final WindowInsetsController controller = new WindowInsetsController();
+        public void clearFlags(int f) { flags &= ~f; }
+        public void addFlags(int f) { flags |= f; }
+        public void setStatusBarColor(int c) { statusBarColor = c; }
+        public void setStatusBarContrastEnforced(boolean b) { contrastEnforced = b; }
+        public WindowManager.LayoutParams getAttributes() { return params; }
+        public void setAttributes(WindowManager.LayoutParams p) { params = p; }
+        public void setDecorFitsSystemWindows(boolean b) { decorFits = b; }
+        public View getDecorView() { return decor; }
+        public WindowInsetsController getInsetsController() { return controller; }
+    }
+    public static final class Insets {
+        public final int left, top, right, bottom;
+        Insets(int left, int top, int right, int bottom) { this.left = left; this.top = top; this.right = right; this.bottom = bottom; }
+        public static Insets of(int l, int t, int r, int b) { return new Insets(l, t, r, b); }
+    }
+    public static final class DisplayCutout {
+        final int left, top, right, bottom;
+        DisplayCutout(int l, int t, int r, int b) { left = l; top = t; right = r; bottom = b; }
+        public int getSafeInsetLeft() { return left; }
+        public int getSafeInsetTop() { return top; }
+        public int getSafeInsetRight() { return right; }
+        public int getSafeInsetBottom() { return bottom; }
+    }
+    public static final class WindowInsets {
+        public static final WindowInsets CONSUMED = new WindowInsets();
+        public static final class Type {
+            public static int statusBars() { return 1; }
+            public static int systemBars() { return 2; }
+            public static int displayCutout() { return 4; }
+            public static int ime() { return 8; }
+        }
+        boolean imeVisible;
+        Insets barInsets = Insets.of(0, 0, 0, 0), cutoutInsets = Insets.of(0, 0, 0, 0), imeInsets = Insets.of(0, 0, 0, 0);
+        int sysL, sysT, sysR, sysB;
+        DisplayCutout cutout;
+        public boolean isVisible(int type) { return (type & Type.ime()) != 0 && imeVisible; }
+        public Insets getInsets(int mask) {
+            int l = 0, t = 0, r = 0, b = 0;
+            if ((mask & Type.systemBars()) != 0) { l = Math.max(l, barInsets.left); t = Math.max(t, barInsets.top); r = Math.max(r, barInsets.right); b = Math.max(b, barInsets.bottom); }
+            if ((mask & Type.displayCutout()) != 0) { l = Math.max(l, cutoutInsets.left); t = Math.max(t, cutoutInsets.top); r = Math.max(r, cutoutInsets.right); b = Math.max(b, cutoutInsets.bottom); }
+            if ((mask & Type.ime()) != 0) { l = Math.max(l, imeInsets.left); t = Math.max(t, imeInsets.top); r = Math.max(r, imeInsets.right); b = Math.max(b, imeInsets.bottom); }
+            return Insets.of(l, t, r, b);
+        }
+        public int getSystemWindowInsetLeft() { return sysL; }
+        public int getSystemWindowInsetTop() { return sysT; }
+        public int getSystemWindowInsetRight() { return sysR; }
+        public int getSystemWindowInsetBottom() { return sysB; }
+        public DisplayCutout getDisplayCutout() { return cutout; }
+        public WindowInsets consumeSystemWindowInsets() { return this; }
+    }
+    public static final class WindowInsetsAnimation {}
+    public static final class MotionEvent {
+        public static final int INVALID_POINTER_ID = -1;
+        public static final int ACTION_DOWN = 0, ACTION_UP = 1, ACTION_MOVE = 2, ACTION_CANCEL = 3, ACTION_POINTER_DOWN = 5, ACTION_POINTER_UP = 6;
+        final int actionMasked, actionIndex;
+        final int[] ids;
+        final float[] xs, ys;
+        float offsetX, offsetY;
+        final long timeMs;
+        MotionEvent(int actionMasked, int actionIndex, int[] ids, float[] xs, float[] ys, float rawOffsetY, long timeMs) {
+            this.actionMasked = actionMasked; this.actionIndex = actionIndex; this.ids = ids; this.xs = xs.clone(); this.ys = ys.clone();
+            this.offsetX = 0f; this.offsetY = rawOffsetY; this.timeMs = timeMs;
+        }
+        static MotionEvent single(int action, float x, float y, float offsetY, long timeMs) {
+            return new MotionEvent(action, 0, new int[]{0}, new float[]{x}, new float[]{y}, offsetY, timeMs);
+        }
+        public static MotionEvent obtain(MotionEvent src) {
+            MotionEvent copy = new MotionEvent(src.actionMasked, src.actionIndex, src.ids, src.xs, src.ys, src.offsetY, src.timeMs);
+            copy.offsetX = src.offsetX;
+            return copy;
+        }
+        public void offsetLocation(float dx, float dy) {
+            for (int i = 0; i < xs.length; i++) { xs[i] += dx; ys[i] += dy; }
+            offsetX -= dx; offsetY -= dy;
+        }
+        public void recycle() {}
+        public int getActionMasked() { return actionMasked; }
+        public int getActionIndex() { return actionIndex; }
+        public int getPointerCount() { return ids.length; }
+        public int getPointerId(int idx) { return ids[idx]; }
+        public int findPointerIndex(int id) { for (int i = 0; i < ids.length; i++) if (ids[i] == id) return i; return -1; }
+        public float getX() { return xs[0]; }
+        public float getY() { return ys[0]; }
+        public float getX(int idx) { return xs[idx]; }
+        public float getY(int idx) { return ys[idx]; }
+        public float getRawX() { return xs[0] + offsetX; }
+        public float getRawY() { return ys[0] + offsetY; }
+    }
+    public static final class VelocityTracker {
+        static int obtainedCount, recycledCount;
+        final List<float[]> samples = new ArrayList<>();
+        final Map<Integer, Float> computed = new HashMap<>();
+        public static VelocityTracker obtain() { obtainedCount++; return new VelocityTracker(); }
+        public void clear() { samples.clear(); computed.clear(); }
+        public void recycle() { recycledCount++; clear(); }
+        public void addMovement(MotionEvent event) {
+            for (int i = 0; i < event.getPointerCount(); i++) samples.add(new float[]{event.getPointerId(i), event.getY(i), event.timeMs});
+        }
+        public void computeCurrentVelocity(int units, float maxVelocity) {
+            computed.clear();
+            Map<Integer, List<float[]>> byPointer = new HashMap<>();
+            for (float[] s : samples) byPointer.computeIfAbsent((int)s[0], k -> new ArrayList<>()).add(s);
+            for (Map.Entry<Integer, List<float[]>> entry : byPointer.entrySet()) {
+                List<float[]> list = entry.getValue();
+                float v = 0f;
+                if (list.size() >= 2) {
+                    float[] first = list.get(0), last = list.get(list.size() - 1);
+                    float dt = last[2] - first[2];
+                    if (dt > 0f) v = (last[1] - first[1]) * units / dt;
+                }
+                v = Math.max(-maxVelocity, Math.min(maxVelocity, v));
+                computed.put(entry.getKey(), v);
+            }
+        }
+        public float getYVelocity(int pointerId) { Float v = computed.get(pointerId); return v == null ? 0f : v; }
+    }
+    public static final class FrameLayout {
+        int height, padL, padT, padR, padB, backgroundColor;
+        final List<Runnable> animQueue = new ArrayList<>();
+        final List<Runnable> postQueue = new ArrayList<>();
+        public int getHeight() { return height; }
+        public int getPaddingLeft() { return padL; }
+        public int getPaddingTop() { return padT; }
+        public int getPaddingRight() { return padR; }
+        public int getPaddingBottom() { return padB; }
+        public void setPadding(int l, int t, int r, int b) { padL = l; padT = t; padR = r; padB = b; }
+        public void setBackgroundColor(int color) { backgroundColor = color; }
+        public void postOnAnimation(Runnable r) { animQueue.add(r); }
+        public void post(Runnable r) { postQueue.add(r); }
+        public void removeCallbacks(Runnable r) { animQueue.remove(r); postQueue.remove(r); }
+        void runAnimationsOnly() {
+            List<Runnable> current = new ArrayList<>(animQueue); animQueue.clear();
+            for (Runnable r : current) r.run();
+        }
+        void runPosts() {
+            List<Runnable> current = new ArrayList<>(postQueue); postQueue.clear();
+            for (Runnable r : current) r.run();
+        }
+        void flushFrame() { runAnimationsOnly(); runPosts(); }
+    }
+    public static final class ChromeWeb {
+        String url = ChromeState.START_URL;
+        int scrollY, backgroundColor, loadCount, stopCount, evalCount;
+        boolean hasRestoredState;
+        String evalResult = "[\"rgba(0,0,0,0)\",\"rgb(10, 12, 16)\"]";
+        final List<Runnable> postQueue = new ArrayList<>();
+        final List<Runnable> delayedQueue = new ArrayList<>();
+        java.util.function.IntConsumer scrollHook;
+        public String getUrl() { return url; }
+        public int getScrollY() { return scrollY; }
+        public void setBackgroundColor(int color) { backgroundColor = color; }
+        public Object restoreState(Bundle state) { return hasRestoredState && state != null ? this : null; }
+        public void loadUrl(String u) { url = u; loadCount++; }
+        public void stopLoading() { stopCount++; }
+        public void scrollTo(int x, int y) { int old = scrollY; scrollY = y; if (scrollHook != null) scrollHook.accept(old); }
+        public void evaluateJavascript(String script, ValueCallback<String> callback) { evalCount++; callback.onReceiveValue(evalResult); }
+        public void post(Runnable r) { postQueue.add(r); }
+        public void postDelayed(Runnable r, long delay) { delayedQueue.add(r); }
+        public void removeCallbacks(Runnable r) { postQueue.remove(r); delayedQueue.remove(r); }
+        void flushPosts() { List<Runnable> q = new ArrayList<>(postQueue); postQueue.clear(); for (Runnable r : q) r.run(); }
+        void flushDelayed() { List<Runnable> q = new ArrayList<>(delayedQueue); delayedQueue.clear(); for (Runnable r : q) r.run(); }
+    }
     public static final class Web {
         String job;
         public void saveState(Bundle state) {}
@@ -178,6 +412,17 @@ public final class ActivityCallbacksCheck {
         public boolean shouldOverrideUrlLoading(WebView view, String url) { return false; }
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return false; }
     }
+    public static class ChromeHost {
+        protected final FrameLayout root = new FrameLayout();
+        protected final ChromeWeb web = new ChromeWeb();
+        protected final Window window = new Window();
+        protected boolean readingDownload;
+        protected int downloadSequence;
+        final List<String> notices = new ArrayList<>();
+        protected Window getWindow() { return window; }
+        protected String asset(String name) { return name; }
+        protected void notice(String msg) { notices.add(msg); }
+    }
     public static class Host extends Framework {
         protected static final int OPEN_FILE = 10, SAVE_FILE = 11, RESULT_OK = -1;
         protected PendingExport pendingDownload;
@@ -200,6 +445,7 @@ public final class ActivityCallbacksCheck {
         protected void notice(String message) { notices.add(message); }
         protected void openBrowser(String url) { browser.add(url); }
         protected String asset(String name) { return name; }
+        protected void releaseTouch() {}
         protected void startActivityForResult(Intent intent, int request) throws IOException {
             pickerLaunches++;
             check(pendingDownload != null, "선택기를 열기 전에 임시 바이트를 보관");
@@ -289,12 +535,216 @@ public final class ActivityCallbacksCheck {
                 check(host.browser.isEmpty(), "자동/서브프레임은 브라우저 미실행");
                 check(host.shouldOverrideUrlLoading(view, new WebResourceRequest(external, true, true)), "주 프레임 클릭 처리");
                 check(host.browser.equals(Arrays.asList(external)), "실제 클릭만 외부 브라우저 실행"); break;
-            default: throw new AssertionError("알 수 없는 탐색 검사");
+                default: throw new AssertionError("알 수 없는 탐색 검사");
+        }
+    }
+    private static Object fieldValue(Object target, String name) throws Exception {
+        Class<?> c = target.getClass();
+        while (c != null) {
+            try { java.lang.reflect.Field f = c.getDeclaredField(name); f.setAccessible(true); return f.get(target); }
+            catch (NoSuchFieldException ignored) { c = c.getSuperclass(); }
+        }
+        throw new NoSuchFieldException(name);
+    }
+    private static void setFieldValue(Object target, String name, Object value) throws Exception {
+        Class<?> c = target.getClass();
+        while (c != null) {
+            try { java.lang.reflect.Field f = c.getDeclaredField(name); f.setAccessible(true); f.set(target, value); return; }
+            catch (NoSuchFieldException ignored) { c = c.getSuperclass(); }
+        }
+        throw new NoSuchFieldException(name);
+    }
+    private static Object invokeChrome(ChromeHost host, String name, Class<?>[] types, Object... args) throws Exception {
+        java.lang.reflect.Method m = host.getClass().getDeclaredMethod(name, types);
+        m.setAccessible(true);
+        return m.invoke(host, args);
+    }
+    private static ChromeHost newChrome() throws Exception {
+        ChromeHost host = (ChromeHost)Class.forName("io.github.oax2310blip.etfplanner.ChromeUnderTest").getConstructor().newInstance();
+        setFieldValue(host, "chrome", new ChromeState(36));
+        setFieldValue(host, "touchSlop", 24);
+        setFieldValue(host, "minFlingVelocity", 150);
+        setFieldValue(host, "maxFlingVelocity", 24000);
+        setFieldValue(host, "surface", 0xff0a0c10);
+        host.web.scrollHook = oldY -> {
+            try { invokeChrome(host, "handleScroll", new Class<?>[]{int.class, int.class}, host.web.scrollY, oldY); }
+            catch (Exception error) { throw new RuntimeException(error); }
+        };
+        return host;
+    }
+    private static void scrollStep(ChromeHost host, int y) throws Exception {
+        int oldY = host.web.scrollY;
+        host.web.scrollY = y;
+        invokeChrome(host, "handleScroll", new Class<?>[]{int.class, int.class}, y, oldY);
+    }
+    private static void chrome(String scenario) throws Exception {
+        Build.VERSION.SDK_INT = 35;
+        VelocityTracker.obtainedCount = VelocityTracker.recycledCount = 0;
+        ChromeHost host = newChrome();
+        switch (scenario) {
+            case "chrome-flick-hide":
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 672, 96, 12));
+                scrollStep(host, 20);
+                check((Boolean)fieldValue(host, "barsVisible"), "12dp 미만 드래그 중에는 상태바 유지");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 668, 96, 14));
+                check((Boolean)fieldValue(host, "flinging") && !(Boolean)fieldValue(host, "touching"), "빠른 플릭 해제 뒤 관성 상태 유지");
+                scrollStep(host, 60);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "손가락을 뗀 뒤 관성 스크롤이 12dp를 넘으면 상태바 숨김");
+                check(host.window.controller.hideCount == 1 && Boolean.FALSE.equals(host.window.controller.visibleState), "WindowInsetsController hide 호출");
+                check(!host.web.delayedQueue.isEmpty(), "플릭 종료 타이머 예약");
+                host.web.flushDelayed();
+                check(!(Boolean)fieldValue(host, "flinging"), "플릭 종료 타이머 만료 뒤 관성 해제");
+                break;
+            case "chrome-flick-nopre-hide":
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 660, 96, 12));
+                check((Boolean)fieldValue(host, "flinging"), "터치 중 스크롤 전 손가락을 떼어도 touchSlop 이상 빠른 플릭 감지");
+                scrollStep(host, 15);
+                check((Boolean)fieldValue(host, "barsVisible"), "12dp 도달 전 상태바 유지");
+                scrollStep(host, 50);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "후속 관성 스크롤만으로 상태바 숨김");
+                break;
+            case "chrome-flick-show":
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 0));
+                scrollStep(host, 500);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 700, 96, 200));
+                check(!(Boolean)fieldValue(host, "barsVisible"), "숨김 상태에서 시작");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 300, 0, 300));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 330, 0, 315));
+                scrollStep(host, 490);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "반대 방향 12dp 전에는 숨김 유지");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 340, 0, 320));
+                scrollStep(host, 440);
+                check((Boolean)fieldValue(host, "barsVisible") && Boolean.TRUE.equals(host.window.controller.visibleState), "반대 방향 플릭 관성 스크롤이 12dp를 넘으면 상태바 복귀");
+                break;
+            case "chrome-tap-programmatic":
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 500, 96, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 502, 96, 50));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 502, 96, 80));
+                check(!(Boolean)fieldValue(host, "flinging"), "단순 탭에서는 플릭 시작 금지");
+                scrollStep(host, 400);
+                scrollStep(host, 800);
+                check((Boolean)fieldValue(host, "barsVisible"), "단순 탭 뒤 JS scrollTo는 상태바를 숨기지 않음");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 500, 96, 100));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 480, 96, 105));
+                check(!(Boolean)fieldValue(host, "flinging"), "touchSlop(24px) 미만 빠른 미세 떨림도 플릭 시작 금지");
+                scrollStep(host, 900);
+                check((Boolean)fieldValue(host, "barsVisible"), "미세 떨림 탭 뒤 프로그램 스크롤도 상태바 유지");
+                break;
+            case "chrome-insets-clear":
+                host.root.padT = 96;
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 620, 96, 30));
+                scrollStep(host, 500);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 620, 96, 150));
+                check(!(Boolean)fieldValue(host, "barsVisible"), "상태바 숨김 완료");
+                WindowInsets collapsed = new WindowInsets();
+                collapsed.barInsets = Insets.of(0, 0, 0, 120);
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, collapsed);
+                check((Boolean)fieldValue(host, "adjustingInsets"), "패딩 변경 직후 여백 조정 플래그 설정");
+                host.root.runAnimationsOnly();
+                check((Boolean)fieldValue(host, "adjustingInsets"), "레이아웃 traversal 전에는 여백 조정 플래그 유지");
+                scrollStep(host, 420);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "여백 조정 프레임 중 크기 변화 스크롤은 상태바를 다시 열지 않음");
+                host.root.runPosts();
+                check(!(Boolean)fieldValue(host, "adjustingInsets"), "프레임 완료 뒤 adjustingInsets 자동 해제");
+                // 애니메이션 종료 뒤 패딩 변화가 없더라도 adjustingInsets가 남아 있으면 해제 예약 확인
+                setFieldValue(host, "animating", true);
+                setFieldValue(host, "adjustingInsets", true);
+                Set<WindowInsetsAnimation> running = new HashSet<>();
+                WindowInsetsAnimation anim = new WindowInsetsAnimation();
+                running.add(anim);
+                invokeChrome(host, "endInsetsAnimation", new Class<?>[]{WindowInsetsAnimation.class, Set.class}, anim, running);
+                host.root.flushFrame();
+                check(!(Boolean)fieldValue(host, "adjustingInsets"), "애니메이션 종료 뒤에도 adjustingInsets 자동 해제");
+                // 즉시 반대 방향 플릭 (중간 ACTION_MOVE 없음)도 정상 작동해야 함
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 300, 0, 300));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 345, 0, 312));
+                scrollStep(host, 360);
+                check((Boolean)fieldValue(host, "barsVisible"), "여백 해제 뒤 후속 플릭으로 상태바 복귀");
+                break;
+            case "chrome-prelayout-ime-api29":
+                Build.VERSION.SDK_INT = 29;
+                setFieldValue(host, "barsVisible", false);
+                host.root.height = 0;
+                WindowInsets preLayout = new WindowInsets();
+                preLayout.sysT = 96; preLayout.sysB = 120;
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, preLayout);
+                check(!(Boolean)fieldValue(host, "keyboardVisible"), "root 높이 0일 때 하단 내비게이션 여백을 키보드로 오인하지 않음");
+                check(!(Boolean)fieldValue(host, "barsVisible"), "오인으로 숨김 상태바를 열지 않음");
+                host.root.flushFrame();
+                check(!(Boolean)fieldValue(host, "adjustingInsets"), "API 29 패딩 변경도 프레임 뒤 adjustingInsets 해제");
+                host.root.height = 1920;
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, preLayout);
+                check(!(Boolean)fieldValue(host, "keyboardVisible"), "레이아웃 뒤에도 120px 하단 내비게이션은 키보드 아님");
+                WindowInsets imeOpen = new WindowInsets();
+                imeOpen.sysT = 96; imeOpen.sysB = 700;
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, imeOpen);
+                check((Boolean)fieldValue(host, "keyboardVisible") && (Boolean)fieldValue(host, "barsVisible"), "실제 키보드 여백(700 > 1920/4)에서는 상태바 복원");
+                break;
+            case "chrome-horizontal-ignored":
+                host.web.scrollY = 400;
+                ((ChromeState)fieldValue(host, "chrome")).beginGesture(400);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 500, 96, 0));
+                scrollStep(host, 400);
+                check(!(Boolean)fieldValue(host, "gestureScrolled"), "Y가 같은 가로 스크롤은 세로 스크롤 이력으로 기록하지 않음");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 470, 96, 12));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 465, 96, 15));
+                check(host.web.delayedQueue.size() == 1, "초기 플릭 타이머 1건");
+                host.web.delayedQueue.clear();
+                scrollStep(host, 400);
+                check(host.web.delayedQueue.isEmpty(), "가로 스크롤 틱은 플릭 타이머를 연장하지 않음");
+                check((Boolean)fieldValue(host, "barsVisible"), "가로 스크롤 뒤에도 상태바 상태 유지");
+                break;
+            case "chrome-window-and-surface":
+                Build.VERSION.SDK_INT = 35;
+                invokeChrome(host, "configureWindow", new Class<?>[]{Window.class}, host.window);
+                check((host.window.flags & WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS) == 0, "투명 상태바 구형 반투명 플래그 제거");
+                check((host.window.flags & WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS) != 0, "시스템 바 직접 그리기 플래그 설정");
+                check(host.window.statusBarColor == Color.TRANSPARENT, "상태바 색 투명 설정");
+                check(!host.window.contrastEnforced && !host.window.decorFits, "API 29 대비 강제 해제 및 edge-to-edge");
+                check(host.window.params.layoutInDisplayCutoutMode == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS, "API 30 이상 컷아웃 ALWAYS 모드");
+                Build.VERSION.SDK_INT = 28;
+                invokeChrome(host, "configureWindow", new Class<?>[]{Window.class}, host.window);
+                check(host.window.params.layoutInDisplayCutoutMode == WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES, "API 28~29 SHORT_EDGES 유지");
+                Build.VERSION.SDK_INT = 35;
+                host.web.evalResult = "[\"rgba(0,0,0,0)\",\"rgb(245, 246, 248)\"]";
+                invokeChrome(host, "handlePageCommitVisible", new Class<?>[]{String.class}, "https://evil.test/");
+                check(host.web.evalCount == 0, "외부 페이지는 표면 색 읽기 안 함");
+                invokeChrome(host, "handlePageCommitVisible", new Class<?>[]{String.class}, ChromeState.START_URL);
+                check(host.web.evalCount == 1 && (Integer)fieldValue(host, "surface") == 0xfff5f6f8, "커밋 시점부터 페이지 실제 배경색 동기화");
+                check((host.window.controller.appearance & WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS) != 0, "밝은 배경에서 어두운 아이콘 전환");
+                host.web.hasRestoredState = true;
+                host.web.evalResult = "[\"rgba(0,0,0,0)\",\"rgb(10, 12, 16)\"]";
+                setFieldValue(host, "restoreY", 500);
+                Bundle saved = new Bundle();
+                saved.putString("web-state", "1");
+                invokeChrome(host, "openPlanner", new Class<?>[]{Bundle.class}, saved);
+                host.web.flushPosts();
+                host.web.flushPosts();
+                check((Integer)fieldValue(host, "surface") == 0xff0a0c10, "상태 복원 시 다크 표면 배경 재동기화");
+                check(host.web.scrollY == 500 && (Boolean)fieldValue(host, "barsVisible"), "복원 스크롤 이동은 프로그램 스크롤로 상태바 표시 유지");
+                check(host.web.loadCount == 0, "상태 복원 시 중복 loadUrl 호출 안 함");
+                break;
+            case "chrome-mid-drag-resize-offset":
+                // 드래그 도중 상태바가 숨겨져 web top padding이 96 -> 0으로 줄어 viewY가 그대로(604 -> 604) 보여도
+                // 실제 화면 좌표(rawY: 700 -> 604)는 위로 96px 이동했으므로 플릭이 감지되어야 함
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 604, 96, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 604, 0, 12));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 604, 0, 15));
+                check((Boolean)fieldValue(host, "flinging"), "중간 패딩 축소에도 screenY 기준 플릭 감지 유지");
+                invokeChrome(host, "releaseTouch", new Class<?>[0]);
+                check(VelocityTracker.obtainedCount == 1 && VelocityTracker.recycledCount == 1, "VelocityTracker 누수 없이 반환");
+                check(!(Boolean)fieldValue(host, "flinging") && !(Boolean)fieldValue(host, "touching"), "releaseTouch 후 터치·플릭 상태 초기화");
+                break;
+            default: throw new AssertionError("알 수 없는 상태바 검사: " + scenario);
         }
     }
     public static void main(String[] args) throws Exception {
         if (args[0].equals("compile")) { compile(Path.of(args[1]), Path.of(args[2])); return; }
         if (args[0].endsWith("-links")) { navigation(args[0]); return; }
+        if (args[0].startsWith("chrome-")) { chrome(args[0]); return; }
         Path cache = Files.createTempDirectory("planner-export-check-");
         try {
             byte[] bytes = new byte[3 * 1024 * 1024 + 3];

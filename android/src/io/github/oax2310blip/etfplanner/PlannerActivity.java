@@ -13,7 +13,9 @@ import android.os.Handler;
 import android.util.Base64;
 import android.view.DisplayCutout;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsAnimation;
@@ -47,28 +49,30 @@ public final class PlannerActivity extends Activity {
     private FrameLayout root;
     private ChromeState chrome;
     private boolean touching, keyboardVisible, barsVisible = true, animating, adjustingInsets;
-    private int surface, restoreY;
+    private boolean gestureDragged, gestureScrolled, flinging, programmaticScroll;
+    private int surface, restoreY, activePointerId = MotionEvent.INVALID_POINTER_ID;
+    private int touchSlop, minFlingVelocity, maxFlingVelocity;
+    private float downY;
+    private VelocityTracker velocity;
     private WindowInsets targetInsets;
     private ValueCallback<Uri[]> fileCallback;
     private PendingExport pendingDownload;
     private boolean readingDownload;
     private int downloadSequence;
+    private final Runnable stopFling = () -> flinging = false;
+    private final Runnable clearAdjusting = () -> { if (!animating) adjustingInsets = false; };
+    private final Runnable postClearAdjusting = () -> { if (root != null) root.post(clearAdjusting); };
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         restoreDownload(state);
         surface = getResources().getColor(R.color.planner_background, getTheme());
         chrome = new ChromeState(Math.round(12 * getResources().getDisplayMetrics().density));
-        Window window = getWindow();
-        window.setStatusBarColor(Color.TRANSPARENT);
-        if (Build.VERSION.SDK_INT >= 29) window.setStatusBarContrastEnforced(false);
-        if (Build.VERSION.SDK_INT >= 28) {
-            WindowManager.LayoutParams params = window.getAttributes();
-            params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            window.setAttributes(params);
-        }
-        if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
-        else window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        ViewConfiguration config = ViewConfiguration.get(this);
+        touchSlop = config.getScaledTouchSlop();
+        minFlingVelocity = config.getScaledMinimumFlingVelocity();
+        maxFlingVelocity = config.getScaledMaximumFlingVelocity();
+        configureWindow(getWindow());
         root = new FrameLayout(this);
         web = new WebView(this);
         root.addView(web, new FrameLayout.LayoutParams(-1, -1));
@@ -89,8 +93,25 @@ public final class PlannerActivity extends Activity {
             .setOnCancelListener(dialog -> finish()).show();
     }
 
+    @SuppressWarnings("deprecation") private void configureWindow(Window window) {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= 29) window.setStatusBarContrastEnforced(false);
+        if (Build.VERSION.SDK_INT >= 28) {
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= 30
+                ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(params);
+        }
+        if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
+        else window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+    }
+
     private void openPlanner(Bundle state) {
         if (state == null || web.restoreState(state) == null) web.loadUrl(ChromeState.START_URL);
+        else web.post(() -> { readSurface(); applyRestoreScroll(); });
     }
 
     private void restoreDownload(Bundle state) {
@@ -129,14 +150,13 @@ public final class PlannerActivity extends Activity {
                 return routeNavigation(view, url, link && url != null && url.equals(hit.getExtra()));
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                if (ChromeState.isAppBlob(url)) return; // 다운로드는 현재 문서를 바꾸지 않고 DownloadListener가 처리한다.
-                if (!ChromeState.isPlannerPage(url)) { view.stopLoading(); return; }
-                readingDownload = false; downloadSequence++;
-                touching = false; chrome.reveal(0); barsVisible = true; applyBars();
+                handlePageStarted(url);
+            }
+            @Override public void onPageCommitVisible(WebView view, String url) {
+                handlePageCommitVisible(url);
             }
             @Override public void onPageFinished(WebView view, String url) {
-                readSurface();
-                if (restoreY > 0) { final int y = restoreY; restoreY = 0; view.post(() -> view.scrollTo(0, y)); }
+                handlePageFinished(url);
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -149,18 +169,159 @@ public final class PlannerActivity extends Activity {
                 return true;
             }
         });
-        web.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { touching = true; adjustingInsets = false; chrome.beginGesture(web.getScrollY()); }
-            else if (event.getActionMasked() == MotionEvent.ACTION_MOVE && adjustingInsets && !animating) { adjustingInsets = false; chrome.beginGesture(web.getScrollY()); }
-            else if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) touching = false;
-            return false;
-        });
-        web.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
-            if (keyboardVisible) chrome.reveal(y);
-            else chrome.scroll(y, touching, animating || adjustingInsets);
-            if (barsVisible != chrome.isVisible()) { barsVisible = chrome.isVisible(); applyBars(); }
-        });
+        web.setOnTouchListener((view, event) -> handleTouch(event));
+        web.setOnScrollChangeListener((view, x, y, oldX, oldY) -> handleScroll(y, oldY));
         web.setDownloadListener((url, agent, disposition, mime, length) -> prepareDownload(url, disposition, mime));
+    }
+
+    private void handlePageStarted(String url) {
+        if (ChromeState.isAppBlob(url)) return; // 다운로드는 현재 문서를 바꾸지 않고 DownloadListener가 처리한다.
+        if (!ChromeState.isPlannerPage(url)) { web.stopLoading(); return; }
+        readingDownload = false; downloadSequence++;
+        touching = false; endFling(); chrome.reveal(0); barsVisible = true; applyBars();
+    }
+
+    private void handlePageCommitVisible(String url) {
+        if (ChromeState.isPlannerPage(url)) readSurface();
+    }
+
+    private void handlePageFinished(String url) {
+        if (ChromeState.isPlannerPage(url)) readSurface();
+        applyRestoreScroll();
+    }
+
+    private void applyRestoreScroll() {
+        if (restoreY <= 0) return;
+        final int y = restoreY;
+        restoreY = 0;
+        web.post(() -> {
+            programmaticScroll = true;
+            try { web.scrollTo(0, y); }
+            finally { programmaticScroll = false; }
+        });
+    }
+
+    private float pointerScreenY(MotionEvent event, int index) {
+        return event.getY(index) + (event.getRawY() - event.getY());
+    }
+
+    private void trackVelocity(MotionEvent event) {
+        if (velocity == null) velocity = VelocityTracker.obtain();
+        MotionEvent tracked = MotionEvent.obtain(event);
+        try {
+            tracked.offsetLocation(event.getRawX() - event.getX(), event.getRawY() - event.getY());
+            velocity.addMovement(tracked);
+        } finally {
+            tracked.recycle();
+        }
+    }
+
+    private void endFling() {
+        flinging = false;
+        if (web != null) web.removeCallbacks(stopFling);
+    }
+
+    private void scheduleStopFling() {
+        if (web == null) return;
+        web.removeCallbacks(stopFling);
+        web.postDelayed(stopFling, 180);
+    }
+
+    private void scheduleClearAdjusting() {
+        if (root == null) return;
+        root.removeCallbacks(postClearAdjusting);
+        root.removeCallbacks(clearAdjusting);
+        root.postOnAnimation(postClearAdjusting);
+    }
+
+    protected void releaseTouch() {
+        touching = false;
+        activePointerId = MotionEvent.INVALID_POINTER_ID;
+        endFling();
+        if (root != null) {
+            root.removeCallbacks(postClearAdjusting);
+            root.removeCallbacks(clearAdjusting);
+        }
+        if (velocity != null) { velocity.recycle(); velocity = null; }
+    }
+
+    private boolean handleTouch(MotionEvent event) {
+        int action = event.getActionMasked();
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                endFling();
+                if (velocity != null) velocity.clear();
+                touching = true;
+                adjustingInsets = false;
+                gestureDragged = false;
+                gestureScrolled = false;
+                activePointerId = event.getPointerId(0);
+                downY = pointerScreenY(event, 0);
+                trackVelocity(event);
+                chrome.beginGesture(web.getScrollY());
+                break;
+            case MotionEvent.ACTION_MOVE: {
+                trackVelocity(event);
+                if (adjustingInsets && !animating) { adjustingInsets = false; chrome.beginGesture(web.getScrollY()); }
+                int index = activePointerId == MotionEvent.INVALID_POINTER_ID ? -1 : event.findPointerIndex(activePointerId);
+                if (index >= 0 && Math.abs(pointerScreenY(event, index) - downY) >= touchSlop) gestureDragged = true;
+                break;
+            }
+            case MotionEvent.ACTION_POINTER_UP: {
+                trackVelocity(event);
+                int liftedIndex = event.getActionIndex();
+                if (event.getPointerId(liftedIndex) == activePointerId && event.getPointerCount() > 1) {
+                    int nextIndex = liftedIndex == 0 ? 1 : 0;
+                    activePointerId = event.getPointerId(nextIndex);
+                    downY = pointerScreenY(event, nextIndex);
+                }
+                break;
+            }
+            case MotionEvent.ACTION_UP: {
+                trackVelocity(event);
+                int index = activePointerId == MotionEvent.INVALID_POINTER_ID ? -1 : event.findPointerIndex(activePointerId);
+                if (index >= 0 && Math.abs(pointerScreenY(event, index) - downY) >= touchSlop) gestureDragged = true;
+                float vy = 0f;
+                if (velocity != null && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    velocity.computeCurrentVelocity(1000, maxFlingVelocity);
+                    vy = velocity.getYVelocity(activePointerId);
+                    velocity.clear();
+                }
+                touching = false;
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                if (!keyboardVisible && (gestureScrolled || gestureDragged) && Math.abs(vy) >= minFlingVelocity) {
+                    flinging = true;
+                    scheduleStopFling();
+                } else {
+                    endFling();
+                }
+                break;
+            }
+            case MotionEvent.ACTION_CANCEL:
+                touching = false;
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                if (velocity != null) velocity.clear();
+                endFling();
+                break;
+            default:
+                trackVelocity(event);
+                break;
+        }
+        return false;
+    }
+
+    private void handleScroll(int y, int oldY) {
+        if (keyboardVisible) { endFling(); chrome.reveal(y); }
+        else {
+            if (y == oldY && (y > 0 || barsVisible)) return;
+            boolean settled = y <= 0;
+            boolean resizing = animating || adjustingInsets;
+            if (touching && !resizing && !programmaticScroll && y != oldY) gestureScrolled = true;
+            if (settled || programmaticScroll) endFling();
+            else if (flinging && y != oldY) scheduleStopFling();
+            chrome.scroll(y, !programmaticScroll && (touching || flinging), resizing);
+        }
+        if (barsVisible != chrome.isVisible()) { barsVisible = chrome.isVisible(); applyBars(); }
     }
 
     private boolean routeNavigation(WebView view, String url, boolean externalAllowed) {
@@ -173,22 +334,30 @@ public final class PlannerActivity extends Activity {
 
     // Android 15 이상에서도 투명한 OS 상태바 아래를 root 배경으로 칠한다. 카메라·키보드는 안전 영역 안에 둔다.
     private void configureInsets() {
-        root.setOnApplyWindowInsetsListener((view, insets) -> {
-            targetInsets = insets;
-            keyboardVisible = Build.VERSION.SDK_INT >= 30 ? insets.isVisible(WindowInsets.Type.ime()) : insets.getSystemWindowInsetBottom() > root.getHeight()/4;
-            if (keyboardVisible && !barsVisible) { chrome.reveal(web.getScrollY()); barsVisible = true; applyBars(); }
-            if (!animating) applyPadding(insets);
-            return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : insets.consumeSystemWindowInsets();
-        });
+        root.setOnApplyWindowInsetsListener((view, insets) -> applyInsets(insets));
         if (Build.VERSION.SDK_INT >= 30) root.setWindowInsetsAnimationCallback(new WindowInsetsAnimation.Callback(WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
             private final Set<WindowInsetsAnimation> running = new HashSet<>();
             @Override public void onPrepare(WindowInsetsAnimation animation) { running.add(animation); animating = true; }
             @Override public WindowInsets onProgress(WindowInsets insets, List<WindowInsetsAnimation> animations) { applyPadding(insets); return insets; }
-            @Override public void onEnd(WindowInsetsAnimation animation) {
-                running.remove(animation); animating = !running.isEmpty();
-                if (!animating && targetInsets != null) applyPadding(targetInsets);
-            }
+            @Override public void onEnd(WindowInsetsAnimation animation) { endInsetsAnimation(animation, running); }
         });
+    }
+
+    @SuppressWarnings("deprecation") private WindowInsets applyInsets(WindowInsets insets) {
+        targetInsets = insets;
+        keyboardVisible = Build.VERSION.SDK_INT >= 30
+            ? insets.isVisible(WindowInsets.Type.ime())
+            : root.getHeight() > 0 && insets.getSystemWindowInsetBottom() > root.getHeight() / 4;
+        if (keyboardVisible && !barsVisible) { endFling(); chrome.reveal(web.getScrollY()); barsVisible = true; applyBars(); }
+        if (!animating) applyPadding(insets);
+        return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : insets.consumeSystemWindowInsets();
+    }
+
+    private void endInsetsAnimation(WindowInsetsAnimation animation, Set<WindowInsetsAnimation> running) {
+        running.remove(animation);
+        animating = !running.isEmpty();
+        if (!animating && targetInsets != null) applyPadding(targetInsets);
+        if (!animating && adjustingInsets) scheduleClearAdjusting();
     }
 
     @SuppressWarnings("deprecation") private void applyPadding(WindowInsets insets) {
@@ -208,6 +377,7 @@ public final class PlannerActivity extends Activity {
         if (root.getPaddingLeft()!=left || root.getPaddingTop()!=top || root.getPaddingRight()!=right || root.getPaddingBottom()!=bottom) {
             adjustingInsets = true;
             root.setPadding(left, top, right, bottom);
+            if (!animating) scheduleClearAdjusting();
         }
     }
 
@@ -325,7 +495,8 @@ public final class PlannerActivity extends Activity {
     }
     private void notice(String message) { if (!isFinishing()) Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }
     @Override public void onWindowFocusChanged(boolean focused) { super.onWindowFocusChanged(focused); if (focused && web != null) { applyBars(); readSurface(); } }
+    @Override protected void onPause() { touching = false; endFling(); super.onPause(); }
     @Override protected void onSaveInstanceState(Bundle state) { state.putString(PENDING_EXPORT_STATE, pendingDownload == null ? null : pendingDownload.id()); web.saveState(state); state.putInt("page-scroll", web.getScrollY()); super.onSaveInstanceState(state); }
     @Override public void onBackPressed() { if (web.canGoBack()) web.goBack(); else super.onBackPressed(); }
-    @Override protected void onDestroy() { if (fileCallback != null) fileCallback.onReceiveValue(null); if (isFinishing() && pendingDownload != null) pendingDownload.discard(); pendingDownload = null; readingDownload = false; downloadSequence++; web.destroy(); super.onDestroy(); }
+    @Override protected void onDestroy() { if (fileCallback != null) fileCallback.onReceiveValue(null); if (isFinishing() && pendingDownload != null) pendingDownload.discard(); pendingDownload = null; readingDownload = false; downloadSequence++; releaseTouch(); web.destroy(); super.onDestroy(); }
 }

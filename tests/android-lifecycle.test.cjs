@@ -14,9 +14,10 @@ function run(name, args) {
 }
 before(() => {
   classes = fs.mkdtempSync(path.join(os.tmpdir(), 'etf-native-callbacks-'));
-  run('javac', ['-encoding', 'UTF-8', '-d', classes,
+  run('javac', ['--release', '8', '-encoding', 'UTF-8', '-d', classes,
     path.join(root, 'android/src/io/github/oax2310blip/etfplanner/PendingExport.java'),
-    path.join(root, 'android/src/io/github/oax2310blip/etfplanner/ChromeState.java'),
+    path.join(root, 'android/src/io/github/oax2310blip/etfplanner/ChromeState.java')]);
+  run('javac', ['-encoding', 'UTF-8', '-cp', classes, '-d', classes,
     path.join(root, 'android/test/ActivityCallbacksCheck.java')]);
   run('java', ['-cp', classes, 'io.github.oax2310blip.etfplanner.ActivityCallbacksCheck', 'compile', root, classes]);
 });
@@ -42,3 +43,15 @@ for (const [check, title] of [
   ['blocked-links', '구형 콜백은 선택 대상과 다른 주소·임의 스킴·외부 blob을 열지 않는다'],
   ['modern-links', '신형 콜백의 주 프레임·사용자 동작 제한을 유지한다'],
 ]) test(`Android 탐색 콜백: ${title}`, () => run('java', ['-cp', classes, 'io.github.oax2310blip.etfplanner.ActivityCallbacksCheck', check]));
+
+for (const [check, title] of [
+  ['chrome-flick-hide', '12dp 미만 터치 뒤 빠른 플릭 관성 스크롤이 이어지면 상태바를 숨긴다'],
+  ['chrome-flick-nopre-hide', '터치 중 스크롤이 0이어도 touchSlop 이상 플릭 뒤 관성 스크롤로 상태바를 숨긴다'],
+  ['chrome-flick-show', '숨김 상태에서 반대 방향 빠른 플릭 관성 스크롤로 상태바를 복귀시킨다'],
+  ['chrome-tap-programmatic', '단순 탭 뒤 프로그램 scrollTo는 상태바를 숨기지 않는다'],
+  ['chrome-insets-clear', '여백 변경 뒤 adjustingInsets를 프레임 후 해제해 후속 플릭을 막지 않는다'],
+  ['chrome-prelayout-ime-api29', 'API 29 이하에서 root 높이 0일 때 하단 내비게이션 여백을 키보드로 오인하지 않는다'],
+  ['chrome-horizontal-ignored', '가로 스크롤(Y 동일)은 세로 스크롤·플릭 타이머 판단을 흔들지 않는다'],
+  ['chrome-window-and-surface', '투명 상태바·컷아웃 ALWAYS·onPageCommitVisible 및 복원 표면 동기화를 유지한다'],
+  ['chrome-mid-drag-resize-offset', '드래그 중 상단 여백 축소에도 화면 좌표 속도를 유지하고 VelocityTracker를 해제한다'],
+]) test(`Android 상태바·스크롤 콜백: ${title}`, () => run('java', ['-cp', classes, 'io.github.oax2310blip.etfplanner.ActivityCallbacksCheck', check]));

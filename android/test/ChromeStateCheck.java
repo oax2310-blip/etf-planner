@@ -29,6 +29,21 @@ public final class ChromeStateCheck {
                 state.beginGesture(0); check(!state.scroll(Integer.MAX_VALUE, true, false));
                 check(state.scroll(1, true, false)); check(state.scroll(-100, false, false));
                 ChromeState minimum = new ChromeState(0); minimum.beginGesture(0); check(!minimum.scroll(1, true, false)); break;
+            case "fling-continue":
+                state.beginGesture(0); check(state.scroll(6, true, false));
+                check(!state.scroll(12, true, false)); check(!state.scroll(30, true, false)); break;
+            case "fling-reverse":
+                state.beginGesture(0); check(!state.scroll(200, true, false));
+                state.beginGesture(200); check(!state.scroll(194, true, false));
+                check(state.scroll(188, true, false)); check(state.scroll(170, true, false)); break;
+            case "horizontal-tick":
+                state.beginGesture(0); check(!state.scroll(200, true, false));
+                check(!state.scroll(200, true, false)); check(!state.scroll(192, true, false));
+                check(state.scroll(188, true, false)); break;
+            case "resize-preserve":
+                state.beginGesture(0); check(!state.scroll(200, true, false));
+                check(!state.scroll(160, true, true));
+                check(!state.scroll(149, true, false)); check(state.scroll(148, true, false)); break;
             case "pages":
                 for (String page : new String[]{"", "index.html", "assets.html", "valuation.html"})
                     check(ChromeState.isPlannerPage(ChromeState.START_URL + page + "?split=TEST#section"));
