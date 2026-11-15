@@ -52,7 +52,11 @@ test('런타임 상태바 요청 색은 CSS 본문 배경을 따르고 저장된
     dark:css.match(/:root\[data-theme=dark\]\{[^}]*--bg:([^;]+)/)[1],
   };
   for (const systemDark of [false, true]) {
-    const metas = [{content:'기존 밝은 색'}, {content:'기존 어두운 색'}], saved = new Map([
+    const metas = [
+      {media:'(prefers-color-scheme: light)', content:'기존 밝은 색'},
+      {media:'(prefers-color-scheme: dark)', content:'기존 어두운 색'},
+      {content:'기존 기본 색'},
+    ], saved = new Map([
       ['etf-planner-theme', systemDark ? 'light' : 'dark'], ['legacy-record', '{"plans":[]}'],
     ]), before = [...saved];
     const ctx = vm.createContext({
@@ -62,7 +66,8 @@ test('런타임 상태바 요청 색은 CSS 본문 배경을 따르고 저장된
       addEventListener() {},
     });
     vm.runInContext(source, ctx);
-    assert.deepEqual(metas.map(meta => meta.content), [colors[systemDark ? 'dark' : 'light'], colors[systemDark ? 'dark' : 'light']]);
+    const expected = colors[systemDark ? 'dark' : 'light'];
+    assert.deepEqual(metas.map(meta => meta.content), [expected, expected, expected]);
     assert.deepEqual([...saved], before, '표시 초기화는 저장값을 수정하지 않음');
   }
 });

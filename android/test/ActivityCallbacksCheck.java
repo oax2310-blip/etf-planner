@@ -44,14 +44,15 @@ public final class ActivityCallbacksCheck {
             java.util.Set<String> chromeFields = new java.util.HashSet<>(Arrays.asList(
                 "chrome", "touching", "keyboardVisible", "barsVisible", "animating", "adjustingInsets",
                 "gestureDragged", "gestureScrolled", "flinging", "programmaticScroll", "surface", "restoreY",
-                "activePointerId", "touchSlop", "minFlingVelocity", "maxFlingVelocity", "downY", "velocity",
-                "targetInsets", "stopFling", "clearAdjusting", "postClearAdjusting"
+                "downPadLeft", "downPadTop", "activePointerId", "touchSlop", "minFlingVelocity", "maxFlingVelocity",
+                "downY", "velocity", "targetInsets", "stopFling", "clearAdjusting", "postClearAdjusting"
             ));
             java.util.Set<String> chromeMethods = new java.util.HashSet<>(Arrays.asList(
                 "configureWindow", "openPlanner", "handlePageStarted", "handlePageCommitVisible",
                 "handlePageFinished", "applyRestoreScroll", "pointerScreenY", "trackVelocity", "endFling",
-                "scheduleStopFling", "scheduleClearAdjusting", "releaseTouch", "handleTouch", "handleScroll",
-                "applyInsets", "endInsetsAnimation", "applyPadding", "applyBars", "setSurface", "readSurface"
+                "scheduleStopFling", "scheduleClearAdjusting", "clearTouchGesture", "releaseTouch",
+                "handleTouch", "handleScroll", "applyInsets", "endInsetsAnimation", "applyPadding",
+                "applyBars", "setSurface", "readSurface", "onPause"
             ));
             for (Tree member : activity.getMembers()) {
                 if (member instanceof VariableTree) {
@@ -285,6 +286,9 @@ public final class ActivityCallbacksCheck {
         static MotionEvent single(int action, float x, float y, float offsetY, long timeMs) {
             return new MotionEvent(action, 0, new int[]{0}, new float[]{x}, new float[]{y}, offsetY, timeMs);
         }
+        static MotionEvent multi(int actionMasked, int actionIndex, int[] ids, float[] xs, float[] ys, float offsetY, long timeMs) {
+            return new MotionEvent(actionMasked, actionIndex, ids, xs, ys, offsetY, timeMs);
+        }
         public static MotionEvent obtain(MotionEvent src) {
             MotionEvent copy = new MotionEvent(src.actionMasked, src.actionIndex, src.ids, src.xs, src.ys, src.offsetY, src.timeMs);
             copy.offsetX = src.offsetX;
@@ -422,6 +426,7 @@ public final class ActivityCallbacksCheck {
         protected Window getWindow() { return window; }
         protected String asset(String name) { return name; }
         protected void notice(String msg) { notices.add(msg); }
+        protected void onPause() {}
     }
     public static class Host extends Framework {
         protected static final int OPEN_FILE = 10, SAVE_FILE = 11, RESULT_OK = -1;
@@ -649,6 +654,31 @@ public final class ActivityCallbacksCheck {
                 check(!(Boolean)fieldValue(host, "barsVisible"), "여백 조정 프레임 중 크기 변화 스크롤은 상태바를 다시 열지 않음");
                 host.root.runPosts();
                 check(!(Boolean)fieldValue(host, "adjustingInsets"), "프레임 완료 뒤 adjustingInsets 자동 해제");
+                // 드래그(touching=true) 도중 패딩 변경 뒤 레이아웃 전 ACTION_MOVE가 와도 adjustingInsets가 조기 해제되면 안 됨
+                host.root.padT = 0;
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 0, 160));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 600, 0, 175));
+                scrollStep(host, 500);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "재드래그 숨김 완료");
+                WindowInsets bottomGrow = new WindowInsets();
+                bottomGrow.barInsets = Insets.of(0, 0, 0, 180);
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, bottomGrow);
+                check((Boolean)fieldValue(host, "adjustingInsets"), "드래그 중 여백 변경 시 adjustingInsets 설정");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 590, 0, 180));
+                check((Boolean)fieldValue(host, "adjustingInsets"), "레이아웃 전 ACTION_MOVE가 adjustingInsets를 조기 해제하면 안 됨");
+                scrollStep(host, 420);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "드래그 중 레이아웃 리사이즈 스크롤(500->420)로 상태바가 다시 열리지 않음");
+                host.root.flushFrame();
+                check(!(Boolean)fieldValue(host, "adjustingInsets"), "드래그 중 여백 변경도 프레임 완료 뒤 해제");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 590, 0, 260));
+                // 이전 예약 clearAdjusting가 애니메이션 시작(animating=true) 뒤 실행돼도 조기 해제 금지
+                WindowInsets preAnimPad = new WindowInsets();
+                preAnimPad.barInsets = Insets.of(0, 0, 0, 200);
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, preAnimPad);
+                setFieldValue(host, "animating", true);
+                host.root.flushFrame();
+                check((Boolean)fieldValue(host, "adjustingInsets"), "animating 중에는 이전 예약 clearAdjusting이 adjustingInsets를 끄지 않음");
+                setFieldValue(host, "animating", false);
                 // 애니메이션 종료 뒤 패딩 변화가 없더라도 adjustingInsets가 남아 있으면 해제 예약 확인
                 setFieldValue(host, "animating", true);
                 setFieldValue(host, "adjustingInsets", true);
@@ -658,10 +688,22 @@ public final class ActivityCallbacksCheck {
                 invokeChrome(host, "endInsetsAnimation", new Class<?>[]{WindowInsetsAnimation.class, Set.class}, anim, running);
                 host.root.flushFrame();
                 check(!(Boolean)fieldValue(host, "adjustingInsets"), "애니메이션 종료 뒤에도 adjustingInsets 자동 해제");
+                // 레이아웃 전 ACTION_DOWN도 adjustingInsets를 조기 해제하면 안 됨 (scrollY: 420 -> 380 리사이즈 보정)
+                WindowInsets preDownGrow = new WindowInsets();
+                preDownGrow.barInsets = Insets.of(0, 0, 0, 220);
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, preDownGrow);
+                check((Boolean)fieldValue(host, "adjustingInsets"), "ACTION_DOWN 테스트 전 여백 변경 시 adjustingInsets 설정");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 300, 0, 280));
+                check((Boolean)fieldValue(host, "adjustingInsets"), "레이아웃 전 ACTION_DOWN이 adjustingInsets를 조기 해제하면 안 됨");
+                scrollStep(host, 380);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "ACTION_DOWN 직후 레이아웃 리사이즈 스크롤(420->380)로 상태바가 다시 열리지 않음");
+                host.root.flushFrame();
+                check(!(Boolean)fieldValue(host, "adjustingInsets"), "ACTION_DOWN 후 여백 변경도 프레임 완료 뒤 해제");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_CANCEL, 300, 300, 0, 285));
                 // 즉시 반대 방향 플릭 (중간 ACTION_MOVE 없음)도 정상 작동해야 함
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 300, 0, 300));
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 345, 0, 312));
-                scrollStep(host, 360);
+                scrollStep(host, 320);
                 check((Boolean)fieldValue(host, "barsVisible"), "여백 해제 뒤 후속 플릭으로 상태바 복귀");
                 break;
             case "chrome-prelayout-ime-api29":
@@ -685,17 +727,33 @@ public final class ActivityCallbacksCheck {
                 break;
             case "chrome-horizontal-ignored":
                 host.web.scrollY = 400;
-                ((ChromeState)fieldValue(host, "chrome")).beginGesture(400);
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 500, 96, 0));
                 scrollStep(host, 400);
                 check(!(Boolean)fieldValue(host, "gestureScrolled"), "Y가 같은 가로 스크롤은 세로 스크롤 이력으로 기록하지 않음");
+                scrollStep(host, 420);
+                check((Boolean)fieldValue(host, "barsVisible"), "임계값(36) 미만 세로 이동 중에는 상태바 표시 유지");
+                setFieldValue(host, "adjustingInsets", true);
+                scrollStep(host, 420);
+                setFieldValue(host, "adjustingInsets", false);
+                scrollStep(host, 438);
+                check(!(Boolean)fieldValue(host, "barsVisible"), "resizing 중 가로 틱(y==oldY)은 직전 anchor(400)를 덮어쓰지 않고 누적(438)으로 숨김");
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 470, 96, 12));
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 465, 96, 15));
                 check(host.web.delayedQueue.size() == 1, "초기 플릭 타이머 1건");
                 host.web.delayedQueue.clear();
-                scrollStep(host, 400);
+                scrollStep(host, 438);
                 check(host.web.delayedQueue.isEmpty(), "가로 스크롤 틱은 플릭 타이머를 연장하지 않음");
-                check((Boolean)fieldValue(host, "barsVisible"), "가로 스크롤 뒤에도 상태바 상태 유지");
+                scrollStep(host, 480);
+                check(host.web.delayedQueue.size() == 1, "플릭 중 세로 이동 틱은 종료 타이머를 재연장함");
+                check(!(Boolean)fieldValue(host, "barsVisible"), "가로·세로 플릭 틱 뒤 숨김 상태 유지");
+                host.web.scrollY = 0;
+                scrollStep(host, 0);
+                check(!(Boolean)fieldValue(host, "flinging"), "y==0 정착 가로 틱에서도 잔여 flinging을 종료");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 300, 96, 20));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 360, 96, 30));
+                check((Boolean)fieldValue(host, "flinging") && (Boolean)fieldValue(host, "barsVisible"), "맨 위(y==0, barsVisible==true) 플릭 직후 상태 확인");
+                scrollStep(host, 0);
+                check(!(Boolean)fieldValue(host, "flinging"), "barsVisible==true인 맨 위 가로 틱(y==0, oldY==0)에서도 잔여 flinging을 종료");
                 break;
             case "chrome-window-and-surface":
                 Build.VERSION.SDK_INT = 35;
@@ -721,22 +779,112 @@ public final class ActivityCallbacksCheck {
                 Bundle saved = new Bundle();
                 saved.putString("web-state", "1");
                 invokeChrome(host, "openPlanner", new Class<?>[]{Bundle.class}, saved);
+                // 복원 scrollTo 실행 직전에 사용자가 플릭 중이더라도 복원 스크롤(programmaticScroll=true)은 상태바를 숨기지 않고 플릭을 멈춰야 함
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 650, 96, 10));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 640, 96, 15));
+                check((Boolean)fieldValue(host, "flinging") && (Boolean)fieldValue(host, "barsVisible"), "복원 직전 플릭 활성화 상태에서 확인");
                 host.web.flushPosts();
                 host.web.flushPosts();
                 check((Integer)fieldValue(host, "surface") == 0xff0a0c10, "상태 복원 시 다크 표면 배경 재동기화");
-                check(host.web.scrollY == 500 && (Boolean)fieldValue(host, "barsVisible"), "복원 스크롤 이동은 프로그램 스크롤로 상태바 표시 유지");
+                check(host.web.scrollY == 500 && (Boolean)fieldValue(host, "barsVisible"), "플릭 중 실행돼도 복원 스크롤 이동은 프로그램 스크롤로 상태바 표시 유지");
+                check(!(Boolean)fieldValue(host, "flinging"), "복원 프로그램 스크롤은 잔여 flinging을 종료");
                 check(host.web.loadCount == 0, "상태 복원 시 중복 loadUrl 호출 안 함");
+                // 손가락을 댄(touching=true) 상태에서 지연된 복원 스크롤이 실행되어도 programmaticScroll 가드로 상태바를 숨기지 않아야 함
+                host.web.scrollY = 0;
+                setFieldValue(host, "restoreY", 300);
+                invokeChrome(host, "applyRestoreScroll", new Class<?>[0]);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 96, 20));
+                check((Boolean)fieldValue(host, "touching"), "복원 스크롤 실행 중 터치 상태 확인");
+                host.web.flushPosts();
+                check(host.web.scrollY == 300 && (Boolean)fieldValue(host, "barsVisible"), "터치 중 실행된 복원 스크롤(programmaticScroll=true)도 상태바 표시 유지");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_CANCEL, 300, 700, 96, 25));
                 break;
             case "chrome-mid-drag-resize-offset":
-                // 드래그 도중 상태바가 숨겨져 web top padding이 96 -> 0으로 줄어 viewY가 그대로(604 -> 604) 보여도
-                // 실제 화면 좌표(rawY: 700 -> 604)는 위로 96px 이동했으므로 플릭이 감지되어야 함
+                // 1. 드래그 도중 상태바가 숨겨져 web top padding이 96 -> 0으로 줄어 viewY가 그대로(604 -> 604) 보여도
+                //    실제 화면 좌표(rawY: 700 -> 604)는 위로 96px 이동했으므로 플릭이 감지되어야 하며,
+                //    WebView로 넘어가는 원본 MotionEvent.getY()는 -96px 보정(508)되어 +96px 역방향 점프를 막아야 함
+                host.root.padT = 96;
                 invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 604, 96, 0));
-                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 604, 0, 12));
-                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 604, 0, 15));
+                host.root.padT = 0;
+                MotionEvent midMove = MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 604, 0, 12);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, midMove);
+                check(Math.abs(midMove.getY() - 508f) < 0.01f && Math.abs(midMove.getRawY() - 604f) < 0.01f, "드래그 중 패딩 축소 시 WebView 로컬 Y를 -96px 연속 보정");
+                MotionEvent midUp = MotionEvent.single(MotionEvent.ACTION_UP, 300, 604, 0, 15);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, midUp);
                 check((Boolean)fieldValue(host, "flinging"), "중간 패딩 축소에도 screenY 기준 플릭 감지 유지");
+                check(Math.abs(midUp.getY() - 508f) < 0.01f, "ACTION_UP 시에도 드래그 연속 로컬 Y 보정 유지");
+                // 2. 새 ACTION_DOWN이 들어오면 즉시 직전 flinging 종료
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 500, 0, 20));
+                check(!(Boolean)fieldValue(host, "flinging"), "새 ACTION_DOWN 시 직전 flinging 즉시 종료");
+                // 3. 단순 탭(변위 0) 도중 패딩이 바뀌어도 탭 UP 좌표는 보정하지 않아 실제 뷰 위치 기준 클릭 유지
+                host.root.padT = 96;
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 500, 96, 30));
+                host.root.padT = 0;
+                MotionEvent tapUp = MotionEvent.single(MotionEvent.ACTION_UP, 300, 596, 0, 45);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, tapUp);
+                check(Math.abs(tapUp.getY() - 596f) < 0.01f && !(Boolean)fieldValue(host, "flinging"), "단순 탭 중 패딩 변경은 로컬 좌표를 변형하지 않고 플릭 미시작");
+                // 4. ACTION_CANCEL은 드래그 중 패딩 축소 상태에서도 로컬 Y를 보정하고 터치·플릭 상태를 모두 초기화함
+                host.root.padT = 96;
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 604, 96, 48));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 560, 96, 50));
+                host.root.padT = 0;
+                setFieldValue(host, "flinging", true);
+                MotionEvent cancel = MotionEvent.single(MotionEvent.ACTION_CANCEL, 300, 656, 0, 52);
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, cancel);
+                check(Math.abs(cancel.getY() - 560f) < 0.01f, "드래그 중 패딩 축소 상태의 ACTION_CANCEL도 로컬 Y를 -96px 보정");
+                check(!(Boolean)fieldValue(host, "flinging") && !(Boolean)fieldValue(host, "touching")
+                    && !(Boolean)fieldValue(host, "gestureDragged") && !(Boolean)fieldValue(host, "gestureScrolled")
+                    && (Integer)fieldValue(host, "activePointerId") == MotionEvent.INVALID_POINTER_ID,
+                    "ACTION_CANCEL 시 터치·플릭 상태 전체 초기화");
+                // 5. 멀티터치 ACTION_POINTER_UP 핸드오프: 첫 손가락이 떨어져도 두 번째 손가락 기준으로 플릭 감지
+                host.root.padT = 96;
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.multi(MotionEvent.ACTION_DOWN, 0, new int[]{0}, new float[]{300}, new float[]{604}, 96, 100));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.multi(MotionEvent.ACTION_POINTER_DOWN, 1, new int[]{0, 1}, new float[]{300, 350}, new float[]{604, 404}, 96, 105));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.multi(MotionEvent.ACTION_POINTER_UP, 0, new int[]{0, 1}, new float[]{300, 350}, new float[]{604, 404}, 96, 110));
+                check((Integer)fieldValue(host, "activePointerId") == 1, "활성 포인터 해제 시 다음 포인터(1)로 기준 전환");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.multi(MotionEvent.ACTION_MOVE, 0, new int[]{1}, new float[]{350}, new float[]{350}, 96, 118));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.multi(MotionEvent.ACTION_UP, 0, new int[]{1}, new float[]{350}, new float[]{330}, 96, 122));
+                check((Boolean)fieldValue(host, "flinging"), "남은 두 번째 손가락 플릭도 정상 감지");
                 invokeChrome(host, "releaseTouch", new Class<?>[0]);
                 check(VelocityTracker.obtainedCount == 1 && VelocityTracker.recycledCount == 1, "VelocityTracker 누수 없이 반환");
                 check(!(Boolean)fieldValue(host, "flinging") && !(Boolean)fieldValue(host, "touching"), "releaseTouch 후 터치·플릭 상태 초기화");
+                break;
+            case "chrome-lifecycle-and-ime":
+                // 1. 숨김+플릭 중 키보드 표시 시 상태바 복구 및 플릭 종료
+                setFieldValue(host, "barsVisible", false);
+                setFieldValue(host, "flinging", true);
+                WindowInsets imeShown = new WindowInsets();
+                imeShown.imeVisible = true;
+                imeShown.imeInsets = Insets.of(0, 0, 0, 700);
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, imeShown);
+                check((Boolean)fieldValue(host, "keyboardVisible") && (Boolean)fieldValue(host, "barsVisible"), "키보드 표시 시 상태바 즉시 복원");
+                check(!(Boolean)fieldValue(host, "flinging"), "키보드 표시 시 진행 중이던 flinging 종료");
+                setFieldValue(host, "keyboardVisible", false);
+                invokeChrome(host, "applyInsets", new Class<?>[]{WindowInsets.class}, new WindowInsets());
+                host.root.flushFrame();
+                // 2. 드래그/플릭 중 새 페이지 로드(handlePageStarted) 시 activePointerId·downY·gestureDragged까지 초기화
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 0, 0));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 620, 0, 12));
+                setFieldValue(host, "flinging", true);
+                invokeChrome(host, "handlePageStarted", new Class<?>[]{String.class}, ChromeState.START_URL + "assets.html");
+                check(!(Boolean)fieldValue(host, "touching") && !(Boolean)fieldValue(host, "flinging")
+                    && !(Boolean)fieldValue(host, "gestureDragged") && !(Boolean)fieldValue(host, "gestureScrolled")
+                    && (Integer)fieldValue(host, "activePointerId") == MotionEvent.INVALID_POINTER_ID,
+                    "handlePageStarted 시 터치·포인터·플릭 상태 전체 초기화");
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 560, 0, 20));
+                check(!(Boolean)fieldValue(host, "flinging"), "페이지 전환 뒤 남은 ACTION_UP으로 플릭 재시작 금지");
+                // 3. onPause 시 플릭 종료 및 VelocityTracker 누수 없이 반환
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_DOWN, 300, 700, 0, 30));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_MOVE, 300, 640, 0, 40));
+                invokeChrome(host, "handleTouch", new Class<?>[]{MotionEvent.class}, MotionEvent.single(MotionEvent.ACTION_UP, 300, 630, 0, 44));
+                check((Boolean)fieldValue(host, "flinging"), "onPause 전 flinging 활성 상태 확인");
+                invokeChrome(host, "onPause", new Class<?>[0]);
+                check(!(Boolean)fieldValue(host, "touching") && !(Boolean)fieldValue(host, "flinging")
+                    && (Integer)fieldValue(host, "activePointerId") == MotionEvent.INVALID_POINTER_ID,
+                    "onPause 시 터치·플릭 상태 정리");
+                check(VelocityTracker.obtainedCount >= 1 && VelocityTracker.recycledCount == VelocityTracker.obtainedCount,
+                    "onPause 후 VelocityTracker 반환 완료");
                 break;
             default: throw new AssertionError("알 수 없는 상태바 검사: " + scenario);
         }
