@@ -50,9 +50,9 @@ public final class PlannerActivity extends Activity {
     private ChromeState chrome;
     private boolean touching, keyboardVisible, barsVisible = true, animating, adjustingInsets;
     private boolean gestureDragged, gestureScrolled, flinging, programmaticScroll;
-    private int surface, restoreY, downPadLeft, downPadTop, activePointerId = MotionEvent.INVALID_POINTER_ID;
+    private int surface, restoreY, activePointerId = MotionEvent.INVALID_POINTER_ID;
     private int touchSlop, minFlingVelocity, maxFlingVelocity;
-    private float downY;
+    private float downY, downOffsetX, downOffsetY;
     private VelocityTracker velocity;
     private WindowInsets targetInsets;
     private ValueCallback<Uri[]> fileCallback;
@@ -239,10 +239,6 @@ public final class PlannerActivity extends Activity {
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         gestureDragged = false;
         gestureScrolled = false;
-        downY = 0f;
-        downPadLeft = 0;
-        downPadTop = 0;
-        if (velocity != null) velocity.clear();
         endFling();
     }
 
@@ -258,8 +254,12 @@ public final class PlannerActivity extends Activity {
 
     private boolean handleTouch(MotionEvent event) {
         int action = event.getActionMasked();
-        int dx = root == null ? 0 : root.getPaddingLeft() - downPadLeft;
-        int dy = root == null ? 0 : root.getPaddingTop() - downPadTop;
+        if (action != MotionEvent.ACTION_DOWN && !touching) return false;
+        float dx = 0f, dy = 0f;
+        if (action != MotionEvent.ACTION_DOWN) {
+            dx = (event.getRawX() - event.getX()) - downOffsetX;
+            dy = (event.getRawY() - event.getY()) - downOffsetY;
+        }
         switch (action) {
             case MotionEvent.ACTION_DOWN:
                 endFling();
@@ -269,8 +269,8 @@ public final class PlannerActivity extends Activity {
                 gestureScrolled = false;
                 activePointerId = event.getPointerId(0);
                 downY = pointerScreenY(event, 0);
-                downPadLeft = root == null ? 0 : root.getPaddingLeft();
-                downPadTop = root == null ? 0 : root.getPaddingTop();
+                downOffsetX = event.getRawX() - event.getX();
+                downOffsetY = event.getRawY() - event.getY();
                 trackVelocity(event);
                 chrome.beginGesture(web.getScrollY());
                 break;
@@ -311,35 +311,26 @@ public final class PlannerActivity extends Activity {
                 break;
             }
             case MotionEvent.ACTION_CANCEL:
-                if ((gestureDragged || gestureScrolled) && (dx != 0 || dy != 0)) event.offsetLocation(dx, dy);
                 clearTouchGesture();
-                return false;
+                break;
             default:
                 trackVelocity(event);
                 break;
         }
-        if (action != MotionEvent.ACTION_DOWN && (gestureDragged || gestureScrolled) && (dx != 0 || dy != 0)) {
-            event.offsetLocation(dx, dy);
-        }
-        if (action == MotionEvent.ACTION_UP) {
-            gestureDragged = false;
-            gestureScrolled = false;
-            downY = 0f;
-            downPadLeft = 0;
-            downPadTop = 0;
-        }
+        if (dx != 0f || dy != 0f) event.offsetLocation(dx, dy);
         return false;
     }
 
     private void handleScroll(int y, int oldY) {
-        if (keyboardVisible) { endFling(); chrome.reveal(y); }
-        else {
-            boolean settled = y <= 0;
-            if (settled || programmaticScroll) endFling();
-            if (y == oldY && (y > 0 || barsVisible)) return;
+        if (keyboardVisible || y <= 0) {
+            endFling();
+            chrome.reveal(y);
+        } else {
+            if (programmaticScroll) endFling();
+            if (y == oldY) return;
             boolean resizing = animating || adjustingInsets;
-            if (touching && !resizing && !programmaticScroll && y != oldY) gestureScrolled = true;
-            if (!settled && !programmaticScroll && flinging && y != oldY) scheduleStopFling();
+            if (touching && !resizing && !programmaticScroll) gestureScrolled = true;
+            if (flinging) scheduleStopFling();
             chrome.scroll(y, !programmaticScroll && (touching || flinging), resizing);
         }
         if (barsVisible != chrome.isVisible()) { barsVisible = chrome.isVisible(); applyBars(); }
