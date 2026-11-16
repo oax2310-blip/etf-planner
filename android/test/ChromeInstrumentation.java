@@ -120,6 +120,7 @@ public final class ChromeInstrumentation extends Instrumentation {
                         return original.shouldInterceptRequest(view,request);
                     }
                     @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon){original.onPageStarted(view,url,icon);}
+                    @Override public void onPageCommitVisible(WebView view,String url){original.onPageCommitVisible(view,url);}
                     @Override public void onPageFinished(WebView view,String url){original.onPageFinished(view,url);}
                     @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return original.shouldOverrideUrlLoading(view,request);}
                 });

@@ -122,15 +122,18 @@ test('Android WebView는 앱 표식이 있을 때만 전체 상단바가 문서�
   assert.equal(bar.position,'relative');assert.equal(bar.top,'0');assert.equal(bar.background,'var(--bg)');
 });
 
-test('초기 상태바 요청 색은 세 페이지의 밝은·어두운 본문 배경과 같고 설치 기본 색도 맞춘다', () => {
+test('초기 상태바 요청 색은 세 페이지의 밝은·어두운 본문 배경과 같고 fallback 태그·설치 기본 색도 맞춘다', () => {
   for (const page of pages) {
     const css = page === 'valuation.html' ? 'css/valuation.css' : 'css/app.css';
     const colors = tags(read(page), 'meta').filter(meta => meta.name === 'theme-color');
-    for (const theme of ['light', 'dark']) {
-      const bg = theme === 'light' ? cssRule(css, ':root')['--bg'] : cssRule(css, ':root[data-theme=dark]', '@media screen')['--bg'];
-      assert.equal(colors.find(meta => meta.media === `(prefers-color-scheme: ${theme})`)?.content, bg, `${page}: ${theme}`);
-      if (theme === 'light') assert.equal(manifest.theme_color, bg);
-    }
+    const light = cssRule(css, ':root')['--bg'];
+    const dark = cssRule(css, ':root[data-theme=dark]', '@media screen')['--bg'];
+    assert.equal(colors.find(meta => meta.media === '(prefers-color-scheme: light)')?.content, light, `${page}: light`);
+    assert.equal(colors.find(meta => meta.media === '(prefers-color-scheme: dark)')?.content, dark, `${page}: dark`);
+    const fallbackIndex = colors.findIndex(meta => !meta.media);
+    assert.ok(fallbackIndex > colors.findIndex(meta => meta.media === '(prefers-color-scheme: dark)'), `${page}: media 조건 뒤 fallback theme-color`);
+    assert.equal(colors[fallbackIndex]?.content, light, `${page}: fallback theme-color`);
+    assert.equal(manifest.theme_color, light);
   }
 });
 
