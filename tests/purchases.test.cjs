@@ -1808,18 +1808,50 @@ for(const event of ['pointerup','pointercancel'])test(`계좌 버튼의 ${event}
 });
 
 test('분할매수 계좌 편집 입력과 버튼은 16px 글꼴·44px 터치 크기를 확보한다',()=>{
-  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8'),rule=selector=>{
-    const escaped=selector.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),match=css.match(new RegExp('(?:^|[}\\r\\n])'+escaped+'\\{([^}]+)\\}'));assert.ok(match,selector);
-    return Object.fromEntries(match[1].split(';').filter(Boolean).map(part=>part.split(':').map(x=>x.trim())));
+  const parseTopRules=source=>{
+    const clean=source.replace(/\/\*[\s\S]*?\*\//g,''),rules=new Map();
+    let depth=0,start=0,sel='',quote='';
+    for(let i=0;i<clean.length;i++){
+      const ch=clean[i];
+      if(quote){if(ch==='\\')i++;else if(ch===quote)quote='';continue;}
+      if(ch==='"'||ch==="'"){quote=ch;continue;}
+      if(ch==='{'){if(depth===0){sel=clean.slice(start,i).trim();start=i+1;}depth++;}
+      else if(ch==='}'){
+        depth--;
+        if(depth===0){
+          if(sel&&!sel.startsWith('@')){
+            const decls=Object.fromEntries(clean.slice(start,i).split(';').map(p=>p.trim()).filter(Boolean).map(part=>{const k=part.indexOf(':');assert.ok(k>0,part);return [part.slice(0,k).trim(),part.slice(k+1).trim()];}));
+            rules.set(sel,{...(rules.get(sel)||{}),...decls});
+          }
+          start=i+1;
+        }
+      }
+    }
+    assert.equal(depth,0,'CSS 중괄호 쌍 일치');
+    return rules;
+  };
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8'),rules=parseTopRules(css),rule=selector=>{const r=rules.get(selector);assert.ok(r,selector);return r;};
+  const appRules=parseTopRules(fs.readFileSync(path.join(__dirname,'../css/app.css'),'utf8')),btnRule=appRules.get('.btn');
+  assert.ok(btnRule&&btnRule.border,'css/app.css 최상위 .btn 규칙의 border 필요');
+  const borderMatch=btnRule.border.match(/^(\d+(?:\.\d+)?)px(?=\s|$)/);assert.ok(borderMatch,`css/app.css .btn border px 굵기 필요: ${btnRule.border}`);
+  const borderWidth=Number(borderMatch[1]);
+  const px=v=>{const m=String(v||'').match(/^(-?\d+(?:\.\d+)?)px$/);assert.ok(m,`px 값 필요: ${v}`);return Number(m[1]);};
+  const checkTouchHeight=(btn,before,label)=>{
+    const minH=px(btn['min-height']),parts=String(before.inset||'').trim().split(/\s+/);
+    assert.ok(parts.length>=1&&parts.length<=4,`${label} inset`);
+    const topRaw=parts[0],bottomRaw=parts.length>=3?parts[2]:parts[0];assert.equal(topRaw,bottomRaw,`${label} 상하 inset 대칭`);
+    const insetV=topRaw==='0'?0:px(topRaw);assert.ok(insetV<=0,`${label} inset 확장`);
+    const touchH=minH-2*borderWidth+2*Math.abs(insetV);
+    assert.ok(touchH>=44,`${label}: ${minH} - 2*${borderWidth} + 2*${Math.abs(insetV)} = ${touchH}px < 44px`);
   };
   assert.ok(parseFloat(rule('.purchase-account-edit input')['font-size'])>=16);assert.ok(parseFloat(rule('.purchase-account-edit input')['min-height'])>=44);
   assert.equal(css.includes('.purchase-account-edit button'),false,'행 내부 옛 삭제 버튼 규칙은 남기지 않음');
-  const add=rule('#purchaseAccountAdd');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
-  assert.equal(rule('#purchaseAccountAdd::before').inset,'-6px 0','외형 32px + 위아래 6px = 44px 터치 영역');
-  const toggle=rule('#purchaseAccountDeleteToggle');assert.equal(toggle.width,'max-content');assert.ok(parseFloat(toggle['min-width'])>=44);assert.equal(parseFloat(toggle['min-height']),32);
-  assert.equal(rule('#purchaseAccountDeleteToggle::before').inset,'-6px 0','외형 32px + 위아래 6px = 44px 터치 영역');
-  const del=rule('.purchase-account-delete');assert.ok(parseFloat(del['min-width'])>=44);assert.equal(parseFloat(del['min-height']),28);
-  assert.equal(rule('.purchase-account-delete::before').inset,'-8px 0','외형 28px + 위아래 8px = 44px 터치 영역');
+  const add=rule('#purchaseAccountAdd'),addBefore=rule('#purchaseAccountAdd::before');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
+  assert.equal(addBefore.inset,'-7px 0','외형 32px − 위아래 테두리 2px + inset 7px×2 = 터치 영역 44px');checkTouchHeight(add,addBefore,'#purchaseAccountAdd');
+  const toggle=rule('#purchaseAccountDeleteToggle'),toggleBefore=rule('#purchaseAccountDeleteToggle::before');assert.equal(toggle.width,'max-content');assert.ok(parseFloat(toggle['min-width'])>=44);assert.equal(parseFloat(toggle['min-height']),32);
+  assert.equal(toggleBefore.inset,'-7px 0','외형 32px − 위아래 테두리 2px + inset 7px×2 = 터치 영역 44px');checkTouchHeight(toggle,toggleBefore,'#purchaseAccountDeleteToggle');
+  const del=rule('.purchase-account-delete'),delBefore=rule('.purchase-account-delete::before');assert.ok(parseFloat(del['min-width'])>=44);assert.equal(parseFloat(del['min-height']),28);
+  assert.equal(delBefore.inset,'-9px 0','외형 28px − 위아래 테두리 2px + inset 9px×2 = 터치 영역 44px');checkTouchHeight(del,delBefore,'.purchase-account-delete');
 });
 
 // 기본 초점 이동이 차단됐으면 실제 터치처럼 pointerup의 타이머가 먼저 끝나도 change는 click 안의 blur까지 일어나지 않는다.
