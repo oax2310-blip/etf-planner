@@ -12,10 +12,10 @@ const manifest = JSON.parse(read('manifest.webmanifest'));
 const tags = (html, tag) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'))]
   .map(([text]) => Object.fromEntries([...text.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, key, value]) => [key, value])));
 
-test('홈 화면 앱은 상태바가 보이는 독립 창으로 열고 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
-  assert.equal(manifest.display, 'standalone');
-  assert.ok(!manifest.display_override?.includes('fullscreen'), '전체화면 우선 설정으로 상태바를 다시 숨기지 않음');
-  assert.equal(manifest.theme_color, '#f5f6f8', '기본 밝은 본문과 설치 상태바 요청 색 일치');
+test('홈 화면 앱은 전체화면으로 열고 미지원 환경에서는 독립 창으로 대체하며 특정 탭·종목을 시작 주소에 고정하지 않는다', () => {
+  assert.equal(manifest.display, 'fullscreen');
+  assert.ok(!manifest.display_override || manifest.display_override[0] === 'fullscreen', 'display_override로 전체화면 요청을 다른 모드로 덮어쓰지 않음');
+  assert.equal(manifest.theme_color, '#f5f6f8', '기본 밝은 본문과 폴백 상태바 요청 색 일치');
   assert.ok(manifest.name && manifest.short_name);
   assert.equal(manifest.lang, 'ko');
   for (const key of ['start_url', 'scope']) {
@@ -39,7 +39,17 @@ test('앱 ID는 프로젝트 시작 주소를 쓰며 같은 출처의 다른 Pag
   }
 });
 
-test('프로젝트 하위 경로에서도 세 화면·알림 링크는 앱 안에, 이웃 사이트는 밖에 둔다', () => {
+test('프로젝트 하위 경로에서도 세 화면·알림 링크는 앱 안에, 이웃 사이트는 밖에 두고 전체화면 상단 이동 링크를 연결한다', () => {
+  const headerLinks = name => {
+    const html = read(name), start = html.indexOf('<header class="top"');
+    assert.ok(start >= 0, `${name}: <header class="top"> 필요`);
+    return tags(html.slice(start, html.indexOf('</header>', start)), 'a').map(tag => tag.href).filter(Boolean);
+  };
+  const linkMap = Object.fromEntries(pages.map(name => [name, headerLinks(name)]));
+  assert.ok(linkMap['index.html'].includes('assets.html'), '플래너 상단에서 자산 화면 이동 링크 유지');
+  assert.ok(linkMap['index.html'].includes('valuation.html'), '플래너 상단에서 시나리오 이동 링크 유지');
+  assert.ok(linkMap['assets.html'].includes('index.html'), '자산 화면 상단에서 플래너 복귀 링크 유지');
+  assert.ok(linkMap['valuation.html'].includes('index.html'), '시나리오 상단에서 플래너 복귀 링크 유지');
   for (const prefix of ['/etf-planner/', '/preview/etf-planner/']) {
     const base = new URL(`https://example.test${prefix}manifest.webmanifest`);
     const scope = new URL(manifest.scope, base);
