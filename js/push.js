@@ -3,6 +3,9 @@ const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
 let pushConfig = null, pushSubscription, pushBusy = false, pushMessage = ""; // undefined: 브라우저 구독 조회 전, null: 구독 없음.
+let pushStageWaitMs = 30000, pushGeneration = 0;
+const PUSH_STAGE_TIMEOUT = Symbol("push-stage-timeout");
+const pushPendingTasks = {registration:null,unsubscribe:null,subscribe:null};
 let pendingPushTarget = null, pushAlertFrame = 0, pushAlertFontTarget = null;
 try { pushConfig = JSON.parse(localStorage.getItem(PUSH_CONFIG_KEY) || "null"); } catch {}
 // ruleId를 우선해 메뉴·항목을 식별한다. ID가 있으면 같은 코드의 다른 계좌로 대체하지 않는다.
@@ -180,43 +183,85 @@ async function pushRegistration(){
   const registration=await navigator.serviceWorker.register(worker.href,{scope,updateViaCache:"none"});
   return registration.active?registration:await navigator.serviceWorker.ready;
 }
+// 시간 초과는 브라우저 작업을 취소하지 않는다. 정리 콜백은 보관만 비우며 기기·저장 기록을 바꾸지 않는다.
+function pendingPushTask(kind,start){
+  if(pushPendingTasks[kind])return pushPendingTasks[kind];
+  const task=Promise.resolve().then(start);
+  pushPendingTasks[kind]=task;
+  const clear=()=>{if(pushPendingTasks[kind]===task)pushPendingTasks[kind]=null;};
+  task.then(clear,clear);
+  return task;
+}
+async function waitPushStage(task){
+  let timer;
+  try{return await Promise.race([task,new Promise((_,reject)=>{timer=setTimeout(()=>reject(PUSH_STAGE_TIMEOUT),pushStageWaitMs);})]);}
+  finally{clearTimeout(timer);}
+}
+function pushFailureMessage(error,stage,message){
+  if(error===PUSH_STAGE_TIMEOUT)return `‘${stage}’ 단계가 30초 안에 끝나지 않았습니다. 잠시 뒤 다시 눌러 주세요.`;
+  const name=typeof error?.name==="string"&&/^[A-Za-z]{1,64}$/.test(error.name)?error.name:"Error";
+  return `${message} (${stage} · ${name})`;
+}
 // 권한은 사용자 버튼으로 요청한다. 구독·구독 주소는 비공개 기록에만, 발송키는 서버에만 둔다.
 // state.alerts는 이 입력 때만 만들며 공개 기본값에는 기기 구독·구독 주소·발송키를 넣지 않는다.
 async function enablePhonePush(){
   if(pushBusy||!pushSupported()||!pushReady()||sync.blocked)return;
   const repo=sync.repo,key=pushConfig.publicKey;
-  pushBusy=true;pushMessage="";renderPushSetup();
+  pushGeneration++;pushBusy=true;pushMessage="";renderPushSetup();
+  let stage="알림 권한 확인";
   try{
     // permission request must stay on the click path (no network/registration wait before it).
     const permission=Notification.permission==="granted"?"granted":await Notification.requestPermission();
     if(permission!=="granted"){pushMessage="알림이 허용되지 않았습니다. 허용할 때 다시 눌러 주세요.";return;}
-    const registration=await pushRegistration();
-    let subscription=await registration.pushManager.getSubscription();
-    if(subscription&&(!pushKeyMatches(subscription,key)||pushDeviceExpired())){await subscription.unsubscribe();subscription=null;}
-    if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushPublicBytes(key)});
+    stage="브라우저 알림 준비";
+    const registration=await waitPushStage(pendingPushTask("registration",pushRegistration));
+    // 이전 클릭의 변경 작업이 남아 있으면 먼저 기다린 뒤 조회한다. 키·구독이 바뀐 재시도에도 옛 결과를 저장하지 않는다.
+    if(pushPendingTasks.unsubscribe){stage="이전 구독 해제";await waitPushStage(pushPendingTasks.unsubscribe);}
+    if(pushPendingTasks.subscribe){stage="구독 생성";await waitPushStage(pushPendingTasks.subscribe);}
+    stage="구독 확인";
+    let subscription=await waitPushStage(registration.pushManager.getSubscription());
+    if(subscription&&(!pushKeyMatches(subscription,key)||pushDeviceExpired())){
+      stage="이전 구독 해제";
+      await waitPushStage(pendingPushTask("unsubscribe",()=>subscription.unsubscribe()));subscription=null;
+    }
+    if(!subscription){
+      stage="구독 생성";
+      subscription=await waitPushStage(pendingPushTask("subscribe",()=>registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushPublicBytes(key)})));
+    }
+    stage="연결 저장";
     pushSubscription=subscription;
     if(sync.repo!==repo||!connected())throw Error("동기화 연결이 바뀌었습니다. 현재 저장소를 확인한 뒤 다시 연결해 주세요.");
     const subscriptions=pushDevices().filter(s=>s?.id!==pushDeviceId()&&s?.subscription?.endpoint!==subscription.endpoint);
     if(subscriptions.length>=20)throw Error("연결된 기기가 많습니다. 쓰지 않는 기기에서 알림을 해제해 주세요.");
     state.alerts={...state.alerts,rules:state.alerts?.rules||[],subscriptions:[...subscriptions,{id:pushDeviceId(),subscription:subscription.toJSON()}]};
     save();
+    stage="동기화";
     await syncNow();
     pushMessage=sync.repo!==repo?"동기화 연결이 바뀌었습니다. 현재 저장소에서 알림 연결을 다시 확인해 주세요.":
       !pushIsSaved()?"동기화에서 다른 기록을 선택해 이 기기의 연결이 저장되지 않았습니다. 알림 받기를 다시 눌러 주세요.":
       !pushRemoteHas(subscription.endpoint)?"이 기기에는 저장했습니다. 동기화를 완료하면 알림이 연결됩니다.":`이 ${pushOnPc()?"PC":"휴대폰"}에 알림을 연결했습니다. 다음 시세 수집부터 조건을 확인합니다.`;
-  }catch(error){pushMessage=error?.name==="NotAllowedError"?"브라우저에서 알림 연결을 허용해 주세요.":error?.name==="AbortError"?"알림 서비스를 연결하지 못했습니다. 잠시 뒤 다시 눌러 주세요.":"알림 연결을 완료하지 못했습니다. 동기화 상태와 브라우저 알림 설정을 확인해 주세요.";}
+  }catch(error){pushMessage=error?.name==="NotAllowedError"?"브라우저에서 알림 연결을 허용해 주세요.":error?.name==="AbortError"?"알림 서비스를 연결하지 못했습니다. 잠시 뒤 다시 눌러 주세요.":pushFailureMessage(error,stage,"알림 연결을 완료하지 못했습니다. 동기화 상태와 브라우저 알림 설정을 확인해 주세요.");}
   finally{pushBusy=false;renderPushSetup();}
 }
 async function disablePhonePush(){
-  if(pushBusy)return;pushBusy=true;pushMessage="";
-  const endpoint=pushSubscription?.endpoint;
+  if(pushBusy)return;pushGeneration++;pushBusy=true;pushMessage="";renderPushSetup();
+  let endpoint=pushSubscription?.endpoint;
+  let stage="이전 구독 해제";
   try{
-    if(pushSubscription)await pushSubscription.unsubscribe();
+    if(pushPendingTasks.unsubscribe)await waitPushStage(pushPendingTasks.unsubscribe);
+    if(pushPendingTasks.subscribe){stage="구독 생성";await waitPushStage(pushPendingTasks.subscribe);}
+    // 시간 초과 뒤 브라우저에서만 끝난 생성·해제도 현재 구독을 읽어 확인한다.
+    stage="브라우저 알림 준비";
+    const registration=await waitPushStage(navigator.serviceWorker.getRegistration(new URL("./",document.baseURI).href));
+    stage="구독 확인";
+    const subscription=registration?await waitPushStage(registration.pushManager.getSubscription()):null;
+    if(!endpoint)endpoint=subscription?.endpoint;
+    if(subscription){stage="이전 구독 해제";await waitPushStage(pendingPushTask("unsubscribe",()=>subscription.unsubscribe()));}
     pushSubscription=null;
     if(state.alerts){state.alerts={...state.alerts,subscriptions:pushDevices().filter(s=>s?.id!==pushDeviceId()&&s?.subscription?.endpoint!==endpoint)};save();}
-    if(connected())await syncNow();
+    stage="동기화";if(connected())await syncNow();
     pushMessage=pushRemoteHas(endpoint)?"이 기기 알림을 해제했습니다. 저장소에도 반영하려면 동기화를 완료해 주세요.":"이 기기 알림을 해제했습니다.";
-  }catch{pushMessage="알림 해제를 완료하지 못했습니다. 브라우저의 사이트 설정에서도 알림을 차단할 수 있습니다.";}
+  }catch(error){pushMessage=pushFailureMessage(error,stage,"알림 해제를 완료하지 못했습니다. 브라우저의 사이트 설정에서도 알림을 차단할 수 있습니다.");}
   finally{pushBusy=false;renderPushSetup();}
 }
 async function initializePush(){
@@ -228,6 +273,12 @@ async function initializePush(){
   document.addEventListener("click",event=>{if(event.target.closest?.("[data-plan], [data-rebuy], [data-purchase-select]"))clearPushAlertTarget();},true);
   renderPushSetup();
   if(!pushSupported())return;
-  try{const registration=await navigator.serviceWorker.getRegistration(new URL("./",document.baseURI).href);pushSubscription=registration?await registration.pushManager.getSubscription():null;if(registration?.update)registration.update().catch(()=>{});}catch{}
+  const generation=pushGeneration;
+  try{
+    const registration=await navigator.serviceWorker.getRegistration(new URL("./",document.baseURI).href);
+    const subscription=registration?await registration.pushManager.getSubscription():null;
+    if(generation===pushGeneration)pushSubscription=subscription;
+    if(registration?.update)registration.update().catch(()=>{});
+  }catch{}
   renderPushSetup();
 }
