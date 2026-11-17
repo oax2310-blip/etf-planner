@@ -98,6 +98,17 @@ test('분할매수·분할매도·재매수의 목표는 같은 자산 배분 �
   alloc.groups=JSON.parse(before).groups;
   assert.equal(JSON.stringify(alloc),before,'읽기만 한다');
 });
+test('같은 소분류에 연결되지 않은 다른 종목이 함께 있으면 소분류 목표를 물려받지 않고 저장 예산을 그대로 쓴다',()=>{
+  const item={id:'a',ticker:'111111',amount:10,section:'일반',buyPlan:{lines:{names:['25일선'],budget:50}}};
+  const alloc={total:100,classes:[],cash:[],groups:[{id:'g',target:40,sections:[{name:'일반',target:25}],items:[item,{id:'b',ticker:'111111',section:'일반',amount:5},{id:'x',ticker:'222222',section:'일반',amount:30}]}]};
+  const before=JSON.stringify(alloc);
+  const buy=c.purchaseAllocationSummary(alloc,null,item);
+  const link=c.linkSummary(alloc,null,'111111');
+  assert.deepEqual([buy.target,buy.scope],[null,null]);
+  assert.deepEqual([link.target,link.scope],[null,null]);
+  assert.equal(c.purchaseBudget(item.buyPlan,{allocation:alloc,item}),50);
+  assert.equal(JSON.stringify(alloc),before);
+});
 test('목표 변경 맞춤: 바뀐 이동평균선 돌파 계획만 옛 목표를 지우고 총 매수 금액을 다시 계산한다',()=>{
   const plan=()=>({lines:{names:['25일선','32일선'],startLine:'25일선',budget:65},notify:{stages:true},buys:{'25일선:0':{plannedShares:4,plannedActual:8,shares:2,actual:4,price:20000}}});
   const make=()=>({total:1000,classes:[],cash:[],groups:[{id:'bond',target:25,items:[{id:'edv',ticker:'EDV',amount:100,target:21,buyPlan:plan()},{id:'isa',ticker:'EDV',tradeTicker:'999999',amount:50}]},
