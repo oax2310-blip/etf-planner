@@ -9,7 +9,7 @@ const PEN=PENCIL,dlg=el;
 const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
-let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseTargetEditingId=null,purchaseAccountDeletingId=null;
+let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null;
 // 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
 const openCompletedPurchases=new Set();
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
@@ -207,29 +207,37 @@ function bindPurchaseAccounts(it){
     render();
     el("purchaseAccountDeleteToggle")?.focus({preventScroll:true});
   });
-  const showTarget=open=>{purchaseTargetEditingId=open?it.id:null;const fields=el("purchaseTargetFields"),toggle=el("purchaseTargetToggle");fields.hidden=!open;toggle.setAttribute("aria-expanded",String(open));if(open)fields.querySelector("[data-purchase-target]")?.focus();else toggle.focus();};
-  el("purchaseTargetFields").hidden=purchaseTargetEditingId!==it.id;
-  bindPurchaseAccountAction(el("purchaseTargetToggle"),()=>showTarget(purchaseTargetEditingId!==it.id));
-  bindPurchaseAccountAction(el("purchaseTargetDone"),()=>showTarget(false));
-  all("[data-purchase-target]").forEach(x=>{x.onchange=()=>{
-    const current=findItem(x.dataset.purchaseTarget),value=x.value.trim(),n=Number(value);
-    if(!current?.it?.buyPlan||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");rejectPurchaseEdit();return;}
-    const {own,holder}=targetEditorState(current.it);if(!holder){rejectPurchaseEdit();return;}
-    if(value===""&&!own.length||value!==""&&own.length===1&&finite(holder.it.target)===n){render();return;}
-    if(own.length>1){
-      const split=own.map(r=>`${itemName(r.it)} ${pc(finite(r.it.target))}`).join(", ");
-      const splitGroups=new Set([...own,holder].map(r=>`${r.g.id}\u0000${r.it.section||""}`)).size>1;
-      const prompt=value===""?`연결된 계좌 ${own.length}개(${split})에 들어 있는 목표 비중을 모두 비울까요?`
-        :`계좌 ${own.length}개에 나뉜 목표 비중(${split})을 '${itemName(holder.it)}' 한 계좌(${pc(n)})로 합치고 나머지 계좌의 목표 입력은 비울까요?${splitGroups?"\n자산 배분의 그룹·소분류 목표 합계도 이 계좌 쪽으로 모입니다.":""}`;
-      if(!confirm(prompt)){rejectPurchaseEdit();return;}
-    }
-    if(value===""){for(const r of own)delete r.it.target;}
-    else{holder.it.target=n;for(const r of own)if(r.it!==holder.it)delete r.it.target;}
-    saveSection("allocation");render();
-  };x.onkeydown=e=>{
-    if(e.key==="Enter"){e.preventDefault();x.blur();}
-    if(e.key==="Escape"){e.preventDefault();const current=findItem(x.dataset.purchaseTarget);x.value=current?targetEditorState(current.it).value:"";showTarget(false);}
-  };});
+  all("[data-purchase-target]").forEach(x=>{
+    const placeholder=()=>x.placeholder||x.getAttribute?.("placeholder")||"";
+    x.oninput=()=>{if(x.parentNode?.dataset)x.parentNode.dataset.value=x.value||placeholder();};
+    x.onchange=()=>{
+      if(x.dataset.escaping)return;
+      const current=findItem(x.dataset.purchaseTarget),value=x.value.trim(),n=Number(value);
+      if(!current?.it?.buyPlan||x.validity&&!x.validity.valid||value!==""&&(!Number.isFinite(n)||n<0||n>100)){alert("목표 비중은 0~100 사이로 입력하세요.");rejectPurchaseEdit();return;}
+      const {own,holder}=targetEditorState(current.it);if(!holder){rejectPurchaseEdit();return;}
+      if(value===""&&!own.length||value!==""&&own.length===1&&finite(holder.it.target)===n){render();return;}
+      if(own.length>1){
+        const split=own.map(r=>`${itemName(r.it)} ${pc(finite(r.it.target))}`).join(", ");
+        const splitGroups=new Set([...own,holder].map(r=>`${r.g.id}\u0000${r.it.section||""}`)).size>1;
+        const prompt=value===""?`연결된 계좌 ${own.length}개(${split})에 들어 있는 목표 비중을 모두 비울까요?`
+          :`계좌 ${own.length}개에 나뉜 목표 비중(${split})을 '${itemName(holder.it)}' 한 계좌(${pc(n)})로 합치고 나머지 계좌의 목표 입력은 비울까요?${splitGroups?"\n자산 배분의 그룹·소분류 목표 합계도 이 계좌 쪽으로 모입니다.":""}`;
+        if(!confirm(prompt)){rejectPurchaseEdit();return;}
+      }
+      if(value===""){for(const r of own)delete r.it.target;}
+      else{holder.it.target=n;for(const r of own)if(r.it!==holder.it)delete r.it.target;}
+      saveSection("allocation");render();
+    };
+    x.onkeydown=e=>{
+      if(e.key==="Enter"){e.preventDefault();x.blur?.();}
+      if(e.key==="Escape"){
+        e.preventDefault();
+        const current=findItem(x.dataset.purchaseTarget),saved=current?targetEditorState(current.it).value:"";
+        x.dataset.escaping="1";x.value=saved;
+        if(x.parentNode?.dataset)x.parentNode.dataset.value=saved||placeholder();
+        x.blur?.();delete x.dataset.escaping;
+      }
+    };
+  });
   all("[data-purchase-account-delete]").forEach(b=>bindPurchaseAccountAction(b,()=>{
     const found=findItem(b.dataset.purchaseAccountDelete);if(!found)return;
     const a=doc.allocation,removed=new Set([found.it]),keep=allocLink.keepBuyPlans(a,removed,true),goals=allocLink.keepTargets(a,removed,keep.moved,true);
@@ -277,7 +285,7 @@ const selectPurchase=id=>{selectedPurchaseId=id;};
 // 분할매도와 같은 제목·시세·자산 배분 순서. 자산 배분 줄은 연결된 전체 계좌 합계 비중(아래 보유 목록 요약과 같은 값)이라 꼬리표·계좌 글자 없이 쓰고, 목표 도달·까지·초과 글자는 분할매도·재매수 줄(alloc-link.js line)과 같다. 계획 선택·화면 표시로 저장 필드를 만들지 않는다. 목표 출처 표시는 alloc-link.js 줄과 같다(옛 계획 목표만 '계획 목표').
 const TARGET_SCOPE={group:" (그룹)",section:" (소분류)",plan:" (계획 목표)"};
 const targetSum=list=>Math.round(list.reduce((n,v)=>n+v,0)*1e8)/1e8;
-// 목표를 누를 때만 연결된 전체 계좌(targetsOf)의 종목 목표 입력 한 칸을 연다.
+// 목표를 누르면 같은 자리에서 곧바로 목표 [  ] % 인라인 입력칸과 1줄 안내가 열린다(추가·완료 버튼 없음).
 // 한 계좌에만 목표가 있으면 그 항목(holder)을 수정하고, 비어 있으면 계획 항목(it)에 저장한다. 이미 두 계좌 이상에 나뉜 기존 기록은 합계를 표시하며 수정·비우기 전에 확인 후 holder 한 곳에 합치고 나머지 target을 지운다. 상위·옛 목표를 임의로 바꾸지 않는다.
 function targetEditorState(it,s=allocationSummary(doc.allocation,prices)){
   const rows=targetsOf(it,it?.buyPlan,s),own=rows.filter(r=>finite(r.it.target)!==null);
@@ -286,26 +294,29 @@ function targetEditorState(it,s=allocationSummary(doc.allocation,prices)){
   const value=own.length?String(targetSum(own.map(r=>finite(r.it.target)))):"";
   return {rows,own,holder,value};
 }
-function purchaseTargetEditor(it,s,scope){
-  const {rows,own,holder,value}=targetEditorState(it,s),open=purchaseTargetEditingId===it.id;
-  if(!holder)return '<div class="purchase-target-fields" id="purchaseTargetFields" hidden></div>';
-  const label=rows.length>1?"전체 목표 비중":"목표 비중";
+function purchaseTargetInline(it,s,target,scope){
+  const {rows,own,holder,value}=targetEditorState(it,s),display=target!==null?`목표 ${pc(target)}${TARGET_SCOPE[scope]||""}`:"목표 미입력";
+  if(!holder)return {control:display,hint:""};
   const holderName=itemName(holder.it),itemTitle=stockNames.titleParts(holderName).main||holderName;
   const aria=rows.length>1?`${itemTitle} 전체 목표 비중 (%)`:`${holderName} 목표 비중 (%)`;
-  const splitList=own.map(r=>`${escA(itemName(r.it))} ${pc(finite(r.it.target))}`).join(" · ");
-  const note=own.length>1?`계좌 ${own.length}개에 나뉜 목표(${splitList}) 합계입니다. 수정하면 '${escA(holderName)}' 한 곳에 합쳐 저장합니다.`
-    :["group","section","plan"].includes(scope)?"입력하면 표시된 상위 목표보다 우선합니다. 비워 두면 기존 목표를 따릅니다."
-    :rows.length>1?"연결된 전체 계좌의 합계 목표입니다. 비우면 자산 배분의 상위 비중을 따릅니다."
-    :"비우면 자산 배분에 설정된 상위 비중을 따릅니다.";
-  return `<div class="purchase-target-fields" id="purchaseTargetFields"${open?"":" hidden"}><label class="purchase-account-edit purchase-target-field"><span>${label}</span><input type="number" min="0" max="100" step="any" inputmode="decimal" data-purchase-target="${escA(it.id)}" value="${escA(value)}" aria-label="${escA(aria)}" /> %</label><p class="hint">${note}</p><button class="btn mini" id="purchaseTargetDone" type="button">완료</button></div>`;
+  const scopeLabel={group:"그룹",section:"소분류",plan:"계획"}[scope];
+  const placeholder=!own.length&&target!==null&&scopeLabel?`${scopeLabel} ${pc(target).replace(/%$/,"")}`:"0~100";
+  const hintText=own.length>1?`0~100% · 계좌 ${own.length}개 합계(수정 시 통합 확인) · 바깥 탭·Enter 저장`
+    :scope==="plan"?"0~100% · 비우면 기존 계획 목표 유지 · 바깥 탭·Enter 저장"
+    :["group","section"].includes(scope)?"0~100% · 비우면 표시된 상위 목표 유지 · 바깥 탭·Enter 저장"
+    :"0~100% · 비우면 자산 배분 상위 비중 · 바깥 탭·Enter 저장";
+  return {
+    control:`<label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">${display}</span><span class="target-editor"><span class="purchase-target-size" data-value="${escA(value||placeholder)}"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="${escA(it.id)}" value="${escA(value)}" placeholder="${escA(placeholder)}" aria-label="${escA(aria)}" aria-describedby="purchaseTargetHint"></span></span></label>`,
+    hint:`<small class="purchase-target-hint" id="purchaseTargetHint">${hintText}</small>`
+  };
 }
 function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,target,gap,scope}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
   const name=leadName(it,s),head=stockNames.titleParts(name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   const twin=linkedPlans(it,s).filter(r=>r.it!==it); // 새 계획 창이 막기 전에 만든 같은 종목의 중복 계획은 합치지 않고 알리기만 한다.
-  const targetButton=`<button class="purchase-target-toggle" id="purchaseTargetToggle" type="button" aria-expanded="${purchaseTargetEditingId===it.id}" aria-controls="purchaseTargetFields" aria-label="목표 비중 수정">${target!==null?`목표 ${pc(target)}${TARGET_SCOPE[scope]||""}`:"목표 미입력"}</button>`;
-  const targetText=target!==null?` / ${targetButton}${gap===null?"":Math.abs(gap)<.5?" · 목표 도달":gap>0?` · 목표까지 ${man(gap)}`:` · 목표 초과 ${man(-gap)}`}`:` · ${targetButton}`;
-  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(head.main)}${head.tag?` <span class="title-tag">${escA(head.tag)}</span>`:""}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}${goldNote(it)}<p class="alloc-link" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>현재 ${pc(pct)}${targetText}</span></p>${purchaseTargetEditor(it,s,scope)}</div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}${twin.length?`<div class="warning">같은 종목의 다른 계좌 줄(${twin.map(r=>escA(r.it.name)).join(", ")})에도 분할매수 계획이 있어 예산과 알림이 겹칩니다. 하나만 남기고 삭제하세요.</div>`:""}`;
+  const {control,hint}=purchaseTargetInline(it,s,target,scope);
+  const targetText=target!==null?` / ${control}${gap===null?"":Math.abs(gap)<.5?" · 목표 도달":gap>0?` · 목표까지 ${man(gap)}`:` · 목표 초과 ${man(-gap)}`}`:` · ${control}`;
+  return `<div class="heading plan-heading"><div><div class="eyebrow">${escA(it.ticker||g.name)}${entry?` · ${priceStamp(entry)}`:""}</div><div class="title-row"><h1>${escA(head.main)}${head.tag?` <span class="title-tag">${escA(head.tag)}</span>`:""}</h1><button class="btn icon-btn" type="button" data-purchase-edit="${escA(it.id)}" aria-label="${escA(name)} 분할매수 계획 수정" title="계획 수정">${PEN}</button></div>${quote}${goldNote(it)}<p class="alloc-link" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>현재 ${pc(pct)}${targetText}</span></p>${hint}</div></div>${entry?priceWarning(entry,escA(it.ticker||it.name)):""}${twin.length?`<div class="warning">같은 종목의 다른 계좌 줄(${twin.map(r=>escA(r.it.name)).join(", ")})에도 분할매수 계획이 있어 예산과 알림이 겹칩니다. 하나만 남기고 삭제하세요.</div>`:""}`;
 }
 // 매수대기 진행 카드: 돌파 계획의 진행 카드(statusCard)와 같은 띠·양 끝·가운데 구성. 띠는 왼쪽이 낮은 가격인 가격 축으로, 대기 중엔 왼쪽 선(○)·오른쪽 현재가(●)이고 띠의 화살표(‹)가 선 쪽(하락)을 가리킨다.
 // 현재가가 선 이하로 내려오면 현재가가 선 왼쪽으로 넘어가고 양 끝 가격도 자리를 바꾼다(대기 파랑·도달 주황·시세 대기 회색).
@@ -328,7 +339,7 @@ function renderPurchases(){
   if(purchasePointerDown){redrawLater=true;return;}redrawLater=false;
   doc=assetStore.doc;prices=assetStore.prices;
   const view=el("buysView"), items=purchaseItems(), plans=items.filter(({it})=>it.buyPlan), fills=new Map(), rowData=new Map();
-  const selected=plans.find(({it})=>it.id===selectedPurchaseId)||plans[0];selectedPurchaseId=selected?.it.id||null;if(purchaseTargetEditingId!==selectedPurchaseId)purchaseTargetEditingId=null;if(purchaseAccountDeletingId!==selectedPurchaseId)purchaseAccountDeletingId=null;
+  const selected=plans.find(({it})=>it.id===selectedPurchaseId)||plans[0];selectedPurchaseId=selected?.it.id||null;if(purchaseAccountDeletingId!==selectedPurchaseId)purchaseAccountDeletingId=null;
   const s=allocationSummary(doc.allocation,prices), summaries=plans.map(({it})=>purchaseSummary(it.buyPlan,lineEntry(it),lineOptions(it)));
   const currentNotes=new Map(plans.map(({it})=>[it.id,purchaseNotes(it.buyPlan,it)]));cleanDismissedNotes(currentNotes);
   const card=({g,it})=>{
