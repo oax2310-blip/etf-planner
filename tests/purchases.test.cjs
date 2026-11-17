@@ -1660,6 +1660,7 @@ test('계좌 목표 비중은 기존 저장·예산 갱신을 쓰며 잘못된 �
 
 test('분할매수에서 대표 계좌 삭제는 확인 후 기존 계획·체결 키·목표를 남은 같은 종목으로 이전한다',()=>{
   const r=setup({legacy:true});const a=r.doc.allocation,other={id:'b',name:'가상 ETF (연금저축)',ticker:r.item.ticker,shares:0};a.groups[0].items.push(other);r.item.target=20;r.render();
+  assert.equal(r.inputs('[data-purchase-account-delete]').length,0);r.element('purchaseAccountDeleteToggle').onclick();
   const before=JSON.stringify(r.doc),plan=r.item.buyPlan;r.ctx.confirm=()=>false;r.inputs('[data-purchase-account-delete]')[0].onclick();assert.equal(JSON.stringify(r.doc),before);
   let message='';r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[0].onclick();
   assert.match(message,/현재 보유량을 자산 배분에서도 삭제/);assert.match(message,/기록은 같은 종목의 남은 계좌로/);
@@ -1668,7 +1669,7 @@ test('분할매수에서 대표 계좌 삭제는 확인 후 기존 계획·체�
 });
 
 test('마지막 계좌 삭제는 계획도 삭제된다는 확인을 거치고 새 계좌 추가 취소는 기록을 만들지 않는다',()=>{
-  const r=setup();let message='';r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[0].onclick();assert.match(message,/계획도 삭제됩니다/);assert.equal(r.doc.allocation.groups[0].items.length,0);assert.match(r.html(),/계획 없음/);
+  const r=setup();r.element('purchaseAccountDeleteToggle').onclick();let message='';r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[0].onclick();assert.match(message,/계획도 삭제됩니다/);assert.equal(r.doc.allocation.groups[0].items.length,0);assert.match(r.html(),/계획 없음/);
 });
 
 test('코드 없는 옛 수동 계획은 계좌 추가를 막고 입력 위치를 안내하며 기존 기록을 보존한다',()=>{
@@ -1700,6 +1701,7 @@ test('기준 코드 없이 실제 매수 코드만 있는 기존 계획도 새 �
   const added=r.doc.allocation.groups[0].items[1];assert.equal(added.tradeTicker,'222222');assert.equal(added.ticker,undefined);assert.equal(added.shares,0);
   assert.equal(r.inputs('[data-purchase-target]').length,1);assert.match(r.html(),/전체 계좌 2개 항목/);assert.doesNotMatch(r.html(),/id="purchaseAccountHint"/);
   const target=r.input('[data-purchase-target]');target.value='5';target.onchange();assert.equal(r.item.target,5);assert.equal(added.target,undefined);assert.match(visibleText(r.html()),/목표 5%/);
+  r.element('purchaseAccountDeleteToggle').onclick();
   r.ctx.confirm=()=>true;r.inputs('[data-purchase-account-delete]')[1].onclick();assert.equal(r.doc.allocation.groups[0].items.length,1);assert.ok(r.item.buyPlan);assert.equal(r.item.target,5);
 });
 
@@ -1713,6 +1715,7 @@ function tradeOnlyAccounts(){
 
 test('tradeTicker 단독 대표 계좌 삭제는 계획·체결 키·합산 목표를 남은 같은 계좌로 이전한다',()=>{
   const {r,other}=tradeOnlyAccounts(),plan=r.item.buyPlan,before=JSON.stringify(r.doc);let message='';
+  r.element('purchaseAccountDeleteToggle').onclick();
   assert.deepEqual(r.inputs('[data-purchase-account-delete]').map(x=>x.dataset.purchaseAccountDelete),['a','b']);
   r.ctx.confirm=text=>{message=text;return false;};r.inputs('[data-purchase-account-delete]')[0].onclick();
   assert.equal(JSON.stringify(r.doc),before);assert.match(message,/계획과 체결 기록은 같은 종목의 남은 계좌로/);assert.match(message,/목표 비중은 같은 그룹·소분류/);
@@ -1724,6 +1727,7 @@ test('tradeTicker 단독 대표 계좌 삭제는 계획·체결 키·합산 목�
 
 test('tradeTicker 단독 비대표 계좌 삭제도 같은 그룹·소분류의 대표 계좌에 목표를 합산한다',()=>{
   const {r,other}=tradeOnlyAccounts(),plan=r.item.buyPlan,trades=JSON.stringify(r.doc.allocation.trades);let message='';
+  r.element('purchaseAccountDeleteToggle').onclick();
   r.ctx.confirm=text=>{message=text;return true;};r.inputs('[data-purchase-account-delete]')[1].onclick();
   assert.match(message,/목표 비중은 같은 그룹·소분류/);assert.equal(r.item.target,25);assert.equal(other.target,undefined);assert.equal(r.item.buyPlan,plan);
   assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.deepEqual(r.doc.allocation.groups[0].items.map(it=>it.id),['a']);
@@ -1785,6 +1789,7 @@ test('목표 비중 입력 직후 추가 버튼의 한 번 탭은 비중 저장�
 
 for(const accept of [false,true])test(`목표 비중 입력 직후 삭제 버튼의 한 번 탭은 비중 저장과 확인창 ${accept?'승인':'취소'} 동작을 모두 수행한다`,()=>{
   const {r,other}=tradeOnlyAccounts();delete r.item.target;r.render();
+  r.element('purchaseAccountDeleteToggle').onclick();
   const events=accountPointerEvents(r),button=r.inputs('[data-purchase-account-delete]')[1],before=r.html();let confirmations=0,writes=0;
   r.store.saveSection=()=>{writes++;r.storage.set('etf-planner-assets-v1',JSON.stringify(r.doc));};r.ctx.confirm=()=>{confirmations++;assert.equal(other.target,8);return accept;};
   assert.equal(typeof button.onpointerdown,'function');button.onpointerdown({button:0});const input=r.input('[data-purchase-target]');input.value='8';input.onchange();
@@ -1803,14 +1808,50 @@ for(const event of ['pointerup','pointercancel'])test(`계좌 버튼의 ${event}
 });
 
 test('분할매수 계좌 편집 입력과 버튼은 16px 글꼴·44px 터치 크기를 확보한다',()=>{
-  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8'),rule=selector=>{
-    const escaped=selector.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),match=css.match(new RegExp(escaped+'\\{([^}]+)\\}'));assert.ok(match,selector);
-    return Object.fromEntries(match[1].split(';').filter(Boolean).map(part=>part.split(':').map(x=>x.trim())));
+  const parseTopRules=source=>{
+    const clean=source.replace(/\/\*[\s\S]*?\*\//g,''),rules=new Map();
+    let depth=0,start=0,sel='',quote='';
+    for(let i=0;i<clean.length;i++){
+      const ch=clean[i];
+      if(quote){if(ch==='\\')i++;else if(ch===quote)quote='';continue;}
+      if(ch==='"'||ch==="'"){quote=ch;continue;}
+      if(ch==='{'){if(depth===0){sel=clean.slice(start,i).trim();start=i+1;}depth++;}
+      else if(ch==='}'){
+        depth--;
+        if(depth===0){
+          if(sel&&!sel.startsWith('@')){
+            const decls=Object.fromEntries(clean.slice(start,i).split(';').map(p=>p.trim()).filter(Boolean).map(part=>{const k=part.indexOf(':');assert.ok(k>0,part);return [part.slice(0,k).trim(),part.slice(k+1).trim()];}));
+            rules.set(sel,{...(rules.get(sel)||{}),...decls});
+          }
+          start=i+1;
+        }
+      }
+    }
+    assert.equal(depth,0,'CSS 중괄호 쌍 일치');
+    return rules;
+  };
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8'),rules=parseTopRules(css),rule=selector=>{const r=rules.get(selector);assert.ok(r,selector);return r;};
+  const appRules=parseTopRules(fs.readFileSync(path.join(__dirname,'../css/app.css'),'utf8')),btnRule=appRules.get('.btn');
+  assert.ok(btnRule&&btnRule.border,'css/app.css 최상위 .btn 규칙의 border 필요');
+  const borderMatch=btnRule.border.match(/^(\d+(?:\.\d+)?)px(?=\s|$)/);assert.ok(borderMatch,`css/app.css .btn border px 굵기 필요: ${btnRule.border}`);
+  const borderWidth=Number(borderMatch[1]);
+  const px=v=>{const m=String(v||'').match(/^(-?\d+(?:\.\d+)?)px$/);assert.ok(m,`px 값 필요: ${v}`);return Number(m[1]);};
+  const checkTouchHeight=(btn,before,label)=>{
+    const minH=px(btn['min-height']),parts=String(before.inset||'').trim().split(/\s+/);
+    assert.ok(parts.length>=1&&parts.length<=4,`${label} inset`);
+    const topRaw=parts[0],bottomRaw=parts.length>=3?parts[2]:parts[0];assert.equal(topRaw,bottomRaw,`${label} 상하 inset 대칭`);
+    const insetV=topRaw==='0'?0:px(topRaw);assert.ok(insetV<=0,`${label} inset 확장`);
+    const touchH=minH-2*borderWidth+2*Math.abs(insetV);
+    assert.ok(touchH>=44,`${label}: ${minH} - 2*${borderWidth} + 2*${Math.abs(insetV)} = ${touchH}px < 44px`);
   };
   assert.ok(parseFloat(rule('.purchase-account-edit input')['font-size'])>=16);assert.ok(parseFloat(rule('.purchase-account-edit input')['min-height'])>=44);
-  assert.ok(parseFloat(rule('.purchase-account-edit button')['min-height'])>=44);assert.ok(parseFloat(rule('.purchase-account-edit button')['min-width'])>=44);
-  const add=rule('#purchaseAccountAdd');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
-  assert.equal(rule('#purchaseAccountAdd::before').inset,'-6px 0','외형 32px + 위아래 6px = 44px 터치 영역');
+  assert.equal(css.includes('.purchase-account-edit button'),false,'행 내부 옛 삭제 버튼 규칙은 남기지 않음');
+  const add=rule('#purchaseAccountAdd'),addBefore=rule('#purchaseAccountAdd::before');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
+  assert.equal(addBefore.inset,'-7px 0','외형 32px − 위아래 테두리 2px + inset 7px×2 = 터치 영역 44px');checkTouchHeight(add,addBefore,'#purchaseAccountAdd');
+  const toggle=rule('#purchaseAccountDeleteToggle'),toggleBefore=rule('#purchaseAccountDeleteToggle::before');assert.equal(toggle.width,'max-content');assert.ok(parseFloat(toggle['min-width'])>=44);assert.equal(parseFloat(toggle['min-height']),32);
+  assert.equal(toggleBefore.inset,'-7px 0','외형 32px − 위아래 테두리 2px + inset 7px×2 = 터치 영역 44px');checkTouchHeight(toggle,toggleBefore,'#purchaseAccountDeleteToggle');
+  const del=rule('.purchase-account-delete'),delBefore=rule('.purchase-account-delete::before');assert.ok(parseFloat(del['min-width'])>=44);assert.equal(parseFloat(del['min-height']),28);
+  assert.equal(delBefore.inset,'-9px 0','외형 28px − 위아래 테두리 2px + inset 9px×2 = 터치 영역 44px');checkTouchHeight(del,delBefore,'.purchase-account-delete');
 });
 
 // 기본 초점 이동이 차단됐으면 실제 터치처럼 pointerup의 타이머가 먼저 끝나도 change는 click 안의 blur까지 일어나지 않는다.
@@ -1833,43 +1874,57 @@ for(const field of ['target','shares'])for(const direction of [-1,1])test(`편�
   assert.deepEqual([...r.item.buyPlan.buyPriority],['b','a']);assert.ok(r.html().indexOf('data-purchase-holding="b"')<r.html().indexOf('data-purchase-holding="a"'));
   if(field==='target')assert.equal(r.item.target,33);else{assert.equal(record().shares,2);assert.equal(r.item.shares,12);assert.equal(record().tradeTargetId,'a','순위 변경 전의 체결 대상에 저장');}
 });
-for(const kind of ['shares','buy-shares','exec'])for(const action of ['add','delete'])test(`편집 입력 ${kind} 뒤 계좌 ${action} 터치는 입력을 저장하고 창을 한 번 연다`,()=>{
+for(const kind of ['shares','buy-shares','exec'])for(const action of ['add','delete','toggle'])test(`편집 입력 ${kind} 뒤 계좌 ${action} 터치는 입력을 저장하고 동작을 한 번 실행한다`,()=>{
   const {r,selector,record}=partialPointerFixture(kind);let confirmations=0;r.ctx.confirm=()=>{confirmations++;return false;};
-  const button=action==='add'?r.element('purchaseAccountAdd'):r.inputs('[data-purchase-account-delete]')[1];tapFocusedPurchaseEdit(r,button,selector,kind==='exec'?9999:2);
-  assert.equal(kind==='exec'?record().execPrice:record().shares,kind==='exec'?9999:2);assert.equal(!!r.element('purchaseAccountDialog').open,action==='add');assert.equal(confirmations,action==='delete'?1:0);
+  if(action==='delete')r.element('purchaseAccountDeleteToggle').onclick();
+  const button=action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:r.element('purchaseAccountDeleteToggle');
+  tapFocusedPurchaseEdit(r,button,selector,kind==='exec'?9999:2);
+  assert.equal(kind==='exec'?record().execPrice:record().shares,kind==='exec'?9999:2);
+  assert.equal(!!r.element('purchaseAccountDialog').open,action==='add');assert.equal(confirmations,action==='delete'?1:0);
+  if(action==='toggle'){assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'true');assert.equal(r.inputs('[data-purchase-account-delete]').length,2);}
 });
-for(const action of ['add','delete','priority'])test(`목표 검증 실패 뒤 ${action} 동작은 진행하지 않고 정상 재입력 뒤에는 실행한다`,()=>{
+for(const action of ['add','delete','toggle','priority'])test(`목표 검증 실패 뒤 ${action} 동작은 진행하지 않고 정상 재입력 뒤에는 실행한다`,()=>{
   for(const value of ['200','-1','잘못된 값']){
-    const {r}=partialPointerFixture('shares'),button=()=>action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='b'&&x.dataset.purchaseDirection==='-1');
+    const {r}=partialPointerFixture('shares');if(action==='delete')r.element('purchaseAccountDeleteToggle').onclick();
+    const button=()=>action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:action==='toggle'?r.element('purchaseAccountDeleteToggle'):r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='b'&&x.dataset.purchaseDirection==='-1');
     const before=JSON.stringify(r.doc);let confirmations=0;r.ctx.confirm=()=>{confirmations++;return false;};
     const events=tapFocusedPurchaseEdit(r,button(),'[data-purchase-target]',value);
     assert.match(r.alerts.at(-1),/목표 비중은 0~100/);assert.equal(JSON.stringify(r.doc),before,'잘못된 값을 저장하거나 순위를 바꾸지 않음');assert.ok(!r.element('purchaseAccountDialog').open);assert.equal(confirmations,0);
+    if(action==='toggle')assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
     tapFocusedPurchaseEdit(r,button(),'[data-purchase-target]',33,events);assert.equal(r.item.target,33);
-    if(action==='priority')assert.deepEqual([...r.item.buyPlan.buyPriority],['b','a']);else if(action==='add')assert.equal(r.element('purchaseAccountDialog').open,true);else assert.equal(confirmations,1);
+    if(action==='priority')assert.deepEqual([...r.item.buyPlan.buyPriority],['b','a']);
+    else if(action==='add')assert.equal(r.element('purchaseAccountDialog').open,true);
+    else if(action==='toggle')assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'true');
+    else assert.equal(confirmations,1);
   }
 });
 for(const kind of ['shares','buy-shares','exec'])test(`편집 입력 ${kind} 검증 실패도 후속 버튼 동작을 차단한다`,()=>{
-  for(const action of ['add','delete','priority'])for(const value of kind==='exec'?[0,-1,'문자','1e3']:[999,1.5,-1,'문자']){
-    const {r,selector}=partialPointerFixture(kind),button=action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='b'&&x.dataset.purchaseDirection==='-1');
+  for(const action of ['add','delete','toggle','priority'])for(const value of kind==='exec'?[0,-1,'문자','1e3']:[999,1.5,-1,'문자']){
+    const {r,selector}=partialPointerFixture(kind);if(action==='delete')r.element('purchaseAccountDeleteToggle').onclick();
+    const button=action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:action==='toggle'?r.element('purchaseAccountDeleteToggle'):r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='b'&&x.dataset.purchaseDirection==='-1');
     const before=JSON.stringify(r.doc);let confirmations=0;r.ctx.confirm=()=>{confirmations++;return false;};
     tapFocusedPurchaseEdit(r,button,selector,value);
     assert.equal(JSON.stringify(r.doc),before);assert.ok(!r.element('purchaseAccountDialog').open);assert.equal(confirmations,0);
+    if(action==='toggle')assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
   }
 });
-for(const action of ['add','delete','priority'])test(`계좌 선택 창이 열린 수량 입력 뒤 ${action} 동작은 겹쳐 실행하지 않는다`,()=>{
+for(const action of ['add','delete','toggle','priority'])test(`계좌 선택 창이 열린 수량 입력 뒤 ${action} 동작은 겹쳐 실행하지 않는다`,()=>{
   const r=setup({manual:true});r.doc.allocation.groups[0].items.push({id:'b',name:'가상 두 번째 계좌',ticker:r.item.ticker,shares:0});r.render();
+  if(action==='delete')r.element('purchaseAccountDeleteToggle').onclick();
   // 기존 계좌 선택 테스트와 같이 고정 대상만 풀어 실제 check → openDialog를 실행한다. 선택 전에는 체결 commit이 일어나지 않는다.
   const check=r.link.check;r.link.check=o=>check({...o,targetId:null});r.link.initialize();let confirmations=0;r.ctx.confirm=()=>{confirmations++;return false;};
-  const button=action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='b'&&x.dataset.purchaseDirection==='-1'),before=JSON.stringify(r.doc);
+  const button=action==='add'?r.element('purchaseAccountAdd'):action==='delete'?r.inputs('[data-purchase-account-delete]')[1]:action==='toggle'?r.element('purchaseAccountDeleteToggle'):r.inputs('[data-purchase-priority]').find(x=>x.dataset.purchasePriority==='b'&&x.dataset.purchaseDirection==='-1'),before=JSON.stringify(r.doc);
   tapFocusedPurchaseEdit(r,button,'[data-purchase-shares]',2);
   assert.equal(r.element('linkDialog').open,true);assert.ok(!r.element('purchaseAccountDialog').open);assert.equal(confirmations,0);assert.equal(JSON.stringify(r.doc),before);
+  if(action==='toggle')assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
 });
 test('disabled 계좌 버튼·화살표는 편집 입력의 초점이나 후속 동작을 가로채지 않는다',()=>{
   const {r}=partialPointerFixture('shares'),input=r.input('[data-purchase-target]');input.value='33';r.ctx.document.activeElement=input;let blurs=0,prevented=0;input.blur=()=>blurs++;
-  for(const button of [r.element('purchaseAccountAdd'),r.inputs('[data-purchase-priority]')[0]]){
+  for(const button of [r.element('purchaseAccountAdd'),r.element('purchaseAccountDeleteToggle'),r.inputs('[data-purchase-priority]')[0]]){
     button.disabled=true;button.onpointerdown({button:0,preventDefault(){prevented++;}});button.onclick();
   }
   assert.equal(blurs,0);assert.equal(prevented,0);assert.equal(r.item.target,undefined);assert.ok(!r.element('purchaseAccountDialog').open);
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
 });
 
 test('분할매수 본문 밖 입력은 같은 data 속성이 있어도 계좌 버튼이 blur 저장하지 않는다',()=>{
@@ -1961,4 +2016,162 @@ test('목표 완료의 첫 탭은 초점 입력을 저장하고 닫으며 통합
   assert.equal(split.r.element('purchaseTargetFields').hidden,false,'통합 확인 취소 시 완료 동작 중단');assert.equal(split.r.item.target,20);assert.equal(split.other.target,5);assert.equal(split.r.input('[data-purchase-target]').value,'25');
   r.element('purchaseTargetToggle').onclick();r.doc.allocation.groups[0].items.push({id:'next',name:'다른 계획',ticker:'222222',buyPlan:{wait:{line:'25선'}}});r.render();
   r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='next').onclick();assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
+});
+
+function trackToggleFocus(r){
+  const get=r.ctx.document.getElementById,log=[];
+  r.ctx.document.getElementById=id=>{
+    const node=get(id);
+    if(id==='purchaseAccountDeleteToggle'&&node&&!node._focusTracked){node._focusTracked=true;node.focus=opts=>log.push({node,opts});}
+    return node;
+  };
+  return log;
+}
+
+test('연결된 계좌 목록은 기본 상태에서 행 삭제 버튼을 숨기고 바닥글 토글로만 삭제 모드를 전환한다',()=>{
+  for(const wait of [null,'25선']){
+    const r=setup(wait?{wait}:{});
+    r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:0});
+    r.render();
+    const focusLog=trackToggleFocus(r);
+    const beforeDoc=JSON.stringify(r.doc),beforeStorage=r.storage.get('etf-planner-assets-v1');
+    let writes=0;r.store.saveSection=()=>writes++;
+
+    // 기본(일반) 모드: 행 삭제 UI 없음, 우선순위 화살표 표시, 바닥글 토글은 off
+    assert.equal(r.inputs('[data-purchase-priority]').length,4);
+    assert.equal(r.inputs('[data-purchase-account-delete]').length,0);
+    assert.doesNotMatch(r.html(),/purchase-account-delete["\s>]/);
+    assert.match(r.html(),/class="purchase-account-actions"/);
+    assert.match(r.html(),/id="purchaseLinkedHoldings"[^>]*aria-label="매수 우선순위"/);
+    assert.match(r.html(),wait?/화살표로 계획 종목의 우선순위를 바꿉니다\./:/매수 우선순위 · 맨 위 종목에 새 회차의 체결을 반영합니다\./);
+    const offBtn=r.element('purchaseAccountDeleteToggle');
+    assert.equal(offBtn.getAttribute('aria-pressed'),'false');
+    assert.equal(offBtn.getAttribute('aria-controls'),'purchaseLinkedHoldings');
+    assert.equal(offBtn.getAttribute('aria-label'),'계좌 삭제');
+    assert.doesNotMatch(offBtn.getAttribute('class'),/\bactive\b/);
+    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>계좌 삭제<\/button>/);
+
+    // 토글 ON: 삭제 모드 진입, 저장 없음, 포커스를 새 토글 버튼으로 복원
+    offBtn.onclick();
+    assert.equal(JSON.stringify(r.doc),beforeDoc);
+    assert.equal(r.storage.get('etf-planner-assets-v1'),beforeStorage);
+    assert.equal(writes,0);
+    assert.equal(r.inputs('[data-purchase-priority]').length,0);
+    assert.deepEqual(r.inputs('[data-purchase-account-delete]').map(x=>x.dataset.purchaseAccountDelete),['a','b']);
+    assert.match(r.html(),/id="purchaseLinkedHoldings"[^>]*aria-label="연결 계좌 삭제"/);
+    assert.match(r.html(),/삭제할 계좌를 누르세요\. 확인 후 자산 배분에서도 삭제됩니다\./);
+    const onBtn=r.element('purchaseAccountDeleteToggle');
+    assert.equal(onBtn.getAttribute('aria-pressed'),'true');
+    assert.equal(onBtn.getAttribute('aria-label'),'계좌 삭제 완료');
+    assert.match(onBtn.getAttribute('class'),/\bactive\b/);
+    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>완료<\/button>/);
+    assert.equal(focusLog.length,1);
+    assert.equal(focusLog[0].node,onBtn);
+    assert.deepEqual({...focusLog[0].opts},{preventScroll:true});
+
+    // 토글 OFF: 일반 모드 복귀, 저장 없음, 포커스 유지
+    onBtn.onclick();
+    assert.equal(JSON.stringify(r.doc),beforeDoc);
+    assert.equal(writes,0);
+    assert.equal(r.inputs('[data-purchase-priority]').length,4);
+    assert.equal(r.inputs('[data-purchase-account-delete]').length,0);
+    assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
+    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>계좌 삭제<\/button>/);
+    assert.equal(focusLog.length,2);
+    assert.equal(focusLog[1].node,r.element('purchaseAccountDeleteToggle'));
+    assert.deepEqual({...focusLog[1].opts},{preventScroll:true});
+  }
+});
+
+test('계좌 삭제 모드는 비대표 계좌 삭제·추가 취소에서 유지되고 계좌 추가 완료·다른 계획 전환·대표 삭제 시 해제된다',()=>{
+  const r=setup();
+  r.doc.allocation.groups[0].items.push(
+    {id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:0},
+    {id:'c',name:'테스트 종목 (퇴직연금)',ticker:r.item.ticker,shares:0},
+    {id:'otherPlan',name:'다른 종목',ticker:'222222',shares:3,buyPlan:{wait:{line:'25선'}}}
+  );
+  r.prices.stocks['222222']={kind:'국내',close:10000,asOf:'2026-01-02'};
+  r.render();
+  const focusLog=trackToggleFocus(r);
+  r.ctx.confirm=()=>true;
+
+  // 1) 삭제 모드 진입 후 비대표('b') 삭제 → 삭제 모드 유지 및 새 완료 버튼 포커스
+  r.element('purchaseAccountDeleteToggle').onclick();
+  assert.equal(focusLog.length,1);
+  r.inputs('[data-purchase-account-delete]')[1].onclick();
+  assert.deepEqual(r.inputs('[data-purchase-account-delete]').map(x=>x.dataset.purchaseAccountDelete),['a','c']);
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'true');
+  assert.equal(focusLog.length,2);
+  assert.equal(focusLog[1].node,r.element('purchaseAccountDeleteToggle'));
+  assert.deepEqual({...focusLog[1].opts},{preventScroll:true});
+
+  // 2) 계좌 추가 창 열기 후 취소 → 삭제 모드 유지; 새 계좌 제출 → 삭제 모드 해제 및 화살표 복귀
+  r.element('purchaseAccountAdd').onclick();
+  r.element('purchaseAccountCancel').onclick();
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'true');
+  assert.equal(r.inputs('[data-purchase-account-delete]').length,2);
+  r.element('purchaseAccountAdd').onclick();
+  const f=r.element('purchaseAccountForm');
+  f.accountName.value='신규계좌';
+  f.onsubmit({preventDefault(){}});
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
+  assert.equal(r.inputs('[data-purchase-account-delete]').length,0);
+  assert.equal(r.inputs('[data-purchase-priority]').length,6);
+
+  // 3) 다른 계획으로 이동했다 돌아오면 삭제 모드 해제
+  r.element('purchaseAccountDeleteToggle').onclick();
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'true');
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='otherPlan').onclick();
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
+  assert.equal(r.inputs('[data-purchase-account-delete]').length,0);
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='a').onclick();
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
+
+  // 4) 대표('a') 삭제 → 계획이 남은 계좌('c')로 옮겨지며 삭제 모드 해제
+  r.element('purchaseAccountDeleteToggle').onclick();
+  r.inputs('[data-purchase-account-delete]')[0].onclick();
+  assert.match(r.html(),/data-purchase-item="c"/);
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
+  assert.equal(r.inputs('[data-purchase-account-delete]').length,0);
+  assert.ok(r.inputs('[data-purchase-priority]').length>=2);
+
+  // 5) 마지막 계좌까지 모두 삭제되면 화면에 없는 토글 버튼에 포커스를 주지 않는다
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='otherPlan').onclick();
+  r.element('purchaseAccountDeleteToggle').onclick();
+  const countBefore=focusLog.length;
+  r.inputs('[data-purchase-account-delete]')[0].onclick();
+  assert.equal(focusLog.length,countBefore,'계획이 없어진 뒤 분리된 토글 버튼에 focus()를 호출하지 않음');
+  for(const item of r.doc.allocation.groups[0].items.slice()){
+    if(!item.buyPlan)continue;
+    r.render();
+    r.element('purchaseAccountDeleteToggle').onclick();
+    const beforeLast=focusLog.length;
+    while(r.inputs('[data-purchase-account-delete]').length){
+      r.inputs('[data-purchase-account-delete]')[0].onclick();
+      if(r.inputs('[data-purchase-account-delete]').length===0)assert.equal(focusLog.length,beforeLast,'마지막 계좌 삭제 후에도 focus()를 호출하지 않음');
+      else r.element('purchaseAccountDeleteToggle').onclick();
+    }
+  }
+  assert.match(r.html(),/계획 없음/);
+});
+
+test('분할매수 본문 밖 입력은 계좌 삭제 토글과 행 삭제 버튼 터치에도 blur 저장되지 않는다',()=>{
+  const r=setup();
+  r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:0});
+  r.render();
+  const outside=r.ctx.document.createElement('input');
+  outside.dataset.purchaseTarget='a';outside.value='33';
+  r.ctx.document.body.append(outside);
+  let blurs=0,prevented=0;outside.blur=()=>blurs++;
+  r.ctx.document.activeElement=outside;
+  const toggle=r.element('purchaseAccountDeleteToggle');
+  toggle.onpointerdown({button:0,preventDefault(){prevented++;}});
+  toggle.onclick();
+  assert.equal(blurs,0);assert.equal(prevented,0);assert.equal(r.item.target,undefined);
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'true');
+  let confirms=0;r.ctx.confirm=()=>{confirms++;return false;};
+  const del=r.inputs('[data-purchase-account-delete]')[1];
+  del.onpointerdown({button:0,preventDefault(){prevented++;}});
+  del.onclick();
+  assert.equal(blurs,0);assert.equal(prevented,0);assert.equal(r.item.target,undefined);assert.equal(confirms,1);
 });
