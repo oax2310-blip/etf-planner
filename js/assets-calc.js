@@ -458,18 +458,17 @@ const {allocationHoldingInfo,allocationHoldingTotal}=(()=>{
 })();
 
 // 연결 항목 [{g, it}]의 자산 배분 목표 — 분할매수·분할매도·재매수가 같은 규칙으로 읽는 단일 기준(자산 배분 목표만 쓰고 계획에 따로 저장하지 않는다).
-// 항목 목표가 하나라도 있으면 그 합(scope item). 없으면 연결 항목이 전부 포함된 그룹의 목표, 일부만 포함된 그룹에서는 전부 포함된 소분류의 목표를 더한다(scope group·section).
+// 항목 목표가 하나라도 있으면 그 합(scope item). 없으면 연결 항목이 전부 포함된 소분류의 목표를 더한다(scope section; 상위 그룹 목표는 물려받지 않는다).
 // 목표가 없으면 {target:null, scope:null}. 저장된 목표는 읽기만 한다.
 function linkedAllocationTarget(rows, summary){
   const ids=new Set(rows.map(r=>r.it.id)), own=rows.map(({it})=>finite(it.target)).filter(v=>v!==null), sum=list=>Math.round(list.reduce((n,v)=>n+v,0)*1e8)/1e8;
   if(own.length)return {target:sum(own),scope:"item"};
-  const groups=[], sections=[];
+  const sections=[];
   for(const g of new Set(rows.map(r=>r.g))){
-    if((g.items||[]).every(it=>ids.has(it.id))){const t=summary.targets.groups.get(g.id)?.target;if(t!=null)groups.push(t);continue;}
     for(const name of new Set(rows.filter(r=>r.g===g).map(r=>r.it.section).filter(Boolean)))
       if(g.items.filter(it=>it.section===name).every(it=>ids.has(it.id))){const t=summary.targets.section(g.id,name).target;if(t!==null)sections.push(t);}
   }
-  return groups.length||sections.length?{target:sum([...groups,...sections]),scope:groups.length?"group":"section"}:{target:null,scope:null};
+  return sections.length?{target:sum(sections),scope:"section"}:{target:null,scope:null};
 }
 // 분할매수의 투자 대상은 저장된 기준 ticker·실제 tradeTicker 연결로 구분한다. 같은 코드의 다른 계좌와 명시적으로 연결된 추종 ETF를 중복 없이 합산한다.
 // 이름·큰 분류·소분류가 비슷하다는 이유로 합치지 않는다. 코드가 없으면 선택한 항목만, 평가액·분모는 자산현황 allocationSummary 그대로 쓴다.
@@ -564,7 +563,7 @@ function linkedItems(alloc, ticker, ownId=null){
   for(const g of alloc?.groups||[])for(const it of g.items||[])if(it.id===ownId||key&&(linkTicker(it.ticker)===key||linkTicker(assetTradeTicker(it))===key))out.push({g,it});
   return out;
 }
-// 계획 화면의 '자산 배분' 줄과 보유량 가져오기: 연결 종목 합계 평가액·비중, 목표(linkedAllocationTarget — 분할매수와 같은 자산 배분 목표 규칙, scope item·group·section),
+// 계획 화면의 '자산 배분' 줄과 보유량 가져오기: 연결 종목 합계 평가액·비중, 목표(linkedAllocationTarget — 분할매수와 같은 자산 배분 목표 규칙, scope item·section),
 // 목표와의 차이(gap > 0 목표까지 더 살 금액, < 0 목표 초과), 보유 수량 합(모든 연결 종목에 수량이 있고 실제 거래 티커가 기준 티커와 같을 때만).
 function linkSummary(alloc, prices, ticker, ownId=null){
   const list=linkedItems(alloc,ticker,ownId);if(!list.length)return null;

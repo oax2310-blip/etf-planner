@@ -171,9 +171,8 @@
 .plan-form-foot{padding:12px 0 0}
 @media(max-width:700px){.plan-form-grid{gap:12px 10px}}
 
-/* 목표 입력은 제목 아래 목표를 누를 때만 보인다. 16px 입력과 44px 터치 영역을 유지하고 추가·계좌 삭제·완료·행 삭제 버튼의 외형만 줄인다. ::before의 inset은 테두리 안쪽부터 재므로 터치 높이는 "외형 높이 − 위아래 테두리 + inset×2"다. */
-.purchase-account-edit{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12px;color:var(--text-3)}
-.purchase-account-edit input{width:70px;min-height:44px;padding:5px 7px;font-size:16px;background:var(--field);color:var(--text);border:1px solid var(--line-strong);border-radius:7px}
+/* 제목 아래 목표 비중은 평소 점선 밑줄 글자(.target-display)로 보이고, 누르면 같은 자리에서 목표 [  ] % 인라인 입력칸(.target-editor)과 1줄 안내가 열린다.
+   ::before로 44px 이상 터치 영역을 확보하며 포커스 중에는 제거해 칸 내부 터치·커서 이동을 방해하지 않는다. 추가·계좌 삭제·행 삭제 버튼의 외형만 줄이고 ::before inset으로 터치 높이를 유지한다. */
 .purchase-account-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px}
 #purchaseAccountAdd{position:relative;width:max-content;max-width:100%;min-height:32px;padding:5px 10px;font-size:12px}
 #purchaseAccountAdd::before{content:"";position:absolute;inset:-7px 0}
@@ -183,9 +182,20 @@
 .purchase-account-delete{position:relative;min-width:59px;min-height:28px;padding:4px 10px;border-radius:7px;font-size:12px;line-height:1.3;white-space:nowrap;background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger)}
 .purchase-account-delete::before{content:"";position:absolute;inset:-9px 0}
 .purchase-account-delete:hover{background:var(--danger-soft);border-color:var(--danger-line)}
-@media(hover:hover) and (pointer:fine){#purchaseAccountDeleteToggle:hover{color:var(--text)}#purchaseAccountDeleteToggle.active:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}.purchase-account-delete:hover{border-color:var(--danger)}}
-.purchase-target-toggle{position:relative;display:inline;padding:0;border:0;border-bottom:1px dashed var(--text-3);background:transparent;color:inherit;font:inherit;line-height:inherit;cursor:pointer}
-.purchase-target-toggle::before{content:"";position:absolute;inset:-12px -3px}
-.purchase-target-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
-.purchase-target-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;max-width:480px;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.purchase-target-fields .purchase-target-field{margin:0;gap:6px}.purchase-target-field>span{max-width:200px;overflow-wrap:anywhere}.purchase-target-fields>.hint{flex-basis:100%;margin:0;font-size:11px;line-height:1.5}.purchase-target-fields>.btn{min-height:44px;margin-left:auto}
+@media(hover:hover) and (pointer:fine){#purchaseAccountDeleteToggle:hover{color:var(--text)}#purchaseAccountDeleteToggle.active:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}.purchase-account-delete:hover{border-color:var(--danger)}.purchase-target-inline:hover .target-display{border-bottom-color:var(--accent)}}
+.purchase-target-inline{position:relative;display:inline-flex;align-items:baseline;vertical-align:baseline;max-width:100%;cursor:text}
+.purchase-target-inline::before{content:"";position:absolute;inset:-13px -4px}
+.purchase-target-inline .target-display{border-bottom:1px dashed var(--text-3);pointer-events:none}
+.purchase-target-inline .target-editor{position:absolute;inset:0;opacity:0;display:inline-flex;align-items:baseline;gap:3px;max-width:100%;overflow:hidden}
+.purchase-target-size{display:inline-grid;min-width:4.2ch;font-variant-numeric:tabular-nums}
+.purchase-target-size::after{content:attr(data-value);visibility:hidden;white-space:pre;padding:1px 6px;border:1px solid transparent;font-size:13.5px;font-weight:600;line-height:1.35}
+.purchase-target-size>input,.purchase-target-size::after{grid-area:1/1}
+.purchase-target-size>input{width:0;min-width:100%;padding:1px 6px;border:1px solid var(--accent);border-radius:6px;background:var(--field);color:var(--text);font:inherit;font-size:13.5px;font-weight:600;line-height:1.35;font-variant-numeric:tabular-nums;text-align:center;box-shadow:0 0 0 2.5px var(--accent-soft);outline:0;-moz-appearance:textfield;appearance:textfield}
+.purchase-target-size>input::-webkit-inner-spin-button,.purchase-target-size>input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.purchase-target-inline:focus-within .target-display{display:none}
+.purchase-target-inline:focus-within .target-editor{position:static;opacity:1;width:auto;overflow:visible}
+.purchase-target-inline:focus-within .target-editor::before{content:"목표"}
+.purchase-target-inline:focus-within .target-editor::after{content:"%"}
+.purchase-target-inline:focus-within::before{display:none}
+.purchase-target-hint{display:none;margin:5px 0 0;font-size:11.5px;line-height:1.45;color:var(--text-3);word-break:keep-all;overflow-wrap:anywhere}
+.alloc-link:has(.purchase-target-inline:focus-within)+.purchase-target-hint{display:block}

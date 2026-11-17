@@ -615,7 +615,9 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
   const r=setup({budget:50,tracking:true});r.doc.allocation.groups[0].target=40;
   const other={id:'b',ticker:'111111',tradeTicker:'222222',amount:15};r.doc.allocation.groups[0].items.push(other);
-  r.initialize();r.edit();assert.equal(r.form.lineTarget.value,40,'자산 배분 그룹 목표를 읽기 전용으로 표시');assert.match(r.element('lineTargetNote').innerHTML,/그룹 목표.*assets\.html#alloc/);
+  r.initialize();r.edit();assert.equal(r.form.lineTarget.value,'','상위 그룹 목표만 있으면 물려받지 않음');assert.match(r.element('lineTargetNote').innerHTML,/목표가 없습니다/);
+  r.item.section='공통';other.section='공통';r.doc.allocation.groups[0].sections=[{name:'공통',target:40}];
+  r.edit();assert.equal(r.form.lineTarget.value,40,'소분류 목표를 읽기 전용으로 표시');assert.match(r.element('lineTargetNote').innerHTML,/소분류 목표.*assets\.html#alloc/);
   assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
   r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,'15');assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
@@ -1807,7 +1809,7 @@ for(const event of ['pointerup','pointercancel'])test(`계좌 버튼의 ${event}
   r.change('[data-purchase-target]',26);assert.match(r.html(),/data-purchase-target="a" value="26"/);
 });
 
-test('분할매수 계좌 편집 입력과 버튼은 16px 글꼴·44px 터치 크기를 확보한다',()=>{
+test('분할매수 인라인 목표 비중과 계좌 버튼은 44px 터치 영역과 인라인 입력 규칙을 확보한다',()=>{
   const parseTopRules=source=>{
     const clean=source.replace(/\/\*[\s\S]*?\*\//g,''),rules=new Map();
     let depth=0,start=0,sel='',quote='';
@@ -1844,8 +1846,26 @@ test('분할매수 계좌 편집 입력과 버튼은 16px 글꼴·44px 터치 �
     const touchH=minH-2*borderWidth+2*Math.abs(insetV);
     assert.ok(touchH>=44,`${label}: ${minH} - 2*${borderWidth} + 2*${Math.abs(insetV)} = ${touchH}px < 44px`);
   };
-  assert.ok(parseFloat(rule('.purchase-account-edit input')['font-size'])>=16);assert.ok(parseFloat(rule('.purchase-account-edit input')['min-height'])>=44);
-  assert.equal(css.includes('.purchase-account-edit button'),false,'행 내부 옛 삭제 버튼 규칙은 남기지 않음');
+  for(const legacy of ['.purchase-account-edit','.purchase-target-toggle','.purchase-target-fields'])assert.equal(css.includes(legacy),false,`옛 목표 편집 규칙(${legacy})은 남기지 않음`);
+  const inline=rule('.purchase-target-inline'),inlineBefore=rule('.purchase-target-inline::before');
+  assert.equal(inline.position,'relative');assert.equal(inline.display,'inline-flex');
+  assert.equal(inlineBefore.inset,'-13px -4px','글자 줄 ~19.5px + 위아래 inset 13px×2 = 터치 영역 44px 이상');
+  assert.match(rule('.purchase-target-inline .target-display')['border-bottom']||'',/dashed/);
+  assert.equal(rule('.purchase-target-inline .target-display')['pointer-events'],'none');
+  assert.equal(rule('.purchase-target-inline .target-editor').position,'absolute');assert.equal(rule('.purchase-target-inline .target-editor').opacity,'0');
+  assert.equal(rule('.purchase-target-inline:focus-within .target-display').display,'none');
+  assert.equal(rule('.purchase-target-inline:focus-within .target-editor').position,'static');assert.equal(rule('.purchase-target-inline:focus-within .target-editor').opacity,'1');
+  assert.equal(rule('.purchase-target-inline:focus-within .target-editor::before').content,'"목표"');
+  assert.equal(rule('.purchase-target-inline:focus-within .target-editor::after').content,'"%"');
+  assert.equal(rule('.purchase-target-inline:focus-within::before').display,'none');
+  const sizeBox=rule('.purchase-target-size'),sizeAfter=rule('.purchase-target-size::after'),sizeInput=rule('.purchase-target-size>input');
+  assert.equal(sizeBox.display,'inline-grid');assert.equal(sizeBox['min-width'],'4.2ch');
+  assert.equal(sizeAfter.content,'attr(data-value)');assert.equal(parseFloat(sizeAfter['font-size']),13.5);
+  assert.equal(parseFloat(sizeInput['font-size']),13.5);assert.equal(sizeInput.width,'0');assert.equal(sizeInput['min-width'],'100%');
+  assert.match(css,/\.purchase-target-size>input::-webkit-inner-spin-button/);
+  assert.equal(rule('.purchase-target-hint').display,'none');
+  assert.equal(rule('.alloc-link:has(.purchase-target-inline:focus-within)+.purchase-target-hint').display,'block');
+  assert.match(css,/\.purchase-target-inline:hover \.target-display\{border-bottom-color:var\(--accent\)\}/);
   const add=rule('#purchaseAccountAdd'),addBefore=rule('#purchaseAccountAdd::before');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
   assert.equal(addBefore.inset,'-7px 0','외형 32px − 위아래 테두리 2px + inset 7px×2 = 터치 영역 44px');checkTouchHeight(add,addBefore,'#purchaseAccountAdd');
   const toggle=rule('#purchaseAccountDeleteToggle'),toggleBefore=rule('#purchaseAccountDeleteToggle::before');assert.equal(toggle.width,'max-content');assert.ok(parseFloat(toggle['min-width'])>=44);assert.equal(parseFloat(toggle['min-height']),32);
@@ -1934,48 +1954,103 @@ test('분할매수 본문 밖 입력은 같은 data 속성이 있어도 계좌 �
 });
 
 
-test('제목의 목표 부분만 눌러 기존 목표 입력을 열고 닫으며 열기·취소로 저장하지 않는다',()=>{
+test('제목의 목표 인라인 입력은 추가 버튼·중복 문구 없이 그 자리에서 열리고 입력·Enter·Escape를 처리한다',()=>{
   const r=setup();r.item.target=18.75;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
-  assert.match(r.html(),/<button class="purchase-target-toggle"[^>]*aria-expanded="false"[^>]*>목표 18\.8%<\/button>/);
-  assert.match(r.html(),/id="purchaseTargetFields" hidden/);assert.equal(r.element('purchaseTargetFields').hidden,true);assert.doesNotMatch(r.html().split('sale-linked-holdings')[1],/data-purchase-target=/,'연결 계좌 줄에는 비중 입력을 중복 표시하지 않는다');
-  r.element('purchaseTargetToggle').onclick();assert.equal(r.element('purchaseTargetFields').hidden,false);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'true');
-  const x=r.input('[data-purchase-target]');x.value='33';x.onkeydown({key:'Escape',preventDefault(){}});
-  assert.equal(x.value,'18.75');assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
-  assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0);
-  r.element('purchaseTargetToggle').onclick();r.element('purchaseTargetDone').onclick();assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(writes,0);
+  const src=fs.readFileSync(path.join(__dirname,'../js/purchases.js'),'utf8');
+  for(const legacy of ['purchaseTargetToggle','purchaseTargetFields','purchaseTargetDone','purchaseTargetEditingId'])assert.equal(src.includes(legacy),false,legacy);
+  assert.match(r.html(),/<p class="alloc-link"[^>]*><span>현재 [^<]* \/ <label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">목표 18\.8%<\/span><span class="target-editor"><span class="purchase-target-size" data-value="18\.75"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="a" value="18\.75" placeholder="0~100" aria-label="테스트 종목 목표 비중 \(%\)" aria-describedby="purchaseTargetHint"><\/span><\/span><\/label>[^<]*<\/span><\/p><small class="purchase-target-hint" id="purchaseTargetHint">0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장<\/small>/);
+  assert.match(visibleText(r.html()),/현재 [^/]+ \/ 목표 18\.8% · (?:목표까지|목표 도달|목표 초과)/);
+  assert.doesNotMatch(visibleText(r.html()),/목표 18\.8%목표|%%/);
+  assert.doesNotMatch(r.html().split('sale-linked-holdings')[1],/data-purchase-target=/,'연결 계좌 줄에는 비중 입력을 중복 표시하지 않는다');
+
+  const x=r.input('[data-purchase-target]');
+  x.parentNode={dataset:{value:'18.75'}};
+  r.type(x,'5');assert.equal(x.parentNode.dataset.value,'5','oninput이 너비 맞춤 data-value를 갱신');
+  r.type(x,'');assert.equal(x.parentNode.dataset.value,'0~100','빈 입력 시 placeholder 폭 유지');
+
+  let blurred=0,prevented=0;
+  x.blur=()=>{blurred++;x.onchange();};
+  x.value='33';x.parentNode.dataset.value='33';
+  x.onkeydown({key:'Escape',preventDefault(){prevented++;}});
+  assert.equal(prevented,1);assert.equal(blurred,1);assert.equal(x.value,'18.75');assert.equal(x.parentNode.dataset.value,'18.75');
+  assert.equal(JSON.stringify(r.doc),before,'Escape 뒤 onchange가 이어져도 저장하지 않음');assert.equal(writes,0);
+
+  x.onkeydown({key:'Enter',preventDefault(){prevented++;}});
+  assert.equal(prevented,2);assert.equal(blurred,2);assert.equal(writes,0,'바꾸지 않은 Enter는 저장하지 않음');
+
+  const x2=r.input('[data-purchase-target]');let savedBlurred=0;
+  x2.value='25';x2.blur=()=>{savedBlurred++;x2.onchange();};
+  x2.onkeydown({key:'Enter',preventDefault(){prevented++;}});
+  assert.equal(savedBlurred,1);assert.equal(r.item.target,25);assert.equal(writes,1);
+  assert.match(visibleText(r.html()),/현재 [^/]+ \/ 목표 25%/);
+  assert.match(r.html(),/<span class="purchase-target-size" data-value="25">/);
 });
 
-test('여러 계좌가 연결되어도 단일 목표 입력을 유지하고 상위 목표·체결 기록·다른 계좌를 보존한다',()=>{
+test('소분류·계획·미입력 상태마다 맥락 placeholder와 1줄 안내를 표시하고 상위 그룹 목표는 물려받지 않는다',()=>{
   const {r,other}=tradeOnlyAccounts();delete other.target;r.doc.allocation.groups[0].target=60;r.render();
   const trades=JSON.stringify(r.doc.allocation.trades),plan=JSON.stringify(r.item.buyPlan);let writes=0,confirms=0;
   r.store.saveSection=()=>writes++;r.ctx.confirm=()=>{confirms++;return false;};
-  assert.equal(r.inputs('[data-purchase-target]').length,1);assert.match(r.html(),/<span>전체 목표 비중<\/span>/);
-  r.element('purchaseTargetToggle').onclick();r.change('[data-purchase-target]',18.75);
+  assert.equal(r.inputs('[data-purchase-target]').length,1);assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'0~100');
+  r.change('[data-purchase-target]',18.75);
   assert.equal(confirms,0,'한 계좌만 목표를 가진 경우 통합 확인 없이 저장');
-  assert.equal(r.element('purchaseTargetFields').hidden,false);assert.match(visibleText(r.html()),/현재 .* \/ 목표 18\.8%/);
+  assert.match(visibleText(r.html()),/현재 .* \/ 목표 18\.8%/);
   assert.equal(r.item.target,18.75);assert.equal(other.target,undefined);assert.equal(r.doc.allocation.groups[0].target,60);
   assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.equal(JSON.stringify(r.item.buyPlan),plan);assert.equal(writes,1);
   r.change('[data-purchase-target]','18.750');assert.equal(writes,1,'같은 수치 재입력은 중복 저장하지 않음');
   r.change('[data-purchase-target]','');assert.equal(Object.hasOwn(r.item,'target'),false);assert.equal(Object.hasOwn(other,'target'),false);assert.equal(writes,2);
-  assert.match(visibleText(r.html()),/목표 60% \(그룹\)/);assert.equal(r.input('[data-purchase-target]').value,'');
+  assert.match(visibleText(r.html()),/목표 미입력/);assert.doesNotMatch(visibleText(r.html()),/목표 60%/);
+  assert.equal(r.doc.allocation.groups[0].target,60,'저장된 그룹 목표는 바꾸지 않음');
+  assert.equal(r.input('[data-purchase-target]').value,'');
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'0~100');
+  assert.match(r.html(),/class="purchase-target-size" data-value="0~100"/);
+  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장<\/small>/);
   r.change('[data-purchase-target]','');assert.equal(writes,2,'이미 빈 목표를 다시 비워도 중복 저장하지 않음');
+
+  r.doc.allocation.groups[0].sections=[{name:'가상 분류',target:5}];
+  r.render();
+  assert.match(visibleText(r.html()),/목표 5% \(소분류\)/);
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'소분류 5');
+  assert.match(r.html(),/class="purchase-target-size" data-value="소분류 5"/);
+  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 표시된 소분류 목표 유지 · 바깥 탭·Enter 저장<\/small>/);
+  r.doc.allocation.groups[0].items.push({id:'otherTicker',name:'다른 종목',ticker:'888888',shares:0});
+  r.render();
+  assert.match(visibleText(r.html()),/목표 5% \(소분류\)/);
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'소분류 5');
+
+  delete r.doc.allocation.groups[0].sections;
+  r.doc.allocation.groups[0].items=r.doc.allocation.groups[0].items.filter(x=>x.id!=='otherTicker');
+  r.item.buyPlan={lines:{names:['25선'],budget:8.9,target:30}};r.render();
+  assert.match(visibleText(r.html()),/목표 30% \(계획 목표\)/);
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'계획 30');
+  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 기존 계획 목표 유지 · 바깥 탭·Enter 저장<\/small>/);
+
+  delete r.doc.allocation.groups[0].target;delete r.item.buyPlan.lines.target;r.render();
+  assert.match(visibleText(r.html()),/목표 미입력/);
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'0~100');
+  assert.match(r.html(),/class="purchase-target-size" data-value="0~100"/);
 });
 
-test('기존 여러 계좌에 나뉜 목표는 합계로 열고 Escape는 합계를 복원하며 확인 뒤에만 한 계좌로 통합·비운다',()=>{
+test('기존 여러 계좌에 나뉜 목표는 합계로 열고 Escape는 확인창 없이 합계를 복원하며 확인 뒤에만 한 계좌로 통합·비운다',()=>{
   const {r,other}=tradeOnlyAccounts();r.doc.allocation.groups[0].target=60;r.item.target=0.1;other.target=0.2;r.render();
   const before=JSON.stringify(r.doc),trades=JSON.stringify(r.doc.allocation.trades),plan=JSON.stringify(r.item.buyPlan);let writes=0;const prompts=[];
   r.store.saveSection=()=>writes++;r.ctx.confirm=text=>{prompts.push(text);return false;};
-  r.element('purchaseTargetToggle').onclick();assert.equal(r.inputs('[data-purchase-target]').length,1);
+  assert.equal(r.inputs('[data-purchase-target]').length,1);
+  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 계좌 2개 합계\(수정 시 통합 확인\) · 바깥 탭·Enter 저장<\/small>/);
   const input=r.input('[data-purchase-target]');assert.equal(input.value,'0.3','소수 오차 없이 합계 표시');
-  input.value='99';input.onkeydown({key:'Escape',preventDefault(){}});
-  assert.equal(input.value,'0.3');assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(prompts.length,0);assert.equal(JSON.stringify(r.doc),before);
-  r.element('purchaseTargetToggle').onclick();r.change('[data-purchase-target]',23.75);
+  input.parentNode={dataset:{value:'0.3'}};
+  let blurred=0;input.blur=()=>{blurred++;input.onchange();};
+  r.type(input,'99');assert.equal(input.parentNode.dataset.value,'99');
+  input.onkeydown({key:'Escape',preventDefault(){}});
+  assert.equal(blurred,1);assert.equal(input.value,'0.3');assert.equal(input.parentNode.dataset.value,'0.3');
+  assert.equal(prompts.length,0,'Escape 뒤 blur onchange에서 다계좌 통합 확인창이 뜨지 않음');
+  assert.equal(writes,0);assert.equal(JSON.stringify(r.doc),before);
+  r.change('[data-purchase-target]',23.75);
   assert.equal(prompts.length,1);assert.match(prompts[0],/한 계좌\(23\.8%\)로 합치고 나머지 계좌의 목표 입력은 비울까요/);
   assert.equal(JSON.stringify(r.doc),before,'확인 취소 시 기존 계좌별 목표 보존');assert.equal(writes,0);assert.equal(r.input('[data-purchase-target]').value,'0.3');
   r.ctx.confirm=text=>{prompts.push(text);return true;};r.change('[data-purchase-target]',23.75);
   assert.equal(r.item.target,23.75);assert.equal(Object.hasOwn(other,'target'),false);assert.equal(r.doc.allocation.groups[0].target,60);
   assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.equal(JSON.stringify(r.item.buyPlan),plan);assert.equal(writes,1);
-  assert.match(visibleText(r.html()),/목표 23\.8%/);assert.equal(r.element('purchaseTargetFields').hidden,false);
+  assert.match(visibleText(r.html()),/목표 23\.8%/);
   r.change('[data-purchase-target]',30);assert.equal(prompts.length,2,'통합 뒤 재수정에는 확인창을 다시 띄우지 않음');assert.equal(r.item.target,30);
 });
 
@@ -1989,14 +2064,15 @@ test('다른 그룹에 나뉜 기존 목표 통합 확인에는 그룹·소분�
   r.change('[data-purchase-target]','');assert.match(prompts[1],/목표 비중을 모두 비울까요/);assert.equal(JSON.stringify(r.doc),before);
   r.ctx.confirm=text=>{prompts.push(text);return true;};r.change('[data-purchase-target]','');
   assert.equal(Object.hasOwn(r.item,'target'),false);assert.equal(Object.hasOwn(other,'target'),false);assert.equal(writes,1);assert.match(visibleText(r.html()),/목표 미입력/);
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'0~100');
 });
 
 test('다른 계좌 한 곳만 가진 목표·비대표 다계좌 목표·0% 목표도 기존 보유 계좌 기준으로 수정하고 Escape로 복원한다',()=>{
   const {r,other}=tradeOnlyAccounts();delete r.item.target;other.target=0;r.render();let writes=0,confirms=0;
   r.store.saveSection=()=>writes++;r.ctx.confirm=()=>{confirms++;return false;};
-  r.element('purchaseTargetToggle').onclick();const x=r.input('[data-purchase-target]');assert.equal(x.value,'0');
-  x.value='12';x.onkeydown({key:'Escape',preventDefault(){}});assert.equal(x.value,'0');assert.equal(other.target,0);
-  r.element('purchaseTargetToggle').onclick();r.change('[data-purchase-target]',12.5);
+  const x=r.input('[data-purchase-target]');assert.equal(x.value,'0');
+  x.blur=()=>x.onchange();x.value='12';x.onkeydown({key:'Escape',preventDefault(){}});assert.equal(x.value,'0');assert.equal(other.target,0);assert.equal(writes,0);
+  r.change('[data-purchase-target]',12.5);
   assert.equal(confirms,0);assert.equal(other.target,12.5);assert.equal(Object.hasOwn(r.item,'target'),false);assert.equal(writes,1);
   const third={id:'c',name:'가상 ETF (IRP)',tradeTicker:'222222',shares:0,target:2.5,section:'가상 분류'};
   r.doc.allocation.groups[0].items.push(third);r.render();
@@ -2006,16 +2082,21 @@ test('다른 계좌 한 곳만 가진 목표·비대표 다계좌 목표·0% 목
   r.change('[data-purchase-target]','');assert.equal(Object.hasOwn(other,'target'),false);assert.equal(writes,3);
 });
 
-test('목표 완료의 첫 탭은 초점 입력을 저장하고 닫으며 통합 취소 시 편집창을 유지하고 다른 계획으로 바꾸면 닫는다',()=>{
-  const r=setup(),events=accountPointerEvents(r);r.element('purchaseTargetToggle').onclick();
-  const button=r.element('purchaseTargetDone'),input=r.input('[data-purchase-target]');input.value='25';r.ctx.document.activeElement=input;
-  input.blur=()=>{r.ctx.document.activeElement=null;input.onchange();};button.onpointerdown({button:0,preventDefault(){}});events.fire('pointerup');events.flush();button.onclick();
-  assert.equal(r.item.target,25);assert.equal(r.element('purchaseTargetFields').hidden,true);
-  const split=tradeOnlyAccounts(),splitEvents=accountPointerEvents(split.r);split.r.ctx.confirm=()=>false;split.r.element('purchaseTargetToggle').onclick();
-  tapFocusedPurchaseEdit(split.r,split.r.element('purchaseTargetDone'),'[data-purchase-target]',40,splitEvents);
-  assert.equal(split.r.element('purchaseTargetFields').hidden,false,'통합 확인 취소 시 완료 동작 중단');assert.equal(split.r.item.target,20);assert.equal(split.other.target,5);assert.equal(split.r.input('[data-purchase-target]').value,'25');
-  r.element('purchaseTargetToggle').onclick();r.doc.allocation.groups[0].items.push({id:'next',name:'다른 계획',ticker:'222222',buyPlan:{wait:{line:'25선'}}});r.render();
-  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='next').onclick();assert.equal(r.element('purchaseTargetFields').hidden,true);assert.equal(r.element('purchaseTargetToggle').getAttribute('aria-expanded'),'false');
+test('다른 계획·매수대기 전환에서도 해당 종목의 목표 인라인을 표시하고 범위 밖·형식 오류는 저장하지 않는다',()=>{
+  const r=setup(),next={id:'next',name:'다른 계획',ticker:'222222',target:12,buyPlan:{wait:{line:'25선'}}};
+  r.prices.stocks['222222']={kind:'국내',close:10000,asOf:'2026-01-02'};
+  r.doc.allocation.groups[0].items.push(next);r.render();
+  let writes=0;r.store.saveSection=()=>writes++;const before=JSON.stringify(r.doc);
+  for(const bad of ['-0.1','100.1','abc']){
+    const x=r.input('[data-purchase-target]');x.value=bad;if(bad==='abc')x.validity={valid:false};
+    x.onchange();assert.match(r.alerts.at(-1),/목표 비중은 0~100/);assert.equal(writes,0);assert.equal(JSON.stringify(r.doc),before);
+  }
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='next').onclick();
+  assert.equal(r.input('[data-purchase-target]').dataset.purchaseTarget,'next');
+  assert.equal(r.input('[data-purchase-target]').value,'12');
+  assert.match(visibleText(r.html()),/현재 [^/]+ \/ 목표 12%/);
+  r.change('[data-purchase-target]',15);
+  assert.equal(next.target,15);assert.equal(r.item.target,undefined);assert.equal(writes,1);
 });
 
 function trackToggleFocus(r){

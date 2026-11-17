@@ -120,3 +120,22 @@ test('목표를 다시 바꾸거나 지우면 미체결 회차 금액만 따라�
   assert.match(assets.view().line,/목표 미입력/);
   untouched(saved);
 });
+
+test('분할매도·재매수·분할매수는 상위 그룹 목표를 물려받지 않고 소분류 목표만 (소분류)로 연동한다',()=>{
+  const storage=seeded(),assets=device(storage),planner=device(storage);
+  let stockGroup=assets.assetStore.doc.allocation.groups[1],qqq=assets.find('qqq');
+  delete qqq.target;stockGroup.target=35;assets.assetStore.saveSection('allocation');planner.event();
+  let line=planner.allocLink.line('QQQ');
+  assert.match(line,/<span>현재 30% · 목표 미입력<\/span>/);
+  assert.doesNotMatch(line,/35%|\(그룹\)/);
+  assert.equal(assets.find('qqq').buyPlan.lines.budget,40,'그룹 목표만 있으면 예산을 다시 계산하지 않음');
+
+  assets.assetStore.doc.allocation.groups[1].target=45;assets.assetStore.saveSection('allocation');
+  assert.equal(assets.find('qqq').buyPlan.lines.budget,40,'그룹 목표 변경에도 예산 유지');
+
+  stockGroup=assets.assetStore.doc.allocation.groups[1];qqq=assets.find('qqq');
+  qqq.section='성장';stockGroup.sections=[{name:'성장',target:35}];assets.assetStore.saveSection('allocation');planner.event();
+  line=planner.allocLink.line('QQQ');
+  assert.match(line,/<span>현재 30% \/ 목표 35% \(소분류\) · 목표까지 50만원<\/span>/);
+  assert.equal(assets.find('qqq').buyPlan.lines.budget,50,'소분류 목표 35% × 1,000만원 − 보유 300만원');
+});

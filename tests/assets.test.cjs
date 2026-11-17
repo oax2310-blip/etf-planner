@@ -53,17 +53,19 @@ test('분할매수는 기준 코드·실제 ETF 연결을 따라 다른 추종 E
   assert.equal(JSON.stringify(alloc),before);item.ticker='';delete item.tradeTicker;
   assert.deepEqual(c.purchaseAllocationSummary(alloc,null,item).rows.map(r=>r.it.id),['a'],'코드 없는 항목은 이름으로 찾지 않음');
 });
-test('분할매수 기본 목표는 전체 대상의 소분류·그룹 목표이며 옛 계획 목표는 자산 배분 목표가 없을 때만 쓴다',()=>{
+test('분할매수 기본 목표는 전체 대상의 소분류 목표이며 상위 그룹 목표는 물려받지 않고 옛 계획 목표는 자산 배분 목표가 없을 때만 쓴다',()=>{
   const item={id:'a',ticker:'111111',amount:10,section:'일반'},alloc={total:100,groups:[{id:'g',target:40,sections:[{name:'일반',target:6},{name:'다른 상품',target:8}],items:[item,{id:'b',ticker:'111111',section:'일반',amount:5},{id:'x',ticker:'222222',section:'다른 상품',amount:30}]}],classes:[],cash:[]};
   assert.equal(c.purchaseAllocationSummary(alloc,null,item).target,6,'다른 상품 목표는 제외');
   const legacy=c.purchaseAllocationSummary(alloc,null,item,{lines:{target:30}});
   assert.deepEqual([legacy.target,legacy.assetTarget,legacy.scope],[6,6,'section'],'자산 배분 목표가 있으면 계획에 따로 저장된 옛 목표보다 우선');
   delete alloc.groups[0].sections[0].target;
   const old=c.purchaseAllocationSummary(alloc,null,item,{lines:{target:30}});
-  assert.deepEqual([old.target,old.assetTarget,old.scope],[30,null,'plan'],'자산 배분 목표가 없으면 옛 계획 목표를 그대로 사용');
+  assert.deepEqual([old.target,old.assetTarget,old.scope],[30,null,'plan'],'소분류 목표가 없으면 그룹 목표가 있어도 옛 계획 목표를 그대로 사용');
   assert.equal(c.purchaseAllocationSummary(alloc,null,item,{lines:{target:0}}).buyable,0);
-  alloc.groups=[{id:'g1',target:4,items:[item]},{id:'g2',target:5,items:[{id:'b',ticker:'111111',amount:5}]}];delete item.section;
-  assert.equal(c.purchaseAllocationSummary(alloc,null,item).target,9,'계좌가 달라도 완전히 포함된 그룹 목표 합');
+  alloc.groups=[{id:'g1',target:40,items:[item]},{id:'g2',target:5,items:[{id:'b',ticker:'111111',amount:5}]}];delete item.section;
+  assert.deepEqual([c.purchaseAllocationSummary(alloc,null,item).target,c.purchaseAllocationSummary(alloc,null,item).scope],[null,null],'계좌가 그룹 전체에 나뉘어도 상위 그룹 목표는 물려받지 않음');
+  item.section='일반';alloc.groups[0].sections=[{name:'일반',target:4}];alloc.groups[1].items[0].section='일반';alloc.groups[1].sections=[{name:'일반',target:5}];
+  assert.deepEqual([c.purchaseAllocationSummary(alloc,null,item).target,c.purchaseAllocationSummary(alloc,null,item).scope],[9,'section'],'여러 그룹에 나뉜 소분류 목표 합은 유지');
 });
 test('분할매수 자동 분모는 자산현황의 종목·원화 현금·외화 현금·차감 항목 합과 같고 시세·환율을 반영한다',()=>{
   const item={id:'a',ticker:'AAA',shares:10},p={stocks:{AAA:{kind:'해외',close:10,asOf:'2026-01-02'}},fx:{close:1000}},alloc={groups:[{id:'g',items:[item,{id:'b',ticker:'AAA',amount:30},{id:'x',amount:20}]}],classes:[],cash:[{amount:150000},{currency:'USD',amount:100},{amount:50000,minus:true}]};
@@ -81,12 +83,14 @@ test('분할매수 회차·합계·알림은 전체 목표 잔액을 쓰고 저�
   const partial=c.purchaseLineRows(plan,null,trade);assert.equal(partial.length,1);assert.equal(partial[0].remainingShares,6);assert.equal(partial[0].amount,6);assert.equal(c.purchaseSummary(plan,null,trade).remaining,6);
   delete item.target;assert.equal(c.purchaseBudget(plan,trade),50,'목표 없는 직접 예산은 그대로');
 });
-test('분할매수·분할매도·재매수의 목표는 같은 자산 배분 규칙(종목 합 → 완전히 포함된 그룹·소분류)으로 읽는다',()=>{
+test('분할매수·분할매도·재매수의 목표는 같은 자산 배분 규칙(종목 합 → 완전히 포함된 소분류, 그룹 목표 제외)으로 읽는다',()=>{
   const item={id:'a',ticker:'111111',amount:10,section:'일반'},alloc={total:100,groups:[{id:'g',target:40,sections:[{name:'일반',target:6},{name:'다른 상품',target:8}],items:[item,{id:'b',ticker:'111111',section:'일반',amount:5},{id:'x',ticker:'222222',section:'다른 상품',amount:30}]}],classes:[],cash:[]};
   const before=JSON.stringify(alloc),same=label=>{const link=c.linkSummary(alloc,null,'111111'),buy=c.purchaseAllocationSummary(alloc,null,item);assert.deepEqual([link.target,link.scope],[buy.target,buy.scope],label);return [link.target,link.scope];};
   assert.deepEqual(same('소분류'),[6,'section'],'다른 상품이 있는 그룹은 완전히 포함된 소분류 목표');
   alloc.groups=[{id:'g1',target:4,items:[item]},{id:'g2',target:5,items:[{id:'b',ticker:'111111',amount:5}]}];delete item.section;
-  assert.deepEqual(same('여러 그룹'),[9,'group'],'계좌가 나뉜 그룹 목표 합');
+  assert.deepEqual(same('그룹 목표 제외'),[null,null],'상위 그룹 목표만 있으면 물려받지 않음');
+  item.section='일반';alloc.groups[0].sections=[{name:'일반',target:4}];alloc.groups[1].items[0].section='일반';alloc.groups[1].sections=[{name:'일반',target:5}];
+  assert.deepEqual(same('여러 그룹 소분류'),[9,'section'],'그룹이 나뉘어도 완전히 포함된 소분류 목표 합');
   item.target=21;assert.deepEqual(same('종목'),[21,'item']);
   item.target=21.5;assert.deepEqual(same('변경'),[21.5,'item'],'저장된 목표를 그릴 때마다 다시 읽는다');
   alloc.groups[1].items[0].target=0.5;assert.deepEqual(same('연결 계좌 합'),[22,'item']);
@@ -94,21 +98,33 @@ test('분할매수·분할매도·재매수의 목표는 같은 자산 배분 �
   alloc.groups=JSON.parse(before).groups;
   assert.equal(JSON.stringify(alloc),before,'읽기만 한다');
 });
+test('같은 소분류에 연결되지 않은 다른 종목이 함께 있으면 소분류 목표를 물려받지 않고 저장 예산을 그대로 쓴다',()=>{
+  const item={id:'a',ticker:'111111',amount:10,section:'일반',buyPlan:{lines:{names:['25일선'],budget:50}}};
+  const alloc={total:100,classes:[],cash:[],groups:[{id:'g',target:40,sections:[{name:'일반',target:25}],items:[item,{id:'b',ticker:'111111',section:'일반',amount:5},{id:'x',ticker:'222222',section:'일반',amount:30}]}]};
+  const before=JSON.stringify(alloc);
+  const buy=c.purchaseAllocationSummary(alloc,null,item);
+  const link=c.linkSummary(alloc,null,'111111');
+  assert.deepEqual([buy.target,buy.scope],[null,null]);
+  assert.deepEqual([link.target,link.scope],[null,null]);
+  assert.equal(c.purchaseBudget(item.buyPlan,{allocation:alloc,item}),50);
+  assert.equal(JSON.stringify(alloc),before);
+});
 test('목표 변경 맞춤: 바뀐 이동평균선 돌파 계획만 옛 목표를 지우고 총 매수 금액을 다시 계산한다',()=>{
   const plan=()=>({lines:{names:['25일선','32일선'],startLine:'25일선',budget:65},notify:{stages:true},buys:{'25일선:0':{plannedShares:4,plannedActual:8,shares:2,actual:4,price:20000}}});
   const make=()=>({total:1000,classes:[],cash:[],groups:[{id:'bond',target:25,items:[{id:'edv',ticker:'EDV',amount:100,target:21,buyPlan:plan()},{id:'isa',ticker:'EDV',tradeTicker:'999999',amount:50}]},
-    {id:'only',target:30,items:[{id:'solo',ticker:'SOLO',amount:100,buyPlan:{lines:{names:['25일선'],budget:200}}}]},
+    {id:'only',target:30,sections:[{name:'단독',target:30}],items:[{id:'solo',ticker:'SOLO',amount:100,buyPlan:{lines:{names:['25일선'],budget:200}}},{id:'secOnly',ticker:'SEC',section:'단독',amount:100,buyPlan:{lines:{names:['25일선'],budget:200}}}]},
     {id:'etc',items:[{id:'wait',ticker:'WAIT',amount:10,target:5,buyPlan:{wait:{line:'25개월선'}}},{id:'manual',ticker:'MAN',amount:10,target:5,buyPlan:{stages:[{id:'s',amount:30}]}},{id:'fresh',ticker:'NEW',amount:10,target:5}]}]});
   const before=make(),after=make(),edv=after.groups[0].items[0],trade={allocation:after,item:edv};
   assert.deepEqual(c.syncPurchaseTargets(before,after,null),[],'목표가 그대로면 아무것도 바꾸지 않음');assert.deepEqual(after,make());
   after.groups[0].items[1].amount=60;assert.deepEqual(c.syncPurchaseTargets(before,after,null),[],'보유량·평가액만 바뀐 저장은 예산을 다시 계산하지 않음');
   after.groups[0].items[1].amount=50;
-  edv.target=21.5;after.groups[1].target=31;after.groups[2].items.forEach(it=>it.target=6);after.groups[2].items[2].buyPlan={lines:{names:['25일선'],budget:9}};
-  assert.deepEqual(c.syncPurchaseTargets(before,after,null),['edv','solo']);
+  edv.target=21.5;after.groups[1].target=31;after.groups[1].sections[0].target=31;after.groups[2].items.forEach(it=>it.target=6);after.groups[2].items[2].buyPlan={lines:{names:['25일선'],budget:9}};
+  assert.deepEqual(c.syncPurchaseTargets(before,after,null),['edv','secOnly']);
   assert.equal(edv.buyPlan.lines.budget,c.purchaseAutoBudget(edv.buyPlan,c.purchaseAllocationSummary(after,null,edv)));
   assert.equal(edv.buyPlan.lines.budget,69,'21.5% × 1,000 − 150 + 체결 4');assert.equal(c.purchaseBudget(edv.buyPlan,trade),69);
   assert.deepEqual(edv.buyPlan.buys,plan().buys,'부분 체결 기록 유지');assert.deepEqual([edv.buyPlan.lines.names,edv.buyPlan.lines.startLine,edv.buyPlan.notify],[plan().lines.names,'25일선',{stages:true}]);
-  assert.equal(after.groups[1].items[0].buyPlan.lines.budget,(310-100)*1,'종목 목표가 없으면 그룹 목표 변경도 따라감');
+  assert.equal(after.groups[1].items[0].buyPlan.lines.budget,200,'종목·소분류 목표가 없으면 그룹 목표 변경에도 예산을 바꾸지 않음');
+  assert.equal(after.groups[1].items[1].buyPlan.lines.budget,(310-100)*1,'소분류 목표 변경은 따라감');
   assert.deepEqual(after.groups[2].items.map(it=>it.buyPlan),[{wait:{line:'25개월선'}},{stages:[{id:'s',amount:30}]},{lines:{names:['25일선'],budget:9}}],'매수대기·기존 직접 입력·새 계획은 그대로');
   const snapshot=JSON.parse(JSON.stringify(after));assert.deepEqual(c.syncPurchaseTargets(snapshot,after,null),[],'같은 저장을 다시 맞춰도 바뀌지 않음');
   edv.target=10;c.syncPurchaseTargets(snapshot,after,null);
@@ -887,8 +903,14 @@ test('체결 연동: 같은 종목 코드 계좌(대소문자·국내 A 접두·
   assert.deepEqual(c.linkedItems(alloc, 'ZZZ'), []);
   const kr = c.linkSummary(alloc, lp, 'A111111');
   near(kr.value, 15, '10주 + 5주 × 1만원'); assert.equal(kr.shares, 15);
-  assert.deepEqual([kr.target, kr.scope], [2, 'group'], '종목 목표가 없고 그룹 종목이 모두 연결되면 그룹 목표');
-  near(kr.gap, 5, '목표 2% × 1,000만원 − 15만원'); near(kr.pct, 1.5, '기준 총자산 대비');
+  assert.deepEqual([kr.target, kr.scope, kr.gap], [null, null, null], '종목·소분류 목표가 없으면 상위 그룹 목표는 물려받지 않음');
+  near(kr.pct, 1.5, '기준 총자산 대비');
+  const secAlloc = linkAlloc();
+  secAlloc.groups[0].sections = [{name: '국내 주식', target: 2}];
+  for (const it of secAlloc.groups[0].items) it.section = '국내 주식';
+  const secKr = c.linkSummary(secAlloc, lp, 'A111111');
+  assert.deepEqual([secKr.target, secKr.scope], [2, 'section'], '종목 목표가 없고 소분류 종목이 모두 연결되면 소분류 목표');
+  near(secKr.gap, 5, '소분류 목표 2% × 1,000만원 − 15만원');
   const us = c.linkSummary(alloc, lp, 'AAA');
   near(us.value, 175, '125(시세 따라감) + 50'); assert.deepEqual([us.target, us.scope, us.shares], [1, 'item', null], '종목 목표 합, 금액 종목이 있으면 수량 합 없음');
   assert.equal(c.linkSummary(alloc, lp, 'ZZZ'), null);

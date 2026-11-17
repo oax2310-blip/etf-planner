@@ -43,7 +43,7 @@ function summary(ticker, ownId=null){const a=allocOf();return a?linkSummary(a,as
 function line(ticker, ownId=null){
   const s=summary(ticker,ownId);if(!s)return "";
   const names=s.rows.map(r=>`${r.it.name} ${man(r.value)}`).join("\n");
-  const target=s.target!==null?` / 목표 ${pc(s.target)}${{group:" (그룹)",section:" (소분류)"}[s.scope]||""}`:" · 목표 미입력";
+  const target=s.target!==null?` / 목표 ${pc(s.target)}${s.scope==="section"?" (소분류)":""}`:" · 목표 미입력";
   const gap=s.gap===null?"":Math.abs(s.gap)<.5?" · 목표 도달":s.gap>0?` · 목표까지 ${man(s.gap)}`:` · 목표 초과 ${man(-s.gap)}`;
   return `<p class="alloc-link" title="${esc(names)}"><span>현재 ${pc(s.pct)}${target}${gap}</span></p>`;
 }
