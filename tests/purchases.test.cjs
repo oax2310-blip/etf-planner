@@ -615,7 +615,9 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
   const r=setup({budget:50,tracking:true});r.doc.allocation.groups[0].target=40;
   const other={id:'b',ticker:'111111',tradeTicker:'222222',amount:15};r.doc.allocation.groups[0].items.push(other);
-  r.initialize();r.edit();assert.equal(r.form.lineTarget.value,40,'자산 배분 그룹 목표를 읽기 전용으로 표시');assert.match(r.element('lineTargetNote').innerHTML,/그룹 목표.*assets\.html#alloc/);
+  r.initialize();r.edit();assert.equal(r.form.lineTarget.value,'','상위 그룹 목표만 있으면 물려받지 않음');assert.match(r.element('lineTargetNote').innerHTML,/목표가 없습니다/);
+  r.item.section='공통';other.section='공통';r.doc.allocation.groups[0].sections=[{name:'공통',target:40}];
+  r.edit();assert.equal(r.form.lineTarget.value,40,'소분류 목표를 읽기 전용으로 표시');assert.match(r.element('lineTargetNote').innerHTML,/소분류 목표.*assets\.html#alloc/);
   assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
   r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,'15');assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
@@ -1956,7 +1958,7 @@ test('제목의 목표 인라인 입력은 추가 버튼·중복 문구 없이 �
   const r=setup();r.item.target=18.75;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
   const src=fs.readFileSync(path.join(__dirname,'../js/purchases.js'),'utf8');
   for(const legacy of ['purchaseTargetToggle','purchaseTargetFields','purchaseTargetDone','purchaseTargetEditingId'])assert.equal(src.includes(legacy),false,legacy);
-  assert.match(r.html(),/<p class="alloc-link"[^>]*><span>현재 [^<]* \/ <label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">목표 18\.8%<\/span><span class="target-editor"><span class="purchase-target-size" data-value="18\.75"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="a" value="18\.75" placeholder="0~100" aria-label="테스트 종목 목표 비중 \(%\)" aria-describedby="purchaseTargetHint"><\/span><\/span><\/label>[^<]*<\/span><\/p><small class="purchase-target-hint" id="purchaseTargetHint">0~100% · 비우면 자산 배분 상위 비중 · 바깥 탭·Enter 저장<\/small>/);
+  assert.match(r.html(),/<p class="alloc-link"[^>]*><span>현재 [^<]* \/ <label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">목표 18\.8%<\/span><span class="target-editor"><span class="purchase-target-size" data-value="18\.75"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="a" value="18\.75" placeholder="0~100" aria-label="테스트 종목 목표 비중 \(%\)" aria-describedby="purchaseTargetHint"><\/span><\/span><\/label>[^<]*<\/span><\/p><small class="purchase-target-hint" id="purchaseTargetHint">0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장<\/small>/);
   assert.match(visibleText(r.html()),/현재 [^/]+ \/ 목표 18\.8% · (?:목표까지|목표 도달|목표 초과)/);
   assert.doesNotMatch(visibleText(r.html()),/목표 18\.8%목표|%%/);
   assert.doesNotMatch(r.html().split('sale-linked-holdings')[1],/data-purchase-target=/,'연결 계좌 줄에는 비중 입력을 중복 표시하지 않는다');
@@ -1984,7 +1986,7 @@ test('제목의 목표 인라인 입력은 추가 버튼·중복 문구 없이 �
   assert.match(r.html(),/<span class="purchase-target-size" data-value="25">/);
 });
 
-test('상위 그룹·소분류·계획·미입력 상태마다 맥락 placeholder와 1줄 안내를 표시하고 단일·상위 계좌 목표를 보존한다',()=>{
+test('소분류·계획·미입력 상태마다 맥락 placeholder와 1줄 안내를 표시하고 상위 그룹 목표는 물려받지 않는다',()=>{
   const {r,other}=tradeOnlyAccounts();delete other.target;r.doc.allocation.groups[0].target=60;r.render();
   const trades=JSON.stringify(r.doc.allocation.trades),plan=JSON.stringify(r.item.buyPlan);let writes=0,confirms=0;
   r.store.saveSection=()=>writes++;r.ctx.confirm=()=>{confirms++;return false;};
@@ -1996,27 +1998,33 @@ test('상위 그룹·소분류·계획·미입력 상태마다 맥락 placeholde
   assert.equal(JSON.stringify(r.doc.allocation.trades),trades);assert.equal(JSON.stringify(r.item.buyPlan),plan);assert.equal(writes,1);
   r.change('[data-purchase-target]','18.750');assert.equal(writes,1,'같은 수치 재입력은 중복 저장하지 않음');
   r.change('[data-purchase-target]','');assert.equal(Object.hasOwn(r.item,'target'),false);assert.equal(Object.hasOwn(other,'target'),false);assert.equal(writes,2);
-  assert.match(visibleText(r.html()),/목표 60% \(그룹\)/);assert.equal(r.input('[data-purchase-target]').value,'');
-  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'그룹 60');
-  assert.match(r.html(),/class="purchase-target-size" data-value="그룹 60"/);
-  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 표시된 상위 목표 유지 · 바깥 탭·Enter 저장<\/small>/);
+  assert.match(visibleText(r.html()),/목표 미입력/);assert.doesNotMatch(visibleText(r.html()),/목표 60%/);
+  assert.equal(r.doc.allocation.groups[0].target,60,'저장된 그룹 목표는 바꾸지 않음');
+  assert.equal(r.input('[data-purchase-target]').value,'');
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'0~100');
+  assert.match(r.html(),/class="purchase-target-size" data-value="0~100"/);
+  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장<\/small>/);
   r.change('[data-purchase-target]','');assert.equal(writes,2,'이미 빈 목표를 다시 비워도 중복 저장하지 않음');
 
   r.doc.allocation.groups[0].sections=[{name:'가상 분류',target:5}];
-  r.doc.allocation.groups[0].items.push({id:'otherTicker',name:'다른 종목',ticker:'888888',shares:0});
   r.render();
   assert.match(visibleText(r.html()),/목표 5% \(소분류\)/);
   assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'소분류 5');
   assert.match(r.html(),/class="purchase-target-size" data-value="소분류 5"/);
+  assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 표시된 소분류 목표 유지 · 바깥 탭·Enter 저장<\/small>/);
+  r.doc.allocation.groups[0].items.push({id:'otherTicker',name:'다른 종목',ticker:'888888',shares:0});
+  r.render();
+  assert.match(visibleText(r.html()),/목표 5% \(소분류\)/);
+  assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'소분류 5');
 
-  delete r.doc.allocation.groups[0].target;delete r.doc.allocation.groups[0].sections;
+  delete r.doc.allocation.groups[0].sections;
   r.doc.allocation.groups[0].items=r.doc.allocation.groups[0].items.filter(x=>x.id!=='otherTicker');
   r.item.buyPlan={lines:{names:['25선'],budget:8.9,target:30}};r.render();
   assert.match(visibleText(r.html()),/목표 30% \(계획 목표\)/);
   assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'계획 30');
   assert.match(r.html(),/id="purchaseTargetHint">0~100% · 비우면 기존 계획 목표 유지 · 바깥 탭·Enter 저장<\/small>/);
 
-  delete r.item.buyPlan.lines.target;r.render();
+  delete r.doc.allocation.groups[0].target;delete r.item.buyPlan.lines.target;r.render();
   assert.match(visibleText(r.html()),/목표 미입력/);
   assert.equal(r.input('[data-purchase-target]').attrs.placeholder,'0~100');
   assert.match(r.html(),/class="purchase-target-size" data-value="0~100"/);

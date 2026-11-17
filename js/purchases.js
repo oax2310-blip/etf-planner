@@ -283,10 +283,10 @@ const purchaseMode = plan => plan?.wait?"wait":plan?.lines?"lines":Array.isArray
 // 목록 선택은 화면에만 유지한다. 알림·계획 저장도 같은 종목 id를 선택하며 자산·동기화 기록에는 필드를 추가하지 않는다.
 const selectPurchase=id=>{selectedPurchaseId=id;};
 // 분할매도와 같은 제목·시세·자산 배분 순서. 자산 배분 줄은 연결된 전체 계좌 합계 비중(아래 보유 목록 요약과 같은 값)이라 꼬리표·계좌 글자 없이 쓰고, 목표 도달·까지·초과 글자는 분할매도·재매수 줄(alloc-link.js line)과 같다. 계획 선택·화면 표시로 저장 필드를 만들지 않는다. 목표 출처 표시는 alloc-link.js 줄과 같다(옛 계획 목표만 '계획 목표').
-const TARGET_SCOPE={group:" (그룹)",section:" (소분류)",plan:" (계획 목표)"};
+const TARGET_SCOPE={section:" (소분류)",plan:" (계획 목표)"};
 const targetSum=list=>Math.round(list.reduce((n,v)=>n+v,0)*1e8)/1e8;
 // 목표를 누르면 같은 자리에서 곧바로 목표 [  ] % 인라인 입력칸과 1줄 안내가 열린다(추가·완료 버튼 없음).
-// 한 계좌에만 목표가 있으면 그 항목(holder)을 수정하고, 비어 있으면 계획 항목(it)에 저장한다. 이미 두 계좌 이상에 나뉜 기존 기록은 합계를 표시하며 수정·비우기 전에 확인 후 holder 한 곳에 합치고 나머지 target을 지운다. 상위·옛 목표를 임의로 바꾸지 않는다.
+// 한 계좌에만 목표가 있으면 그 항목(holder)을 수정하고, 비어 있으면 계획 항목(it)에 저장한다. 이미 두 계좌 이상에 나뉜 기존 기록은 합계를 표시하며 수정·비우기 전에 확인 후 holder 한 곳에 합치고 나머지 target을 지운다. 소분류·옛 목표를 임의로 바꾸지 않는다.
 function targetEditorState(it,s=allocationSummary(doc.allocation,prices)){
   const rows=targetsOf(it,it?.buyPlan,s),own=rows.filter(r=>finite(r.it.target)!==null);
   const planRow=rows.find(r=>r.it===it)||findItem(it?.id)||rows[0];
@@ -299,12 +299,12 @@ function purchaseTargetInline(it,s,target,scope){
   if(!holder)return {control:display,hint:""};
   const holderName=itemName(holder.it),itemTitle=stockNames.titleParts(holderName).main||holderName;
   const aria=rows.length>1?`${itemTitle} 전체 목표 비중 (%)`:`${holderName} 목표 비중 (%)`;
-  const scopeLabel={group:"그룹",section:"소분류",plan:"계획"}[scope];
+  const scopeLabel={section:"소분류",plan:"계획"}[scope];
   const placeholder=!own.length&&target!==null&&scopeLabel?`${scopeLabel} ${pc(target).replace(/%$/,"")}`:"0~100";
   const hintText=own.length>1?`0~100% · 계좌 ${own.length}개 합계(수정 시 통합 확인) · 바깥 탭·Enter 저장`
     :scope==="plan"?"0~100% · 비우면 기존 계획 목표 유지 · 바깥 탭·Enter 저장"
-    :["group","section"].includes(scope)?"0~100% · 비우면 표시된 상위 목표 유지 · 바깥 탭·Enter 저장"
-    :"0~100% · 비우면 자산 배분 상위 비중 · 바깥 탭·Enter 저장";
+    :scope==="section"?"0~100% · 비우면 표시된 소분류 목표 유지 · 바깥 탭·Enter 저장"
+    :"0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장";
   return {
     control:`<label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">${display}</span><span class="target-editor"><span class="purchase-target-size" data-value="${escA(value||placeholder)}"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="${escA(it.id)}" value="${escA(value)}" placeholder="${escA(placeholder)}" aria-label="${escA(aria)}" aria-describedby="purchaseTargetHint"></span></span></label>`,
     hint:`<small class="purchase-target-hint" id="purchaseTargetHint">${hintText}</small>`
@@ -638,7 +638,7 @@ function targetNote(h){
   if(!h||h.target===null)return `${link}에 목표가 없습니다. 목표를 넣거나 총 매수 금액을 직접 넣으세요.`;
   if(h.scope==="plan")return `이 계획에만 저장된 옛 목표입니다. ${link}에 목표를 넣으면 그 값을 따릅니다.`;
   const own=h.rows.filter(r=>finite(r.it.target)!==null).length;
-  return `${h.scope==="group"?"그룹 목표":h.scope==="section"?"소분류 목표":own>1?`연결 계좌 ${own}개 목표 합`:"종목 목표"} · ${link}에서 바꾸면 분할매도·재매수와 함께 바뀝니다.`;
+  return `${h.scope==="section"?"소분류 목표":own>1?`연결 계좌 ${own}개 목표 합`:"종목 목표"} · ${link}에서 바꾸면 분할매도·재매수와 함께 바뀝니다.`;
 }
 // 마지막 목표: 시·일·주·월선을 고르면 그 선까지 names에 저장하고 end는 지운다. '직접 입력'(빈 값)이면 end에 목표 가격을 저장한다(비우면 저장 전에 막는다).
 const lineEndPriced=()=>form().lineLastUnit.value==="";
