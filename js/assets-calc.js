@@ -688,6 +688,23 @@ function pnlEntriesTotal(entries){
   return Math.round(total);
 }
 const monthPnl = m => Array.isArray(m?.pnlEntries)&&m.pnlEntries.length?pnlEntriesTotal(m.pnlEntries):finite(m?.pnl);
+function ledgerMonthNumber(record){
+  const value=record?.m;
+  if(typeof value!=="number"&&typeof value!=="string")return null;
+  const month=Number(value);
+  return Number.isInteger(month)&&month>=1&&month<=12?month:null;
+}
+// 같은 달은 한 번만 읽는다. 이미 중복된 달은 기존 월별 화면이 쓰던 숫자 월 기록을 우선하고, 같은 형식끼리는 첫 기록을 쓴다. 저장 기록은 고치지 않는다.
+function ledgerMonths(year){
+  const months=new Map();
+  for(const record of Array.isArray(year?.months)?year.months:[]){
+    const month=ledgerMonthNumber(record);
+    if(month===null)continue;
+    const previous=months.get(month);
+    if(!previous||typeof previous.m==="string"&&typeof record.m==="number")months.set(month,record);
+  }
+  return months;
+}
 // 옛 기록의 loan 계좌는 표시·입력·계산에서 제외한다. 원래 잔액 배열의 인덱스를 유지하며 읽기만 해서는 저장 기록을 바꾸지 않는다.
 const ledgerAccounts = year => (year?.accounts||[]).map((account,index)=>({account,index})).filter(x=>!x.account?.loan);
 // 달 총자산(원): 남은 계좌 잔액 합계, 계좌별 잔액이 없으면 직접 넣은 total. 옛 loan 계좌가 있으면 총액만으로 자산을 추정하지 않는다.
@@ -708,9 +725,9 @@ function monthTotals(year, m){
 // months는 실현손익을 기록한 개월 수다. rateNoLoan·annualNoLoan은 이전 호출부 호환 별칭이다.
 function yearSummary(year){
   let pnl=0,g=1,months=0,recorded=0,rated=true,interest=0,hasInterest=false,last=null,monthFut=null;
-  for(const m of [...(year?.months||[])].sort((a,b)=>a.m-b.m)){
+  for(const [month,m] of [...ledgerMonths(year)].sort(([a],[b])=>a-b)){
     const t=monthTotals(year,m), p=monthPnl(m), f=finite(m.futures);
-    if(t.total!==null)last={m:m.m,...t};
+    if(t.total!==null)last={m:month,...t};
     if(p!==null){pnl+=p;months++;}
     if(f!==null)monthFut=(monthFut||0)+f;
     if(p!==null||f!==null){

@@ -233,6 +233,30 @@ test('월별 손익: 앞뒤 달에는 잔액이 있는데 그달만 빈 계좌�
   assert.equal(JSON.stringify(data),before,'기록은 바꾸지 않음');
 });
 
+test('문자열 월을 누적 그래프·연 수익률·올해 비교에서 같은 숫자 월로 집계한다',()=>{
+  const today=new Date(2026,10,1);
+  const year={year:2026,accounts:[],months:[{m:'10',futures:0,total:2000},{m:'02',pnl:10,total:1000}]};
+  const before=JSON.stringify(year),summary=c.yearSummary(year),chart=c.ledgerChartData(year,today);
+  assert.deepEqual(chart.won,[{m:2,v:10},{m:10,v:10}]);
+  assert.equal(chart.from,1);
+  assert.equal(chart.month,10);
+  assert.equal(summary.last.m,10);
+  assert.equal(chart.rate.at(-1).v,summary.rate);
+  assert.equal(c.compoundYearReturn([year],today).month,10);
+  assert.equal(c.sp500Comparison([year],today).current.month,10);
+  assert.equal(JSON.stringify(year),before);
+});
+
+test('문자열로 기록된 앞뒤 달도 달 번호 순서로 빈 계좌를 찾는다',()=>{
+  const year={year:2025,accounts:[{name:'가상 A'},{name:'가상 B'}],months:[
+    {m:'2',balances:[1000,1000]},{m:'9',pnl:-100,balances:[1000,null]},{m:'10',balances:[1000,1000]}
+  ]};
+  const data={version:1,ledger:{savedAt:'',years:[year]}},html=ledgerHtml(data,new Date(2026,9,16).getTime());
+  const row=html.match(/data-month="9"[\s\S]*?<\/button>/)?.[0];
+  assert.match(row,/빈 계좌 1개 · 확인/);
+  assert.match(row,/-10%/);
+});
+
 test('월별 손익: 항목별로 적은 달은 내역 건수 대신 비어 있는 전용 칸만 경고로 표시한다',()=>{
   // 전용 칸 5개(신한 기본계좌+ISA·연금저축·배당, 키움 실현손익·배당 달러). 금액은 가짜 값.
   const all=[{broker:'신한',label:'기본계좌+ISA',amount:100},{broker:'신한',label:'연금저축',amount:0},{broker:'신한 증권',label:'배당입금내역',amount:10},
@@ -413,6 +437,78 @@ function ledgerDialog(year,{popover=true}={}){
     submit(id='monthForm'){node(id).onsubmit({preventDefault(){}});},
   };
 }
+
+test('옛 문자열 월의 편집은 같은 저장값을 쓰고 지우면 그 달만 삭제한다',()=>{
+  const year={year:2025,accounts:[],months:[{m:11,total:900},{m:'012',pnl:10,total:1000,interest:5}]};
+  const h=ledgerDialog(year),before=JSON.stringify(year);
+  h.openMonth(12);
+  assert.equal(h.node('monthForm').pnl.value,'10');
+  assert.equal(h.node('monthForm').total.value,'1,000');
+  assert.equal(JSON.stringify(year),before);
+  h.input('pnl','20');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[{m:11,total:900},{m:'012',pnl:20,total:1000,interest:5}]);
+  assert.equal(c.yearSummary(year).pnl,20);
+  h.openMonth(12);h.node('monthClear').onclick();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[{m:11,total:900}]);
+  assert.deepEqual(h.saves,['ledger','ledger']);
+});
+
+test('이미 중복된 문자열·숫자 월은 한 번 집계하고 편집해도 옛 사본을 보존한다',()=>{
+  const legacy={m:'12',pnl:10,total:1000},selected={m:12,pnl:20,total:2000};
+  const year={year:2025,accounts:[],months:[legacy,selected]};
+  const h=ledgerDialog(year),before=JSON.stringify(year),today=new Date(2026,0,1);
+  assert.equal(c.yearSummary(year).pnl,20);
+  assert.deepEqual(c.ledgerChartData(year,today).won,[{m:12,v:20}]);
+  h.openMonth(12);
+  assert.equal(h.node('monthForm').pnl.value,'20');
+  assert.equal(JSON.stringify(year),before);
+  h.input('pnl','25');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[legacy,{m:12,pnl:25,total:2000}]);
+  h.openMonth(12);h.input('pnl','');h.input('total','');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[legacy,{m:12}]);
+  assert.equal(c.yearSummary(year).pnl,0,'명시적으로 비운 달에 옛 사본의 손익이 되살아나지 않는다');
+  h.openMonth(12);h.node('monthClear').onclick();
+  assert.equal(year.months.length,0,'달 전체 삭제는 두 기록에 적용');
+});
+
+test('첫 계좌 추가 후 빈 잔액으로 저장해도 옛 총액을 보존하고 실제 잔액을 쓰면 대체한다',()=>{
+  for(const total of ['1000',0]){
+    const year={year:2025,accounts:[],months:[{m:12,total}]};
+    const h=ledgerDialog(year);
+    h.openYear();h.node('addAccount').onclick();
+    const field=h.query('[data-acc-name="0"]')[0];
+    field.value='가상 신규';field.oninput();h.submit('yearForm');
+    const before=JSON.stringify(year);
+    h.openMonth(12);
+    assert.equal(h.node('monthForm').bal0.value,'');
+    assert.equal(JSON.stringify(year),before);
+    h.submit();
+    assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[{m:12,total}]);
+    assert.equal(c.yearSummary(year).last.total,Number(total));
+    h.openMonth(12);h.input('bal0','0');h.submit();
+    assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[{m:12,balances:[0]}]);
+    assert.equal(c.yearSummary(year).last.total,0);
+  }
+});
+
+test('숨은 대출 잔액만 다시 저장하면 옛 총액을 지우지 않는다',()=>{
+  const year={year:2025,accounts:[{name:'가상 대출',loan:true},{name:'가상 계좌'}],months:[{m:12,total:1000,balances:[200]}]};
+  const h=ledgerDialog(year);
+  h.openMonth(12);h.input('pnl','10');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months)),[{m:12,total:1000,balances:[200],pnl:10}]);
+});
+
+test('손실 달의 빈 계좌 안내는 수익률이 실제와 달라질 수 있다고 표시한다',()=>{
+  const year={year:2025,accounts:[{name:'가상 A'},{name:'가상 B'}],months:[
+    {m:1,balances:[1000,1000]},{m:2,pnl:-100,balances:[1000,null]},{m:3,balances:[1000,1000]}
+  ]};
+  const h=ledgerDialog(year),before=JSON.stringify(year),html=h.openMonth(2);
+  assert.match(html,/수익률이 실제와 달라질 수 있습니다/);
+  assert.doesNotMatch(html,/수익률이 높게 나옵니다/);
+  near(c.yearSummary(year).rate,-10,'빈 잔액이 있는 손실 달');
+  assert.equal(JSON.stringify(year),before);
+  assert.deepEqual(h.saves,[]);
+});
 
 test('12월 입력 창은 누락된 일반·RP 계좌 이름에만 연말 경고를 붙인다',()=>{
   const year={year:new Date().getFullYear()-1,

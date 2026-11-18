@@ -229,3 +229,19 @@ test('완료된 12월과 진행 중이거나 미래인 연도에는 연말 경�
     assert.doesNotMatch(p.html,/class="ledger-warning"/,`${year}년의 월별 표와 전체 연도별 요약`);
   }
 });
+
+test('문자열 12월도 월별 행과 연말 잔액 경고에 같은 기록을 쓴다',()=>{
+  const p=page();
+  p.run(`doc.ledger.years=[{year:2025,accounts:[{name:'가상 A'},{name:'가상 B'}],months:[{m:'12',pnl:30,balances:[1000,null]}]}]`);
+  const before=p.run('JSON.stringify(doc)');
+  p.render();
+  const row=()=>p.html.match(/<button class="ledger-row[^>]*data-month="12"[\s\S]*?<\/button>/)?.[0];
+  assert.match(row(),/30원/);
+  assert.match(row(),/1,000원/);
+  assert.match(row(),/12월 계좌 잔액 1개가 미입력입니다\./);
+  assert.doesNotMatch(p.html,/12월 기록이 없어/);
+  assert.equal(p.run('JSON.stringify(doc)'),before);
+  p.run('doc.ledger.years[0].months[0].balances[1]=0');
+  p.render();
+  assert.doesNotMatch(p.html,/class="ledger-warning"/);
+});
