@@ -232,8 +232,11 @@
   .group-head{padding:12px 12px 8px}.group-note{margin:0 12px 8px}.sub-head{padding:7px 12px 5px}.asset-row{gap:8px;padding:9px 12px}.asset-body{column-gap:8px}
   .cash-row{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 12px}.cash-place{grid-column:1/-1}.cash-amt{grid-column:1;grid-row:3}.cash-row b{grid-column:2;grid-row:2/4;align-self:center}
   .ledger-row{grid-template-columns:40px minmax(0,1.25fr) minmax(0,.7fr) minmax(0,1.4fr);gap:6px;padding:9px 12px;font-size:12px}
-  /* 폰에서도 월별 기록의 네 값은 머리글 아래 같은 줄에 둔다. 입력 누락 안내는 해당 값 아래에 둔다. */
-  .ledger-months>.head{padding-inline:12px}
+  .ledger-row.head{padding-inline:12px}
+  /* 월별 행은 열 너비를 공유한다. 첫 열은 왼쪽 여백 12px과 12월 경고까지 두고, 긴 숫자가 화면을 넘으면 표 안에서만 스크롤한다. */
+  .ledger-months{display:grid;grid-template-columns:53px minmax(min-content,1fr) minmax(min-content,.4fr) minmax(min-content,1.1fr);column-gap:4px;overflow-x:auto}
+  .ledger-months>.ledger-row{grid-column:1/-1;grid-template-columns:subgrid;column-gap:inherit;font-size:clamp(11px,3.34vw,12px)}
+  .ledger-months>.ledger-row>span{overflow-wrap:normal}
   .ledger-months>[data-month]{align-content:center;align-items:baseline;min-height:44px}
   .ledger-months>[data-month]>:first-child{white-space:nowrap}
   #editFutures>:first-child{font-size:11px;word-break:keep-all;overflow-wrap:normal}.year-average{padding:12px}.benchmark{padding:12px}.benchmark-grid{gap:6px}.benchmark-grid>div{padding:8px 9px}.benchmark-grid span{font-size:11px}.benchmark-grid strong{font-size:17px}.benchmark-grid small{font-size:10px}.benchmark-ytd-head small{display:block;margin:2px 0 0}.benchmark-ytd-cells{gap:6px}.benchmark-ytd-cells>span{padding:0 9px}.benchmark-ytd-cells b{font-size:14px}.pnl-broker-grid{grid-template-columns:1fr}.pnl-broker{padding:12px}.pnl-entry{padding:10px}.pnl-entry-grid{gap:8px}
