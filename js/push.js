@@ -2,7 +2,7 @@
 const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
-let pushConfig = null, pushSubscription, pushBusy = false, pushTesting = false, pushMessage = ""; // undefined: 브라우저 구독 조회 전, null: 구독 없음.
+let pushConfig = null, pushSubscription, pushBusy = false, pushTesting = false, pushMessage = "", pushMessageTone = "", pushMessageDetail = "", pushConfigError = ""; // undefined: 브라우저 구독 조회 전, null: 구독 없음.
 let pushStageWaitMs = 30000, pushGeneration = 0;
 const PUSH_STAGE_TIMEOUT = Symbol("push-stage-timeout");
 const pushPendingTasks = {registration:null,unsubscribe:null,subscribe:null};
@@ -96,6 +96,32 @@ function schedulePendingPushAlert(){
 }
 function pushOnPc(){try{return typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches;}catch{return false;}}
 function pushSupported(){return window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;}
+const pushNativeApp = () => typeof document!=="undefined"&&document.documentElement?.dataset?.nativeApp==="android";
+function pushMissingFeatures(){
+  const missing=[];
+  if(!window.isSecureContext)missing.push("HTTPS");
+  if(!("serviceWorker" in navigator))missing.push("ServiceWorker");
+  if(!("PushManager" in window))missing.push("PushManager");
+  if(!("Notification" in window))missing.push("Notification");
+  return missing;
+}
+function pushDisplayMode(){
+  try{
+    if(typeof matchMedia==="function"){
+      for(const mode of ["fullscreen","standalone","minimal-ui"])if(matchMedia(`(display-mode:${mode})`).matches)return mode;
+    }
+  }catch{}
+  return "browser";
+}
+function pushNowClock(){
+  try{return new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});}
+  catch{return "";}
+}
+function setPushFeedback(message,tone="",detail=""){pushMessage=message;pushMessageTone=tone;pushMessageDetail=detail;}
+function focusPushFeedback(){
+  const box=$("pushFeedback");
+  if(box&&typeof box.scrollIntoView==="function")box.scrollIntoView({block:"nearest",behavior:"auto"});
+}
 function pushPublicBytes(key){
   const raw=atob(String(key).replace(/-/g,"+").replace(/_/g,"/"));
   const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
@@ -143,7 +169,7 @@ async function readPushConfig(){
   try{
     const response=await gh(`/repos/${repo}/contents/${PUSH_CONFIG_FILE}`,{headers:{Accept:"application/vnd.github.raw+json"}});
     if(sync.repo!==repo)return;
-    if(response.status===404){pushConfig=null;localStorage.removeItem(PUSH_CONFIG_KEY);renderPushSetup();return;}
+    if(response.status===404){pushConfig=null;localStorage.removeItem(PUSH_CONFIG_KEY);pushConfigError="";renderPushSetup();return;}
     if(!response.ok)throw Error("알림 발송 상태를 확인하지 못했습니다.");
     const doc=JSON.parse(await response.text());
     if(typeof doc.publicKey!=="string"||typeof doc.ready!=="boolean")throw Error("알림 연결 정보를 확인하지 못했습니다.");
@@ -151,17 +177,21 @@ async function readPushConfig(){
     if(sync.repo!==repo)return;
     pushConfig={repo,publicKey:doc.publicKey,ready:doc.ready,updatedAt:String(doc.updatedAt||""),status:String(doc.status||""),inactiveDeviceIds:Array.isArray(doc.inactiveDeviceIds)?doc.inactiveDeviceIds.filter(v=>typeof v==="string"&&v.length<=128).slice(0,20):[]};
     localStorage.setItem(PUSH_CONFIG_KEY,JSON.stringify(pushConfig));
-    pushMessage="";
-  }catch{pushMessage="알림 발송 상태를 확인하지 못했습니다. 동기화 후 다시 확인해 주세요.";}
+    pushConfigError="";
+  }catch{
+    if(sync.repo!==repo)return;
+    pushConfigError="알림 발송 상태를 확인하지 못했습니다. 동기화 후 다시 확인해 주세요.";
+  }
   renderPushSetup();
 }
 // 기기마다 따로 연결하며 연결·발송 방식은 같다. 안내 문구만 PC(theme.js와 같은 마우스 기준)와 휴대폰으로 나눈다.
 function renderPushSetup(){
   renderPushConnectionStatus();
   const target=$("pushSetup");if(!target)return;
-  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),changed=pushConnectionChanged(),pc=pushOnPc(),device=pc?"PC":"휴대폰";
+  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),changed=pushConnectionChanged(),pc=pushOnPc(),device=pc?"PC":"휴대폰",nativeApp=pushNativeApp();
+  if(!connected())pushConfigError="";
   let message=!connected()?`동기화를 연결하면 알림 조건과 이 ${device}의 연결 정보를 비공개 저장소에 저장합니다.`:
-    !supported?"이 브라우저는 웹 푸시를 지원하지 않습니다. 휴대폰은 안드로이드 Chrome, PC는 Chrome·Edge·Firefox·Safari에서 사이트를 열어 주세요.":
+    !supported?(nativeApp?"안드로이드 실행 앱(APK)은 웹 푸시를 지원하지 않습니다. 알림은 삼성 인터넷·Chrome에서 추가한 웹앱을 이용해 주세요.":"이 브라우저는 웹 푸시를 지원하지 않습니다. 휴대폰은 안드로이드 Chrome, PC는 Chrome·Edge·Firefox·Safari에서 사이트를 열어 주세요."):
     Notification.permission==="denied"?"알림이 차단되어 있습니다. 브라우저의 이 사이트 설정에서 알림을 허용해 주세요.":
     !ready?`알림 연결을 준비 중입니다. 발송 설정이 적용된 뒤 동기화하고 이 ${device}에서 알림을 허용해 주세요.`:
     changed?"이 기기의 알림 연결이 끊겼거나 바뀌었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.":
@@ -173,9 +203,39 @@ function renderPushSetup(){
   if(status==="delivery-error")message+=" 최근 발송에 실패했습니다. 다음 수집 때 다시 시도합니다.";
   if(status==="collection-unavailable")message+=" 최근 시세 수집에 실패했습니다. 새 시세를 받은 뒤 발송을 재개합니다.";
   if(status==="linked-alerts-unavailable")message+=" 매매 기준 알림 계산을 확인 중입니다. 다음 수집에서 계산을 마치면 발송을 재개합니다.";
-  const disabled=pushBusy||!supported||!ready||sync.blocked||Notification.permission==="denied";
-  const testDisabled=pushBusy||!supported||Notification.permission==="denied";
-  target.innerHTML=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy&&!pushTesting?"연결 중…":saved||changed?"알림 연결 확인":"알림 받기"}</button><button class="btn" id="testPhonePush" type="button" ${testDisabled?"disabled":""}>${pushTesting?"테스트 중…":"알림 테스트"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. 알림 테스트는 이 기기의 브라우저 알림 표시를 확인합니다. ${pc?"PC는 보통 브라우저가 켜져 있을 때 받고(플래너 탭은 닫아도 됨), 꺼져 있던 동안의 알림은 다시 켤 때(최대 24시간) 옵니다. Windows에서 브라우저를 닫아도 받으려면 Edge로 연결하고 Edge 설정 → 시스템 및 성능의 ‘닫혀 있을 때 백그라운드 확장 및 앱 계속 실행’을 켜 두세요. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
+  const blockedPermission=supported&&Notification.permission==="denied";
+  const disabled=pushBusy||!supported||!ready||sync.blocked||blockedPermission;
+  const testDisabled=pushBusy||!supported||blockedPermission;
+  let feedbackTone="",feedbackLabel="",feedbackMain="",feedbackDetail="",feedbackExtra="";
+  if(pushMessage){
+    feedbackTone=pushMessageTone||"info";
+    feedbackLabel=feedbackTone==="busy"?"실행 중":feedbackTone==="ok"?"확인 완료":feedbackTone==="warn"?"확인 필요":feedbackTone==="bad"?"실행 불가":"상태";
+    feedbackMain=pushMessage;
+    feedbackDetail=pushMessageDetail;
+    if(connected()&&pushConfigError)feedbackExtra=pushConfigError;
+  }else if(connected()&&pushConfigError){
+    feedbackTone="warn";
+    feedbackLabel="발송 상태 확인 필요";
+    feedbackMain=pushConfigError;
+  }else if(!supported){
+    feedbackTone="bad";
+    feedbackLabel="알림 미지원";
+    const missing=pushMissingFeatures();
+    feedbackMain=nativeApp?"안드로이드 실행 앱(APK) 화면에서는 알림 받기·알림 테스트를 쓸 수 없습니다.":"현재 브라우저 환경에서 웹 푸시와 알림 테스트를 사용할 수 없습니다.";
+    feedbackDetail=nativeApp?`WebView 환경(${missing.join(" · ")||"Notification"} 미지원) · 기존 삼성 인터넷·Chrome에서 추가한 웹앱에서 열어 주세요.`:`미지원 항목: ${missing.join(" · ")||"알림 API"} · HTTPS 주소의 지원 브라우저에서 열어 주세요.`;
+  }else if(blockedPermission){
+    feedbackTone="bad";
+    feedbackLabel="권한 차단됨";
+    feedbackMain="브라우저에서 사이트 알림이 차단되어 알림 받기·알림 테스트 버튼이 비활성화되어 있습니다.";
+    feedbackDetail="Notification.permission: denied · 주소창 옆 설정(또는 브라우저 → 사이트 설정 → 알림)에서 허용으로 바꾼 뒤 새로고침해 주세요.";
+  }
+  const feedbackHtml=feedbackMain?`${feedbackLabel?`<div class="push-feedback-head">${esc(feedbackLabel)}</div>`:""}<p>${esc(feedbackMain)}</p>${feedbackDetail?`<small>${esc(feedbackDetail)}</small>`:""}${feedbackExtra?`<small>${esc(feedbackExtra)}</small>`:""}`:"";
+  const html=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy&&!pushTesting?"연결 중…":saved||changed?"알림 연결 확인":"알림 받기"}</button><button class="btn" id="testPhonePush" type="button" ${testDisabled?"disabled":""}>${pushTesting?"테스트 중…":"알림 테스트"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><div class="push-feedback${feedbackTone?` ${feedbackTone}`:""}" id="pushFeedback" role="status" aria-live="polite">${feedbackHtml}</div><p class="hint">알림에는 종목·기준선·가격만 보냅니다. 알림 테스트는 이 기기의 브라우저 알림 표시를 확인합니다. ${pc?"PC는 보통 브라우저가 켜져 있을 때 받고(플래너 탭은 닫아도 됨), 꺼져 있던 동안의 알림은 다시 켤 때(최대 24시간) 옵니다. Windows에서 브라우저를 닫아도 받으려면 Edge로 연결하고 Edge 설정 → 시스템 및 성능의 ‘닫혀 있을 때 백그라운드 확장 및 앱 계속 실행’을 켜 두세요. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면·팝업 표시는 휴대폰 앱 알림 설정(웹사이트·기타 알림)에서 바꿀 수 있고, 전체화면 웹앱에서는 위쪽 상태바 아이콘이 숨겨집니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
+  const dom=typeof target.querySelector==="function";
+  if(!dom||target._pushMarkup!==html||!target.contains?.($("enablePhonePush"))){
+    target.innerHTML=html;
+    if(dom)target._pushMarkup=html;
+  }
   $("enablePhonePush").onclick=enablePhonePush;
   const test=$("testPhonePush");if(test){test.disabled=testDisabled;test.onclick=testPhonePush;}
   const disable=$("disablePhonePush");if(disable){disable.disabled=pushBusy;disable.onclick=disablePhonePush;}
@@ -183,7 +243,21 @@ function renderPushSetup(){
 async function pushRegistration(){
   const worker=new URL("push-sw.js",document.baseURI),scope=new URL("./",document.baseURI).href;
   const registration=await navigator.serviceWorker.register(worker.href,{scope,updateViaCache:"none"});
-  return registration.active?registration:await navigator.serviceWorker.ready;
+  return registration.active&&registration.active.state!=="redundant"?registration:await navigator.serviceWorker.ready;
+}
+async function probeTestNotifications(registration,closeExisting=false){
+  if(typeof registration?.getNotifications!=="function")return null;
+  let timer;
+  try{
+    const list=await Promise.race([
+      registration.getNotifications({tag:"etf-planner-push-test"}),
+      new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1500);})
+    ]);
+    if(!Array.isArray(list))return null;
+    if(closeExisting)for(const item of list)try{item?.close?.();}catch{}
+    return list.length;
+  }catch{return null;}
+  finally{clearTimeout(timer);}
 }
 // 시간 초과는 브라우저 작업을 취소하지 않는다. 정리 콜백은 보관만 비우며 기기·저장 기록을 바꾸지 않는다.
 function pendingPushTask(kind,start){
@@ -208,13 +282,24 @@ function pushFailureMessage(error,stage,message){
 // state.alerts는 이 입력 때만 만들며 공개 기본값에는 기기 구독·구독 주소·발송키를 넣지 않는다.
 async function enablePhonePush(){
   if(pushBusy||!pushSupported()||!pushReady()||sync.blocked)return;
-  const repo=sync.repo,key=pushConfig.publicKey;
-  pushGeneration++;pushBusy=true;pushMessage="";renderPushSetup();
+  const repo=sync.repo,key=pushConfig.publicKey,started=pushNowClock();
+  pushGeneration++;pushBusy=true;
+  setPushFeedback("브라우저와 저장소에 알림을 연결하는 중입니다…","busy",`${started?`시작 ${started} · `:""}권한 ${Notification.permission}`);
+  renderPushSetup();
   let stage="알림 권한 확인";
   try{
     // permission request must stay on the click path (no network/registration wait before it).
     const permission=Notification.permission==="granted"?"granted":await Notification.requestPermission();
-    if(permission!=="granted"){pushMessage="알림이 허용되지 않았습니다. 허용할 때 다시 눌러 주세요.";return;}
+    focusPushFeedback();
+    if(permission!=="granted"){
+      const blocked=permission==="denied"||Notification.permission==="denied",pc=pushOnPc(),mode=pushDisplayMode(),done=pushNowClock();
+      setPushFeedback(
+        "알림이 허용되지 않았습니다. 허용할 때 다시 눌러 주세요.",
+        blocked?"bad":"warn",
+        `${done?`확인 ${done} · `:""}권한 ${permission}${!pc&&mode!=="browser"?" · 홈 화면 웹앱에서 창이 뜨지 않으면 삼성 인터넷·Chrome 일반 창에서 먼저 허용해 주세요":""}`
+      );
+      return;
+    }
     stage="브라우저 알림 준비";
     const registration=await waitPushStage(pendingPushTask("registration",pushRegistration));
     // 이전 클릭의 변경 작업이 남아 있으면 먼저 기다린 뒤 조회한다. 키·구독이 바뀐 재시도에도 옛 결과를 저장하지 않는다.
@@ -239,14 +324,23 @@ async function enablePhonePush(){
     save();
     stage="동기화";
     await syncNow();
-    pushMessage=sync.repo!==repo?"동기화 연결이 바뀌었습니다. 현재 저장소에서 알림 연결을 다시 확인해 주세요.":
-      !pushIsSaved()?"동기화에서 다른 기록을 선택해 이 기기의 연결이 저장되지 않았습니다. 알림 받기를 다시 눌러 주세요.":
-      !pushRemoteHas(subscription.endpoint)?"이 기기에는 저장했습니다. 동기화를 완료하면 알림이 연결됩니다.":`이 ${pushOnPc()?"PC":"휴대폰"}에 알림을 연결했습니다. 다음 시세 수집부터 조건을 확인합니다.`;
-  }catch(error){pushMessage=error?.name==="NotAllowedError"?"브라우저에서 알림 연결을 허용해 주세요.":error?.name==="AbortError"?"알림 서비스를 연결하지 못했습니다. 잠시 뒤 다시 눌러 주세요.":pushFailureMessage(error,stage,"알림 연결을 완료하지 못했습니다. 동기화 상태와 브라우저 알림 설정을 확인해 주세요.");}
-  finally{pushBusy=false;renderPushSetup();}
+    const done=pushNowClock();
+    if(sync.repo!==repo)setPushFeedback("동기화 연결이 바뀌었습니다. 현재 저장소에서 알림 연결을 다시 확인해 주세요.","warn",done?`확인 ${done}`:"");
+    else if(!pushIsSaved())setPushFeedback("동기화에서 다른 기록을 선택해 이 기기의 연결이 저장되지 않았습니다. 알림 받기를 다시 눌러 주세요.","warn",done?`확인 ${done}`:"");
+    else if(!pushRemoteHas(subscription.endpoint))setPushFeedback("이 기기에는 저장했습니다. 동기화를 완료하면 알림이 연결됩니다.","warn",done?`확인 ${done}`:"");
+    else setPushFeedback(`이 ${pushOnPc()?"PC":"휴대폰"}에 알림을 연결했습니다. 다음 시세 수집부터 조건을 확인합니다.`,"ok",`${done?`완료 ${done} · `:""}권한 ${Notification.permission}`);
+  }catch(error){
+    const done=pushNowClock(),message=error?.name==="NotAllowedError"?"브라우저에서 알림 연결을 허용해 주세요.":error?.name==="AbortError"?"알림 서비스를 연결하지 못했습니다. 잠시 뒤 다시 눌러 주세요.":pushFailureMessage(error,stage,"알림 연결을 완료하지 못했습니다. 동기화 상태와 브라우저 알림 설정을 확인해 주세요.");
+    setPushFeedback(message,error===PUSH_STAGE_TIMEOUT||error?.name==="AbortError"?"warn":"bad",`${done?`확인 ${done} · `:""}${stage} · 권한 ${Notification.permission}`);
+  }
+  finally{pushBusy=false;renderPushSetup();focusPushFeedback();}
 }
 async function disablePhonePush(){
-  if(pushBusy)return;pushGeneration++;pushBusy=true;pushMessage="";renderPushSetup();
+  if(pushBusy)return;
+  const started=pushNowClock();
+  pushGeneration++;pushBusy=true;
+  setPushFeedback("이 기기의 알림 연결을 해제하는 중입니다…","busy",started?`시작 ${started}`:"");
+  renderPushSetup();focusPushFeedback();
   let endpoint=pushSubscription?.endpoint;
   let stage="이전 구독 해제";
   try{
@@ -262,22 +356,47 @@ async function disablePhonePush(){
     pushSubscription=null;
     if(state.alerts){state.alerts={...state.alerts,subscriptions:pushDevices().filter(s=>s?.id!==pushDeviceId()&&s?.subscription?.endpoint!==endpoint)};save();}
     stage="동기화";if(connected())await syncNow();
-    pushMessage=pushRemoteHas(endpoint)?"이 기기 알림을 해제했습니다. 저장소에도 반영하려면 동기화를 완료해 주세요.":"이 기기 알림을 해제했습니다.";
-  }catch(error){pushMessage=pushFailureMessage(error,stage,"알림 해제를 완료하지 못했습니다. 브라우저의 사이트 설정에서도 알림을 차단할 수 있습니다.");}
-  finally{pushBusy=false;renderPushSetup();}
+    const done=pushNowClock(),pending=pushRemoteHas(endpoint);
+    setPushFeedback(
+      pending?"이 기기 알림을 해제했습니다. 저장소에도 반영하려면 동기화를 완료해 주세요.":"이 기기 알림을 해제했습니다.",
+      pending?"warn":"ok",
+      done?`확인 ${done}`:""
+    );
+  }catch(error){
+    const done=pushNowClock();
+    setPushFeedback(
+      pushFailureMessage(error,stage,"알림 해제를 완료하지 못했습니다. 브라우저의 사이트 설정에서도 알림을 차단할 수 있습니다."),
+      error===PUSH_STAGE_TIMEOUT?"warn":"bad",
+      `${done?`확인 ${done} · `:""}${stage}`
+    );
+  }
+  finally{pushBusy=false;renderPushSetup();focusPushFeedback();}
 }
 // 서버 발송이 아닌 현재 브라우저·OS의 서비스 워커 알림 표시만 시험한다. 기록·구독·알림내역은 바꾸지 않는다.
 async function testPhonePush(){
   if(pushBusy||!pushSupported()||Notification.permission==="denied")return;
-  pushBusy=true;pushTesting=true;pushMessage="";renderPushSetup();
+  const started=pushNowClock();
+  pushBusy=true;pushTesting=true;
+  setPushFeedback("테스트 알림을 보내는 중입니다…","busy",`${started?`시작 ${started} · `:""}권한 ${Notification.permission}`);
+  renderPushSetup();
   let stage="알림 권한 확인";
   try{
     const permission=Notification.permission==="granted"?"granted":await Notification.requestPermission();
-    if(permission!=="granted"){pushMessage="알림이 허용되지 않았습니다. 허용할 때 다시 눌러 주세요.";return;}
+    focusPushFeedback();
+    if(permission!=="granted"){
+      const blocked=permission==="denied"||Notification.permission==="denied",pc=pushOnPc(),mode=pushDisplayMode(),done=pushNowClock();
+      setPushFeedback(
+        blocked?"알림이 허용되지 않았습니다. 브라우저의 이 사이트 설정에서 알림을 허용한 뒤 다시 눌러 주세요.":"알림이 허용되지 않았습니다. 권한 확인 창이 뜨지 않았다면 브라우저에서 알림을 허용한 뒤 다시 눌러 주세요.",
+        blocked?"bad":"warn",
+        `${done?`확인 ${done} · `:""}권한 ${permission}${!pc&&mode!=="browser"?" · 홈 화면 웹앱에서는 허용 창이 열리지 않을 수 있어 삼성 인터넷·Chrome 일반 창에서 먼저 허용해 주세요":""}`
+      );
+      return;
+    }
     stage="브라우저 알림 준비";
     const registration=await waitPushStage(pendingPushTask("registration",pushRegistration));
     if(typeof registration?.showNotification!=="function")throw Object.assign(Error("알림 표시를 지원하지 않습니다."),{name:"NotSupportedError"});
     stage="테스트 알림 표시";
+    await probeTestNotifications(registration,true);
     const options={
       body:"이 기기에서 알림이 정상 표시됩니다.",
       tag:"etf-planner-push-test",
@@ -285,16 +404,32 @@ async function testPhonePush(){
       data:{url:new URL("./",document.baseURI).href}
     };
     const icon=new URL("icons/planner-192.png",document.baseURI).href;
+    let usedIcon=true;
     await waitPushStage(
       Promise.resolve()
         .then(()=>registration.showNotification("매매 플래너 테스트 알림",{...options,icon}))
-        .catch(()=>registration.showNotification("매매 플래너 테스트 알림",options))
+        .catch(()=>{usedIcon=false;return registration.showNotification("매매 플래너 테스트 알림",options);})
     );
-    const pc=pushOnPc();
-    pushMessage=`이 ${pc?"PC":"휴대폰"}에 테스트 알림을 보냈습니다. 보이지 않으면 ${pc?"브라우저·운영체제 알림 설정(방해 금지)":"휴대폰 알림 설정(웹사이트·기타 알림·방해 금지)"}을 확인해 주세요.`;
+    const delivered=await probeTestNotifications(registration,false);
+    const pc=pushOnPc(),mode=pushDisplayMode(),done=pushNowClock();
+    const swState=typeof registration.active==="object"&&registration.active?.state?String(registration.active.state):"활성";
+    if(delivered===0){
+      setPushFeedback(
+        `이 ${pc?"PC":"휴대폰"}에 테스트 알림을 요청했지만 활성 알림에 남지 않았습니다(0건). ${pc?"브라우저·운영체제 알림 설정(방해 금지)":"휴대폰·삼성 인터넷 알림 설정(웹사이트·기타 알림·방해 금지)"}에서 차단되었는지 확인해 주세요.`,
+        "warn",
+        `${done?`시각 ${done} · `:""}권한 ${Notification.permission} · 서비스 워커 ${swState} · 활성 알림 0건${!usedIcon?" · 아이콘 제외 재시도":""}${!pc&&mode!=="browser"?" · 전체화면 앱은 위쪽 상태바가 숨겨집니다(화면 위에서 아래로 내려 알림창 확인)":""}`
+      );
+      return;
+    }
+    setPushFeedback(
+      `이 ${pc?"PC":"휴대폰"}에 테스트 알림을 보냈습니다. 보이지 않으면 ${pc?"브라우저·운영체제 알림 설정(방해 금지)":"휴대폰 알림 설정(웹사이트·기타 알림·방해 금지)"}을 확인해 주세요.`,
+      "ok",
+      `${done?`시각 ${done} · `:""}권한 ${Notification.permission} · 서비스 워커 ${swState}${delivered!==null?` · 활성 알림 ${delivered}건 확인`:""}${!usedIcon?" · 아이콘 제외 재시도":""}${!pc?(mode!=="browser"?" · 전체화면에서는 위쪽 상태바가 가려지니 화면 위에서 아래로 내려 알림창과 카테고리 이름을 눌러 ‘팝업으로 알림’을 확인하세요":" · 팝업이 안 뜨면 카테고리 이름을 눌러 ‘팝업으로 알림’·소리를 확인하세요"):" · 운영체제 알림 센터와 방해 금지 모드를 확인해 주세요"}`
+    );
   }catch(error){
-    pushMessage=error?.name==="NotAllowedError"?"브라우저에서 알림 표시를 허용해 주세요.":pushFailureMessage(error,stage,"테스트 알림을 표시하지 못했습니다. 브라우저와 기기의 알림 설정을 확인해 주세요.");
-  }finally{pushBusy=false;pushTesting=false;renderPushSetup();}
+    const done=pushNowClock(),message=error?.name==="NotAllowedError"?"브라우저에서 알림 표시를 허용해 주세요.":pushFailureMessage(error,stage,"테스트 알림을 표시하지 못했습니다. 브라우저와 기기의 알림 설정을 확인해 주세요.");
+    setPushFeedback(message,error===PUSH_STAGE_TIMEOUT?"warn":"bad",`${done?`확인 ${done} · `:""}${stage} · 권한 ${Notification.permission}`);
+  }finally{pushBusy=false;pushTesting=false;renderPushSetup();focusPushFeedback();}
 }
 async function initializePush(){
   // 알림 글자의 종목 이름표(stock-names.js)는 기록·자산이 바뀔 때 이 기기에만 다시 저장한다.
