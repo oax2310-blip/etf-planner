@@ -771,13 +771,23 @@ test('수정 중인 소분류와 그 소분류가 고른 큰 분류가 함께 �
     assert.equal(h.node('groupDialog').open,true);assert.equal(f.note.value,'가상 메모 유지');
     assert.equal(h.alerts.length,1);
     assert.match(h.alerts[0],/사라질 소분류 S/);assert.match(h.alerts[0],/삭제되어 저장하지 않았습니다/);
-    assert.equal(secC.value,'');assert.doesNotMatch(secC.innerHTML,/value="unused"/);
+    assert.notEqual(secC.value,'');assert.doesNotMatch(secC.innerHTML,/value="unused"/);
+    // 사용자가 충돌을 명시적으로 해소하기 전에는 두 번째 저장도 막히고 저장 횟수는 0회여야 한다.
     saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,2);
+    assert.match(h.alerts[1],/사라질 소분류 S/);assert.equal(f.note.value,'가상 메모 유지');
+    assert.equal(JSON.stringify(next),beforeNext);
+    // 사라진 소분류에 다른 분류를 고른 상태에서도 여전히 막힌다.
+    secC.value='stock';saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,3);
+    assert.match(h.alerts[2],/사라질 소분류 S/);
+    // '그룹 분류 따름'('')으로 충돌을 명시적으로 해소한 뒤에야 S를 되살리지 않고 저장된다.
+    secC.value='';saveForm(f);
     assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
     assert.equal(h.saved().allocation.groups[0].note,'가상 메모 유지');
     assert.equal(Object.hasOwn(h.saved().allocation.groups[0],'sections'),false);
   }
-  // 2) 목표까지 함께 수정했으면 선택지 자동 비우기 후 재시도해도 목표 충돌 해소 전까지 차단 유지
+  // 2) 목표까지 함께 수정했으면 목표만 되돌려도 소분류 분류 충돌 해소 전까지 차단 유지
   {
     const data=allocationTabFixture();
     data.allocation.groups[0].items[0].section='사라질 소분류 S';
@@ -790,14 +800,16 @@ test('수정 중인 소분류와 그 소분류가 고른 큰 분류가 함께 �
     next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='unused');
     h.replaceDoc(next);saveForm(f);
     assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);
-    assert.match(h.alerts[0],/사라질 소분류 S/);assert.equal(secC.value,'');assert.equal(secT.value,'12');
+    assert.match(h.alerts[0],/사라질 소분류 S/);assert.notEqual(secC.value,'');assert.equal(secT.value,'12');
     saveForm(f);
-    assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,2);assert.match(h.alerts[1],/사라질 소분류 S/);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,2);assert.match(h.alerts[1],/사라질 소분류 S/);
     secT.value='';saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,3);assert.match(h.alerts[2],/사라질 소분류 S/);
+    secC.value='';saveForm(f);
     assert.equal(h.node('groupDialog').open,false);assert.equal(h.saved().allocation.groups[0].note,'가상 충돌 메모');
     assert.equal(Object.hasOwn(h.saved().allocation.groups[0],'sections'),false);
   }
-  // 3) 그룹 분류와 수정한 사라진 소분류 분류가 동시에 삭제되면 둘 다 알리고 해소 후 S를 살리지 않고 저장
+  // 3) 그룹 분류와 수정한 사라진 소분류 분류가 동시에 삭제되면 둘 다 알리고 모두 해소 후 S를 살리지 않고 저장
   {
     const data=allocationTabFixture();
     data.allocation.classes.push({id:'D_grp',region:'국내',name:'가상 그룹 분류'});
@@ -811,11 +823,140 @@ test('수정 중인 소분류와 그 소분류가 고른 큰 분류가 함께 �
     h.replaceDoc(next);saveForm(f);
     assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);
     assert.match(h.alerts[0],/가상 그룹 분류/);assert.match(h.alerts[0],/사라질 소분류 S/);
-    assert.equal(f.classId.value,'');assert.equal(secC.value,'');
+    assert.equal(f.classId.value,'');assert.notEqual(secC.value,'');
     f.classId.value='stock';saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,2);
+    secC.value='';saveForm(f);
     assert.equal(h.node('groupDialog').open,false);
     assert.equal(h.saved().allocation.groups[0].note,'가상 동시 삭제 메모');
     assert.equal(Object.hasOwn(h.saved().allocation.groups[0],'sections'),false);
+  }
+});
+
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`소분류가 그룹 분류를 따르는 상태에서(${syncVia}) A가 D를 고르고 B가 S를 E로 저장한 뒤 D를 지워도 자동 비우기로 E가 지워지지 않고, 직접 그룹 분류 따름을 고르면 상속이 저장된다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes.push({id:'D',region:'국내',name:'가상 분류 D'},{id:'E',region:'국내',name:'가상 분류 E'});
+    d.allocation.groups[0].items[0].section='가상 소분류 S';
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  // 1) D 삭제 경고 후 선택을 건드리지 않고 그대로 재시도 -> B가 저장한 E 유지
+  {
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value='가상 2번 그대로 재시도';secC.value='D';
+    next.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'E'}];
+    next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='D');
+    applySync(h,next);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 분류 D/);
+    assert.doesNotMatch(secC.innerHTML,/value="D"/);
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,'가상 2번 그대로 재시도');
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'E');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'E');
+  }
+  // 2) D 삭제 경고 후 A가 직접 '그룹 분류 따름'('')을 고르면 상속(classId 미저장)이 반영됨
+  {
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value='가상 2번 직접 따름';secC.value='D';
+    next.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'E'}];
+    next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='D');
+    applySync(h,next);saveForm(f);
+    assert.notEqual(secC.value,'','직접 선택 전까지는 빈 상속 값과 구분되어야 함');
+    secC.value='';
+    saveForm(f);
+    const saved=h.saved(),sec=saved.allocation.groups[0].sections[0];
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,'가상 2번 직접 따름');
+    assert.equal(Object.hasOwn(sec,'classId'),false);
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'');
+  }
+});
+
+for(const explicitChoice of ['F',''])test(`A가 소분류를 D→${explicitChoice||'그룹 분류 따름'}로 바꾸고 삭제될 그룹 분류 X를 고른 뒤 경고 후 복구하는 사이 B가 ${explicitChoice||'그룹 분류 따름'}→E로 바꿔도 A 화면의 선택이 유지된다`,()=>{
+  const data=allocationTabFixture();
+  data.allocation.classes.push(
+    {id:'D',region:'국내',name:'가상 분류 D'},
+    {id:'E',region:'국내',name:'가상 분류 E'},
+    {id:'F',region:'국내',name:'가상 분류 F'},
+    {id:'X',region:'국내',name:'가상 삭제 그룹 X'},
+  );
+  data.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'D',target:5}];
+  const h=page(data),next1=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+  secC.value=explicitChoice;
+  f.classId.value='X';
+  next1.allocation.groups[0].sections[0].classId=explicitChoice||'';
+  if(!explicitChoice)delete next1.allocation.groups[0].sections[0].classId;
+  next1.allocation.classes=next1.allocation.classes.filter(c=>c.id!=='X');
+  h.replaceDoc(next1);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 삭제 그룹 X/);
+  assert.equal(secC.value,explicitChoice);
+  f.classId.value='stock';
+  const next2=structuredClone(next1);
+  next2.allocation.groups[0].sections[0].classId='E';
+  h.replaceDoc(next2);saveForm(f);
+  const saved=h.saved(),sec=saved.allocation.groups[0].sections[0];
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  if(explicitChoice)assert.equal(sec.classId,explicitChoice);
+  else assert.equal(Object.hasOwn(sec,'classId'),false);
+  const reopened=page(saved);reopened.openGroup('g1');
+  assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,explicitChoice);
+});
+
+test('그룹과 소분류 S의 classId가 모두 같은 분류로 저장돼 그룹 분류 따름으로 표시될 때 그룹 분류만 바꾸면 S도 새 그룹 분류를 따른다',()=>{
+  const data=fixture();
+  data.allocation.classes=[{id:'home',region:'국내',name:'가상 기본'},{id:'E',region:'국내',name:'가상 새 분류'}];
+  data.allocation.groups=[{id:'g1',name:'가상 상속 그룹',classId:'home',sections:[{name:'가상 소분류 S',classId:'home',target:5}],items:[]}];
+  const h=page(data),f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+  h.openGroup('g1');
+  assert.equal(f.classId.value,'home');
+  assert.equal(secC.value,'');
+  f.classId.value='E';
+  saveForm(f);
+  const saved=h.saved(),grp=saved.allocation.groups[0],sec=grp.sections[0];
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  assert.equal(grp.classId,'E');
+  assert.equal(Object.hasOwn(sec,'classId'),false);
+  const reopened=page(saved);reopened.openGroup('g1');
+  assert.equal(reopened.node('groupForm').classId.value,'E');
+  assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'');
+});
+
+test('소분류 목표를 건드리지 않고 메모만 수정하는 사이 다른 탭이 바꾼 소분류 목표가 유지된다',()=>{
+  // 1) 건드리지 않은 목표는 다른 탭의 변경(20%)이 보존된다
+  {
+    const data=allocationTabFixture();
+    data.allocation.groups[0].sections=[{name:'가상 소분류 S',target:5}];
+    const h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    f.note.value='목표 미수정 메모';
+    next.allocation.groups[0].sections[0].target=20;
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(h.saved().allocation.groups[0].note,'목표 미수정 메모');
+    assert.equal(h.saved().allocation.groups[0].sections[0].target,20);
+  }
+  // 2) 사용자가 직접 목표를 고치면 그 목표(12%)가 반영된다
+  {
+    const data=allocationTabFixture();
+    data.allocation.groups[0].sections=[{name:'가상 소분류 S',target:5}];
+    const h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    f.querySelector('[data-sec="0"]').value='12';
+    next.allocation.groups[0].sections[0].target=20;
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(h.saved().allocation.groups[0].sections[0].target,12);
   }
 });
 
