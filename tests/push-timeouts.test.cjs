@@ -374,3 +374,29 @@ test('알림 테스트: 실행 중 버튼 잠금·연결 문구 보존과 30초 
   assert.equal(stalledRegister.calls.register,1,'이미 진행 중인 준비 Promise를 재사용한다');
 });
 
+test('알림 테스트의 getNotifications 조회가 지연되거나 실패해도 1.5초 안에 넘어가고 타이머를 정리한다',async()=>{
+  const h=harness({existing:true}),hung=deferred();saved(h);await h.ctx.initializePush();
+  let calls=0;
+  h.registration.getNotifications=()=>{calls++;return hung.promise;};
+  const work=h.ctx.testPhonePush();
+  await flush();
+  assert.equal(calls,1);
+  assert.equal(h.busy(),true);
+  await h.time.advance(1500);
+  await flush();
+  assert.equal(calls,2);
+  await h.time.advance(1500);
+  await work;
+  assert.equal(h.busy(),false);
+  assert.equal(h.time.size,0);
+  assert.match(h.message(),/테스트 알림을 보냈습니다/);
+
+  const errored=harness();
+  errored.registration.getNotifications=()=>Promise.reject(new Error('private-test-detail'));
+  await errored.ctx.testPhonePush();
+  assert.equal(errored.busy(),false);
+  assert.equal(errored.time.size,0);
+  assert.match(errored.message(),/테스트 알림을 보냈습니다/);
+  assert.doesNotMatch(errored.nodes.pushSetup.innerHTML,/private-test-detail/);
+});
+
