@@ -843,3 +843,52 @@ test('저축·할부의 음수 가능 칸은 \'-\'·\'.\' 키가 있는 키패�
   assert.match(inst,new RegExp(`data-installment="returnRate" ${signed.source}`),'예상 수익률');
   assert.match(inst,/data-installment="discountRate"[^>]*type="number" inputmode="decimal" min="0" max="100"/,'할인율은 그대로');
 });
+
+test('저축 히어로·스텝 바·핵심 가정 웰: 예상·실제 달성·미도달·미기록 상태와 나이별 강조 막대(올해·5억·종료)를 표시한다',()=>{
+  const data=fixture();
+  Object.assign(data.savings,{startYear:2025,startAge:30,actual:[{ym:'2025-12',total:198000000},{ym:'2026-10',total:245000000}]});
+  Object.assign(data.savings.scenarios[0],{salary:4800000,giving:10,spending:1800000,spendingYear:2026,growth:2,returnRate:6,endAge:60,stages:[{age:35,salary:5600000,spending:2100000},{age:45,salary:6500000,spending:2500000}]});
+  Object.assign(data.savings.scenarios[1],{salary:5200000,giving:10,spending:1600000,spendingYear:2026,growth:2,returnRate:8.5,endAge:60,stages:[]});
+  const before=JSON.stringify(data),h=setup(data),view=h.node('savingsView'),res=k=>view.querySelector(`[data-savings-result="${k}"]`);
+  assert.equal(res('hero-percent').textContent,'49% 달성');
+  assert.equal(res('hero-title').textContent,'2031년 12월(36세)에 5억을 달성해요');
+  assert.equal(res('goal-remaining').textContent,'남은 금액 2억 5,500만');
+  assert.match(res('last-date').innerHTML,/2026\.10 실제 기록<b>245,000,000원<\/b>/);
+  const cols=res('step-bars').querySelectorAll('.savings-step-col');
+  assert.equal(cols.length,6);
+  assert.deepEqual(cols.map(c=>c.querySelector('.savings-step-age').textContent),['30세','31세·올해','35세·1단계','36세·5억','45세·2단계','60세·종료']);
+  assert.deepEqual(cols.map(c=>c.className),['savings-step-col','savings-step-col now','savings-step-col','savings-step-col hit','savings-step-col','savings-step-col end']);
+  assert.equal(arrivalButton(h,'base').querySelector('.savings-arrival-badge').textContent,'선택됨');
+  assert.equal(arrivalButton(h,'other').querySelector('.savings-arrival-badge').textContent,'-1년');
+  assert.match(arrivalButton(h,'base').querySelector('.savings-arrival-end').textContent,/^60세 /);
+  const params=res('params-well').querySelectorAll('.savings-param-cell');
+  assert.deepEqual(params.map(p=>[p.children[0].textContent,p.children[1].textContent]),[['월급','480만 원'],['월 사용금액','180만 원'],['연 수익률','6%'],['기부·단계','10% · 2개']]);
+  assert.equal(res('years-range').textContent,'연도별 · 월별 상세 표 2025–2055년 (31년)');
+  data.savings.actual=[{ym:'2025-06',total:500000000}];h.render();
+  assert.equal(res('hero-title').textContent,'2025년 6월(30세)에 5억을 달성했어요');
+  assert.equal(res('goal-remaining').textContent,'5억 목표 달성');
+  data.savings.actual=[{ym:'2025-12',total:1000}];data.savings.scenarios[0].salary=0;data.savings.scenarios[0].returnRate=0;data.savings.scenarios[0].stages=[];h.render();
+  assert.equal(res('hero-title').textContent,'현재 가정으로는 기간 내 미도달이에요');
+  data.savings.actual=[];h.render();
+  assert.equal(res('hero-percent').textContent,'미기록');
+  assert.equal(res('hero-title').textContent,'월말 기록을 입력하면 5억 도달 시점을 계산해요');
+  assert.equal(res('goal-remaining').textContent,'목표 5억 원');
+  assert.equal(res('last-date').textContent,'아직 입력된 월말 기록이 없어요');
+  assert.equal(res('step-end').textContent,'실제 기록 없음');
+  assert.ok(res('step-bars').className.includes('savings-step-empty'));
+  assert.equal(h.saves(),0);
+});
+
+test('개요 바로가기 버튼: 시나리오·단계 설정과 전체 보기 클릭 및 입력 중 첫 터치 이동을 처리한다',()=>{
+  const h=setup(fixture()),view=h.node('savingsView');
+  const gotoBtn=k=>view.querySelectorAll('[data-savings-goto]').find(b=>b.dataset.savingsGoto===k);
+  gotoBtn('assumptions').onclick();
+  assert.equal(h.node('savingsPaneAssumptions').hidden,false);
+  assert.equal(h.document.activeElement,h.node('savingsTabAssumptions'));
+  const salary=paramInput(h,'salary');salary.focus();salary.value='3500000';
+  gotoBtn('records').onclick();
+  assert.equal(h.saves(),1);assert.equal(h.store.doc.savings.scenarios[0].salary,3500000);
+  assert.equal(h.node('savingsPaneRecords').hidden,false);
+  assert.equal(h.document.activeElement,h.node('savingsTabRecords'));
+});
+
