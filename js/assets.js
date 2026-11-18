@@ -558,11 +558,13 @@ function openItem(id, groupId){
 }
 function openGroup(id){
   const a=doc.allocation, g=id?a.groups.find(x=>x.id===id):null, f=el("groupForm");
-  // 중국 분류가 없는 옛 기록에도 선택지를 보이되, 선택한 그룹을 저장할 때만 만든다.
+  // 중국 분류가 없는 옛 기록에도 선택지를 보이되, 저장할 때 이미 해외·중국 분류가 생겼으면 새로 만들지 않고 재사용한다.
   const classes=allocationClassList(a);
+  let tempChina=null;
   if(!classes.some(c=>c.region==="해외"&&c.name==="중국")){
     const india=classes.findIndex(c=>c.region==="해외"&&c.name==="인도");
-    classes.splice(india<0?classes.length:india+1,0,{id:newId(),region:"해외",name:"중국"});
+    tempChina={id:newId(),region:"해외",name:"중국"};
+    classes.splice(india<0?classes.length:india+1,0,tempChina);
   }
   el("groupTitle").textContent=g?"그룹 수정":"새 그룹";
   f.classId.innerHTML=classes.map(c=>`<option value="${escA(c.id)}">${escA(c.region||"기타")} · ${escA(c.name)}</option>`).join("");
@@ -587,13 +589,28 @@ function openGroup(id){
     const a=allocationForWrite(), g=id?a?.groups.find(x=>x.id===id):null;
     if(id&&!g){alert("이 그룹이 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.");return;}
     if(!a){alert("자산 배분 기록이 삭제되어 저장하지 않았습니다.");return;}
-    const t=g||{id:newId(),items:[]};
-    t.name=f.name.value.trim()||"이름 없음"; t.classId=f.classId.value; if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
-    const currentClasses=allocationClassList(a);
+    // 창을 열 때 있던 분류가 그사이 삭제됐으면 그룹·분류·소분류를 바꾸기 전에 저장을 막는다(미리 만든 임시 해외·중국만 예외).
+    const currentClasses=allocationClassList(a), groupCid=f.classId.value;
+    const sectionCids=names.map((_,i)=>String(f.querySelector(`[data-sec-class="${i}"]`)?.value||"").trim());
+    const deleted=[];
+    for(const cid of [groupCid,...sectionCids]){
+      if(!cid||cid===tempChina?.id||currentClasses.some(x=>x.id===cid)||deleted.some(x=>x.id===cid))continue;
+      const prev=classes.find(x=>x.id===cid);
+      if(prev)deleted.push(prev);
+    }
+    if(deleted.length){
+      const labels=deleted.map(c=>`'${c.region||"기타"} · ${c.name}'`).join(", ");
+      alert(`선택한 큰 분류(${labels})가 삭제되어 저장하지 않았습니다. 다른 분류를 고른 뒤 다시 저장하세요.`);
+      return;
+    }
+    const existingChina=tempChina?currentClasses.find(c=>c.region==="해외"&&c.name==="중국"):null;
+    const resolveClassId=cid=>tempChina&&cid===tempChina.id?(existingChina?.id||tempChina.id):cid;
     const ensureClass=cid=>{
-      const c=currentClasses.find(x=>x.id===cid)||classes.find(x=>x.id===cid), stored=a.classes.find(x=>x.id===cid);
+      const c=currentClasses.find(x=>x.id===cid)||(tempChina&&!existingChina&&cid===tempChina.id?tempChina:null), stored=a.classes.find(x=>x.id===cid);
       if(c){if(stored)Object.assign(stored,c);else a.classes.push(c);}
     };
+    const t=g||{id:newId(),items:[]};
+    t.name=f.name.value.trim()||"이름 없음"; t.classId=resolveClassId(groupCid); if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
     ensureClass(t.classId);
     if(names.length){
       // 창에 없던 소분류는 방금 읽은 기록에서 그대로 가져온다.
@@ -601,9 +618,9 @@ function openGroup(id){
       t.sections=currentNames.map(n=>{
         const i=names.indexOf(n), prev=old.find(x=>x.name===n);
         if(i<0)return prev;
-        const o={...prev,name:n}, input=f.querySelector(`[data-sec="${i}"]`), select=f.querySelector(`[data-sec-class="${i}"]`), cid=String(select?.value||"").trim();
+        const o={...prev,name:n}, input=f.querySelector(`[data-sec="${i}"]`), rawCid=sectionCids[i], cid=resolveClassId(rawCid);
         if(!input.disabled)setNum(o,"target",input.value);
-        if(cid&&cid!==t.classId&&classes.some(x=>x.id===cid)){ensureClass(cid);o.classId=cid;}else delete o.classId;
+        if(cid&&cid!==t.classId&&classes.some(x=>x.id===rawCid)){ensureClass(cid);o.classId=cid;}else delete o.classId;
         return o;
       });
     }
