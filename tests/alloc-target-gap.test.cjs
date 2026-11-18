@@ -217,6 +217,73 @@ test('소분류 투자구성 분류: 그룹 수정 창에서 지정·해제하�
   assert.equal(Object.hasOwn(data.allocation.groups[0].sections[1], 'classId'), false, '그룹 분류와 같아지면 delete');
 });
 
+test('그룹 수정 창은 처음부터 목록에 없는 분류 ID에만 빈 선택을 보이고 저장을 막으며 막힌 뒤 선택지를 갱신한다', () => {
+  const base = () => ({
+    version: 1,
+    allocation: {
+      savedAt: '', total: 1000, cashFx: 1400, memo: '',
+      classes: [{id: 'c-btc', region: '외화·원자재', name: '디지털자산'}, {id: 'c-raw', region: '외화·원자재', name: '원자재'}],
+      groups: [
+        {id: 'g-ok', name: '정상 그룹', classId: 'c-btc', sections: [{name: '가상 코인', target: 10}], items: [{id: 'i1', name: '가상 코인 ETF', section: '가상 코인', amount: 100}]},
+        {id: 'g-miss', name: '누락 그룹', classId: 'missing-id', items: [{id: 'i2', name: '가상 종목', section: '사라질 소분류', amount: 50}]},
+      ],
+      cash: [],
+    },
+  });
+  const saved = [], alerts = [];
+  const data = base(), before = JSON.stringify(data);
+  const {ctx, node} = page(data, planner, '#alloc', name => saved.push(name));
+  ctx.alert = msg => alerts.push(msg);
+  const gf = node('groupForm'), st = node('sectionTargets');
+  Object.assign(gf, {name: {value: ''}, classId: {innerHTML: '', value: ''}, target: {value: '', disabled: false, placeholder: ''}, note: {value: ''}});
+  const secInputs = {0: {value: '', disabled: false}}, secSelects = {0: {value: '', innerHTML: ''}};
+  gf.querySelector = sel => {
+    const mSec = /^\[data-sec="(\d+)"\]$/.exec(sel);
+    if (mSec) return secInputs[mSec[1]];
+    const mCls = /^\[data-sec-class="(\d+)"\]$/.exec(sel);
+    if (mCls) return secSelects[mCls[1]];
+    return node(`groupForm:${sel}`);
+  };
+  // 정상 그룹에는 빈 선택을 보이지 않는다.
+  vm.runInContext('openGroup("g-ok")', ctx);
+  assert.equal(gf.classId.value, 'c-btc');
+  assert.doesNotMatch(gf.classId.innerHTML, /분류 없음 · 다시 고르세요|<option value=""/);
+  assert.equal(st.innerHTML.includes('c-raw'), true);
+
+  // 누락 분류 ID 그룹은 열기만 해서는 기록을 바꾸지 않고 빈 선택을 보여 선택해 둔다.
+  vm.runInContext('openGroup("g-miss")', ctx);
+  assert.equal(JSON.stringify(data), before);
+  assert.equal(saved.length, 0);
+  assert.equal(gf.classId.value, '');
+  assert.match(gf.classId.innerHTML, /^<option value="">분류 없음 · 다시 고르세요<\/option>/);
+
+  // 빈 선택으로 저장을 누르면 막고, 다른 탭 변경(사라진 소분류 + 새 분류 추가)이 반영된다.
+  const next = base();
+  next.allocation.classes.push({id: 'c-new', region: '국내', name: '가상 새 분류'});
+  delete next.allocation.groups[1].items[0].section;
+  ctx.assetStore.doc = next;
+  vm.runInContext('doc=assetStore.doc;render()', ctx);
+  const beforeNext = JSON.stringify(next);
+  gf.name.value = '가상 이름 유지';
+  gf.onsubmit({preventDefault() {}});
+  assert.equal(JSON.stringify(next), beforeNext);
+  assert.equal(saved.length, 0);
+  assert.equal(alerts.length, 1);
+  assert.match(alerts[0], /큰 분류를 고르세요/);
+  assert.equal(gf.name.value, '가상 이름 유지');
+  assert.equal(gf.classId.value, '');
+  assert.match(gf.classId.innerHTML, /value="c-new">국내 · 가상 새 분류<\/option>/);
+  assert.match(secSelects[0].innerHTML, /value="c-new">국내 · 가상 새 분류<\/option>/);
+
+  // 새 분류를 고르고 저장하면 없어진 소분류는 다시 만들지 않고 저장된다.
+  gf.classId.value = 'c-new';
+  gf.onsubmit({preventDefault() {}});
+  assert.deepEqual(saved, ['allocation']);
+  assert.equal(next.allocation.groups[1].classId, 'c-new');
+  assert.equal(Object.hasOwn(next.allocation.groups[1], 'sections'), false);
+});
+
+
 test('투자구성 분류 줄을 누르면 이 분류에 합산되는 그룹·종목·현금을 펼치고, 자산 배분에서 보기는 그 그룹 카드를 펼쳐 이동한다', () => {
   const data = {version: 1, allocation: {savedAt: '', total: 1000, cashFx: 1400, memo: '',
     classes: [{id: 'c-btc', region: '외화·원자재', name: '디지털자산'}, {id: 'c-raw', region: '외화·원자재', name: '원자재'}, {id: 'c-cash', region: '현금', name: '현금', cash: true}, {id: 'c-none', region: '미국', name: '빈 분류'}],
