@@ -9,15 +9,16 @@ const publicBytes = Uint8Array.from({length:65}, (_, i) => i === 0 ? 4 : i);
 const publicKey = Buffer.from(publicBytes).toString('base64url');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false}={}){
+function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,onShowNotification=null}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
+  const testStats = {sync:0,showNotification:0,shown:[]};
   const classes = new Set();
   const alertsBtn = {
     title:'알림내역',ariaLabel:'알림',
     classList:{toggle(name,on){if(on)classes.add(name);else classes.delete(name);},contains:name=>classes.has(name)},
     setAttribute(name,value){if(name==='aria-label')this.ariaLabel=value;else this[name]=value;}
   };
-  const nodes = {pushSetup:{},enablePhonePush:{},disablePhonePush:{},alertsBtn,alertsUnreadBadge:{hidden:true,textContent:''}};
+  const nodes = {pushSetup:{},enablePhonePush:{},testPhonePush:{},disablePhonePush:{},alertsBtn,alertsUnreadBadge:{hidden:true,textContent:''}};
   const storage = new Map();
   const subscription = {
     endpoint:'https://push.example.test/device',
@@ -27,12 +28,14 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
   };
   const notification = {
     permission,
-    async requestPermission(){calls.permission++;calls.order.push('permission');this.permission='granted';return this.permission;}
+    async requestPermission(){calls.permission++;calls.order.push('permission');this.permission=typeof permission==='function'?permission():'granted';return this.permission;}
   };
-  const registration = {active:true,pushManager:{
-    async getSubscription(){return existing?subscription:null;},
-    async subscribe(){calls.subscribe++;calls.order.push('subscribe');return subscription;}
-  }};
+  const registration = {active:true,
+    async showNotification(...args){testStats.showNotification++;calls.order.push('showNotification');testStats.shown.push(args);if(onShowNotification)return await onShowNotification(...args);},
+    pushManager:{
+      async getSubscription(){return existing?subscription:null;},
+      async subscribe(){calls.subscribe++;calls.order.push('subscribe');return subscription;}
+    }};
   const serviceWorker = {
     async getRegistration(){return registration;},
     async register(){calls.register++;calls.order.push('register');return registration;},
@@ -51,6 +54,7 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     ...(pc?{matchMedia:query=>({matches:query==='(hover:hover) and (pointer:fine)'})}:{})
   });
   ctx.syncNow=async()=>{
+    testStats.sync++;
     if(syncMode==='busy'){ctx.sync.again=true;return;}
     if(syncMode==='failed'){ctx.sync.failed=true;return;}
     if(syncMode==='discard'){ctx.state.alerts.subscriptions=[];}
@@ -58,7 +62,7 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
   };
   vm.runInContext(source,ctx);
   vm.runInContext(`pushConfig={repo:sync.repo,publicKey:${JSON.stringify(publicKey)},ready:${ready}}`,ctx);
-  return {ctx,calls,nodes,subscription,storage,message:()=>vm.runInContext('pushMessage',ctx)};
+  return {ctx,calls,testStats,nodes,subscription,storage,notification,registration,message:()=>vm.runInContext('pushMessage',ctx)};
 }
 
 const savedDevice = (endpoint='https://push.example.test/device',deviceId='device-test') => ({alerts:{rules:[],subscriptions:[{id:deviceId,subscription:{endpoint}}]}});
@@ -299,4 +303,85 @@ test('휴대폰에서는 PC도 따로 연결할 수 있다고 안내한다',()=>
   ctx.renderPushSetup();
   assert.match(nodes.pushSetup.innerHTML,/이 휴대폰에서 알림 받기/);
   assert.match(nodes.pushSetup.innerHTML,/PC에서도 받으려면/);
+  assert.match(nodes.pushSetup.innerHTML,/id="testPhonePush"[^>]*>알림 테스트<\/button>/);
 });
+
+test('알림 테스트 버튼은 동기화 전에도 누를 수 있고 미지원·차단 상태에서만 비활성화된다',()=>{
+  const {ctx,nodes}=load({existing:false,ready:false});
+  ctx.sync.token='';
+  ctx.renderPushSetup();
+  assert.equal(nodes.testPhonePush.disabled,false);
+  assert.doesNotMatch(nodes.pushSetup.innerHTML.match(/<button[^>]*id="testPhonePush"[^>]*>/)[0],/\bdisabled\b/);
+
+  const blocked=load({permission:'denied'});
+  blocked.ctx.renderPushSetup();
+  assert.equal(blocked.nodes.testPhonePush.disabled,true);
+  assert.match(blocked.nodes.pushSetup.innerHTML.match(/<button[^>]*id="testPhonePush"[^>]*>/)[0],/\bdisabled\b/);
+
+  const unsupported=load();
+  delete unsupported.ctx.window.PushManager;
+  unsupported.ctx.renderPushSetup();
+  assert.equal(unsupported.nodes.testPhonePush.disabled,true);
+});
+
+test('알림 테스트는 클릭 시 권한을 먼저 확인하고 PNG 아이콘으로 로컬 알림을 표시하며 기록·구독·동기화를 바꾸지 않는다',async()=>{
+  const {ctx,calls,testStats,nodes,storage,message}=load({initial:savedDevice(),permission:'default'});
+  ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  const before=JSON.stringify(ctx.state),storedBefore=[...storage];
+  await ctx.initializePush();
+  const initialSub=vm.runInContext('pushSubscription',ctx);
+  await nodes.testPhonePush.onclick();
+  assert.deepEqual(calls.order,['permission','register','showNotification']);
+  assert.equal(calls.subscribe,0);
+  assert.equal(calls.unsubscribe,0);
+  assert.equal(calls.save,0);
+  assert.equal(testStats.sync,0);
+  assert.equal(testStats.showNotification,1);
+  const [title,options]=testStats.shown[0];
+  assert.equal(title,'매매 플래너 테스트 알림');
+  assert.equal(options.tag,'etf-planner-push-test');
+  assert.equal(options.renotify,true);
+  assert.equal(options.data.url,'https://example.test/etf-planner/');
+  assert.equal(options.icon,'https://example.test/etf-planner/icons/planner-192.png');
+  assert.match(message(),/이 휴대폰에 테스트 알림을 보냈습니다/);
+  assert.match(message(),/웹사이트·기타 알림/);
+  assert.equal(vm.runInContext('pushSubscription',ctx),initialSub);
+  assert.equal(JSON.stringify(ctx.state),before);
+  assert.deepEqual([...storage],storedBefore);
+
+  const pc=load({pc:true});
+  pc.ctx.renderPushSetup();
+  await pc.nodes.testPhonePush.onclick();
+  assert.match(pc.message(),/이 PC에 테스트 알림을 보냈습니다/);
+  assert.match(pc.message(),/브라우저·운영체제 알림 설정/);
+});
+
+test('알림 테스트에서 권한이 거부되거나 아이콘 실패·표시 오류가 나도 안전하게 안내하고 기록을 바꾸지 않는다',async()=>{
+  const denied=load({permission:()=> 'denied'});
+  denied.ctx.renderPushSetup();
+  await denied.nodes.testPhonePush.onclick();
+  assert.equal(denied.calls.permission,1);
+  assert.equal(denied.calls.register,0);
+  assert.equal(denied.testStats.showNotification,0);
+  assert.match(denied.message(),/알림이 허용되지 않았습니다/);
+
+  let iconAttempt=0;
+  const fallback=load({onShowNotification:async(_,options)=>{iconAttempt++;if(options.icon)throw new Error('icon-decode-fail');}});
+  const before=JSON.stringify(fallback.ctx.state);
+  fallback.ctx.renderPushSetup();
+  await fallback.nodes.testPhonePush.onclick();
+  assert.equal(iconAttempt,2);
+  assert.equal(fallback.testStats.shown.length,2);
+  assert.equal('icon' in fallback.testStats.shown[1][1],false);
+  assert.match(fallback.message(),/테스트 알림을 보냈습니다/);
+  assert.equal(JSON.stringify(fallback.ctx.state),before);
+
+  const errored=load({onShowNotification:async()=>{throw Object.assign(new Error('internal-secret'),{name:'TypeError'});}});
+  errored.ctx.renderPushSetup();
+  await errored.nodes.testPhonePush.onclick();
+  assert.match(errored.message(),/테스트 알림 표시 · TypeError/);
+  assert.doesNotMatch(errored.message(),/internal-secret/);
+  assert.equal(vm.runInContext('pushBusy',errored.ctx),false);
+  assert.equal(vm.runInContext('pushTesting',errored.ctx),false);
+});
+
