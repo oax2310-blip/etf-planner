@@ -9,7 +9,7 @@ const publicBytes = Uint8Array.from({length:65}, (_, i) => i === 0 ? 4 : i);
 const publicKey = Buffer.from(publicBytes).toString('base64url');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,onShowNotification=null,getNotifications=null,activeState=undefined,nativeApp=false,displayMode='browser',isSecureContext=true,gh=null}={}){
+function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,nativeApp=false,displayMode='browser',isSecureContext=true,gh=null}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
   const testStats = {sync:0,showNotification:0,shown:[]};
   const classes = new Set();
@@ -20,6 +20,7 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
   };
   const nodes = {pushSetup:{},enablePhonePush:{},testPhonePush:{},disablePhonePush:{},alertsBtn,alertsUnreadBadge:{hidden:true,textContent:''}};
   const storage = new Map();
+  const docListeners = new Map();
   const subscription = {
     endpoint:'https://push.example.test/device',
     options:{applicationServerKey:publicBytes.buffer},
@@ -46,12 +47,26 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     if(pc&&query==='(hover:hover) and (pointer:fine)')return true;
     return query===`(display-mode:${displayMode})`;
   };
+  const navigatorMock = {
+    serviceWorker,
+    userAgent,
+    platform,
+    maxTouchPoints,
+    ...(standalone!==undefined?{standalone}:{})
+  };
+  const docMock = {
+    hidden:false,
+    readyState:'complete',
+    addEventListener(type,fn){if(!docListeners.has(type))docListeners.set(type,[]);docListeners.get(type).push(fn);},
+    baseURI:'https://example.test/etf-planner/',
+    ...(nativeApp?{documentElement:{dataset:{nativeApp:'android'}}}:{})
+  };
   const ctx = vm.createContext({
     state:plain(initial),sync:{repo:'owner/private-data',token:'test',base:'{}',busy:syncMode==='busy',failed:false,blocked:false},
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     window:{isSecureContext,PushManager:function(){},Notification:notification},
-    navigator:{serviceWorker},Notification:notification,
-    addEventListener(){},document:{addEventListener(){},baseURI:'https://example.test/etf-planner/',...(nativeApp?{documentElement:{dataset:{nativeApp:'android'}}}:{})},URL,Uint8Array,atob,setTimeout,clearTimeout,
+    navigator:navigatorMock,Notification:notification,
+    addEventListener(){},document:docMock,URL,Uint8Array,atob,setTimeout,clearTimeout,
     assetStore:{subscribe(){}},
     $:name=>nodes[name],id:()=> 'device-test',esc:value=>String(value),
     connected:()=>!!ctx.sync.token,
@@ -68,7 +83,90 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
   };
   vm.runInContext(source,ctx);
   vm.runInContext(`pushConfig={repo:sync.repo,publicKey:${JSON.stringify(publicKey)},ready:${ready}}`,ctx);
-  return {ctx,calls,testStats,nodes,subscription,storage,notification,registration,serviceWorker,message:()=>vm.runInContext('pushMessage',ctx),tone:()=>vm.runInContext('pushMessageTone',ctx),detail:()=>vm.runInContext('pushMessageDetail',ctx)};
+  return {ctx,calls,testStats,nodes,subscription,storage,notification,registration,serviceWorker,docMock,docListeners,message:()=>vm.runInContext('pushMessage',ctx),tone:()=>vm.runInContext('pushMessageTone',ctx),detail:()=>vm.runInContext('pushMessageDetail',ctx)};
+}
+
+function attachLiveDom(h){
+  function makeElement(tag){
+    const attrs = new Map();
+    let _text = '', _innerHTMLWrites = 0;
+    const el = {
+      nodeType:1,
+      tagName:String(tag).toUpperCase(),
+      className:'',
+      disabled:false,
+      type:'',
+      onclick:null,
+      children:[],
+      parentElement:null,
+      setAttribute(name,value){
+        const k=String(name),v=String(value);
+        if(k==='id')this.id=v;
+        else if(k==='class')this.className=v;
+        else attrs.set(k,v);
+      },
+      getAttribute(name){
+        const k=String(name);
+        if(k==='id')return this.id||null;
+        if(k==='class')return this.className||null;
+        return attrs.has(k)?attrs.get(k):null;
+      },
+      hasAttribute(name){return this.getAttribute(name)!==null;},
+      appendChild(child){
+        if(child.parentElement)child.parentElement.children=child.parentElement.children.filter(c=>c!==child);
+        child.parentElement=this;
+        this.children.push(child);
+        return child;
+      },
+      remove(){
+        if(this.parentElement){
+          this.parentElement.children=this.parentElement.children.filter(c=>c!==this);
+          this.parentElement=null;
+        }
+      },
+      get textContent(){
+        if(this.children.length)return this.children.map(c=>c.textContent).join('');
+        return _text;
+      },
+      set textContent(v){
+        _text=String(v);
+        for(const c of this.children)c.parentElement=null;
+        this.children=[];
+      },
+      get innerHTML(){return '';},
+      set innerHTML(_v){_innerHTMLWrites++;},
+      get innerHTMLWrites(){return _innerHTMLWrites;},
+      querySelector(selector){
+        const match=node=>{
+          if(selector.startsWith('#'))return node.id===selector.slice(1);
+          if(selector.startsWith('.'))return String(node.className||'').split(/\s+/).includes(selector.slice(1));
+          if(selector.startsWith('[')&&selector.endsWith(']'))return node.hasAttribute(selector.slice(1,-1));
+          return node.tagName===selector.toUpperCase();
+        };
+        const queue=[...this.children];
+        while(queue.length){
+          const cur=queue.shift();
+          if(match(cur))return cur;
+          queue.push(...cur.children);
+        }
+        return null;
+      },
+      contains(target){
+        let cur=target;
+        while(cur){if(cur===this)return true;cur=cur.parentElement;}
+        return false;
+      }
+    };
+    return el;
+  }
+  const root = makeElement('div');
+  root.id = 'pushSetup';
+  h.docMock.createElement = makeElement;
+  Object.defineProperty(h.nodes, 'pushSetup', { value: root, configurable: true });
+  for (const id of ['enablePhonePush', 'testPhonePush', 'disablePhonePush', 'pushFeedback']) {
+    Object.defineProperty(h.nodes, id, { get: () => root.querySelector(`#${id}`), configurable: true });
+  }
+  return root;
 }
 
 const savedDevice = (endpoint='https://push.example.test/device',deviceId='device-test') => ({alerts:{rules:[],subscriptions:[{id:deviceId,subscription:{endpoint}}]}});
@@ -331,7 +429,8 @@ test('알림 테스트 버튼은 동기화 전에도 누를 수 있고 미지원
 });
 
 test('알림 테스트는 클릭 시 권한을 먼저 확인하고 PNG 아이콘으로 로컬 알림을 표시하며 기록·구독·동기화를 바꾸지 않는다',async()=>{
-  const {ctx,calls,testStats,nodes,storage,message}=load({initial:savedDevice(),permission:'default'});
+  const samsungUa='Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36';
+  const {ctx,calls,testStats,nodes,storage,message}=load({initial:savedDevice(),permission:'default',userAgent:samsungUa});
   ctx.localStorage.setItem('etf-planner-push-device','device-test');
   const before=JSON.stringify(ctx.state),storedBefore=[...storage];
   await ctx.initializePush();
@@ -464,7 +563,8 @@ test('알림 테스트는 이전 테스트 알림을 정리한 뒤 활성 알림
 });
 
 test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, 차단(denied) 상태를 버튼 클릭 전·후로 진단한다',async()=>{
-  const silentPrompt=load({permission:()=> 'default',displayMode:'fullscreen'});
+  const chromeAndroidUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  const silentPrompt=load({permission:()=> 'default',displayMode:'fullscreen',userAgent:chromeAndroidUa});
   silentPrompt.ctx.renderPushSetup();
   await silentPrompt.nodes.testPhonePush.onclick();
   assert.equal(silentPrompt.tone(),'warn');
@@ -521,3 +621,196 @@ test('같은 화면 상태의 반복 렌더는 DOM 버튼을 갈아엎지 않고
   assert.equal(picked,activeReg);
 });
 
+test('배경 동기화 오류·복구와 테스트 실행 중에도 실제 DOM 버튼 노드를 유지하고 중복 클릭을 막는다',async()=>{
+  let ghMode='ok';
+  let releaseNotify;
+  const h=load({
+    initial:savedDevice(),
+    gh:async()=>ghMode==='ok'
+      ?{status:200,ok:true,async text(){return JSON.stringify({publicKey,ready:true});}}
+      :{status:500,ok:false,async text(){return 'fail';}},
+    onShowNotification:()=>new Promise(resolve=>{releaseNotify=resolve;})
+  });
+  h.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  const root=attachLiveDom(h);
+  await h.ctx.initializePush();
+
+  const enableBtn=h.nodes.enablePhonePush;
+  const testBtn=h.nodes.testPhonePush;
+  const disableBtn=h.nodes.disablePhonePush;
+  assert.ok(enableBtn&&testBtn&&disableBtn);
+  assert.equal(root.innerHTMLWrites,0);
+
+  ghMode='error';
+  await h.ctx.readPushConfig();
+  assert.equal(h.nodes.enablePhonePush,enableBtn,'동기화 오류 발생 뒤에도 알림 받기 버튼 DOM 노드를 유지한다');
+  assert.equal(h.nodes.testPhonePush,testBtn,'동기화 오류 발생 뒤에도 알림 테스트 버튼 DOM 노드를 유지한다');
+  assert.equal(h.nodes.disablePhonePush,disableBtn,'동기화 오류 발생 뒤에도 해제 버튼 DOM 노드를 유지한다');
+  assert.match(h.nodes.pushFeedback.className,/warn/);
+  assert.match(h.nodes.pushFeedback.textContent,/발송 상태 확인 필요/);
+
+  const running=testBtn.onclick();
+  await new Promise(setImmediate);
+  assert.equal(h.nodes.enablePhonePush,enableBtn);
+  assert.equal(h.nodes.testPhonePush,testBtn);
+  assert.equal(testBtn.disabled,true);
+  assert.equal(enableBtn.disabled,true);
+  assert.equal(disableBtn.disabled,true);
+  assert.equal(testBtn.textContent,'테스트 중…');
+  await testBtn.onclick();
+  await enableBtn.onclick();
+  assert.equal(h.testStats.showNotification,1,'실행 중 중복 클릭은 새 테스트·연결을 실행하지 않는다');
+
+  ghMode='ok';
+  await h.ctx.readPushConfig();
+  assert.equal(h.nodes.enablePhonePush,enableBtn,'동기화 오류 해소 뒤에도 알림 받기 버튼 DOM 노드를 유지한다');
+  assert.equal(h.nodes.testPhonePush,testBtn,'동기화 오류 해소 뒤에도 알림 테스트 버튼 DOM 노드를 유지한다');
+  assert.equal(h.nodes.disablePhonePush,disableBtn,'동기화 오류 해소 뒤에도 해제 버튼 DOM 노드를 유지한다');
+
+  releaseNotify();
+  await running;
+  assert.equal(h.testStats.showNotification,1);
+  assert.equal(testBtn.disabled,false);
+  assert.equal(enableBtn.disabled,false);
+  assert.equal(disableBtn.disabled,false);
+  assert.equal(testBtn.textContent,'알림 테스트');
+  assert.match(h.nodes.pushFeedback.className,/ok/);
+  assert.equal(root.innerHTMLWrites,0);
+});
+
+test('현재 알림 권한이 denied이면 처음부터든 테스트 성공 뒤든 차단 사유·해제 방법을 우선 표시한다',async()=>{
+  const initDenied=load({initial:savedDevice(),permission:'denied'});
+  initDenied.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  attachLiveDom(initDenied);
+  await initDenied.ctx.initializePush();
+  assert.equal(initDenied.nodes.enablePhonePush.disabled,true);
+  assert.equal(initDenied.nodes.testPhonePush.disabled,true);
+  assert.match(initDenied.nodes.pushFeedback.className,/\bbad\b/);
+  assert.match(initDenied.nodes.pushFeedback.textContent,/권한 차단됨/);
+  assert.match(initDenied.nodes.pushFeedback.textContent,/Notification\.permission: denied/);
+
+  let ghMode='ok';
+  const h=load({
+    initial:savedDevice(),
+    gh:async()=>ghMode==='ok'
+      ?{status:200,ok:true,async text(){return JSON.stringify({publicKey,ready:true});}}
+      :{status:500,ok:false,async text(){return 'fail';}}
+  });
+  h.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  const root=attachLiveDom(h);
+  await h.ctx.initializePush();
+  await h.nodes.testPhonePush.onclick();
+  assert.match(h.nodes.pushFeedback.className,/\bok\b/);
+  assert.match(h.nodes.pushFeedback.textContent,/확인 완료/);
+
+  ghMode='error';
+  await h.ctx.readPushConfig();
+  assert.match(h.nodes.pushFeedback.className,/\bok\b/,'권한이 그대로일 때는 배경 동기화 실패가 테스트 결과를 지우지 않는다');
+  assert.match(h.nodes.pushFeedback.textContent,/확인 완료/);
+  assert.match(h.nodes.pushFeedback.textContent,/알림 발송 상태를 확인하지 못했습니다/);
+
+  ghMode='ok';
+  await h.ctx.readPushConfig();
+  assert.match(h.nodes.pushFeedback.className,/\bok\b/);
+  assert.match(h.nodes.pushFeedback.textContent,/확인 완료/);
+  assert.doesNotMatch(h.nodes.pushFeedback.textContent,/알림 발송 상태를 확인하지 못했습니다/);
+
+  h.notification.permission='denied';
+  h.ctx.renderPushSetup();
+  assert.equal(h.nodes.enablePhonePush.disabled,true);
+  assert.equal(h.nodes.testPhonePush.disabled,true);
+  assert.match(h.nodes.pushFeedback.className,/\bbad\b/);
+  assert.match(h.nodes.pushFeedback.textContent,/권한 차단됨/);
+  assert.match(h.nodes.pushFeedback.textContent,/Notification\.permission: denied/);
+  assert.doesNotMatch(h.nodes.pushFeedback.textContent,/확인 완료|권한 granted/);
+
+  h.notification.permission='granted';
+  h.docMock.hidden=false;
+  for(const fn of h.docListeners.get('visibilitychange')||[])fn();
+  assert.doesNotMatch(h.nodes.pushFeedback.textContent,/확인 완료|권한 granted/,'차단 상태를 거친 뒤 복귀해도 예전 성공 배너를 되살리지 않는다');
+  assert.equal(h.nodes.testPhonePush.disabled,false);
+  assert.equal(root.innerHTMLWrites,0);
+});
+
+test('상태바 숨김 안내는 fullscreen에서만 표시하고 standalone·minimal-ui·browser에서는 숨긴다',async()=>{
+  const androidChromeUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  for(const mode of ['standalone','minimal-ui','browser']){
+    const one=load({displayMode:mode,userAgent:androidChromeUa,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+    one.ctx.renderPushSetup();
+    await one.nodes.testPhonePush.onclick();
+    assert.doesNotMatch(one.nodes.pushSetup.innerHTML,/전체화면|상태바/,`${mode} 모드 바닥·1건 안내에 상태바 숨김을 표시하지 않는다`);
+    assert.doesNotMatch(one.detail(),/전체화면|상태바/);
+
+    const zero=load({displayMode:mode,userAgent:androidChromeUa,getNotifications:async()=>[]});
+    zero.ctx.renderPushSetup();
+    await zero.nodes.testPhonePush.onclick();
+    assert.doesNotMatch(zero.nodes.pushSetup.innerHTML,/전체화면|상태바/,`${mode} 모드 0건 안내에 상태바 숨김을 표시하지 않는다`);
+    assert.doesNotMatch(zero.detail(),/전체화면|상태바/);
+  }
+
+  const iosStandalone=load({
+    userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
+    standalone:true,
+    getNotifications:async()=>[]
+  });
+  iosStandalone.ctx.renderPushSetup();
+  await iosStandalone.nodes.testPhonePush.onclick();
+  assert.equal(iosStandalone.ctx.pushDisplayMode(),'standalone');
+  assert.doesNotMatch(iosStandalone.nodes.pushSetup.innerHTML,/전체화면|상태바/);
+
+  const full=load({displayMode:'fullscreen',userAgent:androidChromeUa,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+  full.ctx.renderPushSetup();
+  await full.nodes.testPhonePush.onclick();
+  assert.match(full.detail(),/전체화면에서는 위쪽 상태바가 가려지니/);
+  assert.match(full.nodes.pushSetup.innerHTML,/전체화면 웹앱에서는 위쪽 상태바 아이콘이 숨겨집니다/);
+});
+
+test('iOS 홈 화면 웹앱과 비안드로이드 환경에서는 삼성 인터넷·Chrome·안드로이드 알림 카테고리 문구를 노출하지 않고 두 버튼이 같은 기준으로 권한을 요청한다',async t=>{
+  const iosDevices=[
+    {name:'iPhone',userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',standalone:true},
+    {name:'iPad',userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',platform:'MacIntel',maxTouchPoints:5,displayMode:'standalone'}
+  ];
+  for(const dev of iosDevices)await t.test(dev.name,async()=>{
+    for(const action of ['enablePhonePush','testPhonePush']){
+      const h=load({permission:()=> 'default',...dev});
+      h.ctx.renderPushSetup();
+      await h.nodes[action].onclick();
+      assert.equal(h.calls.permission,1);
+      assert.equal(h.calls.order[0],'permission','권한 요청은 클릭 경로에서 바로 호출한다');
+      assert.equal(h.tone(),'warn');
+      assert.match(h.message(),/이 홈 화면 앱에서 알림을 허용해야 합니다/);
+      assert.match(h.detail(),/권한 default/);
+      assert.match(h.detail(),/아이폰·iPad 설정 → 알림에서 이 홈 화면 앱/);
+      assert.doesNotMatch(h.nodes.pushSetup.innerHTML,/삼성 인터넷|Chrome|웹사이트·기타 알림|안드로이드 알림 카테고리|팝업으로 알림|전체화면|상태바/);
+    }
+    const denied=load({permission:'denied',...dev});
+    denied.ctx.renderPushSetup();
+    assert.match(denied.nodes.pushSetup.innerHTML,/아이폰·iPad 설정 → 알림에서 이 홈 화면 웹앱/);
+    assert.doesNotMatch(denied.nodes.pushSetup.innerHTML,/삼성 인터넷|Chrome|웹사이트·기타 알림|팝업으로 알림/);
+  });
+
+  const androidChromeUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  for(const action of ['enablePhonePush','testPhonePush']){
+    const h=load({permission:()=> 'default',userAgent:androidChromeUa,displayMode:'standalone'});
+    h.ctx.renderPushSetup();
+    await h.nodes[action].onclick();
+    assert.equal(h.calls.order[0],'permission');
+    assert.match(h.detail(),/삼성 인터넷·Chrome 일반 창/);
+  }
+  const androidSuccess=load({userAgent:androidChromeUa,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+  androidSuccess.ctx.renderPushSetup();
+  await androidSuccess.nodes.testPhonePush.onclick();
+  assert.match(androidSuccess.detail(),/안드로이드 앱 알림 카테고리/);
+  assert.doesNotMatch(androidSuccess.nodes.pushSetup.innerHTML,/웹사이트·기타 알림/);
+
+  const nonAndroid=[
+    load({permission:()=> 'default',userAgent:'',displayMode:'standalone'}),
+    load({permission:()=> 'default',pc:true}),
+    load({permission:'granted',userAgent:'',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]})
+  ];
+  for(const h of nonAndroid){
+    h.ctx.renderPushSetup();
+    await h.nodes.testPhonePush.onclick();
+    assert.doesNotMatch(h.nodes.pushSetup.innerHTML,/삼성 인터넷|Chrome 일반 창|웹사이트·기타 알림|팝업으로 알림|안드로이드 앱 알림 카테고리/);
+  }
+});
