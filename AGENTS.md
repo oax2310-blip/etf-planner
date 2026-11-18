@@ -8,7 +8,7 @@
 - main 최신 상태 기준으로 관련 부분만 수정. 요청은 한 브랜치, 마지막에 PR→병합(Pages 자동 게시).
 - PR이 있는 작업은 최종 답변과 PR 본문에 병합 전 PR 전체 검토를 요청하는 복사용 코드 블록을 넣는다. 프롬프트에는 저장소·PR 번호·주소와 발견 사항의 보고 형식을 적는다. 마지막 줄에는 `[PR #번호](PR 주소) · 검토 요청 — 병합 전 PR 전체 검토`를 적는다. [검토 프롬프트 양식](docs/gemini-delegation.md#pr-검토-프롬프트)
 - 화면 변경은 병합 전 바뀐 화면 캡처만으로 사용자 확인. 글자만 바꾸는 작은 변경은 캡처 생략. 캡처는 대화로만 보여 주고 저장소·PR에 커밋하지 않는다.
-- 사용자에게 보여 주는 시안은 항상 다크 화면. 폰 시안은 393×852·터치·sRGB·기존 Pretendard 글꼴로 캡처 조건을 고정하고 마우스 호버를 해제한다. 사이트의 다크 테마와 삼성 인터넷의 웹페이지 다크 색 변환을 구분해 확인한다. 기본 시안은 대기 회차로 상태를 맞추고, 부분 체결·기준가 도달 예시는 따로 표시한다.
+- 사용자에게 보여 주는 시안은 항상 다크 화면. 폰 시안은 393×852·터치·sRGB·기존 Pretendard 글꼴로 캡처 조건을 고정하고 마우스 호버를 해제한다. 폰 화면의 점검 판정(줄바꿈·겹침·넘침 등)도 이 크기로 하고, 다른 폭은 사용자가 요청할 때만 확인한다. 사이트의 다크 테마와 삼성 인터넷의 웹페이지 다크 색 변환을 구분해 확인한다. 기본 시안은 대기 회차로 상태를 맞추고, 부분 체결·기준가 도달 예시는 따로 표시한다.
 - 빌드·외부 라이브러리 추가 금지(기존 Pretendard CSS 제외). 일반 script 전역 이름은 중복 금지.
 - CSS·JS 변경 시 세 HTML의 로컬 참조 ?v=를 함께 +1. push-sw.js의 importScripts ?v=도 같은 값으로 맞춘다. node scripts/bump-asset-version.cjs로 올린다. 로딩 순서는 script 태그·tests/files.test.cjs가 기준. theme.js만 head의 CSS 앞에서 바로 실행, 나머지 script는 defer(CSP meta가 미리 받기를 꺼서), 인라인 script 금지.
 - 검증: node --test --test-reporter=dot tests/*.cjs(성공은 점, 실패만 상세. 파일만 집계되면 --experimental-test-isolation=none 추가. tests/android-*.test.cjs는 JDK의 javac·java 또는 ETF_ANDROID_JDK가 없으면 실패). 수정 중에는 grep -l 파일명 tests/*.cjs로 찾은 관련 테스트부터. 계산 규칙은 담당 함수 주석에만 두고 변경 시 같이 수정.
