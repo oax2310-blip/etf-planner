@@ -122,8 +122,7 @@ function pushIsChromeAndroid(){
   if(!pushIsAndroid()||pushIsAndroidWebView()||navigator.brave)return false;
   if(!/Chrome\//i.test(ua)||/SamsungBrowser|Firefox|Fennec|EdgA|Edg\/|OPR\/|OPT\/|Whale\/|YaBrowser|UCBrowser|MiuiBrowser|HuaweiBrowser|Vivaldi|Brave|DuckDuckGo|Kiwi|NAVER|KAKAOTALK|Instagram|FB_IAB|FBAN|FBAV|Line\/|GSA\//i.test(ua))return false;
   const brands=navigator.userAgentData?.brands;
-  if(Array.isArray(brands))return brands.some(b=>/^Google Chrome$/i.test(String(b?.brand||"")))&&!brands.some(b=>/Brave|WebView|Edge|Samsung|Opera|Whale|Vivaldi|DuckDuckGo|Kiwi/i.test(String(b?.brand||"")));
-  return true;
+  return Array.isArray(brands)&&brands.some(b=>/^Google Chrome$/i.test(String(b?.brand||"")))&&!brands.some(b=>/Brave|WebView|Edge|Samsung|Opera|Whale|Vivaldi|DuckDuckGo|Kiwi/i.test(String(b?.brand||"")));
 }
 function pushAndroidBrowserLabel(){
   if(pushIsAndroidWebView())return "";

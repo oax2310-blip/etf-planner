@@ -566,7 +566,8 @@ test('알림 테스트는 이전 테스트 알림을 정리한 뒤 활성 알림
 
 test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, 차단(denied) 상태를 버튼 클릭 전·후로 진단한다',async()=>{
   const chromeAndroidUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
-  const silentPrompt=load({permission:()=> 'default',displayMode:'fullscreen',userAgent:chromeAndroidUa});
+  const chromeUserAgentData={brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'};
+  const silentPrompt=load({permission:()=> 'default',displayMode:'fullscreen',userAgent:chromeAndroidUa,userAgentData:chromeUserAgentData});
   silentPrompt.ctx.renderPushSetup();
   await silentPrompt.nodes.testPhonePush.onclick();
   assert.equal(silentPrompt.tone(),'warn');
@@ -737,14 +738,15 @@ test('현재 알림 권한이 denied이면 처음부터든 테스트 성공 뒤�
 
 test('상태바 숨김 안내는 fullscreen에서만 표시하고 standalone·minimal-ui·browser에서는 숨긴다',async()=>{
   const androidChromeUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  const chromeUserAgentData={brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'};
   for(const mode of ['standalone','minimal-ui','browser']){
-    const one=load({displayMode:mode,userAgent:androidChromeUa,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+    const one=load({displayMode:mode,userAgent:androidChromeUa,userAgentData:chromeUserAgentData,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
     one.ctx.renderPushSetup();
     await one.nodes.testPhonePush.onclick();
     assert.doesNotMatch(one.nodes.pushSetup.innerHTML,/전체화면|상태바/,`${mode} 모드 바닥·1건 안내에 상태바 숨김을 표시하지 않는다`);
     assert.doesNotMatch(one.detail(),/전체화면|상태바/);
 
-    const zero=load({displayMode:mode,userAgent:androidChromeUa,getNotifications:async()=>[]});
+    const zero=load({displayMode:mode,userAgent:androidChromeUa,userAgentData:chromeUserAgentData,getNotifications:async()=>[]});
     zero.ctx.renderPushSetup();
     await zero.nodes.testPhonePush.onclick();
     assert.doesNotMatch(zero.nodes.pushSetup.innerHTML,/전체화면|상태바/,`${mode} 모드 0건 안내에 상태바 숨김을 표시하지 않는다`);
@@ -761,7 +763,7 @@ test('상태바 숨김 안내는 fullscreen에서만 표시하고 standalone·mi
   assert.equal(iosStandalone.ctx.pushDisplayMode(),'standalone');
   assert.doesNotMatch(iosStandalone.nodes.pushSetup.innerHTML,/전체화면|상태바/);
 
-  const full=load({displayMode:'fullscreen',userAgent:androidChromeUa,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+  const full=load({displayMode:'fullscreen',userAgent:androidChromeUa,userAgentData:chromeUserAgentData,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
   full.ctx.renderPushSetup();
   await full.nodes.testPhonePush.onclick();
   assert.match(full.detail(),/전체화면에서는 위쪽 상태바가 가려지니/);
@@ -793,15 +795,16 @@ test('iOS 홈 화면 웹앱과 비안드로이드 환경에서는 삼성 인터�
   });
 
   const androidChromeUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  const chromeUserAgentData={brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'};
   for(const action of ['enablePhonePush','testPhonePush']){
-    const h=load({permission:()=> 'default',userAgent:androidChromeUa,displayMode:'standalone'});
+    const h=load({permission:()=> 'default',userAgent:androidChromeUa,userAgentData:chromeUserAgentData,displayMode:'standalone'});
     h.ctx.renderPushSetup();
     await h.nodes[action].onclick();
     assert.equal(h.calls.order[0],'permission');
     assert.match(h.detail(),/Chrome 일반 창/);
     assert.doesNotMatch(h.nodes.pushSetup.innerHTML,/삼성 인터넷|Firefox/);
   }
-  const androidSuccess=load({userAgent:androidChromeUa,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+  const androidSuccess=load({userAgent:androidChromeUa,userAgentData:chromeUserAgentData,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
   androidSuccess.ctx.renderPushSetup();
   await androidSuccess.nodes.testPhonePush.onclick();
   assert.match(androidSuccess.detail(),/안드로이드 앱 알림 카테고리/);
@@ -930,6 +933,7 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
     {
       name:'Chrome',
       ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+      userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'},
       mustContain:/Chrome/,
       webappDefaultDetail:/Chrome 일반 창/,
       browserDefaultDetail:/Chrome 주소창 옆 설정/,
@@ -953,7 +957,7 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
     for(const mode of ['standalone','browser']){
       // default: pushPermissionRejectedFeedback() 직접 확인 + 알림 받기/알림 테스트 클릭 확인
       for(const action of ['enablePhonePush','testPhonePush']){
-        const def=load({permission:()=> 'default',userAgent:b.ua,displayMode:mode});
+        const def=load({permission:()=> 'default',userAgent:b.ua,userAgentData:b.userAgentData,displayMode:mode});
         attachLiveDom(def);
         def.ctx.renderPushSetup();
         const directDefault=def.ctx.pushPermissionRejectedFeedback('default');
@@ -969,7 +973,7 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
       }
 
       // denied: 초기 렌더 + pushBlockedDetail() + 권한 요청 거부 후 알림 받기/알림 테스트 확인
-      const initDenied=load({permission:'denied',userAgent:b.ua,displayMode:mode});
+      const initDenied=load({permission:'denied',userAgent:b.ua,userAgentData:b.userAgentData,displayMode:mode});
       attachLiveDom(initDenied);
       initDenied.ctx.renderPushSetup();
       const blockedDetail=initDenied.ctx.pushBlockedDetail();
@@ -979,7 +983,7 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
       assert.doesNotMatch(initDenied.nodes.pushSetup.textContent,b.forbidden);
 
       for(const action of ['enablePhonePush','testPhonePush']){
-        const rej=load({permission:()=> 'denied',userAgent:b.ua,displayMode:mode});
+        const rej=load({permission:()=> 'denied',userAgent:b.ua,userAgentData:b.userAgentData,displayMode:mode});
         attachLiveDom(rej);
         rej.ctx.renderPushSetup();
         const directDenied=rej.ctx.pushPermissionRejectedFeedback('denied');
@@ -996,7 +1000,7 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
     }
 
     // granted 테스트 알림 성공 후에도 Firefox에 삼성 인터넷·Chrome 문구가 섞이지 않는다
-    const granted=load({permission:'granted',userAgent:b.ua,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+    const granted=load({permission:'granted',userAgent:b.ua,userAgentData:b.userAgentData,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
     attachLiveDom(granted);
     granted.ctx.renderPushSetup();
     await granted.nodes.testPhonePush.onclick();
@@ -1017,7 +1021,7 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
   assert.doesNotMatch(inApp.nodes.pushSetup.textContent,/삼성 인터넷|Chrome|Firefox/);
 });
 
-test('표준 Android WebView(; wv) + Chrome/)와 Chrome 미확인 Brave 모의 환경은 Chrome 대신 현재 앱 또는 설치한 브라우저로 안내한다',async t=>{
+test('표준 Android WebView(; wv) + Chrome/)와 Brave·userAgentData 미확인 Chrome UA는 Chrome 대신 현재 앱 또는 설치한 브라우저로 안내한다',async t=>{
   const androidChromeUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
   const webviewCases=[
     {name:'표준 WebView(; wv + Version/4.0 + Chrome/)',ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240905.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36'},
@@ -1070,6 +1074,8 @@ test('표준 Android WebView(; wv) + Chrome/)와 Chrome 미확인 Brave 모의 �
   });
 
   const braveAndUnconfirmedCases=[
+    {name:'Chrome/ UA만 있고 navigator.brave·navigator.userAgentData 없음'},
+    {name:'Chrome/ UA + navigator.userAgentData 있으나 brands 속성 없음',userAgentData:{mobile:true,platform:'Android'}},
     {name:'Brave navigator.brave + Chrome UA',brave:{async isBrave(){return true;}}},
     {name:'Brave userAgentData.brands + Chrome UA',userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Brave',version:'130'}],mobile:true,platform:'Android'}},
     {name:'Brave navigator.brave + userAgentData.brands + Chrome UA',brave:{},userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Brave',version:'130'}],mobile:true,platform:'Android'}},
@@ -1086,7 +1092,7 @@ test('표준 Android WebView(; wv) + Chrome/)와 Chrome 미확인 Brave 모의 �
     assert.match(unsup.nodes.pushSetup.textContent,/현재 앱|설치한 브라우저/);
     assert.doesNotMatch(unsup.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/);
 
-    for(const mode of ['standalone','browser']){
+    for(const mode of ['standalone','fullscreen','browser']){
       for(const action of ['enablePhonePush','testPhonePush']){
         const def=load({permission:()=> 'default',userAgent:androidChromeUa,brave:br.brave,userAgentData:br.userAgentData,displayMode:mode});
         attachLiveDom(def);
@@ -1107,17 +1113,22 @@ test('표준 Android WebView(; wv) + Chrome/)와 Chrome 미확인 Brave 모의 �
   });
 
   // 실제 Chrome의 userAgentData('Google Chrome' 브랜드 포함, navigator.brave 없음)는 계속 Chrome으로 안내한다
-  const confirmedChrome=load({
-    permission:()=> 'default',
-    userAgent:androidChromeUa,
-    userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'},
-    displayMode:'standalone'
-  });
-  attachLiveDom(confirmedChrome);
-  confirmedChrome.ctx.renderPushSetup();
-  await confirmedChrome.nodes.testPhonePush.onclick();
-  assert.equal(confirmedChrome.ctx.pushIsAndroidWebView(),false);
-  assert.equal(confirmedChrome.ctx.pushIsChromeAndroid(),true);
-  assert.match(confirmedChrome.detail(),/Chrome 일반 창에서 먼저 허용/);
-  assert.doesNotMatch(confirmedChrome.nodes.pushSetup.textContent,/삼성 인터넷|Firefox/);
+  const confirmedChromeData={brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'};
+  for(const mode of ['standalone','fullscreen']){
+    for(const action of ['enablePhonePush','testPhonePush']){
+      const confirmedChrome=load({
+        permission:()=> 'default',
+        userAgent:androidChromeUa,
+        userAgentData:confirmedChromeData,
+        displayMode:mode
+      });
+      attachLiveDom(confirmedChrome);
+      confirmedChrome.ctx.renderPushSetup();
+      await confirmedChrome.nodes[action].onclick();
+      assert.equal(confirmedChrome.ctx.pushIsAndroidWebView(),false);
+      assert.equal(confirmedChrome.ctx.pushIsChromeAndroid(),true);
+      assert.match(confirmedChrome.detail(),/Chrome 일반 창에서 먼저 허용/);
+      assert.doesNotMatch(confirmedChrome.nodes.pushSetup.textContent,/삼성 인터넷|Firefox/);
+    }
+  }
 });
