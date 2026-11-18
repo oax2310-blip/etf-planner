@@ -280,6 +280,159 @@ test('그룹 저장은 다른 탭이 추가한 소분류와 최신 분류·종�
   assert.deepEqual(saved.ledger,next.ledger);
 });
 
+test('그룹 분류로 고른 저장된 분류가 다른 탭에서 지워지면 다시 만들지 않고 창과 입력을 유지한다',()=>{
+  const data=allocationTabFixture();
+  data.allocation.groups[0].sections=[{name:'가상 기존 소분류',target:5}];
+  const h=page(data),next=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm'),secTarget=f.querySelector('[data-sec="0"]');
+  f.name.value='가상 바꾼 그룹 이름';f.classId.value='unused';f.target.value='15';f.note.value='가상 입력 메모';secTarget.value='9';
+  next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='unused');
+  next.allocation.classes[0].name='가상 최신 주식 분류';
+  const beforeNext=JSON.stringify(next);
+  h.replaceDoc(next);saveForm(f);
+  assert.equal(JSON.stringify(next),beforeNext,'막았을 때 메모리 doc은 바뀌지 않음');
+  assert.equal(next.allocation.classes.some(c=>c.id==='unused'),false);
+  assert.deepEqual(h.writes,[]);assert.equal(h.storage.has('etf-planner-assets-v1'),false);
+  assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 큰 분류/);assert.match(h.alerts[0],/삭제되어 저장하지 않았습니다/);assert.match(h.alerts[0],/다른 분류/);
+  assert.equal(h.node('groupDialog').open,true);
+  assert.equal(f.name.value,'가상 바꾼 그룹 이름');assert.equal(f.classId.value,'unused');
+  assert.equal(f.target.value,'15');assert.equal(f.note.value,'가상 입력 메모');assert.equal(secTarget.value,'9');
+  // 다른 분류로 고친 뒤 다시 저장하면 최신 기록에 반영된다.
+  f.classId.value='stock';saveForm(f);
+  const saved=h.saved();
+  assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('groupDialog').open,false);
+  assert.equal(saved.allocation.groups[0].name,'가상 바꾼 그룹 이름');
+  assert.equal(saved.allocation.groups[0].classId,'stock');
+  assert.equal(saved.allocation.classes.some(c=>c.id==='unused'),false);
+  assert.equal(saved.allocation.classes[0].name,'가상 최신 주식 분류');
+});
+
+test('새 그룹 추가나 직전 absorbLocal로 지운 분류도 다시 만들지 않고 저장을 막는다',()=>{
+  const data=allocationTabFixture(),h=page(data),late=otherTabSave(data);
+  h.ctx.openGroup(null);
+  const f=h.node('groupForm');f.name.value='가상 새 그룹';f.classId.value='unused';f.note.value='가상 새 그룹 메모';
+  late.allocation.classes=late.allocation.classes.filter(c=>c.id!=='unused');
+  const beforeLate=JSON.stringify(late);
+  h.store.absorbLocal=()=>{h.store.doc=late;};
+  saveForm(f);
+  assert.equal(JSON.stringify(late),beforeLate,'새 그룹 추가도 막으면 doc을 바꾸지 않음');
+  assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 큰 분류/);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(f.name.value,'가상 새 그룹');assert.equal(f.classId.value,'unused');assert.equal(f.note.value,'가상 새 그룹 메모');
+});
+
+test('소분류 분류로 고른 저장된 분류가 지워지면 그룹·분류·소분류를 바꾸기 전에 저장을 막는다',()=>{
+  for(const pickTempChina of [false,true]){
+    const data=allocationTabFixture(),group=data.allocation.groups[0];
+    group.sections=[{name:'가상 소분류 1',target:4}];
+    group.items.push({id:'sec-it',name:'가상 소분류 종목',section:'가상 소분류 1'});
+    const h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),tempId=/<option value="([^"]+)">해외 · 중국<\/option>/.exec(f.classId.innerHTML)?.[1];
+    assert.ok(tempId);
+    f.name.value='가상 고친 그룹 이름';f.note.value='가상 고친 메모';
+    f.classId.value=pickTempChina?tempId:'stock';
+    const secTarget=f.querySelector('[data-sec="0"]'),secClass=f.querySelector('[data-sec-class="0"]');
+    secTarget.value='9';secClass.value='unused';
+    next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='unused');
+    next.allocation.groups[0].sections.unshift({name:'가상 다른 탭 소분류',target:2});
+    const beforeNext=JSON.stringify(next);
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(JSON.stringify(next),beforeNext,'소분류 분류가 지워져도 doc의 그룹·분류·소분류 모두 그대로');
+    assert.equal(next.allocation.classes.some(c=>c.id==='unused'||c.id===tempId),false);
+    assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 큰 분류/);assert.match(h.alerts[0],/다른 분류/);
+    assert.equal(h.node('groupDialog').open,true);
+    assert.equal(f.name.value,'가상 고친 그룹 이름');assert.equal(f.note.value,'가상 고친 메모');
+    assert.equal(f.classId.value,pickTempChina?tempId:'stock');assert.equal(secTarget.value,'9');assert.equal(secClass.value,'unused');
+  }
+});
+
+test('창을 열 때 이미 저장돼 있던 해외·중국 분류가 지워지면 임시 예외로 살리지 않고 막는다',()=>{
+  for(const legacy of [false,true]){
+    const data=allocationTabFixture();
+    data.allocation.classes.push(legacy?{id:'cn-stored',region:'중국',name:'주식'}:{id:'cn-stored',region:'해외',name:'중국'});
+    const h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm');f.classId.value='cn-stored';
+    next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='cn-stored');
+    const beforeNext=JSON.stringify(next);
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(JSON.stringify(next),beforeNext);
+    assert.equal(next.allocation.classes.some(c=>c.id==='cn-stored'||c.name==='중국'),false);
+    assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/중국/);
+    assert.equal(h.node('groupDialog').open,true);assert.equal(f.classId.value,'cn-stored');
+  }
+});
+
+test('창을 열 때 만든 임시 해외·중국을 그룹 또는 소분류로 고르면 저장할 때 분류를 만든다',()=>{
+  for(const target of ['group','section']){
+    const data=allocationTabFixture();
+    data.allocation.groups[0].sections=[{name:'가상 소분류',target:5}];
+    const h=page(data);h.openGroup('g1');
+    const f=h.node('groupForm'),tempId=/<option value="([^"]+)">해외 · 중국<\/option>/.exec(f.classId.innerHTML)?.[1];
+    assert.ok(tempId);
+    f.name.value='가상 중국 테스트';f.querySelector('[data-sec="0"]').value='5';
+    if(target==='group')f.classId.value=tempId;
+    else f.querySelector('[data-sec-class="0"]').value=tempId;
+    saveForm(f);
+    const saved=h.saved(),china=saved.allocation.classes.filter(c=>c.region==='해외'&&c.name==='중국');
+    assert.equal(china.length,1);assert.equal(china[0].id,tempId);
+    assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('groupDialog').open,false);
+    if(target==='group'){
+      assert.equal(saved.allocation.groups[0].classId,tempId);
+      assert.equal(Object.hasOwn(saved.allocation.groups[0].sections[0],'classId'),false);
+    }else{
+      assert.equal(saved.allocation.groups[0].classId,'stock');
+      assert.equal(saved.allocation.groups[0].sections[0].classId,tempId);
+    }
+  }
+});
+
+test('창이 열린 사이 다른 탭이 해외·중국을 이미 만들었으면 중복 생성 없이 그 분류를 재사용한다',()=>{
+  for(const mode of ['group','newGroup','section','both']){
+    for(const legacy of [false,true]){
+      const data=allocationTabFixture();
+      data.allocation.groups[0].sections=[{name:'가상 소분류',target:5}];
+      const h=page(data),next=otherTabSave(data);
+      if(mode==='newGroup')h.ctx.openGroup(null);else h.openGroup('g1');
+      const f=h.node('groupForm'),tempId=/<option value="([^"]+)">해외 · 중국<\/option>/.exec(f.classId.innerHTML)?.[1];
+      assert.ok(tempId);
+      f.name.value='가상 중국 재사용';
+      if(mode!=='newGroup')f.querySelector('[data-sec="0"]').value='5';
+      if(mode!=='section')f.classId.value=tempId;
+      if(mode==='section'||mode==='both')f.querySelector('[data-sec-class="0"]').value=tempId;
+      next.allocation.classes.push(legacy?{id:'cn-tab-b',region:'중국',name:'주식'}:{id:'cn-tab-b',region:'해외',name:'중국'});
+      h.replaceDoc(next);saveForm(f);
+      const saved=h.saved(),china=saved.allocation.classes.filter(c=>c.region==='해외'&&c.name==='중국');
+      assert.equal(china.length,1,`${mode}/${legacy}: 중복 생성 금지`);
+      assert.equal(china[0].id,'cn-tab-b');
+      assert.equal(saved.allocation.classes.some(c=>c.id===tempId),false);
+      assert.deepEqual(h.writes,['allocation']);assert.equal(h.node('groupDialog').open,false);
+      const grp=mode==='newGroup'?saved.allocation.groups.at(-1):saved.allocation.groups[0];
+      assert.equal(grp.classId,mode==='section'?'stock':'cn-tab-b');
+      if(mode==='section')assert.equal(grp.sections[0].classId,'cn-tab-b');
+      else if(mode==='both')assert.equal(Object.hasOwn(grp.sections[0],'classId'),false);
+    }
+  }
+});
+
+test('다른 탭이 바꾼 분류 이름·지역을 옛 선택지 값으로 덮어쓰지 않는다',()=>{
+  const data=allocationTabFixture();
+  data.allocation.groups[0].sections=[{name:'가상 소분류',target:5}];
+  const h=page(data),next=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm');
+  f.classId.value='stock';f.querySelector('[data-sec="0"]').value='5';f.querySelector('[data-sec-class="0"]').value='unused';
+  Object.assign(next.allocation.classes[0],{region:'미국',name:'가상 바뀐 주식'});
+  Object.assign(next.allocation.classes[1],{region:'해외',name:'가상 바뀐 분류 이름'});
+  h.replaceDoc(next);saveForm(f);
+  const saved=h.saved();
+  assert.deepEqual(saved.allocation.classes.map(c=>({id:c.id,region:c.region,name:c.name})),[
+    {id:'stock',region:'미국',name:'가상 바뀐 주식'},
+    {id:'unused',region:'해외',name:'가상 바뀐 분류 이름'},
+  ]);
+});
+
 function btcFixture(averageCurrency){
   const data=fixture(),quotes=quoteFixture(),item=data.allocation.groups[0].items[0];
   Object.assign(item,{name:'가상 비트코인',ticker:'BTC-USD',shares:.01,averagePrice:70000000});
