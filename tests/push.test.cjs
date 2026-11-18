@@ -570,7 +570,8 @@ test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, �
   assert.equal(silentPrompt.tone(),'warn');
   assert.match(silentPrompt.message(),/알림이 허용되지 않았습니다/);
   assert.match(silentPrompt.detail(),/권한 default/);
-  assert.match(silentPrompt.detail(),/삼성 인터넷·Chrome 일반 창/);
+  assert.match(silentPrompt.detail(),/Chrome 일반 창/);
+  assert.doesNotMatch(silentPrompt.nodes.pushSetup.innerHTML,/삼성 인터넷|Firefox/);
 
   const pcPrompt=load({permission:()=> 'default',pc:true});
   pcPrompt.ctx.renderPushSetup();
@@ -795,13 +796,14 @@ test('iOS 홈 화면 웹앱과 비안드로이드 환경에서는 삼성 인터�
     h.ctx.renderPushSetup();
     await h.nodes[action].onclick();
     assert.equal(h.calls.order[0],'permission');
-    assert.match(h.detail(),/삼성 인터넷·Chrome 일반 창/);
+    assert.match(h.detail(),/Chrome 일반 창/);
+    assert.doesNotMatch(h.nodes.pushSetup.innerHTML,/삼성 인터넷|Firefox/);
   }
   const androidSuccess=load({userAgent:androidChromeUa,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
   androidSuccess.ctx.renderPushSetup();
   await androidSuccess.nodes.testPhonePush.onclick();
   assert.match(androidSuccess.detail(),/안드로이드 앱 알림 카테고리/);
-  assert.doesNotMatch(androidSuccess.nodes.pushSetup.innerHTML,/웹사이트·기타 알림/);
+  assert.doesNotMatch(androidSuccess.nodes.pushSetup.innerHTML,/웹사이트·기타 알림|삼성 인터넷|Firefox/);
 
   const nonAndroid=[
     load({permission:()=> 'default',userAgent:'',displayMode:'standalone'}),
@@ -813,4 +815,202 @@ test('iOS 홈 화면 웹앱과 비안드로이드 환경에서는 삼성 인터�
     await h.nodes.testPhonePush.onclick();
     assert.doesNotMatch(h.nodes.pushSetup.innerHTML,/삼성 인터넷|Chrome 일반 창|웹사이트·기타 알림|팝업으로 알림|안드로이드 앱 알림 카테고리/);
   }
+});
+
+test('renderPushSetup은 granted→default, denied→granted, default→granted 전환 시 이전 배너를 지우고 권한 불변 배경 동기화에는 유지한다',async()=>{
+  // 1) granted → default(다시 묻기): 테스트 성공 뒤 다시 묻기로 바꾸고 설정 창을 다시 열면 '확인 완료 · 권한 granted'가 남지 않는다.
+  let ghMode='ok';
+  const gToD=load({
+    initial:savedDevice(),
+    permission:'granted',
+    gh:async()=>ghMode==='ok'
+      ?{status:200,ok:true,async text(){return JSON.stringify({publicKey,ready:true});}}
+      :{status:500,ok:false,async text(){return 'fail';}}
+  });
+  gToD.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+  attachLiveDom(gToD);
+  await gToD.ctx.initializePush();
+  await gToD.nodes.testPhonePush.onclick();
+  assert.match(gToD.nodes.pushFeedback.textContent,/확인 완료/);
+  assert.match(gToD.nodes.pushFeedback.textContent,/권한 granted/);
+
+  // 권한이 그대로(granted)인 배경 동기화 성공·오류에서는 최근 테스트 결과를 보존한다.
+  ghMode='error';
+  await gToD.ctx.readPushConfig();
+  assert.match(gToD.nodes.pushFeedback.className,/\bok\b/);
+  assert.match(gToD.nodes.pushFeedback.textContent,/확인 완료/);
+  assert.match(gToD.nodes.pushFeedback.textContent,/알림 발송 상태를 확인하지 못했습니다/);
+  ghMode='ok';
+  await gToD.ctx.readPushConfig();
+  assert.match(gToD.nodes.pushFeedback.className,/\bok\b/);
+  assert.match(gToD.nodes.pushFeedback.textContent,/확인 완료/);
+  assert.doesNotMatch(gToD.nodes.pushFeedback.textContent,/알림 발송 상태를 확인하지 못했습니다/);
+
+  gToD.notification.permission='default';
+  gToD.ctx.renderPushSetup();
+  assert.equal(gToD.nodes.enablePhonePush.disabled,false);
+  assert.equal(gToD.nodes.testPhonePush.disabled,false);
+  assert.equal(gToD.message(),'');
+  assert.equal(gToD.nodes.pushFeedback.className,'push-feedback');
+  assert.equal(gToD.nodes.pushFeedback.textContent,'');
+
+  // 2) denied → granted: 권한 요청 거부 후 허용하고 같은 탭으로 돌아오면 '실행 불가 · denied'와 차단 배너가 모두 사라진다.
+  for(const action of ['enablePhonePush','testPhonePush']){
+    const dToG=load({initial:savedDevice(),permission:()=> 'denied'});
+    dToG.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+    attachLiveDom(dToG);
+    await dToG.ctx.initializePush();
+    await dToG.nodes[action].onclick();
+    assert.equal(dToG.tone(),'bad');
+    assert.match(dToG.nodes.pushFeedback.className,/\bbad\b/);
+    assert.match(dToG.nodes.pushFeedback.textContent,/권한 차단됨/);
+    assert.equal(dToG.nodes.enablePhonePush.disabled,true);
+    assert.equal(dToG.nodes.testPhonePush.disabled,true);
+
+    dToG.notification.permission='granted';
+    dToG.docMock.hidden=false;
+    for(const fn of dToG.docListeners.get('visibilitychange')||[])fn();
+    assert.equal(dToG.nodes.enablePhonePush.disabled,false);
+    assert.equal(dToG.nodes.testPhonePush.disabled,false);
+    assert.equal(dToG.message(),'',`${action}: 허용 전환 후 이전 거부 메시지가 남지 않는다`);
+    assert.equal(dToG.nodes.pushFeedback.className,'push-feedback');
+    assert.equal(dToG.nodes.pushFeedback.textContent,'','허용 전환 후 실행 불가·denied 배너를 지운다');
+  }
+
+  // 3) default → granted: default 무응답(확인 필요) 배너는 배경 동기화에서 유지되고, 허용 전환 시 지워진다.
+  for(const action of ['enablePhonePush','testPhonePush']){
+    let mode='ok';
+    const defToG=load({
+      initial:savedDevice(),
+      permission:()=> 'default',
+      gh:async()=>mode==='ok'
+        ?{status:200,ok:true,async text(){return JSON.stringify({publicKey,ready:true});}}
+        :{status:500,ok:false,async text(){return 'fail';}}
+    });
+    defToG.ctx.localStorage.setItem('etf-planner-push-device','device-test');
+    attachLiveDom(defToG);
+    await defToG.ctx.initializePush();
+    await defToG.nodes[action].onclick();
+    assert.match(defToG.nodes.pushFeedback.className,/\bwarn\b/);
+    assert.match(defToG.nodes.pushFeedback.textContent,/확인 필요/);
+    assert.match(defToG.nodes.pushFeedback.textContent,/권한 default/);
+
+    mode='error';
+    await defToG.ctx.readPushConfig();
+    assert.match(defToG.nodes.pushFeedback.className,/\bwarn\b/,'권한(default)이 그대로면 배경 동기화 실패에도 이전 결과를 유지한다');
+    assert.match(defToG.nodes.pushFeedback.textContent,/확인 필요/);
+    mode='ok';
+    await defToG.ctx.readPushConfig();
+    assert.match(defToG.nodes.pushFeedback.textContent,/확인 필요/);
+
+    defToG.notification.permission='granted';
+    defToG.ctx.renderPushSetup();
+    assert.equal(defToG.nodes.enablePhonePush.disabled,false);
+    assert.equal(defToG.nodes.testPhonePush.disabled,false);
+    assert.equal(defToG.message(),'');
+    assert.equal(defToG.nodes.pushFeedback.className,'push-feedback');
+    assert.equal(defToG.nodes.pushFeedback.textContent,'');
+  }
+});
+
+test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현재 브라우저·웹앱에 맞고 다른 브라우저를 섞지 않는다',async t=>{
+  const browsers=[
+    {
+      name:'Firefox',
+      ua:'Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0',
+      mustContain:/Firefox/,
+      webappDefaultDetail:/Firefox 일반 창/,
+      browserDefaultDetail:/Firefox 주소창 왼쪽 자물쇠·설정/,
+      webappDeniedDetail:/애플리케이션 → Firefox → 알림.*Firefox 일반 창/,
+      browserDeniedDetail:/Firefox 설정 → 사이트 권한 → 알림/,
+      forbidden:/삼성 인터넷|Chrome|웹사이트·기타 알림/
+    },
+    {
+      name:'Chrome',
+      ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+      mustContain:/Chrome/,
+      webappDefaultDetail:/Chrome 일반 창/,
+      browserDefaultDetail:/Chrome 주소창 옆 설정/,
+      webappDeniedDetail:/애플리케이션 → Chrome·이 웹앱 알림.*Chrome 사이트 설정/,
+      browserDeniedDetail:/Chrome → 사이트 설정 → 알림/,
+      forbidden:/삼성 인터넷|Firefox|웹사이트·기타 알림/
+    },
+    {
+      name:'삼성 인터넷',
+      ua:'Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36',
+      mustContain:/삼성 인터넷/,
+      webappDefaultDetail:/삼성 인터넷 일반 창/,
+      browserDefaultDetail:/삼성 인터넷 주소창 옆 설정/,
+      webappDeniedDetail:/애플리케이션 → 삼성 인터넷 → 알림.*삼성 인터넷 사이트 설정/,
+      browserDeniedDetail:/삼성 인터넷 → 설정 → 사이트 및 다운로드 → 알림/,
+      forbidden:/Chrome|Firefox/
+    }
+  ];
+
+  for(const b of browsers)await t.test(b.name,async()=>{
+    for(const mode of ['standalone','browser']){
+      // default: pushPermissionRejectedFeedback() 직접 확인 + 알림 받기/알림 테스트 클릭 확인
+      for(const action of ['enablePhonePush','testPhonePush']){
+        const def=load({permission:()=> 'default',userAgent:b.ua,displayMode:mode});
+        attachLiveDom(def);
+        def.ctx.renderPushSetup();
+        const directDefault=def.ctx.pushPermissionRejectedFeedback('default');
+        assert.match(directDefault.message,b.mustContain);
+        assert.doesNotMatch(directDefault.message+directDefault.detail,b.forbidden);
+        assert.match(directDefault.detail,mode==='standalone'?b.webappDefaultDetail:b.browserDefaultDetail);
+
+        await def.nodes[action].onclick();
+        assert.equal(def.tone(),'warn');
+        assert.match(def.message(),b.mustContain,`${b.name}(${mode}) ${action} default 메시지`);
+        assert.match(def.detail(),mode==='standalone'?b.webappDefaultDetail:b.browserDefaultDetail,`${b.name}(${mode}) ${action} default 상세`);
+        assert.doesNotMatch(def.nodes.pushSetup.textContent,b.forbidden,`${b.name}(${mode}) ${action} default DOM 누출 없음`);
+      }
+
+      // denied: 초기 렌더 + pushBlockedDetail() + 권한 요청 거부 후 알림 받기/알림 테스트 확인
+      const initDenied=load({permission:'denied',userAgent:b.ua,displayMode:mode});
+      attachLiveDom(initDenied);
+      initDenied.ctx.renderPushSetup();
+      const blockedDetail=initDenied.ctx.pushBlockedDetail();
+      assert.match(blockedDetail,mode==='standalone'?b.webappDeniedDetail:b.browserDeniedDetail);
+      assert.doesNotMatch(blockedDetail,b.forbidden);
+      assert.match(initDenied.nodes.pushSetup.textContent,mode==='standalone'?b.webappDeniedDetail:b.browserDeniedDetail);
+      assert.doesNotMatch(initDenied.nodes.pushSetup.textContent,b.forbidden);
+
+      for(const action of ['enablePhonePush','testPhonePush']){
+        const rej=load({permission:()=> 'denied',userAgent:b.ua,displayMode:mode});
+        attachLiveDom(rej);
+        rej.ctx.renderPushSetup();
+        const directDenied=rej.ctx.pushPermissionRejectedFeedback('denied');
+        assert.match(directDenied.detail,mode==='standalone'?b.webappDeniedDetail:b.browserDeniedDetail);
+        assert.doesNotMatch(directDenied.message+directDenied.detail,b.forbidden);
+
+        await rej.nodes[action].onclick();
+        assert.equal(rej.tone(),'bad');
+        assert.match(rej.detail(),mode==='standalone'?b.webappDeniedDetail:b.browserDeniedDetail,`${b.name}(${mode}) ${action} denied detail`);
+        assert.doesNotMatch(rej.detail(),b.forbidden);
+        assert.match(rej.nodes.pushSetup.textContent,mode==='standalone'?b.webappDeniedDetail:b.browserDeniedDetail,`${b.name}(${mode}) ${action} denied DOM`);
+        assert.doesNotMatch(rej.nodes.pushSetup.textContent,b.forbidden,`${b.name}(${mode}) ${action} denied DOM 누출 없음`);
+      }
+    }
+
+    // granted 테스트 알림 성공 후에도 Firefox에 삼성 인터넷·Chrome 문구가 섞이지 않는다
+    const granted=load({permission:'granted',userAgent:b.ua,displayMode:'standalone',getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+    attachLiveDom(granted);
+    granted.ctx.renderPushSetup();
+    await granted.nodes.testPhonePush.onclick();
+    assert.match(granted.nodes.pushSetup.textContent,b.mustContain);
+    assert.doesNotMatch(granted.nodes.pushSetup.textContent,b.forbidden);
+  });
+
+  // 비표준 안드로이드 인앱 브라우저(KAKAOTALK 등)는 Chrome으로 오인하지 않고 중립 안내를 쓴다
+  const inApp=load({
+    permission:()=> 'default',
+    userAgent:'Mozilla/5.0 (Linux; Android 14; SM-S921N; wv) AppleWebKit/537.36 Chrome/122.0.0.0 Mobile Safari/537.36 KAKAOTALK 11.0.0',
+    displayMode:'standalone'
+  });
+  attachLiveDom(inApp);
+  inApp.ctx.renderPushSetup();
+  await inApp.nodes.testPhonePush.onclick();
+  assert.match(inApp.detail(),/설치한 브라우저의 일반 창/);
+  assert.doesNotMatch(inApp.nodes.pushSetup.textContent,/삼성 인터넷|Chrome|Firefox/);
 });
