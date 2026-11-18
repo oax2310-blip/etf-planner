@@ -452,6 +452,12 @@ function keepBuyPlans(alloc, removed, dry=false){
 function keepTargets(alloc, removed, moved, dry=false){
   return allocLink.keepTargets(alloc, removed, moved, dry);
 }
+// storage 알림이 아직 도착하지 않았어도 입력 창의 저장·삭제는 현재 기록에 반영한다.
+function allocationForWrite(){
+  assetStore.absorbLocal();
+  doc=assetStore.doc;
+  return doc.allocation;
+}
 function openItem(id, groupId){
   const a=doc.allocation, found=id?findItem(id):null, it=found?.it||{}, f=el("itemForm");
   el("itemTitle").textContent=found?"종목 수정":"새 종목";
@@ -482,7 +488,8 @@ function openItem(id, groupId){
     return draft;
   };
   const preview=()=>{
-    const current=id?findItem(id):null, draft=draftItem(current?.it||{}), alloc=doc.allocation;
+    const alloc=doc.allocation;if(!alloc)return;
+    const current=id?findItem(id):null, draft=draftItem(current?.it||{});
     const value=moneyInputNumber(input.value), moneyValid=moneyInputValidate(input), invalid=!moneyValid||input.value.trim()!==""&&!plus(value);
     const invalidMessage=value>Number.MAX_SAFE_INTEGER?"평균매수가가 입력 가능한 범위를 초과했습니다.":"평균매수가를 0보다 큰 숫자로 입력하세요.";
     input.setCustomValidity(invalid?invalidMessage:"");
@@ -513,14 +520,21 @@ function openItem(id, groupId){
     return `<li><b>${escA(t.label||"체결")}</b><span>${sign}${finite(e.shares)?`${nf2.format(Math.abs(d))}주`:`${man(Math.abs(d))}${it.base?" (입력 금액)":""}`}</span><small>${escA(String(t.at||"").slice(5,10).replace("-","/"))}</small></li>`;}).join("")}</ul>`:"";
   el("itemDelete").hidden=!found;
   el("itemDelete").onclick=()=>{
+    const a=allocationForWrite(), current=findItem(id);
+    if(!current){alert("이 보유 항목은 이미 삭제되었습니다.");dlg("itemDialog").close();return;}
+    const {g,it}=current;
     const removed=new Set([it]), keep=keepBuyPlans(a,removed,true), to=keep.moved[0]?.to, goal=keepTargets(a,removed,keep.moved,true)[0], code=linkTicker(it.ticker), trade=linkTicker(assetTradeTicker(it)), twins=!!(code||trade)&&a.groups.some(g=>g.items.some(x=>x!==it&&linkTicker(x.ticker)===code&&(code||linkTicker(assetTradeTicker(x))===trade)));
     const notes=[to?`분할매수 계획과 체결 기록은 같은 종목의 '${to.name}' 줄로 옮겨 유지합니다.`:"",goal?`목표 비중 ${pc(goal.target)}는 '${goal.to.name}' 줄로 옮깁니다.`:twins&&finite(it.target)!==null?`이 줄의 목표 비중 ${pc(it.target)}는 함께 지워집니다.`:""].filter(Boolean);
     if(!confirm(`'${it.name}' 종목${keep.lost.length?"과 분할매수 계획":""}을 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
-    keepTargets(a,removed,keepBuyPlans(a,removed).moved); found.g.items=found.g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault();preview();if(!input.checkValidity()){input.reportValidity();return;}
-    const a=doc.allocation, current=id?findItem(id):null;
+    keepTargets(a,removed,keepBuyPlans(a,removed).moved); g.items=g.items.filter(x=>x!==it); saveSection("allocation"); dlg("itemDialog").close(); render();
+  };
+  f.onsubmit=e=>{
+    e.preventDefault();
+    const a=allocationForWrite();
+    preview();if(!input.checkValidity()){input.reportValidity();return;}
+    const current=id?findItem(id):null;
     if(id&&!current){alert("이 보유 항목이 삭제되어 저장하지 않았습니다.");dlg("itemDialog").close();return;}
-    if(!a.groups.length){alert("먼저 그룹을 추가하세요.");return;}
+    if(!a?.groups.length){alert("먼저 그룹을 추가하세요.");return;}
     const target=current?.it||{id:newId(),amount:0}, draft=draftItem(target), tradeTicker=draft.tradeTicker||"", sourceKind=purchaseQuoteKind(draft.ticker),tradeKind=purchaseQuoteKind(tradeTicker);
     if(tradeTicker&&(!["국내","해외"].includes(sourceKind)||!["국내","해외"].includes(tradeKind))){alert("기준 티커와 실제 매수 ETF에 국내 종목 코드 또는 미국 심볼을 넣으세요.");f.tradeTicker.focus();return;}
     const g=a.groups.find(x=>x.id===(f.group.value!==initialGroup?f.group.value:current?.g.id||f.group.value));
@@ -561,16 +575,40 @@ function openGroup(id){
   names.forEach((n,i)=>{const select=f.querySelector(`[data-sec-class="${i}"]`),cid=sectionClassId(a,g,n);if(select)select.value=cid&&cid!==g.classId?cid:"";});
   el("groupDelete").hidden=!g;
   el("groupDelete").onclick=()=>{
+    const a=allocationForWrite(), g=a?.groups.find(x=>x.id===id);
+    if(!g){alert("이 그룹은 이미 삭제되었습니다.");dlg("groupDialog").close();return;}
     const removed=new Set(g.items), keep=keepBuyPlans(a,removed,true);
     const notes=[keep.moved.length?`분할매수 계획은 같은 종목의 다른 계좌 줄로 옮겨 유지합니다: ${keep.moved.map(m=>`${m.from.name} → ${m.to.name}`).join(", ")}`:"",keep.lost.length?`분할매수 계획도 함께 삭제됩니다: ${keep.lost.map(x=>x.name).join(", ")}`:""].filter(Boolean);
     if(!confirm(`'${g.name}' 그룹${g.items.length?`과 종목 ${g.items.length}개`:""}를 삭제할까요?${notes.map(n=>`\n${n}`).join("")}`)) return;
-    keepBuyPlans(a,removed); a.groups=a.groups.filter(x=>x!==g); saveSection("allocation"); dlg("groupDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t=g||{id:newId(),items:[]};
+    keepBuyPlans(a,removed); a.groups=a.groups.filter(x=>x!==g); saveSection("allocation"); dlg("groupDialog").close(); render();
+  };
+  f.onsubmit=e=>{
+    e.preventDefault();
+    const a=allocationForWrite(), g=id?a?.groups.find(x=>x.id===id):null;
+    if(id&&!g){alert("이 그룹이 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.");return;}
+    if(!a){alert("자산 배분 기록이 삭제되어 저장하지 않았습니다.");return;}
+    const t=g||{id:newId(),items:[]};
     t.name=f.name.value.trim()||"이름 없음"; t.classId=f.classId.value; if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
-    const ensureClass=cid=>{const c=classes.find(x=>x.id===cid),stored=a.classes.find(x=>x.id===cid);if(c){if(stored)Object.assign(stored,c);else a.classes.push(c);}};
+    const currentClasses=allocationClassList(a);
+    const ensureClass=cid=>{
+      const c=currentClasses.find(x=>x.id===cid)||classes.find(x=>x.id===cid), stored=a.classes.find(x=>x.id===cid);
+      if(c){if(stored)Object.assign(stored,c);else a.classes.push(c);}
+    };
     ensureClass(t.classId);
-    if(names.length){ const old=t.sections||[]; t.sections=names.map((n,i)=>{const prev=old.find(x=>x.name===n)||{},o={...prev,name:n},input=f.querySelector(`[data-sec="${i}"]`),select=f.querySelector(`[data-sec-class="${i}"]`),cid=String(select?.value||"").trim();if(!input.disabled)setNum(o,"target",input.value);if(cid&&cid!==t.classId&&classes.some(x=>x.id===cid)){ensureClass(cid);o.classId=cid;}else delete o.classId;return o;}); }
-    if(!g) a.groups.push(t); saveSection("allocation"); dlg("groupDialog").close(); render(); };
+    if(names.length){
+      // 창에 없던 소분류는 방금 읽은 기록에서 그대로 가져온다.
+      const old=t.sections||[], currentNames=[...new Set([...old.map(s=>s.name),...names])];
+      t.sections=currentNames.map(n=>{
+        const i=names.indexOf(n), prev=old.find(x=>x.name===n);
+        if(i<0)return prev;
+        const o={...prev,name:n}, input=f.querySelector(`[data-sec="${i}"]`), select=f.querySelector(`[data-sec-class="${i}"]`), cid=String(select?.value||"").trim();
+        if(!input.disabled)setNum(o,"target",input.value);
+        if(cid&&cid!==t.classId&&classes.some(x=>x.id===cid)){ensureClass(cid);o.classId=cid;}else delete o.classId;
+        return o;
+      });
+    }
+    if(!g) a.groups.push(t); saveSection("allocation"); dlg("groupDialog").close(); render();
+  };
   dlg("groupDialog").showModal();
 }
 function openClass(id){
@@ -581,17 +619,35 @@ function openClass(id){
   const target=c?allocationTargets(a).classes.get(c.id):{target:null,linked:false};
   f.name.value=display?.name||""; f.region.value=display?.region||""; f.target.value=target.target??""; f.target.disabled=target.linked; f.cash.checked=!!c?.cash;
   // 현금 합계는 한 분류에만 더한다(둘 이상이면 지역 합계에 현금이 겹침). 다른 분류에 있으면 체크할 때 그 분류에서 옮긴다고 알린다.
-  const cashOwner=a.classes.find(x=>x.cash&&x!==c), cashHint=el("classCashHint"), showCashHint=()=>{cashHint.hidden=!(cashOwner&&f.cash.checked);};
-  cashHint.textContent=cashOwner?`저장하면 '${allocationClassList(a).find(x=>x.id===cashOwner.id)?.name||cashOwner.name}' 분류에 더하던 현금 합계를 이 분류로 옮깁니다.`:"";
+  const cashHint=el("classCashHint"), showCashHint=()=>{
+    const current=doc.allocation, cashOwner=current?.classes.find(x=>x.cash&&x.id!==id);
+    cashHint.hidden=!(cashOwner&&f.cash.checked);
+    cashHint.textContent=cashOwner?`저장하면 '${allocationClassList(current).find(x=>x.id===cashOwner.id)?.name||cashOwner.name}' 분류에 더하던 현금 합계를 이 분류로 옮깁니다.`:"";
+  };
   f.cash.onchange=showCashHint; showCashHint();
   el("classTargetHint").textContent=target.linked?"그룹 목표의 합계입니다. 종목별에서 수정하면 자동 반영됩니다.":"하위 목표가 없을 때만 직접 입력합니다. 기준 총자산 대비입니다.";
-  const usedGroups=c?a.groups.filter(g=>g.classId===c.id).length:0;
-  const usedSections=c?a.groups.reduce((n,g)=>n+(g.sections||[]).filter(s=>s.classId===c.id&&g.classId!==c.id).length,0):0;
   el("classDelete").hidden=!c;
-  el("classDelete").onclick=()=>{ if(usedGroups||usedSections){ const what=[usedGroups?`그룹 ${usedGroups}개`:"",usedSections?`소분류 ${usedSections}개`:""].filter(Boolean).join("·"); alert(`이 분류에 ${what}가 있습니다. ${usedGroups&&usedSections?"그룹·소분류를 다른 분류로 옮기거나 지운 뒤":usedGroups?"그룹을 다른 분류로 옮기거나 지운 뒤":"소분류를 다른 분류로 옮긴 뒤"} 삭제하세요.`); return; } if(!confirm(`'${c.name}' 분류를 삭제할까요?`)) return; a.classes=a.classes.filter(x=>x!==c); saveSection("allocation"); dlg("classDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); const t=c||{id:newId()};
+  el("classDelete").onclick=()=>{
+    const a=allocationForWrite(), c=a?.classes.find(x=>x.id===id);
+    if(!c){alert("이 큰 분류는 이미 삭제되었습니다.");dlg("classDialog").close();return;}
+    const usedGroups=a.groups.filter(g=>g.classId===c.id).length;
+    const usedSections=a.groups.reduce((n,g)=>n+(g.sections||[]).filter(s=>s.classId===c.id&&g.classId!==c.id).length,0);
+    if(usedGroups||usedSections){
+      const what=[usedGroups?`그룹 ${usedGroups}개`:"",usedSections?`소분류 ${usedSections}개`:""].filter(Boolean).join("·");
+      alert(`이 분류에 ${what}가 있습니다. ${usedGroups&&usedSections?"그룹·소분류를 다른 분류로 옮기거나 지운 뒤":usedGroups?"그룹을 다른 분류로 옮기거나 지운 뒤":"소분류를 다른 분류로 옮긴 뒤"} 삭제하세요.`);return;
+    }
+    if(!confirm(`'${c.name}' 분류를 삭제할까요?`))return;
+    a.classes=a.classes.filter(x=>x!==c); saveSection("allocation"); dlg("classDialog").close(); render();
+  };
+  f.onsubmit=e=>{
+    e.preventDefault();
+    const a=allocationForWrite(), c=id?a?.classes.find(x=>x.id===id):null;
+    if(id&&!c){alert("이 큰 분류가 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.");return;}
+    if(!a){alert("자산 배분 기록이 삭제되어 저장하지 않았습니다.");return;}
+    const t=c||{id:newId()};
     t.name=f.name.value.trim()||"이름 없음"; t.region=f.region.value.trim()||"기타"; if(!f.target.disabled)setNum(t,"target",f.target.value); if(f.cash.checked){ t.cash=true; a.classes.forEach(x=>{ if(x!==t) delete x.cash; }); } else delete t.cash;
-    if(!c) a.classes.push(t); saveSection("allocation"); dlg("classDialog").close(); render(); };
+    if(!c) a.classes.push(t); saveSection("allocation"); dlg("classDialog").close(); render();
+  };
   dlg("classDialog").showModal();
 }
 function openCash(id){
@@ -599,9 +655,20 @@ function openCash(id){
   el("cashTitle").textContent=c?"현금 수정":"새 현금 항목";
   f.place.value=c?.place||""; f.name.value=c?.name||""; f.amount.value=moneyInputText(c?.amount);moneyInputValidate(f.amount); f.currency.value=c?.currency||"KRW"; f.minus.checked=!!c?.minus;
   el("cashDelete").hidden=!c;
-  el("cashDelete").onclick=()=>{ if(!confirm(`'${c.name}' 항목을 삭제할까요?`)) return; a.cash=a.cash.filter(x=>x!==c); saveSection("allocation"); dlg("cashDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault();if(!moneyInputValidate(f.amount)){f.amount.reportValidity();return;} const t=c||{id:newId()};
+  el("cashDelete").onclick=()=>{
+    const a=allocationForWrite(), c=a?.cash.find(x=>x.id===id);
+    if(!c){alert("이 현금 항목은 이미 삭제되었습니다.");dlg("cashDialog").close();return;}
+    if(!confirm(`'${c.name}' 항목을 삭제할까요?`))return;
+    a.cash=a.cash.filter(x=>x!==c); saveSection("allocation"); dlg("cashDialog").close(); render();
+  };
+  f.onsubmit=e=>{
+    e.preventDefault();if(!moneyInputValidate(f.amount)){f.amount.reportValidity();return;}
+    const a=allocationForWrite(), c=id?a?.cash.find(x=>x.id===id):null;
+    if(id&&!c){alert("이 현금 항목이 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.");return;}
+    if(!a){alert("자산 배분 기록이 삭제되어 저장하지 않았습니다.");return;}
+    const t=c||{id:newId()};
     setText(t,"place",f.place.value); t.name=f.name.value.trim()||"이름 없음"; t.amount=moneyInputNumber(f.amount.value)??0; t.currency=f.currency.value==="USD"?"USD":"KRW"; if(f.minus.checked) t.minus=true; else delete t.minus;
-    if(!c) a.cash.push(t); saveSection("allocation"); dlg("cashDialog").close(); render(); };
+    if(!c) a.cash.push(t); saveSection("allocation"); dlg("cashDialog").close(); render();
+  };
   dlg("cashDialog").showModal();
 }

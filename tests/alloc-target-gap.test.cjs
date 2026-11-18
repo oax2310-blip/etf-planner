@@ -11,7 +11,7 @@ function page(data, planner, hash = '#alloc', save = null, prices = null) {
   const nodes = new Map(), storage = new Map([[PLANNER_KEY, JSON.stringify(planner)]]);
   const node = id => { if (!nodes.has(id)) nodes.set(id, {dataset: {}, hidden: false, value: '', innerHTML: '', textContent: '', style: {}, classList: {toggle() {}}, querySelector: sel => node(`${id}:${sel}`), querySelectorAll: () => [], setAttribute() {}, getAttribute() {}, showModal() {}, close() {}}); return nodes.get(id); };
   const document = {hidden: false, activeElement: null, getElementById: node, querySelector: node, querySelectorAll: () => [], addEventListener() {}};
-  const store = {doc: data, prices, status: {state: 'off'}, config: () => null, recovery: () => [], subscribe() {}, start() {}, saveSection(name) { if (!save) throw Error('조회만으로 저장하면 안 된다'); save(name); }};
+  const store = {doc: data, prices, status: {state: 'off'}, config: () => null, recovery: () => [], subscribe() {}, start() {}, absorbLocal() {}, saveSection(name) { if (!save) throw Error('조회만으로 저장하면 안 된다'); save(name); }};
   const ctx = vm.createContext({document, assetStore: store, splitNotices:{initialize(){}}, URLSearchParams, crypto: require('node:crypto').webcrypto,
     localStorage: {getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v))}, addEventListener() {}, setInterval() {}, setTimeout: fn => { fn(); return 1; },
     location: {hash}, history: {replaceState() {}}, scrollTo() {}});
