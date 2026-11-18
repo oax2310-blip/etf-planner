@@ -183,21 +183,49 @@ for(const absent of ['AbortSignal 없음','timeout 없음','timeout이 함수 �
   p.succeed(SP);p.succeed(GOLD);await flush();assertHints(p,null);p.unchanged();
 });
 
-test('종료된 해의 연말 경고는 12월 활성 계좌 누락을 잡고 0원·대출·올해·옛 총액 기록을 구분한다',()=>{
-  const p=page(),check=y=>p.run(`ledgerYearEndWarning(${JSON.stringify(y)},new Date(2026,0,1))`),base={year:2025,accounts:[{name:'가상 계좌'},{name:'제외 계좌',loan:true},{name:'가상 계좌 2'}],months:[]};
-  assert.match(check(base),/12월 기록/);base.months=[{m:12,balances:[100,null,null]}];assert.match(check(base),/잔액 1개/);
-  base.months[0].balances=[100,null,0];assert.equal(check(base),'','0원도 완료, 원래 배열 인덱스의 대출은 제외');
-  assert.equal(check({...base,year:2026,months:[]}), '');assert.equal(check({...base,year:2027,months:[]}), '');
-  assert.match(check({year:2025,accounts:[],months:[{m:12,pnl:0}]}),/총자산이 미입력/);
-  assert.equal(check({year:2025,accounts:[],months:[{m:12,total:0}]}),'');
-  p.unchanged();
-});
-
 test('연도별 요약 총자산은 월 부제를 없애고 종료된 해의 미완료만 한 줄 아이콘으로 경고한다',()=>{
   const p=page();p.run('doc.ledger.years=[{year:2024,accounts:[],months:[{m:12,total:1000,pnl:0}]},{year:2025,accounts:[],months:[{m:10,total:2000,pnl:0}]},{year:2026,accounts:[],months:[{m:10,total:3000,pnl:0}]}]');
   const before=p.run('JSON.stringify(doc)');p.render();
   const rows=p.html.slice(p.html.indexOf('<section class="card ledger-table years">'),p.html.indexOf('<div class="benchmark">'));
-  assert.doesNotMatch(rows,/<small>(?:10|12)월<\/small>/);assert.equal((rows.match(/class="ledger-year-warning"/g)||[]).length,1);
+  assert.doesNotMatch(rows,/<small>(?:10|12)월<\/small>/);assert.equal((rows.match(/class="ledger-warning"/g)||[]).length,1);
   assert.match(rows,/aria-label="12월 기록이 없어 연말 총자산이 미완료입니다\."/);assert.match(rows,/2,000원/);
   assert.equal(p.run('JSON.stringify(doc)'),before,'표시만 바꾸고 기존 연 요약 계산과 저장을 유지');
+});
+
+test('선택한 연도의 12월에만 연도별 요약과 같은 연말 경고를 표시한다',()=>{
+  const p=page();
+  p.run(`doc.ledger.years=[
+    {year:2023,accounts:[{name:'가상 일반'},{name:'가상 대출',loan:true},{name:'가상 현금'}],months:[{m:11,balances:[2000,null,0]},{m:12,balances:[null,null,'0']}]},
+    {year:2024,accounts:[],months:[{m:11,total:3000}]},
+    {year:2025,accounts:[],months:[{m:12,pnl:0}]}
+  ]`);
+  const before=p.run('JSON.stringify(doc)');
+  const reason=html=>html?.match(/class="ledger-warning" role="img" aria-label="([^"]+)" title="\1"/)?.[1];
+  for(const [year,message] of [
+    [2023,'12월 계좌 잔액 1개가 미입력입니다.'],
+    [2024,'12월 기록이 없어 연말 총자산이 미완료입니다.'],
+    [2025,'12월 총자산이 미입력입니다.'],
+  ]){
+    p.run(`ui.year=${year}`);p.render();
+    const row=n=>p.html.match(new RegExp(`data-month="${n}"[^>]*>[\\s\\S]*?</button>`))?.[0];
+    const summary=p.html.slice(p.html.indexOf('<section class="card ledger-table years">'));
+    assert.equal(reason(summary.match(new RegExp(`data-pick-year="${year}"[^>]*>[\\s\\S]*?</button>`))?.[0]),message,`${year}년 요약`);
+    assert.equal(reason(row(12)),message,`${year}년 12월`);
+    assert.equal(reason(row(11)),undefined,`${year}년 11월`);
+  }
+  assert.equal(p.run('JSON.stringify(doc)'),before);
+});
+
+test('완료된 12월과 진행 중이거나 미래인 연도에는 연말 경고가 없다',()=>{
+  const p=page();
+  p.run(`doc.ledger.years=[
+    {year:2024,accounts:[],months:[{m:12,total:0}]},
+    {year:2025,accounts:[{name:'가상 대출',loan:true},{name:'가상 계좌'}],months:[{m:12,balances:[null,0]}]},
+    {year:2026,accounts:[{name:'가상 계좌'}],months:[{m:12,pnl:0}]},
+    {year:2027,accounts:[],months:[]}
+  ]`);
+  for(const year of [2024,2025,2026,2027]){
+    p.run(`ui.year=${year}`);p.render();
+    assert.doesNotMatch(p.html,/class="ledger-warning"/,`${year}년의 월별 표와 전체 연도별 요약`);
+  }
 });

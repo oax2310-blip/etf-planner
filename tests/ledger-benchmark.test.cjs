@@ -414,6 +414,47 @@ function ledgerDialog(year,{popover=true}={}){
   };
 }
 
+test('12월 입력 창은 누락된 일반·RP 계좌 이름에만 연말 경고를 붙인다',()=>{
+  const year={year:new Date().getFullYear()-1,
+    accounts:[{name:'가상 일반'},{name:'가상 대출',loan:true},{name:'가상 완료'},{name:'키움 해외 가상'}],
+    months:[{m:11,balances:[1000,2000,3000,4000]},{m:12,balances:[null,null,0]}]};
+  const h=ledgerDialog(year),before=JSON.stringify(year),html=h.openMonth(12);
+  assert.match(html,/12월 계좌 잔액 2개가 미입력입니다\./);
+  assert.match(html,/<span>가상 일반 <span class="ledger-warning" role="img" aria-label="12월 잔액 미입력"/);
+  assert.match(html,/<strong>키움 해외 가상 <span class="ledger-warning" role="img" aria-label="12월 잔액 미입력"/);
+  assert.match(html,/<span>가상 완료<\/span>/);
+  assert.doesNotMatch(html,/가상 대출/);
+  assert.equal((html.match(/class="ledger-warning"/g)||[]).length,2);
+  assert.doesNotMatch(h.openMonth(11),/class="ledger-warning"/);
+  const current=ledgerDialog({...year,year:year.year+1});
+  assert.doesNotMatch(current.openMonth(12),/class="ledger-warning"/);
+  assert.equal(JSON.stringify(year),before);
+  assert.deepEqual(h.saves,[]);
+});
+
+test('12월 기록이 없는 해는 빈 계좌를 표시하고 0원을 저장하면 경고가 사라진다',()=>{
+  const year={year:new Date().getFullYear()-1,accounts:[{name:'가상 계좌'}],months:[{m:11,balances:[1000]}]};
+  const h=ledgerDialog(year),before=JSON.stringify(year),html=h.openMonth(12);
+  assert.match(html,/12월 기록이 없어 연말 총자산이 미완료입니다\./);
+  assert.match(html,/<span>가상 계좌 <span class="ledger-warning"/);
+  assert.equal(JSON.stringify(year),before);
+  assert.deepEqual(h.saves,[]);
+  h.input('bal0','0');h.submit();
+  assert.equal(JSON.stringify(year.months.find(m=>m.m===12)),JSON.stringify({m:12,balances:[0]}));
+  assert.deepEqual(h.saves,['ledger']);
+  assert.doesNotMatch(h.openMonth(12),/class="ledger-warning"/);
+});
+
+test('계좌 없는 옛 기록은 12월 총자산 입력 칸에 연말 경고를 붙인다',()=>{
+  const year={year:new Date().getFullYear()-1,accounts:[],months:[{m:12,pnl:0}]};
+  const h=ledgerDialog(year),html=h.openMonth(12);
+  assert.match(html,/<span>총자산 \(원\) <span class="ledger-warning" role="img" aria-label="12월 총자산이 미입력입니다\."/);
+  assert.equal((html.match(/class="ledger-warning"/g)||[]).length,1);
+  h.input('total','0');h.submit();
+  assert.equal(year.months[0].total,0);
+  assert.doesNotMatch(h.openMonth(12),/class="ledger-warning"/);
+});
+
 test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 있는 키패드(numeric), 배당·잔액은 소수 키패드(decimal)를 쓴다',()=>{
   // 삼성 키보드는 inputmode=decimal 키패드에 '-' 키가 없고 numeric 키패드에는 '-'와 '.'이 있다. 금액은 가짜 값.
   const {ctx,node}=ledgerDialog();
@@ -1027,7 +1068,7 @@ test('전달과 같은 잔액은 월별·연도별 경고에서 제외하고 실
   assert.doesNotMatch(row(2),/same-tag|확인/);assert.match(row(2),/3,000원/);
   assert.match(row(3),/빈 계좌 1개 · 확인/);assert.match(row(3),/빈칸 4개 · 확인/);
   const years=html.slice(html.indexOf('<section class="card ledger-table years">'));
-  assert.doesNotMatch(years,/ledger-year-warning/,'완료된 12월이 11월과 같아도 경고하지 않는다');
+  assert.doesNotMatch(years,/class="ledger-warning"/,'완료된 12월이 11월과 같아도 경고하지 않는다');
   assert.equal(JSON.stringify(data),before);
   year.months.at(-1).balances[1]=null;
   assert.match(ledgerHtml(data,new Date(2026,1,1).getTime()),/12월 계좌 잔액 1개가 미입력/,'실제 연말 누락은 계속 표시한다');
