@@ -559,22 +559,130 @@ function openItem(id, groupId){
 function openGroup(id){
   const a=doc.allocation, g=id?a.groups.find(x=>x.id===id):null, f=el("groupForm");
   // 중국 분류가 없는 옛 기록에도 선택지를 보이되, 저장할 때 이미 해외·중국 분류가 생겼으면 새로 만들지 않고 재사용한다.
-  const classes=allocationClassList(a);
   let tempChina=null;
-  if(!classes.some(c=>c.region==="해외"&&c.name==="중국")){
-    const india=classes.findIndex(c=>c.region==="해외"&&c.name==="인도");
-    tempChina={id:newId(),region:"해외",name:"중국"};
-    classes.splice(india<0?classes.length:india+1,0,tempChina);
-  }
+  const buildClasses=alloc=>{
+    const list=allocationClassList(alloc), existingChina=list.find(c=>c.region==="해외"&&c.name==="중국")||null;
+    if(existingChina)tempChina=null;
+    else{
+      const india=list.findIndex(c=>c.region==="해외"&&c.name==="인도");
+      tempChina=tempChina||{id:newId(),region:"해외",name:"중국"};
+      list.splice(india<0?list.length:india+1,0,tempChina);
+    }
+    return {list,existingChina};
+  };
+  let classes=buildClasses(a).list;
+  const optionHtml=(c,picked)=>`<option value="${escA(c.id)}"${c.id===picked?" selected":""}>${escA(c.region||"기타")} · ${escA(c.name)}</option>`;
+  const renderGroupSelect=cid=>{
+    const picked=cid&&classes.some(c=>c.id===cid)?cid:"";
+    f.classId.innerHTML=`${picked?"":'<option value="">분류 없음 · 다시 고르세요</option>'}${classes.map(c=>optionHtml(c,picked)).join("")}`;
+    f.classId.value=picked;
+  };
+  const secOptions=(picked,extra="")=>`${extra}<option value="">그룹 분류 따름</option>${classes.map(c=>optionHtml(c,picked)).join("")}`;
   el("groupTitle").textContent=g?"그룹 수정":"새 그룹";
-  f.classId.innerHTML=classes.map(c=>`<option value="${escA(c.id)}">${escA(c.region||"기타")} · ${escA(c.name)}</option>`).join("");
   const targets=allocationTargets(a), target=g?targets.groups.get(g.id):{target:null,linked:false};
-  f.name.value=g?.name||""; f.classId.value=g?.classId||classes[0].id; f.target.value=target.target??""; f.target.disabled=target.linked; f.note.value=g?.note||"";
+  const initialGroupPicked=g?(g.classId&&classes.some(c=>c.id===g.classId)?g.classId:""):classes[0].id;
+  let groupBaseClassId=initialGroupPicked, userGroupClassPicked=false, groupCleared=false;
+  f.name.value=g?.name||""; renderGroupSelect(initialGroupPicked); f.target.value=target.target??""; f.target.disabled=target.linked; f.note.value=g?.note||"";
   el("groupTargetHint").textContent=target.linked?"종목·소분류 목표의 합계입니다. 종목별에서 수정하면 자동 반영됩니다.":"하위 목표가 없을 때만 직접 입력합니다. 기준 총자산 대비입니다.";
   const names=g?[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(x=>x.section).filter(Boolean)])]:[];
-  const secOptions=picked=>`<option value="">그룹 분류 따름</option>${classes.map(c=>`<option value="${escA(c.id)}"${c.id===picked?" selected":""}>${escA(c.region||"기타")} · ${escA(c.name)}</option>`).join("")}`;
-  el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%) · 투자구성 분류</span>${names.map((n,i)=>{const t=targets.section(g.id,n),cid=sectionClassId(a,g,n),picked=cid&&cid!==g.classId?cid:"";return `<div class="sub-target"><label class="sub-target-name"><span>${escA(n)}${t.linked?" · 종목 합산":""}</span><input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${t.target??""}"${t.linked?" disabled":""} aria-label="${escA(n)} 목표 비중 (%)"></label><label class="sub-target-class"><span>투자구성 분류</span><select data-sec-class="${i}" aria-label="${escA(n)} 투자구성 분류">${secOptions(picked)}</select></label></div>`;}).join("")}`:"";
-  names.forEach((n,i)=>{const select=f.querySelector(`[data-sec-class="${i}"]`),cid=sectionClassId(a,g,n);if(select)select.value=cid&&cid!==g.classId?cid:"";});
+  const makeSentinel=tag=>{
+    let v=`__ep_${tag}_${newId()}`;
+    while(classes.some(c=>c.id===v)||a.classes.some(c=>c.id===v))v+="_";
+    return v;
+  };
+  const initialSections=names.map(n=>{
+    const t=targets.section(g.id,n), cid=sectionClassId(a,g,n), picked=cid&&cid!==g.classId?cid:"";
+    return {name:n,target:t.target,linked:t.linked,targetText:String(t.target??""),classId:picked,userClassPicked:false,allowFollowAfterWarn:false,warnedDeleted:false,clearedValue:makeSentinel("cleared"),deletedValue:makeSentinel("deleted")};
+  });
+  el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%) · 투자구성 분류</span>${initialSections.map((s,i)=>`<div class="sub-target"><label class="sub-target-name"><span data-sec-label="${i}">${escA(s.name)}${s.linked?" · 종목 합산":""}</span><input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${s.target??""}"${s.linked?" disabled":""} aria-label="${escA(s.name)} 목표 비중 (%)"></label><label class="sub-target-class"><span>투자구성 분류</span><select data-sec-class="${i}" aria-label="${escA(s.name)} 투자구성 분류">${secOptions(s.classId)}</select></label></div>`).join("")}`:"";
+  initialSections.forEach((s,i)=>{
+    const input=f.querySelector(`[data-sec="${i}"]`), select=f.querySelector(`[data-sec-class="${i}"]`), label=f.querySelector(`[data-sec-label="${i}"]`);
+    if(input){input.value=s.targetText;input.disabled=s.linked;}
+    if(select){select.innerHTML=secOptions(s.classId);select.value=s.classId;}
+    if(label)label.textContent=`${s.name}${s.linked?" · 종목 합산":""}`;
+  });
+  const refreshClassSelects=(alloc,groupCid,sectionCids,warnedDeleted=new Set())=>{
+    const prevTempId=tempChina?.id, built=buildClasses(alloc);
+    classes=built.list;
+    const mapCid=cid=>prevTempId&&built.existingChina&&cid===prevTempId?built.existingChina.id:cid;
+    const latestG=id?alloc?.groups.find(x=>x.id===id):null;
+    const prevGroupTemp=mapCid(groupCid);
+    const groupUntouched=!groupCleared&&!userGroupClassPicked&&groupCid===groupBaseClassId;
+    const latestGroupCid=latestG?.classId&&classes.some(c=>c.id===latestG.classId)?latestG.classId:"";
+    if(groupUntouched){
+      groupBaseClassId=latestG?latestGroupCid:groupBaseClassId;
+      userGroupClassPicked=false;
+      renderGroupSelect(latestG?latestGroupCid:prevGroupTemp);
+    }else{
+      const validGroup=prevGroupTemp&&classes.some(c=>c.id===prevGroupTemp);
+      groupCleared=!validGroup;
+      groupBaseClassId=validGroup?(latestG?latestGroupCid:groupBaseClassId):"";
+      userGroupClassPicked=!!validGroup;
+      renderGroupSelect(validGroup?prevGroupTemp:"");
+    }
+    const latestTargets=latestG?allocationTargets(alloc):null;
+    const latestSet=new Set(latestG?[...(latestG.sections||[]).map(x=>x.name),...latestG.items.map(x=>x.section).filter(Boolean)]:[]);
+    initialSections.forEach((s,i)=>{
+      // 사용자가 고친 선택은 유지하고, 고치지 않았을 때만 최신 분류로 맞춘다.
+      // 지워진 선택은 사라진 소분류 충돌·타 탭 최신 분류 유무에 따라 창별 임시값으로 구분해 실제 분류 ID·자동 비우기와 섞이지 않게 한다.
+      const raw=sectionCids[i], isDeletedVal=raw===s.deletedValue, isClearedVal=raw===s.clearedValue, wasSpecial=isDeletedVal||isClearedVal;
+      const hasLatest=latestSet.has(s.name), wasRevived=hasLatest&&s.warnedDeleted;
+      const resolvedFollow=!hasLatest&&s.allowFollowAfterWarn&&raw==="";
+      const userTouched=!wasSpecial&&!resolvedFollow&&(s.userClassPicked||raw!==s.classId);
+      const untouched=!userTouched&&!wasSpecial;
+      const latestCid=hasLatest?sectionClassId(alloc,latestG,s.name):"";
+      const latestPicked=latestCid&&latestCid!==latestG.classId?latestCid:"";
+      const prevClassId=s.classId;
+      s.classId=hasLatest?latestPicked:(resolvedFollow?"":(prevClassId&&classes.some(c=>c.id===prevClassId)?prevClassId:""));
+      if(wasRevived){
+        const lt=latestTargets.section(latestG.id,s.name), input=f.querySelector(`[data-sec="${i}"]`), label=f.querySelector(`[data-sec-label="${i}"]`);
+        const wasLocked=s.linked||!!input?.disabled, hasLatestTarget=lt.linked||lt.target!==null;
+        s.target=lt.target; s.linked=lt.linked; s.targetText=String(lt.target??"");
+        if(input){input.disabled=lt.linked;if(wasLocked||hasLatestTarget)input.value=s.targetText;}
+        if(label)label.textContent=`${s.name}${lt.linked?" · 종목 합산":""}`;
+      }
+      if(hasLatest){
+        s.allowFollowAfterWarn=false;
+        s.warnedDeleted=false;
+      }else if(warnedDeleted.has(s.name)){
+        s.allowFollowAfterWarn=true;
+        s.warnedDeleted=true;
+      }
+      const select=f.querySelector(`[data-sec-class="${i}"]`);
+      if(!select)return;
+      if(untouched){
+        s.userClassPicked=false;
+        const picked=hasLatest?(latestPicked&&classes.some(c=>c.id===latestPicked)?latestPicked:""):s.classId;
+        select.innerHTML=secOptions(picked);
+        select.value=picked;
+        return;
+      }
+      const mapped=wasSpecial?"":mapCid(raw);
+      const validChoice=!wasRevived&&((hasLatest&&mapped===""&&!wasSpecial)||(mapped&&classes.some(c=>c.id===mapped)));
+      if(validChoice){
+        s.userClassPicked=hasLatest;
+        select.innerHTML=secOptions(mapped);
+        select.value=mapped;
+        return;
+      }
+      if(!hasLatest&&(wasSpecial||userTouched)){
+        s.userClassPicked=false;
+        select.innerHTML=secOptions("",`<option value="${escA(s.deletedValue)}">삭제된 소분류 · 그룹 분류 따름 선택</option>`);
+        select.value=s.deletedValue;
+        return;
+      }
+      if(hasLatest&&latestPicked){
+        s.classId=s.clearedValue;
+        s.userClassPicked=false;
+        select.innerHTML=secOptions("",`<option value="${escA(s.clearedValue)}">${wasRevived?"다른 탭에서 다시 추가됨":"선택 삭제됨"} · 저장 시 최신 분류 유지</option>`);
+        select.value=s.clearedValue;
+        return;
+      }
+      s.userClassPicked=false;
+      select.innerHTML=secOptions("");
+      select.value="";
+    });
+  };
   el("groupDelete").hidden=!g;
   el("groupDelete").onclick=()=>{
     const a=allocationForWrite(), g=a?.groups.find(x=>x.id===id);
@@ -590,39 +698,85 @@ function openGroup(id){
     if(id&&!g){alert("이 그룹이 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.");return;}
     if(!a){alert("자산 배분 기록이 삭제되어 저장하지 않았습니다.");return;}
     // 창을 열 때 있던 분류가 그사이 삭제됐으면 그룹·분류·소분류를 바꾸기 전에 저장을 막는다(미리 만든 임시 해외·중국만 예외).
-    const currentClasses=allocationClassList(a), groupCid=f.classId.value;
-    const sectionCids=names.map((_,i)=>String(f.querySelector(`[data-sec-class="${i}"]`)?.value||"").trim());
+    // 막은 뒤에는 최신 분류 목록으로 선택지를 다시 채우고, 지워진 분류를 골랐던 칸만 비운다. 기존 id의 앞뒤 공백은 그대로 비교·저장한다.
+    const currentClasses=allocationClassList(a), groupCid=String(f.classId.value??"");
+    const sectionCids=names.map((_,i)=>String(f.querySelector(`[data-sec-class="${i}"]`)?.value??""));
+    const latestSectionNames=new Set(g?[...(g.sections||[]).map(x=>x.name),...g.items.map(x=>x.section).filter(Boolean)]:[]);
+    const existingChina=tempChina?currentClasses.find(c=>c.region==="해외"&&c.name==="중국"):null;
+    const latestGroupClassId=g?.classId??"";
+    const groupValidInLatest=cid=>!!(cid&&(currentClasses.some(x=>x.id===cid)||(tempChina&&!existingChina&&cid===tempChina.id)));
+    const groupChanged=userGroupClassPicked||groupCid!==groupBaseClassId;
+    const effectiveGroupCid=!groupCid?"":(groupChanged?groupCid:(g?(groupValidInLatest(latestGroupClassId)?latestGroupClassId:""):groupCid));
+    const targetChanged=i=>{
+      const init=initialSections[i], input=f.querySelector(`[data-sec="${i}"]`), rawTarget=String(input?.value??"");
+      return !(input?.disabled||init.linked)&&(numIn(rawTarget)!==init.target||(init.target===null&&rawTarget.trim()!==""));
+    };
+    const classChanged=i=>{
+      const init=initialSections[i], raw=sectionCids[i], hasLatest=latestSectionNames.has(names[i]);
+      if(raw===init.deletedValue)return true;
+      if(raw===init.clearedValue)return !hasLatest;
+      if(!hasLatest&&init.allowFollowAfterWarn&&raw==="")return false;
+      return init.userClassPicked||raw!==init.classId;
+    };
+    const secChanged=i=>targetChanged(i)||classChanged(i);
+    const deletedSections=names.filter((n,i)=>!latestSectionNames.has(n)&&secChanged(i));
+    const revivedSections=names.filter((n,i)=>latestSectionNames.has(n)&&(initialSections[i].warnedDeleted||sectionCids[i]===initialSections[i].deletedValue));
+    const activeSectionCids=sectionCids.filter((cid,i)=>latestSectionNames.has(names[i])&&cid!==initialSections[i].clearedValue&&cid!==initialSections[i].deletedValue);
     const deleted=[];
-    for(const cid of [groupCid,...sectionCids]){
+    for(const cid of [effectiveGroupCid,...activeSectionCids]){
       if(!cid||cid===tempChina?.id||currentClasses.some(x=>x.id===cid)||deleted.some(x=>x.id===cid))continue;
       const prev=classes.find(x=>x.id===cid);
       if(prev)deleted.push(prev);
     }
-    if(deleted.length){
-      const labels=deleted.map(c=>`'${c.region||"기타"} · ${c.name}'`).join(", ");
-      alert(`선택한 큰 분류(${labels})가 삭제되어 저장하지 않았습니다. 다른 분류를 고른 뒤 다시 저장하세요.`);
+    if(deleted.length||deletedSections.length||revivedSections.length){
+      const messages=[];
+      if(deleted.length){
+        const labels=deleted.map(c=>`'${c.region||"기타"} · ${c.name}'`).join(", ");
+        messages.push(`선택한 큰 분류(${labels})가 삭제되어 저장하지 않았습니다. 다른 분류를 고른 뒤 다시 저장하세요.`);
+      }
+      if(deletedSections.length){
+        const labels=deletedSections.map(n=>`'${n}'`).join(", ");
+        messages.push(`수정한 소분류(${labels})가 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.`);
+      }
+      if(revivedSections.length){
+        const labels=revivedSections.map(n=>`'${n}'`).join(", ");
+        messages.push(`소분류(${labels})가 다른 탭에서 다시 추가되었거나 이전 선택이 삭제되었습니다. 선택을 확인한 뒤 다시 저장하세요.`);
+      }
+      alert(messages.join("\n"));
+      refreshClassSelects(a,groupCid,sectionCids,new Set(deletedSections));
       return;
     }
-    const existingChina=tempChina?currentClasses.find(c=>c.region==="해외"&&c.name==="중국"):null;
+    if(!effectiveGroupCid){
+      alert("큰 분류를 고르세요.");
+      refreshClassSelects(a,groupCid,sectionCids,new Set(deletedSections));
+      return;
+    }
     const resolveClassId=cid=>tempChina&&cid===tempChina.id?(existingChina?.id||tempChina.id):cid;
     const ensureClass=cid=>{
       const c=currentClasses.find(x=>x.id===cid)||(tempChina&&!existingChina&&cid===tempChina.id?tempChina:null), stored=a.classes.find(x=>x.id===cid);
       if(c){if(stored)Object.assign(stored,c);else a.classes.push(c);}
     };
     const t=g||{id:newId(),items:[]};
-    t.name=f.name.value.trim()||"이름 없음"; t.classId=resolveClassId(groupCid); if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
+    t.name=f.name.value.trim()||"이름 없음"; t.classId=resolveClassId(effectiveGroupCid); if(!f.target.disabled)setNum(t,"target",f.target.value); setText(t,"note",f.note.value);
     ensureClass(t.classId);
     if(names.length){
-      // 창에 없던 소분류는 방금 읽은 기록에서 그대로 가져온다.
-      const old=t.sections||[], currentNames=[...new Set([...old.map(s=>s.name),...names])];
-      t.sections=currentNames.map(n=>{
-        const i=names.indexOf(n), prev=old.find(x=>x.name===n);
-        if(i<0)return prev;
-        const o={...prev,name:n}, input=f.querySelector(`[data-sec="${i}"]`), rawCid=sectionCids[i], cid=resolveClassId(rawCid);
-        if(!input.disabled)setNum(o,"target",input.value);
-        if(cid&&cid!==t.classId&&classes.some(x=>x.id===rawCid)){ensureClass(cid);o.classId=cid;}else delete o.classId;
-        return o;
-      });
+      // 창에 없던 소분류는 방금 읽은 기록에서 그대로 가져오고, 이미 없어진 소분류는 다시 만들지 않는다.
+      // 사용자가 소분류 목표·분류를 고치지 않았으면 다른 탭이 저장한 최신 목표·분류를 유지한다.
+      const old=t.sections||[], currentNames=[...new Set([...old.map(s=>s.name),...names.filter(n=>latestSectionNames.has(n))])];
+      if(currentNames.length){
+        t.sections=currentNames.map(n=>{
+          const i=names.indexOf(n), prev=old.find(x=>x.name===n);
+          if(i<0)return prev;
+          const o={...prev,name:n}, input=f.querySelector(`[data-sec="${i}"]`), rawCid=sectionCids[i], touchedClass=classChanged(i);
+          const validChoice=rawCid&&(classes.some(x=>x.id===rawCid)||currentClasses.some(x=>x.id===rawCid));
+          const prevLatestCid=prev&&currentClasses.some(x=>x.id===prev.classId)&&prev.classId!==latestGroupClassId?prev.classId:"";
+          const effectiveRaw=touchedClass?(validChoice?rawCid:""):prevLatestCid;
+          const cid=resolveClassId(effectiveRaw);
+          if(!input.disabled&&targetChanged(i))setNum(o,"target",input.value);
+          if(cid&&cid!==t.classId&&(currentClasses.some(x=>x.id===cid)||tempChina&&!existingChina&&cid===tempChina.id)){ensureClass(cid);o.classId=cid;}else delete o.classId;
+          return o;
+        });
+      }else delete t.sections;
     }
     if(!g) a.groups.push(t); saveSection("allocation"); dlg("groupDialog").close(); render();
   };
