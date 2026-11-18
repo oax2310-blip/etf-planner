@@ -1170,21 +1170,48 @@ test('전달과 같은 잔액은 월별·연도별 경고에서 제외하고 실
   assert.match(ledgerHtml(data,new Date(2026,1,1).getTime()),/12월 계좌 잔액 1개가 미입력/,'실제 연말 누락은 계속 표시한다');
 });
 
-test('월별 카드는 연도 요약과 분리된 영역에서 12달 값·수익률·누락 안내를 유지하고 조회로 저장하지 않는다',()=>{
+test('월별 표는 네 열 머리글과 12달 값·수익률을 표시하고 조회로 저장하지 않는다',()=>{
   const data={version:1,ledger:{years:[{year:2025,accounts:[{name:'가상 계좌'}],months:[{m:1,pnl:-123456789,balances:[1234567890]},{m:12,pnl:0,balances:[0]}]}]}},before=JSON.stringify(data);
   const html=ledgerHtml(data,new Date(2026,1,1).getTime());
-  assert.match(html,/<section class="card ledger-table ledger-months" aria-label="월별 기록">/);
+  assert.match(html,/<section class="card ledger-table ledger-months" aria-label="월별 기록"><div class="ledger-row head"><span>월<\/span><span>실현손익<\/span><span>수익률<\/span><span>총자산<\/span><\/div>/);
   assert.equal((html.match(/data-month="\d+"/g)||[]).length,12);
   assert.match(html,/data-month="1"><span>1월<\/span><span class="neg">-123,456,789원<\/span><span class="neg">-10%<\/span><span>1,234,567,890원<\/span>/);
   assert.match(html,/<section class="card ledger-table years">/);assert.equal(JSON.stringify(data),before);
 });
 
-test('폰 월별 카드의 금액·누락 줄을 분리하고 월 입력은 확대 없이 읽을 수 있는 16px·44px를 확보한다',()=>{
-  const css=read('css/assets.css'),mobile=css.slice(css.indexOf('/* 폰의 월별 카드'));
-  assert.match(mobile,/@media\(max-width:700px\)/);
-  assert.match(mobile,/\.ledger-months>\[data-month\]\{[^}]*grid-template-columns:32px minmax\(0,1fr\) minmax\(0,1fr\)/);
-  assert.match(mobile,/\.ledger-months>\[data-month\]>span\{white-space:nowrap;overflow-wrap:normal\}/);
-  for(const label of ['실현손익','수익률 ','총자산'])assert.ok(mobile.includes(`content:"${label}"`));
-  assert.match(mobile,/\.ledger-months>\[data-month\] small\{[^}]*white-space:normal/);
-  assert.match(mobile,/#monthDialog input\{font-size:16px;min-height:44px\}/);
+const ledgerCss=read('css/assets.css');
+const mobileLedgerCss=(ledgerCss.match(/@media\(max-width:700px\)\{\n[\s\S]*?\n\}/g)??[]).find(media=>media.includes('.ledger-row{'))??'';
+const monthlyLedgerRules=[...ledgerCss.replace(/\/\*[\s\S]*?\*\//g,'').matchAll(/([^{}]*\.ledger-months[^{}]*)\{([^{}]*)\}/g)];
+
+test('폰 월별 표와 연도별 요약은 머리글과 값이 같은 네 열을 쓴다',()=>{
+  assert.match(mobileLedgerCss,/\.ledger-row\{[^}]*padding:9px 12px/);
+  assert.match(mobileLedgerCss,/\.ledger-row\.head\{[^}]*padding-inline:12px\b/);
+  assert.match(mobileLedgerCss,/\.ledger-months\{[^}]*grid-template-columns:\d+px(?: minmax\(min-content,[\d.]+fr\)){3};/);
+  assert.match(mobileLedgerCss,/\.ledger-months>\.ledger-row\{[^}]*grid-template-columns:subgrid\b/);
+  assert.doesNotMatch(ledgerCss,/\.ledger-months>\[data-month\][^{]*\{[^}]*grid-(?:template|column|row)/);
+  assert.doesNotMatch(ledgerCss,/\.ledger-months>\[data-month\][^{]*::before/);
+});
+
+test('폰 월별 표의 값과 선물·옵션·합계의 숫자는 중간에서 끊지 않는다',()=>{
+  assert.match(mobileLedgerCss,/\.ledger-months>\.ledger-row>span\{[^}]*overflow-wrap:normal\b/);
+  assert.match(mobileLedgerCss,/\.ledger-months>\.ledger-row\{[^}]*font-size:clamp\(11px,/);
+  assert.match(mobileLedgerCss,/\.ledger-months\{[^}]*overflow-x:auto\b/);
+  const splitNumber=/(?:^|;)\s*(?:(?:overflow-wrap|word-wrap)\s*:\s*(?:anywhere|break-word)|word-break\s*:\s*(?:break-all|break-word)|line-break\s*:\s*anywhere)\b/i;
+  for(const [,selector,declarations] of monthlyLedgerRules)assert.doesNotMatch(declarations,splitNumber,selector.trim());
+});
+
+test('월별 표에서 머리글과 누락 안내를 숨기는 규칙을 두지 않는다',()=>{
+  for(const [,selector,declarations] of monthlyLedgerRules)assert.doesNotMatch(declarations,/(?:^|;)\s*display\s*:\s*none\b/i,selector.trim());
+});
+
+test('폰 월별 줄은 44px 터치 영역을 두고 누락 안내가 있어도 값의 첫 줄을 맞춘다',()=>{
+  const row=ledgerCss.match(/\.ledger-months>\[data-month\]\{([^}]+)\}/)?.[1]??'';
+  for(const property of ['align-content:center','align-items:baseline','min-height:44px'])assert.ok(row.split(';').includes(property),property);
+  assert.match(ledgerCss,/\.ledger-row small\{display:block/);
+  assert.match(ledgerCss,/\.ledger-months>\[data-month\]>:first-child\{white-space:nowrap\}/);
+  assert.doesNotMatch(ledgerCss,/\.ledger-months>\[data-month\] \.ledger-warning\{[^}]*display:\s*block/);
+});
+
+test('폰 월 입력 창은 16px 글자와 44px 입력 높이를 확보한다',()=>{
+  assert.match(read('css/assets.css'),/#monthDialog input\{font-size:16px;min-height:44px\}/);
 });
