@@ -1,16 +1,17 @@
 // 자산 현황 › 월별 손익 탭(S&P 500·금 비교 표시 포함). 공통 도구·render·saveSection은 assets.js, 계산은 assets-calc.js·ledger-benchmark.js.
 // 잔액을 넣은 달에 비어 있는 계좌 중, 같은 해 앞 달에 0이 아닌 잔액이 있고 뒤 달에도 잔액이 있는 계좌({account, index} 목록).
-// 빈칸은 monthTotals에서 0원으로 더해져 그달 수익률이 높게 나오므로 입력이 빠졌는지 표시만 한다. 아직 열지 않았거나 해지 뒤 비운 계좌는 앞·뒤 조건으로 뺀다. 기록은 바꾸지 않는다.
-function ledgerBalanceGaps(y, m){
-  const bal=Array.isArray(m?.balances)?m.balances:[], accounts=ledgerAccounts(y), at=(x,i)=>finite(x?.balances?.[i]);
+// 빈칸은 총자산에 더하지 않아 그달 수익률이 실제와 다를 수 있다. 아직 열지 않았거나 해지 뒤 비운 계좌는 앞뒤 조건으로 뺀다.
+function ledgerBalanceGaps(y, m, months=ledgerMonths(y)){
+  const bal=Array.isArray(m?.balances)?m.balances:[], accounts=ledgerAccounts(y);
   if(!accounts.some(({index})=>finite(bal[index])!==null))return [];
-  return accounts.filter(({index})=>finite(bal[index])===null&&(y.months||[]).some(x=>x.m<m.m&&at(x,index))&&(y.months||[]).some(x=>x.m>m.m&&at(x,index)!==null));
+  const month=ledgerMonthNumber(m), records=[...months];
+  return accounts.filter(({index})=>finite(bal[index])===null&&records.some(([n,x])=>n<month&&finite(x.balances?.[index]))&&records.some(([n,x])=>n>month&&finite(x.balances?.[index])!==null));
 }
 // 종료된 해의 12월 기록과 계좌별 잔액을 검사해 연 요약·월별 표·입력 창에 같은 사유와 누락 계좌를 전달한다.
 // 0원은 입력으로 보고, loan은 제외한다. 계좌 없는 옛 기록은 12월 total로 판단한다.
 function ledgerYearEndWarning(y, today=new Date()){
   if(Number(y.year)>=today.getFullYear())return null;
-  const december=(y.months||[]).find(m=>m.m===12);
+  const december=ledgerMonths(y).get(12);
   const missing=ledgerAccounts(y).filter(({index})=>finite(december?.balances?.[index])===null);
   if(!december)return {message:"12월 기록이 없어 연말 총자산이 미완료입니다.",missing};
   if(missing.length)return {message:`12월 계좌 잔액 ${missing.length}개가 미입력입니다.`,missing};
@@ -90,7 +91,7 @@ function renderLedger(){
   if(!L||!L.years.length){ view.innerHTML=emptyCard("월별 손익 기록이 없습니다","데이터 저장소에 etf-planner-assets.json이 있으면 동기화할 때 불러옵니다.",`<button class="btn primary" id="startLedger" type="button">올해부터 시작</button>`);
     el("startLedger").onclick=()=>{ doc.ledger={savedAt:"",years:[{year:new Date().getFullYear(),accounts:[],months:[]}]}; saveSection("ledger"); render(); }; return; }
   const years=[...L.years].sort((a,b)=>a.year-b.year), y=years.find(x=>x.year===ui.year)||years[years.length-1], ys=yearSummary(y);
-  const accounts=ledgerAccounts(y), compound=compoundYearReturn(years);
+  const accounts=ledgerAccounts(y), months=ledgerMonths(y), compound=compoundYearReturn(years);
   const today=new Date(), yearEnd=ledgerYearEndWarning(y,today);
   const compoundHint=compound.partial?`올해 1~${compound.month}월 누적 · 1년 미만은 연환산하지 않음`
     :compound.years?`${compound.from}~${compound.to}년${compound.month?` ${compound.month}월`:""} · ${nf2.format(compound.period)}년`:"계산할 수 있는 연도가 없습니다";
@@ -98,7 +99,7 @@ function renderLedger(){
   // 달 줄의 실현손익·수익률은 그달 선물·옵션을 더한 값이다(맨 위 그래프의 달 값과 같다). 입력 창에서는 따로 넣는다.
   // 선물·옵션을 월별로 넣는 해(한 달이라도 넣음)만 기록한 달 중 비어 있는 달에 '선물·옵션 미입력'을 표시한다. 넣은 값(0원 포함)은 줄에 표시하지 않는다.
   const monthRow=n=>{
-    const m=y.months.find(x=>x.m===n), t=m?monthTotals(y,m):{}, pnl=monthPnl(m), f=finite(m?.futures), p=pnl===null&&f===null?null:(pnl||0)+(f||0), r=p!==null&&t.total>0?p/t.total*100:null, gaps=m?ledgerBalanceGaps(y,m).length:0, blanks=ledgerPnlBlanks(m);
+    const m=months.get(n), t=m?monthTotals(y,m):{}, pnl=monthPnl(m), f=finite(m?.futures), p=pnl===null&&f===null?null:(pnl||0)+(f||0), r=p!==null&&t.total>0?p/t.total*100:null, gaps=m?ledgerBalanceGaps(y,m,months).length:0, blanks=ledgerPnlBlanks(m);
     const warning=n===12?ledgerWarningIcon(yearEnd?.message):"";
     return `<button class="ledger-row${m?"":" blank"}" type="button" data-month="${n}"><span>${n}월${warning}</span><span class="${p<0?"neg":""}">${p!==null?wonA(p):"—"}${blanks?`<small class="same-tag">빈칸 ${blanks}개 · 확인</small>`:""}${m&&monthFutures&&finite(m.futures)===null?`<small class="same-tag">선물·옵션 미입력</small>`:""}</span><span class="${r<0?"neg":""}">${pc(r)}</span><span>${t.total!==null&&t.total!==undefined?wonA(t.total):"—"}${gaps?`<small class="same-tag">빈 계좌 ${gaps}개 · 확인</small>`:""}</span></button>`;
   };
@@ -108,7 +109,7 @@ function renderLedger(){
   }).join("");
   loadSp500();loadGold();
   // 달을 모르는 선물·옵션(연도 설정)이 있는 해만 표에 그 줄을 둔다. 금액 합계와 월 복리 수익률은 yearSummary를 따른다.
-  const chart=ledgerChartData(y,today,sp500Data,goldData), monthFutures=y.months.filter(m=>finite(m.futures)!==null).length, restRate=ys.futuresYear!==null&&ys.last?.total>0?ys.futuresYear/ys.last.total*100:null;
+  const chart=ledgerChartData(y,today,sp500Data,goldData), monthFutures=[...months.values()].some(m=>finite(m.futures)!==null), restRate=ys.futuresYear!==null&&ys.last?.total>0?ys.futuresYear/ys.last.total*100:null;
   view.innerHTML=`${ledgerTopHtml(y,ys,years,chart)}
     <div class="section-heading ledger-sec"><h2>${escA(y.year)}년 월별</h2><span>줄을 누르면 그 달 기록을 고칩니다 · 계좌 ${accounts.length}개</span><button class="btn mini" type="button" id="editYear">연도 설정</button></div>
     <section class="card ledger-table ledger-months" aria-label="월별 기록"><div class="ledger-row head"><span>월</span><span>실현손익</span><span>수익률</span><span>총자산</span></div>
@@ -246,14 +247,14 @@ function ledgerRpSaved(m, index){
 // 월 입력 창 자체·그 안의 스크롤에서도 안내를 닫는다. 매번 창을 열 때 리스너를 늘리지 않는다.
 document.addEventListener("scroll",()=>all(".ledger-rp-help").forEach(p=>{if(p.matches(":popover-open"))p.hidePopover();}),{capture:true,passive:true});
 function openMonth(y, n){
-  const f=el("monthForm"), m=y.months.find(x=>x.m===n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
+  const f=el("monthForm"), months=ledgerMonths(y), m=months.get(n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
   const supportsPopover=typeof HTMLElement!=="undefined"&&Object.prototype.hasOwnProperty.call(HTMLElement.prototype,"popover");
   const rpHint="영웅문 해외 잔고의 원화추정자산을 넣고, RP는 아래 칸에 달러로 따로 넣습니다. RP는 배당처럼 125개월 평균 환율로 원화 환산합니다.";
   // 저장한 달러 RP는 기록한 환율을 유지하고(금액을 고쳐도 같음), 새 RP와 평균선 갱신 뒤에는 현재 125개월선을 쓴다.
   const rpSaved=new Map(accounts.map(({index})=>[index,ledgerRpSaved(m,index)])), rpKeep=new Set(accounts.filter(({index})=>rpSaved.get(index).fx).map(({index})=>index));
   const rpFx=index=>rpKeep.has(index)?rpSaved.get(index).fx:assetDividendFx(prices);
   const {fixed,extra}=ledgerPnlSlots(m);
-  const gaps=new Set(ledgerBalanceGaps(y,m).map(x=>x.index)); // 입력이 빠졌을 수 있는 계좌 칸(ledgerBalanceGaps)
+  const gaps=new Set(ledgerBalanceGaps(y,m,months).map(x=>x.index)); // 입력이 빠졌을 수 있는 계좌 칸(ledgerBalanceGaps)
   const yearEnd=n===12?ledgerYearEndWarning(y):null;
   const missingYearEnd=new Set(yearEnd?.missing.map(({index})=>index));
   const fxLine="125개월선", savedDividend=finite(fixed[4].amount)!==null&&finite(fixed[4].krw)!==null;
@@ -272,7 +273,7 @@ function openMonth(y, n){
     ${accounts.map(({account,index})=>{
       const split=ledgerRpAccount(account,m,index), balance=numIn(bal[index]), value=finite(m.rp?.[index]), base=split&&balance!==null&&value!==null?balance-value:bal[index];
       const name=escA(account.name)+(missingYearEnd.has(index)?ledgerWarningIcon("12월 잔액 미입력"):"");
-      const field=`<label class="field" for="ledgerBal${index}"><span>${split?"원화추정자산 (원)":name}</span><input name="bal${index}" id="ledgerBal${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(base)}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 0원으로 더해 이달 수익률이 높게 나옵니다(해지했으면 0).</small>`:""}</label>`;
+      const field=`<label class="field" for="ledgerBal${index}"><span>${split?"원화추정자산 (원)":name}</span><input name="bal${index}" id="ledgerBal${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(base)}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 총자산에 더하지 않아 수익률이 실제와 달라질 수 있습니다. 해지했다면 0원을 입력하세요.</small>`:""}</label>`;
       return split?`<section class="ledger-rp-account"><div class="ledger-rp-head"><strong>${name}</strong>${supportsPopover?`<button class="ledger-rp-button" type="button" data-ledger-rp-help="${index}" popovertarget="ledgerRpHelp${index}" aria-label="${escA(account.name)} 입력 안내"><span aria-hidden="true">!</span></button><div class="ledger-rp-help" id="ledgerRpHelp${index}" popover><strong>원화추정자산</strong><small>${rpHint}</small></div>`:""}</div>
         ${field}${!supportsPopover?`<small class="field-hint">${rpHint}</small>`:""}<label class="field" for="ledgerRp${index}"><span>RP (달러)</span><input name="rp${index}" id="ledgerRp${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(rpSaved.get(index).usd)}" placeholder="미입력"><small class="field-hint" id="ledgerRpFx${index}"></small></label><div class="pnl-conversion"><span>RP 원화 환산액</span><output id="ledgerRpWon${index}"></output></div><small class="ledger-account-total" id="ledgerAccountTotal${index}" data-ledger-account-total="${index}" hidden></small></section>`:field;
     }).join("")}
@@ -349,10 +350,10 @@ function openMonth(y, n){
   f.pnl.oninput=()=>{manualPnl=f.pnl.value;};
   el("addPnlEntry").onclick=()=>{extra.push({broker:""});draw();el("pnlEntryRows").querySelector(`[data-pnl-entry="${extra.length-1}"][data-k="broker"]`).focus();};
   draw();
-  el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>x.m!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
+  el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>ledgerMonthNumber(x)!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
   f.onsubmit=e=>{ e.preventDefault();update();updateBalances();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
     if(accounts.some(({index})=>{const p=rpParts(index);return p.usd!==null&&p.won===null;})){alert("RP를 원화로 환산하려면 원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
-    const t={...m,m:n};for(const key of LEDGER_RP_KEYS)delete t[key]; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;delete t.total;
+    const t={...m};for(const key of LEDGER_RP_KEYS)delete t[key]; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;
     const rows=entries();
     if(rows.length){if(rows.some(r=>!String(r.broker||"").trim())){alert("내역의 증권사 이름을 넣어 주세요.");return;}if(pnlEntriesTotal(rows)===null){alert("내역의 금액과 원화 입금액을 모두 넣어 주세요.");return;}t.pnlEntries=rows.map(r=>({...r}));t.pnl=pnlEntriesTotal(rows);}
     // balances는 원화추정자산+RP 원화 환산액 합계, rp는 원화 환산액으로 유지해 옛 저장·계산 경로와 호환한다. 달러 RP만 rpUsd·rpFx를 더하고 비운 RP 배열은 지운다.
@@ -361,10 +362,17 @@ function openMonth(y, n){
       const b=y.accounts.map((acc,i)=>{if(acc.loan)return finite(bal[i]);const base=numIn(f[`bal${i}`]?.value),value=parts[i].won;return base===null&&value===null?null:(base??0)+(value??0);});
       const list=(key,pick)=>{const a=y.accounts.map((acc,i)=>acc.loan?finite(m[key]?.[i]):pick(parts[i]));while(a.length&&a[a.length-1]===null)a.pop();if(a.length)t[key]=a;};
       while(b.length&&b[b.length-1]===null)b.pop();if(b.length)t.balances=b;
+      // 옛 총액은 실제 계좌 잔액을 기록할 때 대체한다. 빈 새 계좌나 숨은 대출만 저장하면 보존한다.
+      if(accounts.some(({index})=>b[index]!==null&&b[index]!==undefined))delete t.total;
       list("rp",p=>p.won);list("rpUsd",p=>p.usd);list("rpFx",p=>p.usd===null?null:p.fx);
     }
     else setNum(t,"total",f.total.value);
-    y.months=y.months.filter(x=>x.m!==n); if(Object.keys(t).length>1){ y.months.push(t); y.months.sort((a,b)=>a.m-b.m); }
+    // 옛 월 표기와 중복 사본을 보존한다. 선택한 기록을 비워도 중복 사본의 값이 다시 나타나지 않게 한다.
+    const index=y.months.indexOf(m), next=[...y.months];
+    const keep=Object.keys(t).length>1||next.some(x=>x!==m&&ledgerMonthNumber(x)===n);
+    if(index>=0)next.splice(index,1);
+    if(keep){next.splice(index<0?next.length:index,0,t);next.sort((a,b)=>a.m-b.m);}
+    y.months=next;
     saveSection("ledger"); dlg("monthDialog").close(); render(); };
   dlg("monthDialog").showModal();
 }
@@ -372,7 +380,7 @@ function openYear(y){
   const f=el("yearForm"); el("yearTitle").textContent=`${y.year}년 설정`;
   f.futures.value=moneyInputText(y.futures); f.futures.setCustomValidity(""); f.note.value=y.note||"";
   // 월별 선물·옵션(월 입력 창)과 달을 모르는 연 합계(이 칸)는 함께 더한다(assets-calc.js yearSummary).
-  const monthly=y.months.filter(m=>finite(m.futures)!==null);
+  const monthly=[...ledgerMonths(y).values()].filter(m=>finite(m.futures)!==null);
   el("yearFuturesHint").textContent=`달마다 넣으려면 월 입력 창의 선물·옵션 칸을 쓰세요. 이 칸 금액은 마지막 기록 달에 더합니다.${monthly.length?` 월별 입력 ${monthly.length}개월 합계 ${wonA(monthly.reduce((t,m)=>t+Number(m.futures),0))}.`:""}`;
   // 숨긴 옛 계좌·잔액은 저장 호환을 위해 보존한다. 새 계좌에는 loan 필드를 만들지 않는다.
   const hidden=y.accounts.map((a,i)=>({from:i,name:a.name})).filter(r=>y.accounts[r.from].loan);

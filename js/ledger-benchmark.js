@@ -63,6 +63,14 @@ function goldYtdAt(year, month, data=null){
   return end&&start?(end/start-1)*100:null;
 }
 
+function ledgerLastRecordedMonth(year){
+  let last=0;
+  for(const [month,m] of ledgerMonths(year)){
+    if(monthPnl(m)!==null||finite(m.futures)!==null)last=Math.max(last,month);
+  }
+  return last||null;
+}
+
 // 연도별 요약의 연복리: yearSummary.rate가 있는 해만 곱셈·기간에 넣고, 기록은 읽기만 한다.
 // 지난해까지는 시작한 달과 관계없이 해마다 1년, 올해(today 연도 이상)는 실현손익·월별 선물옵션을 기록한 마지막 달 m/12년으로 센다.
 // 올해에 기록한 달이 없으면 제외한다(잔액·달을 모르는 연 합계만 있는 올해도 제외). 0원 손익은 기록한 달이다.
@@ -74,7 +82,7 @@ function compoundYearReturn(years, today=new Date()){
   for(const y of Array.isArray(years)?years:[]){
     const rate=yearSummary(y).rate;if(rate===null)continue;
     const year=Number(y.year), current=year>=thisYear;
-    const month=current?Math.max(0,...(Array.isArray(y.months)?y.months:[]).filter(m=>(monthPnl(m)!==null||finite(m?.futures)!==null)&&Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).map(m=>m.m))||null:null;
+    const month=current?ledgerLastRecordedMonth(y):null;
     if(current&&!month)continue;
     rows.push({year,rate,month,period:current?month/12:1});
   }
@@ -106,7 +114,7 @@ function ledgerBenchmarkComparison(years, today, data, benchmark){
   const mine=compound("mine"), value=compound(benchmark.key), record=recordOf(thisYear), now=record?yearSummary(record):null;
   let current=null;
   if(now){
-    const month=Math.max(0,...(Array.isArray(record.months)?record.months:[]).filter(m=>(monthPnl(m)!==null||finite(m?.futures)!==null)&&Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).map(m=>m.m))||null;
+    const month=ledgerLastRecordedMonth(record);
     const valueNow=month?benchmark.ytdAt(thisYear,month,data):null;
     current={year:thisYear, rate:now.rate, months:now.months, month, [benchmark.key]:valueNow, diff:now.rate!==null&&valueNow!==null?now.rate-valueNow:null};
   }
@@ -149,11 +157,11 @@ function periodBenchmark(spValue, goldValue, fallback="sp500"){
 function ledgerChartData(year, today=new Date(), data=null, goldData=null){
   const s=yearSummary(year), rate=[], won=[], unrated=[];
   let g=1, w=0;
-  for(const m of (Array.isArray(year?.months)?year.months:[]).filter(m=>Number.isInteger(m?.m)&&m.m>=1&&m.m<=12).sort((a,b)=>a.m-b.m)){
+  for(const [month,m] of [...ledgerMonths(year)].sort(([a],[b])=>a-b)){
     const p=monthPnl(m), f=finite(m.futures), t=monthTotals(year,m).total;
     if(p===null&&f===null)continue;
-    w+=(p||0)+(f||0);won.push({m:m.m,v:w});
-    if(t>0){g*=1+((p||0)+(f||0))/t;rate.push({m:m.m,v:(g-1)*100});}else unrated.push(m.m);
+    w+=(p||0)+(f||0);won.push({m:month,v:w});
+    if(t>0){g*=1+((p||0)+(f||0))/t;rate.push({m:month,v:(g-1)*100});}else unrated.push(month);
   }
   const month=won.length?won[won.length-1].m:null, y=Number(year?.year), thisYear=today.getFullYear(), sp=[], gold=[];
   const rest=s.futuresYear, rated=!unrated.length&&(s.rate!==null||!won.length);
