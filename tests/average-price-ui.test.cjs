@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 
-// 실제 투자 기록 없이 종목·그룹 수정창의 입력·저장·삭제 이벤트를 가상 DOM에서 실행한다.
+// 실제 투자 기록 없이 자산 배분 수정창의 입력·저장·삭제 이벤트를 가상 DOM에서 실행한다.
 const read=file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8');
 // 계산·화면 코드는 assets.html에 실제 등록된 순서로만 읽는다. 저장소는 아래 대역을 쓰며, 빠진 페이지 의존성을 테스트가 대신 주입하지 않는다.
 const exercised=new Set(['js/gold-estimate.js','js/money-input.js','js/ma-ladder.js','js/assets-calc.js','js/member-link.js','js/alloc-link.js','js/assets.js']);
@@ -58,18 +58,24 @@ function page(data=fixture(),quotes=quoteFixture()){
     form[name]=input;form.elements[name]=input;
   }
   for(const name of ['name','classId','target','note'])node('groupForm')[name]=node(`group:${name}`);
+  for(const name of ['name','region','target','cash'])node('classForm')[name]=node(`class:${name}`);
+  for(const name of ['place','name','amount','currency','minus'])node('cashForm')[name]=node(`cash:${name}`);
+  node('cashForm').amount.setAttribute('data-money','');
+  node('cashForm').amount.setAttribute('data-money-step','any');
   // HTML의 금액 제한도 실제 화면처럼 공용 검증기에 전달한다.
   const averageTag=read('assets.html').match(/<input id="averagePriceInput"[^>]*>/)[0];
   node('averagePriceInput').setAttribute('data-money','');
   for(const [,key,value] of averageTag.matchAll(/(data-money-(?:min|max|step))="([^"]*)"/g))node('averagePriceInput').setAttribute(key,value);
   form.checkValidity=()=>Object.values(form.elements).every(input=>input.checkValidity());
-  const store={doc:data,prices:quotes,saveSection(section){writes.push(section);storage.set('etf-planner-assets-v1',JSON.stringify(store.doc));}};
+  const store={doc:data,prices:quotes,absorbLocal(){},saveSection(section){writes.push(section);storage.set('etf-planner-assets-v1',JSON.stringify(store.doc));}};
   const ctx=vm.createContext({document,assetStore:store,URLSearchParams,crypto:require('node:crypto').webcrypto,localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},
     addEventListener(){},setTimeout:fn=>{fn();return 1;},confirm:()=>true,alert:message=>alerts.push(message)});
   vm.runInContext(source,ctx);ctx.openTab('alloc');
   const html=()=>node('allocView').innerHTML;
   const row=id=>{const start=html().indexOf(`data-alloc-item="${id}"`);assert.ok(start>=0,`종목 줄 ${id}`);const rest=html().slice(start),end=rest.search(/class="asset-row|class="group-foot"/);return end<0?rest:rest.slice(0,end);};
   return {ctx,data,store,node,html,row,writes,alerts,storage,input:node('averagePriceInput'),
+    replaceDoc(next){store.doc=next;vm.runInContext('doc=assetStore.doc;render()',ctx);},
+    saved(){return JSON.parse(storage.get('etf-planner-assets-v1'));},
     type(input,value){input.value=value;input.selectionStart=input.selectionEnd=value.length;inputListeners.forEach(fn=>fn({target:input}));input.oninput?.();},
     open(id){const b=itemButtons.find(b=>b.dataset.item===id);assert.ok(b?.onclick,'종목 수정 버튼 이벤트');b.click();},
     openGroup(id){const b=groupButtons.find(b=>b.dataset.group===id);assert.ok(b?.onclick,'그룹 수정 버튼 이벤트');b.click();},
@@ -79,6 +85,200 @@ function page(data=fixture(),quotes=quoteFixture()){
     selectCurrency(value){form.elements.averageCurrency.value=value;form.elements.averageCurrency.onchange();},
     refresh(quotes){store.prices=quotes;vm.runInContext('prices=assetStore.prices;render()',ctx);}};
 }
+
+function allocationTabFixture(){
+  const data=fixture();
+  data.allocation.classes.push({id:'unused',region:'국내',name:'가상 큰 분류'});
+  data.allocation.cash.push({id:'cash',name:'가상 현금',amount:1000,currency:'KRW'});
+  data.ledger={savedAt:'',years:[{year:2025,accounts:[{name:'가상 A'}],months:[{m:2,pnl:200,balances:[1000]}]}]};
+  return data;
+}
+
+function otherTabSave(data){
+  const next=structuredClone(data);
+  next.ledger.years[0].months[0].pnl=999;
+  return next;
+}
+
+const allocationDialogs=[
+  {key:'item',label:'종목',id:'a',open:(h,id)=>h.ctx.openItem(id,'g1'),records:a=>a.groups[0].items},
+  {key:'group',label:'그룹',id:'g1',open:(h,id)=>h.ctx.openGroup(id),records:a=>a.groups},
+  {key:'class',label:'큰 분류',id:'unused',open:(h,id)=>h.ctx.openClass(id),records:a=>a.classes},
+  {key:'cash',label:'현금',id:'cash',open:(h,id)=>h.ctx.openCash(id),records:a=>a.cash},
+];
+const saveForm=form=>form.onsubmit({preventDefault(){}});
+
+for(const {key,label,id,open,records} of allocationDialogs){
+  for(const creating of [false,true]){
+    const action=creating?'추가':'수정';
+    test(`${label} ${action} 결과는 열린 뒤 다른 탭이 저장한 문서에 반영된다`,()=>{
+      const data=allocationTabFixture(),h=page(data),before=JSON.stringify(data),next=otherTabSave(data);
+      open(h,creating?null:id);
+      const form=h.node(`${key}Form`),name=`가상 ${label} ${action}`;
+      form.name.value=name;
+      h.replaceDoc(next);saveForm(form);
+      const saved=h.saved(),row=records(saved.allocation).find(r=>r.name===name);
+      assert.ok(row?.id);
+      if(!creating)assert.equal(row.id,id);
+      assert.deepEqual(saved.ledger,next.ledger);
+      assert.equal(saved.ledger.years[0].months[0].pnl,999);
+      assert.equal(JSON.stringify(data),before,'열 때의 자산 기록은 수정하지 않음');
+      assert.deepEqual(h.writes,['allocation']);
+      assert.equal(h.node(`${key}Dialog`).open,false);
+    });
+  }
+
+  test(`${label} 삭제는 확인 문구와 저장에 최신 문서를 쓴다`,()=>{
+    const data=allocationTabFixture(),h=page(data),before=JSON.stringify(data),next=otherTabSave(data),messages=[];
+    open(h,id);
+    records(next.allocation).find(r=>r.id===id).name='가상 최신 이름';
+    h.replaceDoc(next);
+    h.ctx.confirm=message=>{messages.push(message);return true;};
+    h.node(`${key}Delete`).click();
+    assert.match(messages[0],/가상 최신 이름/);
+    assert.equal(records(h.saved().allocation).some(r=>r.id===id),false);
+    assert.deepEqual(h.saved().ledger,next.ledger);
+    assert.equal(JSON.stringify(data),before);
+    assert.deepEqual(h.writes,['allocation']);
+    assert.equal(h.node(`${key}Dialog`).open,false);
+  });
+
+  test(`${label} 수정 중 다른 탭이 대상을 삭제하면 다시 저장하지 않는다`,()=>{
+    const data=allocationTabFixture(),h=page(data),next=otherTabSave(data);
+    open(h,id);
+    const form=h.node(`${key}Form`);form.name.value='가상 남길 입력';
+    const rows=records(next.allocation);rows.splice(rows.findIndex(r=>r.id===id),1);
+    const before=JSON.stringify(next);
+    h.replaceDoc(next);saveForm(form);
+    assert.equal(JSON.stringify(next),before);
+    assert.deepEqual(h.writes,[]);
+    assert.match(h.alerts[0],/삭제되어 저장하지 않았습니다/);
+    assert.equal(h.node(`${key}Dialog`).open,key!=='item');
+    if(key==='item')assert.equal(h.alerts[0],'이 보유 항목이 삭제되어 저장하지 않았습니다.');
+    else assert.equal(form.name.value,'가상 남길 입력');
+  });
+
+  test(`${label} 대상을 이미 삭제했으면 삭제 확인 없이 안내하고 창을 닫는다`,()=>{
+    const data=allocationTabFixture(),h=page(data),next=otherTabSave(data);
+    open(h,id);
+    const rows=records(next.allocation);rows.splice(rows.findIndex(r=>r.id===id),1);
+    const before=JSON.stringify(next);
+    h.replaceDoc(next);
+    h.ctx.confirm=()=>assert.fail('이미 삭제된 대상의 확인 창');
+    h.node(`${key}Delete`).click();
+    assert.equal(JSON.stringify(next),before);
+    assert.deepEqual(h.writes,[]);
+    assert.match(h.alerts[0],/이미 삭제/);
+    assert.equal(h.node(`${key}Dialog`).open,false);
+  });
+
+  for(const deleting of [false,true]){
+    const action=deleting?'삭제':'저장';
+    test(`${label} ${action} 직전에 아직 알림이 오지 않은 다른 탭의 저장을 받는다`,()=>{
+      const data=allocationTabFixture(),h=page(data),next=otherTabSave(data);
+      open(h,id);
+      const current=records(next.allocation).find(r=>r.id===id);
+      current.name='가상 최신 이름';
+      h.store.absorbLocal=()=>{h.store.doc=next;};
+      if(deleting){
+        h.ctx.confirm=message=>{assert.match(message,/가상 최신 이름/);return true;};
+        h.node(`${key}Delete`).click();
+        assert.equal(records(h.saved().allocation).some(r=>r.id===id),false);
+      }else{
+        const form=h.node(`${key}Form`);form.name.value='가상 수정 이름';saveForm(form);
+        assert.equal(records(h.saved().allocation).find(r=>r.id===id).name,'가상 수정 이름');
+      }
+      assert.equal(h.saved().ledger.years[0].months[0].pnl,999);
+    });
+  }
+}
+
+test('종목 삭제는 다른 탭에서 추가한 최신 계좌 줄에 계획·체결·목표를 옮긴다',()=>{
+  const data=allocationTabFixture(),h=page(data),next=otherTabSave(data),a=next.allocation;
+  h.open('a');
+  const from=a.groups[0].items[0],to={id:'new-account',name:'가상 최신 계좌 줄',ticker:'AAA',target:3};
+  const plan=from.buyPlan;plan.buyPriority=['a',to.id];
+  a.groups[0].items.push(to);a.trades={'buy:a:stage':{label:'가상 최신 체결',items:[{id:'a',shares:2}]}};
+  h.replaceDoc(next);
+  h.ctx.confirm=message=>{
+    assert.match(message,/'가상 최신 계좌 줄' 줄로 옮겨 유지합니다/);
+    assert.match(message,/목표 비중 10%는 '가상 최신 계좌 줄' 줄로 옮깁니다/);
+    return true;
+  };
+  h.node('itemDelete').click();
+  assert.equal(a.groups[0].items.includes(from),false);
+  assert.equal(to.buyPlan,plan);assert.deepEqual(Array.from(plan.buyPriority),[to.id]);
+  assert.deepEqual(Object.keys(a.trades),['buy:new-account:stage']);
+  assert.equal(a.trades['buy:new-account:stage'].items[0].shares,2);
+  assert.equal(to.target,13);
+  assert.deepEqual(h.writes,['allocation']);
+});
+
+test('그룹 삭제는 최신 종목 수와 계획으로 확인하고 다른 그룹의 최신 계좌에 계획을 옮긴다',()=>{
+  const data=allocationTabFixture(),h=page(data),next=otherTabSave(data),a=next.allocation;
+  h.openGroup('g1');
+  const to={id:'new-account',name:'가상 최신 계좌 줄',ticker:'AAA',target:3};
+  a.groups[1].items.unshift(to);
+  const plan=a.groups[0].items[0].buyPlan;plan.buyPriority=[to.id];
+  a.groups[0].items.push({id:'new-in-group',name:'가상 최신 종목',ticker:'BBB'});
+  h.replaceDoc(next);
+  h.ctx.confirm=message=>{
+    assert.match(message,/종목 2개/);
+    assert.match(message,/가상 해외 ETF → 가상 최신 계좌 줄/);
+    return true;
+  };
+  h.node('groupDelete').click();
+  assert.equal(a.groups.length,1);assert.equal(to.buyPlan,plan);assert.equal(to.target,3);
+  assert.deepEqual(h.writes,['allocation']);
+});
+
+for(const use of ['그룹','소분류'])test(`큰 분류 삭제는 다른 탭이 추가한 ${use} 연결을 검사한다`,()=>{
+  const data=allocationTabFixture(),h=page(data),next=otherTabSave(data),group=next.allocation.groups[0];
+  h.ctx.openClass('unused');
+  if(use==='그룹')group.classId='unused';
+  else group.sections=[{name:'가상 소분류',classId:'unused'}];
+  h.replaceDoc(next);
+  h.ctx.confirm=()=>assert.fail('사용 중인 분류의 삭제 확인 창');
+  h.node('classDelete').click();
+  assert.match(h.alerts[0],new RegExp(`${use} 1개`));
+  assert.equal(next.allocation.classes.some(c=>c.id==='unused'),true);
+  assert.deepEqual(h.writes,[]);
+  assert.equal(h.node('classDialog').open,true);
+});
+
+test('큰 분류의 현금 체크는 다른 탭이 바꾼 현재 분류에서 새 분류로 옮긴다',()=>{
+  const data=allocationTabFixture();data.allocation.classes[0].cash=true;
+  const h=page(data),next=otherTabSave(data);
+  h.ctx.openClass('unused');
+  delete next.allocation.classes[0].cash;
+  next.allocation.classes.push({id:'new-cash-owner',region:'현금',name:'가상 최신 현금 분류',cash:true});
+  h.replaceDoc(next);
+  const f=h.node('classForm');f.cash.checked=true;f.cash.onchange();
+  assert.match(h.node('classCashHint').textContent,/가상 최신 현금 분류/);
+  saveForm(f);
+  assert.deepEqual(h.saved().allocation.classes.filter(c=>c.cash).map(c=>c.id),['unused']);
+  assert.equal(data.allocation.classes[0].cash,true);
+  assert.deepEqual(h.saved().ledger,next.ledger);
+});
+
+test('그룹 저장은 다른 탭이 추가한 소분류와 최신 분류·종목을 보존한다',()=>{
+  const data=allocationTabFixture(),group=data.allocation.groups[0];
+  group.sections=[{name:'가상 기존 소분류',target:5}];
+  const h=page(data),next=otherTabSave(data),current=next.allocation.groups[0];
+  h.openGroup('g1');
+  const added={name:'가상 최신 소분류',classId:'unused',target:8,note:'가상 최신 메모'};
+  current.sections.unshift(added);
+  current.items.push({id:'new-item',name:'가상 최신 종목',section:added.name});
+  next.allocation.classes[0].name='가상 최신 큰 분류 이름';
+  h.replaceDoc(next);
+  const f=h.node('groupForm');f.name.value='가상 새 그룹 이름';
+  f.querySelector('[data-sec="0"]').value='7';saveForm(f);
+  const saved=h.saved();
+  assert.deepEqual(saved.allocation.groups[0].sections,[added,{name:'가상 기존 소분류',target:7}]);
+  assert.equal(saved.allocation.groups[0].items.at(-1).id,'new-item');
+  assert.equal(saved.allocation.classes[0].name,'가상 최신 큰 분류 이름');
+  assert.deepEqual(saved.ledger,next.ledger);
+});
 
 function btcFixture(averageCurrency){
   const data=fixture(),quotes=quoteFixture(),item=data.allocation.groups[0].items[0];
@@ -383,8 +583,6 @@ test('평균매수가 입력칸은 원화 정수·달러 소수 한 자리로 �
 
 test('현금은 원화·달러·음수 금액을 숫자로 저장하고 잘못된 형식은 저장하지 않는다',()=>{
   const h=page(),f=h.node('cashForm');
-  for(const key of ['place','name','amount','currency','minus'])f[key]=h.node(`cash:${key}`);
-  f.amount.setAttribute('data-money','');f.amount.setAttribute('data-money-step','any');
   for(const [currency,raw,shown,value] of [['KRW','12345.6','12,345.6',12345.6],['USD','-1234.5','-1,234.5',-1234.5]]){
     h.ctx.openCash();f.name.value='예시 현금';f.currency.value=currency;h.type(f.amount,raw);
     assert.equal(f.amount.value,shown);f.onsubmit({preventDefault(){}});
