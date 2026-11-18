@@ -9,7 +9,7 @@ const publicBytes = Uint8Array.from({length:65}, (_, i) => i === 0 ? 4 : i);
 const publicKey = Buffer.from(publicBytes).toString('base64url');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,nativeApp=false,displayMode='browser',isSecureContext=true,gh=null}={}){
+function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,userAgentData=undefined,brave=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,nativeApp=false,displayMode='browser',isSecureContext=true,gh=null}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
   const testStats = {sync:0,showNotification:0,shown:[]};
   const classes = new Set();
@@ -52,7 +52,9 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     userAgent,
     platform,
     maxTouchPoints,
-    ...(standalone!==undefined?{standalone}:{})
+    ...(standalone!==undefined?{standalone}:{}),
+    ...(userAgentData!==undefined?{userAgentData}:{}),
+    ...(brave!==undefined?{brave}:{})
   };
   const docMock = {
     hidden:false,
@@ -1013,4 +1015,109 @@ test('Firefox·Chrome·삼성 인터넷 Android의 default·denied 안내가 현
   await inApp.nodes.testPhonePush.onclick();
   assert.match(inApp.detail(),/설치한 브라우저의 일반 창/);
   assert.doesNotMatch(inApp.nodes.pushSetup.textContent,/삼성 인터넷|Chrome|Firefox/);
+});
+
+test('표준 Android WebView(; wv) + Chrome/)와 Chrome 미확인 Brave 모의 환경은 Chrome 대신 현재 앱 또는 설치한 브라우저로 안내한다',async t=>{
+  const androidChromeUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+  const webviewCases=[
+    {name:'표준 WebView(; wv + Version/4.0 + Chrome/)',ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A.240905.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36'},
+    {name:'표준 WebView(; wv + Chrome/)',ua:'Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36'},
+    {name:'WebView userAgentData brand',ua:androidChromeUa,userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Android WebView',version:'130'}],mobile:true,platform:'Android'}}
+  ];
+
+  for(const wv of webviewCases)await t.test(wv.name,async()=>{
+    for(const connected of [true,false]){
+      const unsup=load({userAgent:wv.ua,userAgentData:wv.userAgentData});
+      if(!connected)unsup.ctx.sync.token='';
+      delete unsup.ctx.window.Notification;
+      delete unsup.ctx.window.PushManager;
+      attachLiveDom(unsup);
+      unsup.ctx.renderPushSetup();
+      assert.equal(unsup.ctx.pushIsAndroidWebView(),true);
+      assert.equal(unsup.ctx.pushIsChromeAndroid(),false);
+      assert.equal(unsup.ctx.pushAndroidBrowserLabel(),'');
+      assert.equal(unsup.nodes.enablePhonePush.disabled,true);
+      assert.equal(unsup.nodes.testPhonePush.disabled,true);
+      assert.match(unsup.nodes.pushSetup.textContent,/현재 앱/);
+      assert.match(unsup.nodes.pushSetup.textContent,/설치한 브라우저/);
+      assert.doesNotMatch(unsup.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/,`${wv.name}(connected=${connected}) 미지원 화면에 Chrome 안내가 없어야 한다`);
+    }
+
+    for(const mode of ['standalone','browser']){
+      const denied=load({permission:'denied',userAgent:wv.ua,userAgentData:wv.userAgentData,displayMode:mode});
+      attachLiveDom(denied);
+      denied.ctx.renderPushSetup();
+      assert.match(denied.nodes.pushSetup.textContent,/현재 앱.*설치한 브라우저/);
+      assert.doesNotMatch(denied.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/);
+
+      for(const action of ['enablePhonePush','testPhonePush']){
+        const def=load({permission:()=> 'default',userAgent:wv.ua,userAgentData:wv.userAgentData,displayMode:mode});
+        attachLiveDom(def);
+        def.ctx.renderPushSetup();
+        await def.nodes[action].onclick();
+        assert.match(def.nodes.pushSetup.textContent,/현재 앱/);
+        assert.match(def.nodes.pushSetup.textContent,/설치한 브라우저/);
+        assert.doesNotMatch(def.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/);
+      }
+
+      const ok=load({permission:'granted',userAgent:wv.ua,userAgentData:wv.userAgentData,displayMode:mode,getNotifications:async()=>[{tag:'etf-planner-push-test',close(){}}]});
+      attachLiveDom(ok);
+      ok.ctx.renderPushSetup();
+      await ok.nodes.testPhonePush.onclick();
+      assert.match(ok.nodes.pushSetup.textContent,/현재 앱/);
+      assert.doesNotMatch(ok.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/);
+    }
+  });
+
+  const braveAndUnconfirmedCases=[
+    {name:'Brave navigator.brave + Chrome UA',brave:{async isBrave(){return true;}}},
+    {name:'Brave userAgentData.brands + Chrome UA',userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Brave',version:'130'}],mobile:true,platform:'Android'}},
+    {name:'Brave navigator.brave + userAgentData.brands + Chrome UA',brave:{},userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Brave',version:'130'}],mobile:true,platform:'Android'}},
+    {name:'Chromium 전용 userAgentData(Google Chrome 미확인)',userAgentData:{brands:[{brand:'Chromium',version:'130'}],mobile:true,platform:'Android'}},
+    {name:'빈 userAgentData.brands(Chrome 미확인)',userAgentData:{brands:[],mobile:true,platform:'Android'}}
+  ];
+
+  for(const br of braveAndUnconfirmedCases)await t.test(br.name,async()=>{
+    const unsup=load({userAgent:androidChromeUa,brave:br.brave,userAgentData:br.userAgentData,isSecureContext:false});
+    attachLiveDom(unsup);
+    unsup.ctx.renderPushSetup();
+    assert.equal(unsup.ctx.pushIsChromeAndroid(),false);
+    assert.equal(unsup.ctx.pushAndroidBrowserLabel(),'');
+    assert.match(unsup.nodes.pushSetup.textContent,/현재 앱|설치한 브라우저/);
+    assert.doesNotMatch(unsup.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/);
+
+    for(const mode of ['standalone','browser']){
+      for(const action of ['enablePhonePush','testPhonePush']){
+        const def=load({permission:()=> 'default',userAgent:androidChromeUa,brave:br.brave,userAgentData:br.userAgentData,displayMode:mode});
+        attachLiveDom(def);
+        def.ctx.renderPushSetup();
+        await def.nodes[action].onclick();
+        assert.equal(def.tone(),'warn');
+        assert.match(def.message(),/설치한 브라우저/);
+        assert.match(def.detail(),/설치한 브라우저/);
+        assert.doesNotMatch(def.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/,`${br.name}(${mode}) ${action}에 Chrome 일반 창 안내가 나오면 안 된다`);
+      }
+
+      const denied=load({permission:'denied',userAgent:androidChromeUa,brave:br.brave,userAgentData:br.userAgentData,displayMode:mode});
+      attachLiveDom(denied);
+      denied.ctx.renderPushSetup();
+      assert.match(denied.nodes.pushSetup.textContent,/설치한 브라우저/);
+      assert.doesNotMatch(denied.nodes.pushSetup.textContent,/Chrome|삼성 인터넷|Firefox/);
+    }
+  });
+
+  // 실제 Chrome의 userAgentData('Google Chrome' 브랜드 포함, navigator.brave 없음)는 계속 Chrome으로 안내한다
+  const confirmedChrome=load({
+    permission:()=> 'default',
+    userAgent:androidChromeUa,
+    userAgentData:{brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'},
+    displayMode:'standalone'
+  });
+  attachLiveDom(confirmedChrome);
+  confirmedChrome.ctx.renderPushSetup();
+  await confirmedChrome.nodes.testPhonePush.onclick();
+  assert.equal(confirmedChrome.ctx.pushIsAndroidWebView(),false);
+  assert.equal(confirmedChrome.ctx.pushIsChromeAndroid(),true);
+  assert.match(confirmedChrome.detail(),/Chrome 일반 창에서 먼저 허용/);
+  assert.doesNotMatch(confirmedChrome.nodes.pushSetup.textContent,/삼성 인터넷|Firefox/);
 });
