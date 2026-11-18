@@ -1512,6 +1512,42 @@ for(const syncVia of ['replaceDoc','absorbLocal'])test(`소분류 목표 편집 
   assert.equal(rf.querySelector('[data-sec-label="0"]').textContent,'가상 소분류 S');
 });
 
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`종목 합산(잠금) 상태였던 소분류가 삭제 경고 후(${syncVia}) 목표 없는 종목으로 재추가되면 옛 합산값을 비우고 수동 목표를 만들지 않는다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes.push({id:'E',region:'국내',name:'가상 분류 E'});
+    d.allocation.groups[0].items[0].section='가상 소분류 S';
+    d.allocation.groups[0].items[0].target=20;
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  const data=base(),h=page(data),next1=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm'),secT=f.querySelector('[data-sec="0"]'),secC=f.querySelector('[data-sec-class="0"]'),secL=f.querySelector('[data-sec-label="0"]');
+  assert.equal(secT.value,'20');assert.equal(secT.disabled,true);assert.equal(secL.textContent,'가상 소분류 S · 종목 합산');
+  secC.value='E';
+  delete next1.allocation.groups[0].items[0].section;
+  delete next1.allocation.groups[0].items[0].target;
+  applySync(h,next1);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.deepEqual(h.writes,[]);
+  const next2=structuredClone(next1);
+  next2.allocation.groups[0].items[0].section='가상 소분류 S';
+  applySync(h,next2);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,2);assert.deepEqual(h.writes,[]);
+  assert.equal(secT.value,'');
+  assert.equal(secT.disabled,false);
+  assert.equal(secL.textContent,'가상 소분류 S');
+  saveForm(f);
+  const saved=h.saved();
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  assert.equal(Object.hasOwn(saved.allocation.groups[0].sections[0],'target'),false);
+  const reopened=page(saved);reopened.openGroup('g1');
+  const rf=reopened.node('groupForm');
+  assert.equal(rf.querySelector('[data-sec="0"]').value,'');
+  assert.equal(rf.querySelector('[data-sec="0"]').disabled,false);
+  assert.equal(rf.querySelector('[data-sec-label="0"]').textContent,'가상 소분류 S');
+});
+
 for(const syncVia of ['replaceDoc','absorbLocal'])test(`지워진 그룹 분류 때문에 빈 선택으로 막힌 뒤(${syncVia}) 그대로 다시 저장하면 빈 선택을 유지하고 큰 분류 선택을 계속 요구한다`,()=>{
   const base=()=>{
     const d=allocationTabFixture();

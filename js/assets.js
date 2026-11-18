@@ -636,9 +636,9 @@ function openGroup(id){
       s.classId=hasLatest?latestPicked:(resolvedFollow?"":(prevClassId&&classes.some(c=>c.id===prevClassId)?prevClassId:""));
       if(wasRevived){
         const lt=latestTargets.section(latestG.id,s.name), input=f.querySelector(`[data-sec="${i}"]`), label=f.querySelector(`[data-sec-label="${i}"]`);
-        const hasLatestTarget=lt.linked||lt.target!==null;
+        const wasLocked=s.linked||!!input?.disabled, hasLatestTarget=lt.linked||lt.target!==null;
         s.target=lt.target; s.linked=lt.linked; s.targetText=String(lt.target??"");
-        if(input){input.disabled=lt.linked;if(hasLatestTarget)input.value=s.targetText;}
+        if(input){input.disabled=lt.linked;if(wasLocked||hasLatestTarget)input.value=s.targetText;}
         if(label)label.textContent=`${s.name}${lt.linked?" · 종목 합산":""}`;
       }
       if(hasLatest){
