@@ -1349,6 +1349,135 @@ for(const syncVia of ['replaceDoc','absorbLocal'])test(`그룹 메모만 수정�
   }
 });
 
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`경고 뒤 비워진 그룹 분류를 원래 값으로 직접 다시 선택하면(${syncVia}) 다른 탭 변경보다 직접 선택을 저장하고, 건드리지 않으면 다른 탭 분류를 보존한다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes=[{id:'home',region:'국내',name:'가상 기본'},{id:'X',region:'국내',name:'가상 삭제될 X'},{id:'E',region:'국내',name:'가상 분류 E'}];
+    d.allocation.groups[0].classId='home';
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  // 1) X 선택 → B가 X 삭제 → 경고 뒤 home 재선택 → B가 E 저장 → A 재저장 시 home 유지
+  {
+    const data=base(),h=page(data),next1=otherTabSave(data),next2=structuredClone(next1);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    f.classId.value='X';f.note.value='가상 R5 1번 직접선택';
+    next1.allocation.classes=next1.allocation.classes.filter(c=>c.id!=='X');
+    applySync(h,next1);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);
+    assert.equal(h.alerts.length,1);assert.equal(f.classId.value,'');
+    f.classId.value='home';
+    next2.allocation.classes=next2.allocation.classes.filter(c=>c.id!=='X');
+    next2.allocation.groups[0].classId='E';
+    applySync(h,next2);saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].classId,'home');
+    assert.equal(saved.allocation.groups[0].note,'가상 R5 1번 직접선택');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').classId.value,'home');
+    assert.equal(reopened.node('groupForm').note.value,'가상 R5 1번 직접선택');
+  }
+  // 2) 그룹 분류를 건드리지 않고 메모만 수정 -> 다른 탭 E 보존
+  {
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    f.note.value='가상 R5 1번 메모만';
+    next.allocation.groups[0].classId='E';
+    applySync(h,next);saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].classId,'E');
+    assert.equal(saved.allocation.groups[0].note,'가상 R5 1번 메모만');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').classId.value,'E');
+  }
+});
+
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`누락된 classId를 가진 그룹을 열고 메모만 입력한 사이(${syncVia}) 다른 탭이 E로 고쳐도 첫 저장은 차단하고 최신 선택지를 표시한 뒤 확인 재시도 때 1회 저장한다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes=[{id:'home',region:'국내',name:'가상 기본'}];
+    d.allocation.groups[0].classId='missing-id';
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  // 1) B가 E 추가 + 그룹 E로 수정 -> A 첫 저장 0회·차단·메모 유지·최신 선택지 표시 -> 확인 재시도 시 1회 저장
+  {
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    assert.equal(f.classId.value,'');
+    f.note.value='가상 R5 2번 누락복구';
+    next.allocation.classes.push({id:'E',region:'국내',name:'가상 분류 E'});
+    next.allocation.groups[0].classId='E';
+    applySync(h,next);saveForm(f);
+    assert.equal(h.writes.length,0);assert.equal(h.node('groupDialog').open,true);
+    assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/큰 분류를 고르세요/);
+    assert.equal(f.note.value,'가상 R5 2번 누락복구');
+    assert.match(f.classId.innerHTML,/value="E"/);
+    assert.equal(f.classId.value,'E');
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.writes.length,1);assert.equal(h.node('groupDialog').open,false);
+    assert.equal(saved.allocation.groups[0].classId,'E');
+    assert.equal(saved.allocation.groups[0].note,'가상 R5 2번 누락복구');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').classId.value,'E');
+  }
+  // 2) B가 E만 추가하고 그룹은 여전히 누락 상태 -> 첫 저장 차단·최신 E 표시·빈 선택 재시도도 차단·직접 E 선택 뒤 1회 저장
+  {
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    f.note.value='가상 R5 2번 직접선택';
+    next.allocation.classes.push({id:'E',region:'국내',name:'가상 분류 E'});
+    applySync(h,next);saveForm(f);
+    assert.equal(h.writes.length,0);assert.equal(h.node('groupDialog').open,true);
+    assert.equal(f.classId.value,'');assert.match(f.classId.innerHTML,/value="E"/);
+    f.classId.value='E';saveForm(f);
+    assert.equal(h.writes.length,1);assert.equal(h.node('groupDialog').open,false);
+    assert.equal(h.saved().allocation.groups[0].classId,'E');
+    assert.equal(h.saved().allocation.groups[0].note,'가상 R5 2번 직접선택');
+  }
+});
+
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`소분류 목표 편집 중 삭제 경고 후(${syncVia}) 종목 목표가 있는 소분류가 재추가되면 값·잠금·종목 합산 라벨을 함께 갱신하고 재열기 화면과 일치시킨다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.groups[0].items[0].section='가상 소분류 S';
+    delete d.allocation.groups[0].items[0].target;
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  const data=base(),h=page(data),next1=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm'),secT=f.querySelector('[data-sec="0"]'),secL=f.querySelector('[data-sec-label="0"]');
+  assert.equal(secT.disabled,false);assert.equal(secL.textContent,'가상 소분류 S');
+  secT.value='12';
+  delete next1.allocation.groups[0].items[0].section;
+  applySync(h,next1);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.deepEqual(h.writes,[]);
+  const next2=structuredClone(next1);
+  next2.allocation.groups[0].items[0].section='가상 소분류 S';
+  next2.allocation.groups[0].items[0].target=20;
+  applySync(h,next2);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,2);assert.deepEqual(h.writes,[]);
+  assert.equal(secT.value,'20');
+  assert.equal(secT.disabled,true);
+  assert.equal(secL.textContent,'가상 소분류 S · 종목 합산');
+  saveForm(f);
+  const saved=h.saved();
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  const reopened=page(saved);reopened.openGroup('g1');
+  const rf=reopened.node('groupForm');
+  assert.equal(rf.querySelector('[data-sec="0"]').value,'20');
+  assert.equal(rf.querySelector('[data-sec="0"]').disabled,true);
+  assert.equal(rf.querySelector('[data-sec-label="0"]').textContent,'가상 소분류 S · 종목 합산');
+});
+
 function btcFixture(averageCurrency){
   const data=fixture(),quotes=quoteFixture(),item=data.allocation.groups[0].items[0];
   Object.assign(item,{name:'가상 비트코인',ticker:'BTC-USD',shares:.01,averagePrice:70000000});

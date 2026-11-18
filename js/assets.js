@@ -581,7 +581,7 @@ function openGroup(id){
   el("groupTitle").textContent=g?"그룹 수정":"새 그룹";
   const targets=allocationTargets(a), target=g?targets.groups.get(g.id):{target:null,linked:false};
   const initialGroupPicked=g?(g.classId&&classes.some(c=>c.id===g.classId)?g.classId:""):classes[0].id;
-  let groupBaseClassId=initialGroupPicked, userGroupClassPicked=false;
+  let groupBaseClassId=initialGroupPicked, userGroupClassPicked=false, groupCleared=false;
   f.name.value=g?.name||""; renderGroupSelect(initialGroupPicked); f.target.value=target.target??""; f.target.disabled=target.linked; f.note.value=g?.note||"";
   el("groupTargetHint").textContent=target.linked?"종목·소분류 목표의 합계입니다. 종목별에서 수정하면 자동 반영됩니다.":"하위 목표가 없을 때만 직접 입력합니다. 기준 총자산 대비입니다.";
   const names=g?[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(x=>x.section).filter(Boolean)])]:[];
@@ -594,11 +594,12 @@ function openGroup(id){
     const t=targets.section(g.id,n), cid=sectionClassId(a,g,n), picked=cid&&cid!==g.classId?cid:"";
     return {name:n,target:t.target,linked:t.linked,targetText:String(t.target??""),classId:picked,userClassPicked:false,allowFollowAfterWarn:false,warnedDeleted:false,clearedValue:makeSentinel("cleared"),deletedValue:makeSentinel("deleted")};
   });
-  el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%) · 투자구성 분류</span>${initialSections.map((s,i)=>`<div class="sub-target"><label class="sub-target-name"><span>${escA(s.name)}${s.linked?" · 종목 합산":""}</span><input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${s.target??""}"${s.linked?" disabled":""} aria-label="${escA(s.name)} 목표 비중 (%)"></label><label class="sub-target-class"><span>투자구성 분류</span><select data-sec-class="${i}" aria-label="${escA(s.name)} 투자구성 분류">${secOptions(s.classId)}</select></label></div>`).join("")}`:"";
+  el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%) · 투자구성 분류</span>${initialSections.map((s,i)=>`<div class="sub-target"><label class="sub-target-name"><span data-sec-label="${i}">${escA(s.name)}${s.linked?" · 종목 합산":""}</span><input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${s.target??""}"${s.linked?" disabled":""} aria-label="${escA(s.name)} 목표 비중 (%)"></label><label class="sub-target-class"><span>투자구성 분류</span><select data-sec-class="${i}" aria-label="${escA(s.name)} 투자구성 분류">${secOptions(s.classId)}</select></label></div>`).join("")}`:"";
   initialSections.forEach((s,i)=>{
-    const input=f.querySelector(`[data-sec="${i}"]`), select=f.querySelector(`[data-sec-class="${i}"]`);
+    const input=f.querySelector(`[data-sec="${i}"]`), select=f.querySelector(`[data-sec-class="${i}"]`), label=f.querySelector(`[data-sec-label="${i}"]`);
     if(input){input.value=s.targetText;input.disabled=s.linked;}
     if(select){select.innerHTML=secOptions(s.classId);select.value=s.classId;}
+    if(label)label.textContent=`${s.name}${s.linked?" · 종목 합산":""}`;
   });
   const refreshClassSelects=(alloc,groupCid,sectionCids,warnedDeleted=new Set())=>{
     const prevTempId=tempChina?.id, built=buildClasses(alloc);
@@ -606,14 +607,16 @@ function openGroup(id){
     const mapCid=cid=>prevTempId&&built.existingChina&&cid===prevTempId?built.existingChina.id:cid;
     const latestG=id?alloc?.groups.find(x=>x.id===id):null;
     const prevGroupTemp=mapCid(groupCid);
-    const groupUntouched=!userGroupClassPicked&&groupCid===groupBaseClassId;
+    const groupUntouched=!groupCleared&&!userGroupClassPicked&&groupCid===groupBaseClassId;
     const latestGroupCid=latestG?.classId&&classes.some(c=>c.id===latestG.classId)?latestG.classId:"";
-    groupBaseClassId=latestG?latestGroupCid:groupBaseClassId;
     if(groupUntouched){
+      groupBaseClassId=latestG?latestGroupCid:groupBaseClassId;
       userGroupClassPicked=false;
       renderGroupSelect(latestG?latestGroupCid:prevGroupTemp);
     }else{
       const validGroup=prevGroupTemp&&classes.some(c=>c.id===prevGroupTemp);
+      groupCleared=!validGroup;
+      groupBaseClassId=validGroup?(latestG?latestGroupCid:groupBaseClassId):"";
       userGroupClassPicked=!!validGroup;
       renderGroupSelect(validGroup?prevGroupTemp:"");
     }
@@ -632,9 +635,10 @@ function openGroup(id){
       const prevClassId=s.classId;
       s.classId=hasLatest?latestPicked:(resolvedFollow?"":(prevClassId&&classes.some(c=>c.id===prevClassId)?prevClassId:""));
       if(wasRevived){
-        const lt=latestTargets.section(latestG.id,s.name), input=f.querySelector(`[data-sec="${i}"]`);
+        const lt=latestTargets.section(latestG.id,s.name), input=f.querySelector(`[data-sec="${i}"]`), label=f.querySelector(`[data-sec-label="${i}"]`);
         s.target=lt.target; s.linked=lt.linked; s.targetText=String(lt.target??"");
         if(input){input.disabled=lt.linked;input.value=s.targetText;}
+        if(label)label.textContent=`${s.name}${lt.linked?" · 종목 합산":""}`;
       }
       if(hasLatest){
         s.allowFollowAfterWarn=false;
@@ -701,7 +705,7 @@ function openGroup(id){
     const latestGroupClassId=g?.classId??"";
     const groupValidInLatest=cid=>!!(cid&&(currentClasses.some(x=>x.id===cid)||(tempChina&&!existingChina&&cid===tempChina.id)));
     const groupChanged=userGroupClassPicked||groupCid!==groupBaseClassId;
-    const effectiveGroupCid=groupChanged?groupCid:(g?(groupValidInLatest(latestGroupClassId)?latestGroupClassId:""):groupCid);
+    const effectiveGroupCid=!groupCid?"":(groupChanged?groupCid:(g?(groupValidInLatest(latestGroupClassId)?latestGroupClassId:""):groupCid));
     const targetChanged=i=>{
       const init=initialSections[i], input=f.querySelector(`[data-sec="${i}"]`), rawTarget=String(input?.value??"");
       return !(input?.disabled||init.linked)&&(numIn(rawTarget)!==init.target||(init.target===null&&rawTarget.trim()!==""));
