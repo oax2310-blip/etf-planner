@@ -991,7 +991,239 @@ test('앞뒤 공백이 포함된 기존 분류 ID가 있어도 메모 저장만�
   assert.deepEqual(hb.writes,[]);assert.match(hb.alerts[0],/큰 분류를 고르세요/);
 });
 
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`소분류와 고른 분류가 삭제돼 경고를 받은 뒤(${syncVia}) 다른 탭이 같은 이름의 소분류를 새 분류 E로 다시 만들면 재시도에서 E를 보존하거나 충돌을 다시 알린다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes.push({id:'D',region:'국내',name:'가상 분류 D'},{id:'E',region:'국내',name:'가상 분류 E'},{id:'F',region:'국내',name:'가상 분류 F'});
+    d.allocation.groups[0].sections=[{name:'가상 소분류 S',target:5}];
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  // 1) 재시도 전 JSON에 E가 있고, 그대로 재시도해도 E가 지워지지 않으며 최종 저장·재열기까지 E가 유지된다
+  {
+    const data=base(),h=page(data),next1=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value='가상 1번 재시도 메모';secC.value='D';
+    delete next1.allocation.groups[0].sections;
+    next1.allocation.classes=next1.allocation.classes.filter(c=>c.id!=='D');
+    applySync(h,next1);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.deepEqual(h.writes,[]);
+    const next2=structuredClone(next1);
+    next2.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'E',target:5}];
+    const beforeNext2=JSON.stringify(next2);
+    applySync(h,next2);saveForm(f);
+    assert.equal(JSON.stringify(next2),beforeNext2,'경고 재시도 중 새 소분류 E가 지워지면 안 됨');
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,2);
+    assert.match(h.alerts[1],/가상 소분류 S/);
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,'가상 1번 재시도 메모');
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'E');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'E');
+  }
+  // 2) 충돌 안내 후 사용자가 직접 다른 분류(F)나 '그룹 분류 따름'('')을 고르면 그 선택이 반영된다
+  for(const choice of ['F','']){
+    const data=base(),h=page(data),next1=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value=`가상 1번 직접 ${choice||'follow'}`;secC.value='D';
+    delete next1.allocation.groups[0].sections;
+    next1.allocation.classes=next1.allocation.classes.filter(c=>c.id!=='D');
+    applySync(h,next1);saveForm(f);
+    const next2=structuredClone(next1);
+    next2.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'E',target:5}];
+    applySync(h,next2);saveForm(f);
+    secC.value=choice;
+    saveForm(f);
+    const saved=h.saved(),sec=saved.allocation.groups[0].sections[0];
+    assert.equal(saved.allocation.groups[0].note,`가상 1번 직접 ${choice||'follow'}`);
+    if(choice)assert.equal(sec.classId,choice);
+    else assert.equal(Object.hasOwn(sec,'classId'),false);
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,choice);
+  }
+});
 
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`D 삭제 경고 뒤(${syncVia}) 자동 안내 옵션을 그대로 두면 타 탭 F가 유지되고, E를 직접 고른 뒤 타 탭이 F로 바꿔도 A가 고른 E가 저장된다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes.push({id:'D',region:'국내',name:'가상 분류 D'},{id:'E',region:'국내',name:'가상 분류 E'},{id:'F',region:'국내',name:'가상 분류 F'});
+    d.allocation.groups[0].items[0].section='가상 소분류 S';
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  // 1) 자동 안내 옵션을 그대로 두고 B가 E->F로 바꾼 뒤 A가 저장 -> 최신값 F 유지
+  {
+    const data=base(),h=page(data),next1=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value='가상 2번 자동유지';secC.value='D';
+    next1.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'E'}];
+    next1.allocation.classes=next1.allocation.classes.filter(c=>c.id!=='D');
+    applySync(h,next1);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);
+    const next2=structuredClone(next1);
+    next2.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'F'}];
+    applySync(h,next2);saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,'가상 2번 자동유지');
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'F');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'F');
+  }
+  // 2) 자동 안내 옵션에서 E를 직접 고른 뒤 B가 F로 바꾸고 A가 저장 -> A가 직접 고른 E 저장
+  {
+    const data=base(),h=page(data),next1=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value='가상 2번 직접선택';secC.value='D';
+    next1.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'E'}];
+    next1.allocation.classes=next1.allocation.classes.filter(c=>c.id!=='D');
+    applySync(h,next1);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);
+    secC.value='E';
+    const next2=structuredClone(next1);
+    next2.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'F'}];
+    applySync(h,next2);saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,'가상 2번 직접선택');
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'E');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'E');
+  }
+});
+
+test("기존 분류 D를 상속('')으로 바꾸거나 E로 바꾼 뒤 S 없는 백업으로 경고받으면 해소·복구 전까지 막히고, 되돌리거나 해소하면 S를 되살리지 않고 메모를 저장한다",()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes.push({id:'D',region:'국내',name:'가상 분류 D'},{id:'E',region:'국내',name:'가상 분류 E'});
+    d.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'D',target:5}];
+    return d;
+  };
+  // 1) D -> ''(상속) 후 B가 S 없는 백업 복원: 그대로 재시도해도 막히고, D 복구 또는 '' 직접 해소를 거치면 S 없이 메모 저장
+  for(const resolveTo of ['D','']){
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value=`가상 3A 메모 ${resolveTo||'follow'}`;secC.value='';
+    delete next.allocation.groups[0].sections;
+    const beforeNext=JSON.stringify(next);
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,1);
+    assert.match(h.alerts[0],/가상 소분류 S/);
+    assert.notEqual(secC.value,'');assert.notEqual(secC.value,'D');
+    saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,2);
+    assert.equal(f.note.value,`가상 3A 메모 ${resolveTo||'follow'}`);assert.equal(JSON.stringify(next),beforeNext);
+    secC.value=resolveTo;
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,`가상 3A 메모 ${resolveTo||'follow'}`);
+    assert.equal(Object.hasOwn(saved.allocation.groups[0],'sections'),false);
+  }
+  // 2) D -> E 편집 후 B가 S 없는 백업 복원: 그대로 재시도하면 막히고, 원래 D로 되돌리거나 ''로 해소하면 S 없이 메모 저장
+  for(const resolveTo of ['D','']){
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    f.note.value=`가상 3B 메모 ${resolveTo||'follow'}`;secC.value='E';
+    delete next.allocation.groups[0].sections;
+    const beforeNext=JSON.stringify(next);
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,1);
+    assert.match(h.alerts[0],/가상 소분류 S/);assert.equal(secC.value,'E');
+    saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);assert.equal(h.alerts.length,2);
+    assert.equal(f.note.value,`가상 3B 메모 ${resolveTo||'follow'}`);assert.equal(JSON.stringify(next),beforeNext);
+    secC.value=resolveTo;
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].note,`가상 3B 메모 ${resolveTo||'follow'}`);
+    assert.equal(Object.hasOwn(saved.allocation.groups[0],'sections'),false);
+  }
+});
+
+test('백업의 실제 분류 ID가 __cleared__와 __deleted__여도 충돌 상태와 구별돼 저장·재열기와 삭제 차단이 정상 동작한다',()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes=[
+      {id:'stock',region:'미국',name:'주식'},
+      {id:'__cleared__',region:'국내',name:'가상 클리어드'},
+      {id:'__deleted__',region:'국내',name:'가상 딜리티드'},
+    ];
+    d.allocation.groups=[{id:'g1',name:'가상 특수 ID 그룹',classId:'stock',sections:[{name:'가상 소분류 S',target:5}],items:[]}];
+    return d;
+  };
+  // 1) 소분류에서 실제 __cleared__를 골라 저장·재열기해도 유지된다
+  {
+    const data=base(),h=page(data),f=h.node('groupForm');
+    h.openGroup('g1');
+    const secC=f.querySelector('[data-sec-class="0"]');
+    secC.value='__cleared__';
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'__cleared__');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'__cleared__');
+  }
+  // 2) 그룹에서 실제 __deleted__를 고른 뒤 다른 탭이 __deleted__를 삭제하면 저장 전에 차단되고 없는 ID가 저장되지 않는다
+  {
+    const data=base(),h=page(data),next=otherTabSave(data),beforeNext=JSON.stringify(next);
+    h.openGroup('g1');
+    const f=h.node('groupForm');
+    f.classId.value='__deleted__';f.note.value='가상 삭제 ID 차단';
+    next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='__deleted__');
+    const expectedNext=JSON.stringify(next);
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);
+    assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 딜리티드/);
+    assert.equal(f.classId.value,'');assert.match(f.classId.innerHTML,/^<option value="">분류 없음 · 다시 고르세요<\/option>/);
+    assert.equal(JSON.stringify(next),expectedNext);
+    assert.notEqual(beforeNext,'');
+  }
+  // 3) 기존 그룹=__deleted__, 소분류=__cleared__를 메모만 바꿔 저장·재열기해도 둘 다 유지된다
+  {
+    const data=base();
+    data.allocation.groups[0].classId='__deleted__';
+    data.allocation.groups[0].sections[0].classId='__cleared__';
+    const h=page(data),f=h.node('groupForm');
+    h.openGroup('g1');
+    assert.equal(f.classId.value,'__deleted__');
+    assert.equal(f.querySelector('[data-sec-class="0"]').value,'__cleared__');
+    f.note.value='가상 특수 ID 유지';
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(saved.allocation.groups[0].classId,'__deleted__');
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'__cleared__');
+    const reopened=page(saved);reopened.openGroup('g1');
+    assert.equal(reopened.node('groupForm').classId.value,'__deleted__');
+    assert.equal(reopened.node('groupForm').querySelector('[data-sec-class="0"]').value,'__cleared__');
+  }
+  // 4) 소분류에서 실제 __deleted__를 고른 뒤 다른 탭이 __deleted__를 삭제하고 S를 __cleared__로 저장하면 차단 후 최신 __cleared__를 보존한다
+  {
+    const data=base(),h=page(data),next=otherTabSave(data);
+    h.openGroup('g1');
+    const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+    secC.value='__deleted__';f.note.value='가상 소분류 삭제 ID';
+    next.allocation.groups[0].sections=[{name:'가상 소분류 S',classId:'__cleared__',target:5}];
+    next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='__deleted__');
+    h.replaceDoc(next);saveForm(f);
+    assert.equal(h.node('groupDialog').open,true);assert.deepEqual(h.writes,[]);
+    assert.equal(h.alerts.length,1);assert.match(h.alerts[0],/가상 딜리티드/);
+    saveForm(f);
+    const saved=h.saved();
+    assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+    assert.equal(saved.allocation.groups[0].sections[0].classId,'__cleared__');
+  }
+});
 
 function btcFixture(averageCurrency){
   const data=fixture(),quotes=quoteFixture(),item=data.allocation.groups[0].items[0];

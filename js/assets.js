@@ -583,9 +583,14 @@ function openGroup(id){
   f.name.value=g?.name||""; renderGroupSelect(g?(g.classId??""):classes[0].id); f.target.value=target.target??""; f.target.disabled=target.linked; f.note.value=g?.note||"";
   el("groupTargetHint").textContent=target.linked?"종목·소분류 목표의 합계입니다. 종목별에서 수정하면 자동 반영됩니다.":"하위 목표가 없을 때만 직접 입력합니다. 기준 총자산 대비입니다.";
   const names=g?[...new Set([...(g.sections||[]).map(x=>x.name),...g.items.map(x=>x.section).filter(Boolean)])]:[];
+  const makeSentinel=tag=>{
+    let v=`__ep_${tag}_${newId()}`;
+    while(classes.some(c=>c.id===v)||a.classes.some(c=>c.id===v))v+="_";
+    return v;
+  };
   const initialSections=names.map(n=>{
     const t=targets.section(g.id,n), cid=sectionClassId(a,g,n), picked=cid&&cid!==g.classId?cid:"";
-    return {name:n,target:t.target,linked:t.linked,targetText:String(t.target??""),classId:picked,userClassPicked:false};
+    return {name:n,target:t.target,linked:t.linked,targetText:String(t.target??""),classId:picked,userClassPicked:false,allowFollowAfterWarn:false,clearedValue:makeSentinel("cleared"),deletedValue:makeSentinel("deleted")};
   });
   el("sectionTargets").innerHTML=names.length?`<span>소분류 목표 비중 (%) · 투자구성 분류</span>${initialSections.map((s,i)=>`<div class="sub-target"><label class="sub-target-name"><span>${escA(s.name)}${s.linked?" · 종목 합산":""}</span><input data-sec="${i}" type="number" min="0" max="100" step="any" inputmode="decimal" value="${s.target??""}"${s.linked?" disabled":""} aria-label="${escA(s.name)} 목표 비중 (%)"></label><label class="sub-target-class"><span>투자구성 분류</span><select data-sec-class="${i}" aria-label="${escA(s.name)} 투자구성 분류">${secOptions(s.classId)}</select></label></div>`).join("")}`:"";
   initialSections.forEach((s,i)=>{
@@ -593,7 +598,7 @@ function openGroup(id){
     if(input){input.value=s.targetText;input.disabled=s.linked;}
     if(select){select.innerHTML=secOptions(s.classId);select.value=s.classId;}
   });
-  const refreshClassSelects=(alloc,groupCid,sectionCids)=>{
+  const refreshClassSelects=(alloc,groupCid,sectionCids,warnedDeleted=new Set())=>{
     const prevTempId=tempChina?.id, built=buildClasses(alloc);
     classes=built.list;
     const mapCid=cid=>prevTempId&&built.existingChina&&cid===prevTempId?built.existingChina.id:cid;
@@ -602,40 +607,45 @@ function openGroup(id){
     const latestSet=new Set(latestG?[...(latestG.sections||[]).map(x=>x.name),...latestG.items.map(x=>x.section).filter(Boolean)]:[]);
     initialSections.forEach((s,i)=>{
       // 사용자가 고친 선택은 유지하고, 고치지 않았을 때만 최신 분류로 맞춘다.
-      // 지워진 선택은 사라진 소분류 충돌·타 탭 최신 분류 유무에 따라 구분해 자동 비우기가 최신 분류를 지우지 않게 한다.
-      const raw=sectionCids[i], wasSpecial=raw==="__deleted__"||raw==="__cleared__";
-      const userTouched=!wasSpecial&&(s.userClassPicked||raw!==s.classId);
+      // 지워진 선택은 사라진 소분류 충돌·타 탭 최신 분류 유무에 따라 창별 임시값으로 구분해 실제 분류 ID·자동 비우기와 섞이지 않게 한다.
+      const raw=sectionCids[i], isDeletedVal=raw===s.deletedValue, isClearedVal=raw===s.clearedValue, wasSpecial=isDeletedVal||isClearedVal;
+      const hasLatest=latestSet.has(s.name), resolvedFollow=!hasLatest&&s.allowFollowAfterWarn&&raw==="";
+      const userTouched=!wasSpecial&&!resolvedFollow&&(s.userClassPicked||raw!==s.classId);
       const untouched=!userTouched&&!wasSpecial;
-      const latestCid=latestG&&latestSet.has(s.name)?sectionClassId(alloc,latestG,s.name):"";
+      const latestCid=hasLatest?sectionClassId(alloc,latestG,s.name):"";
       const latestPicked=latestCid&&latestCid!==latestG.classId?latestCid:"";
-      s.classId=latestPicked;
+      const prevClassId=s.classId;
+      s.classId=hasLatest?latestPicked:(resolvedFollow?"":(prevClassId&&classes.some(c=>c.id===prevClassId)?prevClassId:""));
+      if(hasLatest)s.allowFollowAfterWarn=false;
+      else if(warnedDeleted.has(s.name))s.allowFollowAfterWarn=true;
       const select=f.querySelector(`[data-sec-class="${i}"]`);
       if(!select)return;
       if(untouched){
         s.userClassPicked=false;
-        const picked=latestPicked&&classes.some(c=>c.id===latestPicked)?latestPicked:"";
+        const picked=hasLatest?(latestPicked&&classes.some(c=>c.id===latestPicked)?latestPicked:""):s.classId;
         select.innerHTML=secOptions(picked);
         select.value=picked;
         return;
       }
       const mapped=wasSpecial?"":mapCid(raw);
-      const validChoice=(mapped===""&&!wasSpecial)||(mapped&&classes.some(c=>c.id===mapped));
+      const validChoice=(hasLatest&&mapped===""&&!wasSpecial)||(mapped&&classes.some(c=>c.id===mapped));
       if(validChoice){
-        s.userClassPicked=latestSet.has(s.name);
+        s.userClassPicked=hasLatest;
         select.innerHTML=secOptions(mapped);
         select.value=mapped;
         return;
       }
-      if(!latestSet.has(s.name)&&(raw==="__deleted__"||userTouched)){
+      if(!hasLatest&&(isDeletedVal||userTouched)){
         s.userClassPicked=false;
-        select.innerHTML=secOptions("","<option value=\"__deleted__\">삭제된 소분류 · 그룹 분류 따름 선택</option>");
-        select.value="__deleted__";
+        select.innerHTML=secOptions("",`<option value="${escA(s.deletedValue)}">삭제된 소분류 · 그룹 분류 따름 선택</option>`);
+        select.value=s.deletedValue;
         return;
       }
-      if(latestSet.has(s.name)&&latestPicked){
+      if(hasLatest&&latestPicked){
+        s.classId=s.clearedValue;
         s.userClassPicked=false;
-        select.innerHTML=secOptions("","<option value=\"__cleared__\">선택 삭제됨 · 저장 시 최신 분류 유지</option>");
-        select.value="__cleared__";
+        select.innerHTML=secOptions("",`<option value="${escA(s.clearedValue)}">선택 삭제됨 · 저장 시 최신 분류 유지</option>`);
+        select.value=s.clearedValue;
         return;
       }
       s.userClassPicked=false;
@@ -667,21 +677,23 @@ function openGroup(id){
       return !(input?.disabled||init.linked)&&(numIn(rawTarget)!==init.target||(init.target===null&&rawTarget.trim()!==""));
     };
     const classChanged=i=>{
-      const raw=sectionCids[i];
-      if(raw==="__deleted__")return true;
-      if(raw==="__cleared__")return false;
-      return initialSections[i].userClassPicked||raw!==initialSections[i].classId;
+      const init=initialSections[i], raw=sectionCids[i];
+      if(raw===init.deletedValue)return true;
+      if(raw===init.clearedValue)return false;
+      if(!latestSectionNames.has(names[i])&&init.allowFollowAfterWarn&&raw==="")return false;
+      return init.userClassPicked||raw!==init.classId;
     };
     const secChanged=i=>targetChanged(i)||classChanged(i);
     const deletedSections=names.filter((n,i)=>!latestSectionNames.has(n)&&secChanged(i));
-    const activeSectionCids=sectionCids.filter((_,i)=>latestSectionNames.has(names[i]));
+    const revivedSections=names.filter((n,i)=>latestSectionNames.has(n)&&sectionCids[i]===initialSections[i].deletedValue);
+    const activeSectionCids=sectionCids.filter((cid,i)=>latestSectionNames.has(names[i])&&cid!==initialSections[i].clearedValue&&cid!==initialSections[i].deletedValue);
     const deleted=[];
     for(const cid of [groupCid,...activeSectionCids]){
-      if(!cid||cid==="__cleared__"||cid==="__deleted__"||cid===tempChina?.id||currentClasses.some(x=>x.id===cid)||deleted.some(x=>x.id===cid))continue;
+      if(!cid||cid===tempChina?.id||currentClasses.some(x=>x.id===cid)||deleted.some(x=>x.id===cid))continue;
       const prev=classes.find(x=>x.id===cid);
       if(prev)deleted.push(prev);
     }
-    if(deleted.length||deletedSections.length){
+    if(deleted.length||deletedSections.length||revivedSections.length){
       const messages=[];
       if(deleted.length){
         const labels=deleted.map(c=>`'${c.region||"기타"} · ${c.name}'`).join(", ");
@@ -691,13 +703,17 @@ function openGroup(id){
         const labels=deletedSections.map(n=>`'${n}'`).join(", ");
         messages.push(`수정한 소분류(${labels})가 삭제되어 저장하지 않았습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.`);
       }
+      if(revivedSections.length){
+        const labels=revivedSections.map(n=>`'${n}'`).join(", ");
+        messages.push(`소분류(${labels})가 다른 탭에서 다시 추가되었거나 이전 선택이 삭제되었습니다. 선택을 확인한 뒤 다시 저장하세요.`);
+      }
       alert(messages.join("\n"));
-      refreshClassSelects(a,groupCid,sectionCids);
+      refreshClassSelects(a,groupCid,sectionCids,new Set(deletedSections));
       return;
     }
     if(!groupCid){
       alert("큰 분류를 고르세요.");
-      refreshClassSelects(a,groupCid,sectionCids);
+      refreshClassSelects(a,groupCid,sectionCids,new Set(deletedSections));
       return;
     }
     const existingChina=tempChina?currentClasses.find(c=>c.region==="해외"&&c.name==="중국"):null;
