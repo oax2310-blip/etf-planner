@@ -50,14 +50,16 @@ function harness({existing=false,initial={},permission='granted',waitMs}={}){
   }
   const created=subscription(),old=subscription('old');
   let current=existing?old:null;
-  const registration={active:{state:'activated'},pushManager:{
-    async getSubscription(){calls.query++;order.push('query');return behavior.query?behavior.query():current;},
-    async subscribe(options){
-      calls.subscribe++;order.push('subscribe');
-      const result=behavior.subscribe?await behavior.subscribe(options):created;
-      current=result;return result;
-    }
-  },async update(){calls.update++;}};
+  const registration={active:{state:'activated'},
+    async showNotification(...args){calls.showNotification=(calls.showNotification||0)+1;order.push('showNotification');if(behavior.showNotification)return await behavior.showNotification(...args);},
+    pushManager:{
+      async getSubscription(){calls.query++;order.push('query');return behavior.query?behavior.query():current;},
+      async subscribe(options){
+        calls.subscribe++;order.push('subscribe');
+        const result=behavior.subscribe?await behavior.subscribe(options):created;
+        current=result;return result;
+      }
+    },async update(){calls.update++;}};
   const notification={permission,async requestPermission(){
     calls.permission++;order.push('permission');
     this.permission=behavior.permission?await behavior.permission():'granted';return this.permission;
@@ -67,7 +69,7 @@ function harness({existing=false,initial={},permission='granted',waitMs}={}){
     async getRegistration(){calls.lookup++;return behavior.lookup?behavior.lookup():registration;},
     ready:Promise.resolve(registration)
   };
-  const classes=new Set(),nodes={pushSetup:{},enablePhonePush:{},disablePhonePush:{},alertsBtn:{
+  const classes=new Set(),nodes={pushSetup:{},enablePhonePush:{},testPhonePush:{},disablePhonePush:{},alertsBtn:{
     classList:{toggle(name,on){if(on)classes.add(name);else classes.delete(name);}},title:'',ariaLabel:''
   }};
   const ctx=vm.createContext({
@@ -347,3 +349,28 @@ test('동기화 자체와 충돌 선택 대기에는 새 30초 한도를 적용�
   await h.time.advance(60000);assert.equal(h.busy(),true);assert.equal(h.time.size,0);
   h.ctx.sync.base=JSON.stringify(h.ctx.state);held.resolve();await work;assert.equal(h.busy(),false);
 });
+
+test('알림 테스트: 실행 중 버튼 잠금·연결 문구 보존과 30초 시간 초과 복구',async()=>{
+  const h=harness({existing:true}),held=deferred();saved(h);await h.ctx.initializePush();
+  h.behavior.showNotification=()=>held.promise;
+  const before=JSON.stringify(h.ctx.state),storage=[...h.storage];
+  const work=h.ctx.testPhonePush();await flush();
+  assert.equal(h.busy(),true);
+  assert.equal(h.buttonDisabled(),true);
+  assert.equal(h.nodes.testPhonePush.disabled,true);
+  assert.equal(h.nodes.disablePhonePush.disabled,true);
+  assert.match(h.nodes.pushSetup.innerHTML,/id="testPhonePush"[^>]*>테스트 중…<\/button>/);
+  assert.match(h.nodes.pushSetup.innerHTML,/id="enablePhonePush"[^>]*>알림 연결 확인<\/button>/,'알림 테스트 중 연결 버튼을 연결 중…으로 바꾸지 않는다');
+  await expired(h,work,'테스트 알림 표시',30000);
+  assert.equal(h.nodes.testPhonePush.disabled,false);
+  assert.equal(h.nodes.disablePhonePush.disabled,false);
+  assert.match(h.nodes.pushSetup.innerHTML,/id="testPhonePush"[^>]*>알림 테스트<\/button>/);
+  assert.equal(h.calls.save,0);assert.equal(h.calls.sync,0);
+  assert.equal(JSON.stringify(h.ctx.state),before);assert.deepEqual([...h.storage],storage);
+
+  const stalledRegister=harness(),regHeld=deferred();stalledRegister.behavior.register=()=>regHeld.promise;
+  await expired(stalledRegister,stalledRegister.ctx.testPhonePush(),'브라우저 알림 준비',30000);
+  await expired(stalledRegister,stalledRegister.ctx.enablePhonePush(),'브라우저 알림 준비',30000);
+  assert.equal(stalledRegister.calls.register,1,'이미 진행 중인 준비 Promise를 재사용한다');
+});
+

@@ -2,7 +2,7 @@
 const PUSH_CONFIG_FILE = "etf-planner-push.json";
 const PUSH_CONFIG_KEY = "etf-planner-push-config";
 const PUSH_DEVICE_KEY = "etf-planner-push-device";
-let pushConfig = null, pushSubscription, pushBusy = false, pushMessage = ""; // undefined: 브라우저 구독 조회 전, null: 구독 없음.
+let pushConfig = null, pushSubscription, pushBusy = false, pushTesting = false, pushMessage = ""; // undefined: 브라우저 구독 조회 전, null: 구독 없음.
 let pushStageWaitMs = 30000, pushGeneration = 0;
 const PUSH_STAGE_TIMEOUT = Symbol("push-stage-timeout");
 const pushPendingTasks = {registration:null,unsubscribe:null,subscribe:null};
@@ -174,8 +174,10 @@ function renderPushSetup(){
   if(status==="collection-unavailable")message+=" 최근 시세 수집에 실패했습니다. 새 시세를 받은 뒤 발송을 재개합니다.";
   if(status==="linked-alerts-unavailable")message+=" 매매 기준 알림 계산을 확인 중입니다. 다음 수집에서 계산을 마치면 발송을 재개합니다.";
   const disabled=pushBusy||!supported||!ready||sync.blocked||Notification.permission==="denied";
-  target.innerHTML=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy?"연결 중…":saved||changed?"알림 연결 확인":"알림 받기"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. ${pc?"PC는 보통 브라우저가 켜져 있을 때 받고(플래너 탭은 닫아도 됨), 꺼져 있던 동안의 알림은 다시 켤 때(최대 24시간) 옵니다. Windows에서 브라우저를 닫아도 받으려면 Edge로 연결하고 Edge 설정 → 시스템 및 성능의 ‘닫혀 있을 때 백그라운드 확장 및 앱 계속 실행’을 켜 두세요. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
+  const testDisabled=pushBusy||!supported||Notification.permission==="denied";
+  target.innerHTML=`<h3>이 ${device}에서 알림 받기</h3><p class="hint">${esc(message)}</p><div class="sync-controls"><button class="btn primary" id="enablePhonePush" type="button" ${disabled?"disabled":""}>${pushBusy&&!pushTesting?"연결 중…":saved||changed?"알림 연결 확인":"알림 받기"}</button><button class="btn" id="testPhonePush" type="button" ${testDisabled?"disabled":""}>${pushTesting?"테스트 중…":"알림 테스트"}</button>${pushSubscription?'<button class="btn ghost" id="disablePhonePush" type="button">이 기기 알림 해제</button>':""}</div><p class="hint" role="status">${esc(pushMessage)}</p><p class="hint">알림에는 종목·기준선·가격만 보냅니다. 알림 테스트는 이 기기의 브라우저 알림 표시를 확인합니다. ${pc?"PC는 보통 브라우저가 켜져 있을 때 받고(플래너 탭은 닫아도 됨), 꺼져 있던 동안의 알림은 다시 켤 때(최대 24시간) 옵니다. Windows에서 브라우저를 닫아도 받으려면 Edge로 연결하고 Edge 설정 → 시스템 및 성능의 ‘닫혀 있을 때 백그라운드 확장 및 앱 계속 실행’을 켜 두세요. Windows·Mac 알림 설정이나 방해 금지(집중 모드)에서 브라우저 알림이 꺼져 있으면 보이지 않습니다. 휴대폰·다른 PC도 받으려면 그 기기에서 따로 연결하세요.":"잠금화면 표시 여부는 휴대폰 알림 설정에서 바꿀 수 있습니다. PC에서도 받으려면 PC 브라우저에서 이 창을 열어 따로 연결하세요."}</p>`;
   $("enablePhonePush").onclick=enablePhonePush;
+  const test=$("testPhonePush");if(test){test.disabled=testDisabled;test.onclick=testPhonePush;}
   const disable=$("disablePhonePush");if(disable){disable.disabled=pushBusy;disable.onclick=disablePhonePush;}
 }
 async function pushRegistration(){
@@ -263,6 +265,36 @@ async function disablePhonePush(){
     pushMessage=pushRemoteHas(endpoint)?"이 기기 알림을 해제했습니다. 저장소에도 반영하려면 동기화를 완료해 주세요.":"이 기기 알림을 해제했습니다.";
   }catch(error){pushMessage=pushFailureMessage(error,stage,"알림 해제를 완료하지 못했습니다. 브라우저의 사이트 설정에서도 알림을 차단할 수 있습니다.");}
   finally{pushBusy=false;renderPushSetup();}
+}
+// 서버 발송이 아닌 현재 브라우저·OS의 서비스 워커 알림 표시만 시험한다. 기록·구독·알림내역은 바꾸지 않는다.
+async function testPhonePush(){
+  if(pushBusy||!pushSupported()||Notification.permission==="denied")return;
+  pushBusy=true;pushTesting=true;pushMessage="";renderPushSetup();
+  let stage="알림 권한 확인";
+  try{
+    const permission=Notification.permission==="granted"?"granted":await Notification.requestPermission();
+    if(permission!=="granted"){pushMessage="알림이 허용되지 않았습니다. 허용할 때 다시 눌러 주세요.";return;}
+    stage="브라우저 알림 준비";
+    const registration=await waitPushStage(pendingPushTask("registration",pushRegistration));
+    if(typeof registration?.showNotification!=="function")throw Object.assign(Error("알림 표시를 지원하지 않습니다."),{name:"NotSupportedError"});
+    stage="테스트 알림 표시";
+    const options={
+      body:"이 기기에서 알림이 정상 표시됩니다.",
+      tag:"etf-planner-push-test",
+      renotify:true,
+      data:{url:new URL("./",document.baseURI).href}
+    };
+    const icon=new URL("icons/planner-192.png",document.baseURI).href;
+    await waitPushStage(
+      Promise.resolve()
+        .then(()=>registration.showNotification("매매 플래너 테스트 알림",{...options,icon}))
+        .catch(()=>registration.showNotification("매매 플래너 테스트 알림",options))
+    );
+    const pc=pushOnPc();
+    pushMessage=`이 ${pc?"PC":"휴대폰"}에 테스트 알림을 보냈습니다. 보이지 않으면 ${pc?"브라우저·운영체제 알림 설정(방해 금지)":"휴대폰 알림 설정(웹사이트·기타 알림·방해 금지)"}을 확인해 주세요.`;
+  }catch(error){
+    pushMessage=error?.name==="NotAllowedError"?"브라우저에서 알림 표시를 허용해 주세요.":pushFailureMessage(error,stage,"테스트 알림을 표시하지 못했습니다. 브라우저와 기기의 알림 설정을 확인해 주세요.");
+  }finally{pushBusy=false;pushTesting=false;renderPushSetup();}
 }
 async function initializePush(){
   // 알림 글자의 종목 이름표(stock-names.js)는 기록·자산이 바뀔 때 이 기기에만 다시 저장한다.

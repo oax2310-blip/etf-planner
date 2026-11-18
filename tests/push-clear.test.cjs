@@ -19,7 +19,7 @@ function makeNotification(tag, {closeError = null} = {}) {
   };
 }
 
-function worker({notifications = [], getNotificationsError = null, clients = []} = {}) {
+function worker({notifications = [], getNotificationsError = null, clients = [], onShowNotification = null} = {}) {
   const events = {};
   const calls = {
     shown: [],
@@ -39,6 +39,7 @@ function worker({notifications = [], getNotificationsError = null, clients = []}
       scope,
       showNotification: async (...args) => {
         calls.shown.push(args);
+        if (onShowNotification) await onShowNotification(...args);
       },
       getNotifications: async () => {
         if (getNotificationsError) throw getNotificationsError;
@@ -206,4 +207,33 @@ test('kind가 없는 일반 푸시는 지금처럼 tag가 eventId인 알림을 �
   assert.equal(options.tag, 'event-reg-1');
   assert.ok(title);
   assert.ok(options.body);
+  assert.equal(options.icon, scope + 'icons/planner-192.png');
+  assert.ok(!options.icon.includes('push-icon.svg'));
 });
+
+test('알림 아이콘 표시가 실패하면 아이콘 없이 다시 표시해 푸시 처리를 완료한다', async () => {
+  let attempt = 0;
+  const {push, calls} = worker({
+    onShowNotification: async (_, options) => {
+      attempt++;
+      if (options.icon) throw new Error('icon decode failed');
+    }
+  });
+
+  await assert.doesNotReject(push({
+    eventId: 'event-icon-fallback',
+    ticker: 'TEST1',
+    line: '60일선',
+    title: '이동평균선 알림',
+    body: '기준선 도달'
+  }));
+
+  assert.equal(attempt, 2);
+  assert.equal(calls.shown.length, 2);
+  assert.equal(calls.shown[0][1].icon, scope + 'icons/planner-192.png');
+  assert.equal('icon' in calls.shown[1][1], false);
+  assert.equal(calls.shown[1][1].tag, 'event-icon-fallback');
+  assert.equal(calls.shown[1][0], calls.shown[0][0]);
+  assert.equal(calls.shown[1][1].body, calls.shown[0][1].body);
+});
+

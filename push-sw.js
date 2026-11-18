@@ -1,5 +1,5 @@
 // 수신 알림의 당시 내용을 로컬 수신함에 저장한다. 토큰·매매 기록을 캐시하거나 네트워크로 보내지 않는다.
-importScripts("js/alert-target.js?v=442","js/alert-history-store.js?v=442","js/stock-names.js?v=442");
+importScripts("js/alert-target.js?v=443","js/alert-history-store.js?v=443","js/stock-names.js?v=443");
 self.addEventListener("install",event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener("activate",event=>event.waitUntil(self.clients.claim()));
 // 수집기가 조건이 풀린 회차의 발송 eventId를 kind "alertClear"로 보내면 같은 tag의 알림만 닫고, 알림내역 저장·새 알림 표시는 하지 않는다.
@@ -26,13 +26,17 @@ self.addEventListener("push",event=>{
     for(const client of await self.clients.matchAll({type:"window",includeUncontrolled:true}))client.postMessage?.({type:"alert-history-updated",item});
   }).catch(()=>{});
   // 제목·본문만 종목 이름과 알림 종류로 바꾼다(stock-names.js notice). 수신함에는 받은 내용 그대로 저장한다.
+  // Android·삼성 인터넷이 SVG 아이콘 디코딩에 실패하거나 알림을 건너뛰지 않도록 192px PNG를 쓰고, 실패 시 아이콘 없이 다시 표시한다.
   const shown=stockNames.recall().catch(()=>null).then(names=>{
     let view;try{view=stockNames.notice(data,names);}catch{view={title:text(data.title,100)||"매매 플래너 알림",body:text(data.body,400)||"설정한 기준선 알림을 확인해 주세요."};}
-    return self.registration.showNotification(view.title,{
+    const options={
       body:view.body,
-      tag:text(data.eventId,100)||"ma-alert",data:{url:pushAlertUrl(data,self.registration.scope)},
-      icon:new URL("push-icon.svg",self.registration.scope).href
-    });
+      tag:text(data.eventId,100)||"ma-alert",data:{url:pushAlertUrl(data,self.registration.scope)}
+    };
+    return self.registration.showNotification(view.title,{
+      ...options,
+      icon:new URL("icons/planner-192.png",self.registration.scope).href
+    }).catch(()=>self.registration.showNotification(view.title,options));
   });
   event.waitUntil(Promise.all([historyTask,shown]));
 });
