@@ -1478,6 +1478,104 @@ for(const syncVia of ['replaceDoc','absorbLocal'])test(`소분류 목표 편집 
   assert.equal(rf.querySelector('[data-sec-label="0"]').textContent,'가상 소분류 S · 종목 합산');
 });
 
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`소분류 목표 편집 중 삭제 경고 후(${syncVia}) 목표 없는 종목으로 소분류가 재추가되면 사용자 입력을 유지하고 저장·재열기에도 반영한다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.groups[0].items[0].section='가상 소분류 S';
+    delete d.allocation.groups[0].items[0].target;
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  const data=base(),h=page(data),next1=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm'),secT=f.querySelector('[data-sec="0"]'),secL=f.querySelector('[data-sec-label="0"]');
+  assert.equal(secT.disabled,false);assert.equal(secL.textContent,'가상 소분류 S');
+  secT.value='12';
+  delete next1.allocation.groups[0].items[0].section;
+  applySync(h,next1);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.deepEqual(h.writes,[]);
+  const next2=structuredClone(next1);
+  next2.allocation.groups[0].items[0].section='가상 소분류 S';
+  applySync(h,next2);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,2);assert.deepEqual(h.writes,[]);
+  assert.equal(secT.value,'12');
+  assert.equal(secT.disabled,false);
+  assert.equal(secL.textContent,'가상 소분류 S');
+  saveForm(f);
+  const saved=h.saved();
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  assert.equal(saved.allocation.groups[0].sections[0].target,12);
+  const reopened=page(saved);reopened.openGroup('g1');
+  const rf=reopened.node('groupForm');
+  assert.equal(rf.querySelector('[data-sec="0"]').value,'12');
+  assert.equal(rf.querySelector('[data-sec="0"]').disabled,false);
+  assert.equal(rf.querySelector('[data-sec-label="0"]').textContent,'가상 소분류 S');
+});
+
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`지워진 그룹 분류 때문에 빈 선택으로 막힌 뒤(${syncVia}) 그대로 다시 저장하면 빈 선택을 유지하고 큰 분류 선택을 계속 요구한다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes=[{id:'home',region:'국내',name:'가상 기본'},{id:'X',region:'국내',name:'가상 삭제될 X'},{id:'E',region:'국내',name:'가상 분류 E'}];
+    d.allocation.groups[0].classId='home';
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  const data=base(),h=page(data),next=otherTabSave(data);
+  h.openGroup('g1');
+  const f=h.node('groupForm');
+  f.classId.value='X';f.note.value='가상 빈선택 유지';
+  next.allocation.classes=next.allocation.classes.filter(c=>c.id!=='X');
+  applySync(h,next);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.deepEqual(h.writes,[]);
+  assert.equal(f.classId.value,'');
+  // 고르지 않고 그대로 2차 저장 -> 빈 선택 유지·차단
+  saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,2);assert.deepEqual(h.writes,[]);
+  assert.match(h.alerts[1],/큰 분류를 고르세요/);
+  assert.equal(f.classId.value,'');
+  // 그대로 3차 저장도 여전히 차단
+  saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,3);assert.deepEqual(h.writes,[]);
+  assert.equal(f.classId.value,'');
+  // E를 직접 고르면 저장 성공
+  f.classId.value='E';saveForm(f);
+  const saved=h.saved();
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  assert.equal(saved.allocation.groups[0].classId,'E');
+  assert.equal(saved.allocation.groups[0].note,'가상 빈선택 유지');
+});
+
+for(const syncVia of ['replaceDoc','absorbLocal'])test(`그룹 분류를 직접 고른 뒤(${syncVia}) 소분류 삭제로 막힌 사이 다른 탭이 그룹 분류를 바꿔도 직접 고른 분류가 저장된다`,()=>{
+  const base=()=>{
+    const d=allocationTabFixture();
+    d.allocation.classes=[{id:'home',region:'국내',name:'가상 기본'},{id:'E',region:'국내',name:'가상 분류 E'},{id:'F',region:'국내',name:'가상 분류 F'}];
+    d.allocation.groups[0].classId='home';
+    d.allocation.groups[0].items[0].section='가상 소분류 S';
+    return d;
+  };
+  const applySync=(h,next)=>{if(syncVia==='replaceDoc')h.replaceDoc(next);else h.store.absorbLocal=()=>{h.store.doc=next;};};
+  const data=base(),h=page(data),next1=otherTabSave(data),next2=structuredClone(next1);
+  h.openGroup('g1');
+  const f=h.node('groupForm'),secC=f.querySelector('[data-sec-class="0"]');
+  f.classId.value='F';secC.value='E';
+  // 타 탭이 그룹 분류를 F로 맞추며 소분류 S 삭제 -> 1차 저장이 소분류 삭제로 막히며 groupBaseClassId가 F로 갱신
+  next1.allocation.groups[0].classId='F';
+  delete next1.allocation.groups[0].items[0].section;
+  applySync(h,next1);saveForm(f);
+  assert.equal(h.node('groupDialog').open,true);assert.equal(h.alerts.length,1);assert.deepEqual(h.writes,[]);
+  assert.equal(f.classId.value,'F');
+  // 이후 타 탭이 그룹 분류를 E로 변경, A는 소분류 충돌 해소 뒤 재저장 -> 직접 고른 F가 저장되어야 함
+  next2.allocation.groups[0].classId='E';
+  delete next2.allocation.groups[0].items[0].section;
+  applySync(h,next2);
+  secC.value='';saveForm(f);
+  const saved=h.saved();
+  assert.equal(h.node('groupDialog').open,false);assert.deepEqual(h.writes,['allocation']);
+  assert.equal(saved.allocation.groups[0].classId,'F');
+  const reopened=page(saved);reopened.openGroup('g1');
+  assert.equal(reopened.node('groupForm').classId.value,'F');
+});
+
 function btcFixture(averageCurrency){
   const data=fixture(),quotes=quoteFixture(),item=data.allocation.groups[0].items[0];
   Object.assign(item,{name:'가상 비트코인',ticker:'BTC-USD',shares:.01,averagePrice:70000000});
