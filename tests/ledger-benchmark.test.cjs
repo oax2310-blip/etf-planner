@@ -423,7 +423,7 @@ function ledgerDialog(year,{popover=true}={}){
   Object.assign(node('monthForm'),{pnl:field(),futures:field(),dividendFx:field()});
   Object.assign(node('yearForm'),{futures:field(),note:field()});
   const document={hidden:false,activeElement:null,getElementById:node,querySelector:sel=>query(sel)[0]||node(sel),querySelectorAll:sel=>query(sel),addEventListener(type,fn){listeners.set(type,fn);}};
-  const store={doc:{version:1,ledger:{savedAt:'',years:year?[year]:[]}},prices:null,saveSection:section=>saves.push(section)};
+  const store={doc:{version:1,ledger:{savedAt:'',years:year?[year]:[]}},prices:null,absorbLocal(){},saveSection:section=>saves.push(section)};
   class HTMLElement{};if(popover)HTMLElement.prototype.popover='auto';
   const ctx=vm.createContext({Date,document,assetStore:store,splitNotices:{initialize(){}},HTMLElement,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
@@ -431,12 +431,135 @@ function ledgerDialog(year,{popover=true}={}){
   vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/money-input.js','js/assets.js','js/assets-ledger.js'].map(read).join('\n;\n'),ctx);
   vm.runInContext('render=()=>{}',ctx);ctx.year=year;
   return {ctx,node,saves,query,
+    replaceDoc(next){store.doc=next;vm.runInContext('doc=assetStore.doc',ctx);},
     openMonth(n=3){vm.runInContext(`openMonth(year,${n})`,ctx);return node('monthFields').innerHTML;},
     openYear(){vm.runInContext('openYear(year)',ctx);},
     input(name,value){const x=node('monthForm')[name];assert.ok(x,`입력 칸 ${name}`);x.value=String(value);x.oninput?.({target:x});listeners.get('input')?.({target:x});return x;},
     submit(id='monthForm'){node(id).onsubmit({preventDefault(){}});},
   };
 }
+
+const ledgerTabYear=()=>({year:2025,accounts:[{name:'가상 A'}],months:[{m:1,pnl:100,balances:[1000]},{m:2,pnl:200,balances:[1000]}]});
+const ledgerTabDoc=(...years)=>({version:1,ledger:{savedAt:'',years}});
+
+test('월 저장은 창을 연 뒤 다른 탭이 고친 달을 보존한다',()=>{
+  const opened=ledgerTabYear(),current=ledgerTabYear(),h=ledgerDialog(opened);
+  h.openMonth(1);h.input('pnl','111');
+  current.months[1].pnl=999;h.replaceDoc(ledgerTabDoc(current));
+  h.submit();
+  assert.deepEqual(Array.from(current.months,m=>[m.m,m.pnl]),[[1,111],[2,999]]);
+  assert.deepEqual(opened,ledgerTabYear());
+  assert.deepEqual(h.saves,['ledger']);assert.equal(h.node('monthDialog').open,false);
+});
+
+test('같은 달은 늦게 저장한 창의 입력을 쓰고 최신 옛 월 사본은 보존한다',()=>{
+  const opened=ledgerTabYear(),h=ledgerDialog(opened);
+  opened.months.unshift({m:'01',pnl:90,balances:[900]});
+  h.openMonth(1);h.input('pnl','111');
+  const current=structuredClone(opened);
+  Object.assign(current.months[1],{pnl:999,balances:[2000],interest:7});
+  h.replaceDoc(ledgerTabDoc(current));h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(current.months)),[
+    {m:'01',pnl:90,balances:[900]},
+    {m:1,pnl:111,balances:[1000],interest:7},
+    {m:2,pnl:200,balances:[1000]},
+  ]);
+  assert.deepEqual(h.saves,['ledger']);
+});
+
+test('월 기록 지우기는 최신 기록에서 그 달의 중복 사본만 지운다',()=>{
+  const opened=ledgerTabYear(),current=ledgerTabYear(),h=ledgerDialog(opened);
+  h.openMonth(1);
+  current.months.unshift({m:'01',pnl:90,balances:[900]});current.months.at(-1).pnl=999;
+  h.replaceDoc(ledgerTabDoc(current));h.node('monthClear').onclick();
+  assert.deepEqual(Array.from(current.months,m=>[m.m,m.pnl]),[[2,999]]);
+  assert.deepEqual(opened,ledgerTabYear());
+  assert.deepEqual(h.saves,['ledger']);assert.equal(h.node('monthDialog').open,false);
+});
+
+test('연도 설정 저장은 다른 탭의 최신 월 잔액에 계좌 순서를 적용하고 다른 연도도 보존한다',()=>{
+  const opened=ledgerTabYear(),h=ledgerDialog(opened);
+  opened.accounts.push({name:'가상 대출',loan:true},{name:'가상 B'},{name:'가상 빈 계좌'});
+  h.openYear();h.query('[data-acc-del="2"]')[0].onclick();h.node('yearForm').note.value='가상 메모';h.node('yearForm').futures.value='12';
+  const current=structuredClone(opened),other={...ledgerTabYear(),year:2024,note:'다른 탭 메모'};
+  Object.assign(current.months[1],{pnl:999,balances:[1500,900,2500],rp:[0,10,50]});
+  const next=ledgerTabDoc(other,current);h.replaceDoc(next);h.submit('yearForm');
+  assert.equal(current.note,'가상 메모');assert.equal(current.futures,12);
+  assert.deepEqual(Array.from(current.accounts,a=>a.name),['가상 A','가상 B','가상 대출']);
+  assert.deepEqual(JSON.parse(JSON.stringify(current.months[1])),{m:2,pnl:999,balances:[1500,2500,900],rp:[0,50,10]});
+  assert.deepEqual(JSON.parse(JSON.stringify(next.ledger.years[0])),{...ledgerTabYear(),year:2024,note:'다른 탭 메모'});
+  assert.equal(opened.note,undefined);
+  assert.deepEqual(h.saves,['ledger']);assert.equal(h.node('yearDialog').open,false);
+});
+
+test('연도 설정은 다른 탭이 새 잔액을 넣은 계좌를 이전 삭제 요청으로 지우지 않는다',()=>{
+  const opened=ledgerTabYear(),h=ledgerDialog(opened),alerts=[];h.ctx.alert=message=>alerts.push(message);
+  opened.accounts.push({name:'가상 B'});
+  h.openYear();h.query('[data-acc-del="1"]')[0].onclick();h.node('yearForm').note.value='가상 메모';
+  const current=structuredClone(opened);current.months[1].balances=[1000,2500];
+  const next=ledgerTabDoc(current),before=JSON.stringify(next);h.replaceDoc(next);h.submit('yearForm');
+  assert.equal(JSON.stringify(next),before);assert.deepEqual(h.saves,[]);
+  assert.match(alerts[0],/계좌.*잔액.*바뀌/);
+  assert.equal(h.node('yearDialog').open,true);assert.equal(h.node('yearForm').note.value,'가상 메모');
+});
+
+test('연도 지우기는 다른 탭에서 바뀐 문서 안에서 대상 연도만 지운다',()=>{
+  const h=ledgerDialog(ledgerTabYear()),other={...ledgerTabYear(),year:2024,note:'다른 탭 메모'};
+  h.openYear();
+  const next=ledgerTabDoc(other,ledgerTabYear());h.replaceDoc(next);h.node('yearDelete').onclick();
+  assert.deepEqual(Array.from(next.ledger.years),[other]);
+  assert.deepEqual(h.saves,['ledger']);assert.equal(h.node('yearDialog').open,false);
+});
+
+for(const [action,form,run] of [
+  ['월 저장','month',h=>h.submit()],
+  ['월 기록 지우기','month',h=>h.node('monthClear').onclick()],
+  ['연도 설정 저장','year',h=>h.submit('yearForm')],
+  ['연도 지우기','year',h=>h.node('yearDelete').onclick()],
+])test(`${action} 시 연도가 삭제되었으면 안내하고 열린 창과 입력을 유지한다`,()=>{
+  const h=ledgerDialog(ledgerTabYear()),alerts=[];h.ctx.alert=message=>alerts.push(message);
+  if(form==='month'){h.openMonth(1);h.input('pnl','111');}
+  else{h.openYear();h.node('yearForm').note.value='가상 메모';}
+  const field=form==='month'?h.node('monthForm').pnl:h.node('yearForm').note, value=field.value;
+  const next=ledgerTabDoc({...ledgerTabYear(),year:2024}),before=JSON.stringify(next);
+  h.replaceDoc(next);run(h);
+  assert.equal(JSON.stringify(next),before);assert.deepEqual(h.saves,[]);
+  assert.match(alerts[0],/2025년.*삭제/);
+  assert.equal(h.node(`${form}Dialog`).open,true);assert.equal(field.value,value);
+});
+
+test('월 저장 직전에는 아직 알림이 오지 않은 다른 탭의 연도 삭제도 확인한다',()=>{
+  const h=ledgerDialog(ledgerTabYear()),alerts=[];h.ctx.alert=message=>alerts.push(message);
+  h.openMonth(1);h.input('pnl','111');
+  const next=ledgerTabDoc();h.ctx.assetStore.absorbLocal=()=>h.replaceDoc(next);
+  h.submit();
+  assert.deepEqual(h.saves,[]);assert.deepEqual(next.ledger.years,[]);
+  assert.match(alerts[0],/2025년.*삭제/);
+  assert.equal(h.node('monthDialog').open,true);assert.equal(h.node('monthForm').pnl.value,'111');
+});
+
+test('월 저장은 화면 갱신 전에도 저장 경로가 가진 최신 기록을 사용한다',()=>{
+  const opened=ledgerTabYear(),current=ledgerTabYear(),h=ledgerDialog(opened);
+  h.openMonth(1);h.input('pnl','111');
+  current.months[1].pnl=999;h.ctx.assetStore.doc=ledgerTabDoc(current);
+  h.submit();
+  assert.deepEqual(Array.from(current.months,m=>[m.m,m.pnl]),[[1,111],[2,999]]);
+  assert.deepEqual(opened,ledgerTabYear());assert.deepEqual(h.saves,['ledger']);
+});
+
+for(const form of ['month','year'])test(`${form==='month'?'월 입력':'연도 설정'}은 계좌 순서가 바뀌면 이전 인덱스로 저장하지 않는다`,()=>{
+  const opened=ledgerTabYear(),h=ledgerDialog(opened),alerts=[];h.ctx.alert=message=>alerts.push(message);
+  opened.accounts.push({name:'가상 B'});
+  if(form==='month'){h.openMonth(1);h.input('bal0','1111');}
+  else{h.openYear();h.node('yearForm').note.value='가상 메모';}
+  const field=form==='month'?h.node('monthForm').bal0:h.node('yearForm').note,value=field.value;
+  const current=structuredClone(opened),next=ledgerTabDoc(current);
+  current.accounts.reverse();current.months[0].balances=[2000,1000];
+  const before=JSON.stringify(next);h.replaceDoc(next);h.submit(`${form}Form`);
+  assert.equal(JSON.stringify(next),before);assert.deepEqual(h.saves,[]);
+  assert.match(alerts[0],/계좌 목록.*바뀌/);
+  assert.equal(h.node(`${form}Dialog`).open,true);assert.equal(field.value,value);
+});
 
 test('옛 문자열 월의 편집은 같은 저장값을 쓰고 지우면 그 달만 삭제한다',()=>{
   const year={year:2025,accounts:[],months:[{m:11,total:900},{m:'012',pnl:10,total:1000,interest:5}]};

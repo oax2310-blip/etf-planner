@@ -244,6 +244,19 @@ function ledgerRpSaved(m, index){
   const dollar=usd!==null&&won!==null&&pnlDollarKrw(usd,fx)===won;
   return {usd:dollar?usd:null, fx:dollar?fx:null, legacy:dollar?null:won};
 }
+// 저장 알림이 아직 안 왔을 때도 다른 탭의 기록을 받은 뒤, 창을 열 때의 연도 값으로 현재 기록을 찾는다.
+function ledgerYearForWrite(opened, checkAccounts=false){
+  assetStore.absorbLocal();
+  doc=assetStore.doc;
+  const current=doc.ledger?.years.find(y=>y.year===opened.year);
+  if(!current){alert(`${opened.year}년 기록이 삭제되었습니다. 입력한 내용은 이 창에서 확인할 수 있습니다.`);return null;}
+  // 잔액·RP 입력과 연도 설정의 계좌 번호는 창을 열 때의 계좌 순서를 따른다.
+  if(checkAccounts&&(current.accounts.length!==opened.accounts.length||current.accounts.some((account,index)=>{
+    const before=opened.accounts[index];
+    return account.id!==before.id||account.name!==before.name||!!account.loan!==!!before.loan;
+  }))){alert(`${opened.year}년 계좌 목록이 바뀌었습니다. 입력값을 확인한 뒤 창을 다시 열어 주세요.`);return null;}
+  return current;
+}
 // 월 입력 창 자체·그 안의 스크롤에서도 안내를 닫는다. 매번 창을 열 때 리스너를 늘리지 않는다.
 document.addEventListener("scroll",()=>all(".ledger-rp-help").forEach(p=>{if(p.matches(":popover-open"))p.hidePopover();}),{capture:true,passive:true});
 function openMonth(y, n){
@@ -350,17 +363,26 @@ function openMonth(y, n){
   f.pnl.oninput=()=>{manualPnl=f.pnl.value;};
   el("addPnlEntry").onclick=()=>{extra.push({broker:""});draw();el("pnlEntryRows").querySelector(`[data-pnl-entry="${extra.length-1}"][data-k="broker"]`).focus();};
   draw();
-  el("monthClear").onclick=()=>{ if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`)) return; y.months=y.months.filter(x=>ledgerMonthNumber(x)!==n); saveSection("ledger"); dlg("monthDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault();update();updateBalances();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
+  el("monthClear").onclick=()=>{
+    if(!confirm(`${y.year}년 ${n}월 기록을 지울까요?`))return;
+    const current=ledgerYearForWrite(y);if(!current)return;
+    current.months=current.months.filter(x=>ledgerMonthNumber(x)!==n);
+    saveSection("ledger"); dlg("monthDialog").close(); render();
+  };
+  f.onsubmit=e=>{
+    e.preventDefault();
+    const current=ledgerYearForWrite(y,true);if(!current)return;
+    update();updateBalances();if(!f.reportValidity())return;if(finite(fixed[4].amount)&&!dividendFx){alert("원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
     if(accounts.some(({index})=>{const p=rpParts(index);return p.usd!==null&&p.won===null;})){alert("RP를 원화로 환산하려면 원·달러 125개월 평균선을 먼저 불러와 주세요.");return;}
-    const t={...m};for(const key of LEDGER_RP_KEYS)delete t[key]; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;
+    const currentMonth=ledgerMonths(current).get(n), t={...(currentMonth||{m:m.m})};
+    for(const key of LEDGER_RP_KEYS)delete t[key]; setNum(t,"pnl",f.pnl.value);setNum(t,"futures",f.futures.value);delete t.pnlEntries;delete t.balances;
     const rows=entries();
     if(rows.length){if(rows.some(r=>!String(r.broker||"").trim())){alert("내역의 증권사 이름을 넣어 주세요.");return;}if(pnlEntriesTotal(rows)===null){alert("내역의 금액과 원화 입금액을 모두 넣어 주세요.");return;}t.pnlEntries=rows.map(r=>({...r}));t.pnl=pnlEntriesTotal(rows);}
     // balances는 원화추정자산+RP 원화 환산액 합계, rp는 원화 환산액으로 유지해 옛 저장·계산 경로와 호환한다. 달러 RP만 rpUsd·rpFx를 더하고 비운 RP 배열은 지운다.
-    if(y.accounts.length){
-      const parts=y.accounts.map((acc,i)=>acc.loan?null:rpParts(i));
-      const b=y.accounts.map((acc,i)=>{if(acc.loan)return finite(bal[i]);const base=numIn(f[`bal${i}`]?.value),value=parts[i].won;return base===null&&value===null?null:(base??0)+(value??0);});
-      const list=(key,pick)=>{const a=y.accounts.map((acc,i)=>acc.loan?finite(m[key]?.[i]):pick(parts[i]));while(a.length&&a[a.length-1]===null)a.pop();if(a.length)t[key]=a;};
+    if(current.accounts.length){
+      const parts=current.accounts.map((acc,i)=>acc.loan?null:rpParts(i));
+      const b=current.accounts.map((acc,i)=>{if(acc.loan)return finite(currentMonth?.balances?.[i]);const base=numIn(f[`bal${i}`]?.value),value=parts[i].won;return base===null&&value===null?null:(base??0)+(value??0);});
+      const list=(key,pick)=>{const a=current.accounts.map((acc,i)=>acc.loan?finite(currentMonth?.[key]?.[i]):pick(parts[i]));while(a.length&&a[a.length-1]===null)a.pop();if(a.length)t[key]=a;};
       while(b.length&&b[b.length-1]===null)b.pop();if(b.length)t.balances=b;
       // 옛 총액은 실제 계좌 잔액을 기록할 때 대체한다. 빈 새 계좌나 숨은 대출만 저장하면 보존한다.
       if(accounts.some(({index})=>b[index]!==null&&b[index]!==undefined))delete t.total;
@@ -368,11 +390,11 @@ function openMonth(y, n){
     }
     else setNum(t,"total",f.total.value);
     // 옛 월 표기와 중복 사본을 보존한다. 선택한 기록을 비워도 중복 사본의 값이 다시 나타나지 않게 한다.
-    const index=y.months.indexOf(m), next=[...y.months];
-    const keep=Object.keys(t).length>1||next.some(x=>x!==m&&ledgerMonthNumber(x)===n);
+    const index=current.months.indexOf(currentMonth), next=[...current.months];
+    const keep=Object.keys(t).length>1||next.some(x=>x!==currentMonth&&ledgerMonthNumber(x)===n);
     if(index>=0)next.splice(index,1);
     if(keep){next.splice(index<0?next.length:index,0,t);next.sort((a,b)=>a.m-b.m);}
-    y.months=next;
+    current.months=next;
     saveSection("ledger"); dlg("monthDialog").close(); render(); };
   dlg("monthDialog").showModal();
 }
@@ -384,15 +406,32 @@ function openYear(y){
   el("yearFuturesHint").textContent=`달마다 넣으려면 월 입력 창의 선물·옵션 칸을 쓰세요. 이 칸 금액은 마지막 기록 달에 더합니다.${monthly.length?` 월별 입력 ${monthly.length}개월 합계 ${wonA(monthly.reduce((t,m)=>t+Number(m.futures),0))}.`:""}`;
   // 숨긴 옛 계좌·잔액은 저장 호환을 위해 보존한다. 새 계좌에는 loan 필드를 만들지 않는다.
   const hidden=y.accounts.map((a,i)=>({from:i,name:a.name})).filter(r=>y.accounts[r.from].loan);
-  let rows=ledgerAccounts(y).map(({account,index})=>({from:index,name:account.name}));
+  const rows=ledgerAccounts(y).map(({account,index})=>({from:index,name:account.name}));
   const draw=()=>{ el("accountRows").innerHTML=rows.map((r,i)=>`<div class="account-row"><input data-acc-name="${i}" value="${escA(r.name)}" maxlength="40" aria-label="계좌 이름"><button class="remove" type="button" data-acc-del="${i}" aria-label="계좌 삭제">삭제</button></div>`).join("")||`<p class="hint">계좌 없음 · 총자산만 적습니다</p>`;
     all("[data-acc-name]").forEach(x=>x.oninput=()=>{rows[Number(x.dataset.accName)].name=x.value;});
     all("[data-acc-del]").forEach(x=>x.onclick=()=>{const r=rows[Number(x.dataset.accDel)];if(r.from!==null&&y.months.some(m=>finite(m.balances?.[r.from])!==null)&&!confirm(`'${r.name}' 계좌를 지우면 이 해의 그 계좌 잔액도 지워집니다. 계속할까요?`))return;rows.splice(Number(x.dataset.accDel),1);draw();}); };
   draw(); el("addAccount").onclick=()=>{ rows.push({from:null,name:""}); draw(); el("accountRows").querySelector(`[data-acc-name="${rows.length-1}"]`)?.focus(); };
-  el("yearDelete").onclick=()=>{ if(!confirm(`${y.year}년 손익 기록을 모두 지울까요?`)) return; doc.ledger.years=doc.ledger.years.filter(x=>x!==y); setUi({year:null}); saveSection("ledger"); dlg("yearDialog").close(); render(); };
-  f.onsubmit=e=>{ e.preventDefault(); if(!f.reportValidity())return;setNum(y,"futures",f.futures.value); setText(y,"note",f.note.value);
-    rows=[...rows.filter(r=>r.name.trim()),...hidden];y.accounts=rows.map(r=>({...y.accounts[r.from],name:r.name.trim()}));
-    y.months.forEach(m=>{for(const key of ["balances",...LEDGER_RP_KEYS]){if(!Array.isArray(m[key]))continue;const b=rows.map(r=>r.from===null?null:m[key][r.from]??null);while(b.length&&b[b.length-1]===null)b.pop();if(b.length)m[key]=b;else delete m[key];}});
+  el("yearDelete").onclick=()=>{
+    if(!confirm(`${y.year}년 손익 기록을 모두 지울까요?`))return;
+    const current=ledgerYearForWrite(y);if(!current)return;
+    doc.ledger.years=doc.ledger.years.filter(x=>x!==current);
+    setUi({year:null}); saveSection("ledger"); dlg("yearDialog").close(); render();
+  };
+  f.onsubmit=e=>{
+    e.preventDefault();if(!f.reportValidity())return;
+    const current=ledgerYearForWrite(y,true);if(!current)return;
+    const kept=[...rows.filter(r=>r.name.trim()),...hidden];
+    // 계좌 삭제를 편집한 뒤 다른 탭에서 그 계좌에 기록한 잔액·RP까지 지우지 않는다.
+    const accountAmounts=(year,index)=>year.months.flatMap(m=>{
+      const values=[m.balances?.[index],...LEDGER_RP_KEYS.map(key=>m[key]?.[index])];
+      return values.some(v=>v!==null&&v!==undefined)?[JSON.stringify([m.m,values])]:[];
+    }).sort().join("\n");
+    if(current!==y&&y.accounts.some((_,i)=>!kept.some(r=>r.from===i)&&accountAmounts(y,i)!==accountAmounts(current,i))){
+      alert("삭제할 계좌의 잔액이나 RP 기록이 바뀌었습니다. 입력값을 확인한 뒤 창을 다시 열어 주세요.");return;
+    }
+    setNum(current,"futures",f.futures.value); setText(current,"note",f.note.value);
+    current.accounts=kept.map(r=>({...current.accounts[r.from],name:r.name.trim()}));
+    current.months.forEach(m=>{for(const key of ["balances",...LEDGER_RP_KEYS]){if(!Array.isArray(m[key]))continue;const b=kept.map(r=>r.from===null?null:m[key][r.from]??null);while(b.length&&b[b.length-1]===null)b.pop();if(b.length)m[key]=b;else delete m[key];}});
     saveSection("ledger"); dlg("yearDialog").close(); render(); };
   dlg("yearDialog").showModal();
 }
