@@ -164,6 +164,9 @@
 .ledger-rp-account{min-width:0;align-self:start;display:grid;gap:10px;padding:12px 14px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.ledger-rp-head{display:flex;align-items:center;gap:2px;min-width:0}.ledger-rp-head>strong{font-size:13px;color:var(--text);overflow-wrap:anywhere}.ledger-rp-account .field{gap:4px}
 /* 경고(⚠)·설명(!) 버튼은 이름 옆 글자 크기로 두어 줄 높이를 늘리지 않고, 누르는 영역은 ::after로 32px 안팎을 확보한다. 말풍선(popover)은 dialog 위 top layer에 띄우고 기존 색 토큰만 쓴다. */
 .ledger-tip-button{position:relative;flex:none;display:inline-grid;place-items:center;width:16px;height:16px;margin-left:3px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text-2);font-size:9px;font-weight:700;line-height:1;vertical-align:-2px;cursor:pointer}.ledger-tip-button::after{content:"";position:absolute;inset:-8px -8px -5px}.ledger-tip-button>span{display:inline-grid;place-items:center;width:12px;height:12px;border:1px solid currentColor;border-radius:50%;pointer-events:none}.ledger-tip-button.warn{color:var(--warn);font-size:12px}.ledger-tip-button.warn>span{width:auto;height:auto;border:0}.ledger-tip-button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ledger-tip+.ledger-tip-button{margin-left:10px}
+.ledger-tip+.ledger-tip-button::after{left:-4px}
+.ledger-tip-button:has(+.ledger-tip+.ledger-tip-button)::after{right:-4px}
 @media(hover:hover){.ledger-tip-button:not(.warn):hover{color:var(--text)}}
 .ledger-tip{position:fixed;inset:auto;margin:0;width:min(300px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-lg);font-weight:400;text-align:left}.ledger-tip>strong{display:block;font-size:14px;font-weight:700}.ledger-tip>small{display:block;margin-top:6px;color:var(--text-2);font-size:12px;line-height:1.7;word-break:keep-all;overflow-wrap:anywhere}.ledger-account-total{color:var(--text-2);font-size:11.5px;line-height:1.6;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .pnl-conversion{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;padding-top:8px;border-top:1px solid var(--line);color:var(--text-2);font-size:12px}.pnl-conversion output{font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
@@ -175,6 +178,7 @@
   #monthDialog .field>:is(input,select){min-height:38px;padding-block:7px}
   .pnl-broker{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:8px 14px;padding:12px 14px}
   .pnl-broker>h3{grid-row:1;grid-column:1/-1;align-self:center}
+  .pnl-broker:has(.pnl-broker-sum)>h3{grid-column:1}
   .pnl-broker-sum{grid-row:1;grid-column:2/-1;justify-self:end;align-self:center;display:flex;align-items:center;gap:12px;min-width:0}
   .pnl-broker-sum>.pnl-conversion,.ledger-rp-account>.pnl-conversion{padding:0;border:0}
   .pnl-broker-sum output,.ledger-rp-account>.pnl-conversion output{font-size:14px}
@@ -186,8 +190,9 @@
   .ledger-balance-grid:has(>.field:nth-child(3):last-child),.ledger-balance-grid:has(>.field:nth-child(5):last-child),.ledger-balance-grid:has(>.field:nth-child(6):last-child){grid-template-columns:repeat(3,minmax(0,1fr))}
   .ledger-balance-grid:has(>.field:nth-child(2):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
   .ledger-balance-grid>.field:only-child{grid-column:1/-1}
+  #monthDialog .ledger-balance-grid:not(:has(.field-hint))>.field{align-self:end}
   .ledger-rp-account{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:8px 14px;padding:12px 0 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
-  .ledger-rp-head{grid-row:1;grid-column:1/-1}
+  .ledger-rp-head{grid-row:1;grid-column:1;align-self:center}
   .ledger-rp-account>.pnl-conversion{grid-row:1;grid-column:2;justify-self:end;align-self:center}
   .ledger-rp-account>.field-hint,.ledger-rp-account>.ledger-account-total{grid-column:1/-1}
   .ledger-rp-account>.field-hint{order:-1}
@@ -299,7 +304,7 @@
   .ledger-months>.ledger-row>span{overflow-wrap:normal}
   .ledger-months>[data-month]{align-content:center;align-items:baseline;min-height:44px}
   .ledger-months>[data-month]>:first-child{white-space:nowrap}
-  #editFutures>:first-child{font-size:11px;word-break:keep-all;overflow-wrap:normal}.year-average{padding:12px}.benchmark{padding:12px}.benchmark-grid{gap:6px}.benchmark-grid>div{padding:8px 9px}.benchmark-grid span{font-size:11px}.benchmark-grid strong{font-size:17px}.benchmark-grid small{font-size:10px}.benchmark-ytd-head small{display:block;margin:2px 0 0}.benchmark-ytd-cells{gap:6px}.benchmark-ytd-cells>span{padding:0 9px}.benchmark-ytd-cells b{font-size:14px}.pnl-broker-grid{grid-template-columns:1fr}.pnl-broker{padding:12px}.pnl-entry{padding:10px}.pnl-entry-grid{gap:8px}
+  #editFutures>:first-child{font-size:11px;word-break:keep-all;overflow-wrap:normal}.year-average{padding:12px}.benchmark{padding:12px}.benchmark-grid{gap:6px}.benchmark-grid>div{padding:8px 9px}.benchmark-grid span{font-size:11px}.benchmark-grid strong{font-size:17px}.benchmark-grid small{font-size:10px}.benchmark-ytd-head small{display:block;margin:2px 0 0}.benchmark-ytd-cells{gap:6px}.benchmark-ytd-cells>span{padding:0 9px}.benchmark-ytd-cells b{font-size:14px}.pnl-broker{padding:12px}.pnl-entry{padding:10px}.pnl-entry-grid{gap:8px}
   .param-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.plan-line-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-line input{min-height:44px}.plan-line-head .remove{min-height:44px}
   .data-table th,.data-table td{padding:8px 10px;font-size:12.5px}
   .savings-past{margin-bottom:8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface)}.savings-past-toggle{gap:6px;padding:12px 10px}.savings-past-label{gap:4px;padding-left:12px;font-size:11px}.savings-past-missing{font-size:10px}.savings-past-balance{font-size:12px}.savings-past-years{padding:0 6px 6px}.savings-past-years .savings-year:first-child{margin-top:6px}

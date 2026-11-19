@@ -337,7 +337,17 @@ function openMonth(y, n){
   all("[data-ledger-balance]").forEach(x=>x.oninput=updateBalances);updateBalances();
   all("[data-ledger-tip]").forEach(button=>{
     const help=el(button.dataset.ledgerTip);
-    help.addEventListener("beforetoggle",e=>{if(e.newState!=="open")return;const r=button.getBoundingClientRect(),width=Math.min(300,innerWidth-32);help.style.top=`${Math.round(r.bottom+6)}px`;help.style.left=`${Math.max(16,Math.min(Math.round(r.left),innerWidth-16-width))}px`;});
+    // 말풍선이 화면 아래를 넘치면 버튼 위로 뒤집고, 위아래 모두 16px 여백 안쪽에 맞춘다.
+    const place=()=>{
+      const r=button.getBoundingClientRect(), vw=innerWidth, vh=typeof visualViewport!=="undefined"&&visualViewport?Math.min(innerHeight,visualViewport.height):innerHeight;
+      const width=Math.min(300,vw-32), height=help.getBoundingClientRect?.().height||0;
+      const below=r.bottom+6, above=r.top-6-height;
+      const top=height&&below+height>vh-16?(above>=16?above:Math.max(16,vh-16-height)):Math.max(16,below);
+      help.style.top=`${Math.round(top)}px`;
+      help.style.left=`${Math.max(16,Math.min(Math.round(r.left),vw-16-width))}px`;
+    };
+    help.addEventListener("beforetoggle",e=>{if(e.newState==="open")place();});
+    help.addEventListener("toggle",e=>{if(e.newState==="open")place();});
   });
   let manualPnl=f.pnl.value;
   const entries=()=>[...fixed.filter(r=>finite(r.amount)!==null||finite(r.krw)!==null),...extra];

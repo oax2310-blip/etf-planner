@@ -1396,7 +1396,8 @@ test('PC 월 입력 창의 증권사 카드는 한 줄씩 쌓아 안의 입력�
   assert.equal(cssRule('css/assets.css','.pnl-broker-grid')['grid-template-columns'],'1fr','카드 높이가 달라 생기던 빈 공간 없이 위아래로 쌓는다');
   assert.equal(cssRule('css/assets.css','.pnl-broker',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))');
   const head=cssRule('css/assets.css','.pnl-broker>h3',PC);
-  assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1/-1');
+  assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1/-1','환산액 없는 신한 카드도 입력 세 칸이 둘째 줄에 놓이게 제목이 첫 줄을 쓴다');
+  assert.equal(cssRule('css/assets.css','.pnl-broker:has(.pnl-broker-sum)>h3',PC)['grid-column'],'1','환산액 줄이 있는 키움 카드는 제목을 1열에 두어 오른쪽과 겹치지 않는다');
   const sum=cssRule('css/assets.css','.pnl-broker-sum',PC);
   assert.equal(sum['grid-row'],'1','제목과 같은 줄');assert.equal(sum['grid-column'],'2/-1');assert.equal(sum['justify-self'],'end');assert.equal(sum.display,'flex');
   assert.equal(cssRule('css/assets.css','.ledger-balance,.pnl-broker-sum').display,'contents','폰: 환산액 줄·갱신 버튼을 기존처럼 카드 아래에 둔다');
@@ -1419,6 +1420,7 @@ test('PC 월 입력 창의 계좌 잔액은 증권사 카드와 같은 상자 �
   assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(3):last-child),.ledger-balance-grid:has(>.field:nth-child(5):last-child),.ledger-balance-grid:has(>.field:nth-child(6):last-child)',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))','3·5·6개는 세 칸');
   assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(2):last-child)',PC)['grid-template-columns'],'repeat(2,minmax(0,1fr))');
   assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child',PC)['grid-column'],'1/-1');
+  assert.equal(cssRule('css/assets.css','#monthDialog .ledger-balance-grid:not(:has(.field-hint))>.field',PC)['align-self'],'end','힌트가 없으면 계좌 이름이 2줄이 되어도 같은 줄 입력칸 높이를 맞춘다');
 });
 
 test('PC 월 입력 창의 RP 계좌는 잔액 상자 안 구분선 아래 두 입력을 나란히 두고 RP 원화 환산액은 계좌 이름 줄 오른쪽에 두며 폰에서는 기존 카드 한 열을 유지한다',()=>{
@@ -1428,18 +1430,25 @@ test('PC 월 입력 창의 RP 계좌는 잔액 상자 안 구분선 아래 두 �
   assert.equal(rp['grid-template-columns'],'repeat(2,minmax(0,1fr))');
   assert.equal(rp['align-items'],'start');
   assert.equal(rp['border-top'],'1pxsolidvar(--line)');assert.equal(rp.background,'none','상자 안 상자 대신 구분선');
-  const head=cssRule('css/assets.css','.ledger-rp-head',PC);assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1/-1');
+  const head=cssRule('css/assets.css','.ledger-rp-head',PC);
+  assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1','1열에 두어 긴 계좌명이 오른쪽 환산액과 겹치지 않는다');assert.equal(head['align-self'],'center');
   const won=cssRule('css/assets.css','.ledger-rp-account>.pnl-conversion',PC);
   assert.equal(won['grid-row'],'1');assert.equal(won['grid-column'],'2');assert.equal(won['justify-self'],'end');
   assert.equal(cssRule('css/assets.css','.ledger-rp-account>.field-hint,.ledger-rp-account>.ledger-account-total',PC)['grid-column'],'1/-1');
   assert.equal(cssRule('css/assets.css','.ledger-rp-account>.field-hint',PC).order,'-1');
 });
 
-test('경고(⚠)·설명(!) 버튼은 줄 높이를 늘리지 않는 작은 아이콘이며 누르는 영역은 넓히고 말풍선은 기존 색 토큰만 쓴다',()=>{
+test('경고(⚠)·설명(!) 버튼은 줄 높이를 늘리지 않는 작은 아이콘이며 누르는 영역은 넓히고 나란히 놓여도 서로 겹치지 않는다',()=>{
   const button=cssRule('css/assets.css','.ledger-tip-button');
   assert.equal(button.width,'16px');assert.equal(button.height,'16px');assert.equal(button.position,'relative');
   const hit=cssRule('css/assets.css','.ledger-tip-button::after');
   assert.equal(hit.position,'absolute');assert.equal(hit.inset,'-8px-8px-5px','누르는 영역 32×29px, 아래 입력 칸과 겹치지 않게 아래만 5px');
+  const nextBtn=cssRule('css/assets.css','.ledger-tip+.ledger-tip-button');
+  const nextHit=cssRule('css/assets.css','.ledger-tip+.ledger-tip-button::after');
+  const prevHit=cssRule('css/assets.css','.ledger-tip-button:has(+.ledger-tip+.ledger-tip-button)::after');
+  assert.equal(nextBtn['margin-left'],'10px','나란히 놓인 ⚠·! 사이 간격 확보');
+  assert.equal(nextHit.left,'-4px');assert.equal(prevHit.right,'-4px');
+  assert.ok(parseFloat(nextBtn['margin-left'])>Math.abs(parseFloat(prevHit.right))+Math.abs(parseFloat(nextHit.left)),'인접 버튼 ::after 영역이 서로 겹치지 않는다');
   assert.equal(cssRule('css/assets.css','.ledger-tip-button.warn').color,'var(--warn)');
   const tip=cssRule('css/assets.css','.ledger-tip');
   assert.equal(tip.position,'fixed');assert.equal(tip.background,'var(--surface)');
@@ -1461,6 +1470,30 @@ test('입력 빠짐 경고는 계좌 이름 옆 ⚠ 버튼으로 두고 누르�
   const old=ledgerDialog({...year,months:[{m:2,balances:[1000,2000]},{m:3,balances:[null,2100]},{m:4,balances:[1200,2200]}]},{popover:false}).openMonth();
   assert.match(old,/<label class="field" for="ledgerBal0"><span>가상 일반<\/span><input[^>]*placeholder="입력 빠짐\?"><small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다\./,'popover 미지원: 기존 글자 경고');
   assert.doesNotMatch(old,/ledger-tip/);
+});
+
+test('말풍선이 화면 아래를 넘치면 버튼 위로 뒤집고 위아래 모두 화면 16px 여백 안에 맞춘다',()=>{
+  const year={year:2026,accounts:[{name:'가상 일반'}],months:[{m:3,balances:[1000]}]};
+  const h=ledgerDialog(year);h.ctx.innerWidth=1440;h.ctx.innerHeight=900;h.openMonth();
+  const btn=h.query('[data-ledger-tip="ledgerFuturesTip"]')[0], tip=h.node('ledgerFuturesTip');
+  let btnRect={left:200,right:216,top:803,bottom:819}, tipHeight=159;
+  btn.getBoundingClientRect=()=>btnRect;
+  tip.getBoundingClientRect=()=>({height:tipHeight});
+  tip.listeners.toggle({newState:'open'});
+  assert.equal(tip.style.top,'638px','아래로 넘치면 버튼 위쪽(803 - 6 - 159)으로 뒤집는다');
+  assert.equal(tip.style.left,'200px');
+  // 위아래 모두 공간이 부족한 낮은 화면에서는 하단 16px 여백에 맞춰 화면 안에 둔다.
+  h.ctx.innerHeight=220;btnRect={left:1300,right:1316,top:100,bottom:116};
+  tip.listeners.toggle({newState:'open'});
+  assert.equal(tip.style.top,'45px','220 - 16 - 159 = 45px로 화면 안에 고정');
+  assert.equal(tip.style.left,'1124px','오른쪽 끝도 16px 여백 안에 고정');
+  // 소프트 키보드 등으로 visualViewport.height가 줄어든 경우에도 그 높이를 따른다.
+  h.ctx.innerHeight=852;h.ctx.visualViewport={height:460};btnRect={left:20,right:36,top:380,bottom:396};tipHeight=120;
+  tip.listeners.toggle({newState:'open'});
+  assert.equal(tip.style.top,'254px','visualViewport 하단(460 - 16)을 넘기면 위로 뒤집는다(380 - 6 - 120)');
+  // 닫힐 때는 좌표를 바꾸지 않는다.
+  tip.listeners.toggle({newState:'closed'});
+  assert.equal(tip.style.top,'254px');
 });
 
 test('선물·옵션 설명과 계좌 잔액 안내는 이름 옆 ! 버튼으로 접고, 연도 선물·옵션 금액이 있으면 ⚠로 바꾸며 popover 미지원이면 기존 글자를 쓴다',()=>{
