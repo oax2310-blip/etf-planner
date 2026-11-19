@@ -91,12 +91,12 @@ function bindFuturePositions(){
   if($("undoFuturePosition"))$("undoFuturePosition").onclick=()=>{if(!restoreFuturePosition(state.futures,futurePositionUndo)){renderFutures();return;}futurePositionUndo=null;save();renderFutures();$("futurePositions").open=true;$("addPosition").focus({preventScroll:true});};
   if($("dismissFuturePositionUndo"))$("dismissFuturePositionUndo").onclick=()=>{futurePositionUndo=null;renderFutures();};
 }
-// 같은 월물은 계약 수 가중평균으로 합침; settlementPrice는 화면 '단순평균가'. 선형 손익이라 따로 둘 때와 기대손익이 같다.
 function futurePositionAverageAfterAdd(pos,qty,price){
   if(!pos)return price;
   const c=Number(pos.contracts)||0;
   return (Number(pos.settlementPrice)*c+price*qty)/(c+qty);
 }
+// 같은 월물은 계약 수 가중평균으로 합침; settlementPrice는 화면 '단순평균가'. 선형 손익이라 따로 둘 때와 기대손익이 같다.
 function addToPosition(f, month, qty, price){
   const pos=f.positions.find(p=>String(p.month)===month);
   if(pos){pos.settlementPrice=futurePositionAverageAfterAdd(pos,qty,price);pos.contracts=(Number(pos.contracts)||0)+qty;}
@@ -345,6 +345,8 @@ function renderFutures(){
     if(input.checked){const month=monthOf(key),price=Number(t.price);
       if(!monthOk(month)){alert("합칠 월물을 YYYYMM 형식으로 입력하세요. 예: 202611");input.checked=false;return;}
       if(!(price>0)){alert("매수가를 먼저 입력하세요.");input.checked=false;return;}
+      const pos=f.positions.find(p=>String(p.month)===month);
+      if(!validFuturePositionAverage(futurePositionAverageAfterAdd(pos,1,price))){alert(futurePositionAverageWarning);input.checked=false;return;}
       addToPosition(f,month,1,price);t.completed=true;t.executionPrice=price;t.mergedMonth=month;t.month=month;}
     else if(t.mergedMonth){const execP=Number(t.executionPrice??t.price),has=f.positions.some(p=>String(p.month)===t.mergedMonth&&Number(p.contracts)>=1);
       if(has){if(!confirm(`${t.mergedMonth} 보유분에서 1계약(체결가 ${fmtPrice(execP)})을 빼고 단순평균가를 되돌릴까요?\n그 사이 이 월물의 단순평균가를 직접 고쳤다면, 되돌린 뒤 값을 확인하세요.`)){input.checked=true;return;}

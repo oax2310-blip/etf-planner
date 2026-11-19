@@ -304,6 +304,48 @@ test('재매수 해제·수량·환율 수정에서 평균가 계산이 거절�
   assert.equal(JSON.stringify(f),before);
 });
 
+test('재매수 해제로 평균가가 0이면 확인 창 없이 체크와 원본 전체를 유지한다',()=>{
+  const f=future();
+  f.positions=[{month:'202612',contracts:7,settlementPrice:1200}];
+  f.rebuy.contracts=16;f.rebuy.cuts=[{contracts:8,price:1500,targetPrice:1500}];
+  f.rebuy.stages[0].buys=[{contracts:6,price:1400,month:'202612'}];
+  const r=setup(f),alerts=[];
+  r.c.confirm=()=>assert.fail('계산을 거절할 때는 확인 창을 열지 않는다');
+  r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+  const before=JSON.stringify(f),selector='[data-fbuy="0:0"]';
+  const input=r.input(selector);input.checked=false;input.onchange();
+  assert.equal(r.input(selector).checked,true);
+  assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.']);
+  assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);
+});
+
+test('신규 재매수의 평균가가 잘못되면 경고하고 체크와 원본 전체를 유지한다',()=>{
+  const f=future();
+  f.positions=[{month:'202612',contracts:20,settlementPrice:-90}];
+  f.rebuy={lowPrice:1400,floorPrice:1300,contracts:20,sellPct:50,steps:2,currentPrice:1310,
+    cuts:[{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}],
+    stages:[{name:'25선',price:1320},{name:'32선',price:1330}]};
+  const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+  const before=JSON.stringify(f),selector='[data-fbuy="0:0"]';
+  const input=r.input(selector);assert.equal(input.disabled,false);input.checked=true;input.onchange();
+  assert.equal(r.input(selector).checked,false);
+  assert.equal(alerts.length,1);assert.match(alerts[0],/보유 단순평균가와 체결 환율을 확인하세요/);
+  assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);
+});
+
+test('신규 분할매수로 평균가가 음수가 되면 체크와 원본 전체를 유지한다',()=>{
+  const f=future();
+  f.positions=[{month:'202612',contracts:20,settlementPrice:-90}];
+  f.levels[0].tranches[0].price=1320;
+  const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+  const before=JSON.stringify(f),selector='[data-tranche-check="0:0"]';
+  r.input('[data-tranche-month="0:0"]').value='202612';
+  const input=r.input(selector);input.checked=true;input.onchange();
+  assert.equal(r.input(selector).checked,false);
+  assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.']);
+  assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);
+});
+
 test('체결 환율 칸을 비우면 옛 returns 기록을 유지하고 값을 복원한다',()=>{
   const f=future();
   f.rebuy={cuts:[{contracts:4,price:1400,targetPrice:1400}],returns:[{done:true,contracts:3,execPrice:1325}]};
@@ -346,4 +388,25 @@ test('목표환율 이평선에 현물 일선을 선물 대신 쓰지 않고 없
   const r=setup(future(),etf(),prices);r.c.renderFutures();assert.equal(r.el('ftargetLine').disabled,true);
   assert.equal(r.c.futureTargetLines(prices,null).length,0);
   const before=JSON.stringify(r.f);r.change('#ftargetLine','25일선');assert.equal(JSON.stringify(r.f),before);
+});
+
+test('재매수 해제 확인 창은 월물교체 뒤 보유를 유지하는 기록 해제를 묻고 취소하면 저장하지 않는다',()=>{
+  const f=future(),r=setup(f),messages=[];
+  f.positions[0].month='202701';
+  f.rebuy.cuts=[{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  f.rebuy.stages[0].buys=[{contracts:1,price:1320,month:'202612'}];
+  const holdings=plain(f.positions),pnl=f.baselinePnl;
+  const expected='기록한 202612 월물이 없거나 보유 계약이 부족합니다.\n보유를 그대로 두고 재매수 체크만 해제할까요?';
+  r.c.confirm=message=>{messages.push(message);return messages.length===2;};
+  r.c.renderFutures();
+  const uncheck=()=>{const input=r.input('[data-fbuy="0:0"]');input.checked=false;input.onchange();};
+  uncheck();
+  assert.deepEqual(messages,[expected]);
+  assert.equal(r.input('[data-fbuy="0:0"]').checked,true);assert.equal(r.stored.size,0);
+  uncheck();
+  assert.deepEqual(messages,[expected,expected]);
+  assert.equal(r.input('[data-fbuy="0:0"]').checked,false);
+  assert.deepEqual(r.saved().futures.positions,holdings);
+  assert.equal(r.saved().futures.baselinePnl,pnl);
+  assert.equal(r.saved().futures.rebuy.stages[0].buys,undefined);
 });
