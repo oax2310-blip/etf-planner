@@ -96,6 +96,12 @@ function futurePositionAverageAfterAdd(pos,qty,price){
   const c=Number(pos.contracts)||0;
   return (Number(pos.settlementPrice)*c+price*qty)/(c+qty);
 }
+// 새 체결 편입·수량 증가 전 검증할 평균가(읽기 전용). 체결가나, 계약이 남은 보유의 단순평균가가 양수·유한이 아니면 NaN.
+// 계약 0인 빈 행은 평균가를 쓰지 않으므로 그대로 계산한다. 손절 되돌리기(addToPosition)는 이 검증을 쓰지 않는다.
+function futurePositionAverageAfterBuy(pos,qty,price){
+  if(!validFuturePositionAverage(price)||Number(pos?.contracts)>0&&!validFuturePositionAverage(Number(pos.settlementPrice)))return NaN;
+  return futurePositionAverageAfterAdd(pos,qty,price);
+}
 // 같은 월물은 계약 수 가중평균으로 합침; settlementPrice는 화면 '단순평균가'. 선형 손익이라 따로 둘 때와 기대손익이 같다.
 function addToPosition(f, month, qty, price){
   const pos=f.positions.find(p=>String(p.month)===month);
@@ -126,9 +132,9 @@ function applyFuturePositionRemoval(f,pos,remaining){
   else {pos.settlementPrice=remaining.settlementPrice;pos.contracts=remaining.contracts;}
 }
 // 환율 정정은 계약 수를 유지하면서 옛 체결 원가를 새 체결 원가로 바꾼다. 검증할 값은 정정 후 평균가다.
-// 옛 체결가(oldPrice)가 양수·유한이 아니면(null·빈 값·0·음수·NaN) 뺄 원가를 알 수 없어 NaN을 돌려 호출부가 거절하게 한다.
+// 옛 체결가(oldPrice)나 보유 단순평균가가 양수·유한이 아니면(null·빈 값·0·음수·NaN) 정정 기준을 알 수 없어 NaN을 돌려 호출부가 거절하게 한다.
 function futurePositionAverageAfterExecChange(pos,qty,oldPrice,price){
-  if(!validFuturePositionAverage(oldPrice))return NaN;
+  if(!validFuturePositionAverage(oldPrice)||!validFuturePositionAverage(Number(pos.settlementPrice)))return NaN;
   const contracts=Number(pos.contracts);
   return (Number(pos.settlementPrice)*contracts-oldPrice*qty+price*qty)/contracts;
 }
@@ -352,9 +358,10 @@ function renderFutures(){
       if(!monthOk(month)){alert("합칠 월물을 YYYYMM 형식으로 입력하세요. 예: 202611");input.checked=false;return;}
       if(!(price>0)){alert("매수가를 먼저 입력하세요.");input.checked=false;return;}
       const pos=f.positions.find(p=>String(p.month)===month);
-      if(!validFuturePositionAverage(futurePositionAverageAfterAdd(pos,1,price))){alert(futurePositionAverageWarning);input.checked=false;return;}
+      if(!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,1,price))){alert(futurePositionAverageWarning);input.checked=false;return;}
       addToPosition(f,month,1,price);t.completed=true;t.executionPrice=price;t.mergedMonth=month;t.month=month;}
     else if(t.mergedMonth){const execP=Number(t.executionPrice??t.price),has=f.positions.some(p=>String(p.month)===t.mergedMonth&&Number(p.contracts)>=1);
+      if(has&&!futurePositionAfterRemoval(f.positions.find(p=>String(p.month)===t.mergedMonth),1,execP)){input.checked=true;alert(futurePositionAverageWarning);return;} // 계산할 수 없으면 확인 창 없이 거절(재매수 해제와 같음)
       if(has){if(!confirm(`${t.mergedMonth} 보유분에서 1계약(체결가 ${fmtPrice(execP)})을 빼고 단순평균가를 되돌릴까요?\n그 사이 이 월물의 단순평균가를 직접 고쳤다면, 되돌린 뒤 값을 확인하세요.`)){input.checked=true;return;}
         if(!removeFromPosition(f,t.mergedMonth,1,execP)){input.checked=true;alert(futurePositionAverageWarning);return;}}
       else if(!confirm(`보유 월물에 ${t.mergedMonth}이(가) 없습니다(교체·삭제된 것으로 보입니다).\n체크만 해제하고 보유 월물은 직접 고칠까요?`)){input.checked=true;return;}

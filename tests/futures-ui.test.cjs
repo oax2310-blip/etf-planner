@@ -385,3 +385,15 @@ test('분할매수 보유 전량 차감은 체결가가 비정상이어도 보�
   const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,1)]);f.positions[0].contracts=1;
   assert.equal(ctx.removeFromPosition(f,'202612',1,0),true);assert.equal(f.positions.length,0);
 });
+
+test('분할매수 체결가 수정은 보유 단순평균가가 비정상이면 거절하고 숫자 문자열 평균가는 허용한다',()=>{
+  const ctx=buyTableContext();
+  for(const sp of [null,'',0,-5,NaN,undefined,'1400']){
+    const f=buyTableFutures([level(25,1450,2)]),t=f.levels[0].tranches[0],label=`평균가 ${String(sp)}`;
+    Object.assign(t,{completed:true,price:1450,executionPrice:1450,mergedMonth:'202612'});f.positions[0]={month:'202612',contracts:2,settlementPrice:sp};
+    const before=JSON.stringify(f);
+    if(sp==='1400'){assert.notEqual(ctx.setFutureTrancheExec(f,0,0,'1460'),false,label);assert.equal(f.positions[0].settlementPrice,1405);assert.equal(t.executionPrice,1460);continue;}
+    for(const price of ['1460','1470'])assert.equal(ctx.setFutureTrancheExec(f,0,0,price),false,`${label} → ${price}`);
+    assert.equal(JSON.stringify(f),before,label);
+  }
+});

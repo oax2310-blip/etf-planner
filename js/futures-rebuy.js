@@ -78,7 +78,7 @@ function linkFutureRebuy(f,[rec,key]){
   const qty=futureRebuyQty(rec.contracts),price=Number(rec[key]),month=priceMonth(f,typeof priceData==="object"?priceData:null);
   if(!qty||!(price>0)||!month)return "unlinked";
   const pos=f.positions.find(p=>String(p.month)===month);
-  if(!validFuturePositionAverage(futurePositionAverageAfterAdd(pos,qty,price)))return false;
+  if(!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,qty,price)))return false;
   addToPosition(f,month,qty,price);rec.month=month;
   return true;
 }
@@ -151,7 +151,7 @@ function setFutureBuyCount(f,i,t,text){
   const pos=f.positions.find(p=>String(p.month)===month),price=Number(rec[fill[1]]);
   const remaining=delta<0?futurePositionAfterRemoval(pos,-delta,price):null;
   if(delta<0&&!remaining)return false;
-  if(delta>0&&(!validFuturePositionAverage(price)||!validFuturePositionAverage(futurePositionAverageAfterAdd(pos,delta,price))))return false; // 체결가가 0 이하·비유한이면 평균가를 낮추지 않도록 거절
+  if(delta>0&&!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,delta,price)))return false; // 체결가·보유 단순평균가가 0 이하·비유한이면 거절
   if(setFutureBuyQty(f,i,t,text)===false)return false;
   if(delta>0)addToPosition(f,month,delta,price);else if(remaining)applyFuturePositionRemoval(f,pos,remaining);
 }
