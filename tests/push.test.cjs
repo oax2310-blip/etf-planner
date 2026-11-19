@@ -528,6 +528,28 @@ test('배경 동기화(readPushConfig) 성공·오류는 사용자의 테스트�
   assert.doesNotMatch(empty.nodes.pushSetup.innerHTML,/발송 상태 확인 필요/);
 });
 
+test('규칙 목록을 누르는 동안 푸시 조회는 끝나고 안내 문구는 보류한 목록과 함께 갱신된다',async()=>{
+  const h=load({gh:async()=>({status:500,ok:false})});
+  const alerts=fs.readFileSync(path.join(__dirname,'../js/alerts.js'),'utf8');
+  const list=new EventTarget();
+  let listRenders=0;
+  Object.assign(h.ctx,{list,dialog:new EventTarget(),drawList:()=>listRenders++});
+  vm.runInContext(alerts+'\ndeferAlertRulesRender=deferAlertListWhilePressed(list,dialog);',h.ctx);
+  h.ctx.renderPushSetup();
+  const before=h.nodes.pushSetup.innerHTML;
+  list.dispatchEvent(Object.assign(new Event('pointerdown'),{button:0,pointerId:1}));
+
+  await h.ctx.readPushConfig();
+  assert.match(vm.runInContext('pushConfigError',h.ctx),/발송 상태를 확인하지 못했습니다/);
+  assert.equal(h.nodes.pushSetup.innerHTML,before);
+  assert.equal(vm.runInContext('deferAlertRulesRender(drawList)',h.ctx),true);
+  assert.equal(vm.runInContext('deferAlertRulesRender(drawList)',h.ctx),true);
+
+  for(const cancel of h.docListeners.get('pointercancel'))cancel({pointerId:1});
+  assert.match(h.nodes.pushSetup.innerHTML,/발송 상태 확인 필요/);
+  assert.equal(listRenders,1);
+});
+
 test('알림 테스트는 이전 테스트 알림을 정리한 뒤 활성 알림 잔류 여부를 확인한다',async()=>{
   let active=[],closed=0,phase=0;
   const shown=load({

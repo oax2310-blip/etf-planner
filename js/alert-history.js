@@ -1,6 +1,7 @@
 // 알림내역 화면·발송 이력/수신함 불러오기. state.alertHistory는 새 알림 수신·사용자 조작 때만 생성한다.
 // 기존 localStorage·비공개 동기화·플래너 JSON 백업을 사용하며 매매 기록은 수정하지 않는다.
 let alertHistoryFilter="all",alertHistoryBusy=false,alertHistoryAgain=false,alertHistoryMessage="";
+let deferAlertHistoryRender;
 const alertHistoryReadIds=new Map(); // 푸시를 눌러 연 항목 ID → 누른 시각(ms). 이 페이지가 열려 있는 동안만 둔다.
 const alertHistoryItems=()=>alertHistoryStore.merge(state.alertHistory).items;
 // 읽지 않음: 읽은 적이 없거나, 마지막으로 읽은 뒤 같은 회차의 재알림이 또 왔을 때(lastSentAt > readAt).
@@ -115,6 +116,7 @@ function removeAlertHistoryItems(items){
 }
 function renderAlertHistory(){
   const list=$("alertHistoryList");if(!list)return;
+  if(deferAlertHistoryRender?.(renderAlertHistory))return;
   const all=alertHistoryItems(),unread=all.filter(alertHistoryUnread),items=alertHistoryFilter==="unread"?unread:all;
   $("historyAllCount").textContent=all.length;$("historyUnreadCount").textContent=unread.length;
   $("alertsUnreadBadge").textContent=unread.length;$("alertsUnreadBadge").hidden=!unread.length;
@@ -140,6 +142,7 @@ function openAlertHistory(){
   if($("alertsDialog").open)$("alertsDialog").close();renderAlertHistory();$("alertHistoryDialog").showModal();collectAlertInbox();
 }
 function initializeAlertHistory(){
+  if(typeof deferAlertListWhilePressed==="function")deferAlertHistoryRender=deferAlertListWhilePressed($("alertHistoryList"),$("alertHistoryDialog"));
   $("alertHistoryBtn").onclick=openAlertHistory;$("closeAlertHistory").onclick=()=>$("alertHistoryDialog").close();
   $("openAlertSettings").onclick=()=>{$("alertHistoryDialog").close();openAlertSettings();};
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
