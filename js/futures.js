@@ -115,6 +115,15 @@ function addToPosition(f, month, qty, price){
 // 평균가·체결가의 유효 범위: 0 < 값 ≤ Number.MAX_SAFE_INTEGER(백업·동기화 검증 js/data-validation.js와 같은 상한, 넘으면 업로드·복원이 거절된다).
 const validFuturePositionAverage = value => Number.isFinite(value)&&value>0&&value<=Number.MAX_SAFE_INTEGER;
 const futurePositionAverageWarning = "보유 단순평균가와 체결 환율을 확인하세요.";
+// 거절 원인 안내(읽기 전용). 보유가 원인(행이 있고 계약이 음수이거나, 계약이 남았는데 단순평균가가 범위 밖)이면 보유를 고치게 하고,
+// 기록된 체결가(price를 줄 때)가 원인이면 체결가 칸을 먼저 고치게 하며, 그 밖의 계산 거절은 기존 경고를 쓴다. 보유 → 체결가 순서(체결가 기록만 고치기는 보유가 정상일 때만 가능).
+function futureHoldingBad(pos){const c=Number(pos?.contracts);return !!pos&&(c<0||c>0&&!validFuturePositionAverage(Number(pos.settlementPrice)));}
+const futureExecPriceWarning="기록된 체결가가 비어 있거나 잘못돼 보유에서 뺄 수 없습니다. 먼저 체결가 칸을 고친 뒤 다시 하세요.";
+const futureOldPriceConfirm="기록된 체결가가 비어 있거나 잘못돼 보유 평균가를 맞출 수 없습니다. 보유는 그대로 두고 체결가 기록만 고칠까요?\n보유 단순평균가는 보유·계산 기준에서 계좌와 맞는지 확인하세요.";
+function futureRejectMessage(f,month,price=null){
+  if(futureHoldingBad(f.positions.find(p=>String(p.month)===String(month))))return `${month} 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.`;
+  return price!==null&&!validFuturePositionAverage(price)?futureExecPriceWarning:futurePositionAverageWarning;
+}
 // 원가 차감의 읽기 전용 계산. 계약을 전부 빼면 평균가 없이 행을 지울 수 있다.
 // 일부만 뺄 때 체결가(price)가 양수·유한이 아니면(null·빈 값·0·음수·NaN) 평균가를 부풀리지 않도록 null로 거절한다.
 function futurePositionAfterRemoval(pos,qty,price){
@@ -145,13 +154,16 @@ function futurePositionAverageAfterExecChange(pos,qty,oldPrice,price){
 // 산 분할매수 회차의 체결가 수정: 편입한 월물에서 옛 체결가 1계약을 새 체결가로 바꿔 단순평균가를 맞춘다.
 // 계획가(price)·편입 월물·알림은 그대로 두고 executionPrice만 고친다. 월물 밖 옛 매수는 기록만 고친다(손익은 futuresSummary가 체결가로 계산).
 // false = 잘못된 값·산 회차 아님·단순평균가 계산 불가, "no-month" = 편입 월물이 보유에 없음(월물교체 뒤는 보유를 직접 수정). 거절하면 기록을 유지한다.
-function setFutureTrancheExec(f, li, ti, text){
+// "old-price" = 기록된 체결가가 비어 있거나 잘못돼 평균가를 맞출 수 없음(보유는 정상). recordOnly로 다시 부르면 보유는 두고 체결가 기록만 고친다.
+function setFutureTrancheExec(f, li, ti, text, recordOnly=false){
   const t=f.levels?.[li]?.tranches?.[ti], raw=String(text??"").trim(), n=Number(raw);
   if(!t?.completed||!raw||!validFuturePositionAverage(n)) return false;
   if(t.mergedMonth){
     const pos=f.positions.find(p=>String(p.month)===t.mergedMonth), c=Number(pos?.contracts)||0;
     if(c<1) return "no-month";
-    const average=futurePositionAverageAfterExecChange(pos,1,Number(t.executionPrice??t.price),n);
+    const old=Number(t.executionPrice??t.price);
+    if(!validFuturePositionAverage(old)&&!futureHoldingBad(pos)){if(!recordOnly)return "old-price";t.executionPrice=n;return;}
+    const average=futurePositionAverageAfterExecChange(pos,1,old,n);
     if(!validFuturePositionAverage(average))return false;
     pos.settlementPrice=average;
   }
@@ -350,9 +362,10 @@ function renderFutures(){
   $("addPosition").onclick=()=>{f.positions.push({month:nextFuturePositionMonth(f),contracts:0,settlementPrice:1});save();renderFutures();};
   bindFuturePositions();
   onEdit("[data-tranche-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const price=moneyInputNumber(v)??0;const [li,ti]=el.dataset.tranchePrice.split(":").map(Number),t=f.levels[li].tranches[ti];t.price=price;if(futureLineName(f.levels[li]))t.priceOverride=t.price;},renderFutures);
-  onEdit("[data-future-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const [li,ti]=el.dataset.futureExec.split(":").map(Number),t=f.levels[li].tranches[ti],done=setFutureTrancheExec(f,li,ti,moneyInputNumber(v));
+  onEdit("[data-future-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const [li,ti]=el.dataset.futureExec.split(":").map(Number),t=f.levels[li].tranches[ti],n=moneyInputNumber(v);let done=setFutureTrancheExec(f,li,ti,n);
+    if(done==="old-price"){if(!confirm(futureOldPriceConfirm))return false;done=setFutureTrancheExec(f,li,ti,n,true);}
     if(done==="no-month"){alert(`${t.mergedMonth} 보유 월물이 없어 체결가를 고치지 않았습니다. 월물을 교체했다면 보유·계산 기준에서 단순평균가를 직접 고치세요.`);return false;}
-    if(done===false)alert(futurePositionAverageWarning);
+    if(done===false)alert(futureRejectMessage(f,t.mergedMonth));
     return done;},renderFutures);
   const monthOf=key=>(document.querySelector(`[data-tranche-month="${key}"]`)?.value||"").trim();
   onEdit("[data-tranche-month]",(v,el)=>{const [li,ti]=el.dataset.trancheMonth.split(":").map(Number);f.levels[li].tranches[ti].month=v.trim();});
@@ -362,12 +375,12 @@ function renderFutures(){
       if(!monthOk(month)){alert("합칠 월물을 YYYYMM 형식으로 입력하세요. 예: 202611");input.checked=false;return;}
       if(!(price>0)){alert("매수가를 먼저 입력하세요.");input.checked=false;return;}
       const pos=f.positions.find(p=>String(p.month)===month);
-      if(!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,1,price))){alert(futurePositionAverageWarning);input.checked=false;return;}
+      if(!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,1,price))){alert(futureRejectMessage(f,month));input.checked=false;return;}
       addToPosition(f,month,1,price);t.completed=true;t.executionPrice=price;t.mergedMonth=month;t.month=month;}
     else if(t.mergedMonth){const execP=Number(t.executionPrice??t.price),has=f.positions.some(p=>String(p.month)===t.mergedMonth&&Number(p.contracts)>=1);
-      if(has&&!futurePositionAfterRemoval(f.positions.find(p=>String(p.month)===t.mergedMonth),1,execP)){input.checked=true;alert(futurePositionAverageWarning);return;} // 계산할 수 없으면 확인 창 없이 거절(재매수 해제와 같음)
+      if(has&&!futurePositionAfterRemoval(f.positions.find(p=>String(p.month)===t.mergedMonth),1,execP)){input.checked=true;alert(futureRejectMessage(f,t.mergedMonth,execP));return;} // 계산할 수 없으면 확인 창 없이 거절(재매수 해제와 같음)
       if(has){if(!confirm(`${t.mergedMonth} 보유분에서 1계약(체결가 ${fmtPrice(execP)})을 빼고 단순평균가를 되돌릴까요?\n그 사이 이 월물의 단순평균가를 직접 고쳤다면, 되돌린 뒤 값을 확인하세요.`)){input.checked=true;return;}
-        if(!removeFromPosition(f,t.mergedMonth,1,execP)){input.checked=true;alert(futurePositionAverageWarning);return;}}
+        if(!removeFromPosition(f,t.mergedMonth,1,execP)){input.checked=true;alert(futureRejectMessage(f,t.mergedMonth,execP));return;}}
       else if(!confirm(`보유 월물에 ${t.mergedMonth}이(가) 없습니다(교체·삭제된 것으로 보입니다).\n체크만 해제하고 보유 월물은 직접 고칠까요?`)){input.checked=true;return;}
       t.completed=false;t.executionPrice=null;delete t.mergedMonth;}
     else{t.completed=false;t.executionPrice=null;}

@@ -329,7 +329,7 @@ test('신규 재매수의 평균가가 잘못되면 경고하고 체크와 원�
   const before=JSON.stringify(f),selector='[data-fbuy="0:0"]';
   const input=r.input(selector);assert.equal(input.disabled,false);input.checked=true;input.onchange();
   assert.equal(r.input(selector).checked,false);
-  assert.equal(alerts.length,1);assert.match(alerts[0],/보유 단순평균가와 체결 환율을 확인하세요/);
+  assert.deepEqual(alerts,['202612 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.'],'보유 평균가가 음수면 보유를 고치게 안내');
   assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);
 });
 
@@ -342,7 +342,7 @@ test('신규 분할매수로 평균가가 음수가 되면 체크와 원본 전�
   r.input('[data-tranche-month="0:0"]').value='202612';
   const input=r.input(selector);input.checked=true;input.onchange();
   assert.equal(r.input(selector).checked,false);
-  assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.']);
+  assert.deepEqual(alerts,['202612 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.']);
   assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);
 });
 
@@ -421,7 +421,7 @@ test('신규 분할매수 체크는 계약이 남은 보유의 단순평균가�
     const input=r.input(selector);input.checked=true;input.onchange();
     if(contracts){
       assert.equal(r.input(selector).checked,false,label);
-      assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+      assert.deepEqual(alerts,['202612 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.'],label);
       assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
     }else{
       assert.deepEqual(alerts,[],label);
@@ -440,7 +440,7 @@ test('산 분할매수 체크 해제는 체결가가 비정상이거나 남은 �
     const before=JSON.stringify(f),input=r.input('[data-tranche-check="0:1"]');
     input.checked=false;input.onchange();
     assert.equal(confirms,0,label);
-    assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+    assert.deepEqual(alerts,[exec===2500?'보유 단순평균가와 체결 환율을 확인하세요.':'기록된 체결가가 비어 있거나 잘못돼 보유에서 뺄 수 없습니다. 먼저 체결가 칸을 고친 뒤 다시 하세요.'],label);
     assert.equal(input.checked,true,label);assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
   }
   const f=future(),t=f.levels[0].tranches[1];
@@ -461,7 +461,63 @@ test('신규 분할매수 체크는 보유 계약이 음수인 월물이면 경�
     r.input('[data-tranche-month="0:0"]').value='202612';
     const input=r.input(selector);input.checked=true;input.onchange();
     assert.equal(r.input(selector).checked,false,label);
-    assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+    assert.deepEqual(alerts,['202612 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.'],label);
     assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
+  }
+});
+
+
+const HOLD_WARN='202612 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.';
+const EXEC_WARN='기록된 체결가가 비어 있거나 잘못돼 보유에서 뺄 수 없습니다. 먼저 체결가 칸을 고친 뒤 다시 하세요.';
+const OLD_PRICE_CONFIRM='기록된 체결가가 비어 있거나 잘못돼 보유 평균가를 맞출 수 없습니다. 보유는 그대로 두고 체결가 기록만 고칠까요?\n보유 단순평균가는 보유·계산 기준에서 계좌와 맞는지 확인하세요.';
+function cutView(positions,cut){
+  const f=future();f.positions=positions;f.rebuy.cuts=[cut];
+  const r=setup(f),alerts=[],confirms=[];r.c.alert=m=>alerts.push(m);r.c.confirm=m=>{confirms.push(m);return true;};r.c.renderFutures();
+  return {r,f,alerts,confirms,before:JSON.stringify(f)};
+}
+
+test('손절 해제·체결 감소는 되돌릴 보유가 잘못됐으면 확인 창 없이 보유 안내만 하고 저장하지 않는다',()=>{
+  for(const sp of [null,0,-5]){
+    let v=cutView([{month:'202612',contracts:2,settlementPrice:sp}],{contracts:1,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450});
+    const input=v.r.input('[data-fcut="0"]');input.checked=false;input.onchange();
+    assert.deepEqual(v.confirms,[],`해제 ${sp}`);assert.deepEqual(v.alerts,[HOLD_WARN],`해제 ${sp}`);
+    assert.equal(v.r.input('[data-fcut="0"]').checked,true);assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
+    v=cutView([{month:'202612',contracts:2,settlementPrice:sp}],{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450});
+    v.r.type('[data-fcut-qty="0"]','1');v.r.change('[data-fcut-qty="0"]');
+    assert.deepEqual(v.confirms,[],`감소 ${sp}`);assert.deepEqual(v.alerts,[HOLD_WARN],`감소 ${sp}`);assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
+  }
+  const v=cutView([{month:'202612',contracts:2,settlementPrice:1400}],{contracts:1,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450});
+  const input=v.r.input('[data-fcut="0"]');input.checked=false;input.onchange();
+  assert.equal(v.confirms.length,1,'정상 보유는 기존대로 확인 후 되돌린다');assert.deepEqual(v.alerts,[]);
+  assert.deepEqual(v.r.saved().futures.positions,[{month:'202612',contracts:3,settlementPrice:(2*1400+1450)/3}]);
+});
+
+test('재매수 해제는 보유가 잘못됐으면 보유 안내, 기록된 체결 환율이 잘못됐으면 체결가 안내를 확인 창 없이 보인다',()=>{
+  for(const [sp,price,warn] of [[null,1400,HOLD_WARN],[1400,0,EXEC_WARN]]){
+    const f=future();f.positions=[{month:'202612',contracts:7,settlementPrice:sp}];
+    f.rebuy.contracts=16;f.rebuy.cuts=[{contracts:8,price:1500,targetPrice:1500}];f.rebuy.stages[0].buys=[{contracts:6,price,month:'202612'}];
+    const r=setup(f),alerts=[];r.c.confirm=()=>assert.fail('확인 창을 열지 않는다');r.c.alert=m=>alerts.push(m);r.c.renderFutures();
+    const before=JSON.stringify(f),input=r.input('[data-fbuy="0:0"]');input.checked=false;input.onchange();
+    assert.deepEqual(alerts,[warn]);assert.equal(r.input('[data-fbuy="0:0"]').checked,true);assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);
+  }
+});
+
+test('기록된 체결가가 잘못된 산 분할매수·재매수는 확인하면 보유는 두고 체결가 기록만 고치고, 취소하면 저장하지 않는다',()=>{
+  for(const answer of [false,true]){
+    const f=future(),t=f.levels[0].tranches[1];f.positions=[{month:'202612',contracts:2,settlementPrice:1400}];t.executionPrice=0;t.price=0;
+    const r=setup(f),alerts=[],confirms=[];r.c.alert=m=>alerts.push(m);r.c.confirm=m=>{confirms.push(m);return answer;};r.c.renderFutures();
+    const before=JSON.stringify(f);r.type('[data-future-exec="0:1"]','1460');r.change('[data-future-exec="0:1"]');
+    assert.deepEqual(confirms,[OLD_PRICE_CONFIRM]);assert.deepEqual(alerts,[]);
+    if(answer){assert.equal(r.saved().futures.levels[0].tranches[1].executionPrice,1460);assert.deepEqual(r.saved().futures.positions,[{month:'202612',contracts:2,settlementPrice:1400}]);}
+    else{assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);}
+  }
+  for(const answer of [false,true]){
+    const f=future();f.positions=[{month:'202612',contracts:7,settlementPrice:1400}];
+    f.rebuy.contracts=16;f.rebuy.cuts=[{contracts:8,price:1500,targetPrice:1500}];f.rebuy.stages[0].buys=[{contracts:6,price:0,month:'202612'}];
+    const r=setup(f),alerts=[],confirms=[];r.c.alert=m=>alerts.push(m);r.c.confirm=m=>{confirms.push(m);return answer;};r.c.renderFutures();
+    const before=JSON.stringify(f);r.type('[data-fbuy-exec="0:0"]','1460');r.change('[data-fbuy-exec="0:0"]');
+    assert.deepEqual(confirms,[OLD_PRICE_CONFIRM]);assert.deepEqual(alerts,[]);
+    if(answer){assert.equal(r.saved().futures.rebuy.stages[0].buys[0].price,1460);assert.deepEqual(r.saved().futures.positions,[{month:'202612',contracts:7,settlementPrice:1400}]);}
+    else{assert.equal(r.stored.size,0);assert.equal(JSON.stringify(f),before);}
   }
 });

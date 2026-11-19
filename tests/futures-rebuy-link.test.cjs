@@ -760,13 +760,18 @@ function badRebuyPriceCase(bad,{legacy=false,contracts=2}={}){
   return f;
 }
 
-test('재매수 체결 환율 정정은 연결된 기록의 기존 체결가가 비정상이면 거절하고 기록·보유·누적 정산손익을 보존한다',()=>{
+test('재매수 체결 환율 정정은 연결된 기록의 기존 체결가가 비정상이면 old-price로 멈추고 기록·보유·누적 정산손익을 보존한다',()=>{
   const ctx=load();
   for(const legacy of [false,true])for(const contracts of [2,5])for(const bad of badRebuyPrices){
     const f=badRebuyPriceCase(bad,{legacy,contracts}),before=JSON.stringify(f),label=`${legacy?'옛 done':'buys'} 보유 ${contracts} 기존 ${String(bad)}`;
-    assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),false,label);
+    assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),'old-price',label);
     assert.equal(JSON.stringify(f),before,label);
     assert.equal(f.positions[0].settlementPrice,1400,label);assert.equal(f.baselinePnl,50000,label);
+    const positions=JSON.stringify(f.positions);
+    assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460',true),false,`${label} 기록만 고치기`);
+    assert.equal((legacy?f.rebuy.stages[0].execPrice:f.rebuy.stages[0].buys[0].price),1460,label);
+    assert.equal(JSON.stringify(f.positions),positions,`${label} 보유 그대로`);assert.equal(f.baselinePnl,50000,label);
+    if(contracts===5){assert.notEqual(ctx.setFutureBuyChecked(f,0,0,false),false,`${label} 고친 뒤 해제`);assert.equal(f.positions[0].contracts,3);assert.equal(f.positions[0].settlementPrice,(5*1400-2*1460)/3);}
   }
   const f=badRebuyPriceCase(1450,{contracts:5});
   assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460'),false,'기존 체결가가 양수면 그대로 정정한다');
@@ -916,4 +921,55 @@ test('보유 1계약 Number.MAX_VALUE 평균가의 체결 환율 정정도 상�
   f.positions[0].contracts=1;f.rebuy.stages[0].buys[0].contracts=1;
   const before=JSON.stringify(f);
   assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),false);assert.equal(JSON.stringify(f),before);
+});
+
+
+// 손절 되돌리기: 보유에 넣을 월물마다 계약이 음수거나 계약이 남은 단순평균가·판 시점 평균가(leg)가 범위 밖이면 아무것도 바꾸지 않는다.
+function cutRestoreCase(qty){
+  const ctx=load(),f=futures();
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  if(qty>1)assert.notEqual(ctx.setFutureCutCount(f,0,String(qty)),false);
+  return {ctx,f};
+}
+const badHoldings=[[-1,1450],[2,null],[2,0],[2,-5],[2,NaN]];
+
+test('손절 해제·계약 감소는 되돌릴 보유가 잘못됐으면 기록·보유·누적 정산손익을 모두 보존한다',()=>{
+  for(const [contracts,sp] of badHoldings){
+    const label=`보유 ${contracts}계약 평균가 ${String(sp)}`;
+    let {ctx,f}=cutRestoreCase(1);f.positions[0].contracts=contracts;f.positions[0].settlementPrice=sp;let before=JSON.stringify(f);
+    assert.equal(ctx.setFutureCutChecked(f,0,false),false,`${label} 해제`);assert.equal(JSON.stringify(f),before,`${label} 해제`);
+    assert.equal(ctx.setFutureCutCount(f,0,'0'),false,`${label} 0으로`);assert.equal(JSON.stringify(f),before,`${label} 0으로`);
+    ({ctx,f}=cutRestoreCase(2));f.positions[0].contracts=contracts;f.positions[0].settlementPrice=sp;before=JSON.stringify(f);
+    assert.equal(ctx.setFutureCutCount(f,0,'1'),false,`${label} 감소`);assert.equal(JSON.stringify(f),before,`${label} 감소`);
+  }
+  for(const leg of [0,-5,null]){
+    const {ctx,f}=cutRestoreCase(1);f.rebuy.cuts[0].settlementPrice=leg;const before=JSON.stringify(f);
+    assert.equal(ctx.setFutureCutChecked(f,0,false),false,`판 시점 평균가 ${String(leg)}`);assert.equal(JSON.stringify(f),before);
+  }
+});
+
+test('손절 되돌리기는 정상 보유·계약 0인 빈 행·월물교체(detach)·되살리기를 기존대로 처리한다',()=>{
+  let {ctx,f}=cutRestoreCase(2);
+  assert.notEqual(ctx.setFutureCutCount(f,0,'1'),false);assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:3,settlementPrice:1450}]);
+  ({ctx,f}=cutRestoreCase(1));f.positions[0].contracts=0;f.positions[0].settlementPrice=null;
+  assert.notEqual(ctx.setFutureCutChecked(f,0,false),false,'계약 0인 빈 행');assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:1,settlementPrice:1450}]);
+  ({ctx,f}=cutRestoreCase(1));f.positions=[{month:'202701',contracts:3,settlementPrice:1460}];f.rebuy.cuts[0].settlementPrice=0;
+  const pnl=f.baselinePnl;
+  assert.notEqual(ctx.setFutureCutChecked(f,0,false,true),false,'보유에 없는 월물은 detach면 판 시점 평균가를 보지 않는다');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202701',contracts:3,settlementPrice:1460}]);assert.notEqual(f.baselinePnl,pnl);
+  ({ctx,f}=cutRestoreCase(1));f.positions=[];f.rebuy.cuts[0].settlementPrice=0;const before=JSON.stringify(f);
+  assert.equal(ctx.setFutureCutChecked(f,0,false),false,'되살릴 월물의 판 시점 평균가가 잘못되면 거절');assert.equal(JSON.stringify(f),before);
+  ({ctx,f}=cutRestoreCase(1));f.positions=[];
+  assert.notEqual(ctx.setFutureCutChecked(f,0,false),false,'정상 판 시점 평균가면 다 판 월물을 되살린다');assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:1,settlementPrice:1450}]);
+});
+
+test('체결 환율 기록만 고치기는 보유가 잘못됐거나 기존 체결가가 정상이면 쓰이지 않는다',()=>{
+  const ctx=load();
+  let f=badRebuyPriceCase(0,{contracts:5});f.positions[0].settlementPrice=null;let before=JSON.stringify(f);
+  assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),false,'보유도 잘못되면 old-price가 아니라 거절');
+  assert.equal(ctx.setFutureBuyExec(f,0,0,'1460',true),false,'recordOnly로도 우회하지 않는다');assert.equal(JSON.stringify(f),before);
+  f=badRebuyPriceCase(1450,{contracts:5});
+  assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460',true),false);assert.equal(f.positions[0].settlementPrice,1404,'기존 체결가가 정상이면 recordOnly여도 평균가를 맞춘다');
+  f=badRebuyPriceCase(0,{contracts:5});before=JSON.stringify(f);
+  assert.equal(ctx.setFutureBuyExec(f,0,0,String(Number.MAX_SAFE_INTEGER+1),true),false,'recordOnly도 새 값 상한을 검사한다');assert.equal(JSON.stringify(f),before);
 });
