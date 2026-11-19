@@ -78,19 +78,43 @@ function alertRuleCard(rule){
     <div class="alert-rule-foot"><small>${rule.enabled===false?"일시 중지":"근처 진입 · 위/아래 통과 감지"}</small><div><button class="btn mini" type="button" data-edit-alert="${esc(rule.id)}">수정</button><button class="btn mini ghost" type="button" data-remove-alert="${esc(rule.id)}">삭제</button></div></div>
   </article>`;
 }
+function alertSyncBusy(){return typeof sync==="object"&&!!sync&&(!!sync.busy||!!sync.running);}
+async function waitAlertSync(){
+  while(typeof sync==="object"&&sync&&sync.running){
+    const current=sync.running;
+    await current;
+    if(sync.running===current)break;
+  }
+}
+// 알림내역·직접 추가 알림 규칙 삭제 공통 대기. 동기화 진행 중 삭제를 누르면 진행 중 화면을 띄우고 최대 4초까지 동기화를 기다린 뒤 삭제한다.
+// 4초 경과 후에도 동기화가 안 끝나면 삭제를 진행하되(save→scheduleSync·alertHistory 삭제 ID 합집합 병합으로 데이터 유지), 창 닫힘·충돌(sync.blocked·conflictDialog)이면 실행하지 않는다.
+function runAlertDelete(trigger,action){
+  if(!alertSyncBusy()){action();return;}
+  pageLeave.wait(trigger,waitAlertSync,()=>{
+    if(typeof sync==="object"&&sync&&sync.blocked)return;
+    if(typeof $==="function"&&$("conflictDialog")?.open)return;
+    action();
+  },{
+    label:"동기화 진행 중…",
+    announce:"동기화 진행 중… 최대 4초까지 기다린 뒤 삭제를 진행합니다."
+  });
+}
 function renderAlerts(){
   const list=$("alertsList");if(!list)return;
   const rules=alertRules();
   renderKrOpenReminder();
   if(typeof renderTradeAlertSummary==="function")renderTradeAlertSummary();
-  list.innerHTML=rules.length?rules.map(alertRuleCard).join(""):'<p class="alert-empty">등록한 알림이 없습니다. 종목과 기준선을 추가하세요.</p>';
+  const html=rules.length?rules.map(alertRuleCard).join(""):'<p class="alert-empty">등록한 알림이 없습니다. 종목과 기준선을 추가하세요.</p>';
+  const dom=typeof list.querySelector==="function";
+  if(!dom||list._alertsMarkup!==html||!list.firstChild){list.innerHTML=html;if(dom)list._alertsMarkup=html;}
+  else for(const input of $$("[data-alert-enabled]")){const rule=rules.find(r=>r.id===input.dataset.alertEnabled);if(rule)input.checked=rule.enabled!==false;}
   $("alertsCount").textContent=`${rules.length}개`;
   const status=$("alertsSaveStatus"), linked=connected();
   status.classList.toggle("warning",!linked||sync.blocked||sync.failed);
   status.textContent=!linked?"동기화가 연결되지 않았습니다. 규칙은 이 기기에만 저장됩니다. 휴대폰·PC 알림을 받으려면 동기화와 아래 수신 설정을 완료하세요.":sync.blocked||sync.failed?"동기화를 확인해 주세요. 변경한 규칙이 수집 작업에 아직 전달되지 않았을 수 있습니다.":"알림 ON/OFF는 비공개 기록과 동기화됩니다. 알림을 받을 휴대폰·PC마다 아래에서 한 번 연결하세요.";
   onEdit("[data-alert-enabled]",(v,el)=>setAlertRuleEnabled(el.dataset.alertEnabled,el.checked),renderAlerts);
   $$("[data-edit-alert]").forEach(button=>button.onclick=()=>openAlertEditor(button.dataset.editAlert));
-  $$("[data-remove-alert]").forEach(button=>button.onclick=()=>{if(removeAlertRule(button.dataset.removeAlert)){if(editingAlertId===button.dataset.removeAlert)closeAlertEditor();save();renderAlerts();}});
+  $$("[data-remove-alert]").forEach(button=>button.onclick=()=>{const ruleId=button.dataset.removeAlert;runAlertDelete(button,()=>{if(removeAlertRule(ruleId)){if(editingAlertId===ruleId)closeAlertEditor();save();renderAlerts();}});});
 }
 // 편집창 기본값은 화면에만 채우고 저장·수정 전에는 alerts를 만들지 않는다.
 function openAlertEditor(ruleId=null){

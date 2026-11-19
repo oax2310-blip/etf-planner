@@ -311,3 +311,65 @@ test('뒤로 가기로 복원된 페이지에서는 다음 링크 이동도 처�
   h.click();await turn();h.show();h.click({href:'valuation.html'});await turn();
   assert.equal(calls,2);assert.equal(h.moves.length,2);
 });
+
+test('pageLeave.wait는 열린 창 위에 지정 문구로 동기화 진행 중 화면을 띄우고 완료 뒤 후속 동작을 실행한다',async()=>{
+  const h=page(),dialog=h.document.createElement('dialog'),btn=h.document.createElement('button'),work=deferred();
+  dialog.setAttribute('open','');dialog.append(btn);h.body.append(dialog);h.document.activeElement=h.body;
+  const finishes=[];let workCalls=0;
+  const started=h.leave.wait(btn,()=>{workCalls++;return work.promise;},info=>finishes.push({info,visible:!!h.waiting()}),{
+    label:'동기화 진행 중…',
+    announce:'동기화 진행 중… 동기화가 끝나면 삭제를 진행합니다.'
+  });
+  assert.equal(started,true);
+  const waiting=h.waiting();assert.ok(waiting);
+  assert.equal(waiting.parentElement,dialog,'포커스가 body여도 누른 버튼이 있는 열린 창 안에 붙는다');
+  assert.equal(waiting.popoverOpen,true);
+  assert.equal(h.document.activeElement,h.body,'포커스를 강제로 옮기지 않는다');
+  const [group,sr]=waiting.children,[,label]=group.children;
+  assert.equal(label.textContent,'동기화 진행 중…');
+  assert.equal(sr.textContent,'동기화 진행 중… 동기화가 끝나면 삭제를 진행합니다.');
+  assert.equal(h.leave.wait(btn,()=>{workCalls++;},()=>finishes.push('dup')),false,'대기 중 중복 요청은 무시한다');
+  assert.equal(h.click({href:'valuation.html'}).defaultPrevented,true,'대기 중 화면 이동 클릭도 막는다');
+  await turn();assert.equal(workCalls,1);assert.equal(finishes.length,0);
+  work.resolve();await turn();
+  assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+  assert.deepEqual(finishes.map(f=>({timedOut:f.info.timedOut,visible:f.visible})),[{timedOut:false,visible:false}],'후속 동작 전에 안내를 닫고 완료 상태를 전달한다');
+  assert.equal(h.leave.wait(btn,()=>Promise.resolve(),()=>finishes.push('next')),true,'완료 뒤 잠금이 풀린다');
+  await turn();assert.equal(finishes.length,2);
+});
+
+test('pageLeave.wait는 모달 닫힘·bfcache 복원 시 대기 안내를 지우고 후속 동작을 취소한다',async t=>{
+  for(const reason of ['cancel','close','beforetoggle','open 제거','pageshow 복원'])await t.test(reason,async()=>{
+    const h=page(),dialog=h.document.createElement('dialog'),btn=h.document.createElement('button'),work=deferred();
+    dialog.setAttribute('open','');dialog.append(btn);h.body.append(dialog);
+    let ran=0;
+    h.leave.wait(btn,()=>work.promise,()=>{ran++;},{label:'동기화 진행 중…'});
+    await turn();assert.ok(h.waiting());
+    if(reason==='pageshow 복원'){h.show(true);}
+    else if(reason==='open 제거'){dialog.removeAttribute('open');}
+    else{if(reason==='close')dialog.removeAttribute('open');dialog.emit(reason,{newState:'closed'});}
+    if(reason!=='open 제거')assert.equal(h.waiting(),undefined);
+    work.resolve();await turn();await h.advance(4000);
+    assert.equal(ran,0,'취소된 대기는 후속 동작을 실행하지 않는다');
+    assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+  });
+});
+
+test('pageLeave.wait는 4초 경과·작업 오류·showPopover 예외에서도 잠금을 풀고 정리한다',async t=>{
+  for(const kind of ['4초 경과','거부','동기 예외','popover 예외'])await t.test(kind,async()=>{
+    const h=page({popoverError:kind==='popover 예외'?Error('popover fail'):undefined}),work=deferred();
+    const finishes=[];
+    h.leave.wait(null,()=>{
+      if(kind==='동기 예외')throw Error('sync fail');
+      if(kind==='거부')return Promise.reject(Error('async fail'));
+      return work.promise;
+    },info=>finishes.push({timedOut:info.timedOut}));
+    await turn();
+    if(kind==='4초 경과'){await h.advance(3999);assert.equal(finishes.length,0);await h.advance(1);}
+    else if(kind==='popover 예외'){work.resolve();await turn();}
+    assert.equal(h.waiting(),undefined);assert.equal(h.timers.size,0);
+    assert.deepEqual(finishes,[{timedOut:kind==='4초 경과'}]);
+    if(kind==='4초 경과'){work.resolve();await turn();assert.equal(finishes.length,1,'시간 초과 뒤 늦은 완료는 무시한다');}
+  });
+});
+

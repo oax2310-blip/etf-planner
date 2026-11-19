@@ -36,9 +36,10 @@ test('index.html이 css·js 파일을 빠짐없이 같은 버전(?v=)으로 불�
 test('세 화면은 page-leave.js를 한 번씩 등록자보다 먼저 불러온다',()=>{
   for(const list of [scripts,assetScripts,valuationScripts]){
     assert.equal(list.filter(f=>f==='js/page-leave.js').length,1);
-    for(const consumer of ['js/sync.js','js/assets-store.js','js/valuation.js'])if(list.includes(consumer))
+    for(const consumer of ['js/sync.js','js/assets-store.js','js/valuation.js','js/alerts.js'])if(list.includes(consumer))
       assert.ok(list.indexOf('js/page-leave.js')<list.indexOf(consumer),consumer);
   }
+  assert.ok(scripts.indexOf('js/alerts.js')<scripts.indexOf('js/alert-history.js'),'공통 알림 삭제 대기를 쓰는 alert-history.js는 alerts.js 뒤에 불러야 한다');
   for(const list of [refs,assetRefs,valuationRefs])
     assert.equal(list.filter(r=>r[1]==='css/page-leave.css').length,1,'세 화면에서 같은 동기화 대기 표시를 쓴다');
 });
