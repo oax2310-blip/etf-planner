@@ -262,7 +262,7 @@ document.addEventListener("scroll",()=>all(".ledger-rp-help").forEach(p=>{if(p.m
 function openMonth(y, n){
   const f=el("monthForm"), months=ledgerMonths(y), m=months.get(n)||{m:n}, bal=m.balances||[], accounts=ledgerAccounts(y);
   const supportsPopover=typeof HTMLElement!=="undefined"&&Object.prototype.hasOwnProperty.call(HTMLElement.prototype,"popover");
-  const rpHint="영웅문 해외 잔고의 원화추정자산을 넣고, RP는 아래 칸에 달러로 따로 넣습니다. RP는 배당처럼 125개월 평균 환율로 원화 환산합니다.";
+  const rpHint="영웅문 해외 잔고의 원화추정자산을 넣고, RP는 ‘RP (달러)’ 칸에 달러로 따로 넣습니다. RP는 배당처럼 125개월 평균 환율로 원화 환산합니다.";
   // 저장한 달러 RP는 기록한 환율을 유지하고(금액을 고쳐도 같음), 새 RP와 평균선 갱신 뒤에는 현재 125개월선을 쓴다.
   const rpSaved=new Map(accounts.map(({index})=>[index,ledgerRpSaved(m,index)])), rpKeep=new Set(accounts.filter(({index})=>rpSaved.get(index).fx).map(({index})=>index));
   const rpFx=index=>rpKeep.has(index)?rpSaved.get(index).fx:assetDividendFx(prices);
@@ -275,6 +275,15 @@ function openMonth(y, n){
   let dividendFxAt=savedDividend?fixed[4].fxAt:prices?.fx?.maAsOf||prices?.fx?.asOf;
   if(finite(fixed[4].amount)!==null&&finite(fixed[4].krw)===null){const won=pnlDollarKrw(fixed[4].amount,dividendFx);if(won!==null){fixed[4].krw=won;if(dividendFx)fixed[4].fx=dividendFx;}}
   const input=(i,label,signed=false)=>{const attrs=`data-pnl-fixed="${i}" data-k="amount" value="${moneyText(fixed[i].amount)}" placeholder="미입력"`;return `<label class="field"><span>${label}</span><input ${attrs} ${signed?signedMoneyAttrs:moneyAttrs}></label>`;}; // 손익 칸만 정수 키패드('-' 키), 배당은 양수
+  const normalBalanceFields=[], rpBalanceCards=[];
+  accounts.forEach(({account,index})=>{
+    const split=ledgerRpAccount(account,m,index), balance=numIn(bal[index]), value=finite(m.rp?.[index]), base=split&&balance!==null&&value!==null?balance-value:bal[index];
+    const name=escA(account.name)+(missingYearEnd.has(index)?ledgerWarningIcon("12월 잔액 미입력"):"");
+    const field=`<label class="field" for="ledgerBal${index}"><span>${split?"원화추정자산 (원)":name}</span><input name="bal${index}" id="ledgerBal${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(base)}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 총자산에 더하지 않아 수익률이 실제와 달라질 수 있습니다. 해지했다면 0원을 입력하세요.</small>`:""}</label>`;
+    if(split)rpBalanceCards.push(`<section class="ledger-rp-account"><div class="ledger-rp-head"><strong>${name}</strong>${supportsPopover?`<button class="ledger-rp-button" type="button" data-ledger-rp-help="${index}" popovertarget="ledgerRpHelp${index}" aria-label="${escA(account.name)} 입력 안내"><span aria-hidden="true">!</span></button><div class="ledger-rp-help" id="ledgerRpHelp${index}" popover><strong>원화추정자산</strong><small>${rpHint}</small></div>`:""}</div>
+        ${field}${!supportsPopover?`<small class="field-hint">${rpHint}</small>`:""}<label class="field" for="ledgerRp${index}"><span>RP (달러)</span><input name="rp${index}" id="ledgerRp${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(rpSaved.get(index).usd)}" placeholder="미입력"><small class="field-hint" id="ledgerRpFx${index}"></small></label><div class="pnl-conversion"><span>RP 원화 환산액</span><output id="ledgerRpWon${index}"></output></div><small class="ledger-account-total" id="ledgerAccountTotal${index}" data-ledger-account-total="${index}" hidden></small></section>`);
+    else normalBalanceFields.push(field);
+  });
   el("monthTitle").textContent=`${y.year}년 ${n}월`;
   el("monthFields").innerHTML=`<label class="field dialog-wide"><span>실현손익 합계 (원)</span><input name="pnl" ${signedMoneyAttrs} value="${moneyText(monthPnl(m))}"><small class="field-hint" id="pnlTotalHint"></small></label>
     <div class="dialog-wide pnl-broker-grid"><section class="pnl-broker"><h3>신한</h3>${input(0,"기본계좌+ISA (원)",true)}${input(1,"연금저축 (원)",true)}${input(2,"배당 (원)")}</section>
@@ -283,14 +292,8 @@ function openMonth(y, n){
     <label class="field dialog-wide"><span>선물·옵션 손익 (원)</span><input name="futures" ${signedMoneyAttrs} value="${moneyText(m.futures)}" placeholder="미입력"><small class="field-hint">그달 선물·옵션 실현손익입니다. 실현손익 합계와 따로 더해 그래프·연 수익률·연환산에 반영합니다.${finite(y.futures)!==null?` 연도 설정에 달을 모르는 선물·옵션 ${escA(wonA(y.futures))}이 따로 있어 마지막 기록 달에 더합니다. 달마다 나눠 넣었다면 그 값은 비워 주세요.`:""}</small></label>
     <h3 class="dialog-wide pnl-balance-title"><span>계좌 잔액 (원)</span><output id="ledgerBalanceTotal" hidden></output></h3>
     ${yearEnd?`<div class="dialog-wide field-hint same-tag">${escA(yearEnd.message)}</div>`:""}
-    ${accounts.map(({account,index})=>{
-      const split=ledgerRpAccount(account,m,index), balance=numIn(bal[index]), value=finite(m.rp?.[index]), base=split&&balance!==null&&value!==null?balance-value:bal[index];
-      const name=escA(account.name)+(missingYearEnd.has(index)?ledgerWarningIcon("12월 잔액 미입력"):"");
-      const field=`<label class="field" for="ledgerBal${index}"><span>${split?"원화추정자산 (원)":name}</span><input name="bal${index}" id="ledgerBal${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(base)}"${gaps.has(index)?` placeholder="입력 빠짐?"`:""}>${gaps.has(index)?`<small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다. 비워 두면 총자산에 더하지 않아 수익률이 실제와 달라질 수 있습니다. 해지했다면 0원을 입력하세요.</small>`:""}</label>`;
-      return split?`<section class="ledger-rp-account"><div class="ledger-rp-head"><strong>${name}</strong>${supportsPopover?`<button class="ledger-rp-button" type="button" data-ledger-rp-help="${index}" popovertarget="ledgerRpHelp${index}" aria-label="${escA(account.name)} 입력 안내"><span aria-hidden="true">!</span></button><div class="ledger-rp-help" id="ledgerRpHelp${index}" popover><strong>원화추정자산</strong><small>${rpHint}</small></div>`:""}</div>
-        ${field}${!supportsPopover?`<small class="field-hint">${rpHint}</small>`:""}<label class="field" for="ledgerRp${index}"><span>RP (달러)</span><input name="rp${index}" id="ledgerRp${index}" data-ledger-balance="${index}" ${moneyAttrs} value="${moneyText(rpSaved.get(index).usd)}" placeholder="미입력"><small class="field-hint" id="ledgerRpFx${index}"></small></label><div class="pnl-conversion"><span>RP 원화 환산액</span><output id="ledgerRpWon${index}"></output></div><small class="ledger-account-total" id="ledgerAccountTotal${index}" data-ledger-account-total="${index}" hidden></small></section>`:field;
-    }).join("")}
-    ${!y.accounts.length?`<label class="field"><span>총자산 (원)${ledgerWarningIcon(yearEnd?.message)}</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`:""}
+    ${normalBalanceFields.length?`<div class="dialog-wide ledger-balance-grid">${normalBalanceFields.join("")}</div>`:""}${rpBalanceCards.join("")}
+    ${!y.accounts.length?`<label class="field dialog-wide"><span>총자산 (원)${ledgerWarningIcon(yearEnd?.message)}</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`:""}
     <p class="hint dialog-wide">${accounts.length?"총자산은 계좌 잔액 합계입니다. 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":y.accounts.length?"‘연도 설정’에서 계좌를 추가한 뒤 잔액을 입력해 주세요.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
   // RP 칸의 달러·적용 환율·원화 환산액. 달러 칸이 비면 달러 칸 이전의 원화 rp(legacy)를 그대로 쓰고, 환율이 없으면 won은 null이다.
   const rpParts=index=>{

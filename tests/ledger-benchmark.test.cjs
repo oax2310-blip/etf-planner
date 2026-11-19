@@ -1339,96 +1339,67 @@ test('폰 월 입력 창은 16px 글자와 44px 입력 높이를 확보한다',(
   assert.match(read('css/assets.css'),/#monthDialog input\{font-size:16px;min-height:44px\}/);
 });
 
-// CSS 주석을 제거하고 최상위 규칙과 @media 블록을 분리해 지정 선택자의 최종 선언 맵을 읽는다.
-function parseCssRules(css){
-  const text=css.replace(/\/\*[\s\S]*?\*\//g,''), base=[], media=[];
-  const splitDecls=decls=>{
-    const parts=[];let cur='', quote='', depth=0;
-    for(let i=0;i<decls.length;i++){
-      const ch=decls[i];
-      if(quote){cur+=ch;if(ch==='\\'&&i+1<decls.length)cur+=decls[++i];else if(ch===quote)quote='';continue;}
-      if(ch==='"'||ch==="'"){quote=ch;cur+=ch;}
-      else if(ch==='('){depth++;cur+=ch;}
-      else if(ch===')'){depth=Math.max(0,depth-1);cur+=ch;}
-      else if(ch===';'&&depth===0){parts.push(cur);cur='';}
-      else cur+=ch;
-    }
-    if(cur.trim())parts.push(cur);
-    return parts;
-  };
-  const normMedia=s=>s.replace(/\s+/g,'').toLowerCase();
-  const collect=(body,out)=>{
-    for(const [,sel,decls] of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)){
-      const props=new Map();
-      for(const part of splitDecls(decls)){
-        const idx=part.indexOf(':');
-        if(idx<0)continue;
-        props.set(part.slice(0,idx).trim(),part.slice(idx+1).trim());
-      }
-      for(const s of sel.split(','))out.push({selector:s.trim().replace(/\s+/g,' '),props});
-    }
-  };
-  let i=0, top='';
-  while(i<text.length){
-    if(text.startsWith('@media',i)){
-      const open=text.indexOf('{',i);
-      if(open<0)break;
-      const cond=normMedia(text.slice(i,open));
-      let depth=1, j=open+1, quote='';
-      while(j<text.length&&depth>0){
-        const ch=text[j++];
-        if(quote){if(ch==='\\'&&j<text.length)j++;else if(ch===quote)quote='';}
-        else if(ch==='"'||ch==="'")quote=ch;
-        else if(ch==='{')depth++;
-        else if(ch==='}')depth--;
-      }
-      const rules=[];collect(text.slice(open+1,j-1),rules);
-      media.push({cond,rules});
-      i=j;continue;
-    }
-    top+=text[i++];
-  }
-  collect(top,base);
-  return {base,media};
-}
-const cssProps=(rules,selector)=>{
-  const out=new Map();
-  for(const r of rules)if(r.selector===selector)for(const [k,v] of r.props)out.set(k,v);
-  return out;
-};
+const {cssRule}=require('./helpers/css-rule.cjs');
 
-test('PC 월 입력 창은 계좌 칸이 옆 안내·RP 카드 높이에 맞춰 세로로 늘어나지 않게 위쪽 정렬한다',()=>{
-  const {base}=parseCssRules(read('css/assets.css'));
-  assert.equal(cssProps(base,'#monthDialog .dialog-grid').get('align-items'),'start');
-  const field=cssProps(base,'#monthDialog .field');
-  assert.equal(field.get('align-self'),'start');
-  assert.equal(field.get('align-content'),'start');
+test('RP 입력 안내는 방향 표현(아래 칸) 대신 RP (달러) 칸 이름으로 안내하고 popover 미지원에도 같은 문구를 쓴다',()=>{
+  const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:3,balances:[1000,2000]}]};
+  for(const popover of [true,false]){
+    const html=ledgerDialog(year,{popover}).openMonth();
+    assert.doesNotMatch(html,/아래 칸/,`popover=${popover}: PC 두 열과 어긋나는 방향 표현 금지`);
+    assert.match(html,/RP는 ‘RP \(달러\)’ 칸에 달러로 따로 넣습니다\. RP는 배당처럼 125개월 평균 환율로 원화 환산합니다\./,`popover=${popover}: 칸 이름과 환산 안내 유지`);
+  }
+});
+
+test('월 입력 창은 일반 계좌를 한 묶음으로 먼저 두고 RP 카드를 아래에 두되 계좌 인덱스와 저장 형식은 그대로 유지한다',()=>{
+  const year={year:2026,accounts:[{name:'가상 A'},{name:'키움 해외 가상'},{name:'가상 B'}],months:[{m:3,pnl:0,balances:[1000,2000,3000]}]};
+  const h=ledgerDialog(year), html=h.openMonth();
+  const gridIdx=html.indexOf('class="dialog-wide ledger-balance-grid"'), rpIdx=html.indexOf('class="ledger-rp-account"');
+  assert.ok(gridIdx>=0&&rpIdx>gridIdx,'일반 계좌 묶음이 RP 카드보다 먼저 온다');
+  const gridHtml=html.slice(gridIdx,rpIdx);
+  assert.match(gridHtml,/name="bal0"/);assert.match(gridHtml,/name="bal2"/);
+  assert.doesNotMatch(gridHtml,/name="bal1"|name="rp1"/,'RP 계좌는 일반 계좌 묶음에 넣지 않는다');
+  assert.ok(gridHtml.indexOf('name="bal0"')<gridHtml.indexOf('name="bal2"'),'일반 계좌 사이의 상대 순서 유지');
+  ledgerFx(h,1300);h.input('bal0','1,100');h.input('bal1','2,200');h.input('rp1','1');h.input('bal2','3,300');h.submit();
+  assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[1100,3500,3300],rp:[null,1300],rpUsd:[null,1],rpFx:[null,1300]},'원래 계좌 인덱스대로 저장');
+  const noAccYear={year:2026,accounts:[],months:[{m:3,pnl:0,total:5000}]};
+  assert.match(ledgerDialog(noAccYear).openMonth(),/<label class="field dialog-wide"><span>총자산 \(원\)/,'계좌가 없는 해의 총자산 칸은 전체 폭');
+});
+
+test('PC 월 입력 창은 계좌 칸과 증권사 카드가 옆 높이에 맞춰 세로로 늘어나지 않게 위쪽 정렬하고 일반 계좌 빈 반쪽 줄을 줄인다',()=>{
+  assert.equal(cssRule('css/assets.css','#monthDialog .dialog-grid')['align-items'],'start');
+  const field=cssRule('css/assets.css','#monthDialog .field');
+  assert.equal(field['align-self'],'start');
+  assert.equal(field['align-content'],'start');
+  assert.equal(cssRule('css/assets.css','.pnl-broker-grid')['align-items'],'start');
+  const grid=cssRule('css/assets.css','.ledger-balance-grid');
+  assert.equal(grid['grid-template-columns'],'repeat(2,minmax(0,1fr))');
+  assert.equal(grid['align-items'],'start');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child')['grid-column'],'1/-1');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(3):last-child)')['grid-template-columns'],'repeat(3,minmax(0,1fr))');
+  const mobileGrid=cssRule('css/assets.css','.ledger-balance-grid,.ledger-balance-grid:has(>.field:nth-child(3):last-child)','@media(max-width:700px)');
+  assert.equal(mobileGrid['grid-template-columns'],'1fr');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child','@media(max-width:700px)')['grid-column'],'auto');
 });
 
 test('PC 월 입력 창의 RP 계좌는 두 열 전체를 쓰고 안의 두 입력을 나란히 배치하며 폰에서는 한 열로 접는다',()=>{
-  const {base,media}=parseCssRules(read('css/assets.css'));
-  const rp=cssProps(base,'.ledger-rp-account');
-  assert.equal(rp.get('grid-column'),'1/-1');
-  assert.equal(rp.get('display'),'grid');
-  assert.equal(rp.get('grid-template-columns'),'repeat(2,minmax(0,1fr))');
-  assert.equal(rp.get('align-items'),'start');
-  const head=cssProps(base,'.ledger-rp-head');
-  assert.equal(head.get('grid-column'),'1/-1');
-  assert.equal(head.get('order'),'-2');
-  const hint=cssProps(base,'.ledger-rp-account>.field-hint');
-  assert.equal(hint.get('grid-column'),'1/-1');
-  assert.equal(hint.get('order'),'-1');
-  assert.equal(cssProps(base,'.ledger-rp-account>.pnl-conversion').get('grid-column'),'1/-1');
-  assert.equal(cssProps(base,'.ledger-rp-account>.ledger-account-total').get('grid-column'),'1/-1');
+  const rp=cssRule('css/assets.css','.ledger-rp-account');
+  assert.equal(rp['grid-column'],'1/-1');
+  assert.equal(rp.display,'grid');
+  assert.equal(rp['grid-template-columns'],'repeat(2,minmax(0,1fr))');
+  assert.equal(rp['align-items'],'start');
+  const head=cssRule('css/assets.css','.ledger-rp-head');
+  assert.equal(head['grid-column'],'1/-1');
+  assert.equal(head.order,'-2');
+  const hint=cssRule('css/assets.css','.ledger-rp-account>.field-hint');
+  assert.equal(hint['grid-column'],'1/-1');
+  assert.equal(hint.order,'-1');
+  assert.equal(cssRule('css/assets.css','.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total')['grid-column'],'1/-1');
 
-  const mobile700=media.filter(m=>m.cond==='@media(max-width:700px)').flatMap(m=>m.rules);
-  const mobileRp=cssProps(mobile700,'.ledger-rp-account');
-  assert.equal(mobileRp.get('grid-column'),'auto');
-  assert.equal(mobileRp.get('grid-template-columns'),'1fr');
-  for(const sel of ['.ledger-rp-head','.ledger-rp-account>.field-hint','.ledger-rp-account>.pnl-conversion','.ledger-rp-account>.ledger-account-total']){
-    const p=cssProps(mobile700,sel);
-    assert.equal(p.get('grid-column'),'auto',sel);
-    assert.equal(p.get('order'),'0',sel);
-  }
+  const mobileRp=cssRule('css/assets.css','.ledger-rp-account','@media(max-width:700px)');
+  assert.equal(mobileRp['grid-column'],'auto');
+  assert.equal(mobileRp['grid-template-columns'],'1fr');
+  const mobileRpChildren=cssRule('css/assets.css','.ledger-rp-head,.ledger-rp-account>.field-hint,.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total','@media(max-width:700px)');
+  assert.equal(mobileRpChildren['grid-column'],'auto');
+  assert.equal(mobileRpChildren.order,'0');
 });
 
