@@ -157,7 +157,7 @@ function setFutureBuyCount(f,i,t,text){
 }
 function setFutureBuyExec(f,i,t,text){
   const fill=futureFillOf(f,i,t),rec=fill?.[0],n=Number(text);
-  if(!rec||!Number.isFinite(n)||n<=0)return false;
+  if(!rec||!validFuturePositionAverage(n))return false; // 0 이하·비유한·상한 초과는 미연동 기록도 거절
   if(!rec.month)return setFutureBuyPrice(f,i,t,text);
   const qty=futureRebuyQty(rec.contracts),old=Number(rec[fill[1]]),month=futureRebuyHeldMonth(f,rec.month,qty);
   if(!qty||!month)return false;

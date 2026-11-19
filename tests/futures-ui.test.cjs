@@ -397,3 +397,19 @@ test('분할매수 체결가 수정은 보유 단순평균가가 비정상이면
     assert.equal(JSON.stringify(f),before,label);
   }
 });
+
+test('분할매수 체결가는 상한(Number.MAX_SAFE_INTEGER)을 넘으면 편입·월물 밖 옛 매수 모두 거절한다',()=>{
+  const ctx=buyTableContext();
+  for(const text of [String(Number.MAX_SAFE_INTEGER+1),'1e20']){
+    const f=buyTableFutures([level(25,1450,2)]),[t,old]=f.levels[0].tranches;
+    Object.assign(t,{completed:true,executionPrice:1450,mergedMonth:'202612'});Object.assign(old,{completed:true,executionPrice:1410});
+    const before=JSON.stringify(f);
+    assert.equal(ctx.setFutureTrancheExec(f,0,0,text),false,`편입 ${text}`);assert.equal(ctx.setFutureTrancheExec(f,0,1,text),false,`월물 밖 ${text}`);
+    assert.equal(JSON.stringify(f),before,text);
+  }
+  const f=buyTableFutures([level(25,1450,2)]),t=f.levels[0].tranches[0];
+  Object.assign(t,{completed:true,executionPrice:1450,mergedMonth:'202612'});f.positions[0]={month:'202612',contracts:1,settlementPrice:1450};
+  assert.equal(ctx.setFutureTrancheExec(f,0,0,String(Number.MAX_VALUE)),false);
+  f.positions[0].settlementPrice=Number.MAX_VALUE;const before=JSON.stringify(f);
+  assert.equal(ctx.setFutureTrancheExec(f,0,0,'1460'),false,'1계약 MAX_VALUE 평균가 정정도 거절');assert.equal(JSON.stringify(f),before);
+});

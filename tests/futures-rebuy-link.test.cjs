@@ -897,3 +897,23 @@ test('보유 계약이 음수인 월물에는 신규 재매수 체크·일괄 �
   assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true,'계약 0인 빈 행은 같은 4계약 체크를 반영한다');
   assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:4,settlementPrice:1320}]);
 });
+
+test('재매수 체결 환율은 상한(Number.MAX_SAFE_INTEGER)을 넘으면 연결·미연동 기록 모두 거절한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true])for(const text of [String(Number.MAX_SAFE_INTEGER+1),'1e20']){
+    const f=fullPositionRebuyCase(1400,legacy),before=JSON.stringify(f);
+    assert.equal(ctx.setFutureBuyExec(f,0,0,text),false,`연결 ${text}`);assert.equal(JSON.stringify(f),before);
+    const g=fullPositionRebuyCase(1400,legacy);delete (legacy?g.rebuy.stages[0]:g.rebuy.stages[0].buys[0]).month;const kept=JSON.stringify(g);
+    assert.equal(ctx.setFutureBuyExec(g,0,0,text),false,`미연동 ${text}`);assert.equal(JSON.stringify(g),kept);
+  }
+  const f=fullPositionRebuyCase(1400);
+  assert.notEqual(ctx.setFutureBuyExec(f,0,0,String(Number.MAX_SAFE_INTEGER)),false,'상한값 자체는 받는다');
+  assert.ok(f.positions[0].settlementPrice<=Number.MAX_SAFE_INTEGER);
+});
+
+test('보유 1계약 Number.MAX_VALUE 평균가의 체결 환율 정정도 상한을 넘으므로 거절한다',()=>{
+  const ctx=load(),f=fullPositionRebuyCase(Number.MAX_VALUE);
+  f.positions[0].contracts=1;f.rebuy.stages[0].buys[0].contracts=1;
+  const before=JSON.stringify(f);
+  assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),false);assert.equal(JSON.stringify(f),before);
+});

@@ -25,6 +25,7 @@ function futurePositionEdit(f,index,key,raw){
   }else if(key==="contracts"){
     if(!text||!Number.isSafeInteger(value)||value<0)error="계약 수는 0 이상의 정수로 입력해 주세요.";
   }else if(!text||!Number.isFinite(value)||value<=0)error="단순평균가는 0보다 큰 숫자로 입력해 주세요.";
+  else if(value>Number.MAX_SAFE_INTEGER)error="단순평균가가 입력 가능한 범위를 초과했습니다.";
   if(error)return {ok:false,error};
   p[key]=value;return {ok:true};
 }
@@ -111,7 +112,8 @@ function addToPosition(f, month, qty, price){
   else f.positions.push({month, contracts:qty, settlementPrice:price});
   sortPositions(f);
 }
-const validFuturePositionAverage = value => Number.isFinite(value)&&value>0;
+// 평균가·체결가의 유효 범위: 0 < 값 ≤ Number.MAX_SAFE_INTEGER(백업·동기화 검증 js/data-validation.js와 같은 상한, 넘으면 업로드·복원이 거절된다).
+const validFuturePositionAverage = value => Number.isFinite(value)&&value>0&&value<=Number.MAX_SAFE_INTEGER;
 const futurePositionAverageWarning = "보유 단순평균가와 체결 환율을 확인하세요.";
 // 원가 차감의 읽기 전용 계산. 계약을 전부 빼면 평균가 없이 행을 지울 수 있다.
 // 일부만 뺄 때 체결가(price)가 양수·유한이 아니면(null·빈 값·0·음수·NaN) 평균가를 부풀리지 않도록 null로 거절한다.
@@ -145,7 +147,7 @@ function futurePositionAverageAfterExecChange(pos,qty,oldPrice,price){
 // false = 잘못된 값·산 회차 아님·단순평균가 계산 불가, "no-month" = 편입 월물이 보유에 없음(월물교체 뒤는 보유를 직접 수정). 거절하면 기록을 유지한다.
 function setFutureTrancheExec(f, li, ti, text){
   const t=f.levels?.[li]?.tranches?.[ti], raw=String(text??"").trim(), n=Number(raw);
-  if(!t?.completed||!raw||!Number.isFinite(n)||n<=0) return false;
+  if(!t?.completed||!raw||!validFuturePositionAverage(n)) return false;
   if(t.mergedMonth){
     const pos=f.positions.find(p=>String(p.month)===t.mergedMonth), c=Number(pos?.contracts)||0;
     if(c<1) return "no-month";
