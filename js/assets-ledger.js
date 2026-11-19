@@ -346,7 +346,7 @@ function openMonth(y, n){
       help.style.top=`${Math.round(top)}px`;
       help.style.left=`${Math.max(16,Math.min(Math.round(r.left),vw-16-width))}px`;
     };
-    help.addEventListener("beforetoggle",e=>{if(e.newState==="open")place();});
+    help.addEventListener("beforetoggle",e=>{if(e.newState==="open"){place();requestAnimationFrame(place);}});
     help.addEventListener("toggle",e=>{if(e.newState==="open")place();});
   });
   let manualPnl=f.pnl.value;

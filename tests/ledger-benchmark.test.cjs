@@ -381,7 +381,7 @@ test('월별 선물·옵션: 월 손익에 더해 복리 누적하고, 달을 �
 
 // openMonth·openYear의 기존 VM 하네스. 동적 HTML의 칸만 가볍게 읽어 실제 입력·저장 경로를 호출한다.
 function ledgerDialog(year,{popover=true}={}){
-  const nodes=new Map(),storage=new Map(),rendered=new Map(),saves=[],listeners=new Map();
+  const nodes=new Map(),storage=new Map(),rendered=new Map(),saves=[],listeners=new Map(),rafs=[];
   const decode=value=>String(value).replace(/&(amp|lt|gt|quot|#39);/g,(_,k)=>({amp:'&',lt:'<',gt:'>',quot:'"','#39':"'"}[k]));
   const match=(x,selector)=>selector.split(',').some(part=>{
     part=part.trim();if(part===':popover-open')return !!x.popoverOpen;
@@ -427,10 +427,11 @@ function ledgerDialog(year,{popover=true}={}){
   class HTMLElement{};if(popover)HTMLElement.prototype.popover='auto';
   const ctx=vm.createContext({Date,document,assetStore:store,splitNotices:{initialize(){}},HTMLElement,crypto:require('node:crypto').webcrypto,
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,String(v))},addEventListener(){},setInterval(){},setTimeout:fn=>{fn();return 1;},
+    requestAnimationFrame:fn=>{rafs.push(fn);return rafs.length;},
     location:{hash:'#ledger'},history:{replaceState(){}},scrollTo(){},innerWidth:393,innerHeight:852,confirm:()=>true,alert:message=>{throw Error(message);}});
   vm.runInContext(['js/ma-ladder.js','js/data-validation.js','js/assets-calc.js','js/ledger-benchmark.js','js/money-input.js','js/assets.js','js/assets-ledger.js'].map(read).join('\n;\n'),ctx);
   vm.runInContext('render=()=>{}',ctx);ctx.year=year;
-  return {ctx,node,saves,query,
+  return {ctx,node,saves,query,listeners,rafs,
     replaceDoc(next){store.doc=next;vm.runInContext('doc=assetStore.doc',ctx);},
     openMonth(n=3){vm.runInContext(`openMonth(year,${n})`,ctx);return node('monthFields').innerHTML;},
     openYear(){vm.runInContext('openYear(year)',ctx);},
@@ -1442,7 +1443,7 @@ test('경고(⚠)·설명(!) 버튼은 줄 높이를 늘리지 않는 작은 아
   const button=cssRule('css/assets.css','.ledger-tip-button');
   assert.equal(button.width,'16px');assert.equal(button.height,'16px');assert.equal(button.position,'relative');
   const hit=cssRule('css/assets.css','.ledger-tip-button::after');
-  assert.equal(hit.position,'absolute');assert.equal(hit.inset,'-8px-8px-5px','누르는 영역 32×29px, 아래 입력 칸과 겹치지 않게 아래만 5px');
+  assert.equal(hit.position,'absolute');assert.equal(hit.inset,'-8px-8px-4px','누르는 영역 32×28px, PC 아래 입력 칸 윗선과 겹치지 않게 아래만 4px');
   const nextBtn=cssRule('css/assets.css','.ledger-tip+.ledger-tip-button');
   const nextHit=cssRule('css/assets.css','.ledger-tip+.ledger-tip-button::after');
   const prevHit=cssRule('css/assets.css','.ledger-tip-button:has(+.ledger-tip+.ledger-tip-button)::after');
@@ -1463,6 +1464,9 @@ test('입력 빠짐 경고는 계좌 이름 옆 ⚠ 버튼으로 두고 누르�
   assert.doesNotMatch(html,/same-tag/,'칸 아래 주황 글자 없음');
   assert.match(html,/<label class="field" for="ledgerBal1"><span>가상 B<\/span>/,'경고 없는 계좌는 기존 label 그대로');
   for(const label of html.matchAll(/<label\b[^>]*>[\s\S]*?<\/label>/g))assert.doesNotMatch(label[0],/data-ledger-tip|popover/,'버튼·말풍선을 label 안에 두지 않는다');
+  // 계좌 이름의 따옴표·꺾쇠가 경고 버튼 aria-label 속성에서 깨지지 않게 이스케이프한다.
+  const special=ledgerDialog({year:2026,accounts:[{name:'가상 "<B>"'},{name:'가상 B'}],months:[{m:2,balances:[1000,2000]},{m:3,balances:[null,2100]},{m:4,balances:[1200,2200]}]}).openMonth();
+  assert.match(special,/aria-label="가상 &quot;&lt;B&gt;&quot; 경고: 입력 빠짐\?"/,'계좌 이름의 따옴표·꺾쇠를 aria-label에 이스케이프한다');
   // 버튼을 누를 때 말풍선을 버튼 아래(화면 안)에 놓는다.
   const tip=h.node('ledgerWarn0');tip.listeners.beforetoggle({newState:'open'});
   assert.equal(tip.style.top,'138px');assert.equal(tip.style.left,'20px');
@@ -1476,14 +1480,22 @@ test('말풍선이 화면 아래를 넘치면 버튼 위로 뒤집고 위아래 
   const year={year:2026,accounts:[{name:'가상 일반'}],months:[{m:3,balances:[1000]}]};
   const h=ledgerDialog(year);h.ctx.innerWidth=1440;h.ctx.innerHeight=900;h.openMonth();
   const btn=h.query('[data-ledger-tip="ledgerFuturesTip"]')[0], tip=h.node('ledgerFuturesTip');
-  let btnRect={left:200,right:216,top:803,bottom:819}, tipHeight=159;
+  let btnRect={left:200,right:216,top:803,bottom:819}, tipHeight=0;
   btn.getBoundingClientRect=()=>btnRect;
   tip.getBoundingClientRect=()=>({height:tipHeight});
-  tip.listeners.toggle({newState:'open'});
-  assert.equal(tip.style.top,'638px','아래로 넘치면 버튼 위쪽(803 - 6 - 159)으로 뒤집는다');
+  // beforetoggle 시점에는 말풍선 높이가 0이지만, toggle 전 첫 rAF에서 실제 높이로 위로 뒤집는다.
+  tip.listeners.beforetoggle({newState:'open'});
+  assert.equal(tip.style.top,'825px');assert.equal(h.rafs.length,1,'첫 프레임 배치를 위해 rAF를 예약한다');
+  tipHeight=159;
+  h.rafs.splice(0).forEach(fn=>fn());
+  assert.equal(tip.style.top,'638px','toggle 전 rAF에서도 버튼 위쪽(803 - 6 - 159)으로 뒤집는다');
   assert.equal(tip.style.left,'200px');
+  // below+height가 화면 끝(vh) 안쪽이어도 하단 16px 여백(vh-16)을 넘으면 위로 뒤집는다.
+  btnRect={left:200,right:216,top:714,bottom:730};tipHeight=155;
+  tip.listeners.toggle({newState:'open'});
+  assert.equal(tip.style.top,'553px','736 + 155 = 891 > 900 - 16이므로 버튼 위(714 - 6 - 155)로 뒤집는다');
   // 위아래 모두 공간이 부족한 낮은 화면에서는 하단 16px 여백에 맞춰 화면 안에 둔다.
-  h.ctx.innerHeight=220;btnRect={left:1300,right:1316,top:100,bottom:116};
+  h.ctx.innerHeight=220;btnRect={left:1300,right:1316,top:100,bottom:116};tipHeight=159;
   tip.listeners.toggle({newState:'open'});
   assert.equal(tip.style.top,'45px','220 - 16 - 159 = 45px로 화면 안에 고정');
   assert.equal(tip.style.left,'1124px','오른쪽 끝도 16px 여백 안에 고정');
@@ -1494,6 +1506,16 @@ test('말풍선이 화면 아래를 넘치면 버튼 위로 뒤집고 위아래 
   // 닫힐 때는 좌표를 바꾸지 않는다.
   tip.listeners.toggle({newState:'closed'});
   assert.equal(tip.style.top,'254px');
+  // 문서 스크롤 시 열려 있는 .ledger-tip 말풍선만 hidePopover로 닫는다.
+  const closedTip=h.node('ledgerBalanceHelp');
+  tip.showPopover();
+  let hideCalls=0, closedHideCalls=0;
+  const origHide=tip.hidePopover;tip.hidePopover=()=>{hideCalls++;origHide.call(tip);};
+  closedTip.hidePopover=()=>{closedHideCalls++;};
+  h.listeners.get('scroll')();
+  assert.equal(hideCalls,1,'스크롤하면 열린 .ledger-tip을 hidePopover로 닫는다');
+  assert.equal(tip.popoverOpen,false);
+  assert.equal(closedHideCalls,0,'닫힌 말풍선은 건드리지 않는다');
 });
 
 test('선물·옵션 설명과 계좌 잔액 안내는 이름 옆 ! 버튼으로 접고, 연도 선물·옵션 금액이 있으면 ⚠로 바꾸며 popover 미지원이면 기존 글자를 쓴다',()=>{
