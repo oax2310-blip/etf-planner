@@ -297,7 +297,7 @@ test('재매수 해제·수량·환율 수정에서 평균가 계산이 거절�
   const input=r.input(check);input.checked=false;input.onchange();
   assert.equal(r.input(check).checked,true);
   r.type('[data-fbuy-qty="0:0"]','1');r.change('[data-fbuy-qty="0:0"]');
-  r.type('[data-fbuy-exec="0:0"]','1440');r.change('[data-fbuy-exec="0:0"]');
+  r.type('[data-fbuy-exec="0:0"]','200');r.change('[data-fbuy-exec="0:0"]');
   assert.equal(alerts.length,3);
   for(const message of alerts)assert.match(message,/보유 단순평균가와 체결 환율을 확인하세요/);
   assert.equal(r.stored.size,0);

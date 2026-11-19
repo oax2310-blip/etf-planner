@@ -109,10 +109,9 @@ const futurePositionAverageWarning = "보유 단순평균가와 체결 환율을
 function futurePositionAfterRemoval(pos,qty,price){
   const before=Number(pos?.contracts),contracts=before-qty;
   if(!(qty>0)||!Number.isFinite(contracts)||contracts<0)return null;
-  const cost=Number(pos.settlementPrice)*before-price*qty;
-  if(contracts===0)return {contracts,cost};
-  const settlementPrice=cost/contracts;
-  return validFuturePositionAverage(settlementPrice)?{contracts,cost,settlementPrice}:null;
+  if(contracts===0)return {contracts};
+  const settlementPrice=(Number(pos.settlementPrice)*before-price*qty)/contracts;
+  return validFuturePositionAverage(settlementPrice)?{contracts,settlementPrice}:null;
 }
 function removeFromPosition(f, month, qty, price){
   const pos=f.positions.find(p=>String(p.month)===month),remaining=futurePositionAfterRemoval(pos,qty,price);
@@ -124,6 +123,11 @@ function applyFuturePositionRemoval(f,pos,remaining){
   if(remaining.contracts===0)f.positions.splice(f.positions.indexOf(pos),1);
   else {pos.settlementPrice=remaining.settlementPrice;pos.contracts=remaining.contracts;}
 }
+// 환율 정정은 계약 수를 유지하면서 옛 체결 원가를 새 체결 원가로 바꾼다. 검증할 값은 정정 후 평균가다.
+function futurePositionAverageAfterExecChange(pos,qty,oldPrice,price){
+  const contracts=Number(pos.contracts);
+  return (Number(pos.settlementPrice)*contracts-oldPrice*qty+price*qty)/contracts;
+}
 // 산 분할매수 회차의 체결가 수정: 편입한 월물에서 옛 체결가 1계약을 새 체결가로 바꿔 단순평균가를 맞춘다.
 // 계획가(price)·편입 월물·알림은 그대로 두고 executionPrice만 고친다. 월물 밖 옛 매수는 기록만 고친다(손익은 futuresSummary가 체결가로 계산).
 // false = 잘못된 값·산 회차 아님·단순평균가 계산 불가, "no-month" = 편입 월물이 보유에 없음(월물교체 뒤는 보유를 직접 수정). 거절하면 기록을 유지한다.
@@ -133,9 +137,7 @@ function setFutureTrancheExec(f, li, ti, text){
   if(t.mergedMonth){
     const pos=f.positions.find(p=>String(p.month)===t.mergedMonth), c=Number(pos?.contracts)||0;
     if(c<1) return "no-month";
-    const remaining=futurePositionAfterRemoval(pos,1,Number(t.executionPrice??t.price));
-    if(!remaining)return false;
-    const average=(remaining.cost+n)/c;
+    const average=futurePositionAverageAfterExecChange(pos,1,Number(t.executionPrice??t.price),n);
     if(!validFuturePositionAverage(average))return false;
     pos.settlementPrice=average;
   }
