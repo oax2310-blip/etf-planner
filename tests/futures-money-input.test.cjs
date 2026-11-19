@@ -181,3 +181,24 @@ test('목표환율 이평선에 현물 일선을 선물 대신 쓰지 않고 없
   assert.equal(r.c.futureTargetLines(prices,null).length,0);
   const before=JSON.stringify(r.f);r.change('#ftargetLine','25일선');assert.equal(JSON.stringify(r.f),before);
 });
+
+test('재매수 해제 확인 창은 월물교체 뒤 보유를 유지하는 기록 해제를 묻고 취소하면 저장하지 않는다',()=>{
+  const f=future(),r=setup(f),messages=[];
+  f.positions[0].month='202701';
+  f.rebuy.cuts=[{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  f.rebuy.stages[0].buys=[{contracts:1,price:1320,month:'202612'}];
+  const holdings=plain(f.positions),pnl=f.baselinePnl;
+  const expected='기록한 202612 월물이 없거나 보유 계약이 부족합니다.\n보유를 그대로 두고 재매수 체크만 해제할까요?';
+  r.c.confirm=message=>{messages.push(message);return messages.length===2;};
+  r.c.renderFutures();
+  const uncheck=()=>{const input=r.input('[data-fbuy="0:0"]');input.checked=false;input.onchange();};
+  uncheck();
+  assert.deepEqual(messages,[expected]);
+  assert.equal(r.input('[data-fbuy="0:0"]').checked,true);assert.equal(r.stored.size,0);
+  uncheck();
+  assert.deepEqual(messages,[expected,expected]);
+  assert.equal(r.input('[data-fbuy="0:0"]').checked,false);
+  assert.deepEqual(r.saved().futures.positions,holdings);
+  assert.equal(r.saved().futures.baselinePnl,pnl);
+  assert.equal(r.saved().futures.rebuy.stages[0].buys,undefined);
+});
