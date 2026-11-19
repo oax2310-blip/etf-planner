@@ -290,11 +290,11 @@ function openMonth(y, n){
       <section class="pnl-broker"><h3>키움증권</h3>${input(3,"실현손익 (원)",true)}${input(4,"배당 (달러)")}<label class="field"><span id="dividendFxLabel"></span><input name="dividendFx" ${moneyAttrs} readonly placeholder="평균선 필요"><small class="field-hint" id="dividendFxHint"></small></label><div class="pnl-conversion"><span>배당 원화 환산액</span><output id="kiwoomDividendWon"></output></div><button class="btn mini ghost" type="button" id="refreshDividendFx">125개월 평균선 갱신</button></section></div>
     <details class="dialog-wide pnl-other" id="pnlOther"${extra.length?" open":""}><summary>다른 증권사·항목 추가</summary><div id="pnlEntryRows"></div><button class="btn mini" type="button" id="addPnlEntry">＋ 내역</button></details>
     <label class="field dialog-wide"><span>선물·옵션 손익 (원)</span><input name="futures" ${signedMoneyAttrs} value="${moneyText(m.futures)}" placeholder="미입력"><small class="field-hint">그달 선물·옵션 실현손익입니다. 실현손익 합계와 따로 더해 그래프·연 수익률·연환산에 반영합니다.${finite(y.futures)!==null?` 연도 설정에 달을 모르는 선물·옵션 ${escA(wonA(y.futures))}이 따로 있어 마지막 기록 달에 더합니다. 달마다 나눠 넣었다면 그 값은 비워 주세요.`:""}</small></label>
-    <h3 class="dialog-wide pnl-balance-title"><span>계좌 잔액 (원)</span><output id="ledgerBalanceTotal" hidden></output></h3>
+    <div class="dialog-wide ledger-balance"><h3 class="dialog-wide pnl-balance-title"><span>계좌 잔액 (원)</span><output id="ledgerBalanceTotal" hidden></output></h3>
     ${yearEnd?`<div class="dialog-wide field-hint same-tag">${escA(yearEnd.message)}</div>`:""}
     ${normalBalanceFields.length?`<div class="dialog-wide ledger-balance-grid">${normalBalanceFields.join("")}</div>`:""}${rpBalanceCards.join("")}
     ${!y.accounts.length?`<label class="field dialog-wide"><span>총자산 (원)${ledgerWarningIcon(yearEnd?.message)}</span><input name="total" ${moneyAttrs} value="${moneyText(m.total)}"></label>`:""}
-    <p class="hint dialog-wide">${accounts.length?"총자산은 계좌 잔액 합계입니다. 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":y.accounts.length?"‘연도 설정’에서 계좌를 추가한 뒤 잔액을 입력해 주세요.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p>`;
+    <p class="hint dialog-wide">${accounts.length?"총자산은 계좌 잔액 합계입니다. 계좌는 ‘연도 설정’에서 더하거나 뺍니다.":y.accounts.length?"‘연도 설정’에서 계좌를 추가한 뒤 잔액을 입력해 주세요.":"계좌가 없는 해는 총자산만 넣습니다. ‘연도 설정’에서 계좌를 더하면 계좌별로 적을 수 있습니다."}</p></div>`;
   // RP 칸의 달러·적용 환율·원화 환산액. 달러 칸이 비면 달러 칸 이전의 원화 rp(legacy)를 그대로 쓰고, 환율이 없으면 won은 null이다.
   const rpParts=index=>{
     const usd=numIn(f[`rp${index}`]?.value);

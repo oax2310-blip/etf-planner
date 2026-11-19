@@ -1361,45 +1361,57 @@ test('월 입력 창은 일반 계좌를 한 묶음으로 먼저 두고 RP 카�
   assert.ok(gridHtml.indexOf('name="bal0"')<gridHtml.indexOf('name="bal2"'),'일반 계좌 사이의 상대 순서 유지');
   ledgerFx(h,1300);h.input('bal0','1,100');h.input('bal1','2,200');h.input('rp1','1');h.input('bal2','3,300');h.submit();
   assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,pnl:0,balances:[1100,3500,3300],rp:[null,1300],rpUsd:[null,1],rpFx:[null,1300]},'원래 계좌 인덱스대로 저장');
-  const noAccYear={year:2026,accounts:[],months:[{m:3,pnl:0,total:5000}]};
-  assert.match(ledgerDialog(noAccYear).openMonth(),/<label class="field dialog-wide"><span>총자산 \(원\)/,'계좌가 없는 해의 총자산 칸은 전체 폭');
+  const box=html.match(/<div class="dialog-wide ledger-balance">([\s\S]*)<\/div>$/);
+  assert.ok(box,'계좌 잔액은 창 맨 끝의 한 묶음');
+  for(const part of ['pnl-balance-title','ledgerBalanceTotal','ledger-balance-grid','ledger-rp-account','총자산은 계좌 잔액 합계입니다'])assert.ok(box[1].includes(part),`${part}를 잔액 묶음 안에 둔다`);
+  const noAccYear={year:2026,accounts:[],months:[{m:3,pnl:0,total:5000}]}, noAcc=ledgerDialog(noAccYear).openMonth();
+  assert.match(noAcc,/<div class="dialog-wide ledger-balance">[\s\S]*<label class="field dialog-wide"><span>총자산 \(원\)[\s\S]*<\/div>$/,'계좌가 없는 해의 총자산 칸도 잔액 묶음 안 전체 폭');
 });
 
-test('PC 월 입력 창은 계좌 칸과 증권사 카드가 옆 높이에 맞춰 세로로 늘어나지 않게 위쪽 정렬하고 일반 계좌 빈 반쪽 줄을 줄인다',()=>{
+const PC='@media(min-width:701px)';
+
+test('월 입력 창은 계좌 칸과 증권사 카드가 옆 높이에 맞춰 세로로 늘어나지 않게 위쪽부터 둔다',()=>{
   assert.equal(cssRule('css/assets.css','#monthDialog .dialog-grid')['align-items'],'start');
   const field=cssRule('css/assets.css','#monthDialog .field');
   assert.equal(field['align-self'],'start');
   assert.equal(field['align-content'],'start');
-  assert.equal(cssRule('css/assets.css','.pnl-broker-grid')['align-items'],'start');
-  const grid=cssRule('css/assets.css','.ledger-balance-grid');
-  assert.equal(grid['grid-template-columns'],'repeat(2,minmax(0,1fr))');
-  assert.equal(grid['align-items'],'start');
-  assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child')['grid-column'],'1/-1');
-  assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(3):last-child)')['grid-template-columns'],'repeat(3,minmax(0,1fr))');
-  const mobileGrid=cssRule('css/assets.css','.ledger-balance-grid,.ledger-balance-grid:has(>.field:nth-child(3):last-child)','@media(max-width:700px)');
-  assert.equal(mobileGrid['grid-template-columns'],'1fr');
-  assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child','@media(max-width:700px)')['grid-column'],'auto');
+  const broker=cssRule('css/assets.css','.pnl-broker',PC);
+  assert.equal(broker['align-items'],'start','같은 줄의 안내가 길어도 옆 입력칸이 늘어나지 않는다');
 });
 
-test('PC 월 입력 창의 RP 계좌는 두 열 전체를 쓰고 안의 두 입력을 나란히 배치하며 폰에서는 한 열로 접는다',()=>{
-  const rp=cssRule('css/assets.css','.ledger-rp-account');
-  assert.equal(rp['grid-column'],'1/-1');
-  assert.equal(rp.display,'grid');
+test('PC 월 입력 창의 증권사 카드는 한 줄씩 쌓고 안의 입력을 세 칸으로 맞추며 평균선 갱신은 키움 제목 줄 오른쪽에 둔다',()=>{
+  assert.equal(cssRule('css/assets.css','.pnl-broker-grid')['grid-template-columns'],'1fr','카드 높이가 달라 생기던 빈 공간 없이 위아래로 쌓는다');
+  assert.equal(cssRule('css/assets.css','.pnl-broker',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))');
+  const head=cssRule('css/assets.css','.pnl-broker>h3',PC);
+  assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1/-1');
+  const button=cssRule('css/assets.css','#refreshDividendFx',PC);
+  assert.equal(button['grid-row'],'1','제목과 같은 줄');assert.equal(button['grid-column'],'3');assert.equal(button['justify-self'],'end');
+  assert.equal(cssRule('css/assets.css','.pnl-broker>.pnl-conversion',PC)['grid-column'],'1/-1');
+});
+
+test('PC 월 입력 창의 계좌 잔액은 증권사 카드와 같은 상자 하나에 담고 폰에서는 상자 없이 기존 한 열을 유지한다',()=>{
+  assert.equal(cssRule('css/assets.css','.ledger-balance').display,'contents','폰: 묶음 상자 없이 창 칸으로 푼다');
+  const box=cssRule('css/assets.css','.ledger-balance',PC), card=cssRule('css/assets.css','.pnl-broker');
+  assert.equal(box.display,'grid');
+  for(const k of ['padding','border','border-radius','background'])assert.equal(box[k],card[k],`증권사 카드와 같은 ${k}`);
+  assert.equal(cssRule('css/assets.css','.ledger-balance>.pnl-balance-title',PC).order,'-2');
+  const note=cssRule('css/assets.css','.ledger-balance>.hint',PC);
+  assert.equal(note.order,'-1','안내문은 제목 바로 아래');assert.equal(note.background,'none');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid')['grid-template-columns'],'1fr');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(2):last-child),.ledger-balance-grid:has(>.field:nth-child(4):last-child)',PC)['grid-template-columns'],'repeat(2,minmax(0,1fr))','2·4개는 빈칸 없이 두 칸');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child',PC)['grid-column'],'1/-1');
+});
+
+test('PC 월 입력 창의 RP 계좌는 잔액 상자 안에서 구분선 아래 두 입력을 나란히 두고 폰에서는 기존 카드 한 열을 유지한다',()=>{
+  const phone=cssRule('css/assets.css','.ledger-rp-account');
+  assert.equal(phone.background,'var(--surface-2)');assert.equal(phone['grid-template-columns'],undefined,'폰: 한 열 카드');
+  const rp=cssRule('css/assets.css','.ledger-rp-account',PC);
   assert.equal(rp['grid-template-columns'],'repeat(2,minmax(0,1fr))');
   assert.equal(rp['align-items'],'start');
-  const head=cssRule('css/assets.css','.ledger-rp-head');
-  assert.equal(head['grid-column'],'1/-1');
-  assert.equal(head.order,'-2');
-  const hint=cssRule('css/assets.css','.ledger-rp-account>.field-hint');
-  assert.equal(hint['grid-column'],'1/-1');
-  assert.equal(hint.order,'-1');
-  assert.equal(cssRule('css/assets.css','.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total')['grid-column'],'1/-1');
-
-  const mobileRp=cssRule('css/assets.css','.ledger-rp-account','@media(max-width:700px)');
-  assert.equal(mobileRp['grid-column'],'auto');
-  assert.equal(mobileRp['grid-template-columns'],'1fr');
-  const mobileRpChildren=cssRule('css/assets.css','.ledger-rp-head,.ledger-rp-account>.field-hint,.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total','@media(max-width:700px)');
-  assert.equal(mobileRpChildren['grid-column'],'auto');
-  assert.equal(mobileRpChildren.order,'0');
+  assert.equal(rp['border-top'],'1pxsolidvar(--line)');assert.equal(rp.background,'none','상자 안 상자 대신 구분선');
+  assert.equal(cssRule('css/assets.css','.ledger-rp-head,.ledger-rp-account>.field-hint,.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total',PC)['grid-column'],'1/-1');
+  assert.equal(cssRule('css/assets.css','.ledger-rp-head',PC).order,'-2');
+  assert.equal(cssRule('css/assets.css','.ledger-rp-account>.field-hint',PC).order,'-1');
 });
 
