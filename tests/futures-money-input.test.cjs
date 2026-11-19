@@ -25,7 +25,7 @@ function setup(f=future(),r=etf(),prices=null){
     money:v=>`${Math.round(v||0)}원`,priceText:(v,c)=>`${c==='USD'?'$':''}${v}`,fxText:v=>String(v),memoCount:()=>'',
     won:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:0}),decimal:new Intl.NumberFormat('ko-KR',{maximumFractionDigits:1}),usd:new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
     matchMedia:()=>({matches:false}),id:()=> 'example-id',confirm:()=>true,alert:msg=>{throw Error(msg);},Event:class{constructor(type){this.type=type;}},
-    save:()=>stored.set('etf-exit-planner-standalone-v1',JSON.stringify(state)),
+    save:(next=c.state)=>{stored.set('etf-exit-planner-standalone-v1',JSON.stringify(next));c.state=next;return true;},
   });
   c.onEdit=(sel,set,redraw)=>document.querySelectorAll(sel).forEach(el=>el.onchange=()=>{if(set(el.value,el)!==false)c.save();redraw?.();});
   for(const file of ['money-input.js','ma-ladder.js','prices.js','assets-calc.js','stock-names.js','item-search.js','rebuy.js','futures.js','futures-plan.js','futures-rebuy.js','trade-alerts.js','data-validation.js'])vm.runInContext(read('js/'+file),c);
@@ -95,6 +95,97 @@ test('달러선물 손절 기준의 신저점·하단·현재 환율은 쉼표�
   const before=JSON.stringify(r.f);r.submit('futureRebuyForm');assert.equal(JSON.stringify(r.f),before,'변경 없는 저장은 필드를 만들지 않음');
   r.c.openFutureRebuyDialog();r.type('[data-fr-field="floorPrice"]','-1');r.change('#frFloorUnit','일선');r.submit('futureRebuyForm');
   assert.equal(r.f.rebuy.floorLine,'60일선');assert.equal(r.input('[data-fr-field="floorPrice"]').disabled,true);
+});
+
+function openNewStopPlan({unlinked=false,legacy=false}={}){
+  const f=future();
+  f.rebuy.contracts=12;
+  f.rebuy.cuts=[{contracts:4,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  if(legacy){
+    f.rebuy.returns=[{done:true,contracts:3,execPrice:1325}];
+  }else{
+    f.rebuy.stages[0].buys=[{contracts:3,price:1325,partial:true,plannedQty:4,...(unlinked?{}:{month:'202612'})}];
+  }
+  f.rebuy.notify={cuts:true,buys:true};
+  const r=setup(f),archive=[];
+  r.c.absorbPlanner=()=>false;
+  r.c.dataSnapshot=()=>JSON.stringify(r.c.state);
+  r.c.backupRecord=(snapshot,reason)=>archive.push({snapshot:JSON.parse(snapshot),reason});
+  r.c.renderFutures();
+  r.el('frEdit').onclick();
+  assert.equal(r.input('[data-fr-field="lowPrice"]').disabled,true);
+  r.el('frNewPlan').onclick();
+  return {...r,archive,enterPrices(){r.type('[data-fr-field="lowPrice"]','1380');r.type('[data-fr-field="floorPrice"]','1280');}};
+}
+
+test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
+  const r=openNewStopPlan(),before=plain(r.c.state);
+  assert.equal(r.input('[data-fr-field="contracts"]').value,'8');
+  assert.match(r.el('frNewGoal').textContent,/손절 목표 4계약 · 4회/);
+  assert.match(r.el('futureRebuyDialog').innerHTML,/손절 4계약 · 재매수 3계약 · 미복원 1계약/);
+  r.enterPrices();r.type('[data-fr-field="steps"]','2');
+  assert.match(r.el('frNewGoal').textContent,/손절 목표 4계약 · 2회/);
+  r.submit('futureRebuyForm');
+  assert.deepEqual(r.archive.map(x=>x.snapshot),[before]);
+  const {rebuy,...savedFutures}=r.saved().futures;
+  const {rebuy:oldRebuy,...oldFutures}=before.futures;
+  assert.deepEqual(savedFutures,oldFutures);
+  assert.deepEqual(r.archive[0].snapshot.futures.rebuy,oldRebuy);
+  assert.equal(rebuy.contracts,8);assert.equal(rebuy.currentPrice,1350);
+  assert.deepEqual([rebuy.lowPrice,rebuy.floorPrice,rebuy.steps],[1380,1280,2]);
+  assert.equal(Object.hasOwn(rebuy,'notify'),false);
+  const s=r.c.futureRebuySummary(r.saved().futures);
+  assert.equal(s.started,false);assert.equal(s.rest,0);
+  assert.deepEqual(plain(s.cuts.map(c=>[c.price,c.qty])),[[1380,2],[1280,2]]);
+  assert.equal(r.el('futureRebuyDialog').open,false);
+});
+
+test('새 손절 계획 취소 또는 손절 목표 0계약은 현재 계획과 보관 기록을 유지한다',()=>{
+  const r=openNewStopPlan(),before=plain(r.c.state);
+  r.enterPrices();r.type('[data-fr-field="sellPct"]','0');r.submit('futureRebuyForm');
+  assert.match(r.el('futureRebuyError').textContent,/1계약 이상/);
+  assert.equal(r.el('futureRebuyDialog').open,true);
+  r.input('[data-close-future-rebuy]').onclick();
+  assert.equal(r.el('futureRebuyDialog').open,false);
+  assert.deepEqual(plain(r.c.state),before);assert.deepEqual(r.archive,[]);assert.equal(r.stored.size,0);
+});
+
+for(const options of [{unlinked:true},{legacy:true}])test(`새 손절 계획은 보유 미반영 ${options.legacy?'옛 복귀':'부분 재매수'} 기록이 있으면 전환을 막는다`,()=>{
+  const r=openNewStopPlan(options),before=plain(r.c.state);
+  assert.match(r.el('futureRebuyDialog').innerHTML,/보유 미반영 체결/);
+  assert.equal(r.input('#futureRebuyForm button[type="submit"]').disabled,true);
+  r.enterPrices();r.submit('futureRebuyForm');
+  assert.deepEqual(plain(r.c.state),before);assert.deepEqual(r.archive,[]);assert.equal(r.stored.size,0);
+});
+
+test('새 손절 기준을 입력하는 동안 다른 탭에서 보유가 바뀌면 최신 기록을 받아 전환을 막는다',()=>{
+  const r=openNewStopPlan();
+  r.c.absorbPlanner=()=>{r.c.state.futures.positions[0].contracts=9;return true;};
+  r.enterPrices();r.submit('futureRebuyForm');
+  assert.match(r.el('futureRebuyError').textContent,/달러선물 기록이 바뀌었습니다/);
+  assert.equal(r.c.state.futures.positions[0].contracts,9);
+  assert.equal(r.c.state.futures.rebuy.lowPrice,1400);assert.deepEqual(r.archive,[]);assert.equal(r.stored.size,0);
+});
+
+test('이전 손절 계획을 보관하지 못하면 새 계획을 저장하지 않는다',()=>{
+  const r=openNewStopPlan(),before=plain(r.c.state);
+  r.c.backupRecord=()=>{throw Error('quota');};
+  r.enterPrices();r.submit('futureRebuyForm');
+  assert.match(r.el('futureRebuyError').textContent,/보관하지 못했습니다/);
+  assert.equal(r.el('futureRebuyDialog').open,true);
+  assert.deepEqual(plain(r.c.state),before);assert.equal(r.stored.size,0);
+});
+
+test('새 손절 계획 저장에 실패하면 기존 계획을 유지하고 다시 시도할 때 같은 보관본을 중복 생성하지 않는다',()=>{
+  const r=openNewStopPlan(),before=plain(r.c.state),save=r.c.save;
+  r.c.save=()=>false;
+  r.enterPrices();r.submit('futureRebuyForm');
+  assert.match(r.el('futureRebuyError').textContent,/저장하지 못했습니다/);
+  assert.equal(r.el('futureRebuyDialog').open,true);assert.deepEqual(plain(r.c.state),before);
+  assert.deepEqual(r.archive.map(x=>x.snapshot),[before]);
+  r.c.save=save;r.submit('futureRebuyForm');
+  assert.deepEqual(r.archive.map(x=>x.snapshot),[before]);
+  assert.equal(r.saved().futures.rebuy.lowPrice,1380);
 });
 
 test('달러선물 재매수 종료 기준은 가격 모드만 쉼표를 쓰며 기간 전환·자동 모드가 가격 검사를 남기지 않는다',()=>{
