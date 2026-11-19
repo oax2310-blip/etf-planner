@@ -103,7 +103,7 @@ const externalData = (()=>{
       list(p.sellPriority,`${path}.sellPriority`,(v,k)=>{if(typeof v!=="string")fail(k);});
     });
     const f=data.futures;
-    numbers(f,["targetPrice","baselinePnl","targetProfit","lossPrice","rollSpread"],"futures");strings(f,["note"],"futures");
+    numbers(f,["targetPrice","baselinePnl","targetProfit","lossPrice","rollSpread"],"futures");strings(f,["note","targetLine"],"futures");
     records(f.positions,"futures.positions",(v,p)=>{trade(v,p);numbers(v,["contracts"],p,0);if(!absent(v.month)&&!["string","number"].includes(typeof v.month))fail(`${p}.month`);});
     records(f.levels,"futures.levels",(v,p)=>{trade(v,p);strings(v,["unit","label","name"],p);numbers(v,["days"],p,0,400,true);numbers(v,["contracts"],p,0,10000);records(v.tranches,`${p}.tranches`,trade);});
     records(f.rolls,"futures.rolls");child(f,"buyPlan","futures",(v,p)=>{numbers(v,["endPrice","manualEndPrice"],p);numbers(v,["contracts"],p,1,100,true);strings(v,["startLine","endLine"],p);list(v.units,`${p}.units`,(x,k)=>{if(typeof x!=="string")fail(k);});});

@@ -5,11 +5,17 @@ const monthOk = m => /^\d{6}$/.test(m) && Number(m.slice(4)) >= 1 && Number(m.sl
 // 달러선물 가격은 소수 첫째 자리까지만 보인다(기존 기록·계산값은 보존). fmtPrice는 글자, futureShown은 입력칸 값(futures-plan.js·futures-rebuy.js 공용).
 const fmtPrice = v => Number(v).toLocaleString("ko-KR",{maximumFractionDigits:1});
 const futureShown = v => Number.isFinite(Number(v)) ? moneyInputText(Math.round(Number(v)*10)/10) : "";
-// 목표 환율의 이평선 선택은 현재 값을 표시·수동 입력과 같은 0.1원 단위로 반올림해 기존 targetPrice 숫자에 한 번 적용한다. 렌더·시세 갱신만으로 저장하거나 자동 추종하지 않는다.
+// 목표 환율 기준: 이평선을 고르면 그 이름을 targetLine에 저장(입력 때만)하고, 목표 환율은 그 선의 현재 값을 표시·수동 입력과 같은 0.1원 단위로 반올림해 따라간다(futureTargetOf).
+// 고를 때 그 값을 targetPrice에도 저장해 선 시세가 없을 때·옛 버전 기기의 대체값으로 쓴다. 렌더·시세 갱신만으로는 targetPrice·targetLine을 바꾸거나 저장하지 않는다.
+// 목표 환율을 직접 입력하거나 '직접 입력'을 고르면 targetLine을 지워 그 숫자로 고정한다.
 // 기존 종료선과 같이 보유 근월물 우선, 월봉 부족 때만 현물 월선으로 보완한다. 없는 시세는 선택할 수 없다.
 function futureTargetLines(prices,entry){
   const names=[...new Set([...MA_LINES,...Object.keys(entry?.ma||{}),...Object.keys(fxEntry(prices)?.ma||{})].map(movingLineName).filter(Boolean))];
   return names.flatMap(name=>{const found=futureEndLineValue(prices,entry,name);return found&&Number.isFinite(found.value)&&found.value>0?[{name,...found}]:[];});
+}
+function futureTargetOf(f,prices=typeof priceData==="object"?priceData:null){
+  const line=typeof f.targetLine==="string"&&f.targetLine?f.targetLine:"",row=line&&prices?futureTargetLines(prices,futuresEntry(prices,f)).find(x=>x.name===line):null;
+  return row?priceRound(row.value,1):Number(f.targetPrice);
 }
 const nearestMonth = f => f.positions.filter(p=>Number(p.contracts)>0 && monthOk(String(p.month))).map(p=>String(p.month)).sort()[0] || "";
 const sortPositions = f => f.positions.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
@@ -171,7 +177,7 @@ function setFutureTrancheExec(f, li, ti, text, recordOnly=false){
 }
 // 현재 기대손익 = (price−단순평균가)×계약×1만 + baselinePnl(누적 정산손익: 직접 입력 + 손절 체크 실현손익, futures-rebuy.js) + 월물 밖 옛 매수.
 // 편입 매수는 월물에 이미 포함; 미매수 유효 가격만 projected에 추가. price 기본은 목표 환율, invested는 보유 매수금액.
-function futuresSummary(f, price=f.targetPrice){
+function futuresSummary(f, price=futureTargetOf(f)){
   const tr=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({...t,price:f.buyPlan?.endLine?Number(t.price)||0:futureTranchePrice(f.levels,li,t,ti)}))), gainAt=p=>(price-Number(p))*contractSize;
   const posContracts=f.positions.reduce((s,p)=>s+(Number(p.contracts)||0),0);
   const existing=(Number(f.baselinePnl)||0)+f.positions.reduce((s,p)=>s+gainAt(p.settlementPrice)*(Number(p.contracts)||0),0);
@@ -196,7 +202,7 @@ function resizeTranches(l, qty){
 // futuresSummary 등 손익에 더하지 말 것(실제 교체 후 단순평균가를 고치면 이미 반영돼 이중 계산).
 function rollSpreadOf(f){const v=f.rollSpread;return v===""||v==null||!Number.isFinite(Number(v))?-0.5:Number(v);}
 function rollEstimate(f, contracts, current=0){
-  const spread=rollSpreadOf(f), perContract=Math.round(-spread*contractSize), perRoll=perContract*contracts, invested=contracts*contractSize*(Number(f.targetPrice)||0);
+  const spread=rollSpreadOf(f), perContract=Math.round(-spread*contractSize), perRoll=perContract*contracts, invested=contracts*contractSize*(futureTargetOf(f)||0);
   return {spread,perContract,perRoll,invested,years:[1,2,3].map(years=>{const gain=perRoll*12*years;return {years,rolls:12*years,gain,total:current+gain,investedExtra:invested>0&&gain>0?gain/invested:null};})};
 }
 // 환율 N원(lossPrice, 없거나 0 이하면 1,320원) 도달 시 손익: 기대수익과 같은 계산(보유 월물 + 누적 정산손익 + 월물 밖 매수)에 가격만 바꾼다.
@@ -244,11 +250,11 @@ function futureLadderBreakeven(pnlAt,hi){
 function futureLadder(f,now=null){
   const s=futuresSummary(f),contracts=s.posContracts+s.legacyCount,avg=contracts?s.invested/(contracts*contractSize):null,buys=futureLadderBuys(f),cuts=futureLadderCuts(f);
   const held=p=>futuresSummary(f,p).current,buy=p=>futureLadderBuyPnl(f,p,buys),cut=p=>futureLadderCutPnl(f,p,cuts),ref=now>0?now:avg;
-  const hi=Math.max(Number(f.targetPrice)||0,now||0,avg||0,...buys.map(x=>x.price))*2+1000,beHeld=contracts?futureLadderBreakeven(held,hi):null,beBuy=buys.length?futureLadderBreakeven(p=>buy(p).pnl,hi):null;
+  const target=futureTargetOf(f),hi=Math.max(target||0,now||0,avg||0,...buys.map(x=>x.price))*2+1000,beHeld=contracts?futureLadderBreakeven(held,hi):null,beBuy=buys.length?futureLadderBreakeven(p=>buy(p).pnl,hi):null;
   const subOf=p=>{const b=buy(p),c=cut(p),dir=ref>0?p>ref?"buy":p<ref?"cut":"":b.count?"buy":"cut";
     return dir==="buy"&&b.count?{type:"buy",count:b.count,pnl:b.pnl}:dir==="cut"&&c.count?{type:"cut",count:c.count,pnl:c.pnl}:null;};
   const order=["target","be-held","be-buy","avg","now","check","floor"];
-  const rows=[{kind:"target",price:Number(f.targetPrice)},...(avg?[{kind:"avg",price:avg,contracts}]:[]),...(now>0?[{kind:"now",price:now}]:[]),{kind:"check",price:lossPriceOf(f)},
+  const rows=[{kind:"target",price:target},...(avg?[{kind:"avg",price:avg,contracts}]:[]),...(now>0?[{kind:"now",price:now}]:[]),{kind:"check",price:lossPriceOf(f)},
     ...(cuts.length?[{kind:"floor",price:Math.min(...cuts.map(c=>c.price)),rounds:cuts.length}]:[])].map(r=>({...r,pnl:held(r.price),sub:r.kind==="now"?null:subOf(r.price)}));
   const marks=[...(beHeld!=null?[{kind:"be-held",price:beHeld}]:[]),...(beBuy!=null&&beBuy!==beHeld?[{kind:"be-buy",price:beBuy}]:[])];
   return {rows:[...rows,...marks].sort((a,b)=>b.price-a.price||order.indexOf(a.kind)-order.indexOf(b.kind)),beHeld,beBuy,unpriced:s.unpriced};
@@ -312,7 +318,7 @@ function futureQuote(f,fe){
 function futureBuyTable(f){
   // 도달 표시는 환율 사다리·알림과 같은 월물 시세와 futureLadderBuys의 방향을 쓴다. 완료·시세 없음·추가 매수 중지 상태는 제외하며 기록·알림 설정을 바꾸지 않는다.
   const prices=typeof priceData==="object"?priceData:null,current=Number(futuresEntry(prices,f)?.close);
-  const near=priceMonth(f,typeof priceData==="object"?priceData:null),target=decimal.format(f.targetPrice),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length,auto=f.buyPlan?futureAutoBuyPlan(f):null;
+  const near=priceMonth(f,typeof priceData==="object"?priceData:null),target=decimal.format(futureTargetOf(f)),rows=f.levels.flatMap((l,li)=>l.tranches.map((t,ti)=>({l,li,t,ti}))),completed=rows.filter(x=>x.t.completed).length,auto=f.buyPlan?futureAutoBuyPlan(f):null;
   const bell='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>';
   const allAlerts=typeof tradeAlertAllButtons==="function"?`<span class="trade-alert-actions future-buy-alert-actions"><span class="future-buy-bell" aria-hidden="true">${bell}</span><button class="btn mini ghost" type="button" data-level-alert-all="on" aria-label="분할매수 전체 알림 켜기">전체 ON</button><button class="btn mini ghost" type="button" data-level-alert-all="off" aria-label="분할매수 전체 알림 끄기">OFF</button></span>`:"";
   if(auto)rows.sort((a,b)=>Number(a.t.completed?(a.t.executionPrice??a.t.price):a.t.price)-Number(b.t.completed?(b.t.executionPrice??b.t.price):b.t.price)||a.li-b.li||a.ti-b.ti);
@@ -338,8 +344,16 @@ function futureBuyTable(f){
 // 월물교체는 계좌를 보고 보유 월물·단순평균가·누적 정산손익을 직접 수정(교체 실행 기능 없음).
 // rollSpread·lossPrice는 입력 때만 저장, 비우면 delete. 현재 근월물 시세는 화면 전용.
 // 누적 정산손익·스프레드는 음수가 흔해 '-'와 '.'이 있는 키패드(text + inputmode=numeric)를 쓴다. 삼성 키보드의 type=number 키패드에는 '-' 키가 없다.
+// 목표 환율 기준 선택: '직접 입력'(고정)과 시세가 있는 이평선(추종). 저장된 선의 시세가 없으면 '시세 없음'으로 선택된 채 보이고 targetPrice를 쓴다.
+function futureTargetSelect(f,fe){
+  const lines=futureTargetLines(priceData,fe),line=typeof f.targetLine==="string"?f.targetLine:"",missing=line&&!lines.some(x=>x.name===line);
+  const options=[`<option value=""${line?"":" selected"}>${lines.length||line?"직접 입력 (고정)":"직접 입력 · 이평선 시세 없음"}</option>`,
+    ...lines.map(x=>`<option value="${esc(x.name)}"${x.name===line?" selected":""}>${esc(movingLineText(x.name))} 따라가기 · ${fmtPrice(x.value)}원${x.spot?" · 현물":""}</option>`),
+    ...(missing?[`<option value="${esc(line)}" selected>${esc(movingLineText(line))} 따라가기 · 시세 없음</option>`]:[])];
+  return `<select id="ftargetLine" aria-label="목표 환율 기준"${lines.length||line?"":" disabled"}>${options.join("")}</select>`;
+}
 function renderFutures(){
-  const f=state.futures;refreshFutureBuyPrices(f);const s=futuresSummary(f),target=decimal.format(f.targetPrice),near=nearestMonth(f),months=[...new Set(f.positions.map(p=>String(p.month)).filter(monthOk))].sort();
+  const f=state.futures;refreshFutureBuyPrices(f);const s=futuresSummary(f),target=decimal.format(futureTargetOf(f)),near=nearestMonth(f),months=[...new Set(f.positions.map(p=>String(p.month)).filter(monthOk))].sort();
   const open=id=>$(id)?.open?' open':"",positionOpen=open("futurePositions");
   // 월물교체 장기 예상: 마우스 PC에서만 접기 없는 카드, 터치 기기는 접어 두고 펼침 상태를 유지한다(theme.js와 같은 기기 구분).
   // 목표 환율 기대수익(rollEstimate)과 확인 환율 손익(lossCheck, 손실 상쇄 비율)에 교체 이득을 더한 총손익을 연도별로 보인다.
@@ -349,14 +363,14 @@ function renderFutures(){
   const rollBody=`<div class="roll-est"><div class="roll-est-head"><label>스프레드<input id="frollSpread" type="text" inputmode="numeric" autocomplete="off" data-money data-money-step="any" value="${moneyInputText(shown(roll.spread))}" title="원월물 − 근월물 (원)">원</label><span>원월물 − 근월물</span></div>${years(`목표 ${target}원 기대수익 + 교체 이득`,roll.years,extraText)}${years(`확인 ${decimal.format(loss.price)}원 손익 + 교체 이득`,loss.years,y=>offsetText(y.offset))}</div>`;
   const rollHead=`<strong>월물교체 장기 예상</strong><span>스프레드 ${shown(roll.spread)}원 · 1년 ${roll.years[0].gain>0?"+":""}${money(roll.years[0].gain)}</span>`;
   const rollCard=desktop?`<section class="card future-roll" id="futureRollDetails"><div class="future-roll-head">${rollHead}</div>${rollBody}</section>`:`<details class="card future-roll" id="futureRollDetails"${open("futureRollDetails")}><summary class="future-roll-head">${rollHead}</summary>${rollBody}</details>`;
-  const positions=`<details class="card future-position-settings" id="futurePositions"${positionOpen}><summary><strong>보유·계산 기준</strong><span>${s.posContracts}계약${near?` · 근월물 ${esc(near)}`:""}</span></summary><div class="panel future-panel"><div class="inline-fields"><label class="field"><span>목표 환율</span><input id="ftarget" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="0.1" value="${esc(moneyInputText(f.targetPrice))}"><select id="ftargetLine" aria-label="목표 환율에 이평선 값 적용"${futureTargetLines(priceData,fe).length?"":" disabled"}><option value="">이평선 값 가져오기</option>${futureTargetLines(priceData,fe).map(row=>`<option value="${esc(row.name)}">${esc(movingLineText(row.name))} · ${fmtPrice(row.value)}원${row.spot?" · 현물":" · 선물"}</option>`).join("")}</select><small class="field-hint">${futureTargetLines(priceData,fe).length?"선택한 선의 현재 값을 적용합니다. 자동 추종하지 않습니다.":"이평선 시세가 없으면 직접 입력하세요."}</small></label><label class="field"><span>누적 정산손익 (원)</span><input id="fpnl" type="text" inputmode="numeric" autocomplete="off" data-money data-money-step="any" value="${esc(moneyInputText(f.baselinePnl))}"></label></div><div class="future-panel-head" style="margin-top:18px"><h2>보유 월물</h2><button class="btn mini" id="addPosition" type="button">＋ 월물 추가</button></div><div class="positions">${f.positions.map((p,i)=>`<div class="position-row"><label>월물<input data-pos="${i}" data-key="month" value="${esc(p.month)}" inputmode="numeric" maxlength="6" required aria-describedby="futurePositionError${i}month"></label><label>계약 수<input data-pos="${i}" data-key="contracts" type="number" min="0" step="1" inputmode="numeric" required value="${esc(p.contracts)}" aria-describedby="futurePositionError${i}contracts"></label><label>단순평균가<input data-pos="${i}" data-key="settlementPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" required value="${futureShown(p.settlementPrice)}" aria-describedby="futurePositionError${i}settlementPrice"></label><button class="remove" data-remove-pos="${i}" type="button" aria-label="${esc(p.month)} 보유 월물 삭제">삭제</button>${["month","contracts","settlementPrice"].map(key=>`<p class="future-position-error" id="futurePositionError${i}${key}" role="alert"></p>`).join("")}</div>`).join("")}</div></div></details>`;
+  const positions=`<details class="card future-position-settings" id="futurePositions"${positionOpen}><summary><strong>보유·계산 기준</strong><span>${s.posContracts}계약${near?` · 근월물 ${esc(near)}`:""}</span></summary><div class="panel future-panel"><div class="inline-fields future-target-fields"><label class="field"><span>목표 환율</span><input id="ftarget" type="text" inputmode="decimal" autocomplete="off" data-money data-money-step="0.1" value="${esc(moneyInputText(futureTargetOf(f)))}"></label><label class="field"><span>누적 정산손익 (원)</span><input id="fpnl" type="text" inputmode="numeric" autocomplete="off" data-money data-money-step="any" value="${esc(moneyInputText(f.baselinePnl))}"></label><label class="field future-target-line"><span>목표 환율 기준</span>${futureTargetSelect(f,fe)}</label></div><div class="future-panel-head" style="margin-top:18px"><h2>보유 월물</h2><button class="btn mini" id="addPosition" type="button">＋ 월물 추가</button></div><div class="positions">${f.positions.map((p,i)=>`<div class="position-row"><label>월물<input data-pos="${i}" data-key="month" value="${esc(p.month)}" inputmode="numeric" maxlength="6" required aria-describedby="futurePositionError${i}month"></label><label>계약 수<input data-pos="${i}" data-key="contracts" type="number" min="0" step="1" inputmode="numeric" required value="${esc(p.contracts)}" aria-describedby="futurePositionError${i}contracts"></label><label>단순평균가<input data-pos="${i}" data-key="settlementPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" required value="${futureShown(p.settlementPrice)}" aria-describedby="futurePositionError${i}settlementPrice"></label><button class="remove" data-remove-pos="${i}" type="button" aria-label="${esc(p.month)} 보유 월물 삭제">삭제</button>${["month","contracts","settlementPrice"].map(key=>`<p class="future-position-error" id="futurePositionError${i}${key}" role="alert"></p>`).join("")}</div>`).join("")}</div></div></details>`;
   $("futuresView").innerHTML=`<div class="future-top">${futureLadderHtml(f,fe)}${rollCard}</div>${futurePositionUndoNotice(f)}${positions}<div id="futureRebuyPanel" class="rebuy"></div>${s.legacyCount?`<div class="warning">월물 밖 매수 ${s.legacyCount}계약이 있습니다. 완료 회차를 펼쳐 체크를 풀고 월물을 지정한 뒤 다시 체크하면 보유 월물에 편입합니다. 이미 보유 월물에 직접 입력한 계약은 중복되지 않았는지 확인하세요.</div>`:""}${fe?priceWarning(fe,`달러선물 ${esc(near)}`):""}<datalist id="posMonths">${months.map(m=>`<option value="${m}">`).join("")}</datalist>${futureBuyTable(f)}<section class="card panel memo"><div class="memo-head"><h2>달러선물 메모</h2><span class="memo-count">${memoCount(f.note)}</span><button class="btn mini" id="fSave" type="button">저장</button></div><textarea id="fNote" maxlength="4000" aria-label="달러선물 메모">${esc(f.note||"")}</textarea></section>`;
   if(typeof bindTradeFuturesAlerts==="function")bindTradeFuturesAlerts(f);
   $("editFuturePlan").onclick=openFuturePlanDialog;if($("startFuturePlan"))$("startFuturePlan").onclick=openFuturePlanDialog;
   const completedToggle=$("toggleCompletedFutureBuys");if(completedToggle)completedToggle.onclick=()=>{futureCompletedOpen=!futureCompletedOpen;$("futureBuyTable").classList.toggle("hide-completed",!futureCompletedOpen);completedToggle.setAttribute("aria-expanded",String(futureCompletedOpen));completedToggle.querySelector("[data-completed-action]").textContent=futureCompletedOpen?"접기":"펼치기";};
   $$("#futuresView input[data-money]").forEach(el=>moneyInputValidate(el));
-  onEdit("#ftarget",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}f.targetPrice=moneyInputNumber(v)||f.targetPrice;},renderFutures);onEdit("#fpnl",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}f.baselinePnl=moneyInputNumber(v)??0;},renderFutures);
-  onEdit("#ftargetLine",value=>{const row=futureTargetLines(priceData,futuresEntry(priceData,f)).find(row=>row.name===value);if(!row)return false;f.targetPrice=priceRound(row.value,1);},renderFutures);
+  onEdit("#ftarget",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(!v)return;f.targetPrice=v;delete f.targetLine;},renderFutures);onEdit("#fpnl",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}f.baselinePnl=moneyInputNumber(v)??0;},renderFutures);
+  onEdit("#ftargetLine",value=>{if(!value){if(!f.targetLine)return false;f.targetPrice=futureTargetOf(f);delete f.targetLine;return;}const row=futureTargetLines(priceData,futuresEntry(priceData,f)).find(row=>row.name===value);if(!row)return false;f.targetLine=row.name;f.targetPrice=priceRound(row.value,1);},renderFutures);
   onEdit("#flossPrice",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(!(v>0))delete f.lossPrice;else f.lossPrice=v;},renderFutures);
   onEdit("#frollSpread",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}v=moneyInputNumber(v);if(v===null)delete f.rollSpread;else f.rollSpread=v;},renderFutures);$("fSave").onclick=()=>{f.note=$("fNote").value;save();renderFutures();};$("fNote").oninput=e=>f.note=e.target.value;
   $("addPosition").onclick=()=>{f.positions.push({month:nextFuturePositionMonth(f),contracts:0,settlementPrice:1});save();renderFutures();};
