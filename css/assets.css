@@ -157,32 +157,39 @@
 /* 월 입력 창: 안내·카드 높이에 맞춰 옆 입력칸이 늘어나지 않게 위쪽부터 둔다. 폰은 한 열이며 계좌 잔액 묶음(.ledger-balance)은 상자 없이 창 칸으로 푼다. PC 배치는 아래 min-width:701px에서 정한다. */
 #monthDialog .dialog-grid{align-items:start}
 #monthDialog .field{align-self:start;align-content:start}
-.ledger-balance{display:contents}
+.ledger-balance,.pnl-broker-sum{display:contents}
 .ledger-balance-grid{display:grid;grid-template-columns:1fr;gap:12px}
 /* RP는 계좌 합계에 포함하되 별도 입력한다. 안내는 dialog 위 top layer에 띄우고 기존 색 토큰만 쓴다. */
 .pnl-balance-title{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 12px}.pnl-balance-title output{margin-left:auto;font-size:12px;font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
-.ledger-rp-account{min-width:0;align-self:start;display:grid;gap:10px;padding:4px 14px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.ledger-rp-head{display:flex;align-items:center;gap:4px;min-width:0}.ledger-rp-head>strong{font-size:13px;color:var(--text);overflow-wrap:anywhere}.ledger-rp-account .field{gap:4px}
-/* 작은 안내 아이콘은 이름 오른쪽 위에 두고, 누르는 영역은 32px로 유지한다. */
-.ledger-rp-button{flex:none;display:inline-flex;align-items:center;justify-content:flex-start;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text-2);font-size:9px;font-weight:700;line-height:1}.ledger-rp-button>span{display:inline-grid;place-items:center;width:11px;height:11px;border:1px solid currentColor;border-radius:50%;transform:translateY(-3px);pointer-events:none}.ledger-rp-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.ledger-rp-help{position:fixed;inset:auto;margin:0;width:min(300px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-lg)}.ledger-rp-help>strong{display:block;font-size:14px}.ledger-rp-help>small{display:block;margin-top:6px;color:var(--text-2);font-size:12px;line-height:1.7;word-break:keep-all;overflow-wrap:anywhere}.ledger-account-total{color:var(--text-2);font-size:11.5px;line-height:1.6;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.ledger-rp-account{min-width:0;align-self:start;display:grid;gap:10px;padding:12px 14px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.ledger-rp-head{display:flex;align-items:center;gap:2px;min-width:0}.ledger-rp-head>strong{font-size:13px;color:var(--text);overflow-wrap:anywhere}.ledger-rp-account .field{gap:4px}
+/* 경고(⚠)·설명(!) 버튼은 이름 옆 글자 크기로 두어 줄 높이를 늘리지 않고, 누르는 영역은 ::after로 32px 안팎을 확보한다. 말풍선(popover)은 dialog 위 top layer에 띄우고 기존 색 토큰만 쓴다. */
+.ledger-tip-button{position:relative;flex:none;display:inline-grid;place-items:center;width:16px;height:16px;margin-left:3px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text-2);font-size:9px;font-weight:700;line-height:1;vertical-align:-2px;cursor:pointer}.ledger-tip-button::after{content:"";position:absolute;inset:-8px -8px -5px}.ledger-tip-button>span{display:inline-grid;place-items:center;width:12px;height:12px;border:1px solid currentColor;border-radius:50%;pointer-events:none}.ledger-tip-button.warn{color:var(--warn);font-size:12px}.ledger-tip-button.warn>span{width:auto;height:auto;border:0}.ledger-tip-button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media(hover:hover){.ledger-tip-button:not(.warn):hover{color:var(--text)}}
+.ledger-tip{position:fixed;inset:auto;margin:0;width:min(300px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-lg);font-weight:400;text-align:left}.ledger-tip>strong{display:block;font-size:14px;font-weight:700}.ledger-tip>small{display:block;margin-top:6px;color:var(--text-2);font-size:12px;line-height:1.7;word-break:keep-all;overflow-wrap:anywhere}.ledger-account-total{color:var(--text-2);font-size:11.5px;line-height:1.6;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .pnl-conversion{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;padding-top:8px;border-top:1px solid var(--line);color:var(--text-2);font-size:12px}.pnl-conversion output{font-size:15px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
 @media(min-width:701px){
-  /* PC 월 입력 창: 증권사 카드는 한 줄씩 쌓아 안의 입력을 세 칸으로 맞추고, 평균선 갱신 버튼은 키움 카드 제목 줄 오른쪽에 둔다. */
-  .pnl-broker{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:10px 14px}
+  /* PC 월 입력 창: 칸 높이·간격을 줄이고, 증권사 카드는 한 줄씩 쌓아 안의 입력을 세 칸으로 맞춘다. 키움 카드의 배당 원화 환산액·평균선 갱신은 제목 줄 오른쪽에 둔다. */
+  #monthDialog .dialog-grid{gap:12px;margin-top:14px}
+  #monthDialog .dialog-foot{margin-top:16px}
+  #monthDialog .field{gap:4px}
+  #monthDialog .field>:is(input,select){min-height:38px;padding-block:7px}
+  .pnl-broker{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:8px 14px;padding:12px 14px}
   .pnl-broker>h3{grid-row:1;grid-column:1/-1;align-self:center}
-  .pnl-broker>.pnl-conversion{grid-column:1/-1}
-  #refreshDividendFx{grid-row:1;grid-column:3;justify-self:end;align-self:center}
-  /* 계좌 잔액은 증권사 카드와 같은 상자 하나에 담고 안내문은 제목 바로 아래에 둔다. 일반 계좌는 세 칸(2·4개는 두 칸, 1개는 전체 폭), RP 계좌는 구분선 아래 두 칸이다. */
-  .ledger-balance{display:grid;gap:12px;min-width:0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+  .pnl-broker-sum{grid-row:1;grid-column:2/-1;justify-self:end;align-self:center;display:flex;align-items:center;gap:12px;min-width:0}
+  .pnl-broker-sum>.pnl-conversion,.ledger-rp-account>.pnl-conversion{padding:0;border:0}
+  .pnl-broker-sum output,.ledger-rp-account>.pnl-conversion output{font-size:14px}
+  /* 계좌 잔액은 증권사 카드와 같은 상자 하나에 담는다. 일반 계좌는 네 칸까지 한 줄(3·5·6개는 세 칸, 2개는 두 칸, 1개는 전체 폭), RP 계좌는 구분선 아래 두 칸이고 RP 원화 환산액은 계좌 이름 줄 오른쪽에 둔다. */
+  .ledger-balance{display:grid;gap:12px;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
   .ledger-balance>.pnl-balance-title{order:-2;margin:0}
   .ledger-balance>.hint{order:-1;margin:-6px 0 0;padding:0;border-radius:0;background:none}
-  .ledger-balance-grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:10px 14px}
-  .ledger-balance-grid:has(>.field:nth-child(2):last-child),.ledger-balance-grid:has(>.field:nth-child(4):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ledger-balance-grid{grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:10px 14px}
+  .ledger-balance-grid:has(>.field:nth-child(3):last-child),.ledger-balance-grid:has(>.field:nth-child(5):last-child),.ledger-balance-grid:has(>.field:nth-child(6):last-child){grid-template-columns:repeat(3,minmax(0,1fr))}
+  .ledger-balance-grid:has(>.field:nth-child(2):last-child){grid-template-columns:repeat(2,minmax(0,1fr))}
   .ledger-balance-grid>.field:only-child{grid-column:1/-1}
-  .ledger-balance-grid>.field{gap:4px}
-  .ledger-rp-account{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:10px 14px;padding:2px 0 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
-  .ledger-rp-head,.ledger-rp-account>.field-hint,.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total{grid-column:1/-1}
-  .ledger-rp-head{order:-2}
+  .ledger-rp-account{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:8px 14px;padding:12px 0 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
+  .ledger-rp-head{grid-row:1;grid-column:1/-1}
+  .ledger-rp-account>.pnl-conversion{grid-row:1;grid-column:2;justify-self:end;align-self:center}
+  .ledger-rp-account>.field-hint,.ledger-rp-account>.ledger-account-total{grid-column:1/-1}
   .ledger-rp-account>.field-hint{order:-1}
 }
 .account-rows{display:grid;gap:6px;margin-bottom:6px}.account-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.account-row input:not([type]){width:100%;min-height:38px;padding:7px 10px;border:1px solid var(--line-strong);border-radius:9px;background:var(--field);color:var(--text)}

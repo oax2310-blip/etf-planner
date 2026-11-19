@@ -633,20 +633,27 @@ test('손실 달의 빈 계좌 안내는 수익률이 실제와 달라질 수 �
   assert.deepEqual(h.saves,[]);
 });
 
-test('12월 입력 창은 누락된 일반·RP 계좌 이름에만 연말 경고를 붙인다',()=>{
+test('12월 입력 창은 누락된 일반·RP 계좌 이름에만 연말 경고 아이콘을 붙이고 누르면 사유를 펼친다',()=>{
   const year={year:new Date().getFullYear()-1,
     accounts:[{name:'가상 일반'},{name:'가상 대출',loan:true},{name:'가상 완료'},{name:'키움 해외 가상'}],
     months:[{m:11,balances:[1000,2000,3000,4000]},{m:12,balances:[null,null,0]}]};
   const h=ledgerDialog(year),before=JSON.stringify(year),html=h.openMonth(12);
-  assert.match(html,/12월 계좌 잔액 2개가 미입력입니다\./);
-  assert.match(html,/<span>가상 일반 <span class="ledger-warning" role="img" aria-label="12월 잔액 미입력"/);
-  assert.match(html,/<strong>키움 해외 가상 <span class="ledger-warning" role="img" aria-label="12월 잔액 미입력"/);
-  assert.match(html,/<span>가상 완료<\/span>/);
+  assert.match(html,/<label for="ledgerBal0">가상 일반<\/label><button class="ledger-tip-button warn" type="button" data-ledger-tip="ledgerWarn0" popovertarget="ledgerWarn0" aria-label="가상 일반 경고: 12월 잔액 미입력">/);
+  assert.match(html,/<span class="ledger-tip" id="ledgerWarn0" popover><strong>12월 잔액 미입력<\/strong><small>12월 잔액이 비어 있어 연말 총자산이 미완료입니다\./);
+  assert.match(html,/<strong>키움 해외 가상<\/strong><button class="ledger-tip-button warn"[^>]*data-ledger-tip="ledgerWarn3"/);
+  assert.match(html,/<label class="field" for="ledgerBal2"><span>가상 완료<\/span>/);
   assert.doesNotMatch(html,/가상 대출/);
-  assert.equal((html.match(/class="ledger-warning"/g)||[]).length,2);
-  assert.doesNotMatch(h.openMonth(11),/class="ledger-warning"/);
+  assert.match(html,/data-ledger-tip="ledgerYearEndWarn"[^>]*aria-label="계좌 잔액 경고: 연말 기록 확인"[\s\S]*?<small>12월 계좌 잔액 2개가 미입력입니다\.<\/small>/,'창 전체 사유는 계좌 잔액 제목 옆 아이콘');
+  assert.equal((html.match(/class="ledger-tip-button warn"/g)||[]).length,3,'누락 계좌 2개 + 계좌 잔액 제목');
+  assert.doesNotMatch(html,/class="ledger-warning"|same-tag/,'글자 경고·고정 아이콘 대신 누르는 아이콘');
+  assert.doesNotMatch(h.openMonth(11),/ledger-tip-button warn/);
   const current=ledgerDialog({...year,year:year.year+1});
-  assert.doesNotMatch(current.openMonth(12),/class="ledger-warning"/);
+  assert.doesNotMatch(current.openMonth(12),/ledger-tip-button warn/);
+  const old=ledgerDialog(year,{popover:false}).openMonth(12);
+  assert.match(old,/<span>가상 일반 <span class="ledger-warning" role="img" aria-label="12월 잔액 미입력"/,'popover 미지원: 기존 고정 아이콘');
+  assert.match(old,/<strong>키움 해외 가상 <span class="ledger-warning" role="img" aria-label="12월 잔액 미입력"/);
+  assert.match(old,/<div class="dialog-wide field-hint same-tag">12월 계좌 잔액 2개가 미입력입니다\.<\/div>/,'popover 미지원: 기존 글자 경고');
+  assert.equal((old.match(/class="ledger-warning"/g)||[]).length,2);assert.doesNotMatch(old,/ledger-tip/);
   assert.equal(JSON.stringify(year),before);
   assert.deepEqual(h.saves,[]);
 });
@@ -655,23 +662,26 @@ test('12월 기록이 없는 해는 빈 계좌를 표시하고 0원을 저장하
   const year={year:new Date().getFullYear()-1,accounts:[{name:'가상 계좌'}],months:[{m:11,balances:[1000]}]};
   const h=ledgerDialog(year),before=JSON.stringify(year),html=h.openMonth(12);
   assert.match(html,/12월 기록이 없어 연말 총자산이 미완료입니다\./);
-  assert.match(html,/<span>가상 계좌 <span class="ledger-warning"/);
+  assert.match(html,/<label for="ledgerBal0">가상 계좌<\/label><button class="ledger-tip-button warn"/);
   assert.equal(JSON.stringify(year),before);
   assert.deepEqual(h.saves,[]);
   h.input('bal0','0');h.submit();
   assert.equal(JSON.stringify(year.months.find(m=>m.m===12)),JSON.stringify({m:12,balances:[0]}));
   assert.deepEqual(h.saves,['ledger']);
-  assert.doesNotMatch(h.openMonth(12),/class="ledger-warning"/);
+  assert.doesNotMatch(h.openMonth(12),/ledger-tip-button warn|class="ledger-warning"/);
 });
 
 test('계좌 없는 옛 기록은 12월 총자산 입력 칸에 연말 경고를 붙인다',()=>{
   const year={year:new Date().getFullYear()-1,accounts:[],months:[{m:12,pnl:0}]};
+  const old=ledgerDialog(year,{popover:false}).openMonth(12);
+  assert.match(old,/<span>총자산 \(원\) <span class="ledger-warning" role="img" aria-label="12월 총자산이 미입력입니다\."/,'popover 미지원: 기존 고정 아이콘');
+  assert.equal((old.match(/class="ledger-warning"/g)||[]).length,1);
   const h=ledgerDialog(year),html=h.openMonth(12);
-  assert.match(html,/<span>총자산 \(원\) <span class="ledger-warning" role="img" aria-label="12월 총자산이 미입력입니다\."/);
-  assert.equal((html.match(/class="ledger-warning"/g)||[]).length,1);
+  assert.match(html,/<label for="ledgerTotal">총자산 \(원\)<\/label><button class="ledger-tip-button warn" type="button" data-ledger-tip="ledgerTotalWarn"[^>]*aria-label="총자산 경고: 연말 기록 확인">[\s\S]*?<small>12월 총자산이 미입력입니다\.<\/small>[\s\S]*?<input name="total" id="ledgerTotal"/);
+  assert.equal((html.match(/class="ledger-tip-button warn"/g)||[]).length,1,'계좌가 없으면 제목 아이콘 없이 총자산 칸에만');
   h.input('total','0');h.submit();
   assert.equal(year.months[0].total,0);
-  assert.doesNotMatch(h.openMonth(12),/class="ledger-warning"/);
+  assert.doesNotMatch(h.openMonth(12),/ledger-tip-button warn|class="ledger-warning"/);
 });
 
 test('월별 손익: 음수가 될 수 있는 손익 칸은 \'-\'·\'.\' 키가 있는 키패드(numeric), 배당·잔액은 소수 키패드(decimal)를 쓴다',()=>{
@@ -700,14 +710,14 @@ test('월 입력 RP 칸과 안내 버튼은 키움·영웅문 해외 및 RP 기�
   const before=JSON.stringify(year),h=ledgerDialog(year),html=h.openMonth();
   for(const i of [0,1,5,7]){
     assert.match(html,new RegExp(`<input[^>]*name="rp${i}"[^>]*inputmode="decimal"`),`RP 대상 ${i}`);
-    assert.match(html,new RegExp(`<button[^>]*data-ledger-rp-help="${i}"`),`안내 버튼 ${i}`);
+    assert.match(html,new RegExp(`<button[^>]*data-ledger-tip="ledgerRpHelp${i}"`),`안내 버튼 ${i}`);
     assert.match(html,new RegExp(`<label[^>]*for="ledgerBal${i}"`),'원화추정자산 label과 입력 칸을 연결');
   }
-  for(const i of [2,3,4,6])assert.doesNotMatch(html,new RegExp(`name="rp${i}"|data-ledger-rp-help="${i}"`),`RP 비대상 ${i}`);
+  for(const i of [2,3,4,6])assert.doesNotMatch(html,new RegExp(`name="rp${i}"|data-ledger-tip="ledgerRpHelp${i}"`),`RP 비대상 ${i}`);
   assert.doesNotMatch(html,/name="bal6"/,'loan은 원래 잔액 칸도 숨긴다');
   assert.match(html,/aria-label="키움 해외 &quot;&lt;가상&gt;&quot; 입력 안내"/,'이름은 HTML 속성에서도 이스케이프');
   assert.doesNotMatch(html,/<가상>|"<가상>"/);
-  for(const label of html.matchAll(/<label\b[^>]*>[\s\S]*?<\/label>/g))assert.doesNotMatch(label[0],/data-ledger-rp-help/,'안내 버튼을 label 안에 두지 않는다');
+  for(const label of html.matchAll(/<label\b[^>]*>[\s\S]*?<\/label>/g))assert.doesNotMatch(label[0],/data-ledger-tip/,'안내 버튼을 label 안에 두지 않는다');
   assert.equal(h.node('monthForm').rp5.value,'0','RP 0달러도 숨기지 않는다');
   assert.match(html,/<span>RP \(달러\)<\/span>/);assert.doesNotMatch(html,/RP \(원\)/,'RP는 달러 칸만 둔다');
   assert.equal(JSON.stringify(year),before);assert.deepEqual(h.saves,[],'창을 열기만 해서 기록을 저장하지 않는다');
@@ -828,12 +838,15 @@ test('125개월 평균선 갱신은 저장한 RP 환율도 현재 평균선으�
   h.submit();assert.deepEqual(JSON.parse(JSON.stringify(year.months[0])),{m:3,balances:[3800],rp:[2800],rpUsd:[2],rpFx:[1400]});
 });
 
-test('RP 계좌의 입력 빠짐 표시는 원화추정자산 칸에 유지한다',()=>{
+test('RP 계좌의 입력 빠짐 표시는 원화추정자산 칸에 유지하고 경고는 계좌 이름 옆 ⚠로 둔다',()=>{
   const year={year:2026,accounts:[{name:'키움 해외 가상'},{name:'가상 일반'}],months:[{m:2,balances:[1000,2000]},{m:3,balances:[null,2100]},{m:4,balances:[1200,2200]}]};
   const h=ledgerDialog(year),html=h.openMonth();
   assert.match(html,/<input[^>]*name="bal0"[^>]*placeholder="입력 빠짐\?"/);
   assert.match(html,/<input[^>]*name="rp0"[^>]*placeholder="미입력"/);
-  assert.match(html,/앞뒤 달에는 잔액이 있습니다/);assert.deepEqual(h.saves,[]);
+  assert.match(html,/<strong>키움 해외 가상<\/strong><button class="ledger-tip-button warn" type="button" data-ledger-tip="ledgerWarn0"[^>]*aria-label="키움 해외 가상 경고: 입력 빠짐\?">[\s\S]*?<small>앞뒤 달에는 잔액이 있습니다/,'경고는 RP 계좌 이름 옆 ⚠');
+  assert.doesNotMatch(html,/same-tag/,'원화추정자산 칸 아래 주황 글자 없음');assert.deepEqual(h.saves,[]);
+  const old=ledgerDialog(year,{popover:false}).openMonth();
+  assert.match(old,/<label class="field" for="ledgerBal0"><span>원화추정자산 \(원\)<\/span><input[^>]*placeholder="입력 빠짐\?"><small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다/,'popover 미지원: 기존 글자 경고');
 });
 
 test('연도 설정에서 계좌 삭제·loan 뒤로 정렬 시 balances와 rp·rpUsd·rpFx 인덱스를 함께 맞춘다',()=>{
@@ -1379,39 +1392,90 @@ test('월 입력 창은 계좌 칸과 증권사 카드가 옆 높이에 맞춰 �
   assert.equal(broker['align-items'],'start','같은 줄의 안내가 길어도 옆 입력칸이 늘어나지 않는다');
 });
 
-test('PC 월 입력 창의 증권사 카드는 한 줄씩 쌓고 안의 입력을 세 칸으로 맞추며 평균선 갱신은 키움 제목 줄 오른쪽에 둔다',()=>{
+test('PC 월 입력 창의 증권사 카드는 한 줄씩 쌓아 안의 입력을 세 칸으로 맞추고 키움 환산액·평균선 갱신은 제목 줄 오른쪽에 둔다',()=>{
   assert.equal(cssRule('css/assets.css','.pnl-broker-grid')['grid-template-columns'],'1fr','카드 높이가 달라 생기던 빈 공간 없이 위아래로 쌓는다');
   assert.equal(cssRule('css/assets.css','.pnl-broker',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))');
   const head=cssRule('css/assets.css','.pnl-broker>h3',PC);
   assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1/-1');
-  const button=cssRule('css/assets.css','#refreshDividendFx',PC);
-  assert.equal(button['grid-row'],'1','제목과 같은 줄');assert.equal(button['grid-column'],'3');assert.equal(button['justify-self'],'end');
-  assert.equal(cssRule('css/assets.css','.pnl-broker>.pnl-conversion',PC)['grid-column'],'1/-1');
+  const sum=cssRule('css/assets.css','.pnl-broker-sum',PC);
+  assert.equal(sum['grid-row'],'1','제목과 같은 줄');assert.equal(sum['grid-column'],'2/-1');assert.equal(sum['justify-self'],'end');assert.equal(sum.display,'flex');
+  assert.equal(cssRule('css/assets.css','.ledger-balance,.pnl-broker-sum').display,'contents','폰: 환산액 줄·갱신 버튼을 기존처럼 카드 아래에 둔다');
+  const html=ledgerDialog({year:2026,accounts:[],months:[{m:3,pnl:0}]}).openMonth();
+  assert.match(html,/<div class="pnl-broker-sum"><div class="pnl-conversion"><span>배당 원화 환산액<\/span><output id="kiwoomDividendWon"><\/output><\/div><button class="btn mini ghost" type="button" id="refreshDividendFx">125개월 평균선 갱신<\/button><\/div><\/section>/,'입력 칸 뒤 DOM 순서 유지');
+  const field=cssRule('css/assets.css','#monthDialog .field>:is(input,select)',PC);
+  assert.equal(field['min-height'],'38px','PC는 칸 높이를 줄인다');
 });
 
-test('PC 월 입력 창의 계좌 잔액은 증권사 카드와 같은 상자 하나에 담고 폰에서는 상자 없이 기존 한 열을 유지한다',()=>{
-  assert.equal(cssRule('css/assets.css','.ledger-balance').display,'contents','폰: 묶음 상자 없이 창 칸으로 푼다');
-  const box=cssRule('css/assets.css','.ledger-balance',PC), card=cssRule('css/assets.css','.pnl-broker');
-  assert.equal(box.display,'grid');
-  for(const k of ['padding','border','border-radius','background'])assert.equal(box[k],card[k],`증권사 카드와 같은 ${k}`);
+test('PC 월 입력 창의 계좌 잔액은 증권사 카드와 같은 상자 하나에 담고 일반 계좌는 네 칸까지 한 줄로 두며 폰에서는 상자 없이 한 열을 유지한다',()=>{
+  assert.equal(cssRule('css/assets.css','.ledger-balance,.pnl-broker-sum').display,'contents','폰: 묶음 상자 없이 창 칸으로 푼다');
+  const box=cssRule('css/assets.css','.ledger-balance',PC), card=cssRule('css/assets.css','.pnl-broker',PC), base=cssRule('css/assets.css','.pnl-broker');
+  assert.equal(box.display,'grid');assert.equal(box.padding,card.padding,'증권사 카드와 같은 안쪽 여백');
+  for(const k of ['border','border-radius','background'])assert.equal(box[k],base[k],`증권사 카드와 같은 ${k}`);
   assert.equal(cssRule('css/assets.css','.ledger-balance>.pnl-balance-title',PC).order,'-2');
   const note=cssRule('css/assets.css','.ledger-balance>.hint',PC);
-  assert.equal(note.order,'-1','안내문은 제목 바로 아래');assert.equal(note.background,'none');
+  assert.equal(note.order,'-1','계좌가 없을 때의 안내문은 제목 바로 아래');assert.equal(note.background,'none');
   assert.equal(cssRule('css/assets.css','.ledger-balance-grid')['grid-template-columns'],'1fr');
-  assert.equal(cssRule('css/assets.css','.ledger-balance-grid',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))');
-  assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(2):last-child),.ledger-balance-grid:has(>.field:nth-child(4):last-child)',PC)['grid-template-columns'],'repeat(2,minmax(0,1fr))','2·4개는 빈칸 없이 두 칸');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid',PC)['grid-template-columns'],'repeat(4,minmax(0,1fr))','4개까지 한 줄');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(3):last-child),.ledger-balance-grid:has(>.field:nth-child(5):last-child),.ledger-balance-grid:has(>.field:nth-child(6):last-child)',PC)['grid-template-columns'],'repeat(3,minmax(0,1fr))','3·5·6개는 세 칸');
+  assert.equal(cssRule('css/assets.css','.ledger-balance-grid:has(>.field:nth-child(2):last-child)',PC)['grid-template-columns'],'repeat(2,minmax(0,1fr))');
   assert.equal(cssRule('css/assets.css','.ledger-balance-grid>.field:only-child',PC)['grid-column'],'1/-1');
 });
 
-test('PC 월 입력 창의 RP 계좌는 잔액 상자 안에서 구분선 아래 두 입력을 나란히 두고 폰에서는 기존 카드 한 열을 유지한다',()=>{
+test('PC 월 입력 창의 RP 계좌는 잔액 상자 안 구분선 아래 두 입력을 나란히 두고 RP 원화 환산액은 계좌 이름 줄 오른쪽에 두며 폰에서는 기존 카드 한 열을 유지한다',()=>{
   const phone=cssRule('css/assets.css','.ledger-rp-account');
   assert.equal(phone.background,'var(--surface-2)');assert.equal(phone['grid-template-columns'],undefined,'폰: 한 열 카드');
   const rp=cssRule('css/assets.css','.ledger-rp-account',PC);
   assert.equal(rp['grid-template-columns'],'repeat(2,minmax(0,1fr))');
   assert.equal(rp['align-items'],'start');
   assert.equal(rp['border-top'],'1pxsolidvar(--line)');assert.equal(rp.background,'none','상자 안 상자 대신 구분선');
-  assert.equal(cssRule('css/assets.css','.ledger-rp-head,.ledger-rp-account>.field-hint,.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total',PC)['grid-column'],'1/-1');
-  assert.equal(cssRule('css/assets.css','.ledger-rp-head',PC).order,'-2');
+  const head=cssRule('css/assets.css','.ledger-rp-head',PC);assert.equal(head['grid-row'],'1');assert.equal(head['grid-column'],'1/-1');
+  const won=cssRule('css/assets.css','.ledger-rp-account>.pnl-conversion',PC);
+  assert.equal(won['grid-row'],'1');assert.equal(won['grid-column'],'2');assert.equal(won['justify-self'],'end');
+  assert.equal(cssRule('css/assets.css','.ledger-rp-account>.field-hint,.ledger-rp-account>.ledger-account-total',PC)['grid-column'],'1/-1');
   assert.equal(cssRule('css/assets.css','.ledger-rp-account>.field-hint',PC).order,'-1');
+});
+
+test('경고(⚠)·설명(!) 버튼은 줄 높이를 늘리지 않는 작은 아이콘이며 누르는 영역은 넓히고 말풍선은 기존 색 토큰만 쓴다',()=>{
+  const button=cssRule('css/assets.css','.ledger-tip-button');
+  assert.equal(button.width,'16px');assert.equal(button.height,'16px');assert.equal(button.position,'relative');
+  const hit=cssRule('css/assets.css','.ledger-tip-button::after');
+  assert.equal(hit.position,'absolute');assert.equal(hit.inset,'-8px-8px-5px','누르는 영역 32×29px, 아래 입력 칸과 겹치지 않게 아래만 5px');
+  assert.equal(cssRule('css/assets.css','.ledger-tip-button.warn').color,'var(--warn)');
+  const tip=cssRule('css/assets.css','.ledger-tip');
+  assert.equal(tip.position,'fixed');assert.equal(tip.background,'var(--surface)');
+  assert.doesNotMatch(read('css/assets.css'),/ledger-rp-button|ledger-rp-help/,'예전 RP 전용 버튼·말풍선 규칙 없음');
+});
+
+test('입력 빠짐 경고는 계좌 이름 옆 ⚠ 버튼으로 두고 누르면 사유를 펼치며 popover 미지원이면 기존처럼 칸 아래 글자로 보인다',()=>{
+  const year={year:2026,accounts:[{name:'가상 일반'},{name:'가상 B'}],months:[{m:2,balances:[1000,2000]},{m:3,balances:[null,2100]},{m:4,balances:[1200,2200]}]};
+  const h=ledgerDialog(year),html=h.openMonth();
+  assert.match(html,/<div class="field"><span><label for="ledgerBal0">가상 일반<\/label><button class="ledger-tip-button warn" type="button" data-ledger-tip="ledgerWarn0" popovertarget="ledgerWarn0" aria-label="가상 일반 경고: 입력 빠짐\?"><span aria-hidden="true">⚠<\/span><\/button><span class="ledger-tip" id="ledgerWarn0" popover><strong>입력 빠짐\?<\/strong><small>앞뒤 달에는 잔액이 있습니다\./);
+  assert.match(html,/<input name="bal0" id="ledgerBal0"[^>]*placeholder="입력 빠짐\?">/,'칸 안 표시는 유지');
+  assert.doesNotMatch(html,/same-tag/,'칸 아래 주황 글자 없음');
+  assert.match(html,/<label class="field" for="ledgerBal1"><span>가상 B<\/span>/,'경고 없는 계좌는 기존 label 그대로');
+  for(const label of html.matchAll(/<label\b[^>]*>[\s\S]*?<\/label>/g))assert.doesNotMatch(label[0],/data-ledger-tip|popover/,'버튼·말풍선을 label 안에 두지 않는다');
+  // 버튼을 누를 때 말풍선을 버튼 아래(화면 안)에 놓는다.
+  const tip=h.node('ledgerWarn0');tip.listeners.beforetoggle({newState:'open'});
+  assert.equal(tip.style.top,'138px');assert.equal(tip.style.left,'20px');
+  h.input('bal0','1,100');h.submit();assert.deepEqual(year.months[1].balances,[1100,2100],'경고 표시는 저장 형식과 무관');
+  const old=ledgerDialog({...year,months:[{m:2,balances:[1000,2000]},{m:3,balances:[null,2100]},{m:4,balances:[1200,2200]}]},{popover:false}).openMonth();
+  assert.match(old,/<label class="field" for="ledgerBal0"><span>가상 일반<\/span><input[^>]*placeholder="입력 빠짐\?"><small class="field-hint same-tag">앞뒤 달에는 잔액이 있습니다\./,'popover 미지원: 기존 글자 경고');
+  assert.doesNotMatch(old,/ledger-tip/);
+});
+
+test('선물·옵션 설명과 계좌 잔액 안내는 이름 옆 ! 버튼으로 접고, 연도 선물·옵션 금액이 있으면 ⚠로 바꾸며 popover 미지원이면 기존 글자를 쓴다',()=>{
+  const year={year:2026,accounts:[{name:'가상 일반'}],months:[{m:3,balances:[1000]}]};
+  let html=ledgerDialog(year).openMonth();
+  assert.match(html,/<div class="field dialog-wide"><span><label for="ledgerFutures">선물·옵션 손익 \(원\)<\/label><button class="ledger-tip-button" type="button" data-ledger-tip="ledgerFuturesTip"[^>]*aria-label="선물·옵션 손익 안내">[\s\S]*?<small>그달 선물·옵션 실현손익입니다\. 실현손익 합계와 따로 더해 그래프·연 수익률·연환산에 반영합니다\.<\/small><\/span><\/span><input name="futures" id="ledgerFutures"/);
+  assert.match(html,/<span>계좌 잔액 \(원\)<button class="ledger-tip-button" type="button" data-ledger-tip="ledgerBalanceHelp"[^>]*>[\s\S]*?<small>총자산은 계좌 잔액 합계입니다\. 계좌는 ‘연도 설정’에서 더하거나 뺍니다\.<\/small>/);
+  assert.doesNotMatch(html,/<p class="hint dialog-wide">총자산은/,'안내문 줄을 따로 두지 않는다');
+  html=ledgerDialog({...year,futures:-1000}).openMonth();
+  assert.match(html,/<button class="ledger-tip-button warn" type="button" data-ledger-tip="ledgerFuturesTip"[^>]*aria-label="선물·옵션 손익 경고: 연도 설정 금액 확인">[\s\S]*?달을 모르는 선물·옵션 -1,000원이 따로 있어 마지막 기록 달에 더합니다/);
+  const old=ledgerDialog({...year,futures:-1000},{popover:false}).openMonth();
+  assert.match(old,/<label class="field dialog-wide"><span>선물·옵션 손익 \(원\)<\/span><input name="futures"[^>]*><small class="field-hint">그달 선물·옵션 실현손익입니다\.[^<]*달을 모르는 선물·옵션 -1,000원/);
+  assert.match(old,/<p class="hint dialog-wide">총자산은 계좌 잔액 합계입니다\./);
+  const empty=ledgerDialog({year:2026,accounts:[],months:[{m:3,pnl:0}]}).openMonth();
+  assert.match(empty,/<p class="hint dialog-wide">계좌가 없는 해는 총자산만 넣습니다\./,'계좌가 없을 때의 할 일 안내는 글자로 보인다');
+  assert.doesNotMatch(empty,/ledgerBalanceHelp/);
 });
 
