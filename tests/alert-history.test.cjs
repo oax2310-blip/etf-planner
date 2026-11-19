@@ -359,3 +359,157 @@ test("읽은 뒤 같은 회차 재알림이 와서 다시 읽지 않음이 된 �
   assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(item=>item.id)),[FIRST]);
   assert.equal(isUnread(h.ctx.state.alertHistory.items[0]),true);
 });
+
+const turn=()=>new Promise(resolve=>setImmediate(resolve));
+const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+function loadWithPageLeave(initial={}){
+  const h=load(initial),events=new Map(),timers=new Map();
+  let timerId=0;
+  function element(tagName){
+    const map=new Map();
+    const node={tagName,children:[],attributes:{},className:'',textContent:'',dataset:{},
+      setAttribute(k,v){this.attributes[k]=String(v);},getAttribute(k){return this.attributes[k]??null;},
+      removeAttribute(k){delete this.attributes[k];},get open(){return Object.hasOwn(this.attributes,'open');},
+      addEventListener(type,fn){if(!map.has(type))map.set(type,new Set());map.get(type).add(fn);},
+      removeEventListener(type,fn){map.get(type)?.delete(fn);},
+      emit(type,extra={}){for(const fn of [...(map.get(type)||[])])fn({type,target:this,...extra});},
+      append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},
+      remove(){const p=this.parentElement;if(p)p.children.splice(p.children.indexOf(this),1);this.parentElement=null;},
+      closest(sel){if(sel==='dialog[open]'&&this.tagName==='dialog'&&Object.hasOwn(this.attributes,'open'))return this;return this.parentElement?.closest(sel)||null;},
+      showPopover(){this.popoverOpen=true;}};
+    return node;
+  }
+  const body=element('body'),dialog=element('dialog');
+  dialog.setAttribute('open','');body.append(dialog);
+  const clearReadBtn=element('button'),clearAllBtn=element('button'),deleteBtn=element('button');
+  dialog.append(clearReadBtn,clearAllBtn,deleteBtn);
+  h.nodes.set('alertHistoryDialog',dialog);
+  h.nodes.set('clearReadAlertHistory',clearReadBtn);
+  h.nodes.set('clearAlertHistory',clearAllBtn);
+  h.nodes.set('conflictDialog',element('dialog'));
+  const doc={body,createElement:element,addEventListener:(type,fn)=>events.set(type,fn)};
+  Object.assign(h.ctx,{document:doc,navigator:{},URL,location:{href:'https://example.test/index.html',origin:'https://example.test',assign(){}},
+    console:{error(){}},addEventListener:(type,fn)=>events.set(type,fn),
+    setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id),
+    sync:{busy:false,running:null,blocked:false}});
+  vm.runInContext(source('page-leave.js')+'\n;globalThis.pageLeave=pageLeave;',h.ctx);
+  const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
+  return {...h,body,dialog,clearReadBtn,clearAllBtn,deleteBtn,timers,waiting:()=>findWaiting(body)};
+}
+
+test('동기화 중 개별 알림 삭제를 누르면 진행 중 화면을 띄우고 동기화 완료 후 삭제한다',async()=>{
+  const h=loadWithPageLeave(),syncRun=deferred();
+  h.ctx.acceptAlertHistory([event('one'),event('two')]);
+  h.deleteBtn.dataset.deleteHistory='one';
+  h.ctx.$$=sel=>sel==='[data-delete-history]'?[h.deleteBtn]:[];
+  h.ctx.renderAlertHistory();
+  h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+  h.deleteBtn.onclick();
+  const overlay=h.waiting();
+  assert.ok(overlay,'동기화 중 삭제 클릭 시 진행 중 화면이 즉시 보여야 한다');
+  assert.equal(overlay.parentElement,h.dialog,'알림내역 창 안에 표시해야 한다');
+  assert.equal(overlay.children[0].children[1].textContent,'동기화 진행 중…');
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['one','two'],'동기화 완료 전에는 삭제하지 않는다');
+  // 중복 클릭은 무시된다.
+  h.deleteBtn.onclick();
+  assert.equal(h.dialog.children.filter(c=>c.className==='page-leave').length,1);
+  // 동기화 중 새 알림이 도착해도 완료 뒤 원래 누른 항목만 삭제한다.
+  h.ctx.acceptAlertHistory([event('three',{occurredAt:'2026-10-14T02:00:00Z'})]);
+  h.ctx.sync.running=null;h.ctx.sync.busy=false;syncRun.resolve();
+  await turn();
+  assert.equal(h.waiting(),undefined,'동기화 완료 뒤 진행 중 화면을 닫는다');
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['three','two']);
+});
+
+test('동기화 중 읽은 알림 삭제·전체 삭제는 동기화 완료 후 최신 개수로 확인 창을 띄운다',async()=>{
+  const h=loadWithPageLeave();
+  const calls=[];
+  h.ctx.confirm=msg=>{calls.push({msg,waiting:!!h.waiting()});return true;};
+  h.ctx.initializeAlertHistory();
+  h.ctx.acceptAlertHistory([event('one'),event('two')]);
+  h.ctx.markAlertHistoryRead('one');
+
+  // 1) 읽은 알림 삭제
+  const firstRun=deferred();
+  h.ctx.sync.busy=true;h.ctx.sync.running=firstRun.promise;
+  h.clearReadBtn.onclick();
+  assert.ok(h.waiting(),'읽은 알림 삭제 클릭 직후 동기화 진행 중 화면이 보여야 한다');
+  assert.equal(calls.length,0,'동기화가 끝나기 전에는 confirm 창을 띄우지 않는다');
+  h.ctx.markAlertHistoryRead('two'); // 동기화로 다른 기기 읽음이 합쳐진 상황
+  h.ctx.sync.running=null;h.ctx.sync.busy=false;firstRun.resolve();
+  await turn();
+  assert.equal(h.waiting(),undefined);
+  assert.deepEqual(calls,[{msg:'읽은 알림 2개를 삭제할까요?',waiting:false}]);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+
+  // 2) 전체 삭제
+  h.ctx.acceptAlertHistory([event('three')]);
+  const secondRun=deferred();
+  h.ctx.sync.busy=true;h.ctx.sync.running=secondRun.promise;
+  h.clearAllBtn.onclick();
+  assert.ok(h.waiting(),'전체 삭제 클릭 직후 동기화 진행 중 화면이 보여야 한다');
+  assert.equal(calls.length,1);
+  h.ctx.sync.running=null;h.ctx.sync.busy=false;secondRun.resolve();
+  await turn();
+  assert.equal(h.waiting(),undefined);
+  assert.deepEqual(calls[1],{msg:'알림내역 1개를 모두 삭제할까요?',waiting:false});
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+});
+
+test('동기화 대기 중 알림내역 창을 닫거나 충돌 창이 열리면 삭제를 실행하지 않는다',async t=>{
+  for(const reason of ['창 닫기','sync.blocked','conflictDialog 열림'])await t.test(reason,async()=>{
+    const h=loadWithPageLeave(),syncRun=deferred();
+    let confirmCalls=0;
+    h.ctx.confirm=()=>{confirmCalls++;return true;};
+    h.ctx.initializeAlertHistory();
+    h.ctx.acceptAlertHistory([event('one')]);
+    h.deleteBtn.dataset.deleteHistory='one';
+    h.ctx.$$=sel=>sel==='[data-delete-history]'?[h.deleteBtn]:[];
+    h.ctx.renderAlertHistory();
+    h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+    if(reason==='창 닫기'){
+      h.deleteBtn.onclick();assert.ok(h.waiting());
+      h.dialog.removeAttribute('open');h.dialog.emit('close');
+      assert.equal(h.waiting(),undefined);
+    }else{
+      h.clearAllBtn.onclick();assert.ok(h.waiting());
+      if(reason==='sync.blocked')h.ctx.sync.blocked=true;
+      else h.nodes.get('conflictDialog').setAttribute('open','');
+    }
+    h.ctx.sync.running=null;h.ctx.sync.busy=false;syncRun.resolve();
+    await turn();
+    assert.equal(h.waiting(),undefined);
+    assert.equal(confirmCalls,0);
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['one']);
+  });
+});
+
+test('동기화 중이 아닐 때는 알림 삭제가 대기 화면 없이 즉시 실행된다',()=>{
+  const h=loadWithPageLeave();
+  h.ctx.acceptAlertHistory([event('one')]);
+  h.deleteBtn.dataset.deleteHistory='one';
+  h.ctx.$$=sel=>sel==='[data-delete-history]'?[h.deleteBtn]:[];
+  h.ctx.renderAlertHistory();
+  h.deleteBtn.onclick();
+  assert.equal(h.waiting(),undefined);
+  assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+});
+
+test('목록 내용이 같으면 renderAlertHistory가 DOM innerHTML을 불필요하게 교체하지 않아 탭을 끊지 않는다',()=>{
+  const h=load();
+  let writes=0,markup='';
+  const list={
+    querySelector(){return null;},
+    get firstChild(){return markup?{}:null;},
+    get innerHTML(){return markup;},
+    set innerHTML(v){writes++;markup=v;}
+  };
+  h.nodes.set('alertHistoryList',list);
+  h.ctx.acceptAlertHistory([event('one')]);
+  assert.equal(writes,1);
+  h.ctx.renderAlertHistory();
+  assert.equal(writes,1,'동일한 마크업으로 다시 그릴 때 DOM을 갈아엎지 않아야 한다');
+  h.ctx.markAlertHistoryRead('one');
+  assert.equal(writes,2,'항목 상태가 바뀌면 마크업을 갱신해야 한다');
+});
+

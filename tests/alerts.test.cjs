@@ -126,3 +126,133 @@ test('비트코인 BTC-USD를 알림 종목으로 받고 가격을 달러로 표
   assert.match(html,/USD 65432\.1/);
   assert.match(html,/USD 65000/);
 });
+
+const turn=()=>new Promise(resolve=>setImmediate(resolve));
+const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+const pageLeaveSource=fs.readFileSync(path.join(__dirname,'../js/page-leave.js'),'utf8');
+
+function loadAlertDialogContext(initial={}){
+  const ctx=load(initial);
+  const events=new Map();
+  let saves=0,editorClosed=0;
+  function element(tagName){
+    const map=new Map();
+    return {tagName,children:[],attributes:{},className:'',textContent:'',dataset:{},
+      setAttribute(k,v){this.attributes[k]=String(v);},getAttribute(k){return this.attributes[k]??null;},
+      removeAttribute(k){delete this.attributes[k];},get open(){return Object.hasOwn(this.attributes,'open');},
+      addEventListener(type,fn){if(!map.has(type))map.set(type,new Set());map.get(type).add(fn);},
+      removeEventListener(type,fn){map.get(type)?.delete(fn);},
+      emit(type,extra={}){for(const fn of [...(map.get(type)||[])])fn({type,target:this,...extra});},
+      append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},
+      remove(){const p=this.parentElement;if(p)p.children.splice(p.children.indexOf(this),1);this.parentElement=null;},
+      closest(sel){if(sel==='dialog[open]'&&this.tagName==='dialog'&&Object.hasOwn(this.attributes,'open'))return this;return this.parentElement?.closest(sel)||null;},
+      showPopover(){this.popoverOpen=true;}};
+  }
+  const body=element('body'),dialog=element('dialog'),removeBtn=element('button');
+  dialog.setAttribute('open','');dialog.append(removeBtn);body.append(dialog);
+  const nodes={
+    alertsDialog:dialog,conflictDialog:element('dialog'),
+    alertsList:{},alertsCount:{},alertsSaveStatus:{classList:{toggle(){}}},
+    alertForm:{hidden:false},alertFormError:{}
+  };
+  Object.assign(ctx,{
+    $:id=>nodes[id],$$:sel=>sel==='[data-remove-alert]'?[removeBtn]:[],
+    esc:v=>String(v??''),priceText:(v,c)=>`${c} ${v}`,priceStamp:()=>'',priceData:null,
+    connected:()=>true,sync:{busy:false,running:null,blocked:false,failed:false},onEdit:()=>{},
+    save:()=>{saves++;},
+    document:{body,createElement:element,addEventListener:(type,fn)=>events.set(type,fn)},
+    URL,location:{href:'https://example.test/index.html',origin:'https://example.test',assign(){}},
+    console:{error(){}},addEventListener:(type,fn)=>events.set(type,fn),setTimeout,clearTimeout
+  });
+  vm.runInContext(pageLeaveSource+'\n;globalThis.pageLeave=pageLeave;',ctx);
+  const origClose=ctx.closeAlertEditor;
+  ctx.closeAlertEditor=()=>{editorClosed++;origClose();};
+  const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
+  return {ctx,body,dialog,removeBtn,nodes,saves:()=>saves,editorClosed:()=>editorClosed,waiting:()=>findWaiting(body)};
+}
+
+test('동기화 중 알림 규칙 삭제를 누르면 진행 중 화면을 띄우고 완료 후 삭제한다',async()=>{
+  const h=loadAlertDialogContext(),syncRun=deferred();
+  const rule=h.ctx.writeAlertRule(valid()).value;
+  h.removeBtn.dataset.removeAlert=rule.id;
+  h.ctx.renderAlerts();
+  h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+  h.removeBtn.onclick();
+  const overlay=h.waiting();
+  assert.ok(overlay,'동기화 중 규칙 삭제 클릭 시 진행 중 화면이 즉시 보여야 한다');
+  assert.equal(overlay.parentElement,h.dialog,'알림 설정 창 안에 표시해야 한다');
+  assert.equal(overlay.children[0].children[1].textContent,'동기화 진행 중…');
+  assert.equal(h.ctx.state.alerts.rules.length,1,'동기화 완료 전에는 규칙을 삭제하지 않는다');
+  h.ctx.sync.running=null;h.ctx.sync.busy=false;syncRun.resolve();
+  await turn();
+  assert.equal(h.waiting(),undefined);
+  assert.equal(h.ctx.state.alerts.rules.length,0);
+  assert.equal(h.saves(),1);
+});
+
+test('동기화 대기 중 알림 설정 창 닫힘·충돌 발생 시 규칙 삭제를 취소하고 평상시에는 즉시 삭제한다',async()=>{
+  const h=loadAlertDialogContext();
+  const first=h.ctx.writeAlertRule(valid()).value;
+  const second=h.ctx.writeAlertRule(valid({unit:'주선'})).value;
+  h.removeBtn.dataset.removeAlert=first.id;
+  h.ctx.renderAlerts();
+
+  // 창 닫힘 취소
+  const run1=deferred();
+  h.ctx.sync.busy=true;h.ctx.sync.running=run1.promise;
+  h.removeBtn.onclick();assert.ok(h.waiting());
+  h.dialog.removeAttribute('open');h.dialog.emit('close');
+  h.ctx.sync.running=null;h.ctx.sync.busy=false;run1.resolve();
+  await turn();
+  assert.equal(h.ctx.state.alerts.rules.length,2);
+
+  // 충돌(sync.blocked) 시 취소
+  h.dialog.setAttribute('open','');
+  const run2=deferred();
+  h.ctx.sync.busy=true;h.ctx.sync.running=run2.promise;
+  h.removeBtn.onclick();assert.ok(h.waiting());
+  h.ctx.sync.blocked=true;h.ctx.sync.running=null;h.ctx.sync.busy=false;run2.resolve();
+  await turn();
+  assert.equal(h.ctx.state.alerts.rules.length,2);
+
+  // 충돌 창(conflictDialog) 열림 시 취소
+  h.ctx.sync.blocked=false;
+  const run3=deferred();
+  h.ctx.sync.busy=true;h.ctx.sync.running=run3.promise;
+  h.removeBtn.onclick();assert.ok(h.waiting());
+  h.nodes.conflictDialog.setAttribute('open','');
+  h.ctx.sync.running=null;h.ctx.sync.busy=false;run3.resolve();
+  await turn();
+  assert.equal(h.ctx.state.alerts.rules.length,2);
+
+  // 평상시 즉시 삭제
+  h.nodes.conflictDialog.removeAttribute('open');
+  h.removeBtn.dataset.removeAlert=second.id;
+  h.removeBtn.onclick();
+  assert.equal(h.waiting(),undefined);
+  assert.deepEqual(plain(h.ctx.state.alerts.rules.map(r=>r.id)),[first.id]);
+});
+
+test('알림 규칙 목록이 같으면 renderAlerts가 DOM innerHTML을 불필요하게 교체하지 않고 체크 상태만 맞춘다',()=>{
+  const h=loadAlertDialogContext();
+  const rule=h.ctx.writeAlertRule(valid()).value;
+  let writes=0,markup='';
+  const checkbox={dataset:{alertEnabled:rule.id},checked:false};
+  h.nodes.alertsList={
+    querySelector(){return null;},
+    get firstChild(){return markup?{}:null;},
+    get innerHTML(){return markup;},
+    set innerHTML(v){writes++;markup=v;}
+  };
+  h.ctx.$$=sel=>sel==='[data-alert-enabled]'?[checkbox]:[];
+  h.ctx.renderAlerts();
+  assert.equal(writes,1);
+  checkbox.checked=false;
+  h.ctx.renderAlerts();
+  assert.equal(writes,1,'동일한 규칙 목록으로 다시 그릴 때 DOM을 갈아엎지 않아야 한다');
+  assert.equal(checkbox.checked,true,'DOM을 유지할 때도 체크 상태를 현재 규칙과 맞춰야 한다');
+  h.ctx.setAlertRuleEnabled(rule.id,false);
+  h.ctx.renderAlerts();
+  assert.equal(writes,2,'규칙 상태가 바뀌면 마크업을 갱신해야 한다');
+});
+

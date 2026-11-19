@@ -105,6 +105,33 @@ function noteAlertHistoryRead(eventId){
   if(typeof eventId!=="string"||!eventId||eventId.length>128)return;
   alertHistoryReadIds.set(eventId,Date.now());markAlertHistoryRead(eventId);
 }
+function alertHistorySyncBusy(){return typeof sync==="object"&&!!sync&&(!!sync.busy||!!sync.running);}
+async function waitAlertHistorySync(){
+  while(typeof sync==="object"&&sync&&sync.running){
+    const current=sync.running;
+    await current;
+    if(sync.running===current)break;
+  }
+}
+// 동기화 진행 중에 알림 삭제를 누르면 진행 중 화면을 띄우고 현재 동기화가 끝난 뒤 삭제를 이어 간다.
+// 충돌 확인 창이 열렸거나 대화상자를 닫았으면 삭제를 실행하지 않는다.
+function runAlertHistoryDelete(trigger,action){
+  if(!alertHistorySyncBusy()){action();return;}
+  const finish=()=>{
+    if(typeof sync==="object"&&sync&&sync.blocked)return;
+    if(typeof $==="function"&&$("conflictDialog")?.open)return;
+    action();
+  };
+  if(typeof pageLeave==="object"&&typeof pageLeave.wait==="function"){
+    pageLeave.wait(trigger,waitAlertHistorySync,finish,{
+      label:"동기화 진행 중…",
+      announce:"동기화 진행 중… 동기화가 끝나면 삭제를 진행합니다."
+    });
+    return;
+  }
+  const dialog=trigger?.closest?.("dialog[open]")||null;
+  Promise.resolve().then(waitAlertHistorySync).then(()=>{if(dialog&&!dialog.open)return;finish();});
+}
 function removeAlertHistory(eventId){
   const item=alertHistoryItems().find(item=>item.id===eventId);if(!item)return false;
   removeAlertHistoryItems([item]);return true;
@@ -123,7 +150,9 @@ function renderAlertHistory(){
   for(const button of $$("[data-history-filter]")){const selected=button.dataset.historyFilter===alertHistoryFilter;button.classList.toggle("active",selected);button.setAttribute("aria-pressed",String(selected));}
   $("readAllHistory").disabled=!unread.length;$("clearReadAlertHistory").disabled=unread.length===all.length;$("clearAlertHistory").disabled=!all.length;
   const names=items.length&&typeof stockNames==="object"?stockNames.alertMap():null;
-  list.innerHTML=items.length?items.map(item=>alertHistoryCard(item,names)).join(""):`<div class="alert-history-empty"><span aria-hidden="true"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span><strong>${alertHistoryFilter==="unread"?"읽지 않은 알림이 없습니다":"아직 알림내역이 없습니다"}</strong><p>${alertHistoryFilter==="unread"?"전체 탭에서 지난 알림을 확인하세요.":"기능 적용 이후 발생하는 알림부터 기록합니다.<br>새 알림이 오면 당시 조건과 가격을 이곳에서 확인할 수 있습니다."}</p></div>`;
+  const html=items.length?items.map(item=>alertHistoryCard(item,names)).join(""):`<div class="alert-history-empty"><span aria-hidden="true"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span><strong>${alertHistoryFilter==="unread"?"읽지 않은 알림이 없습니다":"아직 알림내역이 없습니다"}</strong><p>${alertHistoryFilter==="unread"?"전체 탭에서 지난 알림을 확인하세요.":"기능 적용 이후 발생하는 알림부터 기록합니다.<br>새 알림이 오면 당시 조건과 가격을 이곳에서 확인할 수 있습니다."}</p></div>`;
+  const dom=typeof list.querySelector==="function";
+  if(!dom||list._alertHistoryMarkup!==html||!list.firstChild){list.innerHTML=html;if(dom)list._alertHistoryMarkup=html;}
   $("alertHistoryStatus").textContent=alertHistoryMessage;
   $$("[data-open-history]").forEach(button=>button.onclick=()=>{
     const item=alertHistoryItems().find(item=>item.id===button.dataset.openHistory);if(!item)return;
@@ -132,7 +161,7 @@ function renderAlertHistory(){
     alertHistoryMessage="";$("alertHistoryDialog").close();history.replaceState(null,"",pushAlertHash(target));openPlannerLocation();
   });
   $$("[data-read-history]").forEach(button=>button.onclick=()=>markAlertHistoryRead(button.dataset.readHistory));
-  $$("[data-delete-history]").forEach(button=>button.onclick=()=>removeAlertHistory(button.dataset.deleteHistory));
+  $$("[data-delete-history]").forEach(button=>button.onclick=()=>{const eventId=button.dataset.deleteHistory;runAlertHistoryDelete(button,()=>removeAlertHistory(eventId));});
 }
 function openAlertHistory(){
   if($("alertsDialog").open)$("alertsDialog").close();renderAlertHistory();$("alertHistoryDialog").showModal();collectAlertInbox();
@@ -142,8 +171,10 @@ function initializeAlertHistory(){
   $("openAlertSettings").onclick=()=>{$("alertHistoryDialog").close();openAlertSettings();};
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
   $("readAllHistory").onclick=()=>{for(const item of state.alertHistory?.items||[])if(alertHistoryUnread(item))item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();};
-  $("clearReadAlertHistory").onclick=()=>{const items=alertHistoryItems().filter(item=>!alertHistoryUnread(item));if(!items.length||!confirm(`읽은 알림 ${items.length}개를 삭제할까요?`))return;removeAlertHistoryItems(items);};
-  $("clearAlertHistory").onclick=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;removeAlertHistoryItems(items);};
+  const clearReadBtn=$("clearReadAlertHistory");
+  clearReadBtn.onclick=()=>runAlertHistoryDelete(clearReadBtn,()=>{const items=alertHistoryItems().filter(item=>!alertHistoryUnread(item));if(!items.length||!confirm(`읽은 알림 ${items.length}개를 삭제할까요?`))return;removeAlertHistoryItems(items);});
+  const clearAllBtn=$("clearAlertHistory");
+  clearAllBtn.onclick=()=>runAlertHistoryDelete(clearAllBtn,()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;removeAlertHistoryItems(items);});
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
   // 다른 탭의 읽음·삭제는 sync.js absorbPlanner가 플래너 기록 전체와 함께 받는다(알림내역만 합쳐 옛 체결 기록을 다시 저장하지 않게).
