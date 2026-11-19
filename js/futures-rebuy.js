@@ -162,8 +162,8 @@ function setFutureBuyExec(f,i,t,text){
   const qty=futureRebuyQty(rec.contracts),old=Number(rec[fill[1]]),month=futureRebuyHeldMonth(f,rec.month,qty);
   if(!qty||!month)return false;
   const pos=f.positions.find(p=>String(p.month)===month);
-  // 전량과 연결된 재매수는 새 체결 환율로, 일부와 연결된 재매수는 정정 후 가중평균가로 반영한다.
-  const average=Number(pos.contracts)===qty?n:futurePositionAverageAfterExecChange(pos,qty,old,n);
+  // 보유 전량이든 일부든 분할매수(setFutureTrancheExec)와 같이 현재 평균가에서 옛 체결 원가를 새 체결 원가로 바꾼 평균가를 검증한다.
+  const average=futurePositionAverageAfterExecChange(pos,qty,old,n);
   if(!validFuturePositionAverage(average)||setFutureBuyPrice(f,i,t,text)===false)return false;
   pos.settlementPrice=average;
 }
