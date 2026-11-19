@@ -288,6 +288,10 @@ test('목표환율 이평선 선택은 선 이름과 대체값만 저장하고 �
   assert.equal(r.c.futureTargetOf(r.f),1499.1);assert.equal(r.input('#ftarget').value,'1,499.1');assert.equal(r.el('ftargetLine').value,'25일선');
   assert.equal(r.c.futuresSummary(r.f).current,r.c.futuresSummary(r.f,1499.1).current);
   assert.equal(r.c.futureLadder(r.f).rows.find(x=>x.kind==='target').price,1499.1);
+  // 매수 표 회차 기대손익도 같은 추종 목표 환율을 쓴다(미매수 1,354.91원 회차).
+  const buyTable=r.el('futuresView').innerHTML;
+  assert.match(buyTable,/목표 환율 1,499.1원 기준/);assert.match(buyTable,new RegExp(`기대손익 ${Math.round((1499.1-1354.91)*10000)}원`));
+  assert.doesNotMatch(buyTable,new RegExp(`기대손익 ${Math.round((1451.2-1354.91)*10000)}원`));
   r.change('#ftargetLine','25개월선');assert.equal(r.f.targetPrice,1420.1);assert.equal(r.f.targetLine,'25개월선');assert.equal(r.saved().futures.targetPrice,1420.1);
   const saved=JSON.stringify(r.f);r.change('#ftargetLine','없는 선');assert.equal(JSON.stringify(r.f),saved);
 });
@@ -300,8 +304,11 @@ test('목표환율 직접 입력·직접 입력 선택은 기준선을 지워 �
   prices.futures['202612'].ma['25일선']=1470;r.c.renderFutures();assert.equal(r.c.futureTargetOf(r.f),1460,'고정 후에는 따라가지 않음');
   r.change('#ftargetLine','25일선');r.type('#ftarget','1500');r.change('#ftarget');
   assert.equal(Object.hasOwn(r.f,'targetLine'),false);assert.equal(r.f.targetPrice,1500);assert.equal(Object.hasOwn(r.saved().futures,'targetLine'),false);
-  // 빈 입력은 기준선·숫자를 바꾸지 않는다.
-  r.change('#ftargetLine','25일선');r.type('#ftarget','');r.change('#ftarget');assert.equal(r.f.targetLine,'25일선');assert.equal(r.f.targetPrice,1470);
+  // 빈 값·0·음수 입력은 기준선·숫자를 바꾸거나 저장하지 않는다.
+  r.change('#ftargetLine','25일선');
+  const savedText=r.stored.get('etf-exit-planner-standalone-v1');let writes=0;const save=r.c.save;r.c.save=(...a)=>{writes++;return save(...a);};
+  for(const bad of ['','0','-100']){r.type('#ftarget',bad);r.change('#ftarget');assert.equal(r.f.targetLine,'25일선',bad);assert.equal(r.f.targetPrice,1470,bad);}
+  assert.equal(writes,0,'빈 값·0·음수는 저장하지 않음');assert.equal(r.stored.get('etf-exit-planner-standalone-v1'),savedText);assert.equal(r.input('#ftarget').value,'1,470');
   // 저장된 선의 시세가 없으면 targetPrice를 쓰고 선택 상태를 '시세 없음'으로 보인다.
   const f=future();f.targetLine='60일선';f.targetPrice=1444.4;r=setup(f,etf(),prices);r.c.renderFutures();
   assert.equal(r.c.futureTargetOf(f),1444.4);assert.equal(r.el('ftargetLine').value,'60일선');assert.match(r.el('futuresView').innerHTML,/60일선 따라가기 · 시세 없음/);
