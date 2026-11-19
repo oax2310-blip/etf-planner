@@ -273,15 +273,48 @@ test('ETF·달러선물의 회차 가격 수정은 실제 입력 처리에서 �
   }
 });
 
-test('목표환율 이평선 선택은 현재 값을 0.1 단위의 기존 숫자에만 저장하고 월봉 부족만 현물로 보완한다',()=>{
+test('목표환율 이평선 선택은 선 이름과 대체값만 저장하고 시세를 따라가며 월봉 부족만 현물로 보완한다',()=>{
   const prices={updatedAt:'2026-11-13T01:00:00Z',futures:{'202612':{kind:'달러선물',close:1400,asOf:'2026-11-13',ma:{'25일선':1451.2345}}},fx:{USDKRW:{kind:'현물환율',close:1400,asOf:'2026-11-13',ma:{'25일선':1300,'25개월선':1420.125}}}};
   const r=setup(future(),etf(),prices);r.c.renderFutures();const before=JSON.stringify(r.f);r.c.renderFutures();assert.equal(JSON.stringify(r.f),before);
-  assert.match(r.el('futuresView').innerHTML,/25월선 · 1,420.1원 · 현물/);
-  r.change('#ftargetLine','25일선');assert.equal(r.f.targetPrice,1451.2);assert.equal(r.saved().futures.targetPrice,1451.2);
-  const expected=JSON.parse(before);expected.targetPrice=1451.2;assert.deepEqual(plain(r.f),expected,'옛 숫자 필드 외 선택 설정·체결은 바꾸지 않음');
-  prices.futures['202612'].ma['25일선']=1499;r.c.renderFutures();assert.equal(r.f.targetPrice,1451.2,'시세 갱신만으로 자동 추종하지 않음');
-  r.change('#ftargetLine','25개월선');assert.equal(r.f.targetPrice,1420.1);assert.equal(r.saved().futures.targetPrice,1420.1);
+  assert.match(r.el('futuresView').innerHTML,/25월선 따라가기 · 1,420.1원 · 현물/);assert.equal(r.el('ftargetLine').value,'');
+  assert.doesNotMatch(r.el('futuresView').innerHTML,/자동 추종|가져오기/);
+  r.change('#ftargetLine','25일선');assert.equal(r.f.targetPrice,1451.2);assert.equal(r.f.targetLine,'25일선');
+  assert.equal(r.saved().futures.targetPrice,1451.2);assert.equal(r.saved().futures.targetLine,'25일선');
+  const expected=JSON.parse(before);expected.targetPrice=1451.2;expected.targetLine='25일선';assert.deepEqual(plain(r.f),expected,'선택 설정·체결은 바꾸지 않음');
+  // 시세가 바뀌면 화면·계산은 새 값을 따라가고, 렌더만으로 기록·저장은 바뀌지 않는다.
+  const savedText=r.stored.get('etf-exit-planner-standalone-v1');
+  prices.futures['202612'].ma['25일선']=1499.06;r.c.renderFutures();
+  assert.equal(r.f.targetPrice,1451.2);assert.equal(r.stored.get('etf-exit-planner-standalone-v1'),savedText);
+  assert.equal(r.c.futureTargetOf(r.f),1499.1);assert.equal(r.input('#ftarget').value,'1,499.1');assert.equal(r.el('ftargetLine').value,'25일선');
+  assert.equal(r.c.futuresSummary(r.f).current,r.c.futuresSummary(r.f,1499.1).current);
+  assert.equal(r.c.futureLadder(r.f).rows.find(x=>x.kind==='target').price,1499.1);
+  // 매수 표 회차 기대손익도 같은 추종 목표 환율을 쓴다(미매수 1,354.91원 회차).
+  const buyTable=r.el('futuresView').innerHTML;
+  assert.match(buyTable,/목표 환율 1,499.1원 기준/);assert.match(buyTable,new RegExp(`기대손익 ${Math.round((1499.1-1354.91)*10000)}원`));
+  assert.doesNotMatch(buyTable,new RegExp(`기대손익 ${Math.round((1451.2-1354.91)*10000)}원`));
+  r.change('#ftargetLine','25개월선');assert.equal(r.f.targetPrice,1420.1);assert.equal(r.f.targetLine,'25개월선');assert.equal(r.saved().futures.targetPrice,1420.1);
   const saved=JSON.stringify(r.f);r.change('#ftargetLine','없는 선');assert.equal(JSON.stringify(r.f),saved);
+});
+
+test('목표환율 직접 입력·직접 입력 선택은 기준선을 지워 숫자로 고정하고 시세 없는 기준선은 대체값을 쓴다',()=>{
+  const prices={futures:{'202612':{kind:'달러선물',close:1400,asOf:'2026-11-13',ma:{'25일선':1451.2345}}}};
+  let r=setup(future(),etf(),prices);r.c.renderFutures();r.change('#ftargetLine','25일선');
+  prices.futures['202612'].ma['25일선']=1460.04;r.c.renderFutures();
+  r.change('#ftargetLine','');assert.equal(Object.hasOwn(r.f,'targetLine'),false);assert.equal(r.f.targetPrice,1460);assert.equal(r.saved().futures.targetPrice,1460);
+  prices.futures['202612'].ma['25일선']=1470;r.c.renderFutures();assert.equal(r.c.futureTargetOf(r.f),1460,'고정 후에는 따라가지 않음');
+  r.change('#ftargetLine','25일선');r.type('#ftarget','1500');r.change('#ftarget');
+  assert.equal(Object.hasOwn(r.f,'targetLine'),false);assert.equal(r.f.targetPrice,1500);assert.equal(Object.hasOwn(r.saved().futures,'targetLine'),false);
+  // 빈 값·0·음수 입력은 기준선·숫자를 바꾸거나 저장하지 않는다.
+  r.change('#ftargetLine','25일선');
+  const savedText=r.stored.get('etf-exit-planner-standalone-v1');let writes=0;const save=r.c.save;r.c.save=(...a)=>{writes++;return save(...a);};
+  for(const bad of ['','0','-100']){r.type('#ftarget',bad);r.change('#ftarget');assert.equal(r.f.targetLine,'25일선',bad);assert.equal(r.f.targetPrice,1470,bad);}
+  assert.equal(writes,0,'빈 값·0·음수는 저장하지 않음');assert.equal(r.stored.get('etf-exit-planner-standalone-v1'),savedText);assert.equal(r.input('#ftarget').value,'1,470');
+  // 저장된 선의 시세가 없으면 targetPrice를 쓰고 선택 상태를 '시세 없음'으로 보인다.
+  const f=future();f.targetLine='60일선';f.targetPrice=1444.4;r=setup(f,etf(),prices);r.c.renderFutures();
+  assert.equal(r.c.futureTargetOf(f),1444.4);assert.equal(r.el('ftargetLine').value,'60일선');assert.match(r.el('futuresView').innerHTML,/60일선 따라가기 · 시세 없음/);
+  assert.equal(r.el('ftargetLine').disabled,false);
+  // 옛 기록(targetLine 없음)은 렌더로 필드를 만들지 않는다.
+  const old=future();r=setup(old,etf(),prices);r.c.renderFutures();assert.equal(Object.hasOwn(old,'targetLine'),false);assert.equal(r.c.futureTargetOf(old),1480);
 });
 
 test('재매수 해제·수량·환율 수정에서 평균가 계산이 거절되면 안내하고 저장하지 않는다',()=>{
