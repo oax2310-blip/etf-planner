@@ -72,6 +72,7 @@ function sellFromPosition(f,month,qty){
 function linkFutureCut(f,rec){
   const qty=futureRebuyQty(rec.contracts),month=qty?futureHeldMonth(f,qty):"",avg=Number(f.positions.find(p=>String(p.month)===month)?.settlementPrice);
   if(!month||!validFuturePositionAverage(avg))return false; // 상한 초과·비유한 평균가는 업로드·복원이 거절되는 기록을 만든다
+  if(!Number.isFinite(futureCutPnl({...rec,settlementPrice:avg})))return false; // 체결 환율·목표가 없는 기록(외부 JSON)은 누적 정산손익이 NaN이 되므로 바꾸지 않는다
   rec.month=month;rec.settlementPrice=avg;sellFromPosition(f,month,qty);addFuturePnl(f,futureCutPnl(rec));
   return true;
 }
@@ -124,12 +125,15 @@ function setFutureCutCount(f,i,text,detach=false){
     if(!detach||futureHeld(f,b.month))addToPosition(f,b.month,b.contracts,b.settlementPrice);
     legs.find(l=>l.month===b.month).contracts-=b.contracts;
   }
-  if(qty!==old)setFutureCutLegs(rec,legs);
+  if(qty===old)return; // 같은 계약 수("02" 등)는 보유·손익을 바꾸지 않는다(손익을 계산할 수 없는 기록에서 NaN 방지)
+  setFutureCutLegs(rec,legs);
   addFuturePnl(f,futureCutPnl(rec)-before);
 }
+// 보유에 반영한 기록(month)은 손익을 다시 계산할 수 없으면(futureCutPnlOk) 체결 환율·누적 정산손익을 바꾸지 않고 false.
 function setFutureCutPrice(f,i,text){
-  const n=Number(text),rec=editFutureRebuy(f).cuts[i];if(!rec||!Number.isFinite(n)||n<=0)return false;
-  const before=rec.month?futureCutPnl(rec):0;rec.price=n;
+  const n=Number(text),cur=futureRebuyOf(f).cuts?.[i];
+  if(!cur||!Number.isFinite(n)||n<=0||cur.month&&(!futureCutPnlOk(cur)||!Number.isFinite(futureCutPnl({...cur,price:n}))))return false;
+  const rec=editFutureRebuy(f).cuts[i],before=rec.month?futureCutPnl(rec):0;rec.price=n;
   if(rec.month)addFuturePnl(f,futureCutPnl(rec)-before);
 }
 // 재매수 체크·해제. 기록 월물이 없거나 계약이 부족하면 detach일 때만 체크를 푼다(보유는 직접 수정).
@@ -568,6 +572,8 @@ function renderFutureRebuy(f){
     return confirm(`월물을 교체했다면 확인을 누르세요. 보유에 없는 ${gone}은 그대로 두고 손절 기록과 누적 정산손익(이 손절 손익 ${pnl}을 뺌)만 고칩니다.\n교체한 월물의 계약 수·단순평균가는 계좌를 보고 직접 고치세요.`)?true:null;
   };
   const cutFail="계약 수는 0 이상 정수로, 손절 목표와 재매수 기록 사이에서 입력하세요. 재매수 후에도 남은 손절을 기록할 수 있으며, 보유 월물에 더 뺄 계약이 없으면 늘릴 수 없습니다.";
+  // 손절 기록의 손익을 계산할 수 없어 거절했으면(futureCutPnlOk) 계약 수 안내 대신 손절 기록 안내를 보인다.
+  const cutFailMessage=i=>{const rec=futureRebuyOf(f).cuts?.[i];return rec?.month&&!futureCutPnlOk(rec)?futureCutRecordWarning:cutFail;};
   const cutUnlinked="판 계약 수만큼 남은 보유 월물(단순평균가 포함)이 없어 손절 기록만 했습니다. 보유 월물을 확인한 뒤 '보유 월물에 반영'을 누르세요.";
   $$("[data-fcut-partial],[data-fbuy-partial]").forEach(input=>{input.indeterminate=true;});
   // 되돌릴 보유가 잘못돼 합칠 수 없으면 확인 창 전에 거절한다(보유에 없는 월물은 확인 뒤 함수가 다시 검사).
@@ -583,15 +589,16 @@ function renderFutureRebuy(f){
     const detach=input.checked?false:cutBack(i,0);
     if(detach===null){renderFutures();return;}
     const done=setFutureCutChecked(f,i,input.checked,detach);
-    if(done===false)alert(cutFail);else{save();if(done==="unlinked")alert(cutUnlinked);}
+    if(done===false)alert(cutFailMessage(i));else{save();if(done==="unlinked")alert(cutUnlinked);}
     renderFutures();});
   onEdit("[data-fcut-qty]",(v,el)=>{const i=Number(el.dataset.fcutQty),t=v.trim(),qty=t===""?0:Number(t);
     if(!Number.isInteger(qty)||qty<0){alert(cutFail);return false;}
     if(cutBackBlocked(i,qty))return false;
     const detach=cutBack(i,qty);if(detach===null)return false;
-    const done=setFutureCutCount(f,i,t,detach);if(done===false){alert(cutFail);return false;}if(done==="unlinked")alert(cutUnlinked);},renderFutures);
+    const done=setFutureCutCount(f,i,t,detach);if(done===false){alert(cutFailMessage(i));return false;}if(done==="unlinked")alert(cutUnlinked);},renderFutures);
   $$("#futureRebuyPanel input[data-money]").forEach(el=>moneyInputValidate(el));
-  onEdit("[data-fcut-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}return setFutureCutPrice(f,Number(el.dataset.fcutPrice),moneyInputNumber(v));},renderFutures);
+  onEdit("[data-fcut-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const i=Number(el.dataset.fcutPrice),done=setFutureCutPrice(f,i,moneyInputNumber(v));
+    if(done===false&&futureRebuyOf(f).cuts?.[i]?.month&&!futureCutPnlOk(futureRebuyOf(f).cuts[i]))alert(futureCutRecordWarning);return done;},renderFutures);
   const trKey=v=>String(v).split(":").map(Number);
   $$("[data-fbuy]").forEach(input=>input.onchange=()=>{const [i,t]=trKey(input.dataset.fbuy),fill=futureFillOf(f,i,t),rec=fill?.[0];let detach=false;
     if(!input.checked&&rec?.month){const qty=futureRebuyQty(rec.contracts),month=futureRebuyHeldMonth(f,rec.month,qty);
@@ -613,7 +620,9 @@ function renderFutureRebuy(f){
       alert(rec?.month&&!bad&&!futureRebuyHeldMonth(f,rec.month,futureRebuyQty(rec.contracts))?"체결 환율과 기록한 월물의 보유 계약을 확인하세요.":rec?.month?futureRejectMessage(f,rec.month):futurePositionAverageWarning);return false;}
   },renderFutures);
   if($("frLink"))$("frLink").onclick=()=>{const g=futureRebuyLinked(f),held=x=>x.positions.reduce((n,p)=>n+(Number(p.contracts)||0),0);
-    if(!g){const msg=futureRejectMessage(f,priceMonth(f,typeof priceData==="object"?priceData:null));alert(msg===futurePositionAverageWarning?`반영할 월물과 보유 계약을 확인하세요. ${msg}`:msg);return;}
+    // 체결 환율·목표가 없는 미연동 손절(외부 JSON)은 누적 정산손익을 계산할 수 없어 반영하지 않는다(linkFutureCut).
+    const noPrice=(futureRebuyOf(f).cuts||[]).some(c=>futureRebuyOpen(c)&&!Number.isFinite(Number(c.price)||Number(c.targetPrice)));
+    if(!g){const msg=futureRejectMessage(f,priceMonth(f,typeof priceData==="object"?priceData:null));alert(noPrice?futureCutRecordWarning:msg===futurePositionAverageWarning?`반영할 월물과 보유 계약을 확인하세요. ${msg}`:msg);return;}
     if(!confirm(`보유 ${held(f)}계약 → ${held(g)}계약, 누적 정산손익 ${money(Number(f.baselinePnl)||0)} → ${money(g.baselinePnl)}으로 고칩니다.\n계좌 기준으로 이미 직접 고쳤다면 취소하고 '직접 반영함'을 누르세요.`))return;
     f.positions=g.positions;f.baselinePnl=g.baselinePnl;f.rebuy=g.rebuy;save();renderFutures();};
   if($("frManual"))$("frManual").onclick=()=>{if(!confirm(`${unText}을 계좌 기준으로 직접 고친 것으로 표시하고 이 안내를 닫을까요?\n보유 월물·누적 정산손익은 바꾸지 않습니다.`))return;markFutureRebuyManual(f);save();renderFutures();};

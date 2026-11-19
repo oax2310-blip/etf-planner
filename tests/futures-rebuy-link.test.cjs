@@ -1026,3 +1026,24 @@ test('분할매수 체결가 수정은 편입 월물 계약이 음수면 보유 
     assert.equal(ctx.setFutureTrancheExec(f,0,0,'1460'),want,JSON.stringify(positions));assert.equal(JSON.stringify(f),before);
   }
 });
+
+test('손익을 계산할 수 없는 손절 기록은 같은 계약 수 입력·체결 환율 수정·미연동 반영에서 누적 정산손익을 NaN으로 만들지 않는다',()=>{
+  const noAvg=()=>({contracts:2,price:1400,targetPrice:1400,month:'202612'});
+  for(const text of ['2','02']){
+    const ctx=load(),f=futures();f.positions=[{month:'202701',contracts:3,settlementPrice:1460}];f.rebuy.cuts=[noAvg()];
+    assert.notEqual(ctx.setFutureCutCount(f,0,text),false,`같은 계약 수 ${text}`);
+    assert.equal(f.baselinePnl,50000);assert.deepEqual(plain(f.positions),[{month:'202701',contracts:3,settlementPrice:1460}]);
+  }
+  for(const cut of [{contracts:1,price:1400,targetPrice:1400,month:'202612'},{contracts:1,month:'202612',settlementPrice:1450}]){
+    const ctx=load(),f=futures();f.rebuy.cuts=[cut];const before=JSON.stringify(f);
+    assert.equal(ctx.setFutureCutPrice(f,0,'1410'),false,JSON.stringify(cut));assert.equal(JSON.stringify(f),before);assert.equal(f.baselinePnl,50000);
+  }
+  const {ctx,f}=cutRestoreCase(1);
+  assert.notEqual(ctx.setFutureCutPrice(f,0,'1410'),false,'정상 기록은 체결 환율을 고치고 손익을 맞춘다');
+  assert.equal(f.rebuy.cuts[0].price,1410);assert.equal(f.baselinePnl,50000+(1410-1450)*10000);
+  const c=load(),g=futures();g.rebuy.cuts=[{contracts:1}];const before=JSON.stringify(g);
+  assert.equal(c.linkFutureCut(g,g.rebuy.cuts[0]),false,'체결 환율·목표가 없는 미연동 손절');assert.equal(JSON.stringify(g),before);
+  assert.equal(c.futureRebuyLinked(g),null);assert.equal(JSON.stringify(g),before);
+  const h=futures();h.rebuy.cuts=[{contracts:1,price:1400,targetPrice:1400}];
+  const linked=c.futureRebuyLinked(h);assert.ok(linked,'정상 미연동 손절은 반영');assert.equal(linked.baselinePnl,50000+(1400-1450)*10000);
+});

@@ -569,3 +569,31 @@ test('신규 분할매수 체크는 단순평균가가 생략된 계약 0인 빈
   r.input('[data-tranche-month="0:0"]').value='202612';const input=r.input('[data-tranche-check="0:0"]');input.checked=true;input.onchange();
   assert.deepEqual(alerts,[]);assert.deepEqual(plain(r.saved().futures.positions),[{month:'202612',contracts:1,settlementPrice:1320}]);
 });
+
+const CUT_RECORD_WARN='손절 기록의 판 시점 단순평균가나 체결 환율이 비어 있거나 잘못돼 누적 정산손익을 맞출 수 없습니다. 보유 월물·누적 정산손익은 계좌와 맞게 직접 고치세요.';
+test('손익을 계산할 수 없는 손절 기록은 같은 계약 수·체결 환율 수정에서 누적 정산손익을 지키고 손절 기록 안내를 보인다',()=>{
+  let v=cutView([{month:'202701',contracts:3,settlementPrice:1460}],{contracts:2,price:1400,targetPrice:1400,month:'202612'});
+  const pnl=v.f.baselinePnl;v.r.type('[data-fcut-qty="0"]','02');v.r.change('[data-fcut-qty="0"]');
+  assert.deepEqual(v.alerts,[]);assert.equal(v.f.baselinePnl,pnl);if(v.r.stored.size)assert.equal(v.r.saved().futures.baselinePnl,pnl);
+  for(const cut of [{contracts:1,price:1400,targetPrice:1400,month:'202612'},{contracts:1,month:'202612',settlementPrice:1450}]){
+    v=cutView([{month:'202612',contracts:3,settlementPrice:1450}],cut);
+    v.r.type('[data-fcut-price="0"]','1410');v.r.change('[data-fcut-price="0"]');
+    assert.deepEqual(v.alerts,[CUT_RECORD_WARN],JSON.stringify(cut));assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
+  }
+});
+
+test('체결 환율·목표가 없는 미연동 손절은 보유 월물에 반영할 때 확인 창 없이 손절 기록 안내만 하고 저장하지 않는다',()=>{
+  const v=cutView([{month:'202612',contracts:4,settlementPrice:1450}],{contracts:1});
+  v.r.c.$('frLink').onclick();
+  assert.deepEqual(v.confirms,[]);assert.deepEqual(v.alerts,[CUT_RECORD_WARN]);assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
+});
+
+test('판 시점 단순평균가가 생략된 부분 체결 손절의 체결 증가·체크 완료는 손절 기록 안내를 보이고 저장하지 않는다',()=>{
+  const cut=()=>({contracts:1,price:1400,targetPrice:1400,month:'202612',partial:true,plannedQty:2});
+  let v=cutView([{month:'202612',contracts:4,settlementPrice:1450}],cut());
+  v.r.type('[data-fcut-qty="0"]','2');v.r.change('[data-fcut-qty="0"]');
+  assert.deepEqual(v.alerts,[CUT_RECORD_WARN]);assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
+  v=cutView([{month:'202612',contracts:4,settlementPrice:1450}],cut());
+  const input=v.r.input('[data-fcut="0"]');input.checked=true;input.onchange();
+  assert.deepEqual(v.alerts,[CUT_RECORD_WARN]);assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
+});
