@@ -751,3 +751,149 @@ test('재매수 표의 부분 체결 회차는 손절 표처럼 체크 −·남�
   assert.match(html,new RegExp(`<div class="purchase-row partial">[^]*data-fbuy="${x.i}:${x.t}" data-fbuy-partial="true" aria-checked="mixed"[^]*<small>남은 1</small>[^]*<div class="purchase-qty">2계약</div>[^]*data-fbuy-qty="${x.i}:${x.t}" value="1"[^]*<div class="status partial">부분 체결</div>`));
   assert.match(html,new RegExp(`data-fbuy-exec="${x.i}:${x.t}"`),'산 계약의 체결 환율은 그 자리에서 고친다');
 });
+
+// 연결된 재매수 기록의 기존 체결가가 비정상(null·빈 값·0·음수·NaN·undefined)이면 옛 원가를 알 수 없어 보유 평균가를 바꾸지 않는다.
+const badRebuyPrices=[null,'',0,-5,NaN,undefined];
+function badRebuyPriceCase(bad,{legacy=false,contracts=2}={}){
+  const f=fullPositionRebuyCase(1400,legacy),fill=legacy?f.rebuy.stages[0]:f.rebuy.stages[0].buys[0];
+  fill[legacy?'execPrice':'price']=bad;f.positions[0].contracts=contracts;f.rebuy.cuts[0].contracts=4; // 판 4계약: 재매수 2계약에서 늘릴 여유
+  return f;
+}
+
+test('재매수 체결 환율 정정은 연결된 기록의 기존 체결가가 비정상이면 거절하고 기록·보유·누적 정산손익을 보존한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true])for(const contracts of [2,5])for(const bad of badRebuyPrices){
+    const f=badRebuyPriceCase(bad,{legacy,contracts}),before=JSON.stringify(f),label=`${legacy?'옛 done':'buys'} 보유 ${contracts} 기존 ${String(bad)}`;
+    assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),false,label);
+    assert.equal(JSON.stringify(f),before,label);
+    assert.equal(f.positions[0].settlementPrice,1400,label);assert.equal(f.baselinePnl,50000,label);
+  }
+  const f=badRebuyPriceCase(1450,{contracts:5});
+  assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460'),false,'기존 체결가가 양수면 그대로 정정한다');
+  assert.equal(f.positions[0].settlementPrice,1404);
+});
+
+test('재매수 체결 환율 정정에서 월물 없는 미연동 기록은 기존 체결가가 비어 있어도 기록만 고친다',()=>{
+  const ctx=load();
+  for(const bad of [null,0]){
+    const f=badRebuyPriceCase(bad);delete f.rebuy.stages[0].buys[0].month;const positions=JSON.stringify(f.positions);
+    assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460'),false);
+    assert.equal(f.rebuy.stages[0].buys[0].price,1460);assert.equal(JSON.stringify(f.positions),positions);
+  }
+});
+
+test('재매수 일부 해제·수량 감소·수량 증가는 연결된 기록의 체결가가 비정상이면 거절하고 전체 기록을 보존한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true])for(const bad of badRebuyPrices){
+    const label=`${legacy?'옛 done':'buys'} 기존 ${String(bad)}`;
+    let f=badRebuyPriceCase(bad,{legacy,contracts:5}),before=JSON.stringify(f);
+    assert.equal(ctx.setFutureBuyChecked(f,0,0,false),false,`${label} 해제`);assert.equal(JSON.stringify(f),before,`${label} 해제`);
+    assert.equal(ctx.setFutureBuyCount(f,0,0,'1'),false,`${label} 감소`);assert.equal(JSON.stringify(f),before,`${label} 감소`);
+    assert.equal(ctx.setFutureBuyCount(f,0,0,'3'),false,`${label} 증가`);assert.equal(JSON.stringify(f),before,`${label} 증가`);
+  }
+  for(const legacy of [false,true]){
+    const f=badRebuyPriceCase(1450,{legacy,contracts:5}),label=legacy?'옛 done':'buys';
+    assert.notEqual(ctx.setFutureBuyCount(f,0,0,'3'),false,`${label}: 체결가가 양수면 같은 수량 증가를 반영한다`);
+    assert.equal(f.positions[0].contracts,6,label);
+    assert.notEqual(ctx.setFutureBuyCount(f,0,0,'1'),false,`${label}: 체결가가 양수면 수량 감소를 반영한다`);
+    assert.equal(f.positions[0].contracts,4,label);
+  }
+});
+
+test('재매수가 보유 전량이면 기존 체결가가 비정상이어도 체크 해제로 보유 행을 지울 수 있다',()=>{
+  const ctx=load();
+  for(const bad of [null,0]){
+    const f=badRebuyPriceCase(bad);
+    assert.notEqual(ctx.setFutureBuyChecked(f,0,0,false),false);
+    assert.equal(f.positions.length,0);
+  }
+});
+
+// 보유 단순평균가가 비정상(null·빈 값·0·음수·NaN·undefined)이면 정정·편입 기준을 알 수 없어 거절한다. 옛 숫자 문자열은 허용한다.
+const badAverages=[null,'',0,-5,NaN,undefined];
+
+test('재매수 체결 환율 정정은 보유 단순평균가가 비정상이면 거절하고 숫자 문자열 평균가는 허용한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true]){
+    for(const sp of badAverages){
+      const f=fullPositionRebuyCase(1400,legacy);f.positions[0].settlementPrice=sp;
+      const before=JSON.stringify(f),label=`${legacy?'옛 done':'buys'} 평균가 ${String(sp)}`;
+      assert.equal(ctx.setFutureBuyExec(f,0,0,'1460'),false,label);
+      assert.equal(JSON.stringify(f),before,label);
+    }
+    const f=fullPositionRebuyCase(1400,legacy);f.positions[0].settlementPrice='1400';
+    assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460'),false,'옛 숫자 문자열 평균가');
+    assert.equal(f.positions[0].settlementPrice,1410);
+  }
+});
+
+test('재매수 수량 증가는 계약이 남은 보유의 단순평균가가 비정상이면 거절한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true]){
+    for(const sp of badAverages){
+      const f=badRebuyPriceCase(1450,{legacy});f.positions[0].settlementPrice=sp;
+      const before=JSON.stringify(f),label=`${legacy?'옛 done':'buys'} 평균가 ${String(sp)}`;
+      assert.equal(ctx.setFutureBuyCount(f,0,0,'3'),false,label);
+      assert.equal(JSON.stringify(f),before,label);
+    }
+    const f=badRebuyPriceCase(1450,{legacy});
+    assert.notEqual(ctx.setFutureBuyCount(f,0,0,'3'),false,'평균가가 양수면 반영');
+    assert.equal(f.positions[0].contracts,3);assert.equal(f.positions[0].settlementPrice,(2*1400+1450)/3);
+  }
+});
+
+test('신규 재매수 체크·일괄 반영은 계약이 남은 보유의 단순평균가가 비정상이면 거절한다',()=>{
+  const ctx=load();
+  for(const sp of badAverages){
+    const label=`평균가 ${String(sp)}`;
+    let f=pendingFutureRebuy(sp);f.positions[0].contracts=2;let before=JSON.stringify(f);
+    assert.equal(ctx.setFutureBuyChecked(f,0,0,true),false,`${label} 체크`);
+    assert.equal(JSON.stringify(f),before,`${label} 체크`);
+    f=pendingFutureRebuy(sp);f.positions[0].contracts=2;f.rebuy.stages[0].buys=[{contracts:1,price:1320}];before=JSON.stringify(f);
+    assert.equal(ctx.futureRebuyLinked(f),null,`${label} 일괄 반영`);
+    assert.equal(JSON.stringify(f),before,`${label} 일괄 반영`);
+  }
+});
+
+test('신규 재매수는 계약 0인 빈 보유 행에 첫 체결을 넣고, 손절 되돌리기는 그대로 보유에 더한다',()=>{
+  const ctx=load();
+  for(const sp of [1,null,0]){
+    const f=pendingFutureRebuy(sp);f.positions[0].contracts=0;
+    assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true,`빈 행 평균가 ${String(sp)}`);
+    assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:1,settlementPrice:1320}]);
+    const g=pendingFutureRebuy(sp);g.positions[0].contracts=0;g.rebuy.stages[0].buys=[{contracts:1,price:1320}];
+    const linked=ctx.futureRebuyLinked(g);
+    assert.ok(linked,`빈 행 일괄 반영 ${String(sp)}`);
+    assert.deepEqual(JSON.parse(JSON.stringify(linked.positions)),[{month:'202612',contracts:1,settlementPrice:1320}]);
+  }
+  const f=futures(),orig=JSON.parse(JSON.stringify(f.positions));
+  assert.equal(ctx.setFutureCutChecked(f,0,true),true);
+  assert.notEqual(ctx.setFutureCutChecked(f,0,false),false,'손절 해제는 판 시점 평균가로 되돌린다');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),orig);
+});
+
+// 보유 계약이 음수인 월물에는 새 체결을 합치지 않는다(가중평균이 의미 없음). 한 단계 재매수는 판 4계약을 한 회차에 모은다.
+function negativeHoldingRebuy(contracts,sp){
+  const f=futures({contracts:20,sellPct:50,currentPrice:1310,
+    cuts:[{contracts:4,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}],
+    stages:[{name:'25선',price:1320}]});
+  f.positions[0]={month:'202612',contracts,settlementPrice:sp};
+  return f;
+}
+
+test('보유 계약이 음수인 월물에는 신규 재매수 체크·일괄 반영을 거절하고 원본 전체를 보존한다',()=>{
+  const ctx=load();
+  for(const contracts of [-1,-2])for(const sp of [0,null,-5,1400]){
+    const label=`${contracts}계약 평균가 ${String(sp)}`;
+    let f=negativeHoldingRebuy(contracts,sp),before=JSON.stringify(f);
+    assert.equal(ctx.futureRebuySummary(f).tranches[0].amount,4,`${label}: 한 회차 4계약`);
+    assert.equal(ctx.setFutureBuyChecked(f,0,0,true),false,`${label} 체크`);
+    assert.equal(JSON.stringify(f),before,`${label} 체크`);
+    f=negativeHoldingRebuy(contracts,sp);f.rebuy.stages[0].buys=[{contracts:2,price:1320}];before=JSON.stringify(f);
+    assert.equal(ctx.futureRebuyLinked(f),null,`${label} 일괄 반영`);
+    assert.equal(JSON.stringify(f),before,`${label} 일괄 반영`);
+  }
+  const f=negativeHoldingRebuy(0,1);
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true,'계약 0인 빈 행은 같은 4계약 체크를 반영한다');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:4,settlementPrice:1320}]);
+});

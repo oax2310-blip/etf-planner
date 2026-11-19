@@ -410,3 +410,58 @@ test('재매수 해제 확인 창은 월물교체 뒤 보유를 유지하는 기
   assert.equal(r.saved().futures.baselinePnl,pnl);
   assert.equal(r.saved().futures.rebuy.stages[0].buys,undefined);
 });
+
+test('신규 분할매수 체크는 계약이 남은 보유의 단순평균가가 비정상이면 경고하고, 계약 0인 빈 행에는 첫 체결을 넣는다',()=>{
+  for(const [contracts,sp] of [[2,null],[2,''],[2,0],[2,-5],[0,1],[0,null],[0,0]]){
+    const f=future(),label=`${contracts}계약 평균 ${String(sp)}`;
+    f.positions=[{month:'202612',contracts,settlementPrice:sp}];f.levels[0].tranches[0].price=1320;
+    const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+    const before=JSON.stringify(f),selector='[data-tranche-check="0:0"]';
+    r.input('[data-tranche-month="0:0"]').value='202612';
+    const input=r.input(selector);input.checked=true;input.onchange();
+    if(contracts){
+      assert.equal(r.input(selector).checked,false,label);
+      assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+      assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
+    }else{
+      assert.deepEqual(alerts,[],label);
+      assert.deepEqual(plain(r.saved().futures.positions),[{month:'202612',contracts:1,settlementPrice:1320}],label);
+      assert.equal(r.saved().futures.levels[0].tranches[0].completed,true,label);
+    }
+  }
+});
+
+test('산 분할매수 체크 해제는 체결가가 비정상이거나 남은 평균가를 계산할 수 없으면 확인 창 없이 경고만 하고, 보유 전량은 확인 후 지운다',()=>{
+  for(const [exec,sp] of [[0,1400],[-5,1400],[NaN,1400],[2500,1000]]){
+    const f=future(),t=f.levels[0].tranches[1],label=`체결가 ${exec} 평균가 ${sp}`;
+    f.positions=[{month:'202612',contracts:2,settlementPrice:sp}];t.executionPrice=exec;
+    const r=setup(f),alerts=[];let confirms=0;
+    r.c.confirm=()=>{confirms++;return true;};r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+    const before=JSON.stringify(f),input=r.input('[data-tranche-check="0:1"]');
+    input.checked=false;input.onchange();
+    assert.equal(confirms,0,label);
+    assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+    assert.equal(input.checked,true,label);assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
+  }
+  const f=future(),t=f.levels[0].tranches[1];
+  f.positions=[{month:'202612',contracts:1,settlementPrice:1400}];t.executionPrice=0;
+  const r=setup(f),alerts=[];let confirms=0;
+  r.c.confirm=()=>{confirms++;return true;};r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+  const input=r.input('[data-tranche-check="0:1"]');input.checked=false;input.onchange();
+  assert.equal(confirms,1);assert.deepEqual(alerts,[]);
+  assert.deepEqual(r.saved().futures.positions,[]);assert.equal(r.saved().futures.levels[0].tranches[1].completed,false);
+});
+
+test('신규 분할매수 체크는 보유 계약이 음수인 월물이면 경고하고 체크와 원본 전체를 유지한다',()=>{
+  for(const sp of [1400,0,null]){
+    const f=future(),label=`평균가 ${String(sp)}`;
+    f.positions=[{month:'202612',contracts:-2,settlementPrice:sp}];f.levels[0].tranches[0].price=1320;
+    const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+    const before=JSON.stringify(f),selector='[data-tranche-check="0:0"]';
+    r.input('[data-tranche-month="0:0"]').value='202612';
+    const input=r.input(selector);input.checked=true;input.onchange();
+    assert.equal(r.input(selector).checked,false,label);
+    assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+    assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
+  }
+});
