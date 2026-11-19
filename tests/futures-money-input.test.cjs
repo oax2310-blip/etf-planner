@@ -451,3 +451,17 @@ test('산 분할매수 체크 해제는 체결가가 비정상이거나 남은 �
   assert.equal(confirms,1);assert.deepEqual(alerts,[]);
   assert.deepEqual(r.saved().futures.positions,[]);assert.equal(r.saved().futures.levels[0].tranches[1].completed,false);
 });
+
+test('신규 분할매수 체크는 보유 계약이 음수인 월물이면 경고하고 체크와 원본 전체를 유지한다',()=>{
+  for(const sp of [1400,0,null]){
+    const f=future(),label=`평균가 ${String(sp)}`;
+    f.positions=[{month:'202612',contracts:-2,settlementPrice:sp}];f.levels[0].tranches[0].price=1320;
+    const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+    const before=JSON.stringify(f),selector='[data-tranche-check="0:0"]';
+    r.input('[data-tranche-month="0:0"]').value='202612';
+    const input=r.input(selector);input.checked=true;input.onchange();
+    assert.equal(r.input(selector).checked,false,label);
+    assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.'],label);
+    assert.equal(r.stored.size,0,label);assert.equal(JSON.stringify(f),before,label);
+  }
+});

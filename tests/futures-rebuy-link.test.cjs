@@ -871,3 +871,29 @@ test('신규 재매수는 계약 0인 빈 보유 행에 첫 체결을 넣고, �
   assert.notEqual(ctx.setFutureCutChecked(f,0,false),false,'손절 해제는 판 시점 평균가로 되돌린다');
   assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),orig);
 });
+
+// 보유 계약이 음수인 월물에는 새 체결을 합치지 않는다(가중평균이 의미 없음). 한 단계 재매수는 판 4계약을 한 회차에 모은다.
+function negativeHoldingRebuy(contracts,sp){
+  const f=futures({contracts:20,sellPct:50,currentPrice:1310,
+    cuts:[{contracts:4,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}],
+    stages:[{name:'25선',price:1320}]});
+  f.positions[0]={month:'202612',contracts,settlementPrice:sp};
+  return f;
+}
+
+test('보유 계약이 음수인 월물에는 신규 재매수 체크·일괄 반영을 거절하고 원본 전체를 보존한다',()=>{
+  const ctx=load();
+  for(const contracts of [-1,-2])for(const sp of [0,null,-5,1400]){
+    const label=`${contracts}계약 평균가 ${String(sp)}`;
+    let f=negativeHoldingRebuy(contracts,sp),before=JSON.stringify(f);
+    assert.equal(ctx.futureRebuySummary(f).tranches[0].amount,4,`${label}: 한 회차 4계약`);
+    assert.equal(ctx.setFutureBuyChecked(f,0,0,true),false,`${label} 체크`);
+    assert.equal(JSON.stringify(f),before,`${label} 체크`);
+    f=negativeHoldingRebuy(contracts,sp);f.rebuy.stages[0].buys=[{contracts:2,price:1320}];before=JSON.stringify(f);
+    assert.equal(ctx.futureRebuyLinked(f),null,`${label} 일괄 반영`);
+    assert.equal(JSON.stringify(f),before,`${label} 일괄 반영`);
+  }
+  const f=negativeHoldingRebuy(0,1);
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,true),true,'계약 0인 빈 행은 같은 4계약 체크를 반영한다');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.positions)),[{month:'202612',contracts:4,settlementPrice:1320}]);
+});

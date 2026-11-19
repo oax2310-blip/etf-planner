@@ -96,10 +96,12 @@ function futurePositionAverageAfterAdd(pos,qty,price){
   const c=Number(pos.contracts)||0;
   return (Number(pos.settlementPrice)*c+price*qty)/(c+qty);
 }
-// 새 체결 편입·수량 증가 전 검증할 평균가(읽기 전용). 체결가나, 계약이 남은 보유의 단순평균가가 양수·유한이 아니면 NaN.
-// 계약 0인 빈 행은 평균가를 쓰지 않으므로 그대로 계산한다. 손절 되돌리기(addToPosition)는 이 검증을 쓰지 않는다.
+// 새 체결 편입·수량 증가 전 검증할 평균가(읽기 전용). 체결가나, 계약이 남은 보유의 단순평균가가 양수·유한이 아니거나,
+// 보유 계약이 음수면 NaN(음수 계약과 합친 가중평균은 의미가 없다). 계약 0인 빈 행은 평균가를 쓰지 않으므로 그대로 계산한다.
+// 손절 되돌리기(addToPosition)는 이 검증을 쓰지 않는다.
 function futurePositionAverageAfterBuy(pos,qty,price){
-  if(!validFuturePositionAverage(price)||Number(pos?.contracts)>0&&!validFuturePositionAverage(Number(pos.settlementPrice)))return NaN;
+  const contracts=Number(pos?.contracts);
+  if(!validFuturePositionAverage(price)||contracts<0||contracts>0&&!validFuturePositionAverage(Number(pos.settlementPrice)))return NaN;
   return futurePositionAverageAfterAdd(pos,qty,price);
 }
 // 같은 월물은 계약 수 가중평균으로 합침; settlementPrice는 화면 '단순평균가'. 선형 손익이라 따로 둘 때와 기대손익이 같다.
