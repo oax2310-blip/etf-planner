@@ -183,6 +183,43 @@ test('재매수가 보유 전량이면 새 환율로 바꾼 뒤 체크를 풀어
   assert.equal(ctx.futureFillOf(f,0,0),null);
 });
 
+function fullPositionRebuyCase(average,legacy=false){
+  const stage=legacy?{name:'25선',price:1450,done:true,contracts:2,execPrice:1450,month:'202612'}
+    :{name:'25선',price:1450,buys:[{contracts:2,price:1450,month:'202612'}]};
+  const f=futures({contracts:4,cuts:[{contracts:2,price:1500,targetPrice:1500}],stages:[stage]});
+  f.positions=[{month:'202612',contracts:2,settlementPrice:average}];
+  return f;
+}
+
+test('보유 전량 재매수 체결 환율 정정은 새 buys와 옛 done/execPrice 형식 모두 현재 평균가에 차액만 반영한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true]){
+    const f=fullPositionRebuyCase(1400,legacy);
+    const savedPrice=()=>legacy?f.rebuy.stages[0].execPrice:f.rebuy.stages[0].buys[0].price;
+    assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460'),false);
+    assert.equal(savedPrice(),1460);
+    assert.equal(f.positions[0].contracts,2);
+    assert.equal(f.positions[0].settlementPrice,1410);
+    assert.equal(f.baselinePnl,50000);
+    assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1440'),false);
+    assert.equal(savedPrice(),1440);
+    assert.equal(f.positions[0].contracts,2);
+    assert.equal(f.positions[0].settlementPrice,1390);
+    assert.equal(f.baselinePnl,50000);
+  }
+});
+
+test('보유 전량 재매수 체결 환율 정정 뒤 최종 평균가가 0 이하거나 비유한이면 전체 기록을 보존한다',()=>{
+  const ctx=load();
+  for(const legacy of [false,true]){
+    for(const [average,price] of [[1400,'50'],[1400,'40'],[Number.MAX_VALUE,'1460']]){
+      const f=fullPositionRebuyCase(average,legacy),before=JSON.stringify(f);
+      assert.equal(ctx.setFutureBuyExec(f,0,0,price),false);
+      assert.equal(JSON.stringify(f),before);
+    }
+  }
+});
+
 test('옛 returns 체결 환율의 0·빈 값·잘못된 값 거절은 옛 형식을 보존한다',()=>{
   const ctx=load(),f=futures({cuts:[{contracts:4,price:1400,targetPrice:1400}],returns:[{done:true,contracts:3,execPrice:1325}]}),before=JSON.stringify(f);
   for(const text of ['0','','abc']){
