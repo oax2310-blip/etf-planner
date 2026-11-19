@@ -917,15 +917,21 @@ test('저축 스텝 바 높이: 감소·0 이하·동일 자산에서도 막대 
     const ages=h.node('savingsView').querySelectorAll('.savings-step-age').map(x=>Number(x.textContent.match(/^(\d+)세/)[1]));
     return ages.map(a=>rows.find(r=>r.age===a).end);
   };
-  for(const [actualTotal,spending] of [[100000000,2000000],[0,1000000]]){
+  for(const [ym,actualTotal,spending] of [['2025-12',100000000,2000000],['2025-12',0,1000000],['2026-10',-12000000,1000000]]){
     const data=fixture();
-    Object.assign(data.savings,{startYear:2025,startAge:30,actual:[{ym:'2025-12',total:actualTotal}]});
+    Object.assign(data.savings,{startYear:2025,startAge:30,actual:[{ym,total:actualTotal}]});
     Object.assign(data.savings.scenarios[0],{salary:0,giving:0,spending,spendingYear:2026,growth:0,returnRate:0,endAge:60,stages:[]});
     const h=setup(data),hs=heights(h),vs=ends(h,0);
+    const labels=h.node('savingsView').querySelectorAll('.savings-step-val').map(x=>x.textContent);
     assert.equal(hs.length,6);
     assert.ok(vs[0]>vs[vs.length-1],'감소 시나리오 확인');
+    for(let i=0;i<vs.length;i++)if(vs[i]<0)assert.ok(labels[i].startsWith('\u2212'),`음수 금액은 U+2212 부호로 시작한다: ${labels[i]}`);
     for(let i=1;i<hs.length;i++)assert.ok(hs[i]<=hs[i-1],`감소 구간 막대 높이는 커지지 않는다: ${vs.join(',')} → ${hs.join(',')}`);
     assert.ok(hs[0]>hs[hs.length-1],'시작보다 감소한 끝 막대가 더 낮다');
+    if(actualTotal===-12000000){
+      assert.ok(labels.some(t=>/^−[\d,]+만$/.test(t)),`1만 이상 만 단위 음수 표기 확인: ${labels.join(',')}`);
+      assert.ok(labels.some(t=>/^−\d+\.\d+억$/.test(t)),`1억 이상 소수 음수 표기 확인: ${labels.join(',')}`);
+    }
   }
   const flat=fixture();
   Object.assign(flat.savings,{startYear:2025,startAge:30,actual:[{ym:'2025-12',total:100000000}]});
@@ -943,6 +949,8 @@ test('저축 남은 금액 단위와 CSS 계약: 남은 금액 끝의 원을 통
   const css=fs.readFileSync(path.join(root,'css/assets.css'),'utf8');
   assert.match(css,/--savings-mint:#0f766e;/,'라이트 테마 민트는 AA 대비 이상 색을 쓴다');
   assert.match(css,/\.savings-step-bars\{[^}]*min-height:120px/,'고정 height 대신 min-height로 막대+라벨 넘침을 막는다');
+  assert.match(css,/\.savings-summary-head select\{[^}]*field-sizing:content/,'시나리오 선택 상자는 선택 항목 너비에 맞춰 ⌄ 간격을 좁힌다');
+  assert.match(css,/@supports\(grid-template-columns:subgrid\)\{[^}]*\.savings-arrivals\{[^}]*\}\.savings-arrivals li\{[^}]*\}\.savings-arrival\{grid-template-columns:subgrid/,'시나리오 행 이름·날짜 시작 위치를 subgrid로 맞춘다');
   const mobile=css.slice(css.indexOf('@media(max-width:700px){.assets-page:has(#savingsView'));
   assert.match(mobile,/\.savings-arrival\{[^}]*grid-template-columns:auto minmax\(0,1fr\) auto/);
   assert.match(mobile,/\.savings-arrival-name\{grid-column:2\/-1\}/);
