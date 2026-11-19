@@ -34,6 +34,11 @@ function bindFutureTable(kind,box,key){
 const futureRebuyOpen=x=>!!x&&typeof x==="object"&&!x.month&&!x.manual&&futureRebuyQty(x.contracts)>0;
 const futureCutPnl=rec=>Math.round(((Number(rec.price)||Number(rec.targetPrice))-Number(rec.settlementPrice))*futureRebuyQty(rec.contracts)*contractSize);
 const addFuturePnl=(f,v)=>{f.baselinePnl=(Number(f.baselinePnl)||0)+v;};
+// 손절 기록의 손익을 다시 계산할 수 있는지(읽기 전용): 실현 손익(futureCutPnl)과 월물별 판 시점 단순평균가가 유한해야 한다.
+// 판 시점 평균가·체결 환율이 생략·NaN인 기록(외부 JSON)을 되돌리거나 계약 수를 바꾸면 누적 정산손익이 NaN이 되므로 바꾸기 전에 거절한다(detach 포함).
+// 범위(양수·상한)는 보유에 합칠 월물만 futureCutBackOk가 본다(detach로 보유에 없는 월물은 손익만 되돌린다).
+const futureCutPnlOk=rec=>Number.isFinite(futureCutPnl(rec))&&futureCutLegs(rec).every(l=>Number.isFinite(l.settlementPrice));
+const futureCutRecordWarning="손절 기록의 판 시점 단순평균가나 체결 환율이 비어 있거나 잘못돼 누적 정산손익을 맞출 수 없습니다. 보유 월물·누적 정산손익은 계좌와 맞게 직접 고치세요.";
 // 손절 기록이 판 월물별 계약(사본): legs가 있으면 legs, 없으면 month·settlementPrice 하나.
 const futureCutLegs=rec=>Array.isArray(rec?.legs)&&rec.legs.length?rec.legs.map(l=>({month:String(l.month),contracts:futureRebuyQty(l.contracts),settlementPrice:Number(l.settlementPrice)}))
   :rec?.month?[{month:String(rec.month),contracts:futureRebuyQty(rec.contracts),settlementPrice:Number(rec.settlementPrice)}]:[];
@@ -66,7 +71,7 @@ function sellFromPosition(f,month,qty){
 }
 function linkFutureCut(f,rec){
   const qty=futureRebuyQty(rec.contracts),month=qty?futureHeldMonth(f,qty):"",avg=Number(f.positions.find(p=>String(p.month)===month)?.settlementPrice);
-  if(!month||!(avg>0))return false;
+  if(!month||!validFuturePositionAverage(avg))return false; // 상한 초과·비유한 평균가는 업로드·복원이 거절되는 기록을 만든다
   rec.month=month;rec.settlementPrice=avg;sellFromPosition(f,month,qty);addFuturePnl(f,futureCutPnl(rec));
   return true;
 }
@@ -94,7 +99,7 @@ function futureFillOf(f,i,t){const x=futureRebuyStages(futureRebuyOf(f))[i];retu
 function setFutureCutChecked(f,i,on,detach=false){
   const cuts=futureRebuyOf(f).cuts,old=Array.isArray(cuts)?cuts[i]:null;
   if(on&&old){const c=futureRebuySummary(f).cuts[i];return !c||c.done||setFutureCutCount(f,i,String(c.plannedQty))===false?false:old.month?true:"unlinked";}
-  if(!on&&old?.month&&!futureCutBackOk(f,futureCutLegs(old),detach))return false; // 되돌릴 수 없으면 기록·보유·정산손익 모두 그대로
+  if(!on&&old?.month&&(!futureCutPnlOk(old)||!futureCutBackOk(f,futureCutLegs(old),detach)))return false; // 되돌릴 수 없으면 기록·보유·정산손익 모두 그대로
   if(setFutureCutDone(f,i,on)===false)return false;
   if(on)return linkFutureCut(f,f.rebuy.cuts[i])||"unlinked";
   if(old?.month)unlinkFutureCut(f,old,detach);
@@ -111,7 +116,7 @@ function setFutureCutCount(f,i,text,detach=false){
   if(!rec.month)return setFutureCutQty(f,i,t);
   const legs=futureCutLegs(rec),back=qty<old?futureCutBack(rec,old-qty):[];
   const sell=qty>old?futureHeldMonth(f,qty-old,rec.month):"",avg=Number(f.positions.find(p=>String(p.month)===sell)?.settlementPrice),before=futureCutPnl(rec);
-  if(qty>old&&!(avg>0)||!futureCutBackOk(f,back,detach)||setFutureCutQty(f,i,t)===false)return false;
+  if(qty!==old&&!futureCutPnlOk(rec)||qty>old&&!validFuturePositionAverage(avg)||!futureCutBackOk(f,back,detach)||setFutureCutQty(f,i,t)===false)return false;
   if(qty>old){
     sellFromPosition(f,sell,qty-old);const leg=legs.find(l=>l.month===sell);
     if(leg){leg.settlementPrice=(leg.settlementPrice*leg.contracts+avg*(qty-old))/(leg.contracts+qty-old);leg.contracts+=qty-old;}else legs.push({month:sell,contracts:qty-old,settlementPrice:avg});
@@ -568,6 +573,7 @@ function renderFutureRebuy(f){
   // 되돌릴 보유가 잘못돼 합칠 수 없으면 확인 창 전에 거절한다(보유에 없는 월물은 확인 뒤 함수가 다시 검사).
   const cutBackBlocked=(i,qty)=>{
     const rec=futureRebuyOf(f).cuts?.[i],back=futureRebuyQty(rec?.contracts)-qty;if(!rec?.month||back<=0)return false;
+    if(!futureCutPnlOk(rec)){alert(futureCutRecordWarning);return true;}
     const legs=futureCutBack(rec,back);if(futureCutBackOk(f,legs,true))return false;
     const bad=legs.find(l=>futureHoldingBad(f.positions.find(p=>String(p.month)===l.month)));
     alert(bad?futureRejectMessage(f,bad.month):futurePositionAverageWarning);return true;
@@ -592,7 +598,8 @@ function renderFutureRebuy(f){
       if(month&&!futurePositionAfterRemoval(f.positions.find(p=>String(p.month)===month),qty,Number(rec[fill[1]]))){alert(futureRejectMessage(f,month,Number(rec[fill[1]])));renderFutures();return;}
       if(month?!confirm(`${month} 보유분에서 재매수 ${qty}계약(체결 환율 ${fmtPrice(rec[fill[1]])}원)을 빼고 단순평균가를 되돌릴까요?\n그 사이 이 월물의 단순평균가를 직접 고쳤다면, 되돌린 뒤 값을 확인하세요.`):!(detach=confirm(`기록한 ${rec.month} 월물이 없거나 보유 계약이 부족합니다.\n보유를 그대로 두고 재매수 체크만 해제할까요?`))){renderFutures();return;}}
     const done=setFutureBuyChecked(f,i,t,input.checked,detach);
-    if(done===false){const msg=input.checked?futureRejectMessage(f,priceMonth(f,typeof priceData==="object"?priceData:null)):futureRejectMessage(f,rec?.month,Number(rec?.[fill?.[1]]));
+    // 부분 체결 회차(기록 월물 있음)는 체크도 기록 월물·기록 체결가로 반영하므로 그 기준으로 안내한다(setFutureBuyChecked → setFutureBuyCount).
+    if(done===false){const msg=input.checked&&!rec?.month?futureRejectMessage(f,priceMonth(f,typeof priceData==="object"?priceData:null)):futureRejectMessage(f,rec?.month,Number(rec?.[fill?.[1]]));
       alert(input.checked&&msg===futurePositionAverageWarning?`판 계약 수와 배분된 재매수 수량을 확인하세요. ${msg}`:msg);}
     else{save();if(done==="unlinked")alert("보유 월물이 없어 재매수 기록만 했습니다. 보유 월물을 입력한 뒤 '보유 월물에 반영'을 누르세요.");}
     renderFutures();});
@@ -602,8 +609,8 @@ function renderFutureRebuy(f){
   onEdit("[data-fbuy-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const [i,t]=trKey(el.dataset.fbuyExec),n=moneyInputNumber(v);
     let done=setFutureBuyExec(f,i,t,n);
     if(done==="old-price"){if(!confirm(futureOldPriceConfirm))return false;done=setFutureBuyExec(f,i,t,n,true);}
-    if(done===false){const rec=futureFillOf(f,i,t)?.[0];
-      alert(rec?.month&&!futureRebuyHeldMonth(f,rec.month,futureRebuyQty(rec.contracts))?"체결 환율과 기록한 월물의 보유 계약을 확인하세요.":rec?.month?futureRejectMessage(f,rec.month):futurePositionAverageWarning);return false;}
+    if(done===false){const rec=futureFillOf(f,i,t)?.[0],bad=futureHoldingBad(f.positions.find(p=>String(p.month)===String(rec?.month)));
+      alert(rec?.month&&!bad&&!futureRebuyHeldMonth(f,rec.month,futureRebuyQty(rec.contracts))?"체결 환율과 기록한 월물의 보유 계약을 확인하세요.":rec?.month?futureRejectMessage(f,rec.month):futurePositionAverageWarning);return false;}
   },renderFutures);
   if($("frLink"))$("frLink").onclick=()=>{const g=futureRebuyLinked(f),held=x=>x.positions.reduce((n,p)=>n+(Number(p.contracts)||0),0);
     if(!g){const msg=futureRejectMessage(f,priceMonth(f,typeof priceData==="object"?priceData:null));alert(msg===futurePositionAverageWarning?`반영할 월물과 보유 계약을 확인하세요. ${msg}`:msg);return;}

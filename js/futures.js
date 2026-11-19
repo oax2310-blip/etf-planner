@@ -93,13 +93,13 @@ function bindFuturePositions(){
   if($("dismissFuturePositionUndo"))$("dismissFuturePositionUndo").onclick=()=>{futurePositionUndo=null;renderFutures();};
 }
 function futurePositionAverageAfterAdd(pos,qty,price){
-  if(!pos)return price;
-  const c=Number(pos.contracts)||0;
+  const c=Number(pos?.contracts)||0;
+  if(!c)return price; // 계약 0인 빈 행(평균가 생략·null 포함)은 기존 평균가를 곱하지 않고 새 체결가가 평균가가 된다
   return (Number(pos.settlementPrice)*c+price*qty)/(c+qty);
 }
 // 새 체결 편입·수량 증가 전 검증할 평균가(읽기 전용). 체결가나, 계약이 남은 보유의 단순평균가가 양수·유한이 아니거나,
-// 보유 계약이 음수면 NaN(음수 계약과 합친 가중평균은 의미가 없다). 계약 0인 빈 행은 평균가를 쓰지 않으므로 그대로 계산한다.
-// 손절 되돌리기(addToPosition)는 이 검증을 쓰지 않는다.
+// 보유 계약이 음수면 NaN(음수 계약과 합친 가중평균은 의미가 없다). 계약 0인 빈 행은 평균가를 쓰지 않고 price가 평균가다.
+// 손절 되돌리기도 되돌릴 월물마다 판 시점 단순평균가를 price로 이 검증을 쓴다(futures-rebuy.js futureCutBackOk).
 function futurePositionAverageAfterBuy(pos,qty,price){
   const contracts=Number(pos?.contracts);
   if(!validFuturePositionAverage(price)||contracts<0||contracts>0&&!validFuturePositionAverage(Number(pos.settlementPrice)))return NaN;
@@ -118,7 +118,7 @@ const futurePositionAverageWarning = "보유 단순평균가와 체결 환율을
 // 거절 원인 안내(읽기 전용). 보유가 원인(행이 있고 계약이 음수이거나, 계약이 남았는데 단순평균가가 범위 밖)이면 보유를 고치게 하고,
 // 기록된 체결가(price를 줄 때)가 원인이면 체결가 칸을 먼저 고치게 하며, 그 밖의 계산 거절은 기존 경고를 쓴다. 보유 → 체결가 순서(체결가 기록만 고치기는 보유가 정상일 때만 가능).
 function futureHoldingBad(pos){const c=Number(pos?.contracts);return !!pos&&(c<0||c>0&&!validFuturePositionAverage(Number(pos.settlementPrice)));}
-const futureExecPriceWarning="기록된 체결가가 비어 있거나 잘못돼 보유에서 뺄 수 없습니다. 먼저 체결가 칸을 고친 뒤 다시 하세요.";
+const futureExecPriceWarning="기록된 체결가가 비어 있거나 잘못돼 보유에 반영할 수 없습니다. 먼저 체결가 칸을 고친 뒤 다시 하세요.";
 const futureOldPriceConfirm="기록된 체결가가 비어 있거나 잘못돼 보유 평균가를 맞출 수 없습니다. 보유는 그대로 두고 체결가 기록만 고칠까요?\n보유 단순평균가는 보유·계산 기준에서 계좌와 맞는지 확인하세요.";
 function futureRejectMessage(f,month,price=null){
   if(futureHoldingBad(f.positions.find(p=>String(p.month)===String(month))))return `${month} 보유의 계약 수·단순평균가가 비어 있거나 잘못됐습니다. 보유·계산 기준에서 계좌와 맞게 고친 뒤 다시 하세요.`;
@@ -153,14 +153,14 @@ function futurePositionAverageAfterExecChange(pos,qty,oldPrice,price){
 }
 // 산 분할매수 회차의 체결가 수정: 편입한 월물에서 옛 체결가 1계약을 새 체결가로 바꿔 단순평균가를 맞춘다.
 // 계획가(price)·편입 월물·알림은 그대로 두고 executionPrice만 고친다. 월물 밖 옛 매수는 기록만 고친다(손익은 futuresSummary가 체결가로 계산).
-// false = 잘못된 값·산 회차 아님·단순평균가 계산 불가, "no-month" = 편입 월물이 보유에 없음(월물교체 뒤는 보유를 직접 수정). 거절하면 기록을 유지한다.
+// false = 잘못된 값·산 회차 아님·단순평균가 계산 불가·편입 월물 보유 비정상(계약 음수 포함), "no-month" = 편입 월물이 보유에 없음(계약 0 포함)(월물교체 뒤는 보유를 직접 수정). 거절하면 기록을 유지한다.
 // "old-price" = 기록된 체결가가 비어 있거나 잘못돼 평균가를 맞출 수 없음(보유는 정상). recordOnly로 다시 부르면 보유는 두고 체결가 기록만 고친다.
 function setFutureTrancheExec(f, li, ti, text, recordOnly=false){
   const t=f.levels?.[li]?.tranches?.[ti], raw=String(text??"").trim(), n=Number(raw);
   if(!t?.completed||!raw||!validFuturePositionAverage(n)) return false;
   if(t.mergedMonth){
     const pos=f.positions.find(p=>String(p.month)===t.mergedMonth), c=Number(pos?.contracts)||0;
-    if(c<1) return "no-month";
+    if(c<1) return futureHoldingBad(pos)?false:"no-month"; // 행은 있는데 계약이 음수면 보유 비정상(futureRejectMessage)으로 거절
     const old=Number(t.executionPrice??t.price);
     if(!validFuturePositionAverage(old)&&!futureHoldingBad(pos)){if(!recordOnly)return "old-price";t.executionPrice=n;return;}
     const average=futurePositionAverageAfterExecChange(pos,1,old,n);

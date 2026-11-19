@@ -9,6 +9,7 @@ const code=['ma-ladder.js','prices.js','rebuy.js','futures.js','futures-plan.js'
 const load=()=>{const ctx=vm.createContext({...require('./helpers/money-input.cjs'),contractSize:10000});vm.runInContext(code,ctx);return ctx;};
 const futures=(extra={})=>({targetPrice:1480,baselinePnl:50000,positions:[{month:'202612',contracts:4,settlementPrice:1450}],levels:[],rebuy:{lowPrice:1400,floorPrice:1300,contracts:4,steps:2,...extra}});
 const held=f=>f.positions.reduce((n,p)=>n+p.contracts,0);
+const plain=x=>JSON.parse(JSON.stringify(x));
 
 function futureTableView(f){
   const ctx=load(),els={};
@@ -972,4 +973,56 @@ test('체결 환율 기록만 고치기는 보유가 잘못됐거나 기존 체�
   assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460',true),false);assert.equal(f.positions[0].settlementPrice,1404,'기존 체결가가 정상이면 recordOnly여도 평균가를 맞춘다');
   f=badRebuyPriceCase(0,{contracts:5});before=JSON.stringify(f);
   assert.equal(ctx.setFutureBuyExec(f,0,0,String(Number.MAX_SAFE_INTEGER+1),true),false,'recordOnly도 새 값 상한을 검사한다');assert.equal(JSON.stringify(f),before);
+});
+
+test('계약 0인 빈 행은 단순평균가가 생략돼도 새 체결가를 평균가로 쓰고, 음수·비정상 평균가 보유는 계속 거절한다',()=>{
+  const ctx=load();
+  for(const pos of [{month:'202612',contracts:0},{month:'202612',contracts:0,settlementPrice:NaN},{month:'202612',contracts:0,settlementPrice:null}])
+    assert.equal(ctx.futurePositionAverageAfterBuy(pos,1,1450),1450,JSON.stringify(pos));
+  assert.ok(Number.isNaN(ctx.futurePositionAverageAfterBuy({month:'202612',contracts:-1,settlementPrice:1400},1,1450)),'음수 계약');
+  assert.ok(Number.isNaN(ctx.futurePositionAverageAfterBuy({month:'202612',contracts:2},1,1450)),'계약이 남았는데 평균가 생략');
+  const f={positions:[{month:'202612',contracts:0}]};ctx.addToPosition(f,'202612',2,1320);
+  assert.deepEqual(plain(f.positions),[{month:'202612',contracts:2,settlementPrice:1320}],'편입');
+  let c=cutRestoreCase(1);c.f.positions=[{month:'202612',contracts:0}];
+  assert.notEqual(c.ctx.setFutureCutChecked(c.f,0,false),false,'손절 해제');assert.deepEqual(plain(c.f.positions),[{month:'202612',contracts:1,settlementPrice:1450}]);
+  assert.equal(c.f.baselinePnl,50000,'손절 해제 뒤 정산손익 복원');
+  c=cutRestoreCase(2);c.f.positions=[{month:'202612',contracts:0}];
+  assert.notEqual(c.ctx.setFutureCutCount(c.f,0,'1'),false,'손절 감소');assert.deepEqual(plain(c.f.positions),[{month:'202612',contracts:1,settlementPrice:1450}]);
+});
+
+test('판 시점 단순평균가가 생략·NaN인 손절 기록은 detach라도 되돌리거나 계약 수를 바꾸지 않아 누적 정산손익이 NaN이 되지 않는다',()=>{
+  for(const sp of [undefined,NaN]){
+    for(const [qty,run] of [[1,(ctx,f)=>ctx.setFutureCutChecked(f,0,false,true)],[2,(ctx,f)=>ctx.setFutureCutCount(f,0,'1',true)],[2,(ctx,f)=>ctx.setFutureCutCount(f,0,'3')],[1,(ctx,f)=>ctx.setFutureCutChecked(f,0,false)]]){
+      const ctx=load(),f=futures();f.positions=[{month:'202701',contracts:3,settlementPrice:1460}];
+      f.rebuy.cuts=[{contracts:qty,price:1400,targetPrice:1400,month:'202612',...(sp===undefined?{}:{settlementPrice:sp})}];
+      if(run.toString().includes("'3'"))f.positions.push({month:'202612',contracts:3,settlementPrice:1450});
+      const before=JSON.stringify(f),label=`평균가 ${String(sp)} ${run.toString()}`;
+      assert.equal(run(ctx,f),false,label);assert.equal(JSON.stringify(f),before,label);assert.equal(f.baselinePnl,50000,label);
+    }
+  }
+  const ctx=load(),f=futures();f.positions=[{month:'202701',contracts:3,settlementPrice:1460}];
+  f.rebuy.cuts=[{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450,legs:[{month:'202611',contracts:1,settlementPrice:1450},{month:'202612',contracts:1}]}];
+  const before=JSON.stringify(f);assert.equal(ctx.setFutureCutCount(f,0,'1',true),false,'월물별 평균가 생략');assert.equal(JSON.stringify(f),before);
+  const ok=load(),g=futures();g.positions=[{month:'202701',contracts:3,settlementPrice:1460}];g.rebuy.cuts=[{contracts:1,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  assert.notEqual(ok.setFutureCutChecked(g,0,false,true),false,'정상 기록은 detach로 손익만 되돌린다');assert.equal(g.baselinePnl,50000+500000);
+});
+
+test('손절 신규 반영·체결 증가는 보유 평균가가 상한을 넘으면 반영하지 않고 보유·누적 정산손익을 보존한다',()=>{
+  for(const sp of [Number.MAX_SAFE_INTEGER+1,1e20]){
+    let ctx=load(),f=futures();f.positions[0].settlementPrice=sp;
+    assert.equal(ctx.setFutureCutChecked(f,0,true),'unlinked',`신규 ${sp}`);
+    assert.deepEqual(plain(f.positions),[{month:'202612',contracts:4,settlementPrice:sp}]);assert.equal(f.baselinePnl,50000);
+    assert.equal(f.rebuy.cuts[0].month,undefined);assert.equal(f.rebuy.cuts[0].settlementPrice,undefined);
+    ({ctx,f}=cutRestoreCase(1));f.positions[0].settlementPrice=sp;const before=JSON.stringify(f);
+    assert.equal(ctx.setFutureCutCount(f,0,'2'),false,`증가 ${sp}`);assert.equal(JSON.stringify(f),before);
+  }
+  const {ctx,f}=cutRestoreCase(1);f.positions[0].settlementPrice=Number.MAX_SAFE_INTEGER;
+  assert.notEqual(ctx.setFutureCutCount(f,0,'2'),false,'상한 값은 그대로 허용');assert.equal(f.positions[0].contracts,2);
+});
+
+test('분할매수 체결가 수정은 편입 월물 계약이 음수면 보유 비정상(false), 월물 없음·계약 0이면 "no-month"를 돌려준다',()=>{
+  for(const [positions,want] of [[[{month:'202612',contracts:-1,settlementPrice:1400}],false],[[{month:'202612',contracts:0,settlementPrice:1400}],'no-month'],[[],'no-month']]){
+    const ctx=load(),f={positions,levels:[{tranches:[{price:1400,completed:true,executionPrice:1400,mergedMonth:'202612'}]}]},before=JSON.stringify(f);
+    assert.equal(ctx.setFutureTrancheExec(f,0,0,'1460'),want,JSON.stringify(positions));assert.equal(JSON.stringify(f),before);
+  }
 });
