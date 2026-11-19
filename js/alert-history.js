@@ -105,33 +105,6 @@ function noteAlertHistoryRead(eventId){
   if(typeof eventId!=="string"||!eventId||eventId.length>128)return;
   alertHistoryReadIds.set(eventId,Date.now());markAlertHistoryRead(eventId);
 }
-function alertHistorySyncBusy(){return typeof sync==="object"&&!!sync&&(!!sync.busy||!!sync.running);}
-async function waitAlertHistorySync(){
-  while(typeof sync==="object"&&sync&&sync.running){
-    const current=sync.running;
-    await current;
-    if(sync.running===current)break;
-  }
-}
-// 동기화 진행 중에 알림 삭제를 누르면 진행 중 화면을 띄우고 현재 동기화가 끝난 뒤 삭제를 이어 간다.
-// 충돌 확인 창이 열렸거나 대화상자를 닫았으면 삭제를 실행하지 않는다.
-function runAlertHistoryDelete(trigger,action){
-  if(!alertHistorySyncBusy()){action();return;}
-  const finish=()=>{
-    if(typeof sync==="object"&&sync&&sync.blocked)return;
-    if(typeof $==="function"&&$("conflictDialog")?.open)return;
-    action();
-  };
-  if(typeof pageLeave==="object"&&typeof pageLeave.wait==="function"){
-    pageLeave.wait(trigger,waitAlertHistorySync,finish,{
-      label:"동기화 진행 중…",
-      announce:"동기화 진행 중… 동기화가 끝나면 삭제를 진행합니다."
-    });
-    return;
-  }
-  const dialog=trigger?.closest?.("dialog[open]")||null;
-  Promise.resolve().then(waitAlertHistorySync).then(()=>{if(dialog&&!dialog.open)return;finish();});
-}
 function removeAlertHistory(eventId){
   const item=alertHistoryItems().find(item=>item.id===eventId);if(!item)return false;
   removeAlertHistoryItems([item]);return true;
@@ -161,7 +134,7 @@ function renderAlertHistory(){
     alertHistoryMessage="";$("alertHistoryDialog").close();history.replaceState(null,"",pushAlertHash(target));openPlannerLocation();
   });
   $$("[data-read-history]").forEach(button=>button.onclick=()=>markAlertHistoryRead(button.dataset.readHistory));
-  $$("[data-delete-history]").forEach(button=>button.onclick=()=>{const eventId=button.dataset.deleteHistory;runAlertHistoryDelete(button,()=>removeAlertHistory(eventId));});
+  $$("[data-delete-history]").forEach(button=>button.onclick=()=>{const eventId=button.dataset.deleteHistory,run=()=>removeAlertHistory(eventId);if(typeof runAlertDelete==="function")runAlertDelete(button,run);else run();});
 }
 function openAlertHistory(){
   if($("alertsDialog").open)$("alertsDialog").close();renderAlertHistory();$("alertHistoryDialog").showModal();collectAlertInbox();
@@ -172,9 +145,9 @@ function initializeAlertHistory(){
   $$("[data-history-filter]").forEach(button=>button.onclick=()=>{alertHistoryFilter=button.dataset.historyFilter;renderAlertHistory();});
   $("readAllHistory").onclick=()=>{for(const item of state.alertHistory?.items||[])if(alertHistoryUnread(item))item.readAt=alertHistoryReadStamp(item);save();renderAlertHistory();};
   const clearReadBtn=$("clearReadAlertHistory");
-  clearReadBtn.onclick=()=>runAlertHistoryDelete(clearReadBtn,()=>{const items=alertHistoryItems().filter(item=>!alertHistoryUnread(item));if(!items.length||!confirm(`읽은 알림 ${items.length}개를 삭제할까요?`))return;removeAlertHistoryItems(items);});
+  clearReadBtn.onclick=()=>{const run=()=>{const items=alertHistoryItems().filter(item=>!alertHistoryUnread(item));if(!items.length||!confirm(`읽은 알림 ${items.length}개를 삭제할까요?`))return;removeAlertHistoryItems(items);};if(typeof runAlertDelete==="function")runAlertDelete(clearReadBtn,run);else run();};
   const clearAllBtn=$("clearAlertHistory");
-  clearAllBtn.onclick=()=>runAlertHistoryDelete(clearAllBtn,()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;removeAlertHistoryItems(items);});
+  clearAllBtn.onclick=()=>{const run=()=>{const items=alertHistoryItems();if(!items.length||!confirm(`알림내역 ${items.length}개를 모두 삭제할까요?`))return;removeAlertHistoryItems(items);};if(typeof runAlertDelete==="function")runAlertDelete(clearAllBtn,run);else run();};
   navigator.serviceWorker?.addEventListener("message",event=>{if(event.data?.type==="alert-history-updated"){if(event.data.item)acceptAlertHistory([event.data.item]);collectAlertInbox();}});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)collectAlertInbox();});
   // 다른 탭의 읽음·삭제는 sync.js absorbPlanner가 플래너 기록 전체와 함께 받는다(알림내역만 합쳐 옛 체결 기록을 다시 저장하지 않게).

@@ -364,7 +364,7 @@ const turn=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 function loadWithPageLeave(initial={}){
   const h=load(initial),events=new Map(),timers=new Map();
-  let timerId=0;
+  let timerId=0,now=0;
   function element(tagName){
     const map=new Map();
     const node={tagName,children:[],attributes:{},className:'',textContent:'',dataset:{},
@@ -390,11 +390,16 @@ function loadWithPageLeave(initial={}){
   const doc={body,createElement:element,addEventListener:(type,fn)=>events.set(type,fn)};
   Object.assign(h.ctx,{document:doc,navigator:{},URL,location:{href:'https://example.test/index.html',origin:'https://example.test',assign(){}},
     console:{error(){}},addEventListener:(type,fn)=>events.set(type,fn),
-    setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id),
+    setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,at:now+ms});return timerId;},clearTimeout:id=>timers.delete(id),
     sync:{busy:false,running:null,blocked:false}});
-  vm.runInContext(source('page-leave.js')+'\n;globalThis.pageLeave=pageLeave;',h.ctx);
+  vm.runInContext(source('page-leave.js')+'\n;globalThis.pageLeave=pageLeave;\n'+source('alerts.js'),h.ctx);
   const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
-  return {...h,body,dialog,clearReadBtn,clearAllBtn,deleteBtn,timers,waiting:()=>findWaiting(body)};
+  async function advance(ms){
+    now+=ms;
+    for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}
+    await turn();await turn();
+  }
+  return {...h,body,dialog,clearReadBtn,clearAllBtn,deleteBtn,timers,advance,waiting:()=>findWaiting(body)};
 }
 
 test('동기화 중 개별 알림 삭제를 누르면 진행 중 화면을 띄우고 동기화 완료 후 삭제한다',async()=>{
@@ -409,6 +414,10 @@ test('동기화 중 개별 알림 삭제를 누르면 진행 중 화면을 띄�
   assert.ok(overlay,'동기화 중 삭제 클릭 시 진행 중 화면이 즉시 보여야 한다');
   assert.equal(overlay.parentElement,h.dialog,'알림내역 창 안에 표시해야 한다');
   assert.equal(overlay.children[0].children[1].textContent,'동기화 진행 중…');
+  assert.equal(overlay.children[1].textContent,'동기화 진행 중… 최대 4초까지 기다린 뒤 삭제를 진행합니다.');
+  // 마이크로태스크를 비워도 동기화가 끝나기 전에는 진행 중 화면을 유지하고 삭제하지 않는다.
+  await turn();await turn();
+  assert.equal(h.waiting(),overlay,'동기화 진행 중에는 마이크로태스크 이후에도 진행 중 화면을 유지해야 한다');
   assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['one','two'],'동기화 완료 전에는 삭제하지 않는다');
   // 중복 클릭은 무시된다.
   h.deleteBtn.onclick();
@@ -421,39 +430,91 @@ test('동기화 중 개별 알림 삭제를 누르면 진행 중 화면을 띄�
   assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['three','two']);
 });
 
-test('동기화 중 읽은 알림 삭제·전체 삭제는 동기화 완료 후 최신 개수로 확인 창을 띄운다',async()=>{
-  const h=loadWithPageLeave();
-  const calls=[];
-  h.ctx.confirm=msg=>{calls.push({msg,waiting:!!h.waiting()});return true;};
-  h.ctx.initializeAlertHistory();
-  h.ctx.acceptAlertHistory([event('one'),event('two')]);
-  h.ctx.markAlertHistoryRead('one');
+test('동기화 중 읽은 알림 삭제·전체 삭제는 동기화 완료 후 최신 개수로 확인 창을 띄운다',async t=>{
+  await t.test('읽은 알림 삭제',async()=>{
+    const h=loadWithPageLeave(),calls=[],firstRun=deferred();
+    h.ctx.confirm=msg=>{calls.push({msg,waiting:!!h.waiting()});return true;};
+    h.ctx.initializeAlertHistory();
+    h.ctx.acceptAlertHistory([event('one'),event('two')]);
+    h.ctx.markAlertHistoryRead('one');
+    h.ctx.sync.busy=true;h.ctx.sync.running=firstRun.promise;
+    h.clearReadBtn.onclick();
+    assert.ok(h.waiting(),'읽은 알림 삭제 클릭 직후 동기화 진행 중 화면이 보여야 한다');
+    await turn();await turn();
+    assert.ok(h.waiting(),'읽은 알림 삭제는 동기화가 끝나기 전까지 대기 화면을 유지해야 한다');
+    assert.equal(calls.length,0,'동기화가 끝나기 전에는 confirm 창을 띄우지 않는다');
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['one','two']);
+    h.ctx.markAlertHistoryRead('two'); // 동기화로 다른 기기 읽음이 합쳐진 상황
+    h.ctx.sync.running=null;h.ctx.sync.busy=false;firstRun.resolve();
+    await turn();
+    assert.equal(h.waiting(),undefined);
+    assert.deepEqual(calls,[{msg:'읽은 알림 2개를 삭제할까요?',waiting:false}]);
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+  });
 
-  // 1) 읽은 알림 삭제
-  const firstRun=deferred();
-  h.ctx.sync.busy=true;h.ctx.sync.running=firstRun.promise;
-  h.clearReadBtn.onclick();
-  assert.ok(h.waiting(),'읽은 알림 삭제 클릭 직후 동기화 진행 중 화면이 보여야 한다');
-  assert.equal(calls.length,0,'동기화가 끝나기 전에는 confirm 창을 띄우지 않는다');
-  h.ctx.markAlertHistoryRead('two'); // 동기화로 다른 기기 읽음이 합쳐진 상황
-  h.ctx.sync.running=null;h.ctx.sync.busy=false;firstRun.resolve();
-  await turn();
-  assert.equal(h.waiting(),undefined);
-  assert.deepEqual(calls,[{msg:'읽은 알림 2개를 삭제할까요?',waiting:false}]);
-  assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+  await t.test('전체 삭제',async()=>{
+    const h=loadWithPageLeave(),calls=[],secondRun=deferred();
+    h.ctx.confirm=msg=>{calls.push({msg,waiting:!!h.waiting()});return true;};
+    h.ctx.initializeAlertHistory();
+    h.ctx.acceptAlertHistory([event('three')]);
+    h.ctx.sync.busy=true;h.ctx.sync.running=secondRun.promise;
+    h.clearAllBtn.onclick();
+    assert.ok(h.waiting(),'전체 삭제 클릭 직후 동기화 진행 중 화면이 보여야 한다');
+    await turn();await turn();
+    assert.ok(h.waiting(),'전체 삭제는 동기화가 끝나기 전까지 대기 화면을 유지해야 한다');
+    assert.equal(calls.length,0,'동기화가 끝나기 전에는 전체 삭제 confirm 창을 띄우지 않는다');
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['three']);
+    h.ctx.sync.running=null;h.ctx.sync.busy=false;secondRun.resolve();
+    await turn();
+    assert.equal(h.waiting(),undefined);
+    assert.deepEqual(calls,[{msg:'알림내역 1개를 모두 삭제할까요?',waiting:false}]);
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+  });
+});
 
-  // 2) 전체 삭제
-  h.ctx.acceptAlertHistory([event('three')]);
-  const secondRun=deferred();
-  h.ctx.sync.busy=true;h.ctx.sync.running=secondRun.promise;
-  h.clearAllBtn.onclick();
-  assert.ok(h.waiting(),'전체 삭제 클릭 직후 동기화 진행 중 화면이 보여야 한다');
-  assert.equal(calls.length,1);
-  h.ctx.sync.running=null;h.ctx.sync.busy=false;secondRun.resolve();
-  await turn();
-  assert.equal(h.waiting(),undefined);
-  assert.deepEqual(calls[1],{msg:'알림내역 1개를 모두 삭제할까요?',waiting:false});
-  assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+test('동기화가 4초 넘게 끝나지 않으면 대기 화면을 닫고 삭제를 진행하되 충돌 상태면 취소한다',async t=>{
+  await t.test('4초 경과 후 개별·전체 삭제 진행',async()=>{
+    const h=loadWithPageLeave(),syncRun=deferred(),calls=[];
+    h.ctx.confirm=msg=>{calls.push(msg);return true;};
+    h.ctx.initializeAlertHistory();
+    h.ctx.acceptAlertHistory([event('one'),event('two')]);
+    h.deleteBtn.dataset.deleteHistory='one';
+    h.ctx.$$=sel=>sel==='[data-delete-history]'?[h.deleteBtn]:[];
+    h.ctx.renderAlertHistory();
+    h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+    h.deleteBtn.onclick();
+    await h.advance(3999);
+    assert.ok(h.waiting(),'4초 전에는 대기 화면을 유지한다');
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['one','two']);
+    await h.advance(1);
+    assert.equal(h.waiting(),undefined,'4초 경과 후 대기 화면을 닫는다');
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['two'],'4초 경과 후 삭제를 진행한다');
+
+    h.clearAllBtn.onclick();
+    await h.advance(3999);
+    assert.ok(h.waiting());assert.equal(calls.length,0);
+    await h.advance(1);
+    assert.equal(h.waiting(),undefined);
+    assert.deepEqual(calls,['알림내역 1개를 모두 삭제할까요?']);
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items),[]);
+  });
+
+  for(const reason of ['sync.blocked','conflictDialog 열림'])await t.test(`4초 경과 시 ${reason}이면 삭제 취소`,async()=>{
+    const h=loadWithPageLeave(),syncRun=deferred();
+    let confirmCalls=0;
+    h.ctx.confirm=()=>{confirmCalls++;return true;};
+    h.ctx.initializeAlertHistory();
+    h.ctx.acceptAlertHistory([event('one')]);
+    h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+    h.clearAllBtn.onclick();
+    assert.ok(h.waiting());
+    if(reason==='sync.blocked')h.ctx.sync.blocked=true;
+    else h.nodes.get('conflictDialog').setAttribute('open','');
+    await h.advance(4000);
+    assert.equal(h.waiting(),undefined);
+    assert.equal(confirmCalls,0);
+    assert.deepEqual(plain(h.ctx.state.alertHistory.items.map(i=>i.id)),['one']);
+  });
 });
 
 test('동기화 대기 중 알림내역 창을 닫거나 충돌 창이 열리면 삭제를 실행하지 않는다',async t=>{

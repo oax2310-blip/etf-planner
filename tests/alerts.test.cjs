@@ -133,8 +133,8 @@ const pageLeaveSource=fs.readFileSync(path.join(__dirname,'../js/page-leave.js')
 
 function loadAlertDialogContext(initial={}){
   const ctx=load(initial);
-  const events=new Map();
-  let saves=0,editorClosed=0;
+  const events=new Map(),timers=new Map();
+  let saves=0,editorClosed=0,timerId=0,now=0;
   function element(tagName){
     const map=new Map();
     return {tagName,children:[],attributes:{},className:'',textContent:'',dataset:{},
@@ -162,13 +162,19 @@ function loadAlertDialogContext(initial={}){
     save:()=>{saves++;},
     document:{body,createElement:element,addEventListener:(type,fn)=>events.set(type,fn)},
     URL,location:{href:'https://example.test/index.html',origin:'https://example.test',assign(){}},
-    console:{error(){}},addEventListener:(type,fn)=>events.set(type,fn),setTimeout,clearTimeout
+    console:{error(){}},addEventListener:(type,fn)=>events.set(type,fn),
+    setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,at:now+ms});return timerId;},clearTimeout:id=>timers.delete(id)
   });
   vm.runInContext(pageLeaveSource+'\n;globalThis.pageLeave=pageLeave;',ctx);
   const origClose=ctx.closeAlertEditor;
   ctx.closeAlertEditor=()=>{editorClosed++;origClose();};
   const findWaiting=node=>node.className==='page-leave'?node:node.children.map(findWaiting).find(Boolean);
-  return {ctx,body,dialog,removeBtn,nodes,saves:()=>saves,editorClosed:()=>editorClosed,waiting:()=>findWaiting(body)};
+  async function advance(ms){
+    now+=ms;
+    for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}
+    await turn();await turn();
+  }
+  return {ctx,body,dialog,removeBtn,nodes,timers,advance,saves:()=>saves,editorClosed:()=>editorClosed,waiting:()=>findWaiting(body)};
 }
 
 test('동기화 중 알림 규칙 삭제를 누르면 진행 중 화면을 띄우고 완료 후 삭제한다',async()=>{
@@ -182,12 +188,52 @@ test('동기화 중 알림 규칙 삭제를 누르면 진행 중 화면을 띄�
   assert.ok(overlay,'동기화 중 규칙 삭제 클릭 시 진행 중 화면이 즉시 보여야 한다');
   assert.equal(overlay.parentElement,h.dialog,'알림 설정 창 안에 표시해야 한다');
   assert.equal(overlay.children[0].children[1].textContent,'동기화 진행 중…');
+  assert.equal(overlay.children[1].textContent,'동기화 진행 중… 최대 4초까지 기다린 뒤 삭제를 진행합니다.');
+  // 마이크로태스크를 비워도 동기화가 끝나기 전에는 대기 화면을 유지하고 삭제하지 않는다.
+  await turn();await turn();
+  assert.equal(h.waiting(),overlay,'동기화 진행 중에는 마이크로태스크 이후에도 진행 중 화면을 유지해야 한다');
   assert.equal(h.ctx.state.alerts.rules.length,1,'동기화 완료 전에는 규칙을 삭제하지 않는다');
+  assert.equal(h.saves(),0,'동기화 완료 전에는 저장을 호출하지 않는다');
   h.ctx.sync.running=null;h.ctx.sync.busy=false;syncRun.resolve();
   await turn();
   assert.equal(h.waiting(),undefined);
   assert.equal(h.ctx.state.alerts.rules.length,0);
   assert.equal(h.saves(),1);
+});
+
+test('알림 규칙 삭제는 동기화가 4초 넘게 끝나지 않으면 삭제를 진행하되 충돌 상태면 취소한다',async t=>{
+  await t.test('4초 경과 후 규칙 삭제 진행',async()=>{
+    const h=loadAlertDialogContext(),syncRun=deferred();
+    const rule=h.ctx.writeAlertRule(valid()).value;
+    h.removeBtn.dataset.removeAlert=rule.id;
+    h.ctx.renderAlerts();
+    h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+    h.removeBtn.onclick();
+    await h.advance(3999);
+    assert.ok(h.waiting(),'4초 전에는 대기 화면을 유지한다');
+    assert.equal(h.ctx.state.alerts.rules.length,1);
+    assert.equal(h.saves(),0);
+    await h.advance(1);
+    assert.equal(h.waiting(),undefined,'4초 경과 후 대기 화면을 닫는다');
+    assert.equal(h.ctx.state.alerts.rules.length,0,'4초 경과 후 규칙을 삭제한다');
+    assert.equal(h.saves(),1);
+  });
+
+  for(const reason of ['sync.blocked','conflictDialog 열림'])await t.test(`4초 경과 시 ${reason}이면 규칙 삭제 취소`,async()=>{
+    const h=loadAlertDialogContext(),syncRun=deferred();
+    const rule=h.ctx.writeAlertRule(valid()).value;
+    h.removeBtn.dataset.removeAlert=rule.id;
+    h.ctx.renderAlerts();
+    h.ctx.sync.busy=true;h.ctx.sync.running=syncRun.promise;
+    h.removeBtn.onclick();
+    assert.ok(h.waiting());
+    if(reason==='sync.blocked')h.ctx.sync.blocked=true;
+    else h.nodes.conflictDialog.setAttribute('open','');
+    await h.advance(4000);
+    assert.equal(h.waiting(),undefined);
+    assert.equal(h.ctx.state.alerts.rules.length,1);
+    assert.equal(h.saves(),0);
+  });
 });
 
 test('동기화 대기 중 알림 설정 창 닫힘·충돌 발생 시 규칙 삭제를 취소하고 평상시에는 즉시 삭제한다',async()=>{
