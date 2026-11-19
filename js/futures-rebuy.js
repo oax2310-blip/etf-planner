@@ -120,23 +120,34 @@ function setFutureBuyChecked(f,i,t,on,detach=false){
     if(setFutureBuyDone(f,i,t,true)===false)return false;return linkFutureRebuy(f,futureFillRec(f,i,t))||"unlinked";
   }
   const fill=futureFillOf(f,i,t),rec=fill?.[0],qty=futureRebuyQty(rec?.contracts),price=Number(rec?.[fill?.[1]]),month=rec?.month?futureHeldMonth(f,qty,rec.month):"";
-  if(rec?.month&&!month&&!detach||setFutureBuyDone(f,i,t,false)===false)return false;
-  if(month)removeFromPosition(f,month,qty,price);
+  if(!rec||rec.month&&!month&&!detach)return false;
+  const pos=month?f.positions.find(p=>String(p.month)===month):null,remaining=futurePositionAfterRemoval(pos,qty,price);
+  if(month&&!remaining)return false;
+  if(setFutureBuyDone(f,i,t,false)===false)return false;
+  if(remaining)applyFuturePositionRemoval(f,pos,remaining);
   const st=futureRebuyOf(f).stages[i];delete st.month;delete st.manual; // 옛 통째 기록은 해제 후에도 단계가 남는다
 }
 function setFutureBuyCount(f,i,t,text){
   const fill=futureFillOf(f,i,t),rec=fill?.[0],old=futureRebuyQty(rec?.contracts),qty=Number(text);
   if(!rec?.month)return setFutureBuyQty(f,i,t,text);
   const take=qty<old?futureHeldMonth(f,old-qty,rec.month):"",price=Number(rec[fill[1]]);
-  if(qty<old&&!take||setFutureBuyQty(f,i,t,text)===false)return false;
-  if(qty>old)addToPosition(f,rec.month,qty-old,price);else if(qty<old)removeFromPosition(f,take,old-qty,price);
+  const pos=take?f.positions.find(p=>String(p.month)===take):null,remaining=futurePositionAfterRemoval(pos,old-qty,price);
+  if(qty<old&&!remaining)return false;
+  if(qty>old&&!validFuturePositionAverage(futurePositionAverageAfterAdd(f.positions.find(p=>String(p.month)===rec.month),qty-old,price)))return false;
+  if(setFutureBuyQty(f,i,t,text)===false)return false;
+  if(qty>old)addToPosition(f,rec.month,qty-old,price);else if(remaining)applyFuturePositionRemoval(f,pos,remaining);
 }
 function setFutureBuyExec(f,i,t,text){
   const fill=futureFillOf(f,i,t),rec=fill?.[0],n=Number(text);
-  if(!rec?.month)return setFutureBuyPrice(f,i,t,text);
+  if(!rec||!Number.isFinite(n)||n<=0)return false;
+  if(!rec.month)return setFutureBuyPrice(f,i,t,text);
   const qty=futureRebuyQty(rec.contracts),old=Number(rec[fill[1]]),month=futureHeldMonth(f,qty,rec.month);
-  if(!month||setFutureBuyPrice(f,i,t,text)===false)return false;
-  removeFromPosition(f,month,qty,old);addToPosition(f,month,qty,n);
+  const pos=month?f.positions.find(p=>String(p.month)===month):null,remaining=futurePositionAfterRemoval(pos,qty,old);
+  if(!remaining)return false;
+  // 보유 전량이면 해제 후 새 체결 환율로 편입할 때와 같다. 일부라면 남은 원가에 새 체결 원가를 더한다.
+  const average=remaining.contracts===0?n:(remaining.cost+qty*n)/Number(pos.contracts);
+  if(!validFuturePositionAverage(average)||setFutureBuyPrice(f,i,t,text)===false)return false;
+  pos.settlementPrice=average;
 }
 // month·manual 없는 손절·재매수 계약 수(화면 안내용, 읽기 전용).
 function futureRebuyUnlinked(f){
@@ -543,12 +554,12 @@ function renderFutureRebuy(f){
     if(!input.checked&&rec?.month){const qty=futureRebuyQty(rec.contracts),month=futureHeldMonth(f,qty,rec.month);
       if(month?!confirm(`${month} 보유분에서 재매수 ${qty}계약(체결 환율 ${fmtPrice(rec[fill[1]])}원)을 빼고 단순평균가를 되돌릴까요?\n그 사이 이 월물의 단순평균가를 직접 고쳤다면, 되돌린 뒤 값을 확인하세요.`):!(detach=confirm(`보유 월물에 재매수 ${qty}계약을 뺄 ${rec.month}이(가) 없습니다(교체·삭제된 것으로 보입니다).\n체크만 해제하고 보유 월물은 직접 고칠까요?`))){renderFutures();return;}}
     const done=setFutureBuyChecked(f,i,t,input.checked,detach);
-    if(done===false)alert("손절한 계약과 배분된 재매수 수량·환율을 먼저 확인하세요. 판 계약 수를 넘겨 재매수할 수 없습니다.");
+    if(done===false)alert(input.checked?`판 계약 수와 배분된 재매수 수량을 확인하세요. ${futurePositionAverageWarning}`:futurePositionAverageWarning);
     else{save();if(done==="unlinked")alert("보유 월물이 없어 재매수 기록만 했습니다. 보유 월물을 입력한 뒤 '보유 월물에 반영'을 누르세요.");}
     renderFutures();});
-  onEdit("[data-fbuy-qty]",(v,el)=>{if(setFutureBuyCount(f,...trKey(el.dataset.fbuyQty),v)===false){alert("계약 수는 1 이상 정수로, 판 계약 수 안에서 입력하세요. 보유 월물에서 뺄 계약이 없으면 줄일 수 없습니다.");return false;}},renderFutures);
+  onEdit("[data-fbuy-qty]",(v,el)=>{if(setFutureBuyCount(f,...trKey(el.dataset.fbuyQty),v)===false){alert(`계약 수는 1 이상 정수로, 판 계약 수 안에서 입력하세요. ${futurePositionAverageWarning}`);return false;}},renderFutures);
   onEdit("[data-fbuy-price]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}const n=moneyInputNumber(v)??0;editFutureRebuy(f).stages[Number(el.dataset.fbuyPrice)].price=n;},renderFutures);
-  onEdit("[data-fbuy-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}return setFutureBuyExec(f,...trKey(el.dataset.fbuyExec),moneyInputNumber(v));},renderFutures);
+  onEdit("[data-fbuy-exec]",(v,el)=>{if(!moneyInputValidate(el)){el.reportValidity();return false;}if(setFutureBuyExec(f,...trKey(el.dataset.fbuyExec),moneyInputNumber(v))===false){alert(futurePositionAverageWarning);return false;}},renderFutures);
   if($("frLink"))$("frLink").onclick=()=>{const g=futureRebuyLinked(f),held=x=>x.positions.reduce((n,p)=>n+(Number(p.contracts)||0),0);
     if(!g){alert("반영할 보유 월물 계약이 부족하거나 단순평균가·체결 환율이 없습니다. 보유 월물과 체결 기록을 확인하세요.");return;}
     if(!confirm(`보유 ${held(f)}계약 → ${held(g)}계약, 누적 정산손익 ${money(Number(f.baselinePnl)||0)} → ${money(g.baselinePnl)}으로 고칩니다.\n계좌 기준으로 이미 직접 고쳤다면 취소하고 '직접 반영함'을 누르세요.`))return;

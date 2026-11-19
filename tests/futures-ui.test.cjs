@@ -314,6 +314,27 @@ test('체결가 수정은 잘못된 값·미매수 회차·보유에 없는 편�
   assert.equal(gain(1480)-gain(1470),(3+1)*10*10000,'월물 밖 매수는 체결가로 손익 계산');assert.equal(ctx.futuresSummary(f,1405).legacyCount,1);
 });
 
+test('분할매수 체결가 수정과 보유 차감은 평균가가 0 이하 또는 비유한이면 전체 기록을 보존한다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0];
+  Object.assign(t,{completed:true,executionPrice:2500,mergedMonth:'202612'});
+  f.positions[0].contracts=2;
+  for(const average of [1000,1250,Number.MAX_VALUE]){
+    f.positions[0].settlementPrice=average;
+    const before=JSON.stringify(f);
+    assert.equal(ctx.setFutureTrancheExec(f,0,0,'200'),false);
+    assert.equal(JSON.stringify(f),before);
+    assert.equal(ctx.removeFromPosition(f,'202612',1,t.executionPrice),false);
+    assert.equal(JSON.stringify(f),before);
+  }
+  f.positions[0].contracts=1;f.positions[0].settlementPrice=1000;
+  const before=JSON.stringify(f);
+  assert.equal(ctx.setFutureTrancheExec(f,0,0,'200'),false);
+  assert.equal(JSON.stringify(f),before,'보유 전량 체결이라도 수정 후 평균가는 양수여야 한다');
+  t.executionPrice=1300;f.positions[0].settlementPrice=1350;
+  assert.notEqual(ctx.setFutureTrancheExec(f,0,0,'1310'),false);
+  assert.equal(f.positions[0].settlementPrice,1360,'기존 보유 평균가에는 체결가 변경분만 반영한다');
+});
+
 test('분할매수 표의 산 회차는 체결가를 점선으로 보이고 그 자리에서 고치며 자동 배분 미매수 회차는 글자로 둔다',()=>{
   const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]);
   Object.assign(f.levels[0].tranches[0],{completed:true,executionPrice:1396.25,mergedMonth:'202612'});

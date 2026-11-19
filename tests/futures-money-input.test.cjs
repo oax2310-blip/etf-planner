@@ -284,6 +284,50 @@ test('목표환율 이평선 선택은 현재 값을 0.1 단위의 기존 숫자
   const saved=JSON.stringify(r.f);r.change('#ftargetLine','없는 선');assert.equal(JSON.stringify(r.f),saved);
 });
 
+test('재매수 해제·수량·환율 수정에서 평균가 계산이 거절되면 안내하고 저장하지 않는다',()=>{
+  const f=future();
+  f.positions=[{month:'202612',contracts:7,settlementPrice:1000}];
+  f.rebuy.contracts=16;
+  f.rebuy.cuts=[{contracts:8,price:1500,targetPrice:1500}];
+  f.rebuy.stages[0].buys=[{contracts:6,price:1450,month:'202612'}];
+  const r=setup(f),alerts=[];
+  r.c.alert=message=>alerts.push(message);
+  r.c.renderFutures();
+  const before=JSON.stringify(f),check='[data-fbuy="0:0"]';
+  const input=r.input(check);input.checked=false;input.onchange();
+  assert.equal(r.input(check).checked,true);
+  r.type('[data-fbuy-qty="0:0"]','1');r.change('[data-fbuy-qty="0:0"]');
+  r.type('[data-fbuy-exec="0:0"]','1440');r.change('[data-fbuy-exec="0:0"]');
+  assert.equal(alerts.length,3);
+  for(const message of alerts)assert.match(message,/보유 단순평균가와 체결 환율을 확인하세요/);
+  assert.equal(r.stored.size,0);
+  assert.equal(JSON.stringify(f),before);
+});
+
+test('체결 환율 칸을 비우면 옛 returns 기록을 유지하고 값을 복원한다',()=>{
+  const f=future();
+  f.rebuy={cuts:[{contracts:4,price:1400,targetPrice:1400}],returns:[{done:true,contracts:3,execPrice:1325}]};
+  const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+  const before=JSON.stringify(f),selector='[data-fbuy-exec="0:0"]';
+  r.type(selector,'');r.change(selector);
+  assert.equal(r.stored.size,0);
+  assert.equal(JSON.stringify(f),before);
+  assert.equal(r.input(selector).value,'1,325');
+  assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.']);
+});
+
+test('산 분할매수 체크를 풀 때 잘못된 단순평균가가 되면 체크와 보유를 보존한다',()=>{
+  const f=future(),t=f.levels[0].tranches[1];
+  f.positions=[{month:'202612',contracts:2,settlementPrice:1000}];t.executionPrice=2500;
+  const r=setup(f),alerts=[];r.c.alert=message=>alerts.push(message);r.c.renderFutures();
+  const before=JSON.stringify(f),input=r.input('[data-tranche-check="0:1"]');
+  input.checked=false;input.onchange();
+  assert.equal(input.checked,true);
+  assert.equal(r.stored.size,0);
+  assert.equal(JSON.stringify(f),before);
+  assert.deepEqual(alerts,['보유 단순평균가와 체결 환율을 확인하세요.']);
+});
+
 test('목표환율 이평선 적용 직후 정수·0.1 단위 수동 재입력은 저장되고 단위 밖 입력은 거부된다',()=>{
   const prices={futures:{'202612':{kind:'달러선물',close:1400,asOf:'2026-11-13',ma:{'25일선':1451.2345}}},fx:{USDKRW:{kind:'현물환율',close:1400,asOf:'2026-11-13',ma:{'25개월선':1420.125}}}};
   for(const [line,value] of [['25일선',1451.2],['25개월선',1420.1]]){
