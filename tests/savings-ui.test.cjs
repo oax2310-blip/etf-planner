@@ -843,3 +843,117 @@ test('저축·할부의 음수 가능 칸은 \'-\'·\'.\' 키가 있는 키패�
   assert.match(inst,new RegExp(`data-installment="returnRate" ${signed.source}`),'예상 수익률');
   assert.match(inst,/data-installment="discountRate"[^>]*type="number" inputmode="decimal" min="0" max="100"/,'할인율은 그대로');
 });
+
+test('저축 히어로·스텝 바·핵심 가정 웰: 예상·실제 달성·미도달·미기록 상태와 나이별 강조 막대(올해·5억·종료)를 표시한다',()=>{
+  const data=fixture();
+  Object.assign(data.savings,{startYear:2025,startAge:30,actual:[{ym:'2025-12',total:198000000},{ym:'2026-10',total:245000000}]});
+  Object.assign(data.savings.scenarios[0],{salary:4800000,giving:10,spending:1800000,spendingYear:2026,growth:2,returnRate:6,endAge:60,stages:[{age:35,salary:5600000,spending:2100000},{age:45,salary:6500000,spending:2500000}]});
+  Object.assign(data.savings.scenarios[1],{salary:5200000,giving:10,spending:1600000,spendingYear:2026,growth:2,returnRate:8.5,endAge:60,stages:[]});
+  const before=JSON.stringify(data),h=setup(data),view=h.node('savingsView'),res=k=>view.querySelector(`[data-savings-result="${k}"]`);
+  assert.equal(res('hero-percent').textContent,'49% 달성');
+  assert.equal(res('hero-title').textContent,'2031년 12월(36세)에 5억을 달성해요');
+  assert.equal(res('goal-remaining').textContent,'남은 금액 2억 5,500만 원');
+  assert.match(res('last-date').innerHTML,/2026\.10 실제 기록<b>245,000,000원<\/b>/);
+  const cols=res('step-bars').querySelectorAll('.savings-step-col');
+  assert.equal(cols.length,6);
+  assert.deepEqual(cols.map(c=>c.querySelector('.savings-step-age').textContent),['30세','31세·올해','35세·1단계','36세·5억','45세·2단계','60세·종료']);
+  assert.deepEqual(cols.map(c=>c.className),['savings-step-col','savings-step-col now','savings-step-col','savings-step-col hit','savings-step-col','savings-step-col end']);
+  assert.equal(arrivalButton(h,'base').querySelector('.savings-arrival-badge').textContent,'선택됨');
+  assert.equal(arrivalButton(h,'other').querySelector('.savings-arrival-badge').textContent,'-1년');
+  assert.match(arrivalButton(h,'base').querySelector('.savings-arrival-end').textContent,/^60세 /);
+  const params=res('params-well').querySelectorAll('.savings-param-cell');
+  assert.deepEqual(params.map(p=>[p.children[0].textContent,p.children[1].textContent]),[['월급','480만 원'],['월 사용금액','180만 원'],['연 수익률','6%'],['기부·단계','10% · 2개']]);
+  assert.equal(res('years-range').textContent,'연도별 · 월별 상세 표 2025–2055년 (31년)');
+  data.savings.actual=[{ym:'2025-06',total:500000000}];h.render();
+  assert.equal(res('hero-title').textContent,'2025년 6월(30세)에 5억을 달성했어요');
+  assert.equal(res('goal-remaining').textContent,'5억 목표 달성');
+  data.savings.actual=[{ym:'2025-12',total:1000}];data.savings.scenarios[0].salary=0;data.savings.scenarios[0].returnRate=0;data.savings.scenarios[0].stages=[];h.render();
+  assert.equal(res('hero-title').textContent,'현재 가정으로는 기간 내 미도달이에요');
+  data.savings.actual=[];h.render();
+  assert.equal(res('hero-percent').textContent,'미기록');
+  assert.equal(res('hero-title').textContent,'월말 기록을 입력하면 5억 도달 시점을 계산해요');
+  assert.equal(res('goal-remaining').textContent,'목표 5억 원');
+  assert.equal(res('last-date').textContent,'아직 입력된 월말 기록이 없어요');
+  assert.equal(res('step-end').textContent,'실제 기록 없음');
+  assert.ok(res('step-bars').className.includes('savings-step-empty'));
+  assert.equal(h.saves(),0);
+});
+
+test('개요 바로가기 버튼: 시나리오·단계 설정과 전체 보기 클릭 및 입력 중 첫 터치 이동을 처리한다',()=>{
+  const h=setup(fixture()),view=h.node('savingsView');
+  const gotoBtn=k=>view.querySelectorAll('[data-savings-goto]').find(b=>b.dataset.savingsGoto===k);
+  gotoBtn('assumptions').onclick();
+  assert.equal(h.node('savingsPaneAssumptions').hidden,false);
+  assert.equal(h.document.activeElement,h.node('savingsTabAssumptions'));
+  const salary=paramInput(h,'salary');salary.focus();salary.value='3500000';
+  gotoBtn('records').onclick();
+  assert.equal(h.saves(),1);assert.equal(h.store.doc.savings.scenarios[0].salary,3500000);
+  assert.equal(h.node('savingsPaneRecords').hidden,false);
+  assert.equal(h.document.activeElement,h.node('savingsTabRecords'));
+});
+
+test('저축 도달 배지: 선택 시나리오가 미도달이어도 도달한 비교 시나리오는 도달 배지를 표시한다',()=>{
+  const data=fixture();
+  Object.assign(data.savings,{startYear:2025,startAge:30,actual:[{ym:'2026-10',total:100000000}]});
+  Object.assign(data.savings.scenarios[0],{salary:0,giving:0,spending:1000000,spendingYear:2026,growth:0,returnRate:0,endAge:60,stages:[]});
+  Object.assign(data.savings.scenarios[1],{salary:7000000,giving:0,spending:1000000,spendingYear:2026,growth:0,returnRate:6,endAge:60,stages:[]});
+  data.savings.scenarios.push({id:'never',name:'같이 미도달',salary:0,giving:0,spending:500000,spendingYear:2026,growth:0,returnRate:0,endAge:60,stages:[]});
+  const h=setup(data);
+  const base=arrivalButton(h,'base'),other=arrivalButton(h,'other'),never=arrivalButton(h,'never');
+  assert.equal(base.querySelector('.savings-arrival-badge').textContent,'선택됨');
+  assert.match(base.querySelector('.savings-arrival-date').textContent,/종료 나이까지 미도달/);
+  assert.equal(other.querySelector('.savings-arrival-badge').textContent,'도달');
+  assert.match(other.querySelector('.savings-arrival-date').textContent,/^\d{4}\.\d{2} · \d+세$/);
+  assert.equal(never.querySelector('.savings-arrival-badge').textContent,'미도달');
+  assert.equal(never.querySelector('.savings-arrival-date').children[0].textContent,'종료 나이까지 미도달');
+  assert.equal(never.querySelector('.savings-arrival-date').children[1].hidden,true);
+  assert.equal(h.saves(),0);
+});
+
+test('저축 스텝 바 높이: 감소·0 이하·동일 자산에서도 막대 높이가 금액 대소와 반대로 역전되지 않는다',()=>{
+  const heights=h=>h.node('savingsView').querySelectorAll('.savings-step-bar').map(b=>Number(b.getAttribute('style').match(/height:(\d+)px/)[1]));
+  const ends=(h,sc)=>{
+    const rows=JSON.parse(vm.runInContext(`JSON.stringify(simulateSavings(doc.savings,doc.savings.scenarios[${sc}]).rows)`,h.ctx));
+    const ages=h.node('savingsView').querySelectorAll('.savings-step-age').map(x=>Number(x.textContent.match(/^(\d+)세/)[1]));
+    return ages.map(a=>rows.find(r=>r.age===a).end);
+  };
+  for(const [ym,actualTotal,spending] of [['2025-12',100000000,2000000],['2025-12',0,1000000],['2026-10',-12000000,1000000]]){
+    const data=fixture();
+    Object.assign(data.savings,{startYear:2025,startAge:30,actual:[{ym,total:actualTotal}]});
+    Object.assign(data.savings.scenarios[0],{salary:0,giving:0,spending,spendingYear:2026,growth:0,returnRate:0,endAge:60,stages:[]});
+    const h=setup(data),hs=heights(h),vs=ends(h,0);
+    const labels=h.node('savingsView').querySelectorAll('.savings-step-val').map(x=>x.textContent);
+    assert.equal(hs.length,6);
+    assert.ok(vs[0]>vs[vs.length-1],'감소 시나리오 확인');
+    for(let i=0;i<vs.length;i++)if(vs[i]<0)assert.ok(labels[i].startsWith('\u2212'),`음수 금액은 U+2212 부호로 시작한다: ${labels[i]}`);
+    for(let i=1;i<hs.length;i++)assert.ok(hs[i]<=hs[i-1],`감소 구간 막대 높이는 커지지 않는다: ${vs.join(',')} → ${hs.join(',')}`);
+    assert.ok(hs[0]>hs[hs.length-1],'시작보다 감소한 끝 막대가 더 낮다');
+    if(actualTotal===-12000000){
+      assert.ok(labels.some(t=>/^−[\d,]+만$/.test(t)),`1만 이상 만 단위 음수 표기 확인: ${labels.join(',')}`);
+      assert.ok(labels.some(t=>/^−\d+\.\d+억$/.test(t)),`1억 이상 소수 음수 표기 확인: ${labels.join(',')}`);
+    }
+  }
+  const flat=fixture();
+  Object.assign(flat.savings,{startYear:2025,startAge:30,actual:[{ym:'2025-12',total:100000000}]});
+  Object.assign(flat.savings.scenarios[0],{salary:0,giving:0,spending:0,spendingYear:2026,growth:0,returnRate:0,endAge:60,stages:[]});
+  const flatHeights=heights(setup(flat));
+  assert.equal(new Set(flatHeights).size,1,'동일 금액이면 모든 막대 높이가 같다');
+});
+
+test('저축 남은 금액 단위와 CSS 계약: 남은 금액 끝의 원을 통일하고 스텝 바 넘침·모바일 이름·라이트 민트 대비 기준을 유지한다',()=>{
+  for(const [total,expected] of [[0,'남은 금액 5억 원'],[300000000,'남은 금액 2억 원'],[245000000,'남은 금액 2억 5,500만 원'],[499999000,'남은 금액 1,000원']]){
+    const data=fixture();data.savings.actual=[{ym:'2026-10',total}];
+    const h=setup(data);
+    assert.equal(h.node('savingsView').querySelector('[data-savings-result="goal-remaining"]').textContent,expected);
+  }
+  const css=fs.readFileSync(path.join(root,'css/assets.css'),'utf8');
+  assert.match(css,/--savings-mint:#0f766e;/,'라이트 테마 민트는 AA 대비 이상 색을 쓴다');
+  assert.match(css,/\.savings-step-bars\{[^}]*min-height:120px/,'고정 height 대신 min-height로 막대+라벨 넘침을 막는다');
+  assert.match(css,/\.savings-summary-head select\{[^}]*field-sizing:content/,'시나리오 선택 상자는 선택 항목 너비에 맞춰 ⌄ 간격을 좁힌다');
+  assert.match(css,/@supports\(grid-template-columns:subgrid\)\{[^}]*\.savings-arrivals\{[^}]*\}\.savings-arrivals li\{[^}]*\}\.savings-arrival\{grid-template-columns:subgrid/,'시나리오 행 이름·날짜 시작 위치를 subgrid로 맞춘다');
+  const mobile=css.slice(css.indexOf('@media(max-width:700px){.assets-page:has(#savingsView'));
+  assert.match(mobile,/\.savings-arrival\{[^}]*grid-template-columns:auto minmax\(0,1fr\) auto/);
+  assert.match(mobile,/\.savings-arrival-name\{grid-column:2\/-1\}/);
+});
+
+

@@ -4,6 +4,24 @@ function savingsMilestoneHtml(record){
   const age=finite(record.age);return `${Math.floor(n/12)}.${String(n%12+1).padStart(2,"0")}${age!==null?` <span class="savings-milestone-age">· ${age}세</span>`:""}`;
 }
 function savingsCompactWon(value){return eok(value).replace(/만원$/,"만 원").replace(/억원$/,"억 원");}
+function savingsStepWon(value){
+  const n=finite(value);if(n===null)return "—";
+  const abs=Math.abs(n),sign=n<0?"−":"";
+  if(abs>=1e8){
+    const e=abs/1e8;
+    return `${sign}${abs>=1e11?nf0.format(Math.round(e)):Number(e.toFixed(abs>=1e9?1:2))}억`;
+  }
+  if(abs>=1e4)return `${sign}${nf0.format(Math.round(abs/1e4))}만`;
+  return `${sign}${nf0.format(Math.round(abs))}원`;
+}
+function savingsHeroTitleHtml(milestone,sim){
+  const n=ymNum(milestone?.ym);
+  if(n!==null){
+    const age=finite(milestone.age);
+    return `<span>${Math.floor(n/12)}년 ${n%12+1}월${age!==null?`(${age}세)`:""}</span>에 5억을 ${milestone.actual?"달성했어요":"달성해요"}`;
+  }
+  return sim?`현재 가정으로는 <span>기간 내 미도달</span>이에요`:`월말 기록을 입력하면 <span>5억 도달 시점</span>을 계산해요`;
+}
 const savingsIcon=path=>`<svg viewBox="0 0 24 24" aria-hidden="true">${path}</svg>`;
 let savingsTab=null; // 처음 열 때 실제 기록 유무로 선택하고, 이후 선택은 메모리에만 유지한다.
 const savingsOpenDetails=new Set();
@@ -61,24 +79,75 @@ function savingsYearHtml(r,{simulated,actualByMonth,missing,currentYear}){
         <p class="hint missing-note" data-savings-result="year-gaps-${r.year}"${gaps.length?"":" hidden"}>기록 사이에 빠진 달: ${gaps.map(ym=>`${Number(ym.slice(5))}월`).join(", ")}</p><div class="savings-month-grid">${months}</div></div></section>`;
 }
 function savingsSummaryHtml({sim,fill,percent,progress,milestone}){
-  return `      <div class="savings-balance"><span>최근 기록 자산</span><strong data-savings-result="last-balance" title="${sim?wonA(sim.last.total):"실제 기록 없음"}">${sim?savingsCompactWon(sim.last.total):"—"}</strong><small data-savings-result="last-date"${sim?"":" hidden"}>${sim?`${sim.last.ym.replace("-",".")} 실제 기록`:""}</small><button class="btn mini" id="enterSavingsRecord" type="button" data-savings-result="enter-record"${sim?" hidden":""}>기록 입력</button></div>
+  const rem=sim?(sim.last.total>=5e8?"<b>5억 목표 달성</b>":`남은 금액 <b>${savingsCompactWon(5e8-sim.last.total)}</b>`):"목표 <b>5억 원</b>";
+  return `      <p class="savings-hero-title" data-savings-result="hero-title">${savingsHeroTitleHtml(milestone,sim)}</p>
+      <div class="savings-balance"><span class="sr-only">최근 기록 자산</span><strong data-savings-result="last-balance" title="${sim?wonA(sim.last.total):"실제 기록 없음"}">${sim?savingsCompactWon(sim.last.total):"—"}</strong><span class="savings-remaining" data-savings-result="goal-remaining">${rem}</span></div>
       <div data-savings-result="goal" class="savings-goal" role="progressbar" aria-label="목표 5억 진행률" aria-describedby="savingsGoalDescription" aria-valuemin="0" aria-valuemax="100"${progress===null?"":` aria-valuenow="${fill}"`} aria-valuetext="${progress===null?"실제 기록 없음":percent}">
         <span class="savings-goal-fill" style="width:${fill}%" aria-hidden="true"></span><span class="savings-goal-label-group" style="width:${Math.min(fill,50)}%"><b>목표 5억</b><span class="savings-goal-percent">${percent}</span></span>
         <span class="savings-goal-date" title="${milestone?.actual?"실제 월말 기록 · 이미 달성":"현재 시나리오 · 월말 자산 기준"}">${milestone?savingsMilestoneHtml(milestone):sim?"기간 내 미도달":"실제 기록 없음"}</span>
-      </div><span class="sr-only" id="savingsGoalDescription" data-savings-result="goal-description">${milestone?`${milestone.actual?"실제 목표 도달":"예상 목표 시점"}: ${savingsMilestoneHtml(milestone)}`:sim?"현재 가정의 예측 기간 내에 목표에 도달하지 않습니다.":"실제 기록을 입력하면 목표 진행률과 예상 시점을 계산합니다."}</span>`;
+      </div><span class="sr-only" id="savingsGoalDescription" data-savings-result="goal-description">${milestone?`${milestone.actual?"실제 목표 도달":"예상 목표 시점"}: ${savingsMilestoneHtml(milestone)}`:sim?"현재 가정의 예측 기간 내에 목표에 도달하지 않습니다.":"실제 기록을 입력하면 목표 진행률과 예상 시점을 계산합니다."}</span>
+      <div class="savings-record-well"><small class="savings-well-text" data-savings-result="last-date">${sim?`${sim.last.ym.replace("-",".")} 실제 기록<b>${wonA(sim.last.total)}</b>`:"아직 입력된 월말 기록이 없어요"}</small><button class="btn mini savings-well-btn" id="enterSavingsRecord" type="button" data-savings-result="enter-record">기록 입력</button></div>`;
+}
+function savingsStepBarsHtml(sc,sim,milestone,currentYear){
+  const rows=sim?.rows||[];
+  if(!rows.length)return `<div class="savings-step-bars savings-step-empty" data-savings-result="step-bars"><p class="hint">월말 실제 저축총액을 기록하면 나이별 자산 성장 흐름을 표시합니다.</p></div>`;
+  const firstRow=rows[0],endRow=rows[rows.length-1],nowRow=rows.find(r=>r.year===currentYear)||null;
+  const hitAge=finite(milestone?.age),hitRow=hitAge!==null?(rows.find(r=>r.age===hitAge)||null):null;
+  const stageAges=(sc?.stages||[]).map(st=>finite(st.age)).filter(a=>a!==null);
+  let picked;
+  if(rows.length<=6)picked=[...rows];
+  else{
+    const set=new Set([endRow,nowRow,hitRow,firstRow].filter(Boolean));
+    for(const age of stageAges){if(set.size>=6)break;const row=rows.find(r=>r.age===age);if(row)set.add(row);}
+    for(const age of [45,50,40,35,55,65,70,80,90]){if(set.size>=6)break;const row=rows.find(r=>r.age===age);if(row)set.add(row);}
+    for(let i=1;set.size<6&&i<rows.length-1;i++){
+      const idx=Math.round(i*(rows.length-1)/5);
+      if(rows[idx])set.add(rows[idx]);
+    }
+    for(const row of rows){if(set.size>=6)break;set.add(row);}
+    picked=[...set].sort((a,b)=>a.year-b.year).slice(0,6);
+    if(!picked.includes(endRow))picked[picked.length-1]=endRow;
+  }
+  const vals=picked.map(r=>finite(r.end)??0);
+  const minVal=Math.min(...vals),maxVal=Math.max(...vals),span=maxVal-minVal;
+  const uniq=[...new Set(vals)].sort((a,b)=>a-b);
+  return `<div class="savings-step-bars" data-savings-result="step-bars" role="list" aria-label="나이별 예상 저축총액">${picked.map((r,i)=>{
+    const isEnd=r===endRow,isHit=!isEnd&&r===hitRow,isNow=!isEnd&&!isHit&&r===nowRow;
+    const stageIdx=stageAges.indexOf(r.age);
+    const tag=isEnd?"·종료":isHit?"·5억":isNow?"·올해":stageIdx>=0?`·${stageIdx+1}단계`:"";
+    const tone=isEnd?" end":isHit?" hit":isNow?" now":"";
+    const val=vals[i],valRank=uniq.length>1?uniq.indexOf(val)/(uniq.length-1):(maxVal>0?1:0);
+    const ratio=span>0?(val-minVal)/span:(maxVal>0?1:0);
+    const height=Math.round(18+66*(0.65*valRank+0.35*ratio));
+    return `<div class="savings-step-col${tone}" role="listitem"><span class="savings-step-val">${savingsStepWon(r.end)}</span><div class="savings-step-bar" style="height:${height}px" aria-hidden="true"></div><span class="savings-step-age">${r.age}세${tag}</span></div>`;
+  }).join("")}</div>`;
 }
 function savingsArrivalHtml(scenarios,sc){
   const current=scenarios.find(x=>x.scenario===sc)?.milestone;
   const reached=scenarios.map(x=>ymNum(x.milestone?.ym)).filter(n=>n!==null),fastest=reached.length?Math.min(...reached):null;
   return scenarios.map(({scenario,sim,milestone},i)=>{
     const month=ymNum(milestone?.ym),delta=current&&month!==null?month-ymNum(current.ym):null;
-    const diff=scenario!==sc&&delta!==null?(delta===0?"같은 시점":`${Math.floor(Math.abs(delta)/12)}년 ${Math.abs(delta)%12}개월 ${delta<0?"빠름":"늦음"}`):"";
+    const abs=delta===null?0:Math.abs(delta),dy=Math.floor(abs/12),dm=abs%12;
+    const diff=scenario!==sc&&delta!==null?(delta===0?"같은 시점":`${dy}년 ${dm}개월 ${delta<0?"빠름":"늦음"}`):"";
+    const badge=scenario===sc?"선택됨":delta!==null?(delta===0?"동일":`${delta<0?"-":"+"}${dy?`${dy}년`:""}${dy&&dm?" ":""}${dm||!dy?`${dm}개월`:""}`):milestone?"도달":sim?"미도달":"미기록";
     const age=finite(milestone?.age),date=milestone?`${milestone.actual?"달성 ":""}${Math.floor(month/12)}.${String(month%12+1).padStart(2,"0")}`:sim?"종료 나이까지 미도달":"실제 기록 없음";
-    return `<li><button class="savings-arrival${scenario===sc?" savings-arrival-current":""}" type="button" data-savings-scenario="${escA(scenario.id)}" data-savings-result="arrival-${i}" aria-pressed="${scenario===sc}"><span class="savings-arrival-name" title="${escA(scenario.name)}">${escA(scenario.name)}</span><strong class="savings-arrival-date${milestone?"":" savings-arrival-unreached"}"><span>${date}</span><span class="savings-milestone-age"${age===null?" hidden":""}> · ${age??""}세</span></strong><span class="savings-arrival-meta"><small class="savings-arrival-fastest"${month!==null&&month===fastest?"":" hidden"}>가장 빠름</small><span>${diff}</span></span></button></li>`;
+    const endRow=sim?.rows?.[sim.rows.length-1];
+    return `<li><button class="savings-arrival${scenario===sc?" savings-arrival-current":""}" type="button" data-savings-scenario="${escA(scenario.id)}" data-savings-result="arrival-${i}" aria-pressed="${scenario===sc}"><span class="savings-arrival-badge">${badge}</span><span class="savings-arrival-name" title="${escA(scenario.name)}">${escA(scenario.name)}</span><strong class="savings-arrival-date${milestone?"":" savings-arrival-unreached"}"><span>${date}</span><span class="savings-milestone-age"${age===null?" hidden":""}> · ${age??""}세</span></strong><small class="savings-arrival-end"${endRow?"":" hidden"}>${endRow?`${endRow.age}세 ${savingsStepWon(endRow.end)}`:""}</small><span class="savings-arrival-meta"><small class="savings-arrival-fastest"${month!==null&&month===fastest?"":" hidden"}>가장 빠름</small><span>${diff}</span></span></button></li>`;
   }).join("");
 }
-function savingsOverviewHtml({endRow,ages,compare,best,canSave,scenarios,sc}){
-  return `      <div class="section-heading"><h2>5억 도달 시점</h2></div><ul class="card savings-arrivals" aria-label="시나리오별 5억 도달 시점">${savingsArrivalHtml(scenarios,sc)}</ul>
+function savingsParamsWellHtml(sc,spending){
+  const items=[
+    ["월급",finite(sc?.salary)!==null?savingsCompactWon(sc.salary):"—"],
+    ["월 사용금액",spending?savingsCompactWon(spending.value):"—"],
+    ["연 수익률",finite(sc?.returnRate)!==null?`${nf1.format(sc.returnRate)}%`:"—"],
+    ["기부·단계",`${moneyInputText(finite(sc?.giving)??0)}% · ${(sc?.stages||[]).length}개`]
+  ];
+  return `<div class="savings-params-well" data-savings-result="params-well" aria-label="현재 시나리오 핵심 가정">${items.map(([label,val])=>`<div class="savings-param-cell"><span>${label}</span><b>${val}</b></div>`).join("")}</div>`;
+}
+function savingsOverviewHtml({endRow,ages,compare,best,canSave,scenarios,sc,sim,milestone,currentYear,spending,firstYear,lastYear,yearCount}){
+  return `      <section class="card savings-step-card" aria-label="나이별 자산 성장 흐름"><div class="savings-card-head"><h2>나이별 자산 성장 흐름</h2><span data-savings-result="step-end">${endRow?`${endRow.age}세 말 <b class="savings-end-accent">${savingsCompactWon(endRow.end)}</b> 예상`:"실제 기록 없음"}</span></div>${savingsStepBarsHtml(sc,sim,milestone,currentYear)}</section>
+      <section class="card savings-scenario-card" aria-label="시나리오 및 핵심 가정"><div class="savings-card-head"><h2>시나리오 · 핵심 가정<span class="sr-only"> 5억 도달 시점</span></h2><button class="savings-link-btn" type="button" data-savings-goto="assumptions">시나리오 · 단계 설정 ›</button></div><ul class="savings-arrivals" aria-label="시나리오별 5억 도달 시점">${savingsArrivalHtml(scenarios,sc)}</ul>${savingsParamsWellHtml(sc,spending)}</section>
+      <div class="savings-bottom-bar"><span data-savings-result="years-range">연도별 · 월별 상세 표 <b>${firstYear}–${lastYear}년 (${yearCount}년)</b></span><button class="savings-link-btn" type="button" data-savings-goto="records">전체 보기 ›</button></div>
       <div class="section-heading"><h2>시나리오 비교</h2><span>나이별 연말 저축총액</span></div><div class="card savings-compare"><div class="table-scroll" tabindex="0" role="region" aria-label="시나리오별 나이별 연말 저축총액" data-savings-result="compare"><table class="data-table"><thead><tr><th scope="col">시나리오</th>${ages.map(a=>`<th scope="col">${a}세</th>`).join("")}</tr></thead><tbody>${compare}</tbody></table></div></div>
       <div class="card savings-future" data-savings-result="future"><h2>장기 예상 자산</h2><span>${endRow?`${endRow.age}세 말 · ${endRow.year}.12`:"종료 나이"}</span><strong title="${endRow?wonA(endRow.end):""}">${endRow?savingsCompactWon(endRow.end):"실제 기록 없음"}</strong><small>현재 시나리오의 월말 자산 기준</small></div>
       <div class="card savings-milestone-record"><h2>목표 도달 최단 기록</h2><div data-savings-result="milestone"><b>${best?savingsMilestoneHtml(best):"저장된 기록 없음"}</b><small>저장된 시점</small></div><button class="btn mini" id="saveSavingsMilestone" type="button" data-savings-result="save-milestone"${canSave?"":" hidden"}>최단 기록 저장</button><p>지금 예상이 저장된 시점보다 빠를 때 저장할 수 있습니다</p></div>`;
@@ -123,14 +192,14 @@ function savingsMarkup(S,sc,stages){
   const progress=sim?sim.last.total/5e8*100:null, fill=progress===null?0:Math.max(0,Math.min(100,progress));
   const percent=progress===null?"—":`${nf1.format(progress)}%`, activeTab=sc?savingsTab:"records";
   const tabs=[["overview","Overview","개요"],["records","Records","기록"],["assumptions","Assumptions","가정"]];
-  return `<div class="savings-heading"><h1>저축 계획</h1></div>
+  return `<div class="savings-heading sr-only"><h1>저축 계획</h1></div>
     <section class="card savings-summary" aria-label="저축 요약">
-      <div class="savings-summary-head">${sc?`<select id="savingsScenarioSelect" data-savings-result="scenario-options" aria-label="저축 시나리오">${S.scenarios.map(x=>`<option value="${escA(x.id)}"${x===sc?" selected":""}>${escA(x.name)} 계획</option>`).join("")}</select>`:'<span>저축 기록</span>'}<button class="btn icon-btn" id="copyScenario" type="button" aria-label="시나리오 복사" title="시나리오 복사">${savingsIcon('<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>')}</button></div>
+      <div class="savings-summary-head"><div class="savings-hero-eyebrow"><span class="savings-hero-goal">목표 5억 모으기 ·</span>${sc?`<select id="savingsScenarioSelect" data-savings-result="scenario-options" aria-label="저축 시나리오">${S.scenarios.map(x=>`<option value="${escA(x.id)}"${x===sc?" selected":""}>${escA(x.name)} 계획</option>`).join("")}</select>`:'<span>저축 기록</span>'}</div><div class="savings-hero-actions"><b class="savings-hero-pct" data-savings-result="hero-percent">${progress===null?"미기록":`${percent} 달성`}</b><button class="btn icon-btn" id="copyScenario" type="button" aria-label="시나리오 복사" title="시나리오 복사">${savingsIcon('<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>')}</button></div></div>
       ${savingsSummaryHtml({sim,fill,percent,progress,milestone})}
     </section>
     <div class="card savings-tabs" role="tablist" aria-label="저축 계획 상세">${tabs.map(([key,id,label])=>`<button type="button" role="tab" id="savingsTab${id}" aria-controls="savingsPane${id}" aria-selected="${activeTab===key}" tabindex="${activeTab===key?0:-1}">${label}</button>`).join("")}</div>
     <section id="savingsPaneOverview" class="savings-pane" role="tabpanel" aria-labelledby="savingsTabOverview"${activeTab==="overview"?"":" hidden"}>
-      ${savingsOverviewHtml({endRow,ages,compare,best,canSave,scenarios,sc})}
+      ${savingsOverviewHtml({endRow,ages,compare,best,canSave,scenarios,sc,sim,milestone,currentYear,spending,firstYear,lastYear,yearCount:yearData.length})}
     </section>
     <section id="savingsPaneAssumptions" class="savings-pane" role="tabpanel" aria-labelledby="savingsTabAssumptions"${activeTab==="assumptions"?"":" hidden"}>
       ${sc?`<div class="card savings-assumptions-body" id="savingsAssumptionsBody">
@@ -273,6 +342,7 @@ function bindSavings(S,sc){
     button.onclick=()=>{savingsTab=key;if(editing())document.activeElement.blur();showTab(key,true);};
   };
   if(el("enterSavingsRecord"))bindTabChoice(el("enterSavingsRecord"),"records");
+  all("[data-savings-goto]").forEach(b=>bindTabChoice(b,b.dataset.savingsGoto));
   tabs.forEach(([key,id],index)=>{
     const button=el(`savingsTab${id}`);bindTabChoice(button,key);
     button.onkeydown=e=>{let next;if(e.key==="ArrowRight")next=(index+1)%tabs.length;else if(e.key==="ArrowLeft")next=(index+tabs.length-1)%tabs.length;else if(e.key==="Home")next=0;else if(e.key==="End")next=tabs.length-1;else return;e.preventDefault();showTab(tabs[next][0],true);};
