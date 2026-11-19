@@ -318,10 +318,10 @@ test('분할매수 체결가 수정과 보유 차감은 평균가가 0 이하 �
   const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0];
   Object.assign(t,{completed:true,executionPrice:2500,mergedMonth:'202612'});
   f.positions[0].contracts=2;
-  for(const average of [1000,1250,Number.MAX_VALUE]){
+  for(const [average,price] of [[1000,'200'],[1000,'500'],[Number.MAX_VALUE,'200']]){
     f.positions[0].settlementPrice=average;
     const before=JSON.stringify(f);
-    assert.equal(ctx.setFutureTrancheExec(f,0,0,'200'),false);
+    assert.equal(ctx.setFutureTrancheExec(f,0,0,price),false);
     assert.equal(JSON.stringify(f),before);
     assert.equal(ctx.removeFromPosition(f,'202612',1,t.executionPrice),false);
     assert.equal(JSON.stringify(f),before);
@@ -333,6 +333,19 @@ test('분할매수 체결가 수정과 보유 차감은 평균가가 0 이하 �
   t.executionPrice=1300;f.positions[0].settlementPrice=1350;
   assert.notEqual(ctx.setFutureTrancheExec(f,0,0,'1310'),false);
   assert.equal(f.positions[0].settlementPrice,1360,'기존 보유 평균가에는 체결가 변경분만 반영한다');
+});
+
+test('분할매수 체결가 수정은 최종 평균가가 양수면 허용하고 보유 차감은 계속 거절한다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0];
+  Object.assign(t,{completed:true,executionPrice:2500,mergedMonth:'202612'});
+  f.positions[0].contracts=2;f.positions[0].settlementPrice=1000;
+  assert.notEqual(ctx.setFutureTrancheExec(f,0,0,'600'),false);
+  assert.equal(t.executionPrice,600);
+  assert.equal(f.positions[0].contracts,2);
+  assert.equal(f.positions[0].settlementPrice,50);
+  const edited=JSON.stringify(f);
+  assert.equal(ctx.removeFromPosition(f,'202612',1,t.executionPrice),false);
+  assert.equal(JSON.stringify(f),edited);
 });
 
 test('분할매수 표의 산 회차는 체결가를 점선으로 보이고 그 자리에서 고치며 자동 배분 미매수 회차는 글자로 둔다',()=>{

@@ -146,11 +146,23 @@ test('재매수 수량 증가로 새 단순평균가가 비유한이면 전체 �
   assert.equal(JSON.stringify(f),before);
 });
 
-test('재매수 체결 환율 수정은 옛 원가 차감 뒤 잘못된 평균가가 되면 전체 기록을 보존한다',()=>{
+test('재매수 체결 환율은 최종 평균가가 양수면 수정하고 차감 결과가 음수인 해제는 계속 거절한다',()=>{
+  const ctx=load(),f=futureRebuyAverageCase(1230);
+  assert.notEqual(ctx.setFutureBuyExec(f,0,0,'1460'),false);
+  assert.equal(f.rebuy.stages[0].buys[0].price,1460);
+  assert.equal(f.positions[0].contracts,7);
+  assert.equal(f.positions[0].settlementPrice,(7*1230-6*1450+6*1460)/7);
+  assert.equal(f.baselinePnl,50000);
+  const edited=JSON.stringify(f);
+  assert.equal(ctx.setFutureBuyChecked(f,0,0,false),false);
+  assert.equal(JSON.stringify(f),edited);
+});
+
+test('재매수 체결 환율 수정 뒤 최종 평균가가 0 이하거나 비유한이면 전체 기록을 보존한다',()=>{
   const ctx=load();
-  for(const [average,price] of [[1230,1450],[1200,1400],[Number.MAX_VALUE,1450]]){
-    const f=futureRebuyAverageCase(average,price),before=JSON.stringify(f);
-    assert.equal(ctx.setFutureBuyExec(f,0,0,'1440'),false);
+  for(const [average,price] of [[1230,'14'],[1230,'15'],[Number.MAX_VALUE,'1460']]){
+    const f=futureRebuyAverageCase(average),before=JSON.stringify(f);
+    assert.equal(ctx.setFutureBuyExec(f,0,0,price),false);
     assert.equal(JSON.stringify(f),before);
   }
 });
