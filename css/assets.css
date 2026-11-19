@@ -154,9 +154,12 @@
 .pnl-broker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.pnl-broker{min-width:0;display:grid;align-content:start;gap:8px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.pnl-broker h3,.pnl-balance-title{margin:0;font-size:14px;font-weight:700}.pnl-broker .field{gap:4px}.pnl-broker .field>input{min-height:40px}.pnl-other>summary{padding:6px 0;cursor:pointer;color:var(--text-2);font-size:13px}.pnl-other[open]>#pnlEntryRows{margin-top:10px}
 .pnl-entry{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);margin-bottom:8px}.pnl-entry-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--text-3)}.pnl-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pnl-balance-title{margin-top:6px}.assets-page input[data-money]{font-variant-numeric:tabular-nums}
 .pnl-entry-grid>.dialog-wide{grid-column:1/-1}
+/* 월 입력 창: PC 두 열에서 안내·RP 카드 높이에 맞춰 옆 입력칸이 늘어나지 않게 위쪽부터 배치하고, RP 계좌는 한 줄 전체로 두 입력을 나란히 둔다. */
+#monthDialog .dialog-grid{align-items:start}
+#monthDialog .field{align-self:start;align-content:start}
 /* RP는 계좌 합계에 포함하되 별도 입력한다. 안내는 dialog 위 top layer에 띄우고 기존 색 토큰만 쓴다. */
 .pnl-balance-title{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 12px}.pnl-balance-title output{margin-left:auto;font-size:12px;font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
-.ledger-rp-account{min-width:0;align-self:start;display:grid;gap:10px;padding:4px 14px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.ledger-rp-head{display:flex;align-items:center;gap:4px;min-width:0}.ledger-rp-head>strong{font-size:13px;color:var(--text);overflow-wrap:anywhere}.ledger-rp-account .field{gap:4px}
+.ledger-rp-account{grid-column:1/-1;min-width:0;align-self:start;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:10px 14px;padding:4px 14px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.ledger-rp-head{grid-column:1/-1;order:-2;display:flex;align-items:center;gap:4px;min-width:0}.ledger-rp-head>strong{font-size:13px;color:var(--text);overflow-wrap:anywhere}.ledger-rp-account .field{gap:4px}.ledger-rp-account>.field-hint{grid-column:1/-1;order:-1}.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total{grid-column:1/-1}
 /* 작은 안내 아이콘은 이름 오른쪽 위에 두고, 누르는 영역은 32px로 유지한다. */
 .ledger-rp-button{flex:none;display:inline-flex;align-items:center;justify-content:flex-start;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--text-2);font-size:9px;font-weight:700;line-height:1}.ledger-rp-button>span{display:inline-grid;place-items:center;width:11px;height:11px;border:1px solid currentColor;border-radius:50%;transform:translateY(-3px);pointer-events:none}.ledger-rp-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ledger-rp-help{position:fixed;inset:auto;margin:0;width:min(300px,calc(100vw - 32px));padding:14px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-lg)}.ledger-rp-help>strong{display:block;font-size:14px}.ledger-rp-help>small{display:block;margin-top:6px;color:var(--text-2);font-size:12px;line-height:1.7;word-break:keep-all;overflow-wrap:anywhere}.ledger-account-total{color:var(--text-2);font-size:11.5px;line-height:1.6;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -371,6 +374,8 @@ a.alloc-chip.on.buy:active{background:var(--danger-line)}
   #monthDialog input{font-size:16px;min-height:44px}
   #monthDialog .field-hint{line-height:1.6;word-break:keep-all;overflow-wrap:anywhere}
   #monthDialog .pnl-broker{gap:12px}
+  .ledger-rp-account{grid-column:auto;grid-template-columns:1fr;gap:10px}
+  .ledger-rp-head,.ledger-rp-account>.field-hint,.ledger-rp-account>.pnl-conversion,.ledger-rp-account>.ledger-account-total{grid-column:auto;order:0}
   #monthDialog .dialog-foot{flex-wrap:wrap}
   #monthDialog .dialog-foot>.danger{flex-basis:100%;margin:0 0 4px}
 }

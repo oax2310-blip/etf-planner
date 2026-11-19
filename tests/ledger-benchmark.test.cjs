@@ -1338,3 +1338,97 @@ test('폰 월별 줄은 44px 터치 영역을 두고 누락 안내가 있어도 
 test('폰 월 입력 창은 16px 글자와 44px 입력 높이를 확보한다',()=>{
   assert.match(read('css/assets.css'),/#monthDialog input\{font-size:16px;min-height:44px\}/);
 });
+
+// CSS 주석을 제거하고 최상위 규칙과 @media 블록을 분리해 지정 선택자의 최종 선언 맵을 읽는다.
+function parseCssRules(css){
+  const text=css.replace(/\/\*[\s\S]*?\*\//g,''), base=[], media=[];
+  const splitDecls=decls=>{
+    const parts=[];let cur='', quote='', depth=0;
+    for(let i=0;i<decls.length;i++){
+      const ch=decls[i];
+      if(quote){cur+=ch;if(ch==='\\'&&i+1<decls.length)cur+=decls[++i];else if(ch===quote)quote='';continue;}
+      if(ch==='"'||ch==="'"){quote=ch;cur+=ch;}
+      else if(ch==='('){depth++;cur+=ch;}
+      else if(ch===')'){depth=Math.max(0,depth-1);cur+=ch;}
+      else if(ch===';'&&depth===0){parts.push(cur);cur='';}
+      else cur+=ch;
+    }
+    if(cur.trim())parts.push(cur);
+    return parts;
+  };
+  const normMedia=s=>s.replace(/\s+/g,'').toLowerCase();
+  const collect=(body,out)=>{
+    for(const [,sel,decls] of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)){
+      const props=new Map();
+      for(const part of splitDecls(decls)){
+        const idx=part.indexOf(':');
+        if(idx<0)continue;
+        props.set(part.slice(0,idx).trim(),part.slice(idx+1).trim());
+      }
+      for(const s of sel.split(','))out.push({selector:s.trim().replace(/\s+/g,' '),props});
+    }
+  };
+  let i=0, top='';
+  while(i<text.length){
+    if(text.startsWith('@media',i)){
+      const open=text.indexOf('{',i);
+      if(open<0)break;
+      const cond=normMedia(text.slice(i,open));
+      let depth=1, j=open+1, quote='';
+      while(j<text.length&&depth>0){
+        const ch=text[j++];
+        if(quote){if(ch==='\\'&&j<text.length)j++;else if(ch===quote)quote='';}
+        else if(ch==='"'||ch==="'")quote=ch;
+        else if(ch==='{')depth++;
+        else if(ch==='}')depth--;
+      }
+      const rules=[];collect(text.slice(open+1,j-1),rules);
+      media.push({cond,rules});
+      i=j;continue;
+    }
+    top+=text[i++];
+  }
+  collect(top,base);
+  return {base,media};
+}
+const cssProps=(rules,selector)=>{
+  const out=new Map();
+  for(const r of rules)if(r.selector===selector)for(const [k,v] of r.props)out.set(k,v);
+  return out;
+};
+
+test('PC 월 입력 창은 계좌 칸이 옆 안내·RP 카드 높이에 맞춰 세로로 늘어나지 않게 위쪽 정렬한다',()=>{
+  const {base}=parseCssRules(read('css/assets.css'));
+  assert.equal(cssProps(base,'#monthDialog .dialog-grid').get('align-items'),'start');
+  const field=cssProps(base,'#monthDialog .field');
+  assert.equal(field.get('align-self'),'start');
+  assert.equal(field.get('align-content'),'start');
+});
+
+test('PC 월 입력 창의 RP 계좌는 두 열 전체를 쓰고 안의 두 입력을 나란히 배치하며 폰에서는 한 열로 접는다',()=>{
+  const {base,media}=parseCssRules(read('css/assets.css'));
+  const rp=cssProps(base,'.ledger-rp-account');
+  assert.equal(rp.get('grid-column'),'1/-1');
+  assert.equal(rp.get('display'),'grid');
+  assert.equal(rp.get('grid-template-columns'),'repeat(2,minmax(0,1fr))');
+  assert.equal(rp.get('align-items'),'start');
+  const head=cssProps(base,'.ledger-rp-head');
+  assert.equal(head.get('grid-column'),'1/-1');
+  assert.equal(head.get('order'),'-2');
+  const hint=cssProps(base,'.ledger-rp-account>.field-hint');
+  assert.equal(hint.get('grid-column'),'1/-1');
+  assert.equal(hint.get('order'),'-1');
+  assert.equal(cssProps(base,'.ledger-rp-account>.pnl-conversion').get('grid-column'),'1/-1');
+  assert.equal(cssProps(base,'.ledger-rp-account>.ledger-account-total').get('grid-column'),'1/-1');
+
+  const mobile700=media.filter(m=>m.cond==='@media(max-width:700px)').flatMap(m=>m.rules);
+  const mobileRp=cssProps(mobile700,'.ledger-rp-account');
+  assert.equal(mobileRp.get('grid-column'),'auto');
+  assert.equal(mobileRp.get('grid-template-columns'),'1fr');
+  for(const sel of ['.ledger-rp-head','.ledger-rp-account>.field-hint','.ledger-rp-account>.pnl-conversion','.ledger-rp-account>.ledger-account-total']){
+    const p=cssProps(mobile700,sel);
+    assert.equal(p.get('grid-column'),'auto',sel);
+    assert.equal(p.get('order'),'0',sel);
+  }
+});
+
