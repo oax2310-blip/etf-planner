@@ -359,3 +359,29 @@ test('분할매수 표의 산 회차는 체결가를 점선으로 보이고 그 
   assert.match(buyTableRow(html,'0:0').html,/data-future-exec="0:0"/,'자동 배분에서도 산 회차 체결가는 고친다');
   assert.doesNotMatch(open,/data-tranche-price|data-future-exec/,'자동 배분 미매수 회차는 계획 창에서 정한다');
 });
+
+test('분할매수 체결가 수정과 일부 보유 차감은 편입 회차의 기존 체결가가 비정상이면 거절하고 전체 기록을 보존한다',()=>{
+  const ctx=buyTableContext();
+  for(const [price,executionPrice] of [[0,null],[null,null],[1400,''],[1400,0],[1400,-5],[1400,NaN],[undefined,undefined]]){
+    const f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0],label=`price ${String(price)} executionPrice ${String(executionPrice)}`;
+    Object.assign(t,{completed:true,price,executionPrice,mergedMonth:'202612'});f.positions[0]={month:'202612',contracts:2,settlementPrice:1400};
+    const before=JSON.stringify(f);
+    assert.equal(ctx.setFutureTrancheExec(f,0,0,'1460'),false,label);
+    assert.equal(JSON.stringify(f),before,label);assert.equal(f.positions[0].settlementPrice,1400,label);
+    assert.equal(ctx.removeFromPosition(f,'202612',1,Number(t.executionPrice??t.price)),false,`${label} 차감`);
+    assert.equal(JSON.stringify(f),before,`${label} 차감`);
+  }
+  const f=buyTableFutures([level(25,1400,2)]),t=f.levels[0].tranches[0];
+  Object.assign(t,{completed:true,price:1450,executionPrice:null,mergedMonth:'202612'});f.positions[0]={month:'202612',contracts:2,settlementPrice:1400};
+  assert.notEqual(ctx.setFutureTrancheExec(f,0,0,'1460'),false,'체결가가 비어 있는 옛 기록은 양수 계획가를 기존 체결가로 쓴다');
+  assert.equal(f.positions[0].settlementPrice,1405);assert.equal(t.executionPrice,1460);
+  const legacy=buyTableFutures([level(25,1400,2)]),u=legacy.levels[0].tranches[0];
+  Object.assign(u,{completed:true,price:0,executionPrice:null});const positions=JSON.stringify(legacy.positions);
+  assert.notEqual(ctx.setFutureTrancheExec(legacy,0,0,'1460'),false,'월물 밖 옛 매수는 기록만 고친다');
+  assert.equal(u.executionPrice,1460);assert.equal(JSON.stringify(legacy.positions),positions);
+});
+
+test('분할매수 보유 전량 차감은 체결가가 비정상이어도 보유 행을 지울 수 있다',()=>{
+  const ctx=buyTableContext(),f=buyTableFutures([level(25,1400,1)]);f.positions[0].contracts=1;
+  assert.equal(ctx.removeFromPosition(f,'202612',1,0),true);assert.equal(f.positions.length,0);
+});

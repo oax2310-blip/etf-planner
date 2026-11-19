@@ -106,10 +106,12 @@ function addToPosition(f, month, qty, price){
 const validFuturePositionAverage = value => Number.isFinite(value)&&value>0;
 const futurePositionAverageWarning = "보유 단순평균가와 체결 환율을 확인하세요.";
 // 원가 차감의 읽기 전용 계산. 계약을 전부 빼면 평균가 없이 행을 지울 수 있다.
+// 일부만 뺄 때 체결가(price)가 양수·유한이 아니면(null·빈 값·0·음수·NaN) 평균가를 부풀리지 않도록 null로 거절한다.
 function futurePositionAfterRemoval(pos,qty,price){
   const before=Number(pos?.contracts),contracts=before-qty;
   if(!(qty>0)||!Number.isFinite(contracts)||contracts<0)return null;
   if(contracts===0)return {contracts};
+  if(!validFuturePositionAverage(price))return null;
   const settlementPrice=(Number(pos.settlementPrice)*before-price*qty)/contracts;
   return validFuturePositionAverage(settlementPrice)?{contracts,settlementPrice}:null;
 }
@@ -124,7 +126,9 @@ function applyFuturePositionRemoval(f,pos,remaining){
   else {pos.settlementPrice=remaining.settlementPrice;pos.contracts=remaining.contracts;}
 }
 // 환율 정정은 계약 수를 유지하면서 옛 체결 원가를 새 체결 원가로 바꾼다. 검증할 값은 정정 후 평균가다.
+// 옛 체결가(oldPrice)가 양수·유한이 아니면(null·빈 값·0·음수·NaN) 뺄 원가를 알 수 없어 NaN을 돌려 호출부가 거절하게 한다.
 function futurePositionAverageAfterExecChange(pos,qty,oldPrice,price){
+  if(!validFuturePositionAverage(oldPrice))return NaN;
   const contracts=Number(pos.contracts);
   return (Number(pos.settlementPrice)*contracts-oldPrice*qty+price*qty)/contracts;
 }
