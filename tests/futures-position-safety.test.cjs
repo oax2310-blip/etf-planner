@@ -128,3 +128,18 @@ test('옛 returns의 완료 재매수 변경도 복구를 막고 미완료 설�
   const g=old(),pendingRecord=ctx.deleteFuturePosition(g,0);Object.assign(g.rebuy.returns[1],{done:true,contracts:1,execPrice:1432,month:'202612'});const changed=JSON.stringify(g);
   assert.equal(ctx.restoreFuturePosition(g,pendingRecord),false);assert.equal(JSON.stringify(g),changed,'미완료 회차가 새로 체결되면 복구를 막는다');
 });
+
+test('보유 단순평균가 직접 입력은 백업·동기화 검증과 같은 상한(Number.MAX_SAFE_INTEGER)까지만 받는다',()=>{
+  const ctx=load(),validate=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../js/data-validation.js'),'utf8')+'\nexternalData');
+  for(const raw of [String(Number.MAX_SAFE_INTEGER+1),'1e20',String(Number.MAX_VALUE)]){
+    const f=fixture(),before=JSON.stringify(f),result=ctx.futurePositionEdit(f,0,'settlementPrice',raw);
+    assert.deepEqual(plain(result),{ok:false,error:'단순평균가가 입력 가능한 범위를 초과했습니다.'},raw);
+    assert.equal(JSON.stringify(f),before,raw);
+  }
+  const f=fixture();
+  assert.equal(ctx.futurePositionEdit(f,0,'settlementPrice',String(Number.MAX_SAFE_INTEGER)).ok,true);
+  assert.equal(f.positions[0].settlementPrice,Number.MAX_SAFE_INTEGER);
+  assert.doesNotThrow(()=>validate.planner({plans:[],futures:f,actions:{}}),'상한값은 백업·동기화 검증을 통과한다');
+  const over=fixture();over.positions[0].settlementPrice=1e20;
+  assert.throws(()=>validate.planner({plans:[],futures:over,actions:{}}),/숫자 범위/,'상한을 넘으면 업로드·복원이 거절되므로 입력에서 막는다');
+});

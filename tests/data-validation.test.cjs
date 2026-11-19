@@ -236,3 +236,17 @@ test('소분류 sections[].classId는 선택 문자열만 허용하고 다른 �
   for(const classId of [undefined,null,'','c-raw'])assetsUnchanged(sec(classId));
   for(const classId of [123,true,false,{},['c-raw']])assetsRejected(sec(classId),'자산.allocation.groups[0].sections[0].classId');
 });
+
+test('달러선물 보유 계약은 음수면 거부하고 0·양수·숫자 문자열·빈 값은 그대로 통과한다',()=>{
+  for(const contracts of [-1,'-2',-0.5]){
+    const data=planner();data.futures.positions=[{month:'202612',contracts,settlementPrice:1400}];const before=JSON.stringify(data);
+    assert.throws(()=>validate.planner(data),/futures\.positions\[0\]\.contracts/,String(contracts));assert.equal(JSON.stringify(data),before);
+  }
+  for(const contracts of [0,3,'3',null,undefined,'']){
+    const data=planner();data.futures.positions=[{month:'202612',contracts,settlementPrice:1400}];const before=JSON.stringify(data);
+    assert.equal(validate.planner(data),data,String(contracts));assert.equal(JSON.stringify(data),before);
+  }
+  const data=planner();data.futures.positions=[{month:'202612',settlementPrice:1400}];
+  data.futures.levels=[{days:25,contracts:0,tranches:[]}];data.futures.rebuy={cuts:[{contracts:1,price:1400,legs:[{month:'202612',contracts:1,settlementPrice:1450}]}]};
+  assert.equal(validate.planner(data),data,'계약 필드가 없는 보유와 다른 위치의 contracts는 기존대로');
+});
