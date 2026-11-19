@@ -174,7 +174,7 @@ function loadAlertDialogContext(initial={}){
     for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}
     await turn();await turn();
   }
-  return {ctx,body,dialog,removeBtn,nodes,timers,advance,saves:()=>saves,editorClosed:()=>editorClosed,waiting:()=>findWaiting(body)};
+  return {ctx,body,dialog,removeBtn,nodes,events,timers,advance,saves:()=>saves,editorClosed:()=>editorClosed,waiting:()=>findWaiting(body)};
 }
 
 test('동기화 중 알림 규칙 삭제를 누르면 진행 중 화면을 띄우고 완료 후 삭제한다',async()=>{
@@ -302,3 +302,35 @@ test('알림 규칙 목록이 같으면 renderAlerts가 DOM innerHTML을 불필�
   assert.equal(writes,2,'규칙 상태가 바뀌면 마크업을 갱신해야 한다');
 });
 
+test('알림 규칙 목록을 누르면 목록·상태를 유지하고 클릭 뒤 원래 규칙 삭제와 새 규칙을 그린다',async()=>{
+  const h=loadAlertDialogContext(),list=new EventTarget();
+  h.nodes.alertsList=list;
+  for(const name of ['alertsBtn','closeAlerts','addAlertBtn','cancelAlertEdit'])h.nodes[name]={};
+  h.ctx.initializeAlerts();
+  const first=h.ctx.writeAlertRule(valid()).value;
+  h.removeBtn.dataset.removeAlert=first.id;
+  h.ctx.renderAlerts();
+  const before=list.innerHTML,statusBefore=h.nodes.alertsSaveStatus.textContent;
+
+  list.dispatchEvent(Object.assign(new Event('pointerdown'),{button:0,pointerId:7}));
+  const fresh=h.ctx.writeAlertRule(valid({ticker:'NEW'})).value;
+  h.ctx.state.alerts.rules.reverse();
+  h.ctx.sync.failed=true;
+  h.ctx.renderAlerts();
+  assert.equal(list.innerHTML,before,'누르는 동안 바뀐 규칙을 그리지 않는다');
+  assert.equal(h.nodes.alertsSaveStatus.textContent,statusBefore);
+  assert.equal(h.nodes.alertsCount.textContent,'1개');
+
+  h.events.get('pointerup')({pointerId:7,pointerType:'touch'});
+  await h.advance(0);
+  assert.equal(list.innerHTML,before);
+  h.events.get('click')({pointerId:7,detail:1});
+  h.removeBtn.onclick();
+  assert.equal(h.saves(),1);
+  assert.deepEqual(plain(h.ctx.state.alerts.rules.map(rule=>rule.id)),[fresh.id]);
+  assert.equal(list.innerHTML,before);
+  await h.advance(0);
+  assert.match(list.innerHTML,/NEW/);
+  assert.doesNotMatch(list.innerHTML,/TEST/);
+  assert.match(h.nodes.alertsSaveStatus.textContent,/동기화를 확인/);
+});

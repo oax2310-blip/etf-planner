@@ -381,9 +381,10 @@ function loadWithPageLeave(initial={}){
   }
   const body=element('body'),dialog=element('dialog');
   dialog.setAttribute('open','');body.append(dialog);
-  const clearReadBtn=element('button'),clearAllBtn=element('button'),deleteBtn=element('button');
-  dialog.append(clearReadBtn,clearAllBtn,deleteBtn);
+  const clearReadBtn=element('button'),clearAllBtn=element('button'),deleteBtn=element('button'),list=element('div');
+  dialog.append(clearReadBtn,clearAllBtn,list);list.append(deleteBtn);
   h.nodes.set('alertHistoryDialog',dialog);
+  h.nodes.set('alertHistoryList',list);
   h.nodes.set('clearReadAlertHistory',clearReadBtn);
   h.nodes.set('clearAlertHistory',clearAllBtn);
   h.nodes.set('conflictDialog',element('dialog'));
@@ -399,7 +400,7 @@ function loadWithPageLeave(initial={}){
     for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}
     await turn();await turn();
   }
-  return {...h,body,dialog,clearReadBtn,clearAllBtn,deleteBtn,timers,advance,waiting:()=>findWaiting(body)};
+  return {...h,body,dialog,list,events,clearReadBtn,clearAllBtn,deleteBtn,timers,advance,waiting:()=>findWaiting(body)};
 }
 
 test('동기화 중 개별 알림 삭제를 누르면 진행 중 화면을 띄우고 동기화 완료 후 삭제한다',async()=>{
@@ -574,3 +575,66 @@ test('목록 내용이 같으면 renderAlertHistory가 DOM innerHTML을 불필�
   assert.equal(writes,2,'항목 상태가 바뀌면 마크업을 갱신해야 한다');
 });
 
+test('알림내역을 누르는 동안 목록·상태 갱신을 보류하고 원래 버튼의 클릭 뒤 최신 상태를 그린다',async()=>{
+  const h=loadWithPageLeave(),status=h.ctx.$('alertHistoryStatus');
+  h.ctx.collectAlertInbox=()=>{};
+  h.deleteBtn.dataset.deleteHistory='one';
+  h.ctx.$$=selector=>selector==='[data-delete-history]'?[h.deleteBtn]:[];
+  h.ctx.initializeAlertHistory();
+  h.ctx.acceptAlertHistory([event('one')]);
+  const before=h.list.innerHTML;
+
+  h.list.emit('pointerdown',{button:0,pointerId:1,target:h.deleteBtn});
+  h.ctx.acceptAlertHistory([event('new',{occurredAt:'2026-10-14T02:00:00Z'})]);
+  vm.runInContext('alertHistoryMessage="발송 이력 오류";renderAlertHistory()',h.ctx);
+  assert.deepEqual(JSON.parse(h.storage.get('test-state')).alertHistory.items.map(i=>i.id),['new','one']);
+  assert.equal(h.list.innerHTML,before,'누르는 동안 새 알림을 화면에 삽입하지 않는다');
+  assert.equal(status.textContent,'','누르는 동안 상태 문구를 표시하지 않는다');
+
+  h.events.get('pointerup')({pointerId:1,pointerType:'touch'});
+  await h.advance(0);
+  assert.equal(h.list.innerHTML,before,'pointerup과 click 사이에도 기존 버튼을 유지한다');
+  h.events.get('click')({pointerId:1,detail:1});
+  h.deleteBtn.onclick();
+  assert.deepEqual(plain(h.ctx.state.alertHistory.deletedIds),['one']);
+  assert.equal(h.list.innerHTML,before,'click 처리 뒤 예약된 렌더링에서 갱신한다');
+  await h.advance(0);
+  assert.match(h.list.innerHTML,/data-delete-history="new"/);
+  assert.doesNotMatch(h.list.innerHTML,/data-delete-history="one"/);
+  assert.equal(status.textContent,'발송 이력 오류');
+});
+
+test('알림내역의 마지막 포인터가 취소되면 클릭 없이 보류한 목록과 상태를 갱신한다',()=>{
+  const h=loadWithPageLeave(),status=h.ctx.$('alertHistoryStatus');
+  h.ctx.collectAlertInbox=()=>{};
+  h.ctx.initializeAlertHistory();
+  h.ctx.acceptAlertHistory([event('one')]);
+  const before=h.list.innerHTML;
+  for(const pointerId of [1,2])h.list.emit('pointerdown',{button:0,pointerId});
+  h.ctx.acceptAlertHistory([event('new')]);
+  vm.runInContext('alertHistoryMessage="수신함 오류";renderAlertHistory()',h.ctx);
+
+  h.events.get('pointercancel')({pointerId:1});
+  assert.equal(h.list.innerHTML,before,'다른 포인터가 누르는 동안 그대로 둔다');
+  assert.equal(status.textContent,'');
+  h.events.get('pointercancel')({pointerId:2});
+  assert.match(h.list.innerHTML,/data-delete-history="new"/);
+  assert.equal(status.textContent,'수신함 오류');
+  assert.deepEqual(plain(h.ctx.state.alertHistory.deletedIds),[]);
+});
+
+test('알림내역 터치를 뗀 뒤 관련 클릭이 오지 않아도 보류한 갱신을 반영한다',async()=>{
+  const h=loadWithPageLeave();
+  h.ctx.collectAlertInbox=()=>{};
+  h.ctx.initializeAlertHistory();
+  h.ctx.acceptAlertHistory([event('one')]);
+  const before=h.list.innerHTML;
+  h.list.emit('pointerdown',{button:0,pointerId:1});
+  h.ctx.acceptAlertHistory([event('new')]);
+  h.events.get('pointerup')({pointerId:1,pointerType:'touch'});
+  h.events.get('click')({pointerId:2,detail:1});
+  await h.advance(300);
+  assert.equal(h.list.innerHTML,before,'다른 포인터의 클릭으로 터치 대기를 끝내지 않는다');
+  await h.advance(50);
+  assert.match(h.list.innerHTML,/data-delete-history="new"/);
+});

@@ -1,6 +1,46 @@
 // 추가 기준선 알림 설정. 시세 표시는 prices.js, 연결 매매 기준은 trade-alerts.js, 기기 수신은 push.js와 연결된다.
 let editingAlertId = null;
 let alertsInitialized = false;
+let deferAlertRulesRender;
+// 누른 위치를 유지하고, 누르는 동안 여러 번 요청한 렌더링은 최신 상태로 한 번 그린다.
+function deferAlertListWhilePressed(list, dialog){
+  if(!list?.addEventListener)return;
+  const pointers=new Set(),pendingRenders=new Set();
+  let releaseTimer=null,releasedPointerId;
+  function flush(){
+    releaseTimer=null;
+    if(pointers.size)return;
+    const renders=[...pendingRenders];pendingRenders.clear();
+    for(const render of renders)render();
+  }
+  function scheduleRelease(delay){
+    clearTimeout(releaseTimer);releaseTimer=setTimeout(flush,delay);
+  }
+  list.addEventListener("pointerdown",event=>{if(event.button===0)pointers.add(event.pointerId);},true);
+  document.addEventListener("pointerup",event=>{
+    if(!pointers.delete(event.pointerId))return;
+    releasedPointerId=event.pointerId;
+    // 터치 click은 pointerup과 별도 작업으로 올 수 있다. 클릭 없는 놓기에도 갱신을 끝낸다.
+    scheduleRelease(event.pointerType==="mouse"?0:350);
+  },true);
+  document.addEventListener("click",event=>{
+    if(releaseTimer===null||event.detail===0)return;
+    if(event.pointerId>0&&event.pointerId!==releasedPointerId)return;
+    scheduleRelease(0);
+  },true);
+  document.addEventListener("pointercancel",event=>{
+    if(pointers.delete(event.pointerId)&&releaseTimer===null)flush();
+  },true);
+  function reset(){
+    pointers.clear();clearTimeout(releaseTimer);flush();
+  }
+  dialog.addEventListener("close",reset);
+  globalThis.addEventListener?.("blur",reset);
+  return render=>{
+    if(!pointers.size&&releaseTimer===null)return false;
+    pendingRenders.add(render);return true;
+  };
+}
 // 조회·창 열기는 state.alerts를 만들거나 저장 기록을 바꾸지 않는다. DOM 없이 불러 쓰므로 함수 밖에서 화면을 건드리지 않는다.
 const alertRules = () => Array.isArray(state.alerts?.rules) ? state.alerts.rules.filter(r=>r&&typeof r==="object") : [];
 // 기본 OFF. alerts.krOpenReminder=true면 밤사이 미국 종목 신호를 한국장 09:20 이후 첫 국내 조회(보통 09:45쯤)에 기준별 한 번 재발송한다.
@@ -101,6 +141,7 @@ function runAlertDelete(trigger,action){
 }
 function renderAlerts(){
   const list=$("alertsList");if(!list)return;
+  if(deferAlertRulesRender?.(renderAlerts))return;
   const rules=alertRules();
   renderKrOpenReminder();
   if(typeof renderTradeAlertSummary==="function")renderTradeAlertSummary();
@@ -129,6 +170,7 @@ function closeAlertEditor(){editingAlertId=null;$("alertForm").hidden=true;$("al
 function openAlertSettings(){closeAlertEditor();renderAlerts();if(typeof renderPushSetup==="function")renderPushSetup();$("alertsDialog").showModal();}
 function initializeAlerts(){
   if(alertsInitialized)return;alertsInitialized=true;
+  deferAlertRulesRender=deferAlertListWhilePressed($("alertsList"),$("alertsDialog"));
   $("alertsBtn").onclick=()=>typeof openAlertHistory==="function"?openAlertHistory():openAlertSettings();
   $("closeAlerts").onclick=()=>$("alertsDialog").close();
   $("addAlertBtn").onclick=()=>openAlertEditor();$("cancelAlertEdit").onclick=closeAlertEditor;

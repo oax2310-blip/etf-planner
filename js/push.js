@@ -366,6 +366,8 @@ function renderPushSetup(){
   if(status==="linked-alerts-unavailable")message+=" 매매 기준 알림 계산을 확인 중입니다. 다음 수집에서 계산을 마치면 발송을 재개합니다.";
   const blockedPermission=supported&&Notification.permission==="denied";
   if(!pushBusy&&supported&&pushMessage&&((pushMessagePermission&&Notification.permission!==pushMessagePermission)||(blockedPermission&&pushMessageTone!=="bad")))setPushFeedback("");
+  // 규칙 목록 위의 안내 문구가 누르고 있는 규칙의 위치를 밀지 않도록 표시만 미룬다.
+  if(typeof deferAlertRulesRender==="function"&&deferAlertRulesRender(renderPushSetup))return;
   const disabled=pushBusy||!supported||!ready||sync.blocked||blockedPermission;
   const testDisabled=pushBusy||!supported||blockedPermission;
   let feedbackTone="",feedbackLabel="",feedbackMain="",feedbackDetail="",feedbackExtra="";
