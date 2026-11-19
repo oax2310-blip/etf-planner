@@ -177,15 +177,17 @@ function futureRebuyEditError(f,values){
 }
 // 하단선 시세가 신저점 환율 이상일 때 창에 보일 이유(line = 하단선 이름, floor = 그 선의 시세).
 const futureFloorAbove=(line,floor)=>`손절 하단 ${movingLineText(line)}(${fmtPrice(floor)}원)이 신저점 환율 이상입니다. 더 긴 선이나 직접 가격을 고르세요.`;
+function futureNewStopBase(f){
+  const currentPrice=futureRebuyOf(f).currentPrice;
+  return {...f,rebuy:Number(currentPrice)>0?{currentPrice}:{}};
+}
 // 손절 하단 칸: 숫자 + 단위(원 = 직접 가격, 일선·주선·월선 = 그 기간의 하단선). 선을 고르면 숫자는 기간(1~400)이고 아래 작은 글씨에 그 선의 지금 시세를 보인다.
 // 하단선은 setFutureRebuyField('floorLine')로 저장하며, 직접 가격 칸은 선을 고른 동안 비활성이라 바꾼 칸에 들어가지 않는다.
 function openFutureRebuyDialog(startNew=false){
   const previous=state.futures,old=futureRebuySummary(previous),unlinked=startNew?futureRebuyUnlinked(previous):null;
-  const previousJson=startNew?JSON.stringify(previous):null;
+  const previousJson=startNew?JSON.stringify({futures:previous}):null;
   let archivedSnapshot=null;
-  const newBase={...previous,rebuy:{}};
-  if(startNew&&Number(futureRebuyOf(previous).currentPrice)>0)newBase.rebuy.currentPrice=futureRebuyOf(previous).currentPrice;
-  const f=startNew?newBase:previous,r=futureRebuyOf(f),s=startNew?futureRebuySummary(f):old,fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?futureShown(v):"";
+  const f=startNew?futureNewStopBase(previous):previous,r=futureRebuyOf(f),s=startNew?futureRebuySummary(f):old,fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?futureShown(v):"";
   const field=(key,label,value,attrs,off=s.started)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" ${key.endsWith("Price")?'type="text" inputmode="decimal" autocomplete="off" data-money':'type="number"'} ${attrs} value="${key.endsWith("Price")?moneyInputText(value):value}"${off?" disabled":""}></label>`;
   const floorLine=futureFloorLine(r.floorLine),lock=s.started?" disabled":"",floorUnits=[["","원"],["일선","일선"],["주선","주선"],["개월선","월선"]];
   const floorField=`<div class="field future-floor"><span>손절 하단</span><div class="hold-input"><input data-fr-field="floorPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${opt(r.floorPrice)}" aria-label="손절 하단 (원)"${floorLine?" hidden disabled":lock}><input id="frFloorPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(floorLine)||60}" required aria-label="손절 하단 이동평균 기간"${floorLine?lock:" hidden disabled"}><select id="frFloorUnit" aria-label="손절 하단 단위"${lock}>${floorUnits.map(([v,label])=>`<option value="${v}"${movingLineUnit(floorLine)===v?" selected":""}>${label}</option>`).join("")}</select></div><small id="frFloorPrice"></small></div>`;
@@ -194,6 +196,7 @@ function openFutureRebuyDialog(startNew=false){
   dialog.innerHTML=`<form id="futureRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyTitle">${startNew?"새 손절 계획":"손절 기준 수정"}</h2><button class="btn ghost" type="button" data-close-future-rebuy>닫기</button></div>
     ${startNew?`<p class="hint">이전 계획 · 손절 ${old.sold}계약 · 재매수 ${old.rebought}계약 · 미복원 ${old.rest}계약</p>
     <p class="hint">체결은 이 기기의 플래너 보관 기록에 남깁니다. 이전 미체결 회차와 알림은 종료하고 미복원 수량은 이월하지 않습니다. 보유 월물·단순평균가·누적 정산손익은 유지합니다.</p>
+    <p class="hint">새 계획의 알림은 꺼진 상태로 시작합니다. 분할 손절 표에서 알림을 켜세요. 재매수 기준은 새 계획에서 다시 정합니다.</p>
     ${hasUnlinked?'<p class="future-plan-error">보유 미반영 체결이 있습니다. 계좌와 대조하고 보유 월물에 반영하거나 직접 반영으로 표시하세요.</p>':""}
     <button class="btn mini ghost" id="frBackup" type="button">플래너 JSON 백업</button>`:s.started?`<p class="hint">${hint}</p><button class="btn" id="frNewPlan" type="button">보관 후 새 계획 시작</button>`:'<p class="hint">신저점부터 정한 하단까지 환율을 고르게 나눕니다. 설정한 비중만큼 손절하고, 하단 아래의 손절 회차는 만들지 않습니다. 하단은 직접 가격(원)이나 일선·주선·월선으로 정하며, 선을 고르면 그 선의 시세를 따라 남은 회차가 다시 나뉩니다.</p>'}
     <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'data-money-min="0" data-money-step="any"')}${floorField}${field("contracts","이탈 전 계약 수",s.hold||"",'min="0" step="1" inputmode="numeric"')}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${field("steps","분할 횟수",futureRebuyQty(r.steps)||10,'min="1" max="60" step="1" inputmode="numeric"')}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'data-money-min="0" data-money-step="any" placeholder="시세 없음"',false)}</div>
@@ -235,11 +238,15 @@ function openFutureRebuyDialog(startNew=false){
     if(!startNew&&!Object.keys(edits).length){dialog.close();return;}
     if(startNew){
       try{absorbPlanner();}catch{error.textContent="최신 기록을 읽지 못했습니다. 다시 시도하세요.";return;}
-      if(JSON.stringify(state.futures)!==previousJson){error.textContent="달러선물 기록이 바뀌었습니다. 창을 닫고 새 계획을 다시 열어 확인하세요.";return;}
+      // 창을 연 기록에 최신 시세를 채운 결과와 일치하면 시세 갱신으로 보고, 보유·체결·설정의 변경은 계속 막는다.
+      const currentJson=JSON.stringify({futures:state.futures});
+      if(currentJson!==previousJson&&currentJson!==pricedSnapshot(previousJson,priceData)){
+        error.textContent="달러선물 기록이 바뀌었습니다. 보유·체결·설정이 바뀌었거나 최신 시세만으로 변경을 확인할 수 없습니다. 새 계획을 다시 열어 확인하세요.";return;
+      }
       edits.contracts=inputs.find(el=>el.dataset.frField==="contracts").value;
     }
-    const latest=state.futures,g=applyFutureRebuyEdits(startNew?newBase:latest,edits);
-    if(!g){error.textContent=futureRebuyEditError(startNew?newBase:latest,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})});return;}
+    const latest=state.futures,base=startNew?futureNewStopBase(latest):latest,g=applyFutureRebuyEdits(base,edits);
+    if(!g){error.textContent=futureRebuyEditError(base,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})});return;}
     const priced=priceData&&Object.keys(edits).some(key=>key!=="currentPrice");if(priced)fillPrices({futures:g},priceData);
     const gl=futureFloorLine(g.rebuy.floorLine),floor=Number(g.rebuy.floorPrice)||0; // 새로 고른 하단선·신저점은 지금 시세로 하단이 신저점보다 낮은지 확인한다
     if(gl&&(Object.hasOwn(edits,"floorLine")||Object.hasOwn(edits,"lowPrice"))&&floor>0&&Number(g.rebuy.lowPrice)>0&&floor>=Number(g.rebuy.lowPrice)){error.textContent=futureFloorAbove(gl,floor);return;}
