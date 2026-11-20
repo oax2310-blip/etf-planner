@@ -241,6 +241,9 @@ function futureRestartCuts(f,auto){
   r.cuts.forEach((c,i)=>{const row=plan.find(x=>x.k===i+1);if(c&&!(Number(c.targetPrice)>0)&&row?.price>0)c.targetPrice=row.price;});
   r.cutRestart={at:r.cuts.reduce((n,c,i)=>c?i+1:n,0),rebought:futureRebuySummary(f).rebought};
   if(auto)delete r.contracts;
+  // 지난 계획의 미체결 회차(at 이상)에 둔 회차별 알림 예외는 새 계획 회차에 이어지지 않게 지운다(새 회차는 손절 알림 전체 설정을 따름).
+  const o=r.notify?.cutsOverrides;
+  if(o&&typeof o==="object"){for(const k of Object.keys(o))if(Number(k)>=r.cutRestart.at)delete o[k];if(!Object.keys(o).length)delete r.notify.cutsOverrides;}
   return g;
 }
 function futureNewStopBase(f){
@@ -307,6 +310,7 @@ function openFutureRebuyDialog(startNew=false){
     const open=inputs.filter(el=>!el.disabled&&!el.hidden),invalid=[...open,period].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
     const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
     if(line!==floorLine)edits.floorLine=line;
+    if(holdTouched&&holdInput.value===initial.contracts)edits.contracts=holdInput.value; // 직접 다시 넣은 같은 값도 고정으로 저장(신저점을 바꿔도 자동으로 바꾸지 않음)
     if(!startNew&&!Object.keys(edits).length){dialog.close();return;}
     if(startNew){
       try{absorbPlanner();}catch{error.textContent="최신 기록을 읽지 못했습니다. 다시 시도하세요.";return;}
@@ -425,7 +429,7 @@ function openFutureDirectRebuyDialog(){
 // 말풍선은 다음에 비거나 채워질 칸(그 회차 계약 수만큼)을 가리킨다. 손절 도달을 먼저 표시하고, 재매수 중에는 다음 재매수 회차를 보여 주되 남은 손절도 계속 확인한다.
 // 손절 시점(현재 환율 ≤ 회차 환율)·재매수 시점(현재 환율 ≥ 회차 환율)은 주황. toggle은 신저점 이탈 알림 스위치, trText는 재매수 회차 이름(이스케이프됨).
 function futureRebuyTrack(r,s,cur,toggle,trText,fe=null){
-  const hold=s.hold,sold=Math.min(s.cutSold,hold),back=Math.min(s.cutRebought,sold),green=hold-sold,filled=green+back,keep=Math.max(0,hold-s.goal),low=Number(r.lowPrice)||0;
+  const hold=s.cells,sold=Math.min(s.cutSold,hold),back=Math.min(s.cutRebought,sold),green=hold-sold,filled=green+back,keep=Math.max(0,hold-s.goal),low=Number(r.lowPrice)||0; // 칸 수 = cells(rebuy.js futureRebuySummary)
   const cutPx=v=>`${decimal.format(v)}원`,px2=v=>`${fmtPrice(v)}원`;
   const pct=p=>{const g=(p/cur-1)*100;return `${g>0?"+":""}${new Intl.NumberFormat("ko-KR",{maximumFractionDigits:Math.abs(g)<1?2:1}).format(g)}%`;},gap=p=>cur>0&&p>0?pct(p):"";
   const nextCut=s.ready?s.cuts.find(c=>futureCutRest(c)>0):null,nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
@@ -434,14 +438,15 @@ function futureRebuyTrack(r,s,cur,toggle,trText,fe=null){
   let from=-1,to=-1,bub="",due=false,buy=false;
   if(showCut){from=Math.max(0,filled-cutQty);to=filled;due=!!cutDue;
     bub=due?`손절 시점 · ${futureCutNo(showCut)}회 <b>${cutPx(showCut.price)}</b> ${cutQty}계약`:`${futureCutNo(showCut)===1&&!showCut.recorded?"신저점 이탈 시 1회":`다음 손절 ${futureCutNo(showCut)}회`} <b>${cutPx(showCut.price)}</b>${cutQty>1||showCut.partial?` · ${showCut.partial?"남은 ":""}${cutQty}계약`:""} ${gap(showCut.price)}`;}
-  else if(nextTr&&filled<hold){buy=true;from=filled;to=Math.min(hold,filled+nextTr.amount);const p=Number(nextTr.price)||0;due=futureRebuyReached(nextTr,cur);
+  // 빈 칸이 없는데 재매수가 남았으면(이어서 새 손절 전의 미복원 계약) 칸 묶음 없이 말풍선만 마지막 칸에 둔다.
+  else if(nextTr){buy=true;if(filled<hold){from=filled;to=Math.min(hold,filled+nextTr.amount);}const p=Number(nextTr.price)||0;due=futureRebuyReached(nextTr,cur);
     bub=`${due?"재매수 시점":"다음 재매수"} ${trText(nextTr)} <b>${trPx(nextTr)}</b>${s.direct?` ${buyIf(nextTr)}`:""} ${due?`${nextTr.amount}계약`:gap(p)}`;}
-  const [chipCls,chipText]=!s.ready?["muted","기준 확인 필요"]:due?["warn",buy?"재매수 시점":"손절 시점"]:s.started&&!s.rest?[nextCut?"muted":"done",nextCut?"손절 대기":"재매수 완료"]
+  const [chipCls,chipText]=!s.ready?["muted","기준 확인 필요"]:cutDue||buyDue?["warn",cutDue?"손절 시점":"재매수 시점"]:s.started&&!s.rest?[nextCut?"muted":"done",nextCut?"손절 대기":"재매수 완료"]
     :s.above&&!nextTr&&(s.started||!nextCut)?["muted","재매수 제외"]:s.direct&&!s.directRest?["muted","이번 계획 완료"]:s.started?["","재매수 진행 중"]:s.sold?nextCut?["","손절 진행 중"]:["","재매수 대기"]:cur>0&&cur<low?["warn","신저점 이탈"]:["muted",cur>0?"신저점 위 대기":"손절 대기"];
   const cell=i=>`<i class="${i<green?i<keep?"h keep":"h":i<filled?"r":"s"}${!buy&&due&&i>=from&&i<to?" due":""}"></i>`,cells=Array.from({length:hold},(_,i)=>i);
   // 다음 회차 칸은 한 묶음(.fr-next)으로 감싸 테두리(손절)·점선(재매수)을 한 번만 그린다(계약이 많아 칸이 좁아도 겹치지 않음).
   const strip=from<0?cells.map(cell).join(""):`${cells.slice(0,from).map(cell).join("")}<span class="fr-next${buy?" buy":""}${due?" due":""}" style="flex:${to-from}">${cells.slice(from,to).map(cell).join("")}</span>${cells.slice(to).map(cell).join("")}`;
-  const x=from<0?0:Math.round((from+to)/2/hold*1e4)/100,dense=hold>60?" tight":hold>30?" dense":"";
+  const x=from<0?(buy&&hold?Math.round((hold-0.5)/hold*1e4)/100:0):Math.round((from+to)/2/hold*1e4)/100,dense=hold>60?" tight":hold>30?" dense":"";
   const gapChip=p=>gap(p)?` <span class="fr-gap${p>cur?" up":""}">${gap(p)}</span>`:"";
   const bought=s.tranches.filter(t=>t.done&&t.qty>0&&t.execPrice>0),bq=bought.reduce((n,t)=>n+t.qty,0),buyAvg=bq?bought.reduce((n,t)=>n+t.qty*t.execPrice,0)/bq:0,sellAvg=s.sellAvg?px2(s.sellAvg):"";
   const floorWait=s.goal>0?futureFloorWait(r,fe):null;
@@ -487,7 +492,7 @@ function futureRebuyFoldLine(r,s,cur,locked,cutDue,buyDue,fe=null){
   const px=v=>Number(v)>0?`${fmtPrice(v)}원`:"—",cutAt=c=>`${decimal.format(c.price)}원 이하`;
   const trAt=x=>Number(x.price)>0?`${x.est?"≈":""}${fmtPrice(x.price)}원 ${futureRebuyCondition(x)==="down"?"이하":"이상"}`:"기준가 없음";
   const low=Number(r.lowPrice)||0,broken=!locked&&s.ready&&cur>0&&cur<low,nextCut=s.ready?s.cuts.find(c=>futureCutRest(c)>0):null,nextTr=s.tranches.find(x=>!x.done&&x.amount>0);
-  const held=locked&&s.hold?` · 보유 ${s.held}/${s.hold}`:"",floorLine=futureFloorLine(r.floorLine),floorWait=s.goal>0?futureFloorWait(r,fe):null;
+  const held=locked&&s.cells?` · 보유 ${s.held}/${s.cells}`:"",floorLine=futureFloorLine(r.floorLine),floorWait=s.goal>0?futureFloorWait(r,fe):null;
   const line=cutDue?`<b>손절 시점</b> · ${cutAt(cutDue)}`:buyDue?`<b>재매수 시점</b> · ${trAt(buyDue)}`
     :!s.goal&&s.hold>0?"손절 목표 0계약 · 펼쳐서 비중을 확인하세요":!s.ready?floorWait?`${floorWait.short} · 펼쳐서 확인하세요`:"기준 미입력 · 펼쳐서 기준을 넣으세요"
     :broken?`<b>신저점 이탈</b> · 다음 손절 ${nextCut?cutAt(nextCut):"없음"}`

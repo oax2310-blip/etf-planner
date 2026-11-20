@@ -125,7 +125,7 @@ test('이탈 전 계약 수를 비워 두면 보유(분할매수 체결 포함)�
   assert.equal(Object.hasOwn(f.rebuy,'contracts'),false,'입력하지 않은 이탈 전 계약 수는 저장하지 않는다');
   assert.deepEqual([ctx.futureRebuySummary(f).hold,ctx.futureRebuySummary(f).goal],[21,10]);
   // 손절 체결: 보유가 줄어도 판 계약만큼 기준이 유지된다.
-  assert.notEqual(ctx.setFutureCutDone(f,0,true),false);const sold=ctx.futureRebuySummary(f).sold;f.positions[0].contracts-=sold;
+  assert.notEqual(ctx.setFutureCutDone(f,0,true),false);f.rebuy.cuts[0].manual=true;const sold=ctx.futureRebuySummary(f).sold;f.positions[0].contracts-=sold; // 직접 반영한 손절
   assert.deepEqual([ctx.futureRebuySummary(f).hold,ctx.futureRebuySummary(f).held],[21,21-sold]);
   // 분할매수 체결은 기준에 더한다(21 → 22계약, 목표 10 → 11계약).
   f.levels[0].tranches.push({completed:true});
@@ -133,7 +133,7 @@ test('이탈 전 계약 수를 비워 두면 보유(분할매수 체결 포함)�
   // 재매수 체결: 판 계약을 되찾은 것이라 기준은 그대로다.
   f.rebuy.currentPrice=1250;f.rebuy.stages=[{name:'25선',price:1260},{name:'25일선',price:1270}];
   const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);assert.notEqual(ctx.setFutureBuyDone(f,first.i,first.t,true),false);
-  const back=ctx.futureRebuySummary(f).rebought;assert.ok(back>0);f.positions[0].contracts+=back;
+  f.rebuy.stages[first.i].buys.filter(Boolean).forEach(b=>{b.manual=true;});const back=ctx.futureRebuySummary(f).rebought;assert.ok(back>0);f.positions[0].contracts+=back;
   assert.equal(ctx.futureRebuySummary(f).hold,22,'재매수로 되찾은 계약은 기준에 다시 더하지 않는다');
   // 직접 입력하면 고정하고, 비우면 다시 자동으로 센다.
   assert.notEqual(ctx.setFutureRebuyField(f,'contracts','30'),false);f.levels[0].tranches.push({completed:true});

@@ -296,10 +296,24 @@ function futureRebuyStages(r){
 function futureRebuyHold(f){
   const r=futureRebuyOf(f);return Object.hasOwn(r,"contracts")?futureRebuyQty(r.contracts):futureRebuyAutoHold(f);
 }
+// 보유에 반영된(월물 month 또는 직접 반영 manual) 손절·재매수만 센다. 미반영 체결은 보유 월물이 아직 그대로라 더하거나 빼면 기준이 틀어진다.
+// 재매수는 futureRestartSplit으로 이번 손절을 되찾은 몫만 뺀다(지난 미복원 계약을 되찾은 몫은 보유가 늘어난 것으로 본다).
 function futureRebuyAutoHold(f){
-  const r=futureRebuyOf(f),sold=futureCutRecords(r).reduce((n,c)=>n+futureRebuyQty(c?.contracts),0);
-  const rebought=futureRebuyStages(r).reduce((n,x)=>n+stageFills(x,"contracts").reduce((m,y)=>m+y.qty,0),0);
-  return Math.max(0,futureRebuyHeld(f)+sold-Math.max(0,rebought-(futureCutRestart(r)?.rebought||0)));
+  const r=futureRebuyOf(f),on=x=>!!(x?.month||x?.manual),qty=x=>on(x)?futureRebuyQty(x.contracts):0,sold=futureCutRecords(r).reduce((n,c)=>n+qty(c),0);
+  const rebought=futureRebuyStages(r).reduce((n,x)=>n+(x.done?qty(x):(Array.isArray(x.buys)?x.buys:[]).reduce((m,b)=>m+qty(b),0)),0);
+  return Math.max(0,futureRebuyHeld(f)+sold-futureRestartSplit(sold,rebought,futureCutRestart(r)).cutRebought);
+}
+// 재매수 나누기: 이어서 새 손절이 없으면 재매수 전부가 이번 손절을 되찾은 것(cutRebought)이다. 있으면 시작 뒤 재매수 중 이번 계획에서 판 계약(cutSold)까지가 cutRebought,
+// 넘는 몫(priorRebought)은 지난 미복원 계약을 되찾은 것이라 보유가 늘어난 것으로 본다(보유 칸이 이탈 전 계약 수를 넘지 않게).
+const futureRestartSplit = (cutSold,rebought,restart) => {
+  if(!restart)return {cutRebought:rebought,priorRebought:0};
+  const since=Math.max(0,rebought-restart.rebought),cut=Math.min(cutSold,since);return {cutRebought:cut,priorRebought:since-cut};
+};
+// 이어서 새 손절 뒤 재매수를 해제·축소해 재매수 합계가 시작 때보다 줄면 cutRestart.rebought를 그 합계로 낮춘다(입력 때만).
+// 그러지 않으면 다시 산 재매수가 시작 전 몫으로 묻혀 자동 이탈 전 계약 수가 부푼다.
+function futureRestartFit(f){
+  const r=futureRebuyOf(f);if(!futureCutRestart(r))return;
+  const n=futureRebuyStages(r).reduce((m,x)=>m+stageFills(x,"contracts").reduce((k,y)=>k+y.qty,0),0);if(r.cutRestart.rebought>n)r.cutRestart.rebought=n;
 }
 // 지금 보유 계약: 보유 월물 + 보유에 아직 합치지 않은 분할매수 체결.
 function futureRebuyHeld(f){
@@ -311,7 +325,7 @@ const futureRebuySellPct = f => {const raw=futureRebuyOf(f).sellPct,v=Number(raw
 const futureCutGoal = (f,pct=futureRebuySellPct(f),hold=futureRebuyHold(f)) => Math.floor(hold*pct/100+1e-9);
 // 손절 하단 기준선(floorLine): N일선·N주선·N개월선(입력의 월선·달선도 N개월선)만 받고, 아니면 "". 고르면 prices.js fillPrices가 보유 근월물 시세로 floorPrice를 채운다.
 const futureFloorLine = name => {const line=movingLineName(name);return ["일선","주선","개월선"].includes(movingLineUnit(line))?line:"";};
-// 이어서 새 손절(cutRestart = {at, rebought}, 입력 때만 생성: futures-rebuy.js futureContinueStopBase): cuts[at]부터가 이번 손절 계획이다.
+// 이어서 새 손절(cutRestart = {at, rebought}, 입력 때만 생성: futures-rebuy.js futureRestartCuts): cuts[at]부터가 이번 손절 계획이다.
 // at 앞의 지난 손절 기록은 손절 목표·회차·보유 칸에서 빼고, 판 계약·평균 손절가·미복원 계약(재매수)에는 그대로 더한다.
 // rebought = 이어서 시작할 때까지 재매수한 계약(보유 칸 계산용). 없거나 잘못된 값이면 null로 읽어 옛 기록과 같게 계산한다.
 const futureCutRestart = r => {
@@ -364,6 +378,7 @@ function futureRebuyStageIndices(r,stages){
 }
 // 판 계약(부분 체결 포함)만 복원. 평균 손절 환율은 실제 체결(없으면 회차 환율)의 계약 가중평균. doneCuts는 완료 회차, filledCuts는 체결 기록이 있는 회차 수.
 // 이어서 새 손절이면 sold·평균 손절 환율·rest는 지난 손절까지 포함하고, cutSold(손절 목표와 비교)·cutRebought·held(보유 칸)는 이번 계획부터 센다.
+// cells = 보유 칸 수(이탈 전 계약 수, 이탈 전 계약 수를 고정했는데 지난 미복원 계약을 되찾았으면 그만큼 더함). held는 cells를 넘지 않는다.
 // 종료가격 미지정은 시작선 이후의 연속한 평균 손절가 이하 회차(rebuyPlanned)에 남은 계약을 splitWhole로 배분한다.
 // 종료가격 지정은 그 가격 미만의 회차 + 종료가격 도달 1회에만 배분하며, 범위 밖 다음 단계로 넘어가지 않는다.
 // 종료 이동평균선 지정은 시작선~종료선을 포함한 범위에만 배분하며, 종료선은 도달 1회만 쓴다. 종료가는 그 선의 시세를 따라 움직인다.
@@ -380,7 +395,7 @@ function futureRebuySummary(f){
   const endPrice=endLine?(Number(raw[endIndex]?.price)>0?Number(raw[endIndex].price):null):Number(r.endPrice)>0?Number(r.endPrice):null;
   const stages=!endLine&&endIndex>=0?raw.map((x,i)=>i===endIndex?{...x,price:endPrice}:x):raw,fills=stages.map(x=>stageFills(x,"contracts").map(y=>!x.directRebuy&&!x.done&&x.buys[y.t]?.partial===true?{...y,partial:true,plannedQty:futureRebuyQty(x.buys[y.t].plannedQty)}:y)),all=fills.flat(),started=all.length>0;
   const restart=futureCutRestart(r),prior=futureCutPrior(r),cutSold=filled.reduce((n,c)=>n+c.qty,0),sold=cutSold+prior.reduce((n,c)=>n+c.qty,0),rebought=all.reduce((n,x)=>n+x.qty,0),rest=Math.max(0,sold-rebought);
-  const sellAvg=sold?(filled.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)+prior.reduce((n,c)=>n+c.price*c.qty,0))/sold:null,cutRebought=Math.max(0,rebought-(restart?.rebought||0));
+  const sellAvg=sold?(filled.reduce((n,c)=>n+(c.execPrice||c.price)*c.qty,0)+prior.reduce((n,c)=>n+c.price*c.qty,0))/sold:null,{cutRebought,priorRebought}=futureRestartSplit(cutSold,rebought,restart),held=Math.max(0,hold-cutSold+cutRebought+(Object.hasOwn(r,"contracts")?priorRebought:0));
   const base=futureRebuyStageIndices(r,stages),active=[...base.filter(i=>i!==endIndex),...(endIndex>=0?[endIndex]:[])],history=stages.map((_,i)=>i).filter(i=>!active.includes(i)&&fills[i].length),stageOrder=[...history,...active];
   const view=stageOrder.map(i=>stages[i]),lastBuy=[...all].reverse().find(x=>x.price>0),start=cur>0?cur:lastBuy?lastBuy.price:sellAvg||0;
   const prices=stageEstimates(view,start),est=stages.map((x,i)=>stageOrder.includes(i)?prices[stageOrder.indexOf(i)]:Number(x.price)>0?Number(x.price):null);
@@ -415,7 +430,7 @@ function futureRebuySummary(f){
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});
-  const summary={hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,cutSold,rebought,cutRebought,restart,rest,above,sellAvg,started,held:Math.max(0,hold-cutSold+cutRebought),doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
+  const summary={hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,cutSold,rebought,cutRebought,restart,rest,above,sellAvg,started,held,cells:held+cutSold-cutRebought,priorRebought,doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:cutSold>goal,overBought:rebought>sold};
   return r.directPlan?futureDirectRebuySummary(r,summary):summary;
 }
@@ -509,7 +524,7 @@ function futureRebuyWithStart(f,name,entry=null,endText=futureRebuyOf(f).endLine
   return g;
 }
 function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(stageTouched);}
-function futureRebuyLocked(f){return futureCutRecords(futureRebuyOf(f)).some(Boolean)||futureRebuyBought(f);} // 이번 손절 계획의 체결 또는 재매수 체결
+function futureRebuyLocked(f){const r=futureRebuyOf(f);return (Array.isArray(r.cuts)?r.cuts:[]).some(Boolean)||futureRebuyBought(f);} // 손절(지난 손절 포함) 또는 재매수 체결. 이번 계획의 체결 여부는 futureCutRecords
 // 손절 기준(신저점·하단·하단선·이탈 전 계약 수·비중·분할 횟수)은 ETF 재매수처럼 손절 체결 뒤에도 바꿀 수 있다:
 // 체결 기록(계약 수·회차 환율 targetPrice)은 그대로 두고 예정 회차만 새 기준으로 다시 나눈다(futureCutPlan).
 // 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에도 같은 방식으로 바꿀 수 있다:
@@ -567,6 +582,7 @@ function setFutureBuyDone(f,i,t,on){
     else if(Array.isArray(st.buys)&&st.buys[t]){st.buys[t]=null;while(st.buys.length&&!st.buys.at(-1))st.buys.pop();if(!st.buys.length)delete st.buys;}
     else return false;
     if(!r.stages.some(stageTouched))delete r.planned;
+    futureRestartFit(f);
   }
 }
 // 산 회차의 누적 체결 계약(1 이상 정수, 재매수 합계는 판 계약 이하)을 고친다. 계획(체크한 계약, 부분 체결이면 plannedQty)보다 적으면
@@ -575,7 +591,7 @@ function setFutureBuyQty(f,i,t,text){
   const qty=Number(text),s=futureRebuySummary(f),tr=s.tranches.find(y=>y.i===i&&y.t===t);
   if(!(tr?.done||tr?.partial)||text.trim()===""||!Number.isInteger(qty)||qty<1||s.rebought-tr.qty+qty>s.sold||s.direct&&s.active.includes(i)&&s.directBought-tr.qty+qty>futureRebuyOf(f).directPlan.contracts)return false;
   const [rec,key]=futureFillRec(f,i,t),planned=rec.partial===true?futureRebuyQty(rec.plannedQty):futureRebuyQty(rec.contracts);
-  rec.contracts=qty;if(key!=="price")return;
+  rec.contracts=qty;futureRestartFit(f);if(key!=="price")return;
   delete rec.partial;delete rec.plannedQty;if(qty<planned)Object.assign(rec,{partial:true,plannedQty:planned});
 }
 function setFutureBuyPrice(f,i,t,text){
