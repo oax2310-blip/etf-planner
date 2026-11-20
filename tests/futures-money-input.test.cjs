@@ -371,6 +371,26 @@ test('재매수 귀속(prior)이 없는 옛 이어서 새 손절 기록은 이�
   f.rebuy.cutRestart.prior=5;assert.equal(sum().priorRebought,1,'prior는 시작 뒤 재매수 이하로 읽는다');
 });
 
+test('고정한 이탈 전 계약 수를 비우면 미복원 계약을 빼고 지금 보유 기준으로 손절을 다시 짠다',()=>{
+  // 이탈 전 14계약(고정) · 손절 5계약 · 재매수 3계약(미복원 2) · 추가매수로 지금 보유 20계약.
+  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:14,sellPct:100,steps:4});
+  f.rebuy.cuts=Array.from({length:5},(_,i)=>({contracts:1,price:1399-i*5,targetPrice:1400-i*5,month:'202612',settlementPrice:1450}));
+  f.rebuy.stages[0].buys=[{contracts:3,price:1321,month:'202612'}];
+  const r=setup(f),before=r.c.futureRebuySummary(f);r.c.backupRecord=()=>{};
+  assert.deepEqual([before.sold,before.rebought,before.rest],[5,3,2]);
+  r.c.renderFutures();r.el('frEdit').onclick();
+  const hold=r.input('[data-fr-field="contracts"]');
+  assert.deepEqual([hold.value,hold.placeholder],['14','자동 · 20계약'],'비웠을 때 자동 값은 미복원 2계약을 뺀 지금 보유');
+  r.type(hold,'');assert.deepEqual([r.el('frRestartNote').hidden,r.el('frHintBase').hidden],[false,true],'비우면 다시 짠다는 안내');
+  r.submit('futureRebuyForm');
+  const g=r.saved().futures,s=r.c.futureRebuySummary(g);
+  assert.deepEqual(plain(g.rebuy.cutRestart),{at:5,rebought:3});assert.equal(Object.hasOwn(g.rebuy,'contracts'),false);assert.equal(g.rebuy.lowPrice,1400,'신저점은 그대로');
+  assert.deepEqual([s.hold,s.goal,s.cutSold,s.sold,s.rest,s.sellAvg],[20,20,0,5,2,before.sellAvg],'손절 기준은 지금 보유 20, 미복원 2는 재매수에만 남는다');
+  // 이번 손절에 체결이 없거나 고정 값이 없으면 비워도 다시 짜지 않는다.
+  const plan=future();assert.equal(Object.hasOwn(r.c.applyFutureRebuyEdits(plan,{contracts:''}).rebuy,'cutRestart'),false);
+  assert.equal(Object.hasOwn(r.c.applyFutureRebuyEdits(g,{contracts:''}).rebuy,'contracts'),false);assert.deepEqual(plain(r.c.applyFutureRebuyEdits(g,{contracts:''}).rebuy.cutRestart),{at:5,rebought:3});
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
