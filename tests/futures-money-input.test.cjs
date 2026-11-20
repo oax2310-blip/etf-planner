@@ -155,7 +155,7 @@ test('신저점을 바꾸면 평균 손절가·미복원 계약·재매수 계�
   r.c.renderFutures();r.el('frEdit').onclick();
   const hold=r.input('[data-fr-field="contracts"]');assert.equal(hold.value,'14');assert.equal(r.el('frRestartNote').hidden,true);
   r.type('[data-fr-field="lowPrice"]','1350');
-  assert.equal(r.el('frRestartNote').hidden,false,'신저점을 바꾸면 이어서 새 손절 안내를 보인다');
+  assert.deepEqual([r.el('frRestartNote').hidden,r.el('frHintBase').hidden],[false,true],'신저점을 바꾸면 기존 안내 대신 이어서 새 손절 안내를 보인다');
   assert.deepEqual([hold.value,hold.placeholder],['','자동 · 20계약'],'이탈 전 계약 수를 지금 보유 기준(자동)으로 바꿔 보인다');
   r.type('[data-fr-field="lowPrice"]','1400');assert.deepEqual([hold.value,r.el('frRestartNote').hidden],['14',true],'신저점을 되돌리면 원래 값');
   r.type('[data-fr-field="lowPrice"]','1350');r.type('[data-fr-field="floorPrice"]','1280');r.type('[data-fr-field="sellPct"]','72');
@@ -169,7 +169,7 @@ test('신저점을 바꾸면 평균 손절가·미복원 계약·재매수 계�
   assert.equal(JSON.stringify(plain(s.tranches)),tranches,'남은 재매수 회차·계약은 그대로');
   assert.deepEqual(plain(s.cuts.map(c=>[c.k,c.round,c.price,c.qty])),[[3,1,1350,3],[4,2,1332.5,3],[5,3,1315,2],[6,4,1297.5,3],[7,5,1280,3]],'20계약 × 72% = 14계약을 신저점부터 1회로 다시 나눈다');
   r.c.renderFutures();
-  assert.match(r.el('futureRebuyPanel').innerHTML,/이전 손절 4계약은 평균 손절가와 남은 재매수에 이어서 반영합니다/);
+  assert.match(r.el('futureRebuyPanel').innerHTML,/이전 손절 4계약은 평균 손절가·재매수에 포함됩니다/);
   assert.match(r.el('futureRebuyPanel').innerHTML,/data-fcut="2"[^>]*aria-label="1회 손절 완료"/,'cuts 위치 2의 회차를 1회로 보인다');
   // 새로 손절한 계약은 평균 손절가와 남은 재매수에 더하고, 기준(20)은 그대로다.
   assert.notEqual(r.c.setFutureCutChecked(live,2,true),false);
@@ -195,7 +195,7 @@ test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
   assert.match(r.el('frNewGoal').textContent,/손절 목표 4계약 · 4회/);
   assert.match(r.el('futureRebuyDialog').innerHTML,/손절 4계약 · 재매수 3계약 · 미복원 1계약/);
-  assert.match(r.el('futureRebuyDialog').innerHTML,/새 계획의 알림은 꺼진 상태로 시작합니다\. 분할 손절 표에서 알림을 켜세요\./);
+  assert.match(r.el('futureRebuyDialog').innerHTML,/알림은 꺼진 채 시작합니다/);
   r.enterPrices();r.type('[data-fr-field="steps"]','2');
   assert.match(r.el('frNewGoal').textContent,/손절 목표 4계약 · 2회/);
   r.submit('futureRebuyForm');
