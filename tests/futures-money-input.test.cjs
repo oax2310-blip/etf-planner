@@ -350,6 +350,17 @@ test('재매수 체결 수를 늘려도 늘린 몫을 기록 때 지난 미복�
   assert.equal(sum().hold,17+a+1,'뒤에 손절이 체결돼도 기준이 그대로');
 });
 
+test('부분 체결 재매수를 체크해 채워도 늘어난 몫을 기록 때 지난 미복원으로 고정한다',()=>{
+  // 화면은 부분 체결을 setFutureBuyCount로 보내지만, 공용 계산 setFutureBuyDone의 부분 체결 분기도 같은 규칙을 지킨다.
+  const {r,f,sum,pos}=orderPlan();f.positions[0].contracts=18;f.rebuy.stages[0].buys=[{contracts:1,price:1321,month:'202612',partial:true,plannedQty:2}];
+  const tr=sum().tranches.find(x=>x.partial);assert.ok(tr&&tr.amount>=1);
+  assert.notEqual(r.c.setFutureBuyDone(f,tr.i,tr.t,true),false);f.positions[0].contracts+=tr.amount; // 늘린 계약을 보유에 반영
+  assert.deepEqual([f.rebuy.stages[0].buys[0].contracts,f.rebuy.cutRestart.prior],[1+tr.amount,1+tr.amount],'이번 손절이 없을 때 채운 몫은 지난 미복원 되찾기로 고정');
+  const hold=sum().hold;assert.equal(hold,pos());
+  const cut=sum().cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
+  assert.equal(sum().hold,hold,'뒤에 손절이 체결돼도 기준이 그대로');
+});
+
 test('재매수 귀속(prior)이 없는 옛 이어서 새 손절 기록은 이전과 같은 값으로 읽고 읽기만으로 필드를 만들지 않는다',()=>{
   // 지난 재매수 1계약 → 새 손절 2계약 순서로 이미 기록된 옛 형식: 시작 뒤 재매수를 이번 손절 먼저 되찾은 것으로 읽는다.
   const {r,f,sum}=orderPlan();f.positions[0].contracts=16;f.rebuy.cuts.push({contracts:2,price:1350,targetPrice:1350,month:'202612',settlementPrice:1450});

@@ -324,10 +324,12 @@ function futureRestartAttribute(f,q){
 }
 // 이어서 새 손절 뒤 재매수를 해제·축소해 재매수 합계가 시작 때보다 줄면 cutRestart.rebought를 그 합계로 낮춘다(입력 때만).
 // 그러지 않으면 다시 산 재매수가 시작 전 몫으로 묻혀 자동 이탈 전 계약 수가 부푼다.
+// 지난 미복원 몫(cutRestart.prior)은 합계만 두므로 시작 뒤 재매수 합계(since)를 넘을 때만 since로 낮춘다.
+// 한계: 해제한 체결이 어느 몫이었는지 저장하지 않아, 이번 손절 재매수가 남아 있는데 지난 미복원 쪽 재매수를 먼저 해제하면 prior가 그대로 남아 기준이 높게 남을 수 있다.
 function futureRestartFit(f){
   const r=futureRebuyOf(f);if(!futureCutRestart(r))return;
   const n=futureRebought(r);if(r.cutRestart.rebought>n)r.cutRestart.rebought=n;
-  const since=Math.max(0,n-r.cutRestart.rebought);if(Number.isInteger(r.cutRestart.prior)&&r.cutRestart.prior>since)r.cutRestart.prior=since; // 해제로 줄어든 재매수만큼 지난 몫도 낮춘다
+  const since=Math.max(0,n-r.cutRestart.rebought);if(Number.isInteger(r.cutRestart.prior)&&r.cutRestart.prior>since)r.cutRestart.prior=since; // since를 넘는 prior만 since로 낮춘다
 }
 // 지금 보유 계약: 보유 월물 + 보유에 아직 합치지 않은 분할매수 체결.
 function futureRebuyHeld(f){
