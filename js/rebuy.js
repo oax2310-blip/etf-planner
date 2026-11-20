@@ -289,12 +289,24 @@ function futureRebuyStages(r){
   const rec={done:true,contracts:qty,execPrice:pq?priced.reduce((n,x)=>n+futureRebuyQty(x.contracts)*Number(x.execPrice),0)/pq:null},i=stages.findIndex(x=>!x.done);
   return i<0?[...stages,{name:"손절 환율 복귀",price:0,...rec}]:stages.map((x,j)=>j===i?{...x,...rec}:x);
 }
+// 손절 기준 계약(화면의 '이탈 전 계약 수'): 직접 입력한 contracts가 있으면 그 값으로 고정한다(옛 기록 포함).
+// 없으면 자동(futureRebuyAutoHold) = 지금 보유 + 이번 손절 계획에서 판 계약 − 그 뒤 재매수한 계약, 즉 손절하지 않았다면 지금 갖고 있을 계약이다.
+// 분할매수 체결은 보유로 바로 더해지고, 손절·재매수 체결은 보유와 판·재매수 계약이 함께 움직여 기준이 바뀌지 않는다.
+// 이어서 새 손절(cutRestart) 뒤에는 그때 보유가 기준이 된다(지난 손절·재매수는 빼고 센다).
 function futureRebuyHold(f){
-  const r=futureRebuyOf(f);if(Object.hasOwn(r,"contracts"))return futureRebuyQty(r.contracts);
+  const r=futureRebuyOf(f);return Object.hasOwn(r,"contracts")?futureRebuyQty(r.contracts):futureRebuyAutoHold(f);
+}
+function futureRebuyAutoHold(f){
+  const r=futureRebuyOf(f),sold=futureCutRecords(r).reduce((n,c)=>n+futureRebuyQty(c?.contracts),0);
+  const rebought=futureRebuyStages(r).reduce((n,x)=>n+stageFills(x,"contracts").reduce((m,y)=>m+y.qty,0),0);
+  return Math.max(0,futureRebuyHeld(f)+sold-Math.max(0,rebought-(futureCutRestart(r)?.rebought||0)));
+}
+// 지금 보유 계약: 보유 월물 + 보유에 아직 합치지 않은 분할매수 체결.
+function futureRebuyHeld(f){
   const held=(Array.isArray(f?.positions)?f.positions:[]).reduce((n,p)=>n+futureRebuyQty(p.contracts),0);
   return held+(Array.isArray(f?.levels)?f.levels:[]).flatMap(l=>Array.isArray(l.tranches)?l.tranches:[]).filter(t=>t.completed&&!t.mergedMonth).length;
 }
-// 손절 목표 = floor(고정 이탈 전 계약 × sellPct/100). 비중은 0~100%, 옛 기록·빈 입력은 50%; 읽을 때 필드를 만들지 않는다.
+// 손절 목표 = floor(이탈 전 계약(futureRebuyHold) × sellPct/100). 비중은 0~100%, 옛 기록·빈 입력은 50%; 읽을 때 필드를 만들지 않는다.
 const futureRebuySellPct = f => {const raw=futureRebuyOf(f).sellPct,v=Number(raw);return raw==null||raw===""||!Number.isFinite(v)||v<0||v>100?50:v;};
 const futureCutGoal = (f,pct=futureRebuySellPct(f),hold=futureRebuyHold(f)) => Math.floor(hold*pct/100+1e-9);
 // 손절 하단 기준선(floorLine): N일선·N주선·N개월선(입력의 월선·달선도 N개월선)만 받고, 아니면 "". 고르면 prices.js fillPrices가 보유 근월물 시세로 floorPrice를 채운다.
@@ -460,11 +472,10 @@ function futureRebuyWithDirect(f,values){
   r.directPlan={startPrice,endPrice,rounds,contracts,condition,names};
   return g;
 }
-// futures.rebuy는 최초 입력 때만 생성하고 이탈 전 계약 수를 고정(읽기/normalize는 생성·이전 안 함).
+// futures.rebuy는 최초 입력 때만 생성한다(읽기/normalize는 생성·이전 안 함). 이탈 전 계약 수(contracts)는 직접 입력할 때만 저장하고, 없으면 자동(futureRebuyHold).
 function editFutureRebuy(f){
-  const hold=futureRebuyHold(f);
   if(f.rebuy!==futureRebuyOf(f))f.rebuy={};
-  const r=f.rebuy;if(!Object.hasOwn(r,"contracts"))r.contracts=hold;
+  const r=f.rebuy;
   if(!Array.isArray(r.cuts))r.cuts=[];
   r.stages=futureRebuyStages(r);delete r.returns;delete r.buyMode; // 예전 환율 복귀 방식 기록을 반등 단계로, 옛 이름 'N분봉'을 'N선'으로 옮김
   return r;
@@ -517,10 +528,10 @@ function setFutureRebuyField(f,key,text){
   }
   const empty=text.trim()==="",v=empty?0:Number(text);if(!Number.isFinite(v)||v<0)return false;
   const r=futureRebuyOf(f),sold=futureCutRecords(r).reduce((n,c)=>n+futureRebuyQty(c?.contracts),0); // 이번 손절 계획에서 판 계약
-  if(key==="sellPct"&&(v>100||futureCutGoal(f,empty?50:v)<sold)||key==="contracts"&&futureCutGoal(f,futureRebuySellPct(f),v)<sold)return false;
+  if(key==="sellPct"&&(v>100||futureCutGoal(f,empty?50:v)<sold)||key==="contracts"&&futureCutGoal(f,futureRebuySellPct(f),empty?futureRebuyAutoHold(f):v)<sold)return false;
   if(key==="lowPrice"&&v>0&&Number(r.floorPrice)>0&&v<=Number(r.floorPrice)||key==="floorPrice"&&v>0&&Number(r.lowPrice)>0&&v>=Number(r.lowPrice))return false;
   if(key==="steps"&&(!Number.isInteger(v)||v<1||v>60)||key==="contracts"&&!Number.isInteger(v))return false;
-  const edited=editFutureRebuy(f);if(v>0||key==="contracts"||key==="sellPct"&&!empty)edited[key]=v;else delete edited[key];
+  const edited=editFutureRebuy(f);if(v>0||(key==="contracts"||key==="sellPct")&&!empty)edited[key]=v;else delete edited[key]; // 이탈 전 계약 수를 비우면 자동
   if(key==="floorPrice"&&edited.floorLine){delete edited.floorLine;if(edited.auto)delete edited.auto.floorPrice;}
 }
 // 체크: 기록 없는 회차는 배정 계약, 부분 체결 회차는 계획 계약까지 채워 완료한다(setFutureCutQty). 해제는 그 회차 기록을 지운다.
