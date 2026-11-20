@@ -219,6 +219,15 @@ test('달러선물 손절 하단선은 변경 없이 불러오고 문자열이 �
   data.futures.rebuy.floorLine=20;assert.throws(()=>validate.planner(data),/floorLine/);
 });
 
+test('달러선물 이어서 새 손절 시작 위치(cutRestart)는 변경 없이 불러오고 잘못된 형식은 거부한다',()=>{
+  const data=planner();data.futures.rebuy={lowPrice:1350,floorPrice:1280,cuts:[{contracts:2,price:1399.5,targetPrice:1400}],cutRestart:{at:1,rebought:0}};
+  const before=JSON.stringify(data);assert.equal(validate.planner(data),data);assert.equal(JSON.stringify(data),before);
+  for(const bad of [{at:-1},{at:1.5},{at:'x'},{rebought:-2},{rebought:20000}]){
+    const next=structuredClone(data);Object.assign(next.futures.rebuy.cutRestart,bad);assert.throws(()=>validate.planner(next),/cutRestart/,JSON.stringify(bad));
+  }
+  const next=structuredClone(data);next.futures.rebuy.cutRestart=3;assert.throws(()=>validate.planner(next),/cutRestart/);
+});
+
 test('여러 월물에서 판 손절의 월물별 내역(legs)은 기록·계약·평균가 형식만 받고 그대로 둔다',()=>{
   const data=planner();data.futures.rebuy={cuts:[{contracts:3,price:1300,month:'202612',settlementPrice:1446.67,legs:[{month:'202611',contracts:1,settlementPrice:1440},{month:'202612',contracts:2,settlementPrice:1450}]}]};
   const before=JSON.stringify(data);validate.planner(data);assert.equal(JSON.stringify(data),before);

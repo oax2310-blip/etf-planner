@@ -97,7 +97,7 @@ test('달러선물 손절 기준의 신저점·하단·현재 환율은 쉼표�
   assert.equal(r.f.rebuy.floorLine,'60일선');assert.equal(r.input('[data-fr-field="floorPrice"]').disabled,true);
 });
 
-function openNewStopPlan({unlinked=false,legacy=false}={}){
+function openNewStopPlan({unlinked=false,legacy=false,mode='fresh'}={}){
   const f=future();
   f.rebuy.contracts=12;
   f.rebuy.cuts=[{contracts:4,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}];
@@ -115,6 +115,8 @@ function openNewStopPlan({unlinked=false,legacy=false}={}){
   r.el('frEdit').onclick();
   assert.equal(r.input('[data-fr-field="lowPrice"]').disabled,false);
   r.el('frNewPlan').onclick();
+  assert.equal(r.el('frNewMode').value,'continue','기본은 평균 손절가·미복원 이어가기');
+  if(mode!=='continue')r.change('#frNewMode',mode);
   return {...r,archive,enterPrices(){r.type('[data-fr-field="lowPrice"]','1380');r.type('[data-fr-field="floorPrice"]','1280');}};
 }
 
@@ -128,7 +130,7 @@ test('재매수 중 손절 기준 수정 창은 보관 없이 바로 저장하�
   assert.match(r.el('futureRebuyDialog').innerHTML,/손절 기준 수정<\/h2>/);
   for(const key of ['lowPrice','floorPrice','contracts','sellPct','steps'])assert.equal(r.input(`[data-fr-field="${key}"]`).disabled,false,key);
   assert.equal(r.el('frFloorUnit').disabled,false);
-  assert.match(r.el('futureRebuyDialog').innerHTML,/class="dialog-foot"><button[^>]*id="frNewPlan"[^>]*>보관 후 새 계획 시작</,'새 신저점용 보관 후 새 계획 버튼은 아래 버튼 줄에 남긴다');
+  assert.match(r.el('futureRebuyDialog').innerHTML,/class="dialog-foot"><button[^>]*id="frNewPlan"[^>]*>새 손절 계획</,'새 손절 계획 버튼은 아래 버튼 줄에 남긴다');
   assert.doesNotMatch(r.el('futureRebuyDialog').innerHTML,/새 신저점으로 손절을 처음부터/,'버튼 설명 문구는 없앤다');
   r.type('[data-fr-field="lowPrice"]','1380');r.type('[data-fr-field="floorPrice"]','1280');r.type('[data-fr-field="steps"]','3');
   r.submit('futureRebuyForm');
@@ -139,6 +141,45 @@ test('재매수 중 손절 기준 수정 창은 보관 없이 바로 저장하�
   assert.deepEqual(archive,[],'보관 기록을 만들지 않는다');assert.equal(r.el('futureRebuyDialog').open,false);
   r.el('frEdit').onclick();r.type('[data-fr-field="contracts"]','7');r.submit('futureRebuyForm');
   assert.match(r.el('futureRebuyError').textContent,/이미 손절한 4계약보다 작아집니다/);assert.equal(r.saved().futures.rebuy.contracts,12);
+});
+
+test('이어서 새 손절은 평균 손절가·미복원 계약·재매수 계획을 유지하고 늘어난 보유로 손절 회차를 1회부터 다시 짠다',()=>{
+  // 이탈 전 14계약에서 4계약 손절·1계약 재매수 뒤 추가매수로 20계약이 된 경우: 신저점 1,350 → 하단 1,280까지 20계약의 72%를 다시 손절한다.
+  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:14,steps:5,notify:{cuts:true,buys:true}});
+  f.rebuy.cuts=[{contracts:2,price:1399.5,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:2,price:1374.8,targetPrice:1375,month:'202612',settlementPrice:1450}];
+  f.rebuy.stages[0].buys=[{contracts:1,price:1321,month:'202612'}];
+  const r=setup(f),archive=[];r.c.absorbPlanner=()=>false;r.c.dataSnapshot=()=>JSON.stringify(r.c.state);r.c.backupRecord=(snapshot,reason)=>archive.push(reason);
+  const before=r.c.futureRebuySummary(f),stages=JSON.stringify(f.rebuy.stages),cuts=JSON.stringify(f.rebuy.cuts),tranches=JSON.stringify(plain(before.tranches));
+  assert.deepEqual([before.sold,before.rebought,before.rest],[4,1,3]);
+  const base=r.c.futureContinueStopBase({...f,rebuy:{...f.rebuy,floorLine:'60일선',auto:{floorPrice:1300}}}).rebuy;
+  for(const key of ['lowPrice','floorPrice','floorLine','contracts','sellPct','steps'])assert.equal(Object.hasOwn(base,key),false,`이어가기는 옛 손절 기준 ${key}를 비운다`);
+  assert.equal(Object.hasOwn(base.auto,'floorPrice'),false);assert.equal(base.currentPrice,1350,'현재 환율은 유지');
+  r.c.renderFutures();r.el('frEdit').onclick();r.el('frNewPlan').onclick();
+  assert.equal(r.input('[data-fr-field="contracts"]').value,'20','늘어난 현재 보유로 시작한다');
+  assert.match(r.el('futureRebuyDialog').innerHTML,/id="frSubmit"[^>]*>이어서 시작</);
+  r.type('[data-fr-field="lowPrice"]','1350');r.type('[data-fr-field="floorPrice"]','1280');r.type('[data-fr-field="sellPct"]','72');r.type('[data-fr-field="steps"]','5');
+  r.submit('futureRebuyForm');
+  const live=r.c.state.futures,g=r.saved().futures,s=r.c.futureRebuySummary(g);
+  assert.deepEqual(plain(g.rebuy.cutRestart),{at:2,rebought:1});
+  assert.deepEqual([g.rebuy.lowPrice,g.rebuy.floorPrice,g.rebuy.contracts,g.rebuy.sellPct,g.rebuy.steps],[1350,1280,20,72,5]);
+  assert.equal(JSON.stringify(g.rebuy.cuts),cuts,'지난 손절 기록은 그대로');assert.equal(JSON.stringify(g.rebuy.stages),stages,'재매수 단계·체결은 그대로');
+  assert.deepEqual(g.rebuy.notify,{cuts:true,buys:true},'알림 설정도 이어 간다');assert.deepEqual(archive,['달러선물 손절 이어서 시작 전']);
+  assert.deepEqual([s.sold,s.cutSold,s.rebought,s.rest,s.sellAvg,s.goal,s.held],[4,0,1,3,before.sellAvg,14,20]);
+  assert.equal(JSON.stringify(plain(s.tranches)),tranches,'남은 재매수 회차·계약은 그대로');
+  assert.deepEqual(plain(s.cuts.map(c=>[c.k,c.round,c.price,c.qty])),[[3,1,1350,3],[4,2,1332.5,3],[5,3,1315,2],[6,4,1297.5,3],[7,5,1280,3]],'20계약 × 72% = 14계약을 신저점부터 1회로 다시 나눈다');
+  r.c.renderFutures();
+  assert.match(r.el('futureRebuyPanel').innerHTML,/이전 손절 4계약은 평균 손절가와 남은 재매수에 이어서 반영합니다/);
+  assert.match(r.el('futureRebuyPanel').innerHTML,/data-fcut="2"[^>]*aria-label="1회 손절 완료"/,'cuts 위치 2의 회차를 1회로 보인다');
+  // 새로 손절한 계약은 평균 손절가와 남은 재매수에 더한다.
+  assert.notEqual(r.c.setFutureCutChecked(live,2,true),false);
+  const after=r.c.futureRebuySummary(live);
+  assert.deepEqual([after.sold,after.cutSold,after.rest,after.held],[7,3,6,17]);
+  assert.ok(Math.abs(after.sellAvg-(before.sellAvg*4+1350*3)/7)<1e-9,'평균 손절가는 지난 손절과 새 손절의 계약 가중평균');
+  const rules=plain(r.c.buildTradeAlertRules({futures:live},null)).filter(x=>x.id.includes(':cut:'));
+  assert.equal(rules[0].id.endsWith(':cut:3'),true,'알림 키는 cuts 위치라 지난 손절 알림 이력과 겹치지 않는다');assert.match(JSON.stringify(rules[0]),/달러선물 손절 2회/);
+  // 손절 목표는 이번 계획에서 판 계약과만 비교한다(지난 4계약은 세지 않는다).
+  assert.notEqual(r.c.setFutureRebuyField(live,'sellPct','20'),false);assert.equal(r.c.futureRebuySummary(live).goal,4);
+  assert.equal(r.c.setFutureRebuyField(live,'sellPct','10'),false,'목표 2계약 < 이번 계획에서 판 3계약');
 });
 
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
@@ -180,6 +221,7 @@ for(const options of [{unlinked:true},{legacy:true}])test(`새 손절 계획은 
   assert.equal(r.input('#futureRebuyForm button[type="submit"]').disabled,true);
   r.enterPrices();r.submit('futureRebuyForm');
   assert.deepEqual(plain(r.c.state),before);assert.deepEqual(r.archive,[]);assert.equal(r.stored.size,0);
+  r.change('#frNewMode','continue');assert.equal(r.input('#futureRebuyForm button[type="submit"]').disabled,false,'이어가기는 기록을 그대로 두므로 시작할 수 있다');
 });
 
 function refreshStopPlanPrices(r){
