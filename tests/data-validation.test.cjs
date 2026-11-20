@@ -222,7 +222,8 @@ test('달러선물 손절 하단선은 변경 없이 불러오고 문자열이 �
 test('달러선물 이어서 새 손절 시작 위치(cutRestart)는 변경 없이 불러오고 잘못된 형식은 거부한다',()=>{
   const data=planner();data.futures.rebuy={lowPrice:1350,floorPrice:1280,cuts:[{contracts:2,price:1399.5,targetPrice:1400}],cutRestart:{at:1,rebought:0}};
   const before=JSON.stringify(data);assert.equal(validate.planner(data),data);assert.equal(JSON.stringify(data),before);
-  for(const bad of [{at:-1},{at:1.5},{at:'x'},{rebought:-2},{rebought:20000}]){
+  data.futures.rebuy.cutRestart.prior=0;
+  for(const bad of [{at:-1},{at:1.5},{at:'x'},{rebought:-2},{rebought:20000},{prior:-1},{prior:0.5}]){
     const next=structuredClone(data);Object.assign(next.futures.rebuy.cutRestart,bad);assert.throws(()=>validate.planner(next),/cutRestart/,JSON.stringify(bad));
   }
   const next=structuredClone(data);next.futures.rebuy.cutRestart=3;assert.throws(()=>validate.planner(next),/cutRestart/);
