@@ -8,9 +8,9 @@ let futureRebuyExpanded=false,futureRebuySeen=[];
 // 표 안에서 체크·입력한 뒤의 열린 상태는 다시 그려도 유지하고(화면 상태, 저장·동기화 안 함), 다른 회차가 새로 매매 시점이 되면 기본으로 돌린다.
 const futureTableState={cuts:{open:null,due:""},buys:{open:null,due:""}};
 let futureCutsOpen=false,futureBuysOpen=false,futureBuyStagesOpen=false; // 손절 완료·재매수 완료 회차와 '다른 단계' 펼침(화면 상태, 저장·동기화 안 함)
-// 손절 시점인 다음 손절 회차(현재 환율 ≤ 회차 환율). 재매수 뒤에도 이어 가며 기준 미입력·현재 환율 없음이면 null.
 // 화면의 손절 회차 번호: 이어서 새 손절이면 이번 계획의 회차(round), 아니면 k. k − 1은 언제나 cuts 위치(체크·알림 키)다.
 const futureCutNo = c => c.round??c.k;
+// 손절 시점인 다음 손절 회차(현재 환율 ≤ 회차 환율). 재매수 뒤에도 이어 가며 기준 미입력·현재 환율 없음이면 null.
 function futureCutDue(s,cur){const c=s.ready?s.cuts.find(x=>futureCutRest(x)>0):null;return c&&cur>0&&cur<=c.price?c:null;}
 // 재매수 시점인 첫 재매수 회차(현재 환율 ≥ 회차 환율, 표의 '재매수 시점'과 같은 조건). 손절 전·현재 환율 없음이면 null.
 function futureBuyDue(s,cur){return s.tranches.find(y=>futureRebuyReached(y,cur))||null;}
