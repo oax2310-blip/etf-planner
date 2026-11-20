@@ -90,13 +90,16 @@ test('손절 목표 완료 뒤 비중을 늘리면 남은 계약을 하단에서
   }
 });
 
-test('재매수 시작 뒤 비중은 고정하고 새 비중으로 판 계약만 복원한다',()=>{
+test('재매수 시작 뒤 비중을 올리면 남은 손절만 늘고 판 계약만 복원한다',()=>{
   const ctx=load(),f=futures({sellPct:75,currentPrice:1250,stages:[{name:'25선',price:1260},{name:'25일선',price:1270}]});
   for(let i=0;i<ctx.futureCutPlan(f).length;i++)ctx.setFutureCutDone(f,i,true);
   assert.equal(ctx.futureRebuySummary(f).sold,15);
   const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);
   assert.notEqual(ctx.setFutureBuyDone(f,first.i,first.t,true),false);
-  const before=JSON.stringify(f);assert.equal(ctx.setFutureRebuyField(f,'sellPct','100'),false);assert.equal(JSON.stringify(f),before);
+  const tranches=JSON.stringify(plain(ctx.futureRebuySummary(f).tranches)),stages=JSON.stringify(f.rebuy.stages);
+  assert.notEqual(ctx.setFutureRebuyField(f,'sellPct','100'),false);assert.equal(f.rebuy.sellPct,100);
+  assert.equal(JSON.stringify(plain(ctx.futureRebuySummary(f).tranches)),tranches,'비중을 바꿔도 남은 재매수 회차는 그대로');assert.equal(JSON.stringify(f.rebuy.stages),stages);
+  assert.equal(ctx.futureRebuySummary(f).cuts.filter(c=>!c.done).reduce((n,c)=>n+c.qty,0),5,'늘린 목표의 남은 손절');
   for(const x of ctx.futureRebuySummary(f).tranches.filter(x=>!x.done&&x.amount>0))assert.notEqual(ctx.setFutureBuyDone(f,x.i,x.t,true),false);
   const s=ctx.futureRebuySummary(f);assert.equal(s.rebought,15);assert.equal(s.rest,0);assert.equal(s.held,20);
   assert.equal(f.positions[0].contracts,20);assert.equal(f.baselinePnl,0);
@@ -162,9 +165,25 @@ test('손절 체크 뒤에도 재매수 전에는 신저점·하단·이탈 전 
   assert.equal(ctx.futureRebuySummary(f).cuts.filter(c=>!c.done).reduce((n,c)=>n+c.qty,0),0);
   f.rebuy.currentPrice=1250;f.rebuy.stages=[{name:'25선',price:1260},{name:'25일선',price:1270}];
   const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);assert.notEqual(ctx.setFutureBuyDone(f,first.i,first.t,true),false);
-  const started=JSON.stringify(f);
-  for(const [key,value] of [['lowPrice','1410'],['floorPrice','1280'],['contracts','20'],['steps','3']])assert.equal(ctx.setFutureRebuyField(f,key,value),false,'재매수 시작 뒤 손절 기준은 고정');
-  assert.equal(JSON.stringify(f),started);assert.notEqual(ctx.setFutureRebuyField(f,'currentPrice','1260'),false);
+  // 재매수 시작 뒤에도 기준은 바뀌고, 체결한 손절·재매수와 남은 재매수 회차·평균 손절가는 그대로다.
+  const started=JSON.stringify(f),cutRecords=JSON.stringify(f.rebuy.cuts),stages=JSON.stringify(f.rebuy.stages),planned=JSON.stringify(f.rebuy.planned??null);
+  const base=ctx.futureRebuySummary(f),tranches=JSON.stringify(plain(base.tranches));
+  for(const [key,value] of [['contracts','7'],['sellPct','10']])assert.equal(ctx.setFutureRebuyField(f,key,value),false,`${key} ${value}: 목표가 이미 판 4계약보다 작아진다`);
+  assert.equal(JSON.stringify(f),started);
+  for(const [key,value] of [['lowPrice','1410'],['floorPrice','1280'],['contracts','20'],['steps','3']])assert.notEqual(ctx.setFutureRebuyField(f,key,value),false,`${key} ${value}`);
+  s=ctx.futureRebuySummary(f);
+  assert.equal(JSON.stringify(f.rebuy.cuts),cutRecords,'체결한 손절 기록은 그대로');
+  assert.equal(JSON.stringify(f.rebuy.stages),stages,'재매수 단계·체결은 그대로');
+  assert.equal(JSON.stringify(f.rebuy.planned??null),planned,'고정한 재매수 계획은 그대로');
+  assert.equal(JSON.stringify(plain(s.tranches)),tranches,'남은 재매수 회차의 환율·계약은 그대로');
+  assert.deepEqual([s.sold,s.rebought,s.rest,s.sellAvg,s.started],[base.sold,base.rebought,base.rest,base.sellAvg,true]);
+  const open=s.cuts.filter(c=>!c.done);
+  assert.equal(s.goal,10);assert.equal(open.reduce((n,c)=>n+c.qty,0),6,'늘린 목표만큼 남은 손절 회차를 새 기준으로 다시 나눈다');
+  assert.ok(open.every(c=>c.price>=1280&&c.price<=1410));
+  const next=s.cuts.find(c=>!c.done&&c.qty>0);assert.notEqual(ctx.setFutureCutDone(f,next.k-1,true),false);
+  const after=ctx.futureRebuySummary(f);
+  assert.equal(after.sold,base.sold+next.qty);assert.equal(after.rest,base.rest+next.qty,'추가로 판 계약은 남은 재매수에 더한다');
+  assert.notEqual(ctx.setFutureRebuyField(f,'currentPrice','1260'),false);
 });
 
 test('반등 단계는 판 계약 수만 복원하고 재매수 완료 뒤에도 남은 손절을 이어 간다',()=>{
@@ -324,7 +343,9 @@ test('하단선 시세가 신저점 이상이면 손절 회차·알림을 멈추
   const direct=futures({notify:{cuts:true}}),rule=plain(ctx.buildTradeAlertRules({futures:direct},null))[0];
   assert.deepEqual(JSON.parse(rule.revision),[1400,1300,3,1],'직접 하단 기록의 알림 기준(이력)은 바뀌지 않는다');
   const bought=futures({stages:[{name:'25일선',price:1260,done:true,contracts:1,execPrice:1259.3}]});
-  assert.equal(ctx.setFutureRebuyField(bought,'floorLine','60일선'),false);assert.equal(Object.hasOwn(bought.rebuy,'floorLine'),false);
+  const boughtStages=JSON.stringify(bought.rebuy.stages);
+  assert.notEqual(ctx.setFutureRebuyField(bought,'floorLine','60일선'),false);assert.equal(bought.rebuy.floorLine,'60일선','재매수 시작 뒤에도 하단선을 고른다');
+  assert.equal(JSON.stringify(bought.rebuy.stages),boughtStages);
 });
 
 test('재매수 회차를 체결해도 남은 회차의 환율·계약은 처음 계획 그대로다(종료 기준 유무 모두)',()=>{

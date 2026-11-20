@@ -216,7 +216,6 @@ function applyFutureRebuyEdits(f,edits){
 // 저장할 수 없을 때 창에 보일 이유(values = 창의 모든 칸 글자, 하단선을 골랐으면 floorLine과 그 선의 시세 floorPrice).
 function futureRebuyEditError(f,values){
   const n=key=>Number(values[key])||0,cuts=futureRebuyOf(f).cuts,sold=(Array.isArray(cuts)?cuts:[]).reduce((m,c)=>m+futureRebuyQty(c?.contracts),0);
-  if(futureRebuyBought(f))return "재매수 시작 후에는 기존 계획을 보관하고 새 손절 계획을 시작할 수 있습니다.";
   if(n("lowPrice")>0&&n("floorPrice")>0&&n("lowPrice")<=n("floorPrice"))return values.floorLine?futureFloorAbove(values.floorLine,n("floorPrice")):"손절 하단은 신저점 환율보다 낮게 입력하세요.";
   const pct=String(values.sellPct??"").trim()===""?50:Number(values.sellPct);
   if(sold&&futureCutGoal(f,pct,n("contracts"))<sold)return `손절 목표(이탈 전 계약 수 × 손절 비중)가 이미 손절한 ${sold}계약보다 작아집니다.`;
@@ -235,20 +234,20 @@ function openFutureRebuyDialog(startNew=false){
   const previousJson=startNew?JSON.stringify({futures:previous}):null;
   let archivedSnapshot=null;
   const f=startNew?futureNewStopBase(previous):previous,r=futureRebuyOf(f),s=startNew?futureRebuySummary(f):old,fe=futuresEntry(priceData,f),locked=futureRebuyLocked(f),dialog=$("futureRebuyDialog"),opt=v=>Number(v)>0?futureShown(v):"";
-  const field=(key,label,value,attrs,off=s.started)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" ${key.endsWith("Price")?'type="text" inputmode="decimal" autocomplete="off" data-money':'type="number"'} ${attrs} value="${key.endsWith("Price")?moneyInputText(value):value}"${off?" disabled":""}></label>`;
-  const floorLine=futureFloorLine(r.floorLine),lock=s.started?" disabled":"",floorUnits=[["","원"],["일선","일선"],["주선","주선"],["개월선","월선"]];
-  const floorField=`<div class="field future-floor"><span>손절 하단</span><div class="hold-input"><input data-fr-field="floorPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${opt(r.floorPrice)}" aria-label="손절 하단 (원)"${floorLine?" hidden disabled":lock}><input id="frFloorPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(floorLine)||60}" required aria-label="손절 하단 이동평균 기간"${floorLine?lock:" hidden disabled"}><select id="frFloorUnit" aria-label="손절 하단 단위"${lock}>${floorUnits.map(([v,label])=>`<option value="${v}"${movingLineUnit(floorLine)===v?" selected":""}>${label}</option>`).join("")}</select></div><small id="frFloorPrice"></small></div>`;
+  const field=(key,label,value,attrs,off=false)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" ${key.endsWith("Price")?'type="text" inputmode="decimal" autocomplete="off" data-money':'type="number"'} ${attrs} value="${key.endsWith("Price")?moneyInputText(value):value}"${off?" disabled":""}></label>`;
+  const floorLine=futureFloorLine(r.floorLine),floorUnits=[["","원"],["일선","일선"],["주선","주선"],["개월선","월선"]];
+  const floorField=`<div class="field future-floor"><span>손절 하단</span><div class="hold-input"><input data-fr-field="floorPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${opt(r.floorPrice)}" aria-label="손절 하단 (원)"${floorLine?" hidden disabled":""}><input id="frFloorPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(floorLine)||60}" required aria-label="손절 하단 이동평균 기간"${floorLine?"":" hidden disabled"}><select id="frFloorUnit" aria-label="손절 하단 단위">${floorUnits.map(([v,label])=>`<option value="${v}"${movingLineUnit(floorLine)===v?" selected":""}>${label}</option>`).join("")}</select></div><small id="frFloorPrice"></small></div>`;
   const hasUnlinked=unlinked&&(unlinked.cuts>0||unlinked.buys>0);
-  const hint=s.started?"재매수 체결이 있는 계획입니다. 새 기준을 쓰려면 기존 계획을 보관하고 새 계획을 시작하세요.":locked?"기준을 바꿔도 체크한 손절의 계약 수·환율은 그대로 두고 남은 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":"손절 비중은 0~100%로 입력합니다(기본 50%). 손절 계약 수보다 많은 분할 횟수는 자동으로 줄입니다.";
+  const hint=s.started?"재매수 중에도 기준을 바꿀 수 있습니다. 체결한 손절·재매수와 평균 손절가, 남은 재매수 회차는 그대로 두고 남은 손절 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":locked?"기준을 바꿔도 체크한 손절의 계약 수·환율은 그대로 두고 남은 회차만 다시 나눕니다. 손절 목표(이탈 전 계약 수 × 손절 비중)는 이미 손절한 계약 수 이상이어야 합니다.":"손절 비중은 0~100%로 입력합니다(기본 50%). 손절 계약 수보다 많은 분할 횟수는 자동으로 줄입니다.";
   dialog.innerHTML=`<form id="futureRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyTitle">${startNew?"새 손절 계획":"손절 기준 수정"}</h2><button class="btn ghost" type="button" data-close-future-rebuy>닫기</button></div>
     ${startNew?`<p class="hint">이전 계획 · 손절 ${old.sold}계약 · 재매수 ${old.rebought}계약 · 미복원 ${old.rest}계약</p>
     <p class="hint">체결은 이 기기의 플래너 보관 기록에 남깁니다. 이전 미체결 회차와 알림은 종료하고 미복원 수량은 이월하지 않습니다. 보유 월물·단순평균가·누적 정산손익은 유지합니다.</p>
     <p class="hint">새 계획의 알림은 꺼진 상태로 시작합니다. 분할 손절 표에서 알림을 켜세요. 재매수 기준은 새 계획에서 다시 정합니다.</p>
     ${hasUnlinked?'<p class="future-plan-error">보유 미반영 체결이 있습니다. 계좌와 대조하고 보유 월물에 반영하거나 직접 반영으로 표시하세요.</p>':""}
-    <button class="btn mini ghost" id="frBackup" type="button">플래너 JSON 백업</button>`:s.started?`<p class="hint">${hint}</p><button class="btn" id="frNewPlan" type="button">보관 후 새 계획 시작</button>`:'<p class="hint">신저점부터 정한 하단까지 환율을 고르게 나눕니다. 설정한 비중만큼 손절하고, 하단 아래의 손절 회차는 만들지 않습니다. 하단은 직접 가격(원)이나 일선·주선·월선으로 정하며, 선을 고르면 그 선의 시세를 따라 남은 회차가 다시 나뉩니다.</p>'}
+    <button class="btn mini ghost" id="frBackup" type="button">플래너 JSON 백업</button>`:s.started?`<p class="hint">새 신저점으로 손절을 처음부터 다시 시작하려면 기존 계획을 보관하고 새 계획을 시작하세요.</p><button class="btn" id="frNewPlan" type="button">보관 후 새 계획 시작</button>`:'<p class="hint">신저점부터 정한 하단까지 환율을 고르게 나눕니다. 설정한 비중만큼 손절하고, 하단 아래의 손절 회차는 만들지 않습니다. 하단은 직접 가격(원)이나 일선·주선·월선으로 정하며, 선을 고르면 그 선의 시세를 따라 남은 회차가 다시 나뉩니다.</p>'}
     <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'data-money-min="0" data-money-step="any"')}${floorField}${field("contracts","이탈 전 계약 수",s.hold||"",'min="0" step="1" inputmode="numeric"')}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${field("steps","분할 횟수",futureRebuyQty(r.steps)||10,'min="1" max="60" step="1" inputmode="numeric"')}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'data-money-min="0" data-money-step="any" placeholder="시세 없음"',false)}</div>
     ${startNew?'<p class="hint"><output id="frNewGoal" aria-live="polite"></output></p>':""}
-    <p class="hint">${s.started?"":hint}${s.cuts.length===1?" 한 번만 손절하는 계획은 하단에서 실행합니다.":""}${fe?"":" 보유 근월물 시세가 없어 현재 환율은 직접 넣습니다."}</p>
+    <p class="hint">${hint}${s.cuts.length===1?" 한 번만 손절하는 계획은 하단에서 실행합니다.":""}${fe?"":" 보유 근월물 시세가 없어 현재 환율은 직접 넣습니다."}</p>
     <p class="future-plan-error" id="futureRebuyError" role="alert"></p><div class="dialog-foot"><button class="btn" type="button" data-close-future-rebuy>취소</button><button class="btn primary" type="submit"${hasUnlinked?" disabled":""}>${startNew?"보관하고 시작":"저장"}</button></div></form>`;
   const inputs=[...dialog.querySelectorAll("[data-fr-field]")],initial=Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.value])),error=$("futureRebuyError");
   const price=dialog.querySelector('[data-fr-field="floorPrice"]'),period=$("frFloorPeriod"),unit=$("frFloorUnit"),floorNote=$("frFloorPrice");
@@ -256,7 +255,7 @@ function openFutureRebuyDialog(startNew=false){
   const lineValue=line=>priceRound(maValue(fe,line),2)||(line===floorLine?Number(r.floorPrice)||0:0); // 시세 파일 값, 없으면 저장한 같은 선의 하단
   const syncFloor=()=>{
     const ma=!!unit.value,line=chosenLine(),v=line?lineValue(line):0;
-    price.hidden=ma;price.disabled=ma||s.started;period.hidden=!ma;period.disabled=!ma||s.started;
+    price.hidden=ma;price.disabled=ma;period.hidden=!ma;period.disabled=!ma;
     const last=line===floorLine&&futureFloorStale(f,r),short=!(v>0)&&futureFloorShort(fe,line); // 마지막 값 표시 중 / 이 월물의 봉이 모자라 계산할 수 없음
     floorNote.textContent=!ma?"":!line?"기간은 1~400으로 입력하세요.":v>0?`${movingLineText(line)} ${last?"시세 없음 · 마지막 값 ":""}${fmtPrice(v)}원`
       :short?`${movingLineText(line)}은 보유 근월물 봉 ${short.have}개로 계산할 수 없습니다 · ${short.max}까지 고를 수 있습니다`:`${movingLineText(line)} 시세 대기`;
@@ -281,7 +280,7 @@ function openFutureRebuyDialog(startNew=false){
     if(hasUnlinked)return;
     const open=inputs.filter(el=>!el.disabled&&!el.hidden),invalid=[...open,period].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
     const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
-    if(!s.started&&line!==floorLine)edits.floorLine=line;
+    if(line!==floorLine)edits.floorLine=line;
     if(!startNew&&!Object.keys(edits).length){dialog.close();return;}
     if(startNew){
       try{absorbPlanner();}catch{error.textContent="최신 기록을 읽지 못했습니다. 다시 시도하세요.";return;}

@@ -113,10 +113,32 @@ function openNewStopPlan({unlinked=false,legacy=false}={}){
   r.c.backupRecord=(snapshot,reason)=>archive.push({snapshot:JSON.parse(snapshot),reason});
   r.c.renderFutures();
   r.el('frEdit').onclick();
-  assert.equal(r.input('[data-fr-field="lowPrice"]').disabled,true);
+  assert.equal(r.input('[data-fr-field="lowPrice"]').disabled,false);
   r.el('frNewPlan').onclick();
   return {...r,archive,enterPrices(){r.type('[data-fr-field="lowPrice"]','1380');r.type('[data-fr-field="floorPrice"]','1280');}};
 }
+
+test('재매수 중 손절 기준 수정 창은 보관 없이 바로 저장하고 체결·재매수 기록은 그대로 둔다',()=>{
+  const f=future();f.rebuy.contracts=12;
+  f.rebuy.cuts=[{contracts:4,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  f.rebuy.stages[0].buys=[{contracts:3,price:1325,month:'202612'}];
+  const r=setup(f),archive=[];r.c.backupRecord=(snapshot,reason)=>archive.push(reason);r.c.renderFutures();
+  const cuts=JSON.stringify(f.rebuy.cuts),stages=JSON.stringify(f.rebuy.stages),tranches=JSON.stringify(plain(r.c.futureRebuySummary(f).tranches));
+  r.el('frEdit').onclick();
+  assert.match(r.el('futureRebuyDialog').innerHTML,/손절 기준 수정<\/h2>/);
+  for(const key of ['lowPrice','floorPrice','contracts','sellPct','steps'])assert.equal(r.input(`[data-fr-field="${key}"]`).disabled,false,key);
+  assert.equal(r.el('frFloorUnit').disabled,false);
+  assert.match(r.el('futureRebuyDialog').innerHTML,/id="frNewPlan"[^>]*>보관 후 새 계획 시작</,'새 신저점용 보관 후 새 계획 버튼은 남긴다');
+  r.type('[data-fr-field="lowPrice"]','1380');r.type('[data-fr-field="floorPrice"]','1280');r.type('[data-fr-field="steps"]','3');
+  r.submit('futureRebuyForm');
+  const saved=r.saved().futures.rebuy;
+  assert.deepEqual([saved.lowPrice,saved.floorPrice,saved.steps],[1380,1280,3]);
+  assert.equal(JSON.stringify(saved.cuts),cuts);assert.equal(JSON.stringify(saved.stages),stages);
+  assert.equal(JSON.stringify(plain(r.c.futureRebuySummary(r.saved().futures).tranches)),tranches,'남은 재매수 회차는 그대로');
+  assert.deepEqual(archive,[],'보관 기록을 만들지 않는다');assert.equal(r.el('futureRebuyDialog').open,false);
+  r.el('frEdit').onclick();r.type('[data-fr-field="contracts"]','7');r.submit('futureRebuyForm');
+  assert.match(r.el('futureRebuyError').textContent,/이미 손절한 4계약보다 작아집니다/);assert.equal(r.saved().futures.rebuy.contracts,12);
+});
 
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);

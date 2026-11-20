@@ -488,12 +488,13 @@ function futureRebuyBought(f){return futureRebuyStages(futureRebuyOf(f)).some(st
 function futureRebuyLocked(f){const r=futureRebuyOf(f);return (Array.isArray(r.cuts)?r.cuts:[]).some(Boolean)||futureRebuyBought(f);}
 // 손절 기준(신저점·하단·하단선·이탈 전 계약 수·비중·분할 횟수)은 ETF 재매수처럼 손절 체결 뒤에도 바꿀 수 있다:
 // 체결 기록(계약 수·회차 환율 targetPrice)은 그대로 두고 예정 회차만 새 기준으로 다시 나눈다(futureCutPlan).
-// 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에도 손절은 이어 가되 기준은 고정하고 현재 환율만 바꾼다.
+// 새 손절 목표(이탈 전 계약 × 비중)가 이미 판 계약보다 작아지면 거절한다. 재매수 시작 뒤에도 같은 방식으로 바꿀 수 있다:
+// 재매수 계획은 손절 기준이 아니라 실제 손절 체결(판 계약·평균 손절가)만 읽으므로 체결한 손절·재매수와 남은 재매수 회차는 그대로다.
 // 비중을 비우면 필드를 지워 기본 50%로 돌아간다; 이 경우에도 이미 판 수량보다 목표가 작아지면 거절한다.
 // 하단선(floorLine, futureFloorLine)을 고르거나 바꾸면 floorPrice와 자동 채움 표시(auto.floorPrice)를 지워 다음 시세 채우기를 기다리고,
 // 빈 글자로 끄면 마지막 floorPrice를 직접 하단으로 남긴다. 직접 하단(floorPrice)을 넣으면 하단선을 끈다.
 function setFutureRebuyField(f,key,text){
-  if(!["lowPrice","floorPrice","floorLine","contracts","sellPct","steps","currentPrice"].includes(key)||key!=="currentPrice"&&futureRebuyBought(f))return false;
+  if(!["lowPrice","floorPrice","floorLine","contracts","sellPct","steps","currentPrice"].includes(key))return false;
   if(key==="floorLine"){
     const line=futureFloorLine(text);if(text.trim()&&!line)return false;
     if(line===(futureRebuyOf(f).floorLine||""))return; // 그대로면 기록을 만들지 않는다

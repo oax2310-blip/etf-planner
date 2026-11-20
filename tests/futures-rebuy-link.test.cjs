@@ -443,7 +443,12 @@ test('손절 기준 수정 창은 바꾼 칸만 순서와 관계없이 함께 �
   assert.match(ctx.futureRebuyEditError(f,{lowPrice:'1400',floorPrice:'1300',contracts:'7',sellPct:'',steps:'5'}),/이미 손절한 4계약보다 작아집니다/);
   f.rebuy.currentPrice=1250;f.rebuy.stages=[{name:'25선',price:1260},{name:'25일선',price:1270}];
   const first=ctx.futureRebuySummary(f).tranches.find(x=>x.amount>0);assert.notEqual(ctx.setFutureBuyChecked(f,first.i,first.t,true),false);
-  assert.equal(ctx.applyFutureRebuyEdits(f,{lowPrice:'1410'}),null);assert.match(ctx.futureRebuyEditError(f,{}),/재매수 시작 후/);
+  const stages=JSON.stringify(f.rebuy.stages),cutRecords=JSON.stringify(f.rebuy.cuts);
+  g=ctx.applyFutureRebuyEdits(f,{lowPrice:'1410',floorPrice:'1280',steps:'3'});
+  assert.deepEqual([g.rebuy.lowPrice,g.rebuy.floorPrice,g.rebuy.steps],[1410,1280,3],'재매수 시작 뒤에도 손절 기준을 바꾼다');
+  assert.equal(JSON.stringify(g.rebuy.stages),stages);assert.equal(JSON.stringify(g.rebuy.cuts),cutRecords);
+  assert.equal(ctx.applyFutureRebuyEdits(f,{contracts:'7'}),null);assert.match(ctx.futureRebuyEditError(f,{lowPrice:'1400',floorPrice:'1300',contracts:'7',sellPct:'',steps:'5'}),/이미 손절한 4계약보다 작아집니다/);
+  assert.doesNotMatch(ctx.futureRebuyEditError(f,{}),/재매수 시작 후/);
   assert.equal(ctx.applyFutureRebuyEdits(f,{currentPrice:'1265'}).rebuy.currentPrice,1265,'재매수 시작 뒤에도 현재 환율은 바꾼다');
 });
 
