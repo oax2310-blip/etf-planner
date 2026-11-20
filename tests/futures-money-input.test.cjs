@@ -128,7 +128,8 @@ test('재매수 중 손절 기준 수정 창은 보관 없이 바로 저장하�
   assert.match(r.el('futureRebuyDialog').innerHTML,/손절 기준 수정<\/h2>/);
   for(const key of ['lowPrice','floorPrice','contracts','sellPct','steps'])assert.equal(r.input(`[data-fr-field="${key}"]`).disabled,false,key);
   assert.equal(r.el('frFloorUnit').disabled,false);
-  assert.match(r.el('futureRebuyDialog').innerHTML,/id="frNewPlan"[^>]*>보관 후 새 계획 시작</,'새 신저점용 보관 후 새 계획 버튼은 남긴다');
+  assert.match(r.el('futureRebuyDialog').innerHTML,/class="dialog-foot"><button[^>]*id="frNewPlan"[^>]*>보관 후 새 계획 시작</,'새 신저점용 보관 후 새 계획 버튼은 아래 버튼 줄에 남긴다');
+  assert.doesNotMatch(r.el('futureRebuyDialog').innerHTML,/새 신저점으로 손절을 처음부터/,'버튼 설명 문구는 없앤다');
   r.type('[data-fr-field="lowPrice"]','1380');r.type('[data-fr-field="floorPrice"]','1280');r.type('[data-fr-field="steps"]','3');
   r.submit('futureRebuyForm');
   const saved=r.saved().futures.rebuy;
