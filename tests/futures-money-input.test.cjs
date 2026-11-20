@@ -509,6 +509,38 @@ test('현재 환율이 하단 + 0.01원 이내면 중간값이 현재 환율과 
   assert.equal(r.c.futureNextCut(f),null);assert.equal(r.c.applyFutureRebuyEdits(f,{contracts:''}).rebuy.lowPrice,1400);
 });
 
+test('하단 아래라도 남은 회차가 하단 회차뿐이 아니면 다음 회차로 옮기고, 후보가 현재 환율 이상이면 첫 회차가 바로 도래한다',()=>{
+  // (a) 4회 아닌 10회 계획: 남은 회차가 하단 회차뿐이 아니라 현재 환율 1290(하단 아래)이어도 다음 회차 1344.44로 옮기고 새 회차가 모두 도래
+  const {r,f}=clearPlan();Object.assign(f.rebuy,{steps:10,currentPrice:1290});
+  const g=r.c.applyFutureRebuyEdits(f,{contracts:''}),s=r.c.futureRebuySummary(g);
+  assert.equal(g.rebuy.lowPrice,1344.44);assert.equal(s.cuts.length,10);assert.equal(s.cuts.filter(c=>c.price>=1290).length,10);
+  // (b) 건너뛴 체결 뒤 현재 1360: 마지막 체결 다음 회차 1366.67이 현재 환율 이상이라 새 첫 회차가 바로 도래
+  const h=future();h.positions[0].contracts=20;Object.assign(h.rebuy,{contracts:20,sellPct:100,steps:10,currentPrice:1360});
+  const rec=p=>({contracts:2,price:p,targetPrice:p,month:'202612',settlementPrice:1450});h.rebuy.cuts=[rec(1400),null,rec(1377.78)];
+  const r2=setup(h),g2=r2.c.applyFutureRebuyEdits(h,{contracts:''}),s2=r2.c.futureRebuySummary(g2);
+  assert.equal(g2.rebuy.lowPrice,1366.67);assert.equal(r2.c.futureCutDue(s2,1360).round,1);
+});
+
+test('분할매수 체결로 다시 짤 때 새 신저점은 체결 전 표의 다음 회차 환율이다',()=>{
+  const f=future();f.positions[0].contracts=14;delete f.rebuy.contracts;Object.assign(f.rebuy,{sellPct:50,steps:10,currentPrice:1395});
+  f.rebuy.cuts=[{contracts:1,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  const r=setup(f),shown=Math.round(r.c.futureRebuySummary(f).cuts.find(c=>!c.recorded).price*100)/100;assert.equal(shown,1383.33);
+  r.c.renderFutures();r.input('[data-tranche-month="0:0"]').value='202612';const b=r.input('[data-tranche-check="0:0"]');b.checked=true;b.onchange();
+  assert.equal(r.c.state.futures.rebuy.lowPrice,1383.33,'체결 뒤 계획(1385.71)이 아니라 표에 보이던 1383.33');
+});
+
+test('자동 기록은 이탈 전 계약 수를 비워도(이미 비어 있음) 다시 짜지 않는다',()=>{
+  const f=future();f.positions[0].contracts=16;delete f.rebuy.contracts;f.rebuy.cuts=[{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  const r=setup(f),g=r.c.applyFutureRebuyEdits(f,{contracts:''});assert.equal(Object.hasOwn(g.rebuy,'cutRestart'),false);
+});
+
+test('하단이 소수 여러 자리일 때 반올림한 중간값이 하단 이하가 되면 신저점을 옮기지 않는다',()=>{
+  // 하단 1331.4501 · 현재 1331.452 → 중간 1331.45105 → 반올림 1331.45 ≤ 하단
+  const {r,f}=clearPlan();Object.assign(f.rebuy,{floorPrice:1331.4501,currentPrice:1331.452});
+  assert.ok(!(r.c.futureRebuySummary(f).cuts.find(c=>!c.recorded&&c.qty>0).price>1331.4501),'남은 회차가 하단 회차뿐');
+  assert.equal(r.c.futureNextCut(f),null);
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
