@@ -143,13 +143,13 @@ function setFutureCutPrice(f,i,text){
 function setFutureBuyChecked(f,i,t,on,detach=false){
   if(on){
     const part=futureRebuySummary(f).tranches.find(y=>y.i===i&&y.t===t&&y.partial);
-    if(part)return part.amount<1||setFutureBuyCount(f,i,t,String(part.qty+part.amount))===false?false:futureFillOf(f,i,t)?.[0]?.month?true:"unlinked";
+    if(part)return part.amount<1||setFutureBuyCount(f,i,t,String(part.qty+part.amount))===false?false:futureFillOf(f,i,t)?.[0]?.month?true:"unlinked"; // 늘린 재매수는 setFutureBuyCount가 다시 짠다
     // 공용 계산이 만든 체결 수량·환율을 사용하되, 평균가를 확인할 때까지 체결 기록은 사본에만 둔다.
     const draft={...f,rebuy:JSON.parse(JSON.stringify(futureRebuyOf(f)))};
     if(setFutureBuyDone(draft,i,t,true)===false)return false;
     const linked=linkFutureRebuy(draft,futureFillRec(draft,i,t));
     if(linked===false)return false;
-    f.rebuy=draft.rebuy;
+    f.rebuy=draft.rebuy;futureRestartOnBuy(f);
     return linked;
   }
   const fill=futureFillOf(f,i,t),rec=fill?.[0],qty=futureRebuyQty(rec?.contracts),price=Number(rec?.[fill?.[1]]),month=futureRebuyHeldMonth(f,rec?.month,qty);
@@ -160,9 +160,10 @@ function setFutureBuyChecked(f,i,t,on,detach=false){
   if(remaining)applyFuturePositionRemoval(f,pos,remaining);
   const st=futureRebuyOf(f).stages[i];delete st.month;delete st.manual; // 옛 통째 기록은 해제 후에도 단계가 남는다
 }
+// 재매수를 늘리면 futureRestartOnBuy로 지금 보유 기준 손절을 다시 짠다(이탈 전 계약 수 자동일 때).
 function setFutureBuyCount(f,i,t,text){
-  const fill=futureFillOf(f,i,t),rec=fill?.[0];
-  if(!rec?.month)return setFutureBuyQty(f,i,t,text);
+  const fill=futureFillOf(f,i,t),rec=fill?.[0],before=futureRebuyQty(rec?.contracts);
+  if(!rec?.month){const done=setFutureBuyQty(f,i,t,text);if(done!==false&&Number(text)>before)futureRestartOnBuy(f);return done;}
   const delta=Number(text)-futureRebuyQty(rec.contracts),month=futureRebuyHeldMonth(f,rec.month,Math.max(0,-delta));
   if(!month)return false;
   const pos=f.positions.find(p=>String(p.month)===month),price=Number(rec[fill[1]]);
@@ -170,7 +171,7 @@ function setFutureBuyCount(f,i,t,text){
   if(delta<0&&!remaining)return false;
   if(delta>0&&!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,delta,price)))return false; // 체결가·보유 단순평균가가 0 이하·비유한이면 거절
   if(setFutureBuyQty(f,i,t,text)===false)return false;
-  if(delta>0)addToPosition(f,month,delta,price);else if(remaining)applyFuturePositionRemoval(f,pos,remaining);
+  if(delta>0){addToPosition(f,month,delta,price);futureRestartOnBuy(f);}else if(remaining)applyFuturePositionRemoval(f,pos,remaining);
 }
 // "old-price" = 연결 기록의 기존 체결 환율이 비어 있거나 잘못돼 평균가를 맞출 수 없음(보유는 정상, 아무것도 바꾸지 않음).
 // recordOnly로 다시 부르면 보유는 두고 체결 환율 기록만 고친다(setFutureTrancheExec와 같음).
@@ -237,8 +238,11 @@ function futureRebuyEditBase(f,edits){
 // 이어서 새 손절 사본: 지난 손절·재매수 기록, 평균 손절가, 재매수 기준·고정 계획, 알림 설정은 그대로 두고
 // cutRestart = {at: 마지막 손절 기록 다음 cuts 위치, rebought: 지금까지 재매수한 계약}을 저장한다(rebuy.js futureCutRestart). 지난 미체결 손절 회차는 끝난다.
 // 회차 환율(targetPrice)이 없는 지난 기록은 지금 회차 환율을 남겨 평균 손절가가 바뀌지 않게 한다. auto면 이탈 전 계약 수를 지워 자동으로 센다.
+// 신저점은 다음 미체결 손절 회차 환율로 옮겨, 새 회차가 이미 지난 환율(현재 환율 위)부터 다시 시작하지 않게 한다(futureNextCutPrice, 없거나 하단 이하면 그대로).
+// 신저점을 직접 바꾼 수정은 이 사본 위에 적용되므로 입력한 신저점이 우선한다.
 function futureRestartCuts(f,auto){
-  const g=JSON.parse(JSON.stringify(f)),plan=futureCutPlan(f),r=editFutureRebuy(g);
+  const g=JSON.parse(JSON.stringify(f)),plan=futureCutPlan(f),r=editFutureRebuy(g),next=futureNextCutPrice(f,plan);
+  if(next)r.lowPrice=next;
   r.cuts.forEach((c,i)=>{const row=plan.find(x=>x.k===i+1);if(c&&!(Number(c.targetPrice)>0)&&row?.price>0)c.targetPrice=row.price;});
   r.cutRestart={at:r.cuts.reduce((n,c,i)=>c?i+1:n,0),rebought:futureRebought(r)}; // 체결 기록 기준 재매수 합계(rebuy.js futureRebought, 자동 기준과 같은 기준)
   if(auto)delete r.contracts;
@@ -246,6 +250,20 @@ function futureRestartCuts(f,auto){
   const o=r.notify?.cutsOverrides;
   if(o&&typeof o==="object"){for(const k of Object.keys(o))if(Number(k)>=r.cutRestart.at)delete o[k];if(!Object.keys(o).length)delete r.notify.cutsOverrides;}
   return g;
+}
+// 다시 짤 때의 새 신저점(소수 둘째 자리): 기록 없는 첫 손절 회차의 환율이 하단보다 높으면 그 환율,
+// 남은 회차가 하단 회차뿐이면 하단과 기존 신저점 사이의 현재 환율, 둘 다 아니면 null(신저점 그대로).
+function futureNextCutPrice(f,plan=futureCutPlan(f)){
+  const r=futureRebuyOf(f),c=plan.find(x=>!x.recorded&&x.qty>0),floor=Number(r.floorPrice)||0,low=Number(r.lowPrice)||0,cur=Number(r.currentPrice)||0,p=c?Math.round(c.price*100)/100:0;
+  if(!(floor>0))return null;
+  return p>floor?p:cur>floor&&(!low||cur<low)?Math.round(cur*100)/100:null;
+}
+// 분할매수·재매수 체결로 보유가 늘면(이탈 전 계약 수 자동일 때만) 그 시점 보유로 손절 기준을 다시 잡는다: 이번 손절 계획에 체결이 있으면
+// 이어서 새 손절(futureRestartCuts)로 그 손절을 지난 손절로 넘기고(평균 손절가·재매수는 그대로) 다음 미체결 회차부터 지금 보유 기준으로 다시 나눈다.
+// 그래서 미복원 계약은 손절 기준에서 빠지고, 재매수로 되찾으면 그때 다시 기준에 들어간다. 이탈 전 계약 수를 직접 입력해 둔 기록은 바꾸지 않는다.
+function futureRestartOnBuy(f){
+  const r=futureRebuyOf(f);if(!f?.rebuy||Object.hasOwn(r,"contracts")||!futureCutRecords(r).some(Boolean))return;
+  f.rebuy=futureRestartCuts(f,true).rebuy;
 }
 function futureNewStopBase(f){
   const currentPrice=futureRebuyOf(f).currentPrice;
@@ -289,14 +307,14 @@ function openFutureRebuyDialog(startNew=false){
   syncFloor();
   if(!startNew&&locked)$("frNewPlan").onclick=()=>openFutureRebuyDialog(true);
   // 신저점을 다른 값으로 바꾸면 안내를 보이고, 이탈 전 계약 수를 고치지 않았으면 칸을 비워 이어서 새 손절 뒤의 자동 기준(지금 보유)을 보인다.
-  // 고정한 이탈 전 계약 수를 비워도 같은 안내를 보이되, 신저점이 그대로면 현재 환율 위 회차가 바로 도래한다는 주의를 더한다(동작은 그대로).
+  // 고정한 이탈 전 계약 수를 비워도 같은 안내를 보이되, 신저점을 그대로 두면 다음 미체결 회차 환율이 새 신저점이 된다고 알린다.
   const field$=key=>inputs.find(el=>el.dataset.frField===key),lowInput=field$("lowPrice"),holdInput=field$("contracts"),holdShown=[holdInput.value,holdInput.placeholder];
-  let holdTouched=false;
+  const nextCut=restartable?futureNextCutPrice(f):null;let holdTouched=false; // 비우기만 하면 이 환율이 새 신저점(futureRestartCuts)
   const syncRestart=()=>{
     if(!restartable)return;const v=moneyInputNumber(lowInput.value),moved=v>0&&v!==Number(r.lowPrice);
     if(!holdTouched)[holdInput.value,holdInput.placeholder]=moved?["",`자동 · ${restartHold}계약`]:holdShown;
     const on=moved||Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="";$("frRestartNote").hidden=!on;$("frHintBase").hidden=on; // 고정 값을 비워도 이어서 새 손절
-    $("frRestartNote").textContent=`지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.${on&&!moved?" 신저점이 그대로면 현재 환율 위 회차도 바로 손절 시점이 되니 현재 환율 아래 회차만 실행하세요.":""}`;
+    $("frRestartNote").textContent=`${on&&!moved&&nextCut?`다음 손절 회차 ${fmtPrice(nextCut)}원을 신저점으로 `:""}지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.`;
   };
   if(startNew)$("frBackup").onclick=()=>$("exportBtn").click();
   dialog.querySelectorAll("[data-close-future-rebuy]").forEach(b=>b.onclick=()=>dialog.close());

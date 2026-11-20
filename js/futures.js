@@ -390,7 +390,8 @@ function renderFutures(){
       if(!(price>0)){alert("매수가를 먼저 입력하세요.");input.checked=false;return;}
       const pos=f.positions.find(p=>String(p.month)===month);
       if(!validFuturePositionAverage(futurePositionAverageAfterBuy(pos,1,price))){alert(futureRejectMessage(f,month));input.checked=false;return;}
-      addToPosition(f,month,1,price);t.completed=true;t.executionPrice=price;t.mergedMonth=month;t.month=month;}
+      addToPosition(f,month,1,price);t.completed=true;t.executionPrice=price;t.mergedMonth=month;t.month=month;
+      if(typeof futureRestartOnBuy==="function")futureRestartOnBuy(f);} // 분할매수 체결로 보유가 늘면 손절 기준을 지금 보유로 다시 잡는다(futures-rebuy.js)
     else if(t.mergedMonth){const execP=Number(t.executionPrice??t.price),has=f.positions.some(p=>String(p.month)===t.mergedMonth&&Number(p.contracts)>=1);
       if(has&&!futurePositionAfterRemoval(f.positions.find(p=>String(p.month)===t.mergedMonth),1,execP)){input.checked=true;alert(futureRejectMessage(f,t.mergedMonth,execP));return;} // 계산할 수 없으면 확인 창 없이 거절(재매수 해제와 같음)
       if(has){if(!confirm(`${t.mergedMonth} 보유분에서 1계약(체결가 ${fmtPrice(execP)})을 빼고 단순평균가를 되돌릴까요?\n그 사이 이 월물의 단순평균가를 직접 고쳤다면, 되돌린 뒤 값을 확인하세요.`)){input.checked=true;return;}

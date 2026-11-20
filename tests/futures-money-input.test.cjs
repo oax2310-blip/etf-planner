@@ -236,7 +236,7 @@ test('이어서 새 손절 뒤 지난 미복원 계약의 재매수 시점·체�
   }
 });
 
-test('이어서 새 손절 뒤 지난 재매수를 해제하면 시작 때 재매수 수를 낮춰 이후 재매수로 자동 이탈 전 계약 수가 부풀지 않는다',()=>{
+test('이어서 새 손절 뒤 지난 재매수를 해제하면 시작 때 재매수 수를 낮추고, 다음 재매수 때 지금 보유로 다시 짠다',()=>{
   const r=restartPlan({buys:[{contracts:2,price:1321,month:'202612'}]}),f=r.c.state.futures;
   f.rebuy=r.c.applyFutureRebuyEdits(f,{lowPrice:1350,floorPrice:1280,sellPct:72}).rebuy;assert.deepEqual(plain(f.rebuy.cutRestart),{at:2,rebought:2});
   assert.notEqual(r.c.setFutureBuyChecked(f,0,0,false),false);assert.equal(f.positions[0].contracts,18);
@@ -245,7 +245,7 @@ test('이어서 새 손절 뒤 지난 재매수를 해제하면 시작 때 재�
   const q=cut.qty;assert.equal(f.positions[0].contracts,18-q);assert.equal(r.c.futureRebuySummary(f).hold,18);
   f.rebuy.currentPrice=1400;const tr=r.c.futureRebuySummary(f).tranches.find(x=>!x.done&&x.amount>0);assert.notEqual(r.c.setFutureBuyChecked(f,tr.i,tr.t,true),false);
   const k=r.c.futureRebuySummary(f).rebought;assert.equal(f.positions[0].contracts,18-q+k);
-  assert.equal(r.c.futureRebuySummary(f).hold,18+Math.max(0,k-q),'이번 손절을 되찾은 재매수는 기준을 늘리지 않는다');
+  assert.deepEqual([r.c.futureRebuySummary(f).hold,plain(f.rebuy.cutRestart)],[18-q+k,{at:cut.k,rebought:k}],'재매수로 보유가 늘면 그 시점 보유로 다시 짠다(미복원 제외)');
 });
 
 test('신저점을 바꾸며 이탈 전 계약 수를 직접 같은 값으로 다시 넣으면 고정으로 저장한다',()=>{
@@ -282,7 +282,7 @@ test('자동 이탈 전 계약 수는 보유 월물에 반영되지 않은 손�
   assert.deepEqual([r.c.futureRebuySummary(f).hold,r.c.futureRebuySummary(f).goal],[6,4],'직접 반영해도 그대로');
 });
 
-test('미반영 재매수가 있어도 이어서 새 손절 뒤 손절·재매수·반영으로 자동 이탈 전 계약 수가 흔들리지 않는다',()=>{
+test('미반영 재매수가 있어도 이어서 새 손절 뒤 손절·반영으로는 기준이 흔들리지 않고 재매수 때 지금 보유로 다시 짠다',()=>{
   for(const reflectAfter of [false,true]){
     // 보유 20계약 + 보유에 아직 반영하지 않은 지난 재매수 1계약(기록상 보유 21계약)
     const r=restartPlan({buys:[{contracts:1,price:1321}]}),f=r.c.state.futures;
@@ -293,8 +293,8 @@ test('미반영 재매수가 있어도 이어서 새 손절 뒤 손절·재매�
     const cut=r.c.futureRebuySummary(f).cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
     assert.equal(r.c.futureRebuySummary(f).hold,base,'손절 체결로 바뀌지 않는다');
     f.rebuy.currentPrice=1400;const tr=r.c.futureRebuySummary(f).tranches.find(x=>!x.done&&x.amount>0);assert.notEqual(r.c.setFutureBuyChecked(f,tr.i,tr.t,true),false);
-    const s=r.c.futureRebuySummary(f);assert.ok(s.rebought-1<=cut.qty);
-    assert.equal(s.hold,base,`이번 손절을 되찾은 재매수는 기준을 늘리지 않는다(${reflectAfter?'반영 후':'미반영'})`);
+    const s=r.c.futureRebuySummary(f);assert.equal(f.rebuy.cutRestart.at,cut.k);
+    assert.equal(s.hold,f.positions[0].contracts+(reflectAfter?0:1),`재매수 뒤 기준 = 기록상 지금 보유(${reflectAfter?'반영 후':'미반영 1계약 포함'})`);
   }
 });
 
@@ -326,19 +326,16 @@ function orderPlan(cutRestart={at:1,rebought:0}){
     stages:[{name:'25선',price:1320},{name:'32선',price:1330},{name:'42선',price:1340}]};
   const r=setup(f);return {r,f,sum:()=>r.c.futureRebuySummary(f),pos:()=>f.positions[0].contracts};
 }
-test('이어서 새 손절 뒤 지난 미복원 재매수가 먼저 체결돼도 다음 손절로 이탈 전 계약 수·목표가 줄지 않는다',()=>{
+test('이어서 새 손절 뒤 지난 미복원 재매수가 먼저 체결돼도 다음 손절로 기준이 줄지 않고, 재매수 때 지금 보유로 다시 짠다',()=>{
   const {r,f,sum,pos}=orderPlan(),open=()=>sum().tranches.find(x=>!x.done&&x.amount>0);
   assert.deepEqual([sum().hold,sum().goal],[17,8]);
   const first=open();assert.notEqual(r.c.setFutureBuyChecked(f,first.i,first.t,true),false);
-  assert.deepEqual([pos(),sum().hold,sum().goal,f.rebuy.cutRestart.prior],[18,18,9,1],'지난 미복원을 되찾은 재매수는 보유 증가로 고정');
+  assert.deepEqual([pos(),sum().hold,sum().goal,f.rebuy.cutRestart.prior],[18,18,9,1],'이번 손절 체결이 없으면 다시 짜지 않고 보유 증가로 고정');
   const cut=sum().cuts[0];assert.equal(cut.qty,2);assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
   assert.deepEqual([pos(),sum().hold,sum().goal],[16,18,9],'손절만 했으면 이탈 전 계약 수·목표가 그대로');
   const second=open();assert.notEqual(r.c.setFutureBuyChecked(f,second.i,second.t,true),false);const q=sum().rebought-1;
-  assert.deepEqual([pos(),sum().hold,f.rebuy.cutRestart.prior],[16+q,18,1],'이번 손절을 되찾은 재매수는 그대로');
-  assert.deepEqual([sum().held,sum().cells],[16+q,18]);
-  // 마지막 재매수를 해제하면 기준은 그대로, 지난 미복원 재매수까지 해제하면 그만큼 기준이 돌아간다.
-  assert.notEqual(r.c.setFutureBuyChecked(f,second.i,second.t,false),false);assert.deepEqual([pos(),sum().hold,f.rebuy.cutRestart.prior],[16,18,1]);
-  assert.notEqual(r.c.setFutureBuyChecked(f,first.i,first.t,false),false);assert.deepEqual([pos(),sum().hold,f.rebuy.cutRestart.prior],[15,17,0]);
+  assert.deepEqual([pos(),sum().hold,sum().cutSold,plain(f.rebuy.cutRestart)],[16+q,16+q,0,{at:2,rebought:1+q}],'재매수로 보유가 늘면 그 보유로 다시 짠다(미복원 제외)');
+  assert.notEqual(r.c.setFutureBuyChecked(f,second.i,second.t,false),false);assert.deepEqual([pos(),sum().hold],[16,16],'되찾은 계약을 해제하면 기준에서도 빠진다');
 });
 
 test('재매수 체결 수를 늘려도 늘린 몫을 기록 때 지난 미복원으로 고정해 뒤의 손절로 기준이 줄지 않는다',()=>{
@@ -384,7 +381,7 @@ test('고정한 이탈 전 계약 수를 비우면 미복원 계약을 빼고 �
   r.type(hold,'');assert.deepEqual([r.el('frRestartNote').hidden,r.el('frHintBase').hidden],[false,true],'비우면 다시 짠다는 안내');
   r.submit('futureRebuyForm');
   const g=r.saved().futures,s=r.c.futureRebuySummary(g);
-  assert.deepEqual(plain(g.rebuy.cutRestart),{at:5,rebought:3});assert.equal(Object.hasOwn(g.rebuy,'contracts'),false);assert.equal(g.rebuy.lowPrice,1400,'신저점은 그대로');
+  assert.deepEqual(plain(g.rebuy.cutRestart),{at:5,rebought:3});assert.equal(Object.hasOwn(g.rebuy,'contracts'),false);assert.equal(g.rebuy.lowPrice,1350,'남은 회차가 하단 회차뿐이라 현재 환율이 새 신저점');
   assert.deepEqual([s.hold,s.goal,s.cutSold,s.sold,s.rest,s.sellAvg],[20,20,0,5,2,before.sellAvg],'손절 기준은 지금 보유 20, 미복원 2는 재매수에만 남는다');
   // 이번 손절에 체결이 없거나 고정 값이 없으면 비워도 다시 짜지 않는다.
   const plan=future();assert.equal(Object.hasOwn(r.c.applyFutureRebuyEdits(plan,{contracts:''}).rebuy,'cutRestart'),false);
@@ -399,17 +396,20 @@ function clearPlan(){
   const r=setup(f);r.c.backupRecord=()=>{};let saves=0;const save=r.c.save;r.c.save=(...x)=>{saves++;return save(...x);};
   return {r,f,saves:()=>saves};
 }
-test('신저점 그대로 고정 값을 비우면 현재 환율 위 새 회차가 바로 손절 시점이 되고 그 알림 규칙을 만든다(현재 동작 고정)',()=>{
-  const {r,f}=clearPlan(),g=r.c.applyFutureRebuyEdits(f,{contracts:''}),s=r.c.futureRebuySummary(g);
-  assert.deepEqual(plain(s.cuts.map(c=>[c.k,c.round,Math.round(c.price*100)/100,c.qty])),[[6,1,1400,5],[7,2,1366.67,5],[8,3,1333.33,5],[9,4,1300,5]]);
-  const due=s.cuts.filter(c=>c.price>=1350);assert.deepEqual([due.length,due.reduce((n,c)=>n+c.qty,0)],[2,10],'현재 환율 위 1·2회(10계약)가 바로 도래');
-  assert.equal(r.c.futureCutDue(s,1350).k,6);
-  const rules=plain(r.c.buildTradeAlertRules({futures:g},null)).filter(x=>x.id.includes(':cut:'));
-  for(const [k,price] of [[5,1400],[6,1366.67]]){const x=rules.find(y=>y.id.endsWith(`:cut:${k}`));assert.ok(x,`cut:${k}`);assert.equal(Math.round(x.targetPrice*100)/100,price);assert.equal(x.condition,'down');}
+test('신저점 그대로 고정 값을 비우면 다음 미체결 손절 회차 환율을 새 신저점으로 다시 짜 지난 환율 회차가 바로 도래하지 않는다',()=>{
+  const {r,f}=clearPlan();f.rebuy.steps=10;
+  const next=r.c.futureRebuySummary(f).cuts.find(c=>!c.recorded&&c.qty>0);assert.equal(Math.round(next.price*100)/100,1344.44,'원래 계획의 다음 미체결 회차');
+  const g=r.c.applyFutureRebuyEdits(f,{contracts:''}),s=r.c.futureRebuySummary(g);
+  assert.equal(g.rebuy.lowPrice,1344.44,'다음 미체결 회차 환율이 새 신저점');assert.equal(s.cuts[0].price,1344.44);assert.equal(s.cuts[0].round,1);
+  assert.ok(s.cuts.every(c=>c.price<1350),'현재 환율 1350 위 회차 없음');assert.equal(r.c.futureCutDue(s,1350),null,'바로 도래하는 회차 없음');
+  const rules=plain(r.c.buildTradeAlertRules({futures:g},null)).filter(x=>x.id.includes(':cut:'));assert.ok(rules.length&&rules.every(x=>x.targetPrice<1350&&x.condition==='down'));
   r.c.renderFutures();r.el('frEdit').onclick();r.type('[data-fr-field="contracts"]','');
-  assert.match(r.el('frRestartNote').textContent,/신저점이 그대로면 현재 환율 위 회차도 바로 손절 시점이 되니/,'비우기만 하면 주의 문구');
-  r.type('[data-fr-field="lowPrice"]','1340');assert.doesNotMatch(r.el('frRestartNote').textContent,/신저점이 그대로면/,'신저점을 바꾸면 주의 문구 없음');
+  assert.match(r.el('frRestartNote').textContent,/다음 손절 회차 1,344\.4원을 신저점으로/);
+  r.type('[data-fr-field="lowPrice"]','1340');assert.doesNotMatch(r.el('frRestartNote').textContent,/다음 손절 회차/,'신저점을 직접 바꾸면 입력값이 신저점');
+  // 남은 회차가 하단 회차뿐이면 하단과 기존 신저점 사이의 현재 환율을 신저점으로 쓴다.
+  const {r:r2,f:f2}=clearPlan();assert.equal(r2.c.applyFutureRebuyEdits(f2,{contracts:''}).rebuy.lowPrice,1350);
 });
+
 test('고정 이탈 전 계약 수 칸: 비우며 신저점도 바꾸기·비웠다 되돌리기·다른 값 입력',()=>{
   // (a) 비움 + 신저점 변경 → 자동·이어서 새 손절·신저점은 입력값
   let {r}=clearPlan();r.c.renderFutures();r.el('frEdit').onclick();
@@ -423,6 +423,29 @@ test('고정 이탈 전 계약 수 칸: 비우며 신저점도 바꾸기·비웠
   // (c) 16 입력 → 고정 16, 이어서 새 손절 없음
   p=clearPlan();p.r.c.renderFutures();p.r.el('frEdit').onclick();p.r.type('[data-fr-field="contracts"]','16');assert.equal(p.r.el('frRestartNote').hidden,true);p.r.submit('futureRebuyForm');
   saved=p.r.saved().futures.rebuy;assert.deepEqual([saved.contracts,Object.hasOwn(saved,'cutRestart')],[16,false]);
+});
+
+test('이탈 전 계약 수 자동이면 분할매수 체결로 보유가 늘 때 그 보유로 손절을 다시 짜고 미복원 계약은 뺀다',()=>{
+  // 보유 18 · 자동 · 손절 4계약(미복원 4) → 분할매수 1계약 체결(보유 19)
+  const f=future();f.positions[0].contracts=18;delete f.rebuy.contracts;Object.assign(f.rebuy,{steps:10,currentPrice:1390});
+  f.rebuy.cuts=[{contracts:2,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:2,price:1388.89,targetPrice:1388.89,month:'202612',settlementPrice:1450}];
+  const r=setup(f),sum=()=>r.c.futureRebuySummary(r.c.state.futures);assert.equal(sum().hold,22,'같은 손절 안에서는 판 계약 포함');
+  r.c.renderFutures();r.input('[data-tranche-month="0:0"]').value='202612';const box=r.input('[data-tranche-check="0:0"]');box.checked=true;box.onchange();
+  const g=r.c.state.futures;assert.equal(g.positions[0].contracts,19);
+  assert.deepEqual([plain(g.rebuy.cutRestart),sum().hold,sum().cutSold,sum().sold,sum().rest],[{at:2,rebought:0},19,0,4,4],'분할매수 체결 시점 보유 19가 기준, 미복원 4는 재매수에만');
+  assert.equal(g.rebuy.lowPrice,1377.78,'다음 미체결 회차 환율이 새 신저점');
+  // 이탈 전 계약 수를 직접 입력해 둔 기록은 다시 짜지 않는다.
+  const h=future();h.positions[0].contracts=18;h.rebuy.cuts=structuredClone(f.rebuy.cuts);const r2=setup(h);r2.c.renderFutures();
+  r2.input('[data-tranche-month="0:0"]').value='202612';const b2=r2.input('[data-tranche-check="0:0"]');b2.checked=true;b2.onchange();
+  assert.equal(Object.hasOwn(r2.c.state.futures.rebuy,'cutRestart'),false);
+});
+
+test('이번 손절 뒤 재매수 체결 수를 늘려도 그 보유로 손절을 다시 짠다',()=>{
+  const {r,f,sum,pos}=orderPlan(),tr=sum().tranches.find(x=>!x.done&&x.amount>0);
+  assert.notEqual(r.c.setFutureBuyChecked(f,tr.i,tr.t,true),false);const a=sum().rebought;
+  const cut=sum().cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);assert.equal(f.rebuy.cutRestart.at,1,'아직 다시 짜지 않음');
+  assert.equal(r.c.futureFillOf(f,tr.i,tr.t)[0].month,'202612');assert.notEqual(r.c.setFutureBuyCount(f,tr.i,tr.t,String(a+1)),false);
+  assert.deepEqual([f.rebuy.cutRestart.at,sum().hold,sum().cutSold],[2,pos(),0],'늘린 재매수로 보유가 늘면 그 보유로 다시 짠다');
 });
 
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
