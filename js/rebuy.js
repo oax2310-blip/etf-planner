@@ -291,7 +291,9 @@ function futureRebuyStages(r){
 }
 // 손절 기준 계약(화면의 '이탈 전 계약 수'): 직접 입력한 contracts가 있으면 그 값으로 고정한다(옛 기록 포함).
 // 없으면 자동(futureRebuyAutoHold) = 지금 보유 + 이번 손절 계획에서 판 계약 − 그 뒤 재매수한 계약, 즉 손절하지 않았다면 지금 갖고 있을 계약이다.
-// 분할매수 체결은 보유로 바로 더해지고, 손절·재매수 체결은 보유와 판·재매수 계약이 함께 움직여 기준이 바뀌지 않는다.
+// 이 계산만 보면 분할매수 체결은 보유로 바로 더해지고, 손절·재매수 체결은 보유와 판·재매수 계약이 함께 움직여 기준이 바뀌지 않는다.
+// 다만 화면에서는 이탈 전 계약 수가 자동이고 이번 손절에 체결이 있으면, 분할매수·재매수 체결로 보유가 늘 때 이어서 새 손절(cutRestart)을 저장해
+// 그 시점 보유로 다시 짠다(futures-rebuy.js futureRestartOnBuy). 그래서 미복원 계약은 기준에서 빠지고, 재매수로 되찾으면 그때 다시 들어간다.
 // 이어서 새 손절(cutRestart) 뒤에는 그때 보유가 기준이 된다(지난 손절·재매수는 빼고 센다).
 function futureRebuyHold(f){
   const r=futureRebuyOf(f);return Object.hasOwn(r,"contracts")?futureRebuyQty(r.contracts):futureRebuyAutoHold(f);
