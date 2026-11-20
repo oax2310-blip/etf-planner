@@ -584,6 +584,23 @@ test('재매수가 지난 미복원까지 되찾아 계획이 바뀌어도 새 �
   assert.deepEqual([f.rebuy.lowPrice,plain(f.rebuy.cutRestart),r.c.futureRebuySummary(f).hold],[1340,{at:2,rebought:2},18],'체결 뒤 계획(1341.25)이 아니라 체결 전 1340');
 });
 
+test('재매수 체결 수량 칸을 늘려 다시 짤 때도 새 신저점은 체결 전 표의 다음 회차다(월물 반영)',()=>{
+  const {r,f,sum}=orderPlan();f.rebuy.steps=10;const tr=sum().tranches.find(x=>!x.done&&x.amount>0); // 계약이 배정된 첫 재매수 회차
+  assert.notEqual(r.c.setFutureBuyChecked(f,tr.i,tr.t,true),false);const q=r.c.futureFillOf(f,tr.i,tr.t)[0].contracts;assert.equal(r.c.futureFillOf(f,tr.i,tr.t)[0].month,'202612');
+  const cut=sum().cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
+  const before=r.c.futureNextCut(f).price;assert.equal(before,1341.25);
+  assert.notEqual(r.c.setFutureBuyCount(f,tr.i,tr.t,String(q+3)),false);
+  assert.deepEqual([f.rebuy.lowPrice,f.rebuy.cutRestart.at],[before,2],'체결 뒤 계획(1342.22)이 아니라 체결 전 1341.25');
+});
+
+test('재매수 체결 수량 칸을 늘려 다시 짤 때도 새 신저점은 체결 전 표의 다음 회차다(월물 미반영)',()=>{
+  const {r,f,sum}=orderPlan();f.positions[0].contracts=14;Object.assign(f.rebuy,{sellPct:30,steps:10});f.rebuy.stages[0].buys=[{contracts:1,price:1321}];
+  const cut=sum().cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
+  const before=r.c.futureNextCut(f).price;assert.equal(before,1326.67);
+  assert.notEqual(r.c.setFutureBuyCount(f,0,0,'4'),false);assert.equal(r.c.futureFillOf(f,0,0)[0].month,undefined);
+  assert.deepEqual([f.rebuy.lowPrice,f.rebuy.cutRestart.at],[before,2],'체결 뒤 계획(1332.5)이 아니라 체결 전 1326.67');
+});
+
 test('계약이 배정되지 않은 미체결 회차는 새 신저점 후보에서 뺀다',()=>{
   const f=future();f.positions[0].contracts=12;Object.assign(f.rebuy,{contracts:20,sellPct:50,steps:10,currentPrice:1380});
   f.rebuy.cuts=[{contracts:8,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
