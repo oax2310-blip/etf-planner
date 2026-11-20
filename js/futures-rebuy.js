@@ -254,7 +254,7 @@ function futureRestartCuts(f,auto,next){
   if(o&&typeof o==="object"){for(const k of Object.keys(o))if(Number(k)>=r.cutRestart.at)delete o[k];if(!Object.keys(o).length)delete r.notify.cutsOverrides;}
   return g;
 }
-// 다시 짤 때의 새 신저점 {price(소수 둘째 자리), current}: 기록 없는 첫 손절 회차의 환율이 하단보다 높으면 그 환율(current false).
+// 다시 짤 때의 새 신저점 {price(소수 둘째 자리), current}: 마지막 체결 회차 뒤에서 계약이 배정된 첫 미체결 회차의 환율이 하단보다 높으면 그 환율(current false).
 // 남은 회차가 하단 회차뿐이고 현재 환율이 하단과 기존 신저점 사이면 현재 환율과 하단의 중간(current true): 첫 회차가 현재 환율보다 낮아
 // 다시 짠 직후 손절 시점이 되지 않는다(현재 환율 그대로 쓰면 첫 회차가 바로 도래). 둘 다 아니면 null(신저점 그대로).
 // 후보 회차는 마지막으로 체결한 회차 뒤의 미체결 회차다(건너뛰고 체결했으면 건너뛴 앞 회차는 새 계획에서 빠짐).

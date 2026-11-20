@@ -574,6 +574,30 @@ test('마지막 회차가 부분 체결로 남아도 남은 미체결 회차가 
   assert.deepEqual(plain(s.cuts.map(c=>[c.price,c.qty])),[[1325,2],[1300,2]]);
 });
 
+test('재매수가 지난 미복원까지 되찾아 계획이 바뀌어도 새 신저점은 체결 전 표의 다음 회차다',()=>{
+  const {r,f,sum}=orderPlan();f.rebuy.steps=10;f.rebuy.cuts[0].contracts=10;
+  assert.deepEqual([sum().hold,sum().goal,sum().cuts.length],[17,8,8]);
+  const cut=sum().cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
+  const tr=sum().tranches.find(x=>!x.done&&x.amount>=2);assert.deepEqual([tr.i,tr.t,tr.amount],[0,0,2]);
+  assert.equal(r.c.futureNextCut(f).price,1340,'체결 전 다음 회차');
+  assert.notEqual(r.c.setFutureBuyChecked(f,tr.i,tr.t,true),false);
+  assert.deepEqual([f.rebuy.lowPrice,plain(f.rebuy.cutRestart),r.c.futureRebuySummary(f).hold],[1340,{at:2,rebought:2},18],'체결 뒤 계획(1341.25)이 아니라 체결 전 1340');
+});
+
+test('계약이 배정되지 않은 미체결 회차는 새 신저점 후보에서 뺀다',()=>{
+  const f=future();f.positions[0].contracts=12;Object.assign(f.rebuy,{contracts:20,sellPct:50,steps:10,currentPrice:1380});
+  f.rebuy.cuts=[{contracts:8,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
+  const r=setup(f),rows=r.c.futureRebuySummary(f).cuts;assert.deepEqual(plain(rows.slice(1,4).map(c=>[Math.round(c.price*100)/100,c.qty])),[[1388.89,0],[1377.78,0],[1366.67,1]]);
+  assert.deepEqual(plain(r.c.futureNextCut(f)),{price:1366.67,current:false});
+  const g=r.c.applyFutureRebuyEdits(f,{contracts:''});assert.equal(g.rebuy.lowPrice,1366.67);assert.equal(r.c.futureCutDue(r.c.futureRebuySummary(g),1380),null);
+});
+
+test('신저점을 직접 넣었으면 하단 오류에 자동 신저점 문구를 쓰지 않는다',()=>{
+  const {r,f}=clearPlan();f.rebuy.steps=10;r.c.renderFutures();r.el('frEdit').onclick();
+  r.type('[data-fr-field="contracts"]','');r.type('[data-fr-field="lowPrice"]','1350');r.type('[data-fr-field="floorPrice"]','1360');r.submit('futureRebuyForm');
+  assert.equal(r.el('futureRebuyError').textContent,'손절 하단은 신저점 환율보다 낮게 입력하세요.');
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
