@@ -564,6 +564,16 @@ test('체결 전 표에서 새 신저점 후보가 없으면 체결 뒤에 다�
   tickTranche(r);assert.equal(r.c.state.futures.rebuy.lowPrice,1400,'체결 뒤 계획(1325)으로 다시 구하지 않는다');assert.ok(r.c.state.futures.rebuy.cutRestart);
 });
 
+test('마지막 회차가 부분 체결로 남아도 남은 미체결 회차가 없는 경로로 다시 짜고 남은 계약은 끝난다',()=>{
+  // 보유 16 · 자동 · 25% · 2회 · 신저점 1400 · 하단 1300 · 현재 1350 · 1400에 3계약 완료 + 1300에 1계약 부분 체결(계획 2) → 목표 5·체결 4
+  const f=future();f.positions[0].contracts=16;delete f.rebuy.contracts;Object.assign(f.rebuy,{sellPct:25,steps:2,currentPrice:1350});
+  f.rebuy.cuts=[{contracts:3,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:1,price:1300,targetPrice:1300,month:'202612',settlementPrice:1450,partial:true,plannedQty:2}];
+  const r=setup(f),s0=r.c.futureRebuySummary(f);assert.deepEqual([s0.goal,s0.cutSold],[5,4]);assert.equal(r.c.futureNextCut(f).current,true,'후보 회차 없음 → 중간값 경로');
+  tickTranche(r);const g=r.c.state.futures,s=r.c.futureRebuySummary(g);
+  assert.deepEqual([g.rebuy.lowPrice,plain(g.rebuy.cutRestart),g.rebuy.cuts.length],[1325,{at:2,rebought:0},2],'부분 체결의 남은 1계약은 새 계획에서 끝남');
+  assert.deepEqual(plain(s.cuts.map(c=>[c.price,c.qty])),[[1325,2],[1300,2]]);
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
