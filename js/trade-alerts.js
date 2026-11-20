@@ -140,7 +140,7 @@ function buildTradeAlertRules(data,priceDoc,quiet=false){
     // 손절 회차 기준: 신저점·하단·회차 수·회차. 하단선(floorLine)은 선 이름이라 시세로 하단만 움직이면 같은 알림 이력이다.
     if(s.ready){
       if(!s.started&&futureRebuyAlertEnabled(f,"breakdown"))addF("breakdown","달러선물 신저점 손절 시작",r.lowPrice,"down",[r.lowPrice]);
-      for(const c of s.cuts)if(futureCutRest(c)>0)addF(`cut:${c.k-1}`,`달러선물 손절 ${c.k}회`,c.price,"down",[r.lowPrice,maKey(r.floorLine)||r.floorPrice,s.cuts.length,c.k],futureRebuyAlertEnabled(f,"cuts",c.k-1));
+      for(const c of s.cuts)if(futureCutRest(c)>0)addF(`cut:${c.k-1}`,`달러선물 손절 ${c.round??c.k}회`,c.price,"down",[r.lowPrice,maKey(r.floorLine)||r.floorPrice,s.cuts.length,c.k],futureRebuyAlertEnabled(f,"cuts",c.k-1));
     }
     for(const x of tradeTranchesToSend(s)){
       const stage=s.stages[x.i],basis=tradeTrancheBasis(r,s,x),condition=futureRebuyCondition(x);

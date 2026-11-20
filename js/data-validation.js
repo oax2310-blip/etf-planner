@@ -58,6 +58,8 @@ const externalData = (()=>{
     // 손절 legs: 여러 월물에서 판 손절의 월물별 계약·판 시점 단순평균가(futures-rebuy.js futureCutLegs).
     records(v.cuts,`${path}.cuts`,(x,p)=>{trade(x,p);strings(x,["afterLine","month"],p);flags(x,["manual"],p);records(x.legs,`${p}.legs`,(l,q)=>{trade(l,q);strings(l,["month"],q);});},true);stages(v.stages,`${path}.stages`,["month"],["manual","rebuyEnd","directRebuy"]);
     records(v.stages,`${path}.stages`,(x,p)=>numbers(x,["directRound"],p,1,60,true));
+    // cutRestart: 이어서 새 손절의 시작 위치(at, cuts 위치)와 그때까지 재매수한 계약(rebought), 그 뒤 지난 미복원을 되찾은 재매수(prior). 정수가 아니면 rebuy.js futureCutRestart가 무시한다.
+    child(v,"cutRestart",path,(d,p)=>numbers(d,["at","rebought","prior"],p,0,10000,true));
     child(v,"directPlan",path,(d,p)=>{
       numbers(d,["startPrice","endPrice"],p,0.01);numbers(d,["rounds"],p,1,60,true);numbers(d,["contracts"],p,1,10000,true);strings(d,["condition"],p);
       if(!["up","down"].includes(d.condition))fail(`${p}.condition`);
