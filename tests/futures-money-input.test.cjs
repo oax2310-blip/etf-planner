@@ -482,6 +482,33 @@ test('자동으로 정한 새 신저점이 하단 이하라 저장할 수 없으
   r.type('[data-fr-field="lowPrice"]','1380');r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.lowPrice,1380,'신저점을 직접 넣으면 저장');
 });
 
+test('신저점이 자동으로 옮겨지지 않았으면 하단 오류는 기존 문구로 보인다',()=>{
+  const {r,f}=clearPlan();f.rebuy.currentPrice=1410;r.c.renderFutures();r.el('frEdit').onclick();
+  r.type('[data-fr-field="contracts"]','');r.type('[data-fr-field="floorPrice"]','1400');r.submit('futureRebuyForm');
+  assert.equal(r.el('futureRebuyError').textContent,'손절 하단은 신저점 환율보다 낮게 입력하세요.');
+});
+
+test('건너뛰고 체결한 뒤 다시 짜면 마지막 체결 다음 회차를 새 신저점으로 써 바로 도래하지 않는다',()=>{
+  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,sellPct:100,steps:10,currentPrice:1370,notify:{cuts:true}});
+  const rec=p=>({contracts:2,price:p,targetPrice:p,month:'202612',settlementPrice:1450});f.rebuy.cuts=[rec(1400),null,rec(1377.78)];
+  const r=setup(f),g=r.c.applyFutureRebuyEdits(f,{contracts:''}),s=r.c.futureRebuySummary(g);
+  assert.deepEqual([g.rebuy.lowPrice,plain(g.rebuy.cutRestart)],[1366.67,{at:3,rebought:0}],'건너뛴 2회차(1388.89)가 아니라 마지막 체결(3회) 다음 4회차');
+  assert.equal(r.c.futureCutDue(s,1370),null);assert.ok(s.cuts.every(c=>c.price<1370));
+});
+
+test('현재 환율이 하단 이하면 신저점을 옮기지 않아 새 회차가 모두 손절 시점이 된다',()=>{
+  const {r,f}=clearPlan();f.rebuy.currentPrice=1290;
+  const g=r.c.applyFutureRebuyEdits(f,{contracts:''}),s=r.c.futureRebuySummary(g);
+  assert.equal(g.rebuy.lowPrice,1400);
+  assert.deepEqual(plain(s.cuts.map(c=>[Math.round(c.price*100)/100,c.qty])),[[1400,5],[1366.67,5],[1333.33,5],[1300,5]]);
+  assert.equal(s.cuts.filter(c=>c.price>=1290).length,4,'새 회차 4개가 모두 도래');assert.equal(r.c.futureCutDue(s,1290).round,1);
+});
+
+test('현재 환율이 하단 + 0.01원 이내면 중간값이 현재 환율과 같아 신저점을 옮기지 않는다',()=>{
+  const {r,f}=clearPlan();f.rebuy.currentPrice=1300.01;
+  assert.equal(r.c.futureNextCut(f),null);assert.equal(r.c.applyFutureRebuyEdits(f,{contracts:''}).rebuy.lowPrice,1400);
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');

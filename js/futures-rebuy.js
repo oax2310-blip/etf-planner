@@ -256,8 +256,11 @@ function futureRestartCuts(f,auto){
 // 다시 짤 때의 새 신저점 {price(소수 둘째 자리), current}: 기록 없는 첫 손절 회차의 환율이 하단보다 높으면 그 환율(current false).
 // 남은 회차가 하단 회차뿐이고 현재 환율이 하단과 기존 신저점 사이면 현재 환율과 하단의 중간(current true): 첫 회차가 현재 환율보다 낮아
 // 다시 짠 직후 손절 시점이 되지 않는다(현재 환율 그대로 쓰면 첫 회차가 바로 도래). 둘 다 아니면 null(신저점 그대로).
+// 후보 회차는 마지막으로 체결한 회차 뒤의 미체결 회차다(건너뛰고 체결했으면 건너뛴 앞 회차는 새 계획에서 빠짐).
+// 현재 환율이 하단 이하면 신저점을 옮기지 않아(null) 새 회차가 모두 바로 손절 시점이 된다(하단을 이미 뚫어 남은 손절을 모두 실행할 때로 봄).
+// mid<cur: 현재 환율이 하단 + 0.01원 이내면 반올림한 중간값이 현재 환율과 같아져 바로 도래하므로 옮기지 않는다.
 function futureNextCut(f,plan=futureCutPlan(f)){
-  const r=futureRebuyOf(f),c=plan.find(x=>!x.recorded&&x.qty>0),floor=Number(r.floorPrice)||0,low=Number(r.lowPrice)||0,cur=Number(r.currentPrice)||0,p=c?Math.round(c.price*100)/100:0;
+  const last=plan.reduce((n,x)=>x.recorded?Math.max(n,x.k):n,0),r=futureRebuyOf(f),c=plan.find(x=>x.k>last&&!x.recorded&&x.qty>0),floor=Number(r.floorPrice)||0,low=Number(r.lowPrice)||0,cur=Number(r.currentPrice)||0,p=c?Math.round(c.price*100)/100:0;
   if(!(floor>0))return null;
   if(p>floor)return {price:p,current:false};
   const mid=Math.round((cur+floor)/2*100)/100;
@@ -351,7 +354,7 @@ function openFutureRebuyDialog(startNew=false){
     // 이탈 전 계약 수를 직접 같은 값으로 다시 넣었으면, 신저점을 바꿔 이어서 새 손절이 될 때(자동으로 바뀔 때)만 그 값을 고정으로 넘긴다(비웠다가 같은 값을 다시 넣으면 변경 없음). 값이 처음과 같으면 그 밖에는 편집으로 보지 않는다.
     if(!startNew&&holdTouched&&holdInput.value===initial.contracts&&futureRebuyEditBase(state.futures,edits)!==state.futures)edits.contracts=holdInput.value;
     const latest=state.futures,base=startNew?futureNewStopBase(latest):latest,g=applyFutureRebuyEdits(base,edits);
-    const editBase=futureRebuyEditBase(base,edits),autoLow=editBase!==base&&!Object.hasOwn(edits,"lowPrice")?Number(futureRebuyOf(editBase).lowPrice)||0:0;
+    const editBase=futureRebuyEditBase(base,edits),autoLow=editBase!==base&&!Object.hasOwn(edits,"lowPrice")&&Number(futureRebuyOf(editBase).lowPrice)!==Number(futureRebuyOf(base).lowPrice)?Number(futureRebuyOf(editBase).lowPrice)||0:0; // 실제로 자동 이동했을 때만
     if(!g){error.textContent=futureRebuyEditError(editBase,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})},autoLow);return;}
     const priced=priceData&&Object.keys(edits).some(key=>key!=="currentPrice");if(priced)fillPrices({futures:g},priceData);
     const gl=futureFloorLine(g.rebuy.floorLine),floor=Number(g.rebuy.floorPrice)||0; // 새로 고른 하단선·신저점은 지금 시세로 하단이 신저점보다 낮은지 확인한다
