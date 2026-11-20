@@ -208,7 +208,7 @@ function markFutureRebuyManual(f){
 // 신저점>하단, 손절 목표(이탈 전 계약 × 비중)≥판 계약은 칸끼리 서로 검사하므로 사본에 순서를 바꿔 적용해 보고 처음 통과한 사본을 돌려준다.
 // 하나도 통과하지 못하면 null(원본은 그대로). 호출하는 쪽이 f.rebuy를 사본의 rebuy로 바꾼다.
 // 하단선(floorLine)은 먼저 적용한다(새 선을 고르면 하단 가격을 지워 시세를 기다리므로 신저점 검사가 옛 하단에 걸리지 않음).
-// 이번 손절 계획에 체결이 있는데 신저점을 바꾸면 이어서 새 손절로 적용한다(futureRebuyEditBase).
+// 이번 손절 계획에 체결이 있는데 신저점을 바꾸거나 고정한 이탈 전 계약 수를 비우면 이어서 새 손절로 적용한다(futureRebuyEditBase).
 function applyFutureRebuyEdits(f,edits){
   const base=futureRebuyEditBase(f,edits);
   for(const prices of [["lowPrice","floorPrice"],["floorPrice","lowPrice"]])for(const goal of [["contracts","sellPct"],["sellPct","contracts"]]){
@@ -289,12 +289,14 @@ function openFutureRebuyDialog(startNew=false){
   syncFloor();
   if(!startNew&&locked)$("frNewPlan").onclick=()=>openFutureRebuyDialog(true);
   // 신저점을 다른 값으로 바꾸면 안내를 보이고, 이탈 전 계약 수를 고치지 않았으면 칸을 비워 이어서 새 손절 뒤의 자동 기준(지금 보유)을 보인다.
+  // 고정한 이탈 전 계약 수를 비워도 같은 안내를 보이되, 신저점이 그대로면 현재 환율 위 회차가 바로 도래한다는 주의를 더한다(동작은 그대로).
   const field$=key=>inputs.find(el=>el.dataset.frField===key),lowInput=field$("lowPrice"),holdInput=field$("contracts"),holdShown=[holdInput.value,holdInput.placeholder];
   let holdTouched=false;
   const syncRestart=()=>{
     if(!restartable)return;const v=moneyInputNumber(lowInput.value),moved=v>0&&v!==Number(r.lowPrice);
     if(!holdTouched)[holdInput.value,holdInput.placeholder]=moved?["",`자동 · ${restartHold}계약`]:holdShown;
     const on=moved||Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="";$("frRestartNote").hidden=!on;$("frHintBase").hidden=on; // 고정 값을 비워도 이어서 새 손절
+    $("frRestartNote").textContent=`지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.${on&&!moved?" 신저점이 그대로면 현재 환율 위 회차도 바로 손절 시점이 되니 현재 환율 아래 회차만 실행하세요.":""}`;
   };
   if(startNew)$("frBackup").onclick=()=>$("exportBtn").click();
   dialog.querySelectorAll("[data-close-future-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
@@ -322,7 +324,7 @@ function openFutureRebuyDialog(startNew=false){
         error.textContent="달러선물 기록이 바뀌었습니다. 보유·체결·설정이 바뀌었거나 최신 시세만으로 변경을 확인할 수 없습니다. 새 계획을 다시 열어 확인하세요.";return;
       }
     }
-    // 이탈 전 계약 수를 직접 같은 값으로 다시 넣었으면, 신저점을 바꿔 이어서 새 손절이 될 때(자동으로 바뀔 때)만 그 값을 고정으로 넘긴다. 값이 처음과 같으면 그 밖에는 편집으로 보지 않는다.
+    // 이탈 전 계약 수를 직접 같은 값으로 다시 넣었으면, 신저점을 바꿔 이어서 새 손절이 될 때(자동으로 바뀔 때)만 그 값을 고정으로 넘긴다(비웠다가 같은 값을 다시 넣으면 변경 없음). 값이 처음과 같으면 그 밖에는 편집으로 보지 않는다.
     if(!startNew&&holdTouched&&holdInput.value===initial.contracts&&futureRebuyEditBase(state.futures,edits)!==state.futures)edits.contracts=holdInput.value;
     const latest=state.futures,base=startNew?futureNewStopBase(latest):latest,g=applyFutureRebuyEdits(base,edits);
     if(!g){error.textContent=futureRebuyEditError(futureRebuyEditBase(base,edits),{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})});return;}
