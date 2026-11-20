@@ -541,6 +541,29 @@ test('하단이 소수 여러 자리일 때 반올림한 중간값이 하단 이
   assert.equal(r.c.futureNextCut(f),null);
 });
 
+const tickTranche=r=>{r.c.renderFutures();r.input('[data-tranche-month="0:0"]').value='202612';const b=r.input('[data-tranche-check="0:0"]');b.checked=true;b.onchange();};
+test('손절 목표를 모두 체결한 뒤 분할매수가 체결돼도 지금 보유로 다시 짠다(하단 아래면 새 회차 모두 도래, 하단 위면 중간부터)',()=>{
+  // 보유 50 · 자동 · 50% · 10회 · 신저점 1400 · 하단 1300 · 5계약씩 10회 모두 손절(미복원 50)
+  const make=cur=>{const f=future();f.positions[0].contracts=50;delete f.rebuy.contracts;Object.assign(f.rebuy,{sellPct:50,steps:10,currentPrice:cur,notify:{cuts:true}});
+    f.rebuy.cuts=Array.from({length:10},(_,i)=>{const p=Math.round((1400-100*i/9)*100)/100;return {contracts:5,price:p,targetPrice:p,month:'202612',settlementPrice:1450};});
+    return {r:setup(f)};};
+  let {r}=make(1290);let s=r.c.futureRebuySummary(r.c.state.futures);assert.deepEqual([s.hold,s.goal,s.cuts.filter(c=>!c.recorded&&c.qty>0).length],[100,50,0],'남은 미체결 회차 없음');
+  tickTranche(r);let g=r.c.state.futures;s=r.c.futureRebuySummary(g);
+  assert.deepEqual([s.hold,s.goal,g.rebuy.lowPrice,s.cuts.length],[51,25,1400,10],'하단 아래: 신저점 그대로, 새 회차 10개');
+  assert.equal(s.cuts.filter(c=>c.price>=1290).reduce((n,c)=>n+c.qty,0),25,'새 회차가 모두 도래');
+  assert.equal(plain(r.c.buildTradeAlertRules({futures:g},null)).filter(x=>x.id.includes(':cut:')).length,10);
+  ({r}=make(1350));tickTranche(r);g=r.c.state.futures;s=r.c.futureRebuySummary(g);
+  assert.equal(g.rebuy.lowPrice,1325,'하단 위: 현재 환율과 하단의 중간');assert.equal(r.c.futureCutDue(s,1350),null);
+});
+
+test('체결 전 표에서 새 신저점 후보가 없으면 체결 뒤에 다시 구하지 않는다',()=>{
+  // 보유 6 · 자동 · 50% · 10회 · 신저점 1400 · 하단 1300 · 현재 1290 · 손절 1계약씩 3회(1400·1366.67·1333.33): 체결 전 남은 회차는 하단 회차뿐
+  const f=future();f.positions[0].contracts=6;delete f.rebuy.contracts;Object.assign(f.rebuy,{sellPct:50,steps:10,currentPrice:1290});
+  f.rebuy.cuts=[1400,1366.67,1333.33].map(p=>({contracts:1,price:p,targetPrice:p,month:'202612',settlementPrice:1450}));
+  const r=setup(f);assert.equal(r.c.futureNextCut(f),null);
+  tickTranche(r);assert.equal(r.c.state.futures.rebuy.lowPrice,1400,'체결 뒤 계획(1325)으로 다시 구하지 않는다');assert.ok(r.c.state.futures.rebuy.cutRestart);
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
