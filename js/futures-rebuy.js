@@ -239,7 +239,7 @@ function futureRebuyEditBase(f,edits){
 function futureRestartCuts(f,auto){
   const g=JSON.parse(JSON.stringify(f)),plan=futureCutPlan(f),r=editFutureRebuy(g);
   r.cuts.forEach((c,i)=>{const row=plan.find(x=>x.k===i+1);if(c&&!(Number(c.targetPrice)>0)&&row?.price>0)c.targetPrice=row.price;});
-  r.cutRestart={at:r.cuts.reduce((n,c,i)=>c?i+1:n,0),rebought:futureRebuySummary(f).rebought};
+  r.cutRestart={at:r.cuts.reduce((n,c,i)=>c?i+1:n,0),rebought:futureRebought(r)}; // 체결 기록 기준 재매수 합계(rebuy.js futureRebought, 자동 기준과 같은 기준)
   if(auto)delete r.contracts;
   // 지난 계획의 미체결 회차(at 이상)에 둔 회차별 알림 예외는 새 계획 회차에 이어지지 않게 지운다(새 회차는 손절 알림 전체 설정을 따름).
   const o=r.notify?.cutsOverrides;
@@ -310,7 +310,6 @@ function openFutureRebuyDialog(startNew=false){
     const open=inputs.filter(el=>!el.disabled&&!el.hidden),invalid=[...open,period].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
     const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
     if(line!==floorLine)edits.floorLine=line;
-    if(holdTouched&&holdInput.value===initial.contracts)edits.contracts=holdInput.value; // 직접 다시 넣은 같은 값도 고정으로 저장(신저점을 바꿔도 자동으로 바꾸지 않음)
     if(!startNew&&!Object.keys(edits).length){dialog.close();return;}
     if(startNew){
       try{absorbPlanner();}catch{error.textContent="최신 기록을 읽지 못했습니다. 다시 시도하세요.";return;}
@@ -320,6 +319,8 @@ function openFutureRebuyDialog(startNew=false){
         error.textContent="달러선물 기록이 바뀌었습니다. 보유·체결·설정이 바뀌었거나 최신 시세만으로 변경을 확인할 수 없습니다. 새 계획을 다시 열어 확인하세요.";return;
       }
     }
+    // 이탈 전 계약 수를 직접 같은 값으로 다시 넣었으면, 신저점을 바꿔 이어서 새 손절이 될 때(자동으로 바뀔 때)만 그 값을 고정으로 넘긴다. 값이 처음과 같으면 그 밖에는 편집으로 보지 않는다.
+    if(!startNew&&holdTouched&&holdInput.value===initial.contracts&&futureRebuyEditBase(state.futures,edits)!==state.futures)edits.contracts=holdInput.value;
     const latest=state.futures,base=startNew?futureNewStopBase(latest):latest,g=applyFutureRebuyEdits(base,edits);
     if(!g){error.textContent=futureRebuyEditError(futureRebuyEditBase(base,edits),{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})});return;}
     const priced=priceData&&Object.keys(edits).some(key=>key!=="currentPrice");if(priced)fillPrices({futures:g},priceData);

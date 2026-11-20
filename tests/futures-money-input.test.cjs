@@ -282,6 +282,43 @@ test('자동 이탈 전 계약 수는 보유 월물에 반영되지 않은 손�
   assert.deepEqual([r.c.futureRebuySummary(f).hold,r.c.futureRebuySummary(f).goal],[6,4],'직접 반영해도 그대로');
 });
 
+test('미반영 재매수가 있어도 이어서 새 손절 뒤 손절·재매수·반영으로 자동 이탈 전 계약 수가 흔들리지 않는다',()=>{
+  for(const reflectAfter of [false,true]){
+    // 보유 20계약 + 보유에 아직 반영하지 않은 지난 재매수 1계약(기록상 보유 21계약)
+    const r=restartPlan({buys:[{contracts:1,price:1321}]}),f=r.c.state.futures;
+    f.rebuy=r.c.applyFutureRebuyEdits(f,{lowPrice:1350,floorPrice:1280,sellPct:72}).rebuy;
+    assert.deepEqual(plain(f.rebuy.cutRestart),{at:2,rebought:1},'시작 재매수 수는 체결 기록 기준');
+    const base=r.c.futureRebuySummary(f).hold;assert.equal(base,21,'미반영 재매수도 기록대로 보유로 본다');
+    if(reflectAfter){r.c.markFutureRebuyManual(f);f.positions[0].contracts+=1;assert.equal(r.c.futureRebuySummary(f).hold,base,'지난 재매수를 반영해도 그대로');}
+    const cut=r.c.futureRebuySummary(f).cuts[0];assert.notEqual(r.c.setFutureCutChecked(f,cut.k-1,true),false);
+    assert.equal(r.c.futureRebuySummary(f).hold,base,'손절 체결로 바뀌지 않는다');
+    f.rebuy.currentPrice=1400;const tr=r.c.futureRebuySummary(f).tranches.find(x=>!x.done&&x.amount>0);assert.notEqual(r.c.setFutureBuyChecked(f,tr.i,tr.t,true),false);
+    const s=r.c.futureRebuySummary(f);assert.ok(s.rebought-1<=cut.qty);
+    assert.equal(s.hold,base,`이번 손절을 되찾은 재매수는 기준을 늘리지 않는다(${reflectAfter?'반영 후':'미반영'})`);
+  }
+});
+
+test('이탈 전 계약 수 칸을 건드렸다가 처음 값으로 되돌리면 편집으로 보지 않는다',()=>{
+  // A: 기록이 없을 때 10을 쳤다가 비우고 저장하면 아무것도 만들지 않는다.
+  const f=future();delete f.rebuy;const a=setup(f);let saves=0;const save=a.c.save;a.c.save=(...x)=>{saves++;return save(...x);};
+  a.c.renderFutures();a.el('frEdit').onclick();a.type('[data-fr-field="contracts"]','10');a.type('[data-fr-field="contracts"]','');a.submit('futureRebuyForm');
+  assert.equal(saves,0);assert.equal(a.c.state.futures.rebuy,undefined);
+  // B: 판 계약이 목표보다 많은 기록에서 12를 쳤다가 10으로 되돌리고 하단만 바꾸면 하단만 저장한다.
+  const g=future();Object.assign(g.rebuy,{contracts:10,sellPct:50,steps:2});g.rebuy.cuts=[{contracts:3,price:1399,targetPrice:1400},{contracts:3,price:1299,targetPrice:1300}];
+  const b=setup(g);b.c.renderFutures();b.el('frEdit').onclick();
+  b.type('[data-fr-field="contracts"]','12');b.type('[data-fr-field="contracts"]','10');b.type('[data-fr-field="floorPrice"]','1280');b.submit('futureRebuyForm');
+  assert.equal(b.el('futureRebuyError').textContent,'');assert.deepEqual([b.saved().futures.rebuy.floorPrice,b.saved().futures.rebuy.contracts],[1280,10]);
+});
+
+test('판 계약이 손절 목표보다 많아도 보유 칸 수는 이탈 전 계약 수다',()=>{
+  const f=future();f.positions[0].contracts=0;Object.assign(f.rebuy,{contracts:10,sellPct:50,steps:2});
+  f.rebuy.cuts=[{contracts:6,price:1399,targetPrice:1400,month:'202612'},{contracts:6,price:1299,targetPrice:1300,month:'202612'}];
+  const r=setup(f),{s,html,fold}=trackOf(r,f);
+  assert.equal(s.overSold,true);assert.deepEqual([s.hold,s.cells,s.held],[10,10,0]);
+  assert.deepEqual(countOf(html),[0,10]);assert.match(html,/aria-label="이탈 전 10계약 중 보유 0계약/);assert.equal((html.match(/<i class=/g)||[]).length,10);
+  assert.match(fold.text,/ · 보유 0\/10$/);
+});
+
 test('보관 후 새 손절 계획은 이전 체결 원본과 현재 보유·정산손익을 보존하고 새 손절 회차만 시작한다',()=>{
   const r=openNewStopPlan(),before=plain(r.c.state);
   assert.equal(r.input('[data-fr-field="contracts"]').value,'');assert.equal(r.input('[data-fr-field="contracts"]').placeholder,'자동 · 8계약','새 계획은 보유에서 자동으로 센다');
