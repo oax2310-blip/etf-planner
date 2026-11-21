@@ -11,7 +11,7 @@ const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null;
 // 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
-const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(); // 완료 회차 펼침·계좌 펼침·메모 편집 열림은 화면 상태로만 둔다
+const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),sortingPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(); // 완료 회차 펼침·계좌 펼침·순서 바꾸기·메모 편집 열림은 화면 상태로만 둔다
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
 const render=()=>renderPurchases(),saveSection=section=>assetStore.saveSection(section);
 // 입력 거부는 이번 blur 뒤의 버튼 동작을 막는 화면 상태다. 저장·동기화 기록에는 넣지 않는다.
@@ -203,7 +203,7 @@ function bindPurchaseAccountAction(button,action){
 function bindPurchaseAccounts(it){
   bindPurchaseAccountAction(el("purchaseAccountAdd"),()=>openPurchaseAccount(it.id));
   bindPurchaseAccountAction(el("purchaseAccountDeleteToggle"),()=>{
-    purchaseAccountDeletingId=purchaseAccountDeletingId===it.id?null:it.id;
+    purchaseAccountDeletingId=purchaseAccountDeletingId===it.id?null:it.id;sortingPurchaseAccounts.delete(it.id);
     render();
     el("purchaseAccountDeleteToggle")?.focus({preventScroll:true});
   });
@@ -350,22 +350,27 @@ function purchaseMemoLine(it){
   const note=String(it.buyPlan.note||""),editing=editingPurchaseMemos.has(it.id),first=note.split(/\r?\n/).find(t=>t.trim())||"";
   return `<div class="bp-memo"${editing?" hidden":""}><span class="bp-memo-text${first?"":" empty"}">${first?`메모: ${escA(first)}`:"메모 없음"}</span><button class="btn bp-memo-edit" type="button" id="purchaseMemoEdit" data-purchase-memo="${escA(it.id)}" aria-expanded="${editing}" aria-controls="purchaseMemoEditor">편집 ›</button></div><div class="bp-memo-editor" id="purchaseMemoEditor"${editing?"":" hidden"}><textarea id="purchaseMemo" maxlength="4000" rows="3" aria-label="분할매수 메모">${escA(note)}</textarea><div class="bp-memo-foot"><span id="purchaseMemoCount" class="memo-count">${noteCount(note)}</span><button class="btn bp-pill" type="button" id="purchaseMemoCancel">취소</button><button class="btn bp-pill accent" id="savePurchaseNote" type="button">저장</button></div></div>`;
 }
-// 계좌 줄(음각): 연결 전체 수량·비중 한 줄(1순위 계좌는 펼침의 첫 줄·파란 번호로 보인다). 펼치면 계좌마다 종목 이름·계좌 꼬리표·보유 수량·손익(alloc-link.js holdingProfitLine, 평균가 글자 없이)을 두 줄로 보이고
-// 우선순위 화살표·계좌 추가·삭제·계획 수정은 기존 data 속성과 id를 그대로 써서 기존 동작(bindPurchasePriority·bindPurchaseAccounts)을 탄다.
+// 계좌 상자(음각): 맨 윗줄은 연결 계좌 평가액(비중)과 합산 손익(alloc-link.js holdingsProfit, 한 줄에 들도록 손익률은 소수 첫째 자리)·[설정]·(펼침 때) [⇅].
+// 펼치면 계좌마다 왼쪽에 종목 이름·계좌 꼬리표와 '수량 · 평가액', 오른쪽에 손익 금액·손익률(alloc-link.js holdingProfit)을 둔다.
+// [⇅] 순서 바꾸기 모드에서는 손익 자리에 우선순위 화살표(평소에는 hidden으로 숨김), 삭제 모드에서는 삭제 버튼이 온다. 펼침·순서 바꾸기 모드는 화면 상태로만 둔다.
+// 화살표·계좌 추가·삭제·계획 수정은 기존 data 속성과 id를 그대로 써서 기존 동작(bindPurchasePriority·bindPurchaseAccounts)을 탄다.
 function purchaseAccountBox({g,it},s){
   const id=escA(it.id),canAdd=canAddPurchaseAccount(it),ordered=targetsOf(it,it.buyPlan,s),infos=new Map(ordered.map(r=>[r.it.id,allocationHoldingInfo(r.it,s)])),total=allocationHoldingTotal(infos.values(),s);
-  const deleteMode=purchaseAccountDeletingId===it.id,open=deleteMode||openPurchaseAccounts.has(it.id),lead=ordered[0];
+  const deleteMode=purchaseAccountDeletingId===it.id,sortMode=!deleteMode&&sortingPurchaseAccounts.has(it.id),open=deleteMode||openPurchaseAccounts.has(it.id);
   const parts=r=>stockNames.titleParts(r.it.name),qty=r=>infos.get(r.it.id).quantityText.replace(/^보유 /,"");
-  const known=[...infos.values()].every(x=>x.shares!==null),sum=[...infos.values()].reduce((n,x)=>n+(x.shares||0),0),unit=ordered.some(r=>unitOf(r.it)<1)?" BTC":"주";
-  const totalText=ordered.length?`전체 ${known?`${nf8.format(Number(sum.toFixed(8)))}${unit}`:total.valueText} <small>(${total.pctText})</small>`:"연결된 계좌 없음";
+  const sum=allocLink.holdingsProfit(ordered.map(r=>r.it),s.fx);
+  const top=ordered.length?`<b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sum.rateTone}">(${sum.rate===null?"—":`${sum.rate>0?"+":sum.rate<0?"−":""}${nf1.format(Math.abs(sum.rate))}%`})</small>`:""}`:"<b>연결된 계좌 없음</b>";
+  const profitOf=r=>{const p=allocLink.holdingProfit(r.it,s.fx);if(!p)return "";
+    return `<div class="bp-acc-pl">${p.amountText?`<b class="${p.amountTone}">${p.amountText}</b>`:`<b class="bp-muted">${p.status}</b>`}${p.rateText?`<small class="${p.rateTone}">${p.rateText}</small>`:""}</div>`;};
   const rows=ordered.map((r,j)=>{
-    const t=parts(r),info=infos.get(r.it.id),pl=allocLink.holdingProfitLine(r.it,s.fx,{average:false}),who=`${escA(r.g.name)} ${escA(r.it.name)}`;
-    const controls=deleteMode?`<button class="btn bp-acc-del" type="button" data-purchase-account-delete="${escA(r.it.id)}" aria-label="${who} 계좌 삭제">삭제</button>`
-      :`<button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="-1"${j===0?" disabled":""} aria-label="${who} 매수 우선순위 올리기">↑</button><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="1"${j===ordered.length-1?" disabled":""} aria-label="${who} 매수 우선순위 내리기">↓</button>`;
-    return `<div class="bp-acc-row${j===0?" lead":""}" data-purchase-holding="${escA(r.it.id)}"><span class="bp-acc-rank" aria-label="${j+1}순위${j===0?" · 매수 반영 대상":""}">${j+1}</span><div class="bp-acc-body"><div class="bp-acc-l1"><span class="bp-acc-name">${escA(t.main||r.it.name)}</span><span class="bp-acc-tag">${escA(t.tag||r.g.name)}</span></div><div class="bp-acc-l2"><b>${escA(qty(r))}</b>${info.pending?`<span class="bp-muted">${info.pending}</span>`:""}${pl?`<span class="bp-sep">·</span>${pl}`:""}</div></div><div class="bp-acc-ctrl">${controls}</div></div>`;
+    const t=parts(r),info=infos.get(r.it.id),who=`${escA(r.g.name)} ${escA(r.it.name)}`;
+    const right=deleteMode?`<div class="bp-acc-ctrl"><button class="btn bp-acc-del" type="button" data-purchase-account-delete="${escA(r.it.id)}" aria-label="${who} 계좌 삭제">삭제</button></div>`
+      :`<div class="bp-acc-ctrl"${sortMode?"":" hidden"}><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="-1"${j===0?" disabled":""} aria-label="${who} 매수 우선순위 올리기">↑</button><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="1"${j===ordered.length-1?" disabled":""} aria-label="${who} 매수 우선순위 내리기">↓</button></div>${sortMode?"":profitOf(r)}`;
+    return `<div class="bp-acc-row${j===0?" lead":""}" data-purchase-holding="${escA(r.it.id)}"><span class="bp-acc-rank" aria-label="${j+1}순위${j===0?" · 매수 반영 대상":""}">${j+1}</span><div class="bp-acc-body"><div class="bp-acc-l1"><span class="bp-acc-name">${escA(t.main||r.it.name)}</span><span class="bp-acc-tag">${escA(t.tag||r.g.name)}</span></div><div class="bp-acc-l2">${escA(qty(r))} · ${info.valueText}${info.pending?` · ${info.pending}`:""}</div></div>${right}</div>`;
   }).join("");
-  const drawer=`<div class="bp-acc-drawer" id="purchaseAccountDrawer"${open?"":" hidden"}><div class="bp-acc-head"><span>연결된 전체 보유 종목 (${ordered.length}개 계좌)</span><b>${total.valueText} · ${total.pctText}</b></div>${deleteMode?'<p class="bp-acc-policy">삭제할 계좌를 누르세요. 확인 후 자산 배분에서도 삭제됩니다.</p>':""}<div class="bp-acc-list" id="purchaseLinkedHoldings" aria-label="${deleteMode?"연결 계좌 삭제":"매수 우선순위"}">${rows}</div><div class="bp-acc-actions"><button class="btn bp-pill" type="button" id="purchaseAccountAdd"${canAdd?"":' disabled aria-describedby="purchaseAccountHint"'}>＋ 계좌 추가</button><button class="btn bp-pill purchase-account-delete-toggle${deleteMode?" active":""}" type="button" id="purchaseAccountDeleteToggle" aria-pressed="${deleteMode}" aria-controls="purchaseLinkedHoldings" aria-label="${deleteMode?"계좌 삭제 완료":"계좌 삭제"}">${deleteMode?"완료":"계좌 삭제"}</button><button class="btn bp-pill accent" type="button" data-purchase-edit="${id}" aria-label="${escA(leadName(it,s))} 분할매수 계획 수정">계획 수정</button></div>${canAdd?"":'<p class="hint" id="purchaseAccountHint"><a href="assets.html#alloc">자산 배분</a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하면 계좌를 추가할 수 있습니다.</p>'}${purchaseMemoLine(it)}</div>`;
-  return `<div class="bp-acc"><div class="bp-acc-main"><b class="bp-acc-total">${totalText}</b><button class="btn bp-acc-toggle" type="button" id="purchaseAccountToggle" data-purchase-accounts="${id}" aria-expanded="${open}" aria-controls="purchaseAccountDrawer">계좌 · 설정 <span aria-hidden="true">${open?"▴":"▾"}</span></button></div>${drawer}</div>`;
+  const drawer=`<div class="bp-acc-drawer" id="purchaseAccountDrawer"${open?"":" hidden"}>${deleteMode?'<p class="bp-acc-policy">삭제할 계좌를 누르세요. 확인 후 자산 배분에서도 삭제됩니다.</p>':sortMode?'<p class="bp-acc-policy sort">맨 위 계좌에 새 회차의 체결을 반영합니다.</p>':""}<div class="bp-acc-list" id="purchaseLinkedHoldings" aria-label="${deleteMode?"연결 계좌 삭제":"매수 우선순위"}">${rows}</div><div class="bp-acc-actions"><button class="btn bp-pill" type="button" id="purchaseAccountAdd"${canAdd?"":' disabled aria-describedby="purchaseAccountHint"'}>＋ 계좌 추가</button><button class="btn bp-pill purchase-account-delete-toggle${deleteMode?" active":""}" type="button" id="purchaseAccountDeleteToggle" aria-pressed="${deleteMode}" aria-controls="purchaseLinkedHoldings" aria-label="${deleteMode?"계좌 삭제 완료":"계좌 삭제"}">${deleteMode?"완료":"삭제"}</button><button class="btn bp-pill accent" type="button" data-purchase-edit="${id}" aria-label="${escA(leadName(it,s))} 분할매수 계획 수정">계획 수정</button></div>${canAdd?"":'<p class="hint" id="purchaseAccountHint"><a href="assets.html#alloc">자산 배분</a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하면 계좌를 추가할 수 있습니다.</p>'}${purchaseMemoLine(it)}</div>`;
+  const sort=open&&!deleteMode&&ordered.length>1?`<button class="btn bp-acc-sort${sortMode?" on":""}" type="button" id="purchaseAccountSort" data-purchase-sort="${id}" aria-pressed="${sortMode}" aria-controls="purchaseLinkedHoldings" aria-label="매수 우선순위 바꾸기">⇅</button>`:"";
+  return `<div class="bp-acc"><div class="bp-acc-main"><div class="bp-acc-sum">${top}</div><button class="btn bp-acc-toggle" type="button" id="purchaseAccountToggle" data-purchase-accounts="${id}" aria-expanded="${open}" aria-controls="purchaseAccountDrawer" aria-label="계좌 · 설정 ${open?"접기":"펼치기"}">설정 <span aria-hidden="true">${open?"▴":"▾"}</span></button>${sort}</div>${drawer}</div>`;
 }
 // 누적 평단(화면 전용 예상값, 기록·알림 계산에 쓰지 않음): 회차표 순서로 체결 수량×체결가(execPrice → tradePrice → price)와
 // 남은 계획 수량×기준가를 더해 나눈다. 실제 매수 코드가 계획 코드와 다른 회차가 있거나(가격 단위가 달라짐) 계획 수량을 모르면 null.
@@ -579,8 +584,13 @@ function renderPurchases(){
     const accountToggle=el("purchaseAccountToggle");
     if(accountToggle?.dataset?.purchaseAccounts!==undefined)bindPurchaseAccountAction(accountToggle,()=>{
       const id=selected.it.id,open=!(openPurchaseAccounts.has(id)||purchaseAccountDeletingId===id);
-      if(open)openPurchaseAccounts.add(id);else{openPurchaseAccounts.delete(id);if(purchaseAccountDeletingId===id)purchaseAccountDeletingId=null;}
+      if(open)openPurchaseAccounts.add(id);else{openPurchaseAccounts.delete(id);sortingPurchaseAccounts.delete(id);if(purchaseAccountDeletingId===id)purchaseAccountDeletingId=null;}
       render();el("purchaseAccountToggle")?.focus?.({preventScroll:true});
+    });
+    const accountSort=el("purchaseAccountSort");
+    if(accountSort?.dataset?.purchaseSort!==undefined)bindPurchaseAccountAction(accountSort,()=>{
+      const id=selected.it.id;if(sortingPurchaseAccounts.has(id))sortingPurchaseAccounts.delete(id);else sortingPurchaseAccounts.add(id);
+      render();el("purchaseAccountSort")?.focus?.({preventScroll:true});
     });
     const note=el("purchaseMemo");note.oninput=()=>el("purchaseMemoCount").textContent=noteCount(note.value);
     el("savePurchaseNote").onclick=()=>{const plan=findItem(selected.it.id)?.it.buyPlan;if(!plan)return;editingPurchaseMemos.delete(selected.it.id);setText(plan,"note",note.value);saveSection("allocation");render();};

@@ -472,11 +472,11 @@ test('연결 보유 목록은 추종 ETF·실제 코드 보유 계좌 모두를 
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,direct,unrelated]});r.prices.stocks['333333']={kind:'국내',close:30000,asOf:'2026-01-02'};r.prices.stocks.A222222={kind:'국내',close:10000,asOf:'2026-01-02'};
   const before=JSON.stringify(r.doc);r.render();r.initialize();
   const ids=()=>Array.from(r.html().matchAll(/data-purchase-holding="([^"]+)"/g),m=>m[1]);assert.deepEqual(ids(),['a','b','c']);
-  assert.match(r.html(),/연결된 전체 보유 종목 \(3개 계좌\)/);assert.match(r.html(),/다른 계좌 &lt;보유&gt;/);assert.match(r.html(),/· 45%<\/b><\/div>/);assert.equal(JSON.stringify(r.doc),before);
-  r.change('[data-purchase-buy-shares]',7);assert.match(r.html(),/· 52%<\/b><\/div>/);assert.match(r.html(),/보유 17주/);assert.equal(other.shares,5);assert.equal(direct.shares,20);
+  assert.equal((r.html().match(/data-purchase-holding=/g)||[]).length,3);assert.match(r.html(),/다른 계좌 &lt;보유&gt;/);assert.match(r.html(),/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\(45%\)<\/small>/);assert.equal(JSON.stringify(r.doc),before);
+  r.change('[data-purchase-buy-shares]',7);assert.match(r.html(),/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\(52%\)<\/small>/);assert.match(r.html(),/보유 17주/);assert.equal(other.shares,5);assert.equal(direct.shares,20);
   r.change('[data-purchase-buy-shares]',0);assert.equal(JSON.stringify(r.doc),before);
-  other.shares=10;r.emit();assert.match(r.html(),/· 60%<\/b><\/div>/);
-  r.prices.stocks['333333'].close=40000;r.emit();assert.match(r.html(),/· 70%<\/b><\/div>/);
+  other.shares=10;r.emit();assert.match(r.html(),/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\(60%\)<\/small>/);
+  r.prices.stocks['333333'].close=40000;r.emit();assert.match(r.html(),/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\(70%\)<\/small>/);
 });
 test('연결 보유 목록은 금액 보유를 주수로 오인하지 않고 0주·시세 누락·매수대기에서도 조회만 한다',()=>{
   const r=setup({wait:'25일선'});delete r.item.shares;r.item.amount=7;r.prices.stocks={};
@@ -492,9 +492,9 @@ test('연결 보유 손익은 itemProfit의 평균가·현재가로 합산하고
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});
   r.ctx.priceText=(v,cur)=>cur==='USD'?`$${v.toFixed(2)}`:`${new Intl.NumberFormat('ko-KR').format(v)}원`;
   const before=JSON.stringify(r.doc);r.render();const card=purchaseLinkedCard(r);
-  assert.match(card,/<div class="bp-acc-head"><span>연결된 전체 보유 종목 \(1개 계좌\)<\/span><b>[^<]+ · [^<]+<\/b><\/div>/);
+  assert.match(card,/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\([^)]+\)<\/small><span class="bp-acc-sum-pl profit-gain" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/div>/,'맨 윗줄: 평가액(비중)·합산 손익');
   assert.match(card,/class="sale-linked-profit" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">손익 <b class="profit-gain">\+1.4만원<\/b> <b class="profit-gain">\+1.66%<\/b>/);
-  assert.match(card,/<small class="sale-holding-profit">손익 <b class="profit-gain">\+1.4만원<\/b> <b class="profit-gain">\+1.66%<\/b>/);
+  assert.match(card,/<div class="bp-acc-pl"><b class="profit-gain">\+1.4만원<\/b><small class="profit-gain">\+1.66%<\/small><\/div>/);
   assert.equal(JSON.stringify(r.doc),before);
 });
 test('연결 보유 손익은 손실을 파랑으로 표시하고 0으로 반올림되는 금액은 부호·색을 뺀다',()=>{
@@ -509,8 +509,8 @@ test('연결 보유 손익은 평균매수가 미입력·시세 대기와 일부
   const r=setup();r.render();assert.match(purchaseLinkedCard(r),/평균매수가 미입력/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
   const other={id:'b',name:'가상 다른 계좌',ticker:'111111',shares:5};r.doc.allocation.groups[0].items.push(other);
   r.item.averagePrice=9000;r.render();assert.match(purchaseLinkedCard(r),/ · 1\/2개<\/span>/);assert.match(purchaseLinkedCard(r),/보유 2개 중 1개 합산/);
-  delete r.prices.stocks['111111'];r.render();assert.match(purchaseLinkedCard(r),/sale-holding-profit">손익 시세 대기/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
-  r.item.shares=0;delete other.shares;other.amount=5;r.render();assert.doesNotMatch(purchaseLinkedCard(r),/sale-holding-profit|평균매수가 미입력/,'0주·금액 관리 항목은 평균가 줄을 만들지 않음');
+  delete r.prices.stocks['111111'];r.render();assert.match(purchaseLinkedCard(r),/<div class="bp-acc-pl"><b class="bp-muted">시세 대기<\/b><\/div>/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
+  r.item.shares=0;delete other.shares;other.amount=5;r.render();assert.doesNotMatch(purchaseLinkedCard(r),/bp-acc-pl|평균매수가 미입력/,'0주·금액 관리 항목은 손익 칸을 만들지 않음');
 });
 test('연결 보유 달러 손익은 현재 환율로 원화 환산하고 매입금액 합으로 손익률을 가중한다',()=>{
   const r=setup({currency:'USD',price:110,fx:1200});r.item.averagePrice=100;r.doc.allocation.cashFx=2500;
@@ -518,11 +518,11 @@ test('연결 보유 달러 손익은 현재 환율로 원화 환산하고 매입
   r.prices.stocks['111111']={kind:'국내',close:10100,asOf:'2026-01-02'};r.render();const card=purchaseLinkedCard(r);
   assert.match(card,/현재 환율 1,200원으로 환산 · 환차손익 제외/);
   assert.match(card,/손익 <b class="profit-gain">\+12.1만원<\/b> <b class="profit-gain">\+9.31%<\/b>/);
-  assert.match(card,/sale-holding-profit">손익 <b class="profit-gain">\+12만원<\/b> <b class="profit-gain">\+10%<\/b>/);
+  assert.match(card,/bp-acc-pl"><b class="profit-gain">\+12만원<\/b><small class="profit-gain">\+10%<\/small>/);
 });
 test('연결 보유 달러 환율이 없으면 손익률만 보이고 달러는 합계에서 제외한다',()=>{
   const r=setup({currency:'USD',price:110,fx:null});r.item.averagePrice=100;r.render();
-  assert.match(purchaseLinkedCard(r),/sale-holding-profit">손익 환율 대기 <b class="profit-gain">\+10%<\/b>/);
+  assert.match(purchaseLinkedCard(r),/bp-acc-pl"><b class="bp-muted">환율 대기<\/b><small class="profit-gain">\+10%<\/small>/);
   assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
   r.doc.allocation.groups[0].items.push({id:'b',name:'가상 원화 추종 ETF',ticker:'AAA',tradeTicker:'111111',shares:10,averagePrice:10000});
   r.prices.stocks['111111']={kind:'국내',close:10100,asOf:'2026-01-02'};r.render();
@@ -530,8 +530,8 @@ test('연결 보유 달러 환율이 없으면 손익률만 보이고 달러는 
 });
 test('연결 보유 원화 평균가 비트코인은 itemProfit의 원화 손익을 다시 환산하지 않는다',()=>{
   const r=setup({bitcoin:true,currency:'USD',price:100,fx:1000});Object.assign(r.item,{shares:1,averagePrice:90000,averageCurrency:'KRW'});r.render();
-  assert.match(purchaseLinkedCard(r),/sale-holding-profit">손익 <b class="profit-gain">\+1만원<\/b> <b class="profit-gain">\+11.11%<\/b>/);
-  r.prices.fx=null;r.render();assert.match(purchaseLinkedCard(r),/sale-holding-profit">손익 환율 대기/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
+  assert.match(purchaseLinkedCard(r),/bp-acc-pl"><b class="profit-gain">\+1만원<\/b><small class="profit-gain">\+11.11%<\/small>/);
+  r.prices.fx=null;r.render();assert.match(purchaseLinkedCard(r),/bp-acc-pl"><b class="bp-muted">환율 대기<\/b><\/div>/);assert.doesNotMatch(purchaseLinkedCard(r),/class="sale-linked-profit"/);
 });
 test('계획을 지우면 반영 기록도 지우고, 같은 종목의 새 계획에서 같은 회차를 체크해도 이전 체결 수량을 빼지 않는다',()=>{
   const r=setup();r.ctx.confirm=()=>true;const box=()=>r.input('[data-purchase-buy]');
@@ -613,10 +613,10 @@ test('분할매수 현재·목표·회차는 모든 계좌 기준으로 표시�
   const other={id:'b',name:'같은 ETF의 다른 계좌',ticker:'A222222',amount:15};
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,{id:'x',name:r.item.name,ticker:'333333',amount:50}]});
   const before=JSON.stringify(r.doc);r.render();r.initialize();assert.equal(JSON.stringify(r.doc),before);
-  assert.match(visibleText(r.html()),/목표 40% · 목표까지 15만원/);assert.match(visibleText(r.html()),/전체 [^(]*\(25%\)/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/purchase-qty">15주</);
-  other.amount=20;r.emit();assert.match(visibleText(r.html()),/목표 40% · 목표까지 10만원/);assert.match(visibleText(r.html()),/전체 [^(]*\(30%\)/);assert.match(r.html(),/purchase-qty">10주</);
-  r.prices.stocks['222222'].close=20000;r.emit();assert.match(visibleText(r.html()),/목표 40% · 목표 도달/);assert.match(visibleText(r.html()),/전체 [^(]*\(40%\)/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
-  r.doc.allocation.total=200;r.emit();assert.match(visibleText(r.html()),/목표 40% · 목표까지 40만원/);assert.match(visibleText(r.html()),/전체 [^(]*\(20%\)/);assert.match(r.html(),/purchase-qty">20주</);assert.equal(r.item.buyPlan.lines.budget,50);
+  assert.match(visibleText(r.html()),/목표 40% · 목표까지 15만원/);assert.match(visibleText(r.html()),/만원\(25%\)/);assert.doesNotMatch(r.html(),/<b>자산 배분<\/b>|전체 계좌 · 현재/,'제목 아래 줄은 꼬리표·계좌 글자 없이 현재 비중부터');assert.match(r.html(),/purchase-qty">15주</);
+  other.amount=20;r.emit();assert.match(visibleText(r.html()),/목표 40% · 목표까지 10만원/);assert.match(visibleText(r.html()),/만원\(30%\)/);assert.match(r.html(),/purchase-qty">10주</);
+  r.prices.stocks['222222'].close=20000;r.emit();assert.match(visibleText(r.html()),/목표 40% · 목표 도달/);assert.match(visibleText(r.html()),/만원\(40%\)/);assert.equal(r.inputs('[data-purchase-buy]').length,0);assert.equal(r.rules().length,0);
+  r.doc.allocation.total=200;r.emit();assert.match(visibleText(r.html()),/목표 40% · 목표까지 40만원/);assert.match(visibleText(r.html()),/만원\(20%\)/);assert.match(r.html(),/purchase-qty">20주</);assert.equal(r.item.buyPlan.lines.budget,50);
 });
 test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 전체 계좌 합을 쓰고 체결은 고른 계좌에만 반영한다',()=>{
   const r=setup({budget:50,tracking:true});r.doc.allocation.groups[0].target=40;
@@ -627,20 +627,20 @@ test('분할매수 계획 창의 기본 목표·다시 계산·미리보기는 �
   assert.match(r.element('purchasePicked').innerHTML,/선택 항목 10%.*전체 계좌 25%/);
   r.element('lineBudgetReset').onclick();assert.equal(r.form.lineBudget.value,'15');assert.match(r.element('lineBudgetNote').textContent,/전체 계좌 보유 25만원/);assert.match(r.element('linePreview').innerHTML,/15주/);
   r.submit();assert.equal(r.item.buyPlan.lines.budget,15);r.change('[data-purchase-buy]',true);
-  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(visibleText(r.html()),/목표 40%/);assert.match(visibleText(r.html()),/전체 [^(]*\(40%\)/);
-  r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(other.amount,15);assert.match(r.html(),/전체 [^(]*\(25%\)/);
+  assert.equal(r.item.shares,25);assert.equal(other.amount,15);assert.equal(r.doc.allocation.trades['buy:a:end'].items[0].id,'a');assert.match(visibleText(r.html()),/목표 40%/);assert.match(visibleText(r.html()),/만원\(40%\)/);
+  r.change('[data-purchase-buy]',false);assert.equal(r.item.shares,10);assert.equal(other.amount,15);assert.match(r.html(),/<small>\(25%\)<\/small>/);
 });
 
 test('자산 배분 목표 21%→21.5%: 분할매수 제목·총 매수 금액·회차·알림·계획 창이 함께 바뀌고 체결 기록은 그대로 둔다',()=>{
   const r=setup({budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});
   r.doc.allocation.total=1000;r.item.target=21;r.item.buyPlan.lines.target=21;r.item.buyPlan.notify={stages:true};r.initialize();r.render();
-  assert.match(visibleText(r.html()),/목표 21% · 목표까지 200만원/);assert.match(visibleText(r.html()),/전체 [^(]*\(1%\)/);
+  assert.match(visibleText(r.html()),/목표 21% · 목표까지 200만원/);assert.match(visibleText(r.html()),/만원\(1%\)/);
   const first=r.inputs('[data-purchase-buy-shares]')[0];first.value='10';first.onchange();assert.equal(r.item.shares,20);
   const buys=JSON.stringify(r.item.buyPlan.buys),trades=JSON.stringify(r.doc.allocation.trades),rules=r.rules().length,before=JSON.parse(JSON.stringify(r.doc.allocation));
   const open=()=>r.inputs('[data-purchase-buy-shares]').filter(x=>!x.attrs.value||x.attrs.value==='0').map(x=>Number(x.attrs.max)).reduce((n,v)=>n+v,0),planned=open();
   r.item.target=21.5;assert.deepEqual([...r.sync(before)],['a']);r.emit();
   assert.equal(r.item.buyPlan.lines.budget,205,'21.5% × 1,000만원 − 보유 20만원 + 체결 10만원');assert.equal(Object.hasOwn(r.item.buyPlan.lines,'target'),false);
-  assert.match(visibleText(r.html()),/목표 21\.5% · 목표까지 195만원/);assert.match(visibleText(r.html()),/전체 [^(]*\(2%\)/);
+  assert.match(visibleText(r.html()),/목표 21\.5% · 목표까지 195만원/);assert.match(visibleText(r.html()),/만원\(2%\)/);
   assert.ok(open()>planned,'미체결 회차 수량이 새 목표만큼 늘어남');assert.equal(r.rules().length,rules);
   assert.equal(JSON.stringify(r.item.buyPlan.buys),buys,'부분 체결 기록 유지');assert.equal(JSON.stringify(r.doc.allocation.trades),trades,'자산 반영 기록 유지');
   r.edit();assert.equal(r.form.lineTarget.value,21.5);assert.equal(r.form.lineBudget.value,'205');assert.match(r.element('lineBudgetNote').textContent,/목표 21\.5%/);assert.doesNotMatch(r.element('lineBudgetNote').textContent,/직접 고친 금액/);
@@ -1650,7 +1650,7 @@ test('분할매수 계좌 추가는 같은 종목의 0주 계좌만 만들고 �
   const added=r.doc.allocation.groups[0].items[1];assert.ok(added.id&&added.id!==r.item.id);
   assert.equal(added.name,'가상 ETF (H) (연금저축)');assert.equal(added.ticker,r.item.ticker);assert.equal(added.section,r.item.section);assert.equal(added.shares,0);
   for(const key of ['buyPlan','target','averagePrice','note','amount'])assert.equal(added[key],undefined,key);
-  assert.equal(r.item.shares,10);assert.equal(r.item.target,20);assert.match(r.html(),/연결된 전체 보유 종목 \(2개 계좌\)/);
+  assert.equal(r.item.shares,10);assert.equal(r.item.target,20);assert.equal((r.html().match(/data-purchase-holding=/g)||[]).length,2);
   r.element('purchaseAccountAdd').onclick();f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});assert.equal(r.doc.allocation.groups[0].items.length,2);assert.match(r.alerts.at(-1),/이미 있습니다/);
 });
 
@@ -1704,7 +1704,7 @@ test('기준 코드 없이 실제 매수 코드만 있는 기존 계획도 새 �
   assert.equal(r.element('purchaseAccountAdd').disabled,false);r.element('purchaseAccountAdd').onclick();
   const f=r.element('purchaseAccountForm');f.accountName.value='연금저축';f.onsubmit({preventDefault(){}});
   const added=r.doc.allocation.groups[0].items[1];assert.equal(added.tradeTicker,'222222');assert.equal(added.ticker,undefined);assert.equal(added.shares,0);
-  assert.equal(r.inputs('[data-purchase-target]').length,1);assert.match(r.html(),/연결된 전체 보유 종목 \(2개 계좌\)/);assert.doesNotMatch(r.html(),/id="purchaseAccountHint"/);
+  assert.equal(r.inputs('[data-purchase-target]').length,1);assert.equal((r.html().match(/data-purchase-holding=/g)||[]).length,2);assert.doesNotMatch(r.html(),/id="purchaseAccountHint"/);
   const target=r.input('[data-purchase-target]');target.value='5';target.onchange();assert.equal(r.item.target,5);assert.equal(added.target,undefined);assert.match(visibleText(r.html()),/목표 5%/);
   r.element('purchaseAccountDeleteToggle').onclick();
   r.ctx.confirm=()=>true;r.inputs('[data-purchase-account-delete]')[1].onclick();assert.equal(r.doc.allocation.groups[0].items.length,1);assert.ok(r.item.buyPlan);assert.equal(r.item.target,5);
@@ -2133,7 +2133,7 @@ test('연결된 계좌 목록은 기본 상태에서 행 삭제 버튼을 숨기
     assert.equal(offBtn.getAttribute('aria-controls'),'purchaseLinkedHoldings');
     assert.equal(offBtn.getAttribute('aria-label'),'계좌 삭제');
     assert.doesNotMatch(offBtn.getAttribute('class'),/\bactive\b/);
-    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>계좌 삭제<\/button>/);
+    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>(?:계좌 )?삭제<\/button>/);
 
     // 토글 ON: 삭제 모드 진입, 저장 없음, 포커스를 새 토글 버튼으로 복원
     offBtn.onclick();
@@ -2160,7 +2160,7 @@ test('연결된 계좌 목록은 기본 상태에서 행 삭제 버튼을 숨기
     assert.equal(r.inputs('[data-purchase-priority]').length,4);
     assert.equal(r.inputs('[data-purchase-account-delete]').length,0);
     assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');
-    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>계좌 삭제<\/button>/);
+    assert.match(r.html(),/<button[^>]*id="purchaseAccountDeleteToggle"[^>]*>(?:계좌 )?삭제<\/button>/);
     assert.equal(focusLog.length,2);
     assert.equal(focusLog[1].node,r.element('purchaseAccountDeleteToggle'));
     assert.deepEqual({...focusLog[1].opts},{preventScroll:true});
@@ -2314,18 +2314,23 @@ test('곡선 카드: 평단은 체결 회차의 실제 체결가·수량과 남�
   const tracking=setup({tracking:true,budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
   assert.match(tracking.html(),/class="card bp-chart"/);assert.doesNotMatch(tracking.html(),/완료 시 평단|누적 예상 평단가|class="bp-avg/,'기준가와 체결가의 종목이 달라 평단을 만들지 않음');
 });
-test('계좌 · 설정은 연결 계좌 목록을 화면에서만 펼치고 접으며, 계좌마다 종목 이름·계좌 꼬리표·보유 수량·손익을 두 줄로 보인다',()=>{
+test('계좌 상자: 맨 윗줄은 평가액(비중)·합산 손익과 [설정], 펼치면 계좌마다 종목·꼬리표·수량·평가액과 오른쪽 손익, [⇅]일 때만 우선순위 화살표를 보이며 펼침·모드는 저장하지 않는다',()=>{
   const r=setup();r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3,averagePrice:9000});r.render();
-  const before=JSON.stringify(r.doc),toggle=()=>r.element('purchaseAccountToggle');let writes=0;r.store.saveSection=()=>writes++;
-  assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);assert.equal(toggle().getAttribute('aria-expanded'),'false');
-  assert.match(r.html(),/<div class="bp-acc-main"><b class="bp-acc-total">전체 13주 <small>\(\d+%\)<\/small><\/b><button/,'접힌 계좌 줄은 한 줄');
-  toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(toggle().getAttribute('aria-expanded'),'true');
-  assert.match(r.html(),/<span class="bp-acc-name">테스트 종목<\/span><span class="bp-acc-tag">연금저축<\/span><\/div><div class="bp-acc-l2"><b>3주<\/b><span class="bp-sep">·<\/span><small class="sale-holding-profit">손익 <b class="profit-gain">\+0\.3만원<\/b> <b class="profit-gain">\+11\.11%<\/b><\/small>/);
-  assert.doesNotMatch(r.html().split('id="purchaseLinkedHoldings"')[1].split('bp-acc-actions')[0],/평균 /,'계좌 줄에는 평균가 글자를 넣지 않음');
-  r.element('purchaseAccountDeleteToggle').onclick();assert.equal(r.inputs('[data-purchase-account-delete]').length,2);
-  toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);r.element('purchaseAccountToggle').onclick();
+  const before=JSON.stringify(r.doc),toggle=()=>r.element('purchaseAccountToggle'),list=()=>r.html().split('id="purchaseLinkedHoldings"')[1].split('bp-acc-actions')[0];let writes=0;r.store.saveSection=()=>writes++;
+  assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);assert.equal(toggle().getAttribute('aria-expanded'),'false');assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'접혀 있으면 ⇅ 없음');
+  assert.match(r.html(),/<div class="bp-acc-main"><div class="bp-acc-sum"><b>[^<]+만원<\/b><small>\(\d+%\)<\/small><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/div><button[^>]*id="purchaseAccountToggle"[^>]*>설정 /,'맨 윗줄 한 줄');
+  toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(toggle().getAttribute('aria-expanded'),'true');assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'false');
+  assert.match(list(),/<span class="bp-acc-name">테스트 종목<\/span><span class="bp-acc-tag">연금저축<\/span><\/div><div class="bp-acc-l2">3주 · [^<]+만원<\/div><\/div><div class="bp-acc-ctrl" hidden>[\s\S]*?<\/div><div class="bp-acc-pl"><b class="profit-gain">\+0\.3만원<\/b><small class="profit-gain">\+11\.11%<\/small><\/div>/);
+  assert.match(list(),/<div class="bp-acc-pl"><b class="bp-muted">평균매수가 미입력<\/b><\/div>/);assert.doesNotMatch(list(),/평균 /,'계좌 줄에는 평균가 글자를 넣지 않음');
+  r.element('purchaseAccountSort').onclick();assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'true');
+  assert.doesNotMatch(list(),/bp-acc-ctrl" hidden|bp-acc-pl/,'⇅ 모드에서는 손익 대신 화살표');assert.match(r.html(),/맨 위 계좌에 새 회차의 체결을 반영합니다\./);
+  r.element('purchaseAccountDeleteToggle').onclick();assert.equal(r.inputs('[data-purchase-account-delete]').length,2);assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'삭제 모드에서는 ⇅ 없음');
+  r.element('purchaseAccountDeleteToggle').onclick();assert.match(list(),/bp-acc-ctrl" hidden/,'삭제 모드로 넘어가면 순서 바꾸기도 끝남');
+  r.element('purchaseAccountSort').onclick();toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);r.element('purchaseAccountToggle').onclick();
+  assert.match(list(),/bp-acc-ctrl" hidden/,'접으면 순서 바꾸기도 끝남');
+  r.element('purchaseAccountDeleteToggle').onclick();toggle().onclick();r.element('purchaseAccountToggle').onclick();
   assert.equal(r.inputs('[data-purchase-account-delete]').length,0,'접으면 삭제 모드도 끝남');
-  assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0,'펼침은 저장하지 않음');
+  assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0,'펼침·모드는 저장하지 않음');
 });
 test('메모는 계좌 · 설정 펼침 안의 한 줄로 첫 줄만 보이고 [편집 ›]에서 그 자리에서 고쳐 저장하며, 취소는 저장하지 않는다',()=>{
   const r=setup();r.item.buyPlan.note='<첫> 줄\n둘째 줄';r.render();let writes=0;const save=r.store.saveSection;r.store.saveSection=x=>{writes++;return save(x);};
