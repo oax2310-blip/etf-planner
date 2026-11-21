@@ -1223,3 +1223,30 @@ test('손절 비중 칸을 비우면 50%로 계산한 자동 회차를 보인다
   r.type('[data-fr-field="sellPct"]','25');assert.equal(r.input('[data-fr-field="steps"]').placeholder,'4회');
   r.type('[data-fr-field="sellPct"]','');assert.equal(r.input('[data-fr-field="steps"]').placeholder,'8회');
 });
+
+test('이번 손절에 부분 체결 회차가 있으면 자동 안내는 1계약씩이라고 단정하지 않는다',()=>{
+  // 부분 체결 회차의 남은 계약은 그 회차에 고정되고 나머지를 재배분한다(rebuy.js futureCutPlan, 0계약 회차가 섞일 수 있음).
+  const f=future();f.positions[0].contracts=16;Object.assign(f.rebuy,{contracts:16,steps:2,cuts:[{contracts:1,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450,partial:true,plannedQty:4}]});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
+  assert.deepEqual([r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent],['8회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,60);
+  assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,0,1,0,1,0,1],'지금 고정 계산의 배분(지시 밖 발견 사항)');
+});
+
+test('고정한 이탈 전 계약 수를 비우면 이어서 새 손절이라 지난 체결을 자동 안내에 반영하지 않는다',()=>{
+  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,steps:2,cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
+  const steps=r.input('[data-fr-field="steps"]'),note=r.el('frStepsNote');
+  assert.deepEqual([steps.placeholder,note.textContent],['10회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  r.type('[data-fr-field="contracts"]','');
+  assert.deepEqual([steps.placeholder,note.textContent],['10회','회차마다 1계약씩 손절']);
+});
+
+test('지난 손절 계획(cutRestart 앞)의 체결은 자동 안내에 반영하지 않는다',()=>{
+  const f=future();f.positions[0].contracts=20;
+  Object.assign(f.rebuy,{contracts:20,steps:2,cutRestart:{at:1,rebought:0},cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:1,price:1390,targetPrice:1390,month:'202612',settlementPrice:1450}]});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
+  assert.equal(r.el('frStepsNote').textContent,'회차마다 1계약씩 손절');
+  r.submit('futureRebuyForm');const plan=r.c.futureCutPlan(r.saved().futures);
+  assert.equal(r.saved().futures.rebuy.steps,60);assert.ok(plan.length>1&&plan.every(c=>c.qty===1),JSON.stringify(plain(plan.map(c=>c.qty))));
+});

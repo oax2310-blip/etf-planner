@@ -348,9 +348,9 @@ function openFutureRebuyDialog(startNew=false){
     const auto=stepsMode.value==="auto",low=moneyInputNumber(lowInput.value),moved=restartable&&low>0&&low!==Number(r.lowPrice),hold=holdInput.value.trim()===""?(moved?restartHold:autoHold):Number(holdInput.value);
     const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value),goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
     stepsInput.disabled=auto;stepsInput.placeholder=auto&&goal>0?`${Math.min(goal,FUTURE_CUT_AUTO_STEPS)}회`:"";
-    // 이번 손절 계획에 회차당 2계약 이상 체결이 있으면 남은 회차 배분은 rebuy.js futureCutPlan의 재배분을 따르므로(0계약 회차가 생길 수 있음) 1계약씩이라고 단정하지 않는다.
+    // 이번 손절 계획에 회차당 2계약 이상 체결이나 부분 체결(partial: 남은 계약을 그 회차에 고정)이 있으면 남은 회차 배분은 rebuy.js futureCutPlan의 재배분을 따르므로(0계약 회차가 생길 수 있음) 1계약씩이라고 단정하지 않는다.
     // 신저점을 바꾸거나 고정한 이탈 전 계약 수를 비워 이어서 새 손절이 되면 회차를 1회부터 다시 짜므로 지난 체결은 보지 않는다(syncRestart와 같은 조건).
-    const restart=moved||restartable&&Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="",multi=!restart&&futureCutRecords(r).some(c=>futureRebuyQty(c?.contracts)>1);
+    const restart=moved||restartable&&Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="",multi=!restart&&futureCutRecords(r).some(c=>futureRebuyQty(c?.contracts)>1||c?.partial===true);
     stepsNote.textContent=!auto?"":goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:multi?"체결한 회차가 있어 남은 회차는 표를 따릅니다":"회차마다 1계약씩 손절";
     stepsNote.classList.toggle("warn",auto&&goal>FUTURE_CUT_AUTO_STEPS);
   };
