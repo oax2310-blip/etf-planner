@@ -242,13 +242,12 @@
 :root[data-theme=dark] .bp-done-stats div{background:rgba(0,0,0,.38);box-shadow:inset 0 2px 4px rgba(0,0,0,.55),inset 0 -1px 0 rgba(255,255,255,.06)}
 .bp-done-stats small{font-size:11.4px;color:var(--text-3);white-space:nowrap}.bp-done-stats b{font-size:11.45px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
 /* 계좌 줄(음각)과 펼침 목록 */
-.bp-acc{display:flex;flex-direction:column;gap:10px;margin-top:3px;padding:12px 15px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
+.bp-acc{display:flex;flex-direction:column;gap:10px;margin-top:3px;padding:9px 9px 9px 15px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
 .bp-acc-main{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.bp-acc-info{display:flex;flex-direction:column;gap:2px;min-width:0}.bp-acc-info small{font-size:11.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-acc-info b{font-size:15px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
+.bp-acc-total{min-width:0;font-size:15px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-acc-total small{font-size:13px;font-weight:600;color:var(--text-2)}
 .bp .bp-acc-toggle{flex:none;min-height:34px;padding:0 13px;border-radius:12px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text);font-size:12.5px;font-weight:700;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
 .bp-acc-drawer{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--bp-line)}.bp-acc-drawer[hidden]{display:none}
-.bp-acc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-2)}.bp-acc-head b{flex:none;color:var(--bp-blue-2);font-weight:700}
-.bp-acc-head .sale-linked-profit{margin-left:4px}.bp-acc-head .sale-linked-profit::before{content:"· "}.bp-acc-head .profit-gain{color:var(--bp-red)}.bp-acc-head .profit-loss{color:var(--bp-loss)}
+.bp-acc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 1px 0;font-size:12.5px}.bp-acc-head span{min-width:0;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-acc-head b{flex:none;color:var(--bp-blue-2);font-weight:700}
 .bp-acc-policy{margin:0;font-size:11.5px;color:var(--danger)}
 .bp-acc-row{display:flex;align-items:center;gap:9px;padding:7px 1px;border-top:1px solid var(--bp-line)}
 .bp-acc-rank{flex:none;display:grid;place-items:center;width:18px;height:18px;border-radius:6px;background:rgba(128,128,128,.14);color:var(--text-2);font-size:10.5px;font-weight:800}
@@ -261,12 +260,14 @@
 .bp-acc-ctrl{flex:none;display:flex;gap:4px}
 .bp .bp-acc-move,.bp .bp-acc-del{min-width:28px;min-height:28px;padding:0 6px;border-radius:8px;font-size:12px;font-weight:700}.bp .bp-acc-move:disabled{opacity:.3}.bp .bp-acc-del{color:var(--danger)}
 .bp-acc-actions{display:flex;align-items:center;gap:6px}.bp-acc-actions .accent{margin-left:auto;color:var(--bp-blue-2)}
-.bp .bp-pill{min-height:30px;padding:0 10px;border-radius:10px;font-size:11.5px;font-weight:600}
+.bp .bp-pill{min-height:32px;padding:0 11px;border-radius:10px;font-size:12px;font-weight:600;color:var(--text-2)}
+:root[data-theme=dark] .bp .bp-pill{background:linear-gradient(180deg,#212736,#171c27);border:1px solid rgba(255,255,255,.09);color:#c7d0e0}
+:root[data-theme=dark] .bp .bp-pill.accent{color:#749eff;border-color:rgba(82,130,255,.28)}
 /* 계좌 펼침 안 메모 줄 */
-.bp-memo{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px;padding:0 6px 0 12px;border-radius:12px;background:rgba(128,128,128,.06);border:1px solid var(--bp-line)}
+.bp-memo{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:0 8px 0 13px;border-radius:12px;background:rgba(128,128,128,.05);border:1px solid var(--bp-line)}
 .bp-memo[hidden],.bp-memo-editor[hidden]{display:none}
-.bp-memo-text{min-width:0;font-size:12px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-memo-text.empty{color:var(--text-3)}
-.bp .bp-memo-edit{flex:none;min-height:30px;padding:0 8px;border:0;background:none;color:var(--text);font-size:12px;font-weight:600}
+.bp-memo-text{min-width:0;font-size:12.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-memo-text.empty{color:var(--text-3)}
+.bp .bp-memo-edit{flex:none;min-height:32px;padding:0 6px;border:0;background:none;color:var(--text);font-size:12.5px;font-weight:700}
 .bp-memo-editor{display:flex;flex-direction:column;gap:6px}.bp-memo-editor textarea{width:100%;min-height:72px;padding:9px 11px;border:1px solid var(--bp-line);border-radius:12px;background:var(--field);color:var(--text);font:inherit;font-size:13px;line-height:1.5;resize:vertical}.bp-memo-editor textarea:focus{outline:2px solid color-mix(in srgb,var(--bp-blue) 55%,transparent);outline-offset:0;border-color:transparent}
 .bp-memo-foot{display:flex;align-items:center;gap:6px}.bp-memo-foot .accent{color:var(--bp-blue-2)}.bp-memo-foot .memo-count{margin-right:auto;font-size:11.5px;color:var(--text-3)}
 /* 곡선 카드 */
@@ -292,3 +293,4 @@
 .bp .bp-main{border:1px solid rgba(130,170,255,.45);background:linear-gradient(180deg,#5684ff,#3d6bf2);color:#fff;box-shadow:0 8px 24px rgba(68,114,248,.42)}
 .bp .bp-main:disabled{opacity:.5;box-shadow:none}
 @media(max-width:700px){.bp .card.bp-sum,.bp .card.bp-chart{padding-left:16px;padding-right:16px}.bp-now{font-size:29px}}
+:root[data-theme=dark] .bp-memo{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.07)}:root[data-theme=dark] .bp-memo-text{color:#8c96a8}
