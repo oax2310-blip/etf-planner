@@ -362,6 +362,10 @@ const futureCutPrior = r => (Array.isArray(r?.cuts)?r.cuts:[]).slice(0,futureCut
 // partial 없는 기록(옛 기록 포함)은 완료로 읽는다. 부분 체결 회차의 남은 계약은 손절 목표 안에서만 남기고(넘으면 줄이고, 0이면 완료로 읽음),
 // 회차 결과의 qty는 체결(기록 없는 회차는 배정) 계약, plannedQty는 기록한 회차의 계획 계약이다.
 // 체결량 수정 후 남은 목표는 기록 없는 회차의 원래 비중으로 재배분; 기존 체결은 유지.
+// 0계약 회차를 만들지 않는다: 마지막 기록 뒤 새로 나눌 회차는 '남은 계약 − 마지막 기록 앞의 기록 없는(건너뛴) 회차'까지만 두고,
+// 비중 배분이 0계약 회차를 만들면 기록 없는 회차마다 1계약씩 먼저 두고 나머지를 원래 비중(넘는 몫)으로 나눈다.
+// 건너뛴 회차가 남은 계약보다 많아 0계약이 남는 회차는 결과에서 뺀다(k는 cuts 위치라 비지 않은 회차의 k는 그대로).
+// 기존 배분에 0계약 회차가 없으면 결과는 이전과 같다.
 // 모든 회차 체결 뒤 목표를 늘렸으면 남은 수량을 하단의 추가 회차에 배정한다.
 // 이어서 새 손절이면 cuts[at]부터 1회로 다시 나눈다. k(1부터)는 언제나 cuts 위치 + 1이고(체크·알림 키), round는 이번 계획의 회차 번호(at이 있을 때만).
 function futureCutPlan(f){
@@ -373,15 +377,20 @@ function futureCutPlan(f){
   let n=Math.max(lastDone,valid?Math.min(60,Math.max(1,futureRebuyQty(r.steps)||10),goal):0);
   const finished=lastDone>0&&Number(records[lastDone-1]?.targetPrice)===floor&&Array.from({length:lastDone},(_,i)=>records[i]).every(Boolean);
   if(valid&&rest>0){if(finished)n=lastDone+1;else if(Array.from({length:n},(_,i)=>records[i]).every(Boolean))n++;}
-  const nominal=i=>Math.round(goal*(i+1)/n)-Math.round(goal*i/n),weights=Array.from({length:n},(_,i)=>records[i]?0:nominal(i)),openWeight=weights.reduce((a,b)=>a+b,0);
-  let pending=0,left=hold;
+  const skipped=Array.from({length:lastDone},(_,i)=>records[i]).filter(c=>!c).length;
+  if(valid&&rest>0)n=lastDone+Math.min(n-lastDone,Math.max(0,rest-skipped)); // 새로 나눌 회차 ≤ 남은 계약 − 건너뛴 회차
+  const nominal=i=>Math.round(goal*(i+1)/n)-Math.round(goal*i/n),openAt=Array.from({length:n},(_,i)=>i).filter(i=>!records[i]);
+  const split=w=>{const total=w.reduce((a,b)=>a+b,0);let sum=0;return w.map(x=>{const before=sum;sum+=x;return total?Math.round(rest*sum/total)-Math.round(rest*before/total):0;});};
+  let shares=valid?split(openAt.map(nominal)):openAt.map(()=>0);
+  if(valid&&rest>=openAt.length&&shares.some(q=>q<1)){const more=openAt.map(i=>Math.max(0,nominal(i)-1)),w=more.some(x=>x>0)?more:openAt.map(nominal);rest-=openAt.length;shares=split(w).map(q=>q+1);rest+=openAt.length;}
+  const assigned=new Map(openAt.map((i,j)=>[i,shares[j]]));
+  let left=hold;
   return Array.from({length:n},(_,i)=>{
     const rec=records[i],target=valid?(n===1?floor:low-(low-floor)*i/(n-1)):0,price=Number(rec?.targetPrice)>0?Number(rec.targetPrice):target;
-    const before=pending;pending+=weights[i];
-    const qty=rec?futureRebuyQty(rec.contracts):valid&&openWeight?Math.round(rest*pending/openWeight)-Math.round(rest*before/openWeight):0,extra=rec?open[i]:0;
+    const qty=rec?futureRebuyQty(rec.contracts):assigned.get(i)||0,extra=rec?open[i]:0;
     left=Math.max(0,left-qty-extra);
     return {k:at+i+1,...(at?{round:i+1}:{}),price,qty,left,done:!!rec&&!extra,...(rec?{recorded:true,plannedQty:qty+extra}:{}),...(extra?{partial:true}:{}),execPrice:Number(rec?.price)>0?Number(rec.price):null};
-  });
+  }).filter(c=>!valid||c.recorded||c.qty>0);
 }
 // 회차에 남은 손절 계약: 부분 체결은 계획 − 체결, 기록 없는 회차는 배정 계약, 완료는 0.
 const futureCutRest = c => c.done?0:c.recorded?c.plannedQty-c.qty:c.qty;

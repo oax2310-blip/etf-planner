@@ -436,3 +436,60 @@ test('달러선물 손절의 quiet 계산은 끈 손절 회차를 notify:false�
   f.rebuy.notify={cuts:true,cutsOverrides:{1:false}};
   assert.deepEqual(plain(ctx.buildTradeAlertRules({futures:f},null,true)).map(r=>[r.label,r.notify]),[['달러선물 손절 1회',undefined],['달러선물 손절 2회',false],['달러선물 손절 3회',undefined]]);
 });
+
+// 0계약 회차를 만들지 않는 손절 배분(rebuy.js futureCutPlan). 가상 계약·환율.
+const cutRows=cuts=>plain(cuts.map(c=>[c.k,Math.round(c.price*100)/100,c.qty]));
+const cutRec=(contracts,targetPrice,more={})=>({contracts,price:targetPrice,targetPrice,...more});
+
+test('달러 손절은 앞 회차에 2계약 이상 체결해도 남은 계약보다 많은 회차를 만들지 않고 하단까지 1계약씩 나눈다',()=>{
+  const ctx=load(),f=futures({steps:60,cuts:[cutRec(3,1400)]}); // 목표 10, 판 3 → 남은 7계약 = 새로 나눌 7회
+  assert.deepEqual(cutRows(ctx.futureCutPlan(f)),[[1,1400,3],[2,1385.71,1],[3,1371.43,1],[4,1357.14,1],[5,1342.86,1],[6,1328.57,1],[7,1314.29,1],[8,1300,1]]);
+  const g=futures({steps:10,contracts:20,cuts:[cutRec(8,1400)]}); // 남은 2계약 → 2회
+  assert.deepEqual(cutRows(ctx.futureCutPlan(g)),[[1,1400,8],[2,1350,1],[3,1300,1]]);
+});
+
+test('달러 손절 배분에 0계약 회차가 없던 계획은 결과가 이전과 같다',()=>{
+  const ctx=load();
+  assert.deepEqual(cutRows(ctx.futureCutPlan(futures({steps:5,cuts:[cutRec(3,1400)]}))),[[1,1400,3],[2,1375,2],[3,1350,2],[4,1325,1],[5,1300,2]]);
+  assert.deepEqual(cutRows(ctx.futureCutPlan(futures({steps:3}))),[[1,1400,3],[2,1350,4],[3,1300,3]]);
+  // 1계약씩 먼저 두는 배분은 0계약 회차가 생길 때만 쓴다(아니면 원래 비중 배분 [1,2,2,2]가 [1,3,1,2]로 바뀐다).
+  assert.deepEqual(cutRows(ctx.futureCutPlan(futures({contracts:16,steps:5,cuts:[cutRec(1,1400),cutRec(1,1375)]}))),[[1,1400,1],[2,1375,1],[3,1350,2],[4,1325,2],[5,1300,2]]);
+});
+
+test('부분 체결 회차의 남은 계약을 고정한 뒤 나머지도 0계약 회차 없이 나눈다',()=>{
+  const ctx=load(),f=futures({contracts:16,steps:60,cuts:[cutRec(1,1400,{partial:true,plannedQty:4})]}); // 목표 8, 체결 1, 1회차에 3 고정 → 남은 4계약 = 4회
+  const cuts=ctx.futureCutPlan(f);
+  assert.deepEqual(cutRows(cuts),[[1,1400,1],[2,1375,1],[3,1350,1],[4,1325,1],[5,1300,1]]);
+  assert.deepEqual(plain(cuts.map(c=>c.done?0:c.recorded?c.plannedQty-c.qty:c.qty)),[3,1,1,1,1]);
+});
+
+test('건너뛴 회차가 남은 계약보다 많으면 0계약이 될 회차는 빼고 나머지 회차의 k(cuts 위치)는 그대로 둔다',()=>{
+  // 4회 계획에서 3회차만 1계약 체결 뒤 목표 2계약으로 줄임 → 남은 1계약은 건너뛴 1회차, 2회차는 표에서 뺀다.
+  const ctx=load(),f=futures({contracts:8,sellPct:25,steps:60,cuts:[null,null,cutRec(1,1400-100*2/3)]});
+  const cuts=ctx.futureCutPlan(f);
+  assert.deepEqual(cutRows(cuts),[[1,1400,1],[3,1333.33,1]]);
+  assert.equal(ctx.futureRebuySummary(f).cuts.length,2);
+  assert.notEqual(ctx.setFutureCutDone(f,0,true),false,'남은 1회차는 k−1(=0) 위치로 체크한다');
+  assert.equal(ctx.futureRebuySummary(f).sold,2);
+  // 새로 나눌 회차는 '남은 계약 − 건너뛴 회차'까지: 1회차를 건너뛰고 2회차에 2계약 → 남은 2계약 = 건너뛴 1회차 + 새 1회(하단).
+  assert.deepEqual(cutRows(ctx.futureCutPlan(futures({contracts:8,steps:5,cuts:[null,cutRec(2,1400-100/3)]}))),[[1,1400,1],[2,1366.67,2],[3,1300,1]]);
+});
+
+test('체결 0계약인 부분 체결 기록 회차도 체크·알림 키(k)를 위해 표에 남긴다',()=>{
+  const ctx=load(),cuts=ctx.futureCutPlan(futures({contracts:8,steps:4,cuts:[cutRec(0,1400,{partial:true,plannedQty:2})]}));
+  assert.deepEqual(plain([cuts[0].k,cuts[0].recorded,cuts[0].qty,cuts[0].plannedQty]),[1,true,0,2]);
+});
+
+test('달러 손절 회차는 체결 기록이 어떻든 기록 없는 회차에 0계약을 두지 않고 남은 계약을 모두 배정한다',()=>{
+  const ctx=load();
+  for(let hold=1;hold<=24;hold++)for(const pct of [25,50,100])for(const steps of [1,2,3,5,10,60])for(let mask=1;mask<16;mask++)for(const q of [1,2,3])for(const partial of [false,true]){
+    const goal=Math.floor(hold*pct/100),n0=Math.min(60,steps,goal);if(!goal)continue;
+    const cuts=[];for(let i=0;i<4;i++)if(mask&(1<<i)&&i<n0)cuts[i]=cutRec(q,n0===1?1300:1400-100*i/(n0-1),partial&&i===0?{partial:true,plannedQty:q+2}:{});
+    const f=futures({contracts:hold,sellPct:pct,steps,cuts}),plan=ctx.futureCutPlan(f),label=JSON.stringify({hold,pct,steps,mask,q,partial});
+    assert.ok(plan.every(c=>c.recorded||c.qty>0),label);
+    assert.ok(plan.every((c,i)=>!i||c.k>plan[i-1].k),label);
+    cuts.forEach((c,i)=>{if(c)assert.ok(plan.some(x=>x.k===i+1&&x.recorded),label);});
+    const sold=cuts.reduce((n,c)=>n+(c?c.contracts:0),0),fixed=plan.reduce((n,c)=>n+(c.recorded?c.plannedQty-c.qty:0),0);
+    assert.equal(plan.reduce((n,c)=>n+(c.recorded?0:c.qty),0),Math.max(0,goal-sold-fixed),label);
+  }
+});
