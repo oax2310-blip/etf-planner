@@ -342,29 +342,49 @@ function openFutureRebuyDialog(startNew=false){
     const contracts=value("contracts")===""?futureRebuyAutoHold(f):Number(value("contracts")),pct=value("sellPct")===""?50:Number(value("sellPct")),steps=$("frStepsMode").value==="auto"?FUTURE_CUT_AUTO_STEPS:Number(value("steps")),goal=futureCutGoal(f,pct,contracts);
     $("frNewGoal").textContent=Number.isInteger(contracts)&&contracts>0&&pct>=0&&pct<=100&&Number.isInteger(steps)&&steps>=1&&steps<=60&&goal>0?`새 계획 · 손절 목표 ${goal}계약 · ${Math.min(goal,steps)}회`:"새 계획 · 손절 목표 1계약 이상 필요";
   };
-  // 자동이면 숫자 칸 자리에 지금 입력한 이탈 전 계약 수·손절 비중의 손절 목표로 'N회'(min(60, 목표))를 보이고, 목표가 60계약을 넘으면 1계약씩이 아님을 알린다.
+  // 창에 입력한 값으로 저장했을 때 바뀌는 칸 {키: 입력 글자}(저장과 같은 규칙). 자동인 동안 분할 횟수 숫자 칸은 비활성이라 들어가지 않는다.
+  const dialogEdits=()=>{
+    const edits=Object.fromEntries(inputs.filter(el=>!el.disabled&&!el.hidden&&el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
+    if(line!==floorLine)edits.floorLine=line;
+    if(stepsMode.value==="auto"&&!stepsAuto)edits.steps=String(FUTURE_CUT_AUTO_STEPS);
+    // 이탈 전 계약 수를 직접 같은 값으로 다시 넣었으면, 신저점을 바꿔 이어서 새 손절이 될 때(자동으로 바뀔 때)만 그 값을 고정으로 넘긴다(비웠다가 같은 값을 다시 넣으면 변경 없음). 값이 처음과 같으면 그 밖에는 편집으로 보지 않는다.
+    if(!startNew&&holdTouched&&holdInput.value===initial.contracts&&futureRebuyEditBase(state.futures,edits)!==state.futures)edits.contracts=holdInput.value;
+    return edits;
+  };
+  // 자동으로 저장했을 때의 손절 표 미리 계산: 저장과 같이 applyFutureRebuyEdits(이어서 새 손절 포함)·fillPrices(하단선 시세)를 사본에 적용해 rebuy.js futureCutPlan을 돌린다.
+  // 신저점·하단·손절 목표로 아직 손절 표를 만들 수 없으면 null.
+  const autoCutPreview=()=>{
+    const g=applyFutureRebuyEdits(f,{...dialogEdits(),steps:String(FUTURE_CUT_AUTO_STEPS)});if(!g)return null;
+    if(priceData)fillPrices({futures:g},priceData);
+    const low=Number(g.rebuy.lowPrice)||0,floor=Number(g.rebuy.floorPrice)||0,goal=futureCutGoal(g);
+    return low>floor&&floor>0&&goal>0?{goal,cuts:futureCutPlan(g)}:null;
+  };
+  // 자동이면 숫자 칸 자리에 저장 뒤 손절 표의 회차 수 'N회'를 보인다. 안내는 손절 목표가 60계약을 넘으면 경고,
+  // 남은 회차(완료 아닌 회차)에 1계약이 아닌 회차가 있으면(2계약 이상·부분 체결 뒤 재배분의 0계약 회차, 모든 회차 체결 뒤 하단 추가 회차 등) 표를 따른다고, 아니면 1계약씩이라고 알린다.
+  // 표를 만들 수 없으면(신저점·하단 미입력 등) 입력한 이탈 전 계약 수·손절 비중으로 min(60, 손절 목표)회를 어림해 보인다.
   const stepsInput=field$("steps"),stepsMode=$("frStepsMode"),stepsNote=$("frStepsNote");let stepsDirect=stepsInput.value||"10";
   const syncSteps=()=>{
-    const auto=stepsMode.value==="auto",low=moneyInputNumber(lowInput.value),moved=restartable&&low>0&&low!==Number(r.lowPrice),hold=holdInput.value.trim()===""?(moved?restartHold:autoHold):Number(holdInput.value);
-    const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value),goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
-    stepsInput.disabled=auto;stepsInput.placeholder=auto&&goal>0?`${Math.min(goal,FUTURE_CUT_AUTO_STEPS)}회`:"";
-    // 이번 손절 계획에 회차당 2계약 이상 체결이나 부분 체결(partial: 남은 계약을 그 회차에 고정)이 있으면 남은 회차 배분은 rebuy.js futureCutPlan의 재배분을 따르므로(0계약 회차가 생길 수 있음) 1계약씩이라고 단정하지 않는다.
-    // 신저점을 바꾸거나 고정한 이탈 전 계약 수를 비워 이어서 새 손절이 되면 회차를 1회부터 다시 짜므로 지난 체결은 보지 않는다(syncRestart와 같은 조건).
-    const restart=moved||restartable&&Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="",multi=!restart&&futureCutRecords(r).some(c=>futureRebuyQty(c?.contracts)>1||c?.partial===true);
-    stepsNote.textContent=!auto?"":goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:multi?"체결한 회차가 있어 남은 회차는 표를 따릅니다":"회차마다 1계약씩 손절";
-    stepsNote.classList.toggle("warn",auto&&goal>FUTURE_CUT_AUTO_STEPS);
+    const auto=stepsMode.value==="auto";stepsInput.disabled=auto;
+    if(!auto){stepsInput.placeholder="";stepsNote.textContent="";stepsNote.classList.remove("warn");return;}
+    const plan=autoCutPreview();let goal=plan?.goal||0;
+    if(!plan){
+      const low=moneyInputNumber(lowInput.value),hold=holdInput.value.trim()===""?(restartable&&low>0&&low!==Number(r.lowPrice)?restartHold:autoHold):Number(holdInput.value);
+      const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value);goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
+    }
+    const rounds=plan?plan.cuts.length:Math.min(goal,FUTURE_CUT_AUTO_STEPS),uneven=!!plan&&plan.cuts.some(c=>!c.done&&futureCutRest(c)!==1);
+    stepsInput.placeholder=rounds>0?`${rounds}회`:"";
+    stepsNote.textContent=goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:uneven?"체결한 회차가 있어 남은 회차는 표를 따릅니다":"회차마다 1계약씩 손절";
+    stepsNote.classList.toggle("warn",goal>FUTURE_CUT_AUTO_STEPS);
   };
   stepsMode.onchange=()=>{error.textContent="";if(stepsMode.value==="auto"){stepsDirect=stepsInput.value||stepsDirect;stepsInput.value="";}else stepsInput.value=stepsDirect;syncSteps();updateGoal();};
   syncSteps();updateGoal();
   inputs.forEach(el=>el.oninput=()=>{error.textContent="";if(el===holdInput)holdTouched=true;if(el===lowInput||el===holdInput)syncRestart();syncSteps();updateGoal();});
-  period.oninput=unit.onchange=()=>{error.textContent="";syncFloor();};
+  period.oninput=unit.onchange=()=>{error.textContent="";syncFloor();syncSteps();};
   $("futureRebuyForm").onsubmit=e=>{
     e.preventDefault();
     if(hasUnlinked)return;
     const open=inputs.filter(el=>!el.disabled&&!el.hidden),invalid=[...open,period].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
-    const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
-    if(line!==floorLine)edits.floorLine=line;
-    if(stepsMode.value==="auto"&&!stepsAuto)edits.steps=String(FUTURE_CUT_AUTO_STEPS);
+    const edits=dialogEdits(),line=chosenLine();
     if(!startNew&&!Object.keys(edits).length){dialog.close();return;}
     if(startNew){
       try{absorbPlanner();}catch{error.textContent="최신 기록을 읽지 못했습니다. 다시 시도하세요.";return;}
@@ -374,8 +394,6 @@ function openFutureRebuyDialog(startNew=false){
         error.textContent="달러선물 기록이 바뀌었습니다. 보유·체결·설정이 바뀌었거나 최신 시세만으로 변경을 확인할 수 없습니다. 새 계획을 다시 열어 확인하세요.";return;
       }
     }
-    // 이탈 전 계약 수를 직접 같은 값으로 다시 넣었으면, 신저점을 바꿔 이어서 새 손절이 될 때(자동으로 바뀔 때)만 그 값을 고정으로 넘긴다(비웠다가 같은 값을 다시 넣으면 변경 없음). 값이 처음과 같으면 그 밖에는 편집으로 보지 않는다.
-    if(!startNew&&holdTouched&&holdInput.value===initial.contracts&&futureRebuyEditBase(state.futures,edits)!==state.futures)edits.contracts=holdInput.value;
     const latest=state.futures,base=startNew?futureNewStopBase(latest):latest,g=applyFutureRebuyEdits(base,edits);
     const editBase=futureRebuyEditBase(base,edits),autoLow=editBase!==base&&!Object.hasOwn(edits,"lowPrice")&&Number(futureRebuyOf(editBase).lowPrice)!==Number(futureRebuyOf(base).lowPrice)?Number(futureRebuyOf(editBase).lowPrice)||0:0; // 실제로 자동 이동했을 때만
     if(!g){error.textContent=futureRebuyEditError(editBase,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})},autoLow);return;}
