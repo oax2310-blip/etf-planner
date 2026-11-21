@@ -356,16 +356,17 @@ function openFutureRebuyDialog(startNew=false){
     return edits;
   };
   // 자동으로 저장했을 때의 손절 표 미리 계산: 저장과 같이 applyFutureRebuyEdits(이어서 새 손절 포함)·fillPrices(하단선 시세)를 사본에 적용해 rebuy.js futureCutPlan을 돌린다.
-  // {cuts, goal}: 손절 표, 신저점·하단(하단선 시세 대기 포함)·손절 목표로 아직 표를 만들 수 없거나 저장할 수 없는 입력이면 cuts 없음.
+  // {cuts, rounds, goal}: cuts는 손절 표에 보일 회차(futureCutsShown: 기록 없는 0계약 회차를 뺌), rounds는 빼기 전 회차 수(카드 'N분할'과 같은 값).
+  // 신저점·하단(하단선 시세 대기 포함)·손절 목표로 아직 표를 만들 수 없거나 저장할 수 없는 입력이면 cuts 없음.
   // kept: 저장했을 때 이번 손절 계획의 체결 기록이 남는지(futureRebuyEditBase: 이어서 새 손절이면 1회부터 다시 짜므로 false).
   const autoCutPreview=()=>{
     const edits={...dialogEdits(),steps:String(FUTURE_CUT_AUTO_STEPS)},kept=futureCutRecords(futureRebuyOf(futureRebuyEditBase(f,edits))).some(Boolean),g=applyFutureRebuyEdits(f,edits);if(!g)return {kept};
     if(priceData)fillPrices({futures:g},priceData);
     const low=Number(g.rebuy.lowPrice)||0,floor=Number(g.rebuy.floorPrice)||0,goal=futureCutGoal(g);
-    return low>floor&&floor>0&&goal>0?{goal,cuts:futureCutsShown(futureCutPlan(g),true),kept}:{kept};
+    const all=futureCutPlan(g);return low>floor&&floor>0&&goal>0?{goal,cuts:futureCutsShown(all,true),rounds:all.length,kept}:{kept};
   };
-  // 자동이면 숫자 칸 자리에 저장 뒤 손절 표의 회차 수 'N회'를 보인다. 안내는 손절 목표가 60계약을 넘으면 경고,
-  // 남은 회차(완료 아닌 회차)에 1계약이 아닌 회차가 있으면(부분 체결 회차의 남은 계약, 모든 회차 체결 뒤 하단 추가 회차 등) 표를 따른다고, 아니면 1계약씩이라고 알린다.
+  // 자동이면 숫자 칸 자리에 저장 뒤 카드의 'N분할'과 같은 회차 수(0계약 회차를 빼기 전) 'N회'를 보인다. 안내는 손절 목표가 60계약을 넘으면 경고,
+  // 손절 표에 보일 남은 회차(완료 아닌 회차)에 1계약이 아닌 회차가 있으면(부분 체결 회차의 남은 계약, 모든 회차 체결 뒤 하단 추가 회차 등) 표를 따른다고, 아니면 1계약씩이라고 알린다.
   // 표를 만들 수 없으면(신저점·하단 미입력, 하단선 시세 대기, 저장할 수 없는 입력) 입력한 이탈 전 계약 수·손절 비중으로 손절 목표를 어림한다.
   // 이때 저장 뒤에도 이번 계획의 체결 기록이 남으면 회차·배분이 그 기록에 달려 어림할 수 없으므로 회차 칸을 비우고 표를 따른다고 알린다.
   // 체결 기록이 없거나 이어서 새 손절이면 회차를 1회부터 나누므로 min(60, 손절 목표)회 · 1계약씩이 저장 뒤 표와 같다.
@@ -378,7 +379,7 @@ function openFutureRebuyDialog(startNew=false){
       const low=moneyInputNumber(lowInput.value),hold=holdInput.value.trim()===""?(restartable&&low>0&&low!==Number(r.lowPrice)?restartHold:autoHold):Number(holdInput.value);
       const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value);goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
     }
-    const rounds=plan?plan.cuts.length:preview.kept?0:Math.min(goal,FUTURE_CUT_AUTO_STEPS),uneven=plan?plan.cuts.some(c=>!c.done&&futureCutRest(c)!==1):preview.kept;
+    const rounds=plan?plan.rounds:preview.kept?0:Math.min(goal,FUTURE_CUT_AUTO_STEPS),uneven=plan?plan.cuts.some(c=>!c.done&&futureCutRest(c)!==1):preview.kept;
     stepsInput.placeholder=rounds>0?`${rounds}회`:"";
     stepsNote.textContent=goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:uneven?"체결한 회차가 있어 남은 회차는 표를 따릅니다":"회차마다 1계약씩 손절";
     stepsNote.classList.toggle("warn",goal>FUTURE_CUT_AUTO_STEPS);
