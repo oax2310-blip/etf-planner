@@ -439,7 +439,7 @@ test('이탈 전 계약 수 자동이면 분할매수 체결로 보유가 늘 �
   r.c.renderFutures();r.input('[data-tranche-month="0:0"]').value='202612';const box=r.input('[data-tranche-check="0:0"]');box.checked=true;box.onchange();
   const g=r.c.state.futures;assert.equal(g.positions[0].contracts,19);
   assert.deepEqual([plain(g.rebuy.cutRestart),sum().hold,sum().cutSold,sum().sold,sum().rest],[{at:2,rebought:0},19,0,4,4],'분할매수 체결 시점 보유 19가 기준, 미복원 4는 재매수에만');
-  assert.equal(g.rebuy.lowPrice,1375,'다음 미체결 회차 환율이 새 신저점(남은 7계약 = 새로 나눌 7회, 하단까지 12.5원 간격)');
+  assert.equal(g.rebuy.lowPrice,1377.78,'다음 미체결 회차 환율이 새 신저점');
   // 이탈 전 계약 수를 직접 입력해 둔 기록은 다시 짜지 않는다.
   const h=future();h.positions[0].contracts=18;h.rebuy.cuts=structuredClone(f.rebuy.cuts);const r2=setup(h);r2.c.renderFutures();
   r2.input('[data-tranche-month="0:0"]').value='202612';const b2=r2.input('[data-tranche-check="0:0"]');b2.checked=true;b2.onchange();
@@ -601,13 +601,13 @@ test('재매수 체결 수량 칸을 늘려 다시 짤 때도 새 신저점은 �
   assert.deepEqual([f.rebuy.lowPrice,f.rebuy.cutRestart.at],[before,2],'체결 뒤 계획(1332.5)이 아니라 체결 전 1326.67');
 });
 
-test('남은 계약이 적으면 새로 나눌 회차를 줄여 다음 회차를 새 신저점 후보로 쓴다',()=>{
+test('계약이 배정되지 않은 미체결 회차는 표에서 빠지고 새 신저점 후보도 아니다',()=>{
   const f=future();f.positions[0].contracts=12;Object.assign(f.rebuy,{contracts:20,sellPct:50,steps:10,currentPrice:1380});
   f.rebuy.cuts=[{contracts:8,price:1400,targetPrice:1400,month:'202612',settlementPrice:1450}];
-  // 남은 2계약은 새로 나눌 2회(하단까지 고르게)에 1계약씩 둔다(0계약 회차를 만들지 않음, rebuy.js futureCutPlan).
-  const r=setup(f),rows=r.c.futureRebuySummary(f).cuts;assert.deepEqual(plain(rows.map(c=>[c.k,Math.round(c.price*100)/100,c.qty])),[[1,1400,8],[2,1350,1],[3,1300,1]]);
-  assert.deepEqual(plain(r.c.futureNextCut(f)),{price:1350,current:false});
-  const g=r.c.applyFutureRebuyEdits(f,{contracts:''});assert.equal(g.rebuy.lowPrice,1350);assert.equal(r.c.futureCutDue(r.c.futureRebuySummary(g),1380),null);
+  // 10회 격자에서 남은 2계약은 4·8회차, 0계약인 2·3·5·6·7·9·10회차는 표에서 뺀다(rebuy.js futureCutLayout).
+  const r=setup(f),rows=r.c.futureRebuySummary(f).cuts;assert.deepEqual(plain(rows.map(c=>[c.k,Math.round(c.price*100)/100,c.qty])),[[1,1400,8],[4,1366.67,1],[8,1322.22,1]]);
+  assert.deepEqual(plain(r.c.futureNextCut(f)),{price:1366.67,current:false});
+  const g=r.c.applyFutureRebuyEdits(f,{contracts:''});assert.equal(g.rebuy.lowPrice,1366.67);assert.equal(r.c.futureCutDue(r.c.futureRebuySummary(g),1380),null);
 });
 
 test('신저점을 직접 넣었으면 하단 오류에 자동 신저점 문구를 쓰지 않는다',()=>{
@@ -1373,4 +1373,34 @@ test('이어서 새 손절이 되면 하단선 시세 대기 중에도 지금처
   assert.deepEqual(autoView(r),[`${goal}회`,'회차마다 1계약씩 손절']);
   r.submit('futureRebuyForm');const g=r.saved().futures;assert.ok(g.rebuy.cutRestart,'이어서 새 손절');
   assert.deepEqual(fillLater(r,g),Array(goal).fill(1));
+});
+
+
+// PR #502 1차 보완: 체결 기록·해제·이어서 새 손절로 만든 상태에서 손절 표 환율이 기록으로 움직이지 않고 k 순서로 내려가며, 알림 기준도 유지한다.
+test('체결 기록·해제·이어서 새 손절을 거쳐도 기록 없는 회차 환율과 알림 기준은 기록으로 바뀌지 않고 표 환율은 k 순서로 내려간다',()=>{
+  let seed=7;const rand=n=>{seed=(seed*1103515245+12345)%2147483648;return seed%n;};
+  const quote={updatedAt:'2026-10-04T00:00:00Z',stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-02',close:1340,ma:{}}}};
+  const r=setup(),c=r.c,open=plan=>new Map(plan.filter(x=>!x.recorded).map(x=>[x.k,x.price]));
+  const revs=f=>new Map(plain(c.buildTradeAlertRules({futures:f},quote,true)).filter(x=>x.id.startsWith('trade:future-rebuy:cut:')).map(x=>[x.id,x.revision]));
+  const ordered=(plan,label)=>plan.forEach((x,i)=>{if(i)assert.ok(x.k>plan[i-1].k&&x.price<plan[i-1].price,label);});
+  let checks=0,revChecks=0;
+  for(let hold=2;hold<=14;hold++)for(const pct of [50,100])for(const steps of [3,5,10,60])for(let run=0;run<3;run++){
+    let f={targetPrice:1480,baselinePnl:0,positions:[{month:'202612',contracts:hold,settlementPrice:1450}],levels:[],note:'',rebuy:{lowPrice:1400,floorPrice:1300,currentPrice:1290,contracts:hold,sellPct:pct,steps,cuts:[],stages:[]}};
+    for(let step=0;step<8;step++){
+      const plan=c.futureCutPlan(f),label=JSON.stringify({hold,pct,steps,run,step,cuts:f.rebuy.cuts});ordered(plan,label);
+      const pick=plan[rand(plan.length||1)],act=rand(10);
+      if(!pick)break;
+      if(act===0){const g=c.futureRestartCuts(f,false);if(g)f=g;continue;} // 이어서 새 손절(다음 회차 환율이 새 신저점)
+      const beforeOpen=open(plan),beforeRevs=revs(f),beforeRounds=c.futureRebuySummary(f).cutRounds;
+      const ok=act===1&&pick.recorded?c.setFutureCutDone(f,pick.k-1,false):c.setFutureCutQty(f,pick.k-1,String((pick.recorded?pick.qty:0)+1+rand(5)));
+      if(ok===false)continue;
+      const after=c.futureCutPlan(f),afterOpen=open(after),afterRevs=revs(f);ordered(after,label);
+      for(const [k,price] of afterOpen)if(beforeOpen.has(k)){assert.equal(price,beforeOpen.get(k),`${label} k${k} 환율`);checks++;}
+      // 회차 수는 모든 회차를 기록해 하단 추가 회차가 생길 때만 바뀐다(그때는 이전부터 남은 미기록 회차가 없다).
+      const afterRounds=c.futureRebuySummary(f).cutRounds;
+      if(afterRounds!==beforeRounds)assert.ok(![...afterOpen.keys()].some(k=>beforeOpen.has(k)),`${label} 회차 수 ${beforeRounds}→${afterRounds}`);
+      for(const [id,rev] of afterRevs)if(beforeRevs.has(id)){assert.equal(rev,beforeRevs.get(id),`${label} ${id} revision`);revChecks++;}
+    }
+  }
+  assert.ok(checks>500&&revChecks>500,`비교한 회차 환율 ${checks}개 · 알림 기준 ${revChecks}개`);
 });

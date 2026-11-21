@@ -362,13 +362,13 @@ const futureCutPrior = r => (Array.isArray(r?.cuts)?r.cuts:[]).slice(0,futureCut
 // partial 없는 기록(옛 기록 포함)은 완료로 읽는다. 부분 체결 회차의 남은 계약은 손절 목표 안에서만 남기고(넘으면 줄이고, 0이면 완료로 읽음),
 // 회차 결과의 qty는 체결(기록 없는 회차는 배정) 계약, plannedQty는 기록한 회차의 계획 계약이다.
 // 체결량 수정 후 남은 목표는 기록 없는 회차의 원래 비중으로 재배분; 기존 체결은 유지.
-// 0계약 회차를 만들지 않는다: 마지막 기록 뒤 새로 나눌 회차는 '남은 계약 − 마지막 기록 앞의 기록 없는(건너뛴) 회차'까지만 두고,
-// 비중 배분이 0계약 회차를 만들면 기록 없는 회차마다 1계약씩 먼저 두고 나머지를 원래 비중(넘는 몫)으로 나눈다.
-// 건너뛴 회차가 남은 계약보다 많아 0계약이 남는 회차는 결과에서 뺀다(k는 cuts 위치라 비지 않은 회차의 k는 그대로).
-// 기존 배분에 0계약 회차가 없으면 결과는 이전과 같다.
+// 0계약 회차: 배분은 위 규칙 그대로 두고(회차 수 n·회차 환율·비중이 체결 기록으로 바뀌지 않음), 기록 없는 회차 중 0계약 회차만 결과에서 뺀다.
+// k는 cuts 위치라 남은 회차의 k는 그대로이고, 기록한 회차는 체결 0계약이어도 남긴다. 0계약 회차가 없으면 결과는 이전과 같다.
+// 뺀 회차까지 센 회차 수 n은 futureCutLayout의 rounds로 내보내고(futureRebuySummary의 cutRounds), 알림 기준(trade-alerts.js)은 이 값을 써서
+// 0계약 회차를 빼거나 체결을 기록해도 알림 이력(revision)이 바뀌지 않게 한다.
 // 모든 회차 체결 뒤 목표를 늘렸으면 남은 수량을 하단의 추가 회차에 배정한다.
 // 이어서 새 손절이면 cuts[at]부터 1회로 다시 나눈다. k(1부터)는 언제나 cuts 위치 + 1이고(체크·알림 키), round는 이번 계획의 회차 번호(at이 있을 때만).
-function futureCutPlan(f){
+function futureCutLayout(f){
   const r=futureRebuyOf(f),low=Number(r.lowPrice)||0,floor=Number(r.floorPrice)||0,hold=futureRebuyHold(f),goal=futureCutGoal(f),records=futureCutRecords(r),at=futureCutRestart(r)?.at||0;
   const valid=Number.isFinite(low)&&Number.isFinite(floor)&&low>floor&&floor>0&&goal>0;
   const lastDone=records.reduce((n,c,i)=>c?i+1:n,0),sold=records.reduce((n,c)=>n+futureRebuyQty(c?.contracts),0);
@@ -377,21 +377,18 @@ function futureCutPlan(f){
   let n=Math.max(lastDone,valid?Math.min(60,Math.max(1,futureRebuyQty(r.steps)||10),goal):0);
   const finished=lastDone>0&&Number(records[lastDone-1]?.targetPrice)===floor&&Array.from({length:lastDone},(_,i)=>records[i]).every(Boolean);
   if(valid&&rest>0){if(finished)n=lastDone+1;else if(Array.from({length:n},(_,i)=>records[i]).every(Boolean))n++;}
-  const skipped=Array.from({length:lastDone},(_,i)=>records[i]).filter(c=>!c).length;
-  if(valid&&rest>0)n=lastDone+Math.min(n-lastDone,Math.max(0,rest-skipped)); // 새로 나눌 회차 ≤ 남은 계약 − 건너뛴 회차
-  const nominal=i=>Math.round(goal*(i+1)/n)-Math.round(goal*i/n),openAt=Array.from({length:n},(_,i)=>i).filter(i=>!records[i]);
-  const split=w=>{const total=w.reduce((a,b)=>a+b,0);let sum=0;return w.map(x=>{const before=sum;sum+=x;return total?Math.round(rest*sum/total)-Math.round(rest*before/total):0;});};
-  let shares=valid?split(openAt.map(nominal)):openAt.map(()=>0);
-  if(valid&&rest>=openAt.length&&shares.some(q=>q<1)){const more=openAt.map(i=>Math.max(0,nominal(i)-1)),w=more.some(x=>x>0)?more:openAt.map(nominal);rest-=openAt.length;shares=split(w).map(q=>q+1);rest+=openAt.length;}
-  const assigned=new Map(openAt.map((i,j)=>[i,shares[j]]));
-  let left=hold;
-  return Array.from({length:n},(_,i)=>{
+  const nominal=i=>Math.round(goal*(i+1)/n)-Math.round(goal*i/n),weights=Array.from({length:n},(_,i)=>records[i]?0:nominal(i)),openWeight=weights.reduce((a,b)=>a+b,0);
+  let pending=0,left=hold;
+  const rows=Array.from({length:n},(_,i)=>{
     const rec=records[i],target=valid?(n===1?floor:low-(low-floor)*i/(n-1)):0,price=Number(rec?.targetPrice)>0?Number(rec.targetPrice):target;
-    const qty=rec?futureRebuyQty(rec.contracts):assigned.get(i)||0,extra=rec?open[i]:0;
+    const before=pending;pending+=weights[i];
+    const qty=rec?futureRebuyQty(rec.contracts):valid&&openWeight?Math.round(rest*pending/openWeight)-Math.round(rest*before/openWeight):0,extra=rec?open[i]:0;
     left=Math.max(0,left-qty-extra);
     return {k:at+i+1,...(at?{round:i+1}:{}),price,qty,left,done:!!rec&&!extra,...(rec?{recorded:true,plannedQty:qty+extra}:{}),...(extra?{partial:true}:{}),execPrice:Number(rec?.price)>0?Number(rec.price):null};
-  }).filter(c=>!valid||c.recorded||c.qty>0);
+  });
+  return {rows:valid?rows.filter(c=>c.recorded||c.qty>0):rows,rounds:n};
 }
+function futureCutPlan(f){return futureCutLayout(f).rows;}
 // 회차에 남은 손절 계약: 부분 체결은 계획 − 체결, 기록 없는 회차는 배정 계약, 완료는 0.
 const futureCutRest = c => c.done?0:c.recorded?c.plannedQty-c.qty:c.qty;
 const futureRebuyLineRank = name => MA_UNITS.indexOf(movingLineUnit(name))*500+parseInt(name);
@@ -417,7 +414,7 @@ function futureRebuyStageIndices(r,stages){
 // 재매수 시작 뒤에도 남은 손절은 기존 목표·회차 환율로 이어 가고, 추가로 판 계약은 남은 재매수에 더한다. 보유/정산손익은 건드리지 않음.
 // 어느 방식이든 평균 손절가 위 회차는 배분한 뒤 제외한다(rebuyAboveAvg, above = 뺀 계약 수).
 function futureRebuySummary(f){
-  const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),cuts=futureCutPlan(f),filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
+  const r=futureRebuyOf(f),hold=futureRebuyHold(f),sellPct=futureRebuySellPct(f),goal=futureCutGoal(f),layout=futureCutLayout(f),cuts=layout.rows,filled=cuts.filter(c=>c.recorded),cur=Number(r.currentPrice)||0;
   const raw=futureRebuyStages(r),endLine=movingLineName(r.endLine),hasEnd=!!r.endLine||Number(r.endPrice)>0;
   const endIndex=endLine?raw.findIndex(x=>movingLineName(x.name)===endLine):hasEnd?raw.findLastIndex(x=>x.rebuyEnd===true):-1;
   const endPrice=endLine?(Number(raw[endIndex]?.price)>0?Number(raw[endIndex].price):null):Number(r.endPrice)>0?Number(r.endPrice):null;
@@ -458,7 +455,7 @@ function futureRebuySummary(f){
   const plan=stages.map((x,i)=>tranches.reduce((n,y)=>y.i===i?n+y.amount:n,0));
   const skipped=rebuySkipped(view,prices,tranches.map(x=>({...x,i:stageOrder.indexOf(x.i)}))).map(x=>({...x,i:stageOrder[x.i]})).filter(x=>active.includes(x.i));
   const nextStages=stages.map((_,i)=>{const at=stageOrder.indexOf(i);return at<0?-1:stageOrder[at+1]??-1;});
-  const summary={hold,sellPct,goal,cuts,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,cutSold,rebought,cutRebought,restart,rest,above,sellAvg,started,held,cells,priorRebought,doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
+  const summary={hold,sellPct,goal,cuts,cutRounds:layout.rounds,stages,est,plan,tranches,skipped,active,stageOrder,nextStages,waitingStart,waitingEnd,endLine,hasEnd,endPrice,endIndex,rangeError,planKeys:planned.map(([i,t])=>[stages[i].name,t]),sold,cutSold,rebought,cutRebought,restart,rest,above,sellAvg,started,held,cells,priorRebought,doneCuts:cuts.filter(c=>c.done).length,filledCuts:filled.length,doneTranches:tranches.filter(x=>x.done).length,
     ready:Number(r.lowPrice)>Number(r.floorPrice)&&Number(r.floorPrice)>0&&goal>0,overSold:cutSold>goal,overBought:rebought>sold};
   return r.directPlan?futureDirectRebuySummary(r,summary):summary;
 }
