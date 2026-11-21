@@ -348,7 +348,7 @@ function openFutureRebuyDialog(startNew=false){
   const field$=key=>inputs.find(el=>el.dataset.frField===key),lowInput=field$("lowPrice"),holdInput=field$("contracts"),holdShown=[holdInput.value,holdInput.placeholder];
   const nextCut=restartable?futureNextCut(f):null;let holdTouched=false; // 비우기만 하면 이 환율이 새 신저점(futureRestartCuts)
   const syncRestart=()=>{
-    if(lowKeep){$("frRestartNote").hidden=moneyInputNumber(lowInput.value)>0;$("frRestartNote").textContent="지난 손절 기록이 있어 신저점을 비워도 지우지 않고 그대로 둡니다.";return;}
+    if(lowKeep){$("frRestartNote").hidden=moneyInputNumber(lowInput.value)>0;$("frRestartNote").textContent="지난 손절 기록이 있어 신저점을 비워도 지우지 않고 그대로 둡니다. ";return;} // 끝 공백: 뒤에 보이는 frHintBase(손절 기록이 있어 locked 안내)와 띄운다
     if(!restartable)return;const v=moneyInputNumber(lowInput.value),cleared=!(v>0)&&Number(r.lowPrice)>0,moved=v>0&&v!==Number(r.lowPrice)||cleared; // 비워도 이어서 새 손절(자동 신저점)
     if(!holdTouched)[holdInput.value,holdInput.placeholder]=moved?["",`자동 · ${restartHold}계약`]:holdShown;
     const on=moved||Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="";$("frRestartNote").hidden=!on;$("frHintBase").hidden=on; // 고정 값을 비워도 이어서 새 손절

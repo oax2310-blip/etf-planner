@@ -427,6 +427,8 @@ test('이어서 새 손절로 다시 짠 뒤 새 회차 체결 전에 신저점�
   const first=r.saved().futures.rebuy;assert.equal(first.lowPrice,1344.44);assert.deepEqual(first.cutRestart,{at:5,rebought:3});
   r.c.renderFutures();r.el('frEdit').onclick();r.type('[data-fr-field="lowPrice"]','');
   assert.equal(r.el('frRestartNote').hidden,false);assert.match(r.el('frRestartNote').textContent,/신저점을 비워도 지우지 않고 그대로 둡니다/);
+  assert.equal(r.el('frHintBase').hidden,false);const hintBase=r.el('futureRebuyDialog').innerHTML.match(/id="frHintBase">([^<]*)</)[1];
+  assert.match(r.el('frRestartNote').textContent+hintBase,/그대로 둡니다\. 남은 손절 회차만 다시 나눕니다\./,'보이는 두 안내 사이를 한 칸 띄운다');
   r.submit('futureRebuyForm');assert.equal(r.el('futureRebuyError').textContent,'');
   const g=r.saved().futures,s=r.c.futureRebuySummary(g);
   assert.equal(g.rebuy.lowPrice,1344.44,'신저점이 지워지거나 한 회차 더 내려가지 않는다');assert.deepEqual(g.rebuy.cutRestart,{at:5,rebought:3});
@@ -452,6 +454,11 @@ test('신저점을 비워도 그대로 남는 신저점 이상으로 하단을 �
   // (A) 옮길 회차가 없어 다시 짜도 신저점 1,400원이 그대로 남는다.
   {const {r,f}=clearPlan();f.rebuy.currentPrice=1410;r.c.renderFutures();r.el('frEdit').onclick();
     r.type('[data-fr-field="lowPrice"]','');r.type('[data-fr-field="floorPrice"]','1405');
+    const before=JSON.stringify(r.c.state);r.submit('futureRebuyForm');const msg=r.el('futureRebuyError').textContent;
+    assert.match(msg,/손절 하단은 그대로 두는 신저점 1,400원보다 낮게/);assert.doesNotMatch(msg,generic);assert.equal(JSON.stringify(r.c.state),before);}
+  // (A) 경계: 하단이 그대로 두는 신저점과 같아도(1,400원) 같은 이유로 저장하지 않는다.
+  {const {r,f}=clearPlan();f.rebuy.currentPrice=1410;r.c.renderFutures();r.el('frEdit').onclick();
+    r.type('[data-fr-field="lowPrice"]','');r.type('[data-fr-field="floorPrice"]','1400');
     const before=JSON.stringify(r.c.state);r.submit('futureRebuyForm');const msg=r.el('futureRebuyError').textContent;
     assert.match(msg,/손절 하단은 그대로 두는 신저점 1,400원보다 낮게/);assert.doesNotMatch(msg,generic);assert.equal(JSON.stringify(r.c.state),before);}
   // (B) 다시 짠 뒤 새 체결 전이라 비워도 신저점 1,344.44원이 그대로 남는다.
