@@ -242,7 +242,7 @@ const partialRow=(filled,left)=>new RegExp(`<small>남은 ${left}주</small>[\\s
 // 매수대기 진행 카드(purchases.js waitCard) 부분
 const waitCard=r=>{const html=r.html();return html.slice(html.indexOf('<section class="card buy-track buy-wait"'),html.indexOf('<div class="control-grid">'));};
 // 계획 진행 카드(purchases.js statusCard)의 상태 칩과 완료/전체 회차
-const summaryCard=r=>{const html=r.html();return html.slice(html.indexOf('<section class="card bp-sum'),html.indexOf('<div class="control-grid">'));};
+const summaryCard=r=>{const html=r.html();return html.slice(html.indexOf('<section class="card bp-sum'),html.indexOf('<div class="section-heading">'));};
 const countText=(done,count)=>new RegExp(`<span class="bp-count[^"]*">${done} / ${count}회 완료 \\(${count?Math.round(done/count*100):0}%\\)`);
 const trackStatus=(status,done,count)=>new RegExp(`buy-track-chip[^"]*">${status}</span>.*?<div class="buy-track-count"><b>${done}</b><span>/ ${count}회</span>`);
 function linkedAccounts(r,{ticker=r.item.ticker,tradeTicker='333333',price=20000}={}){
@@ -846,7 +846,7 @@ test('요약 카드: 진행 막대는 완료와 도달·부분 체결을 이어 
   assert.match(card(r),/<strong class="bp-now">₩9000<\/strong><span class="bp-next">다음 25일선 1차 \+11\.1%<\/span>/);
   assert.match(card(r),/<div class="bp-bar" role="img" aria-label="4회 중 0회 완료"><i class="" style="width:0\.00%"><\/i><\/div>/);
   assert.match(card(r),countText(0,4));assert.doesNotMatch(card(r),/bp-due|buy-track-note|data-purchase-act/);
-  assert.doesNotMatch(r.html(),/계산 요약|purchase-summary|남은 매수 금액/,'돌파 계획은 계산 요약 카드 없이 메모만 둔다');assert.match(r.html(),/<div class="control-grid"><section class="card panel memo">/);
+  assert.doesNotMatch(r.html(),/계산 요약|purchase-summary|남은 매수 금액|class="card panel memo"/,'돌파 계획은 계산 요약·메모 카드 없이 계좌 펼침 안 메모 줄만 둔다');assert.match(r.html(),/<div class="bp-memo"><span class="bp-memo-text empty">메모 없음<\/span>/);
   const before=JSON.stringify(r.doc);r.prices.stocks['111111'].close=12500;r.render();
   assert.match(card(r),/<span class="bp-badge due"><i class="bp-pulse"><\/i>도달 2회 · 미체결<\/span>/);
   assert.match(card(r),/aria-label="4회 중 0회 완료, 도달 2회"><i class="warm" style="width:50\.00%;--edge:0\.0%"><\/i>/,'도달 2회만큼 따뜻한 구간');
@@ -2324,4 +2324,13 @@ test('계좌 · 설정은 연결 계좌 목록을 화면에서만 펼치고 접�
   toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);r.element('purchaseAccountToggle').onclick();
   assert.equal(r.inputs('[data-purchase-account-delete]').length,0,'접으면 삭제 모드도 끝남');
   assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0,'펼침은 저장하지 않음');
+});
+test('메모는 계좌 · 설정 펼침 안의 한 줄로 첫 줄만 보이고 [편집 ›]에서 그 자리에서 고쳐 저장하며, 취소는 저장하지 않는다',()=>{
+  const r=setup();r.item.buyPlan.note='<첫> 줄\n둘째 줄';r.render();let writes=0;const save=r.store.saveSection;r.store.saveSection=x=>{writes++;return save(x);};
+  assert.match(r.html(),/<span class="bp-memo-text">메모: &lt;첫&gt; 줄<\/span>/,'첫 줄만, 이스케이프');assert.match(r.html(),/id="purchaseMemoEditor" hidden>/);
+  r.element('purchaseMemoEdit').onclick();assert.match(r.html(),/<div class="bp-memo" hidden>/);assert.match(r.html(),/id="purchaseAccountDrawer">/,'편집하면 펼침도 열림');
+  r.element('purchaseMemo').value='바뀐 메모';r.element('purchaseMemoCancel').onclick();assert.equal(writes,0);assert.equal(r.item.buyPlan.note,'<첫> 줄\n둘째 줄','취소는 저장하지 않음');
+  r.element('purchaseMemoEdit').onclick();r.element('purchaseMemo').value='바뀐 메모';r.element('savePurchaseNote').onclick();
+  assert.equal(r.item.buyPlan.note,'바뀐 메모');assert.equal(writes,1);assert.match(r.html(),/<span class="bp-memo-text">메모: 바뀐 메모<\/span>/);assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'저장하면 닫힘');
+  r.element('purchaseMemoEdit').onclick();r.element('purchaseMemo').value='  ';r.element('savePurchaseNote').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false,'비우면 필드를 지움');
 });
