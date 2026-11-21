@@ -227,9 +227,11 @@ function applyFutureRebuyEdits(f,edits){
 }
 // 저장할 수 없을 때 창에 보일 이유(values = 창의 모든 칸 글자, 하단선을 골랐으면 floorLine과 그 선의 시세 floorPrice).
 // autoLow = 다시 짤 때 자동으로 옮긴 새 신저점(futureRestartCuts, 신저점을 직접 입력하지 않았을 때만).
-function futureRebuyEditError(f,values,autoLow=0){
+// keptLow = 신저점 칸을 비웠지만 적용하지 않아(futureLowKept) 그대로 남는 신저점(옮기지 않았을 때만). 창의 신저점 칸은 비어 0이므로 하단 검사는 이 값으로 한다.
+function futureRebuyEditError(f,values,autoLow=0,keptLow=0){
   const n=key=>Number(values[key])||0,sold=futureCutRecords(futureRebuyOf(f)).reduce((m,c)=>m+futureRebuyQty(c?.contracts),0);
   if(autoLow>0&&n("floorPrice")>0&&autoLow<=n("floorPrice"))return `다시 짤 때 자동으로 정한 새 신저점 ${fmtPrice(autoLow)}원이 손절 하단 이하라 저장할 수 없습니다. 신저점을 직접 입력하면 저장할 수 있습니다.`;
+  if(keptLow>0&&n("floorPrice")>0&&keptLow<=n("floorPrice"))return values.floorLine?futureFloorAbove(values.floorLine,n("floorPrice")):`손절 하단은 그대로 두는 신저점 ${fmtPrice(keptLow)}원보다 낮게 입력하세요.`;
   if(n("lowPrice")>0&&n("floorPrice")>0&&n("lowPrice")<=n("floorPrice"))return values.floorLine?futureFloorAbove(values.floorLine,n("floorPrice")):"손절 하단은 신저점 환율보다 낮게 입력하세요.";
   const pct=String(values.sellPct??"").trim()===""?50:Number(values.sellPct);
   if(sold&&futureCutGoal(f,pct,String(values.contracts??"").trim()===""?futureRebuyAutoHold(f):n("contracts"))<sold)return `손절 목표(이탈 전 계약 수 × 손절 비중)가 이미 손절한 ${sold}계약보다 작아집니다.`;
@@ -418,7 +420,8 @@ function openFutureRebuyDialog(startNew=false){
     }
     const latest=state.futures,base=startNew?futureNewStopBase(latest):latest,g=applyFutureRebuyEdits(base,edits);
     const editBase=futureRebuyEditBase(base,edits),autoLow=editBase!==base&&!(Number(edits.lowPrice)>0)&&Number(futureRebuyOf(editBase).lowPrice)!==Number(futureRebuyOf(base).lowPrice)?Number(futureRebuyOf(editBase).lowPrice)||0:0; // 실제로 자동 이동했을 때만
-    if(!g){error.textContent=futureRebuyEditError(editBase,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})},autoLow);return;}
+    const keptLow=!autoLow&&futureLowKept(base,edits)?Number(futureRebuyOf(editBase).lowPrice)||0:0; // 비운 신저점 칸을 적용하지 않아 그대로 남는 신저점
+    if(!g){error.textContent=futureRebuyEditError(editBase,{...Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),...(line?{floorLine:line,floorPrice:String(lineValue(line)||"")}:{})},autoLow,keptLow);return;}
     const priced=priceData&&Object.keys(edits).some(key=>key!=="currentPrice");if(priced)fillPrices({futures:g},priceData);
     const gl=futureFloorLine(g.rebuy.floorLine),floor=Number(g.rebuy.floorPrice)||0; // 새로 고른 하단선·신저점은 지금 시세로 하단이 신저점보다 낮은지 확인한다
     if(gl&&(Object.hasOwn(edits,"floorLine")||Object.hasOwn(edits,"lowPrice"))&&floor>0&&Number(g.rebuy.lowPrice)>0&&floor>=Number(g.rebuy.lowPrice)){error.textContent=futureFloorAbove(gl,floor);return;}

@@ -447,6 +447,20 @@ test('이탈 전 계약 수 자동·분할 횟수 자동에서 신저점을 비�
   r.type('[data-fr-field="lowPrice"]','');r.type('[data-fr-field="floorPrice"]','1380');
   assert.deepEqual(steps(),['20회','회차마다 1계약씩 손절'],'하단이 새 신저점 이상이라 표를 못 만들어도 다시 짠 뒤 보유 20계약으로 어림');
 });
+test('신저점을 비워도 그대로 남는 신저점 이상으로 하단을 넣으면 하단 이유를 보이고 저장하지 않는다',()=>{
+  const generic=/이탈 전 계약 수는 정수로/;
+  // (A) 옮길 회차가 없어 다시 짜도 신저점 1,400원이 그대로 남는다.
+  {const {r,f}=clearPlan();f.rebuy.currentPrice=1410;r.c.renderFutures();r.el('frEdit').onclick();
+    r.type('[data-fr-field="lowPrice"]','');r.type('[data-fr-field="floorPrice"]','1405');
+    const before=JSON.stringify(r.c.state);r.submit('futureRebuyForm');const msg=r.el('futureRebuyError').textContent;
+    assert.match(msg,/손절 하단은 그대로 두는 신저점 1,400원보다 낮게/);assert.doesNotMatch(msg,generic);assert.equal(JSON.stringify(r.c.state),before);}
+  // (B) 다시 짠 뒤 새 체결 전이라 비워도 신저점 1,344.44원이 그대로 남는다.
+  {const {r,f}=clearPlan();f.rebuy.steps=10;r.c.renderFutures();r.el('frEdit').onclick();r.type('[data-fr-field="lowPrice"]','');r.submit('futureRebuyForm');
+    assert.equal(r.c.state.futures.rebuy.lowPrice,1344.44);r.c.renderFutures();r.el('frEdit').onclick();
+    r.type('[data-fr-field="lowPrice"]','');r.type('[data-fr-field="floorPrice"]','1350');
+    const before=JSON.stringify(r.c.state);r.submit('futureRebuyForm');const msg=r.el('futureRebuyError').textContent;
+    assert.match(msg,/손절 하단은 그대로 두는 신저점 1,344\.4원보다 낮게/);assert.doesNotMatch(msg,generic);assert.equal(JSON.stringify(r.c.state),before);}
+});
 test('신저점을 비워 다시 짤 때 옮길 회차가 없으면 신저점을 그대로 둔다고 알린다',()=>{
   const {r,f}=clearPlan();f.rebuy.currentPrice=1410;r.c.renderFutures();r.el('frEdit').onclick();
   r.type('[data-fr-field="lowPrice"]','');assert.match(r.el('frRestartNote').textContent,/^신저점은 그대로 두고, 지금 보유 기준으로/);
