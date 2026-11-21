@@ -215,10 +215,10 @@ function markFutureRebuyManual(f){
 // 하나도 통과하지 못하면 null(원본은 그대로). 호출하는 쪽이 f.rebuy를 사본의 rebuy로 바꾼다.
 // 하단선(floorLine)은 먼저 적용한다(새 선을 고르면 하단 가격을 지워 시세를 기다리므로 신저점 검사가 옛 하단에 걸리지 않음).
 // 이번 손절 계획에 체결이 있는데 신저점을 바꾸거나 비우거나 고정한 이탈 전 계약 수를 비우면 이어서 새 손절로 적용한다(futureRebuyEditBase).
-// 신저점을 비워 이어서 새 손절이 되면 신저점은 futureRestartCuts가 자동으로 정하므로 비운 신저점 칸은 적용하지 않는다.
+// 손절 기록이 있는 계획에서 비운 신저점 칸은 적용하지 않는다(futureLowKept): 이어서 새 손절이면 futureRestartCuts가 신저점을 정하고, 아니면 저장된 신저점을 그대로 둔다.
 function applyFutureRebuyEdits(f,edits){
   const base=futureRebuyEditBase(f,edits);
-  if(base!==f&&futureLowCleared(edits)){edits={...edits};delete edits.lowPrice;}
+  if(futureLowKept(f,edits)){edits={...edits};delete edits.lowPrice;}
   for(const prices of [["lowPrice","floorPrice"],["floorPrice","lowPrice"]])for(const goal of [["contracts","sellPct"],["sellPct","contracts"]]){
     const g=JSON.parse(JSON.stringify(base));
     if(["floorLine",...prices,...goal,"steps","currentPrice"].every(key=>!Object.hasOwn(edits,key)||setFutureRebuyField(g,key,String(edits[key]))!==false))return g;
@@ -241,7 +241,8 @@ const futureFloorAbove=(line,floor)=>`손절 하단 ${movingLineText(line)}(${fm
 // 아니면 원본을 돌려준다. 이탈 전 계약 수를 함께 고치지 않았으면 고정 값을 지워 지금 보유 기준(자동)으로 다시 센다.
 // 직접 입력해 둔 이탈 전 계약 수를 비워도 같다: 이번 손절의 미복원 계약(재매수로 되찾을지 모르는 계약)을 손절 기준에 넣지 않고 지금 보유로 다시 짠다.
 // 저장된 신저점을 비워도 같다: 신저점을 지우지 않고 다음 미체결 손절 회차 환율(futureNextCut, 없으면 그대로)을 새 신저점으로 이어서 다시 짠다.
-// 체결 기록이 없으면 비운 신저점은 그대로 지운다(아직 손절을 시작하지 않은 계획).
+// 이어서 새 손절로 다시 짠 뒤 새 회차 체결이 없으면(지난 손절 기록만 있음) 비운 신저점으로 다시 짜지 않고 저장된 신저점을 그대로 둔다
+// (같은 칸을 다시 비울 때마다 신저점이 한 회차씩 내려가지 않게, futureLowKept). 손절 기록이 전혀 없으면 비운 신저점은 그대로 지운다(아직 손절을 시작하지 않은 계획).
 function futureRebuyEditBase(f,edits){
   const low=Object.hasOwn(edits,"lowPrice")?Number(edits.lowPrice):0,r=futureRebuyOf(f),cleared=Object.hasOwn(r,"contracts")&&Object.hasOwn(edits,"contracts")&&String(edits.contracts).trim()==="";
   const lowCleared=futureLowCleared(edits)&&Number(r.lowPrice)>0;
@@ -249,6 +250,8 @@ function futureRebuyEditBase(f,edits){
 }
 // 바꾼 칸에 신저점을 비운(0 또는 빈 글자) 값이 들어 있는지. 창은 비운 금액 칸을 0으로 넘긴다(dialogEdits).
 const futureLowCleared = edits => Object.hasOwn(edits,"lowPrice")&&!(Number(edits.lowPrice)>0);
+// 비운 신저점 칸을 적용하지 않을지: 저장된 신저점이 있고 지난 손절을 포함한 손절 기록(cuts 전체, 이어서 새 손절의 at 앞 포함)이 있으면 true.
+const futureLowKept = (f,edits) => {const r=futureRebuyOf(f);return futureLowCleared(edits)&&Number(r.lowPrice)>0&&Array.isArray(r.cuts)&&r.cuts.some(Boolean);};
 // 이어서 새 손절 사본: 지난 손절·재매수 기록, 평균 손절가, 재매수 기준·고정 계획, 알림 설정은 그대로 두고
 // cutRestart = {at: 마지막 손절 기록 다음 cuts 위치, rebought: 지금까지 재매수한 계약}을 저장한다(rebuy.js futureCutRestart). 지난 미체결 손절 회차는 끝난다.
 // 회차 환율(targetPrice)이 없는 지난 기록은 지금 회차 환율을 남겨 평균 손절가가 바뀌지 않게 한다. auto면 이탈 전 계약 수를 지워 자동으로 센다.
@@ -308,7 +311,8 @@ function openFutureRebuyDialog(startNew=false){
   // 분할 횟수: 자동 = steps 60(futureCutPlan 회차 수 = min(60, 분할 횟수, 손절 목표)라 목표 60계약까지 회차마다 1계약). 새 필드 없이 최대값으로 저장하고, 60이면 자동으로 연다.
   // 자동인 동안 숫자 칸은 비활성이라 바꾼 칸에 들어가지 않고, 저장할 때 자동으로 바꿨을 때만 steps 60을 넣는다. 비어 있는 옛 기록은 지금처럼 직접 10회.
   const stepsAuto=futureRebuyQty(r.steps)===FUTURE_CUT_AUTO_STEPS,stepsField=`<div class="field future-steps"><span>분할 횟수</span><div class="hold-input"><input data-fr-field="steps" type="number" min="1" max="60" step="1" inputmode="numeric" value="${stepsAuto?"":futureRebuyQty(r.steps)||10}" aria-label="분할 횟수"${stepsAuto?" disabled":""}><select id="frStepsMode" aria-label="분할 횟수 방식"><option value="auto"${stepsAuto?" selected":""}>자동</option><option value="direct"${stepsAuto?"":" selected"}>직접</option></select></div><small id="frStepsNote"></small></div>`;
-  const hasUnlinked=unlinked&&(unlinked.cuts>0||unlinked.buys>0),restartable=!startNew&&futureCutRecords(r).some(Boolean); // 신저점을 바꾸거나 고정한 이탈 전 계약 수를 비우면 이어서 새 손절
+  const hasUnlinked=unlinked&&(unlinked.cuts>0||unlinked.buys>0),restartable=!startNew&&futureCutRecords(r).some(Boolean); // 신저점을 바꾸거나 비우거나 고정한 이탈 전 계약 수를 비우면 이어서 새 손절
+  const lowKeep=!startNew&&!restartable&&futureLowKept(f,{lowPrice:0}); // 지난 손절 기록만 있으면 신저점을 비워도 그대로 둔다
   const restartHold=restartable?futureRebuyAutoHold(futureRestartCuts(f,true)):0,autoHold=restartable&&Object.hasOwn(r,"contracts")?restartHold:futureRebuyAutoHold(f); // 칸을 비웠을 때의 자동 값
   const hint=locked?"남은 손절 회차만 다시 나눕니다. 평균 손절가·재매수는 그대로입니다.":"",autoNote=" 이탈 전 계약 수를 비우면 보유로 자동 계산합니다."; // 손절 기준 수정 창 아래 안내(짧게)
   dialog.innerHTML=`<form id="futureRebuyForm" class="dialog-inner" novalidate><div class="dialog-head"><h2 id="futureRebuyTitle">${startNew?"새 손절 계획":"손절 기준 수정"}</h2><button class="btn ghost" type="button" data-close-future-rebuy>닫기</button></div>
@@ -318,7 +322,7 @@ function openFutureRebuyDialog(startNew=false){
     <button class="btn mini ghost" id="frBackup" type="button">플래너 JSON 백업</button>`:s.started?"":'<p class="hint">신저점부터 하단까지 고르게 나눠 비중만큼 손절합니다. 하단은 가격이나 일·주·월선으로 정합니다.</p>'}
     <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'data-money-min="0" data-money-step="any"')}${floorField}${field("contracts","이탈 전 계약 수",Object.hasOwn(r,"contracts")?futureRebuyQty(r.contracts):"",`min="0" step="1" inputmode="numeric" placeholder="자동 · ${autoHold}계약"`)}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${stepsField}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'data-money-min="0" data-money-step="any" placeholder="시세 없음"',false)}</div>
     ${startNew?'<p class="hint"><output id="frNewGoal" aria-live="polite"></output></p>':""}
-    <p class="hint">${restartable?'<span id="frRestartNote" hidden>지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.</span>':""}<span id="frHintBase">${hint}</span>${autoNote}${s.cuts.length===1?" 1회 계획은 하단에서 손절합니다.":""}${fe?"":" 시세가 없어 현재 환율은 직접 넣습니다."}</p>
+    <p class="hint">${restartable||lowKeep?'<span id="frRestartNote" hidden>지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.</span>':""}<span id="frHintBase">${hint}</span>${autoNote}${s.cuts.length===1?" 1회 계획은 하단에서 손절합니다.":""}${fe?"":" 시세가 없어 현재 환율은 직접 넣습니다."}</p>
     <p class="future-plan-error" id="futureRebuyError" role="alert"></p><div class="dialog-foot">${!startNew&&locked?'<button class="btn ghost" id="frNewPlan" type="button">새 손절 계획</button>':""}<button class="btn" type="button" data-close-future-rebuy>취소</button><button class="btn primary" id="frSubmit" type="submit"${hasUnlinked?" disabled":""}>${startNew?"보관하고 시작":"저장"}</button></div></form>`;
   const inputs=[...dialog.querySelectorAll("[data-fr-field]")],initial=Object.fromEntries(inputs.map(el=>[el.dataset.frField,el.value])),error=$("futureRebuyError");
   const price=dialog.querySelector('[data-fr-field="floorPrice"]'),period=$("frFloorPeriod"),unit=$("frFloorUnit"),floorNote=$("frFloorPrice");
@@ -338,13 +342,15 @@ function openFutureRebuyDialog(startNew=false){
   // 신저점을 다른 값으로 바꾸면 안내를 보이고, 이탈 전 계약 수를 고치지 않았으면 칸을 비워 이어서 새 손절 뒤의 자동 기준(지금 보유)을 보인다.
   // 고정한 이탈 전 계약 수를 비워도 같은 안내를 보이되, 신저점을 그대로 두면 다음 미체결 회차 환율이 새 신저점이 된다고 알린다.
   // 저장된 신저점을 비우면 바꾼 것과 같이 칸을 비워 자동 기준을 보이고, 다음 미체결 회차 환율이 새 신저점이 된다고 알린다(futureRebuyEditBase).
+  // 비우기만 했는데 옮길 회차가 없으면(futureNextCut null) 신저점은 그대로 둔다고 알린다. 지난 손절 기록만 있으면(lowKeep) 비워도 신저점을 그대로 둔다고만 알린다.
   const field$=key=>inputs.find(el=>el.dataset.frField===key),lowInput=field$("lowPrice"),holdInput=field$("contracts"),holdShown=[holdInput.value,holdInput.placeholder];
   const nextCut=restartable?futureNextCut(f):null;let holdTouched=false; // 비우기만 하면 이 환율이 새 신저점(futureRestartCuts)
   const syncRestart=()=>{
+    if(lowKeep){$("frRestartNote").hidden=moneyInputNumber(lowInput.value)>0;$("frRestartNote").textContent="지난 손절 기록이 있어 신저점을 비워도 지우지 않고 그대로 둡니다.";return;}
     if(!restartable)return;const v=moneyInputNumber(lowInput.value),cleared=!(v>0)&&Number(r.lowPrice)>0,moved=v>0&&v!==Number(r.lowPrice)||cleared; // 비워도 이어서 새 손절(자동 신저점)
     if(!holdTouched)[holdInput.value,holdInput.placeholder]=moved?["",`자동 · ${restartHold}계약`]:holdShown;
     const on=moved||Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="";$("frRestartNote").hidden=!on;$("frHintBase").hidden=on; // 고정 값을 비워도 이어서 새 손절
-    $("frRestartNote").textContent=`${on&&(!moved||cleared)&&nextCut?`${nextCut.current?"현재 환율과 하단의 중간":"다음 손절 회차"} ${fmtPrice(nextCut.price)}원을 신저점으로 삼아, `:""}지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.`;
+    $("frRestartNote").textContent=`${on&&(!moved||cleared)?nextCut?`${nextCut.current?"현재 환율과 하단의 중간":"다음 손절 회차"} ${fmtPrice(nextCut.price)}원을 신저점으로 삼아, `:"신저점은 그대로 두고, ":""}지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.`;
   };
   if(startNew)$("frBackup").onclick=()=>$("exportBtn").click();
   dialog.querySelectorAll("[data-close-future-rebuy]").forEach(b=>b.onclick=()=>dialog.close());
