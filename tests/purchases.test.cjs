@@ -2341,3 +2341,40 @@ test('메모는 계좌 · 설정 펼침 안의 한 줄로 첫 줄만 보이고 [
   assert.equal(r.item.buyPlan.note,'바뀐 메모');assert.equal(writes,1);assert.match(r.html(),/<span class="bp-memo-text">메모: 바뀐 메모<\/span>/);assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'저장하면 닫힘');
   r.element('purchaseMemoEdit').onclick();r.element('purchaseMemo').value='  ';r.element('savePurchaseNote').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false,'비우면 필드를 지움');
 });
+test('완료 뒤 [체결가 수정]의 대상은 접힌 회차표에서도 보이는 마지막 완료 회차(last-done)의 체결가 입력이다',()=>{
+  const r=setup({budget:100,end:null,names:['25일선','32일선'],price:20000,ma:{'25일선':10000,'32일선':16000}});
+  for(const x of r.inputs('[data-purchase-buy]')){const box=r.inputs('[data-purchase-buy]').find(y=>y.dataset.key===x.dataset.key);box.checked=true;box.onchange();}
+  assert.match(r.html(),/class="card table-card purchase-table hide-completed/,'완료 회차는 접힌 기본 상태');
+  const target=r.input('[data-purchase-exec-focus]').dataset.key;
+  const last=r.html().match(/<div class="purchase-row[^"]*\blast-done\b[^"]*">[\s\S]*?data-purchase-exec="a" data-key="([^"]+)"/);
+  assert.ok(last,'last-done 회차에 체결가 입력이 있음');assert.equal(target,last[1],'접혀도 보이는(last-done) 회차를 고름');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/\.purchase-table\.hide-completed \.purchase-row\.done:not\(\.last-done\)\{display:none\}/);
+  const focused=[];for(const e of r.inputs('[data-purchase-exec]'))e.focus=()=>focused.push(e.dataset.key);r.input('[data-purchase-exec-focus]').onclick();assert.deepEqual(focused,[target]);
+});
+test('반영 계좌가 없어진 부분 체결 회차는 회차표 체크박스처럼 하단 [체결] 버튼도 끄고, 계획 수량을 모르는 부분 체결은 음수 없이 잔량 체결로 보인다',()=>{
+  const r=setup({budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}}),{move}=linkedAccounts(r);move('b',-1);
+  const x=r.inputs('[data-purchase-buy-shares]').find(x=>x.dataset.key==='25일선:0');x.value='1';x.onchange();assert.equal(r.item.buyPlan.buys['25일선:0'].tradeTargetId,'b');
+  r.doc.allocation.groups[1].items=r.doc.allocation.groups[1].items.filter(x=>x.id!=='b');r.render();
+  const box=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key==='25일선:0'),act=r.inputs('[data-purchase-act]').filter(x=>x.dataset.key==='25일선:0');
+  assert.equal(box.disabled,true,'회차표 체크박스는 꺼짐');assert.ok(act.length);for(const b of act)assert.equal(b.disabled,true,'하단 [체결] 버튼도 꺼짐');
+  const m=setup({manual:true,price:10500});
+  m.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8,done:true,actual:8},{id:'s2',partial:true,actual:3.06},{id:'s3',price:10400,shares:8,amount:8.4}];
+  m.doc.allocation.trades={'buy:a:s2':{qty:3,price:10200,value:3.06,items:[{id:'a',shares:3}]}};m.render();
+  const main=mainButton(m);assert.equal(main.dataset.stage,'1');assert.equal(main.disabled,true);
+  assert.match(m.html(),/>✓ 2차 잔량 체결<\/button>/);assert.doesNotMatch(m.html().match(/<div class="bp-dock">[\s\S]*?<\/div>/)[0],/남은 [−-]?\d/,'계획 수량을 모르면 남은 수량 숫자를 쓰지 않음');
+  const over=setup({manual:true,price:10500});over.item.buyPlan.stages=[{id:'s1',price:10200,shares:10,plannedShares:8,amount:8.2,partial:true,actual:10.2},{id:'s2',price:10400,shares:8,amount:8.4}];over.render();
+  assert.match(over.html(),/>✓ 1차 남은 0주 체결<\/button>/,'옛 기록에서 체결이 계획보다 많아도 음수를 쓰지 않음');
+});
+test('계좌 상자를 접으면 메모 편집도 닫혀 다시 펼치면 메모 한 줄로 보인다',()=>{
+  const r=setup();r.item.buyPlan.note='메모';r.render();
+  r.element('purchaseMemoEdit').onclick();assert.match(r.html(),/id="purchaseMemoEditor">/);
+  r.element('purchaseAccountToggle').onclick();r.element('purchaseAccountToggle').onclick();
+  assert.match(r.html(),/id="purchaseMemoEditor" hidden>/);assert.match(r.html(),/<div class="bp-memo"><span class="bp-memo-text">메모: 메모<\/span>/);
+});
+test('곡선 카드: 말풍선과 겹치지 않게 강조 점이 시작점이면 시작 가격을, 끝 쪽(지점 2개의 끝 포함)이면 끝 가격을 점 아래에 둔다',()=>{
+  const labelBelow=(html,cls,anchor)=>{const core=Number(html.match(/class="bp-core[^"]*"/)&&html.match(/<circle cx="[\d.]+" cy="([\d.]+)" r="5\.5" class="bp-core/)[1]);const y=Number(html.match(new RegExp(`<text x="[\\d.]+" y="([\\d.]+)" class="bp-t ${cls}" text-anchor="${anchor}">`))[1]);return y>core;};
+  const first=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
+  assert.ok(labelBelow(first.html(),'mint','start'),'1회차 전: 시작 가격 글자는 점 아래');assert.ok(!labelBelow(first.html(),'blue','end'),'끝 가격 글자는 그대로 위');
+  const two=setup({manual:true,price:9000});two.item.buyPlan.stages=[{id:'s1',price:8000,shares:8,amount:8,done:true,actual:6.4},{id:'s2',price:10000,shares:8,amount:8}];two.render();
+  assert.match(two.html(),/class="bp-x[^"]*on[^"]*"[^>]*>2차/,'지점 2개 중 끝이 강조');assert.ok(labelBelow(two.html(),'blue','end'),'지점 2개의 끝 강조: 끝 가격 글자는 점 아래');
+});

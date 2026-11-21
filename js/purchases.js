@@ -401,8 +401,8 @@ function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,
   const ai=pts.findIndex(p=>p.focus),warn=ai>=0&&isWarn(focus),fa=ai<0?100:ai/(n-1)*100,st=(o,c,a=1)=>`<stop offset="${Math.max(0,Math.min(100,o)).toFixed(1)}%" stop-color="${c}" stop-opacity="${a}"/>`;
   const line=complete||ai<0?st(0,"var(--bp-mint)")+st(100,"var(--bp-mint)"):warn?st(0,"var(--bp-mint)")+st(fa-14,"var(--bp-mint)")+st(fa-5,"var(--bp-orange)")+st(fa+5,"var(--bp-orange)")+st(fa+12,"var(--bp-blue)")+st(100,"var(--bp-blue)"):st(0,"var(--bp-mint)")+st(fa,"var(--bp-mint)")+st(fa+6,"var(--bp-blue)")+st(100,"var(--bp-blue)");
   const area=complete||ai<0?st(0,"var(--bp-mint)",.3)+st(100,"var(--bp-mint)",.26):st(0,"var(--bp-mint)",.3)+st(fa,"var(--bp-mint)",.24)+st(fa+6,"var(--bp-blue)",.3)+st(100,"var(--bp-blue)",.36);
-  const lastP=main.at(-1),nearEnd=ai>=n-2&&n>2,txt=(x,y,t,cls,anchor="middle")=>`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
-  let marks=txt(main[0].x-4,main[0].y-11,escA(rowPt(pts[0].row.price)),"bp-t mint","start")+txt(lastP.x+4,nearEnd?lastP.y+30:lastP.y-12,escA(rowPt(pts.at(-1).row.price)),`bp-t ${complete?"mint":"blue"}`,"end");
+  const lastP=main.at(-1),nearEnd=ai>0&&ai>=n-2,atStart=ai===0,txt=(x,y,t,cls,anchor="middle")=>`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
+  let marks=txt(main[0].x-4,atStart?main[0].y+24:main[0].y-11,escA(rowPt(pts[0].row.price)),"bp-t mint","start")+txt(lastP.x+4,nearEnd?lastP.y+30:lastP.y-12,escA(rowPt(pts.at(-1).row.price)),`bp-t ${complete?"mint":"blue"}`,"end");
   if(avgD){const e=avgPts.at(-1);marks+=`<circle cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="3.2" class="bp-avg-dot"/>`+txt(e.x+4,e.y+20,`최종 ${escA(rowPt(avg.end))}`,"bp-t mint","end");}
   if(ai>=0){
     const p=main[ai],f=pts[ai].row,sub=f.recorded&&!f.done&&f.plannedShares!==null?`${qtyText(f.shares,f.tradeItem)}/${qtyText(f.plannedShares,f.tradeItem)} 체결`:avgOf(pts[ai])>0?`평단 ${rowPt(avgOf(pts[ai]))}`:"";
@@ -516,7 +516,7 @@ function renderPurchases(){
     const complete=p.count>0&&p.done===p.count,focus=partialRows[0]||dueRows[0]||next||null,pctDone=p.count?Math.round(p.done/p.count*100):0;
     const execOf=r=>{const b=r.line?purchaseBuys(plan)[r.line.key]:r.stage;return r.recorded?finite(b?.execPrice??execBase(b)):null;};
     const avg=rows.length&&!mixedTickers?purchaseAverages(rows,execOf,r=>otherCode(it,r.tradeTicker)):null;
-    const blockedOf=r=>r.plannedShares===null||!r.recorded&&(!(r.plannedShares>0)||!(r.price>0)||!r.tradeTicker&&cur==="USD"&&!s.fx&&!(r.stage?.amount>0));
+    const blockedOf=r=>r.plannedShares===null||!r.recorded&&(!(r.plannedShares>0)||!(r.price>0)||!r.tradeTicker&&cur==="USD"&&!s.fx&&!(r.stage?.amount>0))||!!r.targetId&&!r.found&&!r.done&&!followsLead(r,trade.target); // 회차표 체크박스(row)의 blocked·missingTarget과 같은 조건
     const isWarn=r=>!r.done&&(r.recorded||due(r)),label=r=>escA(movingLineText(r.label)),parts=purchaseTargetParts({g,it},s,q),stamp=q?priceStamp(q):"";
     const badge=complete?'<span class="bp-badge ok">✓ 매수 완료</span>':dueRows.length?`<span class="bp-badge due"><i class="bp-pulse"></i>도달 ${dueRows.length}회 · 미체결</span>`:nextGap?`<span class="bp-next">다음 ${escA(movingLineText(next.label))} ${nextGap.text}</span>`:`<span class="bp-badge muted">${status}</span>`;
     // 진행 막대: 완료 + (도달 미체결 회차 수 + 부분 체결 비율). 완료 구간은 파랑→민트, 도달·부분 구간은 노랑→주황으로 이어진다(--edge가 경계).
@@ -531,9 +531,9 @@ function renderPurchases(){
     const curve=purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done)});
     const curveCard=curve?curve.replace('</div><svg',`${stamp?`<span class="bp-stamp">${stamp}</span>`:""}</div><svg`):"";
     const summary=`<section class="card bp-sum${complete?" complete":""}" aria-label="계획 진행"><div class="bp-head"><h1 class="bp-name">${escA(parts.head.main)}${parts.head.tag?` <span class="title-tag">${escA(parts.head.tag)}</span>`:""}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div><div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${curveCard?"":stamp?`<div class="bp-stamp">${stamp}</div>`:""}${bar}<div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.target!==null?`${parts.control}${parts.gapText}`:parts.control}</span></p></div>${parts.hint}${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
-    const dockRow=partialRows[0]||dueRows[0]||next,left=r=>(r.plannedShares??0)-(r.shares||0);
+    const dockRow=partialRows[0]||dueRows[0]||next,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
     const dock=complete&&lastDone?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-exec-focus="${id}" ${lastDone.attr}>체결가 수정</button><button class="btn primary bp-main" type="button" data-purchase-new="${id}">＋ 새 분할매수 계획</button></div>`
-      :dockRow?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-focus="${id}" ${dockRow.attr}>부분 체결 · 체결가</button><button class="btn primary bp-main" type="button" data-purchase-act="${id}" ${dockRow.attr}${blockedOf(dockRow)?" disabled":""}>✓ ${label(dockRow)} ${dockRow.recorded?`남은 ${qtyOf(left(dockRow),dockRow.tradeItem)} 체결`:`${qtyOf(dockRow.plannedShares||0,dockRow.tradeItem)} 체결 완료`}</button></div>`:"";
+      :dockRow?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-focus="${id}" ${dockRow.attr}>부분 체결 · 체결가</button><button class="btn primary bp-main" type="button" data-purchase-act="${id}" ${dockRow.attr}${blockedOf(dockRow)?" disabled":""}>✓ ${label(dockRow)} ${dockRow.recorded?dockRow.plannedShares===null?"잔량 체결":`남은 ${qtyOf(left(dockRow),dockRow.tradeItem)} 체결`:`${qtyOf(dockRow.plannedShares||0,dockRow.tradeItem)} 체결 완료`}</button></div>`:"";
     return `<div data-purchase-item="${id}" class="bp">${summary}${curveCard}
       <div class="section-heading"><h2>분할매수 체크</h2>${alertLine}<span>${p.count?`${p.done} / ${p.count}회 완료`:budgetMissing?"예산 입력 대기":"회차 시세 대기"}</span></div><section class="card table-card purchase-table${completedOpen?"":" hide-completed"}${alertable?"":" no-alert"}${btcTable?" btc":""}" id="purchaseTable">${buyTarget}<div class="purchase-table-head${lines?" line":""}"><span>회차</span><span>기준가</span>${btcTable?"<span>매수 / 체결 <small>BTC</small></span>":"<span>매수</span><span>체결</span>"}${alertable?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"><span>매수 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${emptyText}</div>`}</div>${rows.length&&done===rows.length?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}</section>${dock}
       </div>`;
@@ -580,11 +580,11 @@ function renderPurchases(){
   if(selected){
     bindPurchasePriority(selected.it);
     bindPurchaseAccounts(selected.it);
-    // 계좌 · 설정 펼침은 화면 상태(openPurchaseAccounts)로만 둔다. 접으면 계좌 삭제 모드도 끝낸다.
+    // 계좌 · 설정 펼침은 화면 상태(openPurchaseAccounts)로만 둔다. 접으면 계좌 삭제·순서 바꾸기·메모 편집도 끝낸다.
     const accountToggle=el("purchaseAccountToggle");
     if(accountToggle?.dataset?.purchaseAccounts!==undefined)bindPurchaseAccountAction(accountToggle,()=>{
       const id=selected.it.id,open=!(openPurchaseAccounts.has(id)||purchaseAccountDeletingId===id);
-      if(open)openPurchaseAccounts.add(id);else{openPurchaseAccounts.delete(id);sortingPurchaseAccounts.delete(id);if(purchaseAccountDeletingId===id)purchaseAccountDeletingId=null;}
+      if(open)openPurchaseAccounts.add(id);else{openPurchaseAccounts.delete(id);sortingPurchaseAccounts.delete(id);editingPurchaseMemos.delete(id);if(purchaseAccountDeletingId===id)purchaseAccountDeletingId=null;}
       render();el("purchaseAccountToggle")?.focus?.({preventScroll:true});
     });
     const accountSort=el("purchaseAccountSort");
