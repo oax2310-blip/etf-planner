@@ -10,6 +10,7 @@ const futureTableState={cuts:{open:null,due:""},buys:{open:null,due:""}};
 let futureCutsOpen=false,futureBuysOpen=false,futureBuyStagesOpen=false; // 손절 완료·재매수 완료 회차와 '다른 단계' 펼침(화면 상태, 저장·동기화 안 함)
 // 화면의 손절 회차 번호: 이어서 새 손절이면 이번 계획의 회차(round), 아니면 k. k − 1은 언제나 cuts 위치(체크·알림 키)다.
 const futureCutNo = c => c.round??c.k;
+const FUTURE_CUT_AUTO_STEPS = 60; // 손절 분할 횟수 '자동'의 저장 값(최대 분할 횟수). rebuy.js futureCutPlan이 손절 목표 계약 수로 줄인다.
 // 손절 시점인 다음 손절 회차(현재 환율 ≤ 회차 환율). 재매수 뒤에도 이어 가며 기준 미입력·현재 환율 없음이면 null.
 function futureCutDue(s,cur){const c=s.ready?s.cuts.find(x=>futureCutRest(x)>0):null;return c&&cur>0&&cur<=c.price?c:null;}
 // 재매수 시점인 첫 재매수 회차(현재 환율 ≥ 회차 환율, 표의 '재매수 시점'과 같은 조건). 손절 전·현재 환율 없음이면 null.
@@ -293,6 +294,9 @@ function openFutureRebuyDialog(startNew=false){
   const field=(key,label,value,attrs,off=false)=>`<label class="field"><span>${label}</span><input data-fr-field="${key}" ${key.endsWith("Price")?'type="text" inputmode="decimal" autocomplete="off" data-money':'type="number"'} ${attrs} value="${key.endsWith("Price")?moneyInputText(value):value}"${off?" disabled":""}></label>`;
   const floorLine=futureFloorLine(r.floorLine),floorUnits=[["","원"],["일선","일선"],["주선","주선"],["개월선","월선"]];
   const floorField=`<div class="field future-floor"><span>손절 하단</span><div class="hold-input"><input data-fr-field="floorPrice" type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${opt(r.floorPrice)}" aria-label="손절 하단 (원)"${floorLine?" hidden disabled":""}><input id="frFloorPeriod" type="number" min="1" max="400" step="1" inputmode="numeric" value="${parseInt(floorLine)||60}" required aria-label="손절 하단 이동평균 기간"${floorLine?"":" hidden disabled"}><select id="frFloorUnit" aria-label="손절 하단 단위">${floorUnits.map(([v,label])=>`<option value="${v}"${movingLineUnit(floorLine)===v?" selected":""}>${label}</option>`).join("")}</select></div><small id="frFloorPrice"></small></div>`;
+  // 분할 횟수: 자동 = steps 60(futureCutPlan 회차 수 = min(60, 분할 횟수, 손절 목표)라 목표 60계약까지 회차마다 1계약). 새 필드 없이 최대값으로 저장하고, 60이면 자동으로 연다.
+  // 자동인 동안 숫자 칸은 비활성이라 바꾼 칸에 들어가지 않고, 저장할 때 자동으로 바꿨을 때만 steps 60을 넣는다. 비어 있는 옛 기록은 지금처럼 직접 10회.
+  const stepsAuto=futureRebuyQty(r.steps)===FUTURE_CUT_AUTO_STEPS,stepsField=`<div class="field future-steps"><span>분할 횟수</span><div class="hold-input"><input data-fr-field="steps" type="number" min="1" max="60" step="1" inputmode="numeric" value="${stepsAuto?"":futureRebuyQty(r.steps)||10}" aria-label="분할 횟수"${stepsAuto?" disabled":""}><select id="frStepsMode" aria-label="분할 횟수 방식"><option value="auto"${stepsAuto?" selected":""}>자동</option><option value="direct"${stepsAuto?"":" selected"}>직접</option></select></div><small id="frStepsNote"></small></div>`;
   const hasUnlinked=unlinked&&(unlinked.cuts>0||unlinked.buys>0),restartable=!startNew&&futureCutRecords(r).some(Boolean); // 신저점을 바꾸거나 고정한 이탈 전 계약 수를 비우면 이어서 새 손절
   const restartHold=restartable?futureRebuyAutoHold(futureRestartCuts(f,true)):0,autoHold=restartable&&Object.hasOwn(r,"contracts")?restartHold:futureRebuyAutoHold(f); // 칸을 비웠을 때의 자동 값
   const hint=locked?"남은 손절 회차만 다시 나눕니다. 평균 손절가·재매수는 그대로입니다.":"",autoNote=" 이탈 전 계약 수를 비우면 보유로 자동 계산합니다."; // 손절 기준 수정 창 아래 안내(짧게)
@@ -301,7 +305,7 @@ function openFutureRebuyDialog(startNew=false){
     <p class="hint">평균 손절가까지 새로 시작합니다(이어 가려면 손절 기준 수정에서 신저점만 바꾸세요). 기존 체결은 이 기기에 보관하고 미복원 수량은 넘기지 않습니다. 보유·정산손익은 그대로, 알림은 꺼진 채 시작합니다.</p>
     ${hasUnlinked?'<p class="future-plan-error">보유 미반영 체결이 있습니다. 계좌와 대조하고 보유 월물에 반영하거나 직접 반영으로 표시하세요.</p>':""}
     <button class="btn mini ghost" id="frBackup" type="button">플래너 JSON 백업</button>`:s.started?"":'<p class="hint">신저점부터 하단까지 고르게 나눠 비중만큼 손절합니다. 하단은 가격이나 일·주·월선으로 정합니다.</p>'}
-    <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'data-money-min="0" data-money-step="any"')}${floorField}${field("contracts","이탈 전 계약 수",Object.hasOwn(r,"contracts")?futureRebuyQty(r.contracts):"",`min="0" step="1" inputmode="numeric" placeholder="자동 · ${autoHold}계약"`)}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${field("steps","분할 횟수",futureRebuyQty(r.steps)||10,'min="1" max="60" step="1" inputmode="numeric"')}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'data-money-min="0" data-money-step="any" placeholder="시세 없음"',false)}</div>
+    <div class="dialog-grid">${field("lowPrice","신저점 환율 (원)",opt(r.lowPrice),'data-money-min="0" data-money-step="any"')}${floorField}${field("contracts","이탈 전 계약 수",Object.hasOwn(r,"contracts")?futureRebuyQty(r.contracts):"",`min="0" step="1" inputmode="numeric" placeholder="자동 · ${autoHold}계약"`)}${field("sellPct","손절 비중 (%)",shown(s.sellPct),'min="0" max="100" step="any" inputmode="decimal"')}${stepsField}${fe?"":field("currentPrice","현재 환율 (원)",opt(r.currentPrice),'data-money-min="0" data-money-step="any" placeholder="시세 없음"',false)}</div>
     ${startNew?'<p class="hint"><output id="frNewGoal" aria-live="polite"></output></p>':""}
     <p class="hint">${restartable?'<span id="frRestartNote" hidden>지금 보유 기준으로 손절 회차를 1회부터 다시 짭니다. 평균 손절가·재매수는 그대로입니다.</span>':""}<span id="frHintBase">${hint}</span>${autoNote}${s.cuts.length===1?" 1회 계획은 하단에서 손절합니다.":""}${fe?"":" 시세가 없어 현재 환율은 직접 넣습니다."}</p>
     <p class="future-plan-error" id="futureRebuyError" role="alert"></p><div class="dialog-foot">${!startNew&&locked?'<button class="btn ghost" id="frNewPlan" type="button">새 손절 계획</button>':""}<button class="btn" type="button" data-close-future-rebuy>취소</button><button class="btn primary" id="frSubmit" type="submit"${hasUnlinked?" disabled":""}>${startNew?"보관하고 시작":"저장"}</button></div></form>`;
@@ -335,11 +339,22 @@ function openFutureRebuyDialog(startNew=false){
   const updateGoal=()=>{
     if(!startNew)return;
     const value=key=>inputs.find(el=>el.dataset.frField===key).value;
-    const contracts=value("contracts")===""?futureRebuyAutoHold(f):Number(value("contracts")),pct=value("sellPct")===""?50:Number(value("sellPct")),steps=Number(value("steps")),goal=futureCutGoal(f,pct,contracts);
+    const contracts=value("contracts")===""?futureRebuyAutoHold(f):Number(value("contracts")),pct=value("sellPct")===""?50:Number(value("sellPct")),steps=$("frStepsMode").value==="auto"?FUTURE_CUT_AUTO_STEPS:Number(value("steps")),goal=futureCutGoal(f,pct,contracts);
     $("frNewGoal").textContent=Number.isInteger(contracts)&&contracts>0&&pct>=0&&pct<=100&&Number.isInteger(steps)&&steps>=1&&steps<=60&&goal>0?`새 계획 · 손절 목표 ${goal}계약 · ${Math.min(goal,steps)}회`:"새 계획 · 손절 목표 1계약 이상 필요";
   };
-  updateGoal();
-  inputs.forEach(el=>el.oninput=()=>{error.textContent="";if(el===holdInput)holdTouched=true;if(el===lowInput||el===holdInput)syncRestart();updateGoal();});
+  // 자동이면 숫자 칸 자리에 지금 입력한 이탈 전 계약 수·손절 비중의 손절 목표로 'N회'(min(60, 목표))를 보이고, 목표가 60계약을 넘으면 1계약씩이 아님을 알린다.
+  // 이미 체결한 회차가 있으면 실제 회차 수는 표의 회차(futureCutPlan)를 따른다.
+  const stepsInput=field$("steps"),stepsMode=$("frStepsMode"),stepsNote=$("frStepsNote");let stepsDirect=stepsInput.value||"10";
+  const syncSteps=()=>{
+    const auto=stepsMode.value==="auto",low=moneyInputNumber(lowInput.value),hold=holdInput.value.trim()===""?(restartable&&low>0&&low!==Number(r.lowPrice)?restartHold:autoHold):Number(holdInput.value);
+    const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value),goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
+    stepsInput.disabled=auto;stepsInput.placeholder=auto&&goal>0?`${Math.min(goal,FUTURE_CUT_AUTO_STEPS)}회`:"";
+    stepsNote.textContent=!auto?"":goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:"회차마다 1계약씩 손절";
+    stepsNote.classList.toggle("warn",auto&&goal>FUTURE_CUT_AUTO_STEPS);
+  };
+  stepsMode.onchange=()=>{error.textContent="";if(stepsMode.value==="auto"){stepsDirect=stepsInput.value||stepsDirect;stepsInput.value="";}else stepsInput.value=stepsDirect;syncSteps();updateGoal();};
+  syncSteps();updateGoal();
+  inputs.forEach(el=>el.oninput=()=>{error.textContent="";if(el===holdInput)holdTouched=true;if(el===lowInput||el===holdInput)syncRestart();syncSteps();updateGoal();});
   period.oninput=unit.onchange=()=>{error.textContent="";syncFloor();};
   $("futureRebuyForm").onsubmit=e=>{
     e.preventDefault();
@@ -347,6 +362,7 @@ function openFutureRebuyDialog(startNew=false){
     const open=inputs.filter(el=>!el.disabled&&!el.hidden),invalid=[...open,period].find(el=>!el.disabled&&!el.hidden&&((el.hasAttribute("data-money")&&!moneyInputValidate(el))||!el.checkValidity()));if(invalid){invalid.reportValidity();return;}
     const edits=Object.fromEntries(open.filter(el=>el.value!==initial[el.dataset.frField]).map(el=>[el.dataset.frField,el.hasAttribute("data-money")?(moneyInputNumber(el.value)??0):el.value])),line=chosenLine();
     if(line!==floorLine)edits.floorLine=line;
+    if(stepsMode.value==="auto"&&!stepsAuto)edits.steps=String(FUTURE_CUT_AUTO_STEPS);
     if(!startNew&&!Object.keys(edits).length){dialog.close();return;}
     if(startNew){
       try{absorbPlanner();}catch{error.textContent="최신 기록을 읽지 못했습니다. 다시 시도하세요.";return;}

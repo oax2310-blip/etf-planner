@@ -1127,3 +1127,57 @@ test('판 시점 단순평균가가 생략된 부분 체결 손절의 체결 증
   const input=v.r.input('[data-fcut="0"]');input.checked=true;input.onchange();
   assert.deepEqual(v.alerts,[CUT_RECORD_WARN]);assert.equal(v.r.stored.size,0);assert.equal(JSON.stringify(v.f),v.before);
 });
+
+test('손절 분할 횟수 자동은 steps 60으로 저장해 손절 목표를 회차마다 1계약씩 나누고, 60이면 자동으로 연다',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:16,steps:5});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
+  const steps=r.input('[data-fr-field="steps"]');
+  assert.deepEqual([r.el('frStepsMode').value,steps.value,steps.disabled],['direct','5',false],'저장한 횟수는 직접으로 연다');
+  r.change('#frStepsMode','auto');
+  assert.deepEqual([steps.disabled,steps.value,steps.placeholder,r.el('frStepsNote').textContent],[true,'','8회','회차마다 1계약씩 손절'],'16계약 × 50% = 8계약');
+  r.type('[data-fr-field="contracts"]','150');
+  assert.equal(steps.placeholder,'60회');assert.equal(r.el('frStepsNote').textContent,'목표 75계약 · 일부 회차 2계약');assert.equal(r.el('frStepsNote').classList.contains('warn'),true);
+  r.type('[data-fr-field="contracts"]','16');r.submit('futureRebuyForm');
+  const saved=r.saved().futures;assert.equal(saved.rebuy.steps,60);
+  assert.deepEqual(plain(r.c.futureCutPlan(saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1],'8계약을 8회 · 1계약씩');
+  r.el('frEdit').onclick();
+  assert.deepEqual([r.el('frStepsMode').value,r.input('[data-fr-field="steps"]').disabled],['auto',true],'steps 60은 자동으로 연다');
+  r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,60,'자동 그대로 저장해도 60');
+  r.el('frEdit').onclick();r.change('#frStepsMode','direct');
+  assert.deepEqual([r.input('[data-fr-field="steps"]').value,r.input('[data-fr-field="steps"]').disabled],['10',false],'자동에서 직접으로 바꾸면 기본 10회');
+  r.type('[data-fr-field="steps"]','4');r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,4);
+});
+
+test('손절 목표가 60계약을 넘으면 자동은 60회로 나누고 합계는 손절 목표와 같다',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:150,steps:60});f.positions[0].contracts=150;
+  const plan=require('node:vm').runInContext('futureCutPlan',setup(f).c)(f);
+  assert.equal(plan.length,60);assert.equal(plan.reduce((n,c)=>n+c.qty,0),75);assert.ok(plan.every(c=>c.qty>=1&&c.qty<=2));
+});
+
+test('분할 횟수가 없는 옛 기록은 직접 10회로 열고, 다른 칸만 고치면 steps를 만들지 않는다',()=>{
+  const f=future();delete f.rebuy.steps;
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
+  assert.deepEqual([r.el('frStepsMode').value,r.input('[data-fr-field="steps"]').value],['direct','10']);
+  r.type('[data-fr-field="floorPrice"]','1280');r.submit('futureRebuyForm');
+  const saved=r.saved().futures.rebuy;assert.equal(saved.floorPrice,1280);assert.equal(Object.hasOwn(saved,'steps'),false);
+  assert.equal(r.c.futureCutPlan(r.saved().futures).length,4,'8계약 × 50% = 4계약, 옛 기본 10회는 목표로 줄어든다');
+});
+
+test('체결한 손절 회차가 있어도 자동으로 바꾸면 체결 기록은 그대로 두고 남은 회차만 다시 나눈다',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:16,steps:2,cuts:[{contracts:1,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
+  const r=setup(f),cuts=JSON.stringify(f.rebuy.cuts);r.c.renderFutures();r.el('frEdit').onclick();
+  r.change('#frStepsMode','auto');r.submit('futureRebuyForm');
+  const saved=r.saved().futures;assert.equal(saved.rebuy.steps,60);assert.equal(JSON.stringify(saved.rebuy.cuts),cuts);
+  assert.equal(Object.hasOwn(saved.rebuy,'cutRestart'),false);
+  assert.deepEqual(plain(r.c.futureCutPlan(saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1]);
+});
+
+test('새 손절 계획 창도 분할 횟수 자동을 미리보기와 저장에 반영한다',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:16,cuts:[{contracts:1,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
+  const r=setup(f);r.c.backupRecord=()=>{};r.c.absorbPlanner=()=>{};r.c.dataSnapshot=()=>'snapshot';r.c.pricedSnapshot=()=>'';r.c.openFutureRebuyDialog(true);
+  r.type('[data-fr-field="lowPrice"]','1400');r.type('[data-fr-field="floorPrice"]','1300');r.type('[data-fr-field="contracts"]','12');
+  assert.match(r.el('frNewGoal').textContent,/손절 목표 6계약 · 6회/,'직접 10회도 목표 6계약으로 줄어든다');
+  r.change('#frStepsMode','auto');assert.match(r.el('frNewGoal').textContent,/손절 목표 6계약 · 6회/);
+  r.submit('futureRebuyForm');assert.equal(r.el('futureRebuyError').textContent,'');
+  const saved=r.saved().futures.rebuy;assert.equal(saved.steps,60);assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1]);
+});
