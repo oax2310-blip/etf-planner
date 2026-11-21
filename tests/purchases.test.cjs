@@ -2372,9 +2372,17 @@ test('계좌 상자를 접으면 메모 편집도 닫혀 다시 펼치면 메모
   assert.match(r.html(),/id="purchaseMemoEditor" hidden>/);assert.match(r.html(),/<div class="bp-memo"><span class="bp-memo-text">메모: 메모<\/span>/);
 });
 test('곡선 카드: 말풍선과 겹치지 않게 강조 점이 시작점이면 시작 가격을, 끝 쪽(지점 2개의 끝 포함)이면 끝 가격을 점 아래에 둔다',()=>{
-  const labelBelow=(html,cls,anchor)=>{const core=Number(html.match(/class="bp-core[^"]*"/)&&html.match(/<circle cx="[\d.]+" cy="([\d.]+)" r="5\.5" class="bp-core/)[1]);const y=Number(html.match(new RegExp(`<text x="[\\d.]+" y="([\\d.]+)" class="bp-t ${cls}" text-anchor="${anchor}">`))[1]);return y>core;};
+  // 가격 글자의 y를 강조 점이 아니라 그 글자가 붙은 시작·끝 지점(기준가 곡선의 첫·마지막 좌표)과 비교한다.
+  const ends=html=>{const d=html.match(/<path d="([^"]+)" class="bp-line"/)[1],nums=d.match(/-?[\d.]+/g).map(Number);return {start:nums[1],end:nums.at(-1)};};
+  const labelY=(html,anchor)=>Number(html.match(new RegExp(`<text x="[\\d.]+" y="([\\d.]+)" class="bp-t (?:mint|blue)" text-anchor="${anchor}">`))[1]);
+  const where=html=>{const p=ends(html);return {start:labelY(html,'start')>p.start?'아래':'위',end:labelY(html,'end')>p.end?'아래':'위'};};
   const first=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
-  assert.ok(labelBelow(first.html(),'mint','start'),'1회차 전: 시작 가격 글자는 점 아래');assert.ok(!labelBelow(first.html(),'blue','end'),'끝 가격 글자는 그대로 위');
+  assert.equal((first.html().match(/class="bp-x[ "]/g)||[]).length,2);assert.match(first.html(),/class="bp-x on"[^>]*>25일·다음/,'지점 2개, 첫 지점 강조');
+  assert.deepEqual(where(first.html()),{start:'아래',end:'위'},'지점 2개·첫 지점 강조: 시작 가격만 아래, 끝 가격은 위');
+  const falling=setup({manual:true,price:11000});falling.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:8000,shares:8,amount:6.4}];falling.render();
+  assert.match(falling.html(),/class="bp-x on[^"]*"[^>]*>1차/,'하락형 지점 2개, 첫 지점 강조');assert.deepEqual(where(falling.html()),{start:'아래',end:'위'},'하락형에서도 끝 가격은 위');
   const two=setup({manual:true,price:9000});two.item.buyPlan.stages=[{id:'s1',price:8000,shares:8,amount:8,done:true,actual:6.4},{id:'s2',price:10000,shares:8,amount:8}];two.render();
-  assert.match(two.html(),/class="bp-x[^"]*on[^"]*"[^>]*>2차/,'지점 2개 중 끝이 강조');assert.ok(labelBelow(two.html(),'blue','end'),'지점 2개의 끝 강조: 끝 가격 글자는 점 아래');
+  assert.match(two.html(),/class="bp-x[^"]*on[^"]*"[^>]*>2차/,'지점 2개 중 끝이 강조');assert.deepEqual(where(two.html()),{start:'위',end:'아래'},'지점 2개의 끝 강조: 끝 가격만 아래');
+  const many=setup({budget:100,end:null,names:['25일선','32일선','42일선','60일선'],price:9000,ma:{'25일선':10000,'32일선':12000,'42일선':14000,'60일선':16000}});
+  assert.deepEqual(where(many.html()),{start:'아래',end:'위'},'지점이 많을 때 첫 지점 강조: 끝 가격은 위');
 });
