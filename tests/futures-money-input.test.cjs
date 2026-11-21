@@ -7,6 +7,8 @@ const vm=require('node:vm');
 const uiDom=require('./helpers/ui-dom.cjs');
 const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8');
 const plain=x=>JSON.parse(JSON.stringify(x));
+// 손절 표에 보이는 회차(js/futures-rebuy.js futureCutsShown): 기준이 갖춰지면 기록 없는 0계약 회차를 뺀다.
+const shownCuts=(r,f)=>r.c.futureCutsShown(r.c.futureCutPlan(f),r.c.futureRebuySummary(f).ready);
 const future=()=>({targetPrice:1480,baselinePnl:-12345,positions:[{month:'202612',contracts:8,settlementPrice:1354.91}],note:'',
   levels:[{days:0,unit:'',label:'가상 기준',price:1354.91,confirmed:true,contracts:2,tranches:[{price:1354.91,completed:false},{price:1355.91,completed:true,executionPrice:1355.91,mergedMonth:'202612'}]}],
   rebuy:{lowPrice:1400,floorPrice:1300,currentPrice:1350,contracts:8,sellPct:50,steps:2,cuts:[],stages:[{name:'25선',price:1320},{name:'32선',price:1330},{name:'42선',price:1340}]}});
@@ -1139,7 +1141,7 @@ test('손절 분할 횟수 자동은 steps 60으로 저장해 손절 목표를 �
   assert.equal(steps.placeholder,'60회');assert.equal(r.el('frStepsNote').textContent,'목표 75계약 · 일부 회차 2계약');assert.equal(r.el('frStepsNote').classList.contains('warn'),true);
   r.type('[data-fr-field="contracts"]','16');r.submit('futureRebuyForm');
   const saved=r.saved().futures;assert.equal(saved.rebuy.steps,60);
-  assert.deepEqual(plain(r.c.futureCutPlan(saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1],'8계약을 8회 · 1계약씩');
+  assert.deepEqual(plain(shownCuts(r,saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1],'8계약을 8회 · 1계약씩');
   r.el('frEdit').onclick();
   assert.deepEqual([r.el('frStepsMode').value,r.input('[data-fr-field="steps"]').disabled],['auto',true],'steps 60은 자동으로 연다');
   r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,60,'자동 그대로 저장해도 60');
@@ -1160,7 +1162,7 @@ test('분할 횟수가 없는 옛 기록은 직접 10회로 열고, 다른 칸�
   assert.deepEqual([r.el('frStepsMode').value,r.input('[data-fr-field="steps"]').value],['direct','10']);
   r.type('[data-fr-field="floorPrice"]','1280');r.submit('futureRebuyForm');
   const saved=r.saved().futures.rebuy;assert.equal(saved.floorPrice,1280);assert.equal(Object.hasOwn(saved,'steps'),false);
-  assert.equal(r.c.futureCutPlan(r.saved().futures).length,4,'8계약 × 50% = 4계약, 옛 기본 10회는 목표로 줄어든다');
+  assert.equal(shownCuts(r,r.saved().futures).length,4,'8계약 × 50% = 4계약, 옛 기본 10회는 목표로 줄어든다');
 });
 
 test('체결한 손절 회차가 있어도 자동으로 바꾸면 체결 기록은 그대로 두고 남은 회차만 다시 나눈다',()=>{
@@ -1169,7 +1171,7 @@ test('체결한 손절 회차가 있어도 자동으로 바꾸면 체결 기록�
   r.change('#frStepsMode','auto');assert.equal(r.el('frStepsNote').textContent,'회차마다 1계약씩 손절','1계약 체결뿐이면 안내는 그대로');r.submit('futureRebuyForm');
   const saved=r.saved().futures;assert.equal(saved.rebuy.steps,60);assert.equal(JSON.stringify(saved.rebuy.cuts),cuts);
   assert.equal(Object.hasOwn(saved.rebuy,'cutRestart'),false);
-  assert.deepEqual(plain(r.c.futureCutPlan(saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1]);
+  assert.deepEqual(plain(shownCuts(r,saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1]);
 });
 
 test('새 손절 계획 창도 분할 횟수 자동을 미리보기와 저장에 반영한다',()=>{
@@ -1179,16 +1181,16 @@ test('새 손절 계획 창도 분할 횟수 자동을 미리보기와 저장에
   assert.match(r.el('frNewGoal').textContent,/손절 목표 6계약 · 6회/,'직접 10회도 목표 6계약으로 줄어든다');
   r.change('#frStepsMode','auto');assert.match(r.el('frNewGoal').textContent,/손절 목표 6계약 · 6회/);
   r.submit('futureRebuyForm');assert.equal(r.el('futureRebuyError').textContent,'');
-  const saved=r.saved().futures.rebuy;assert.equal(saved.steps,60);assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1]);
+  const saved=r.saved().futures.rebuy;assert.equal(saved.steps,60);assert.deepEqual(plain(shownCuts(r,r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1]);
 });
 
-test('이번 손절에 2계약 이상 체결한 회차가 있으면 자동 안내는 1계약씩이라고 단정하지 않는다',()=>{
-  // 남은 회차 배분은 rebuy.js futureCutPlan의 재배분을 따른다(0계약 회차가 섞일 수 있어 표를 기준으로 안내).
+test('앞 회차에 2계약 이상 체결해도 자동은 남은 계약을 회차마다 1계약씩 나눈다',()=>{
+  // 10회 격자에서 남은 7계약을 나누면 4·8회차가 0계약이라 손절 표(futureCutsShown)에서 빼고 8개 행이 보인다. 미리보기 N회는 카드 N분할과 같은 10회.
   const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,steps:5,cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
   const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
-  assert.deepEqual([r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent,r.el('frStepsNote').classList.contains('warn')],['10회','체결한 회차가 있어 남은 회차는 표를 따릅니다',false]);
+  assert.deepEqual([r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent,r.el('frStepsNote').classList.contains('warn')],['10회','회차마다 1계약씩 손절',false]);
   r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,60);
-  assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[3,1,1,0,1,1,1,0,1,1],'지금 고정 계산의 배분(지시 밖 발견 사항)');
+  assert.deepEqual(plain(shownCuts(r,r.saved().futures).map(c=>c.qty)),[3,1,1,1,1,1,1,1]);
 });
 
 test('이미 자동인 기록을 열어 아무것도 고치지 않고 저장하면 저장하지 않고 닫는다',()=>{
@@ -1212,7 +1214,7 @@ test('신저점을 바꿔 이어서 새 손절이 되면 자동 회차는 지금
   f.rebuy.cuts=[{contracts:2,price:1399.5,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:2,price:1374.8,targetPrice:1375,month:'202612',settlementPrice:1450}];
   const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
   const steps=r.input('[data-fr-field="steps"]'),note=r.el('frStepsNote');
-  assert.deepEqual([steps.placeholder,note.textContent],['12회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  assert.deepEqual([steps.placeholder,note.textContent],['12회','회차마다 1계약씩 손절'],'12회 격자에서 남은 8계약, 0계약 2개 회차는 표에서만 뺀다');
   r.type('[data-fr-field="lowPrice"]','1350');
   assert.deepEqual([r.input('[data-fr-field="contracts"]').placeholder,steps.placeholder,note.textContent],['자동 · 20계약','10회','회차마다 1계약씩 손절']);
 });
@@ -1225,19 +1227,19 @@ test('손절 비중 칸을 비우면 50%로 계산한 자동 회차를 보인다
 });
 
 test('이번 손절에 부분 체결 회차가 있으면 자동 안내는 1계약씩이라고 단정하지 않는다',()=>{
-  // 부분 체결 회차의 남은 계약은 그 회차에 고정되고 나머지를 재배분한다(rebuy.js futureCutPlan, 0계약 회차가 섞일 수 있음).
+  // 부분 체결 회차의 남은 계약은 그 회차에 고정되고 나머지를 재배분한다(rebuy.js futureCutPlan). 남은 회차가 1계약씩이 아니므로 표를 따른다고 알린다.
   const f=future();f.positions[0].contracts=16;Object.assign(f.rebuy,{contracts:16,steps:2,cuts:[{contracts:1,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450,partial:true,plannedQty:4}]});
   const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
-  assert.deepEqual([r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent],['8회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  assert.deepEqual([r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent],['8회','체결한 회차가 있어 남은 회차는 표를 따릅니다'],'부분 체결 회차에 3계약이 남는다');
   r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,60);
-  assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,0,1,0,1,0,1],'지금 고정 계산의 배분(지시 밖 발견 사항)');
+  assert.deepEqual(plain(shownCuts(r,r.saved().futures).map(c=>[c.qty,futureRest(c)])),[[1,3],[1,1],[1,1],[1,1],[1,1]],'부분 체결 회차 남은 3 + 새로 나눈 4회 × 1');
 });
 
 test('고정한 이탈 전 계약 수를 비우면 이어서 새 손절이라 지난 체결을 자동 안내에 반영하지 않는다',()=>{
-  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,steps:2,cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
+  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,steps:2,cuts:[{contracts:1,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450,partial:true,plannedQty:4}]});
   const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
   const steps=r.input('[data-fr-field="steps"]'),note=r.el('frStepsNote');
-  assert.deepEqual([steps.placeholder,note.textContent],['10회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  assert.deepEqual([steps.placeholder,note.textContent],['10회','체결한 회차가 있어 남은 회차는 표를 따릅니다'],'부분 체결 회차에 3계약이 남는다');
   r.type('[data-fr-field="contracts"]','');
   assert.deepEqual([steps.placeholder,note.textContent],['10회','회차마다 1계약씩 손절']);
 });
@@ -1247,12 +1249,13 @@ test('지난 손절 계획(cutRestart 앞)의 체결은 자동 안내에 반영�
   Object.assign(f.rebuy,{contracts:20,steps:2,cutRestart:{at:1,rebought:0},cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:1,price:1390,targetPrice:1390,month:'202612',settlementPrice:1450}]});
   const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
   assert.equal(r.el('frStepsNote').textContent,'회차마다 1계약씩 손절');
-  r.submit('futureRebuyForm');const plan=r.c.futureCutPlan(r.saved().futures);
+  r.submit('futureRebuyForm');const plan=shownCuts(r,r.saved().futures);
   assert.equal(r.saved().futures.rebuy.steps,60);assert.ok(plan.length>1&&plan.every(c=>c.qty===1),JSON.stringify(plain(plan.map(c=>c.qty))));
 });
 
 // 3차 보완: 자동의 'N회'·안내는 창에 입력한 값으로 저장했을 때의 손절 표(futureCutPlan)와 맞아야 한다.
 const allCut=()=>{const f=future();f.positions[0].contracts=3;Object.assign(f.rebuy,{contracts:6,sellPct:50,steps:3,cuts:[1400,1350,1300].map(p=>({contracts:1,price:p,targetPrice:p,month:'202612',settlementPrice:1450}))});return f;};
+const futureRest=c=>c.done?0:c.recorded?c.plannedQty-c.qty:c.qty;
 const autoView=r=>[r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent];
 
 test('모든 회차를 체결한 뒤 손절 목표를 늘려 자동으로 바꾸면 하단 추가 회차까지 표와 같게 보인다',()=>{
@@ -1260,18 +1263,18 @@ test('모든 회차를 체결한 뒤 손절 목표를 늘려 자동으로 바꾸
     const r=setup(allCut());r.c.renderFutures();r.el('frEdit').onclick();
     r.type(`[data-fr-field="${key}"]`,value);r.change('#frStepsMode','auto');
     assert.deepEqual(autoView(r),['4회','체결한 회차가 있어 남은 회차는 표를 따릅니다'],key);
-    r.submit('futureRebuyForm');const plan=r.c.futureCutPlan(r.saved().futures);
+    r.submit('futureRebuyForm');const plan=shownCuts(r,r.saved().futures);
     assert.deepEqual(plain(plan.map(c=>[c.price,c.qty])),[[1400,1],[1350,1],[1300,1],[1300,3]],`${key}: 하단 추가 회차에 남은 3계약`);
   }
 });
 
-test('중간 회차만 체결한 뒤 손절 목표를 줄여 자동으로 바꾸면 0계약 회차가 있는 표와 같게 보인다',()=>{
+test('중간 회차만 체결한 뒤 손절 목표를 줄여 자동으로 바꾸면 0계약 회차 없이 표와 같게 보인다',()=>{
   const f=future();Object.assign(f.rebuy,{contracts:8,sellPct:50,steps:4,cuts:[null,null,{contracts:1,price:1333.33,targetPrice:1400-100*2/3,month:'202612',settlementPrice:1450}]});
   const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
   r.type('[data-fr-field="sellPct"]','25');r.change('#frStepsMode','auto');
-  assert.deepEqual(autoView(r),['3회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  assert.deepEqual(autoView(r),['3회','회차마다 1계약씩 손절'],'카드 3분할과 같은 회차 수, 표에는 1·3회차만 보인다');
   r.submit('futureRebuyForm');
-  assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,0,1],'2회차가 0계약');
+  assert.deepEqual(plain(shownCuts(r,r.saved().futures).map(c=>[c.k,c.qty])),[[1,1],[3,1]],'남은 1계약은 건너뛴 1회차, 0계약이 될 2회차는 표에서 뺀다(k는 cuts 위치 그대로)');
 });
 
 test('손절 하단을 같이 바꾸면 바꾼 하단으로 계산한 표와 같게 보인다',()=>{
@@ -1279,14 +1282,14 @@ test('손절 하단을 같이 바꾸면 바꾼 하단으로 계산한 표와 같
   let r=setup(allCut());r.c.renderFutures();r.el('frEdit').onclick();
   r.type('[data-fr-field="contracts"]','12');r.type('[data-fr-field="floorPrice"]','1250');r.change('#frStepsMode','auto');
   assert.deepEqual(autoView(r),['6회','회차마다 1계약씩 손절']);
-  r.submit('futureRebuyForm');assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1]);
+  r.submit('futureRebuyForm');assert.deepEqual(plain(shownCuts(r,r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1]);
   // 하단선(60일선) 시세가 마지막 체결 하단과 같은 1,300원이면 저장처럼 시세로 하단을 채워 하단 추가 회차를 보인다.
   const prices={updatedAt:'2026-11-20T00:00:00Z',futures:{'202612':{asOf:'2026-11-20',close:1350,ma:{'60일선':1300}}}};
   r=setup(allCut(),etf(),prices);r.c.renderFutures();r.el('frEdit').onclick();
   r.type('[data-fr-field="contracts"]','12');r.change('#frFloorUnit','일선');r.type('#frFloorPeriod','60');r.change('#frStepsMode','auto');
   assert.deepEqual(autoView(r),['4회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
   r.submit('futureRebuyForm');const g=r.saved().futures;
-  assert.deepEqual([g.rebuy.floorLine,g.rebuy.floorPrice],['60일선',1300]);assert.deepEqual(plain(r.c.futureCutPlan(g).map(c=>c.qty)),[1,1,1,3]);
+  assert.deepEqual([g.rebuy.floorLine,g.rebuy.floorPrice],['60일선',1300]);assert.deepEqual(plain(shownCuts(r,g).map(c=>c.qty)),[1,1,1,3]);
 });
 
 test('새 손절 계획 창의 자동 회차도 저장 뒤 표와 같다',()=>{
@@ -1294,7 +1297,7 @@ test('새 손절 계획 창의 자동 회차도 저장 뒤 표와 같다',()=>{
   r.change('#frStepsMode','auto');
   r.type('[data-fr-field="lowPrice"]','1400');r.type('[data-fr-field="floorPrice"]','1300');r.type('[data-fr-field="contracts"]','14');
   assert.deepEqual(autoView(r),['7회','회차마다 1계약씩 손절'],'지난 계획의 체결은 보관되므로 새 계획은 1회부터');
-  r.submit('futureRebuyForm');assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1,1]);
+  r.submit('futureRebuyForm');assert.deepEqual(plain(shownCuts(r,r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1,1]);
 });
 
 test('손절 표를 아직 만들 수 없으면 자동 회차는 입력한 이탈 전 계약 수·손절 비중으로 어림한다',()=>{
@@ -1320,7 +1323,7 @@ test('자동을 먼저 고른 뒤 하단 단위·기간을 바꿔도 자동 회�
   r.change('#frFloorUnit','일선');r.type('#frFloorPeriod','60');
   assert.deepEqual(autoView(r),['6회','회차마다 1계약씩 손절'],'60일선 1,250원: 6회로 다시 나뉜다');
   r.submit('futureRebuyForm');const g=r.saved().futures;
-  assert.deepEqual([g.rebuy.floorLine,g.rebuy.floorPrice],['60일선',1250]);assert.deepEqual(plain(r.c.futureCutPlan(g).map(c=>c.qty)),[1,1,1,1,1,1]);
+  assert.deepEqual([g.rebuy.floorLine,g.rebuy.floorPrice],['60일선',1250]);assert.deepEqual(plain(shownCuts(r,g).map(c=>c.qty)),[1,1,1,1,1,1]);
 });
 
 test('저장할 수 없는 입력 중에는 체결 기록이 남으면 회차를 어림하지 않고, 없으면 이탈 전 계약 수·손절 비중으로 어림한다',()=>{
@@ -1338,18 +1341,18 @@ test('저장할 수 없는 입력 중에는 체결 기록이 남으면 회차를
 
 // 5차 보완: 하단선 시세 대기(저장할 수 있는 상태) 중에도 체결 기록이 남으면 1계약씩·어림 회차를 단정하지 않는다.
 const waitPrices=()=>({updatedAt:'2026-11-20T00:00:00Z',futures:{'202612':{asOf:'2026-11-20',close:1350,ma:{'60일선':1250}}}});
-const fillLater=(r,g)=>{const p=waitPrices();p.futures['202612'].ma['120일선']=1300;r.c.fillPrices({futures:g},p);return plain(r.c.futureCutPlan(g).map(c=>c.qty));};
+const fillLater=(r,g)=>{const p=waitPrices();p.futures['202612'].ma['120일선']=1300;r.c.fillPrices({futures:g},p);return plain(shownCuts(r,g).map(c=>c.qty));};
 
 test('2계약 이상 체결이 있는 계획에서 하단을 시세 대기 하단선으로 바꾸면 회차를 어림하지 않고 표를 따른다고 알린다',()=>{
   const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,sellPct:50,steps:5,cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
   const r=setup(f,etf(),waitPrices());r.c.renderFutures();r.el('frEdit').onclick();
-  r.change('#frStepsMode','auto');assert.deepEqual(autoView(r),['10회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  r.change('#frStepsMode','auto');assert.deepEqual(autoView(r),['10회','회차마다 1계약씩 손절']);
   r.change('#frFloorUnit','일선');r.type('#frFloorPeriod','120');
   assert.equal(r.el('frFloorPrice').textContent,'120일선 시세 대기');
   assert.deepEqual(autoView(r),['','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
   r.submit('futureRebuyForm');assert.equal(r.el('futureRebuyDialog').open,false,'시세 대기 하단선도 저장된다');
   const g=r.saved().futures;assert.deepEqual([g.rebuy.floorLine,g.rebuy.steps],['120일선',60]);
-  assert.deepEqual(fillLater(r,g),[3,1,1,0,1,1,1,0,1,1],'시세가 들어온 뒤 표');
+  assert.deepEqual(fillLater(r,g),[3,1,1,1,1,1,1,1],'시세가 들어온 뒤 표');
 });
 
 test('모든 회차를 체결한 계획에서 하단을 시세 대기 하단선으로 바꾸면 회차를 어림하지 않고 표를 따른다고 알린다',()=>{
@@ -1371,4 +1374,79 @@ test('이어서 새 손절이 되면 하단선 시세 대기 중에도 지금처
   assert.deepEqual(autoView(r),[`${goal}회`,'회차마다 1계약씩 손절']);
   r.submit('futureRebuyForm');const g=r.saved().futures;assert.ok(g.rebuy.cutRestart,'이어서 새 손절');
   assert.deepEqual(fillLater(r,g),Array(goal).fill(1));
+});
+
+
+// PR #502: 체결 기록·해제·이어서 새 손절로 만든 상태에서 손절 표(0계약 회차를 뺀 행)의 환율이 기록으로 움직이지 않고 k 순서로 내려가며,
+// 알림 기준(revision)도 기록으로 바뀌지 않는다(rebuy.js·trade-alerts.js는 수집기 잠금 3e206ff와 같은 코드).
+test('체결 기록·해제·이어서 새 손절을 거쳐도 표의 기록 없는 회차 환율과 알림 기준은 기록으로 바뀌지 않고 표 환율은 k 순서로 내려간다',()=>{
+  let seed=7;const rand=n=>{seed=(seed*1103515245+12345)%2147483648;return seed%n;};
+  const quote={updatedAt:'2026-10-04T00:00:00Z',stocks:{},futures:{'202612':{kind:'달러선물',asOf:'2026-10-02',close:1340,ma:{}}}};
+  const r=setup(),c=r.c,open=plan=>new Map(plan.filter(x=>!x.recorded).map(x=>[x.k,x.price]));
+  const revs=f=>new Map(plain(c.buildTradeAlertRules({futures:f},quote,true)).filter(x=>x.id.startsWith('trade:future-rebuy:cut:')).map(x=>[x.id,x.revision]));
+  const ordered=(plan,label)=>plan.forEach((x,i)=>{if(i)assert.ok(x.k>plan[i-1].k&&x.price<plan[i-1].price,label);});
+  let checks=0,revChecks=0;
+  for(let hold=2;hold<=14;hold++)for(const pct of [50,100])for(const steps of [3,5,10,60])for(let run=0;run<3;run++){
+    let f={targetPrice:1480,baselinePnl:0,positions:[{month:'202612',contracts:hold,settlementPrice:1450}],levels:[],note:'',rebuy:{lowPrice:1400,floorPrice:1300,currentPrice:1290,contracts:hold,sellPct:pct,steps,cuts:[],stages:[]}};
+    for(let step=0;step<8;step++){
+      const plan=shownCuts(r,f),label=JSON.stringify({hold,pct,steps,run,step,cuts:f.rebuy.cuts});ordered(plan,label);
+      assert.ok(plan.every(x=>x.recorded||x.qty>0),label);
+      const pick=plan[rand(plan.length||1)],act=rand(10);
+      if(!pick)break;
+      if(act===0){const g=c.futureRestartCuts(f,false);if(g)f=g;continue;} // 이어서 새 손절(다음 회차 환율이 새 신저점)
+      const beforeOpen=open(plan),beforeRevs=revs(f),beforeRounds=c.futureCutPlan(f).length;
+      const ok=act===1&&pick.recorded?c.setFutureCutDone(f,pick.k-1,false):c.setFutureCutQty(f,pick.k-1,String((pick.recorded?pick.qty:0)+1+rand(5)));
+      if(ok===false)continue;
+      const after=shownCuts(r,f),afterOpen=open(after),afterRevs=revs(f);ordered(after,label);
+      for(const [k,price] of afterOpen)if(beforeOpen.has(k)){assert.equal(price,beforeOpen.get(k),`${label} k${k} 환율`);checks++;}
+      // 회차 수는 모든 회차를 기록해 하단 추가 회차가 생길 때만 바뀐다(그때는 이전부터 남은 미기록 회차가 없다).
+      const afterRounds=c.futureCutPlan(f).length;
+      if(afterRounds!==beforeRounds)assert.ok(![...afterOpen.keys()].some(k=>beforeOpen.has(k)),`${label} 회차 수 ${beforeRounds}→${afterRounds}`);
+      for(const [id,rev] of afterRevs)if(beforeRevs.has(id)){assert.equal(rev,beforeRevs.get(id),`${label} ${id} revision`);revChecks++;}
+    }
+  }
+  assert.ok(checks>500&&revChecks>500,`비교한 회차 환율 ${checks}개 · 알림 기준 ${revChecks}개`);
+});
+
+// PR #502 2차 보완: 0계약 회차는 손절 표에서만 뺀다. 'N분할'·'1회 계획' 안내는 빼기 전 회차 수, '완료 n / m회'는 표에 보이는 회차 수다.
+const cardOf=f=>{const r=setup(f);vm.runInContext('futureCutsOpen=true',r.c);r.c.renderFutures();return r;};
+const cutTable=r=>[...r.el('futureRebuyPanel').innerHTML.matchAll(/data-fcut="(\d+)"[\s\S]*?<b>(\d+)회<\/b>[\s\S]*?class="purchase-qty">(\d+)계약/g)].map(m=>`${m[2]}회 ${m[3]}계약`);
+
+test('손절 표는 기록 없는 0계약 회차를 빼고 회차 번호(k)는 그대로 둔다',()=>{
+  // 6계약 · 100% · 6회에서 3회차를 4계약 체결: 남은 2계약은 2·5회차, 0계약인 1·4·6회차는 표에서 뺀다(계산은 6회 그대로).
+  const f=future();f.positions[0].contracts=2;Object.assign(f.rebuy,{contracts:6,sellPct:100,steps:10,cuts:[null,null,{contracts:4,price:1360,targetPrice:1360,month:'202612',settlementPrice:1450}]});
+  const r=cardOf(f);
+  assert.deepEqual(cutTable(r),['2회 1계약','3회 4계약','5회 1계약']);
+  assert.equal(r.c.futureCutPlan(f).length,6,'계산(수집기 고정 rebuy.js)은 회차를 그대로 둔다');
+  const html=r.el('futureRebuyPanel').innerHTML;assert.match(html,/1 \/ 3회 완료/,'완료 n / m회는 표에 보이는 회차 수');assert.match(html,/· 6분할/,'N분할은 빼기 전 회차 수');
+  // 기록한 회차는 체결 0계약(부분 체결 시작 전)이어도 체크·체결 입력을 위해 표에 남긴다.
+  const g=future();g.positions[0].contracts=8;Object.assign(g.rebuy,{contracts:8,sellPct:50,steps:4,cuts:[{contracts:0,price:1400,targetPrice:1400,partial:true,plannedQty:2}]});
+  assert.equal(cutTable(cardOf(g))[0],'1회 2계약');
+  // 하단이 비어 기준이 갖춰지지 않으면(ready 아님) 회차를 나누지 않으므로 표는 지금처럼 기록 범위의 회차를 모두 보인다.
+  const h=future();Object.assign(h.rebuy,{floorPrice:0,contracts:8,sellPct:50,steps:4,cuts:[null,{contracts:1,price:1380,targetPrice:1380,month:'202612',settlementPrice:1450}]});
+  assert.deepEqual(cutTable(cardOf(h)),['1회 0계약','2회 1계약']);
+});
+
+test('여러 회차 계획에서 남은 행이 1개여도 1회 계획 안내를 붙이지 않고, 원래 1회 계획만 안내한다',()=>{
+  // 5계약 · 100% · 5회: 1회차에 5계약 전량 체결 / 1회차에 5계약 계획 중 2계약 부분 체결 → 표에 1회차만 남아도 5분할 계획이다.
+  for(const cut of [{contracts:5},{contracts:2,partial:true,plannedQty:5}]){
+    const f=future();f.positions[0].contracts=5;Object.assign(f.rebuy,{contracts:5,sellPct:100,steps:5,cuts:[{price:1400,targetPrice:1400,month:'202612',settlementPrice:1450,...cut}]});
+    const r=cardOf(f);assert.equal(cutTable(r).length,1,JSON.stringify(cut));
+    assert.match(r.el('futureRebuyPanel').innerHTML,/· 5분할/,JSON.stringify(cut));
+    r.c.openFutureRebuyDialog();assert.doesNotMatch(r.el('futureRebuyDialog').innerHTML,/1회 계획은 하단에서 손절합니다/,JSON.stringify(cut));
+  }
+  const f=future();f.positions[0].contracts=2;Object.assign(f.rebuy,{contracts:2,sellPct:50,steps:5});
+  const r=cardOf(f);assert.equal(r.c.futureCutPlan(f).length,1);
+  r.c.openFutureRebuyDialog();assert.match(r.el('futureRebuyDialog').innerHTML,/1회 계획은 하단에서 손절합니다/,'목표 1계약은 원래 1회 계획');
+});
+
+
+// PR #502 3차 보완: 분할 횟수 '자동'의 미리보기 N회는 저장 뒤 카드의 'N분할'(0계약 회차를 빼기 전 회차 수)과 같다.
+test('자동 미리보기 N회는 저장 뒤 카드의 N분할과 같고 0계약 회차는 표에서만 뺀다',()=>{
+  const f=future();f.positions[0].contracts=17;Object.assign(f.rebuy,{contracts:20,sellPct:50,steps:5,cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
+  const r=setup(f);vm.runInContext('futureCutsOpen=true',r.c);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
+  assert.deepEqual(autoView(r),['10회','회차마다 1계약씩 손절']);
+  r.submit('futureRebuyForm');r.c.renderFutures();
+  const html=r.el('futureRebuyPanel').innerHTML;
+  assert.match(html,/· 10분할/);assert.match(html,/1 \/ 8회 완료/,'표에는 0계약인 4·8회차를 뺀 8개 행');
 });

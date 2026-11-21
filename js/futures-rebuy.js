@@ -10,6 +10,10 @@ const futureTableState={cuts:{open:null,due:""},buys:{open:null,due:""}};
 let futureCutsOpen=false,futureBuysOpen=false,futureBuyStagesOpen=false; // 손절 완료·재매수 완료 회차와 '다른 단계' 펼침(화면 상태, 저장·동기화 안 함)
 // 화면의 손절 회차 번호: 이어서 새 손절이면 이번 계획의 회차(round), 아니면 k. k − 1은 언제나 cuts 위치(체크·알림 키)다.
 const futureCutNo = c => c.round??c.k;
+// 손절 표에 보일 회차: 기준이 갖춰지면(ready) 기록 없는 0계약 회차는 뺀다(ETF rebuyVisibleCuts와 같은 방식). 계산·알림(rebuy.js futureCutPlan,
+// trade-alerts.js)은 회차를 그대로 두며, 0계약 회차는 이미 남은 손절(futureCutRest)이 0이라 도달·알림·다음 회차에서 빠진다.
+// k는 cuts 위치라 남은 회차의 번호는 그대로이고 기록한 회차는 체결 0계약이어도 보인다. 'N분할'·'1회 계획' 안내는 빼기 전 회차 수(s.cuts.length)다.
+function futureCutsShown(cuts,ready){return ready?cuts.filter(c=>c.recorded||c.qty>0):cuts;}
 const FUTURE_CUT_AUTO_STEPS = 60; // 손절 분할 횟수 '자동'의 저장 값(최대 분할 횟수). rebuy.js futureCutPlan이 손절 목표 계약 수로 줄인다.
 // 손절 시점인 다음 손절 회차(현재 환율 ≤ 회차 환율). 재매수 뒤에도 이어 가며 기준 미입력·현재 환율 없음이면 null.
 function futureCutDue(s,cur){const c=s.ready?s.cuts.find(x=>futureCutRest(x)>0):null;return c&&cur>0&&cur<=c.price?c:null;}
@@ -352,16 +356,17 @@ function openFutureRebuyDialog(startNew=false){
     return edits;
   };
   // 자동으로 저장했을 때의 손절 표 미리 계산: 저장과 같이 applyFutureRebuyEdits(이어서 새 손절 포함)·fillPrices(하단선 시세)를 사본에 적용해 rebuy.js futureCutPlan을 돌린다.
-  // {cuts, goal}: 손절 표, 신저점·하단(하단선 시세 대기 포함)·손절 목표로 아직 표를 만들 수 없거나 저장할 수 없는 입력이면 cuts 없음.
+  // {cuts, rounds, goal}: cuts는 손절 표에 보일 회차(futureCutsShown: 기록 없는 0계약 회차를 뺌), rounds는 빼기 전 회차 수(카드 'N분할'과 같은 값).
+  // 신저점·하단(하단선 시세 대기 포함)·손절 목표로 아직 표를 만들 수 없거나 저장할 수 없는 입력이면 cuts 없음.
   // kept: 저장했을 때 이번 손절 계획의 체결 기록이 남는지(futureRebuyEditBase: 이어서 새 손절이면 1회부터 다시 짜므로 false).
   const autoCutPreview=()=>{
     const edits={...dialogEdits(),steps:String(FUTURE_CUT_AUTO_STEPS)},kept=futureCutRecords(futureRebuyOf(futureRebuyEditBase(f,edits))).some(Boolean),g=applyFutureRebuyEdits(f,edits);if(!g)return {kept};
     if(priceData)fillPrices({futures:g},priceData);
     const low=Number(g.rebuy.lowPrice)||0,floor=Number(g.rebuy.floorPrice)||0,goal=futureCutGoal(g);
-    return low>floor&&floor>0&&goal>0?{goal,cuts:futureCutPlan(g),kept}:{kept};
+    const all=futureCutPlan(g);return low>floor&&floor>0&&goal>0?{goal,cuts:futureCutsShown(all,true),rounds:all.length,kept}:{kept};
   };
-  // 자동이면 숫자 칸 자리에 저장 뒤 손절 표의 회차 수 'N회'를 보인다. 안내는 손절 목표가 60계약을 넘으면 경고,
-  // 남은 회차(완료 아닌 회차)에 1계약이 아닌 회차가 있으면(2계약 이상·부분 체결 뒤 재배분의 0계약 회차, 모든 회차 체결 뒤 하단 추가 회차 등) 표를 따른다고, 아니면 1계약씩이라고 알린다.
+  // 자동이면 숫자 칸 자리에 저장 뒤 카드의 'N분할'과 같은 회차 수(0계약 회차를 빼기 전) 'N회'를 보인다. 안내는 손절 목표가 60계약을 넘으면 경고,
+  // 손절 표에 보일 남은 회차(완료 아닌 회차)에 1계약이 아닌 회차가 있으면(부분 체결 회차의 남은 계약, 모든 회차 체결 뒤 하단 추가 회차 등) 표를 따른다고, 아니면 1계약씩이라고 알린다.
   // 표를 만들 수 없으면(신저점·하단 미입력, 하단선 시세 대기, 저장할 수 없는 입력) 입력한 이탈 전 계약 수·손절 비중으로 손절 목표를 어림한다.
   // 이때 저장 뒤에도 이번 계획의 체결 기록이 남으면 회차·배분이 그 기록에 달려 어림할 수 없으므로 회차 칸을 비우고 표를 따른다고 알린다.
   // 체결 기록이 없거나 이어서 새 손절이면 회차를 1회부터 나누므로 min(60, 손절 목표)회 · 1계약씩이 저장 뒤 표와 같다.
@@ -374,7 +379,7 @@ function openFutureRebuyDialog(startNew=false){
       const low=moneyInputNumber(lowInput.value),hold=holdInput.value.trim()===""?(restartable&&low>0&&low!==Number(r.lowPrice)?restartHold:autoHold):Number(holdInput.value);
       const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value);goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
     }
-    const rounds=plan?plan.cuts.length:preview.kept?0:Math.min(goal,FUTURE_CUT_AUTO_STEPS),uneven=plan?plan.cuts.some(c=>!c.done&&futureCutRest(c)!==1):preview.kept;
+    const rounds=plan?plan.rounds:preview.kept?0:Math.min(goal,FUTURE_CUT_AUTO_STEPS),uneven=plan?plan.cuts.some(c=>!c.done&&futureCutRest(c)!==1):preview.kept;
     stepsInput.placeholder=rounds>0?`${rounds}회`:"";
     stepsNote.textContent=goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:uneven?"체결한 회차가 있어 남은 회차는 표를 따릅니다":"회차마다 1계약씩 손절";
     stepsNote.classList.toggle("warn",goal>FUTURE_CUT_AUTO_STEPS);
@@ -610,7 +615,7 @@ function renderFutureRebuy(f){
   const tapPrice=(text,attrs,value,label)=>`<label class="future-tap-price" title="${label} 수정"><span class="price" aria-hidden="true">${text}</span><input ${attrs} type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${moneyInputText(value)}" aria-label="${label}"></label>`;
   const cutAlerts=typeof futureRebuyAlertEnabled==="function",cutDone=s.cuts.filter(c=>c.done),lastDoneCut=cutDone.at(-1);
   const cutMonths=[...new Set(s.cuts.filter(c=>c.recorded).flatMap(c=>futureCutLegs(cutRecs[c.k-1]).map(l=>l.month)).filter(m=>m&&heldMonth(m)))].sort();
-  const cutRows=s.cuts.map(c=>{
+  const cutsShown=futureCutsShown(s.cuts,s.ready),cutRows=cutsShown.map(c=>{
     const i=c.k-1,no=futureCutNo(c),rest=futureCutRest(c),due=s.ready&&rest>0&&cur>0&&cur<=c.price,state=c.done?"done":c.partial?"partial":due?"due":"",blocked=!c.recorded&&!c.qty;
     const flag=c.partial?`남은 ${rest}`:due?"도달":"",rec=cutRecs[i],warn=c.recorded?cutWarn(rec):"";
     const price=c.recorded?`${tapPrice(cutPx(c.execPrice||c.price),`data-fcut-price="${i}"`,opt(c.execPrice),`${no}회 손절 체결 환율`)}${warn?`<span class="krw future-row-warn">${warn}</span>`:""}`:`<span class="price">${cutPx(c.price)}</span>`;
@@ -655,7 +660,7 @@ function renderFutureRebuy(f){
   $("futureRebuyPanel").innerHTML=`<section class="future-rebuy"><div class="section-heading"><div class="title-row"><h2><button class="fr-fold-title" type="button" id="frToggle" aria-expanded="true">신저점 손절 후 재매수</button></h2><button class="btn icon-btn" id="frEdit" type="button" aria-label="손절 기준 수정" title="손절 기준 수정">${PENCIL}</button></div><span class="future-rebuy-basis">${basis}</span></div>
     ${futureRebuyTrack(r,s,cur,notify("breakdown",null,"신저점 손절 시작",s.started,"신저점 이탈"),trText,fe)}
     ${s.rangeError?`<div class="warning">${esc(s.rangeError)}</div>`:""}${s.overSold||s.overBought?'<div class="warning">체결 기록이 손절 목표 또는 판 계약 수를 넘습니다. 실제 체결 수량을 확인하세요.</div>':""}${unText?`<div class="warning">${unText}이 보유 월물·누적 정산손익에 반영되지 않았습니다(연동 전 체크 또는 반영할 보유 월물이 없던 체크). 계좌 기준으로 이미 직접 고쳤다면 '직접 반영함'을 누르세요. <button class="btn mini" type="button" id="frLink">보유 월물에 반영</button> <button class="btn mini" type="button" id="frManual">직접 반영함</button></div>`:""}
-    <details class="future-rebuy-details" id="frCuts"${futureTableOpen("cuts",cutKey)?" open":""}><summary><h2>1. 분할 손절</h2><span>${s.doneCuts} / ${s.cuts.length}회 완료</span>${all("cuts")}</summary><section class="card table-card purchase-table sale-table future-cut-table${futureCutsOpen?"":" hide-completed"}${cutAlerts?"":" no-alert"}" id="frCutTable"><div class="purchase-table-head"><span>회차</span><span>손절 환율</span><span>계약</span><span>체결</span>${cutAlerts?"<span>알림</span>":""}<span>상태</span></div>${s.restart&&s.sold>s.cutSold?`<div class="stop-note">이전 손절 ${s.sold-s.cutSold}계약은 평균 손절가·재매수에 포함됩니다.</div>`:""}${cutDone.length?`<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="${futureCutsOpen}" aria-controls="frCutRows"><span>손절 완료 <b>${cutDone.length}회 · ${cutDone.reduce((n,c)=>n+c.qty,0)}계약</b>${cutMonths.length?` · ${cutMonths.map(esc).join("·")} 반영`:""}</span><span class="completed-fold-action" data-completed-action>${futureCutsOpen?"접기":"펼치기"}</span></button>`:""}<div id="frCutRows">${cutRows}</div>${cutDone.length&&cutDone.length===s.cuts.length?'<div class="completed-fold-empty">모든 회차의 손절이 완료되었습니다.</div>':""}${s.started&&s.cuts.some(c=>futureCutRest(c)>0)?'<div class="stop-note">재매수 후에도 회차 환율 이하로 다시 내려오면 남은 손절을 이어갑니다.</div>':""}</section></details>
+    <details class="future-rebuy-details" id="frCuts"${futureTableOpen("cuts",cutKey)?" open":""}><summary><h2>1. 분할 손절</h2><span>${s.doneCuts} / ${cutsShown.length}회 완료</span>${all("cuts")}</summary><section class="card table-card purchase-table sale-table future-cut-table${futureCutsOpen?"":" hide-completed"}${cutAlerts?"":" no-alert"}" id="frCutTable"><div class="purchase-table-head"><span>회차</span><span>손절 환율</span><span>계약</span><span>체결</span>${cutAlerts?"<span>알림</span>":""}<span>상태</span></div>${s.restart&&s.sold>s.cutSold?`<div class="stop-note">이전 손절 ${s.sold-s.cutSold}계약은 평균 손절가·재매수에 포함됩니다.</div>`:""}${cutDone.length?`<button class="completed-fold-bar" id="toggleFutureCuts" type="button" aria-expanded="${futureCutsOpen}" aria-controls="frCutRows"><span>손절 완료 <b>${cutDone.length}회 · ${cutDone.reduce((n,c)=>n+c.qty,0)}계약</b>${cutMonths.length?` · ${cutMonths.map(esc).join("·")} 반영`:""}</span><span class="completed-fold-action" data-completed-action>${futureCutsOpen?"접기":"펼치기"}</span></button>`:""}<div id="frCutRows">${cutRows}</div>${cutDone.length&&cutDone.length===cutsShown.length?'<div class="completed-fold-empty">모든 회차의 손절이 완료되었습니다.</div>':""}${s.started&&s.cuts.some(c=>futureCutRest(c)>0)?'<div class="stop-note">재매수 후에도 회차 환율 이하로 다시 내려오면 남은 손절을 이어갑니다.</div>':""}</section></details>
     <details class="future-rebuy-details" id="frBuys"${futureTableOpen("buys",buyKey)?" open":""}><summary><h2>2. 반등 단계별 재매수</h2><button class="btn icon-btn" id="frBuyEdit" type="button" aria-label="재매수 기준 수정" title="재매수 기준 수정">${PENCIL}</button><span>잔여 ${s.rest}계약 · ${s.doneTranches} / ${s.tranches.length}회</span>${all("buys")}</summary><section class="card table-card purchase-table sale-table future-rebuy-table${futureBuysOpen?"":" hide-completed"}${buyAlerts?"":" no-alert"}" id="frBuyTable">${buyPlanHeader}<div class="purchase-table-head"><span>회차</span><span>재매수 환율</span><span>계약</span><span>체결</span>${buyAlerts?"<span>알림</span>":""}<span>상태</span></div>${buyDone.length?`<button class="completed-fold-bar" id="toggleFutureBuys" type="button" aria-expanded="${futureBuysOpen}" aria-controls="frBuyRows"><span>재매수 완료 <b>${buyDone.length}회 · ${buyDone.reduce((n,x)=>n+x.qty,0)}계약</b>${buyMonths.length?` · ${buyMonths.map(esc).join("·")} 반영`:""}</span><span class="completed-fold-action" data-completed-action>${futureBuysOpen?"접기":"펼치기"}</span></button>`:""}<div id="frBuyRows">${buyRows}</div>${s.direct&&!s.directRest&&s.rest&&!s.above?`<div class="completed-fold-empty">이번 계획을 완료했습니다. 대기 ${s.unplannedRest}계약은 재매수 기준에서 새 계획을 정하세요.</div>`:""}${buyDone.length&&!s.rest&&s.tranches.every(x=>x.done||!x.amount)?'<div class="completed-fold-empty">판 계약을 모두 재매수했습니다.</div>':""}${s.above?`<div class="stop-note">평균 손절 환율 ${px(s.sellAvg)} 위 회차는 사지 않고 알림도 보내지 않습니다. 환율별 총손익의 손익분기도 재매수 없이 분할매수만 반영합니다.</div>`:""}${others.length?`<button class="completed-fold-bar future-stage-bar" id="toggleFutureStages" type="button" aria-expanded="${futureBuyStagesOpen}" aria-controls="frStageRows"><span>다른 단계 <b>${others.length}개</b> · 기준 환율${buyAlerts?"·알림":""}</span><span class="completed-fold-action" data-completed-action>${futureBuyStagesOpen?"접기":"펼치기"}</span></button><div id="frStageRows"${futureBuyStagesOpen?"":" hidden"}>${others.map(otherRow).join("")}</div>`:""}<div class="future-rebuy-foot"><button class="btn mini ghost" id="frTimeframes" type="button">＋ 시·일·주·월선 추가</button></div></section></details></section>`;
   if(typeof bindFutureRebuyAlerts==="function")bindFutureRebuyAlerts(f);
   $("frTimeframes").onclick=()=>{const r=editFutureRebuy(f),stages=completeMovingStages(r.stages);if(stages.length>80){alert("재매수 단계는 80개까지 설정할 수 있습니다.");return;}r.stages=stages;if(priceData)fillPrices({futures:f},priceData);save();renderFutures();};
