@@ -343,13 +343,15 @@ function openFutureRebuyDialog(startNew=false){
     $("frNewGoal").textContent=Number.isInteger(contracts)&&contracts>0&&pct>=0&&pct<=100&&Number.isInteger(steps)&&steps>=1&&steps<=60&&goal>0?`새 계획 · 손절 목표 ${goal}계약 · ${Math.min(goal,steps)}회`:"새 계획 · 손절 목표 1계약 이상 필요";
   };
   // 자동이면 숫자 칸 자리에 지금 입력한 이탈 전 계약 수·손절 비중의 손절 목표로 'N회'(min(60, 목표))를 보이고, 목표가 60계약을 넘으면 1계약씩이 아님을 알린다.
-  // 이미 체결한 회차가 있으면 실제 회차 수는 표의 회차(futureCutPlan)를 따른다.
   const stepsInput=field$("steps"),stepsMode=$("frStepsMode"),stepsNote=$("frStepsNote");let stepsDirect=stepsInput.value||"10";
   const syncSteps=()=>{
-    const auto=stepsMode.value==="auto",low=moneyInputNumber(lowInput.value),hold=holdInput.value.trim()===""?(restartable&&low>0&&low!==Number(r.lowPrice)?restartHold:autoHold):Number(holdInput.value);
+    const auto=stepsMode.value==="auto",low=moneyInputNumber(lowInput.value),moved=restartable&&low>0&&low!==Number(r.lowPrice),hold=holdInput.value.trim()===""?(moved?restartHold:autoHold):Number(holdInput.value);
     const pct=field$("sellPct").value.trim()===""?50:Number(field$("sellPct").value),goal=Number.isInteger(hold)&&hold>0&&pct>=0&&pct<=100?futureCutGoal(f,pct,hold):0;
     stepsInput.disabled=auto;stepsInput.placeholder=auto&&goal>0?`${Math.min(goal,FUTURE_CUT_AUTO_STEPS)}회`:"";
-    stepsNote.textContent=!auto?"":goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:"회차마다 1계약씩 손절";
+    // 이번 손절 계획에 회차당 2계약 이상 체결이 있으면 남은 회차 배분은 rebuy.js futureCutPlan의 재배분을 따르므로(0계약 회차가 생길 수 있음) 1계약씩이라고 단정하지 않는다.
+    // 신저점을 바꾸거나 고정한 이탈 전 계약 수를 비워 이어서 새 손절이 되면 회차를 1회부터 다시 짜므로 지난 체결은 보지 않는다(syncRestart와 같은 조건).
+    const restart=moved||restartable&&Object.hasOwn(r,"contracts")&&holdInput.value.trim()==="",multi=!restart&&futureCutRecords(r).some(c=>futureRebuyQty(c?.contracts)>1);
+    stepsNote.textContent=!auto?"":goal>FUTURE_CUT_AUTO_STEPS?`목표 ${goal}계약 · 일부 회차 2계약`:multi?"체결한 회차가 있어 남은 회차는 표를 따릅니다":"회차마다 1계약씩 손절";
     stepsNote.classList.toggle("warn",auto&&goal>FUTURE_CUT_AUTO_STEPS);
   };
   stepsMode.onchange=()=>{error.textContent="";if(stepsMode.value==="auto"){stepsDirect=stepsInput.value||stepsDirect;stepsInput.value="";}else stepsInput.value=stepsDirect;syncSteps();updateGoal();};

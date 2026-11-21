@@ -1166,7 +1166,7 @@ test('분할 횟수가 없는 옛 기록은 직접 10회로 열고, 다른 칸�
 test('체결한 손절 회차가 있어도 자동으로 바꾸면 체결 기록은 그대로 두고 남은 회차만 다시 나눈다',()=>{
   const f=future();Object.assign(f.rebuy,{contracts:16,steps:2,cuts:[{contracts:1,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
   const r=setup(f),cuts=JSON.stringify(f.rebuy.cuts);r.c.renderFutures();r.el('frEdit').onclick();
-  r.change('#frStepsMode','auto');r.submit('futureRebuyForm');
+  r.change('#frStepsMode','auto');assert.equal(r.el('frStepsNote').textContent,'회차마다 1계약씩 손절','1계약 체결뿐이면 안내는 그대로');r.submit('futureRebuyForm');
   const saved=r.saved().futures;assert.equal(saved.rebuy.steps,60);assert.equal(JSON.stringify(saved.rebuy.cuts),cuts);
   assert.equal(Object.hasOwn(saved.rebuy,'cutRestart'),false);
   assert.deepEqual(plain(r.c.futureCutPlan(saved).map(c=>c.qty)),[1,1,1,1,1,1,1,1]);
@@ -1180,4 +1180,46 @@ test('새 손절 계획 창도 분할 횟수 자동을 미리보기와 저장에
   r.change('#frStepsMode','auto');assert.match(r.el('frNewGoal').textContent,/손절 목표 6계약 · 6회/);
   r.submit('futureRebuyForm');assert.equal(r.el('futureRebuyError').textContent,'');
   const saved=r.saved().futures.rebuy;assert.equal(saved.steps,60);assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[1,1,1,1,1,1]);
+});
+
+test('이번 손절에 2계약 이상 체결한 회차가 있으면 자동 안내는 1계약씩이라고 단정하지 않는다',()=>{
+  // 남은 회차 배분은 rebuy.js futureCutPlan의 재배분을 따른다(0계약 회차가 섞일 수 있어 표를 기준으로 안내).
+  const f=future();f.positions[0].contracts=20;Object.assign(f.rebuy,{contracts:20,steps:5,cuts:[{contracts:3,price:1399,targetPrice:1400,month:'202612',settlementPrice:1450}]});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();r.change('#frStepsMode','auto');
+  assert.deepEqual([r.input('[data-fr-field="steps"]').placeholder,r.el('frStepsNote').textContent,r.el('frStepsNote').classList.contains('warn')],['10회','체결한 회차가 있어 남은 회차는 표를 따릅니다',false]);
+  r.submit('futureRebuyForm');assert.equal(r.saved().futures.rebuy.steps,60);
+  assert.deepEqual(plain(r.c.futureCutPlan(r.saved().futures).map(c=>c.qty)),[3,1,1,0,1,1,1,0,1,1],'지금 고정 계산의 배분(지시 밖 발견 사항)');
+});
+
+test('이미 자동인 기록을 열어 아무것도 고치지 않고 저장하면 저장하지 않고 닫는다',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:16,steps:60});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();assert.equal(r.el('frStepsMode').value,'auto');
+  r.submit('futureRebuyForm');assert.equal(r.stored.size,0);assert.equal(r.el('futureRebuyDialog').open,false);
+});
+
+test('자동 안내는 목표 60계약까지 1계약씩, 61계약부터 일부 회차 2계약 경고',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:120,steps:60});f.positions[0].contracts=122;
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
+  const note=r.el('frStepsNote'),steps=r.input('[data-fr-field="steps"]');
+  assert.deepEqual([steps.placeholder,note.textContent,note.classList.contains('warn')],['60회','회차마다 1계약씩 손절',false]);
+  r.type('[data-fr-field="contracts"]','122');
+  assert.deepEqual([steps.placeholder,note.textContent,note.classList.contains('warn')],['60회','목표 61계약 · 일부 회차 2계약',true]);
+});
+
+test('신저점을 바꿔 이어서 새 손절이 되면 자동 회차는 지금 보유 기준으로 보이고 지난 체결은 안내에 반영하지 않는다',()=>{
+  // 이탈 전 계약 수 자동: 지금은 보유 20 + 판 4 = 24계약, 이어서 새 손절이면 지금 보유 20계약 기준.
+  const f=future();f.positions[0].contracts=20;delete f.rebuy.contracts;f.rebuy.steps=60;
+  f.rebuy.cuts=[{contracts:2,price:1399.5,targetPrice:1400,month:'202612',settlementPrice:1450},{contracts:2,price:1374.8,targetPrice:1375,month:'202612',settlementPrice:1450}];
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
+  const steps=r.input('[data-fr-field="steps"]'),note=r.el('frStepsNote');
+  assert.deepEqual([steps.placeholder,note.textContent],['12회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  r.type('[data-fr-field="lowPrice"]','1350');
+  assert.deepEqual([r.input('[data-fr-field="contracts"]').placeholder,steps.placeholder,note.textContent],['자동 · 20계약','10회','회차마다 1계약씩 손절']);
+});
+
+test('손절 비중 칸을 비우면 50%로 계산한 자동 회차를 보인다',()=>{
+  const f=future();Object.assign(f.rebuy,{contracts:16,steps:60});
+  const r=setup(f);r.c.renderFutures();r.el('frEdit').onclick();
+  r.type('[data-fr-field="sellPct"]','25');assert.equal(r.input('[data-fr-field="steps"]').placeholder,'4회');
+  r.type('[data-fr-field="sellPct"]','');assert.equal(r.input('[data-fr-field="steps"]').placeholder,'8회');
 });
