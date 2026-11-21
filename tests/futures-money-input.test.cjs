@@ -1311,3 +1311,23 @@ test('손절 표를 아직 만들 수 없으면 자동 회차는 입력한 이�
   r.type('[data-fr-field="floorPrice"]','');r.type('[data-fr-field="lowPrice"]','1350');
   assert.deepEqual(autoView(r),['10회','회차마다 1계약씩 손절']);
 });
+
+test('자동을 먼저 고른 뒤 하단 단위·기간을 바꿔도 자동 회차·안내를 그 하단선으로 다시 계산한다',()=>{
+  const prices={updatedAt:'2026-11-20T00:00:00Z',futures:{'202612':{asOf:'2026-11-20',close:1350,ma:{'60일선':1250}}}};
+  const r=setup(allCut(),etf(),prices);r.c.renderFutures();r.el('frEdit').onclick();
+  r.change('#frStepsMode','auto');r.type('[data-fr-field="contracts"]','12');
+  assert.deepEqual(autoView(r),['4회','체결한 회차가 있어 남은 회차는 표를 따릅니다'],'직접 하단 1,300원: 하단 추가 회차');
+  r.change('#frFloorUnit','일선');r.type('#frFloorPeriod','60');
+  assert.deepEqual(autoView(r),['6회','회차마다 1계약씩 손절'],'60일선 1,250원: 6회로 다시 나뉜다');
+  r.submit('futureRebuyForm');const g=r.saved().futures;
+  assert.deepEqual([g.rebuy.floorLine,g.rebuy.floorPrice],['60일선',1250]);assert.deepEqual(plain(r.c.futureCutPlan(g).map(c=>c.qty)),[1,1,1,1,1,1]);
+});
+
+test('저장할 수 없는 입력 중에는 자동 회차를 입력한 이탈 전 계약 수·손절 비중으로 어림한다',()=>{
+  // 하단 1,450원 ≥ 신저점 1,400원이라 저장할 수 없다(applyFutureRebuyEdits가 null). 이 '6회'는 입력을 고치는 동안의 어림이다(12계약 × 50%).
+  const r=setup(allCut());r.c.renderFutures();r.el('frEdit').onclick();
+  r.change('#frStepsMode','auto');r.type('[data-fr-field="contracts"]','12');
+  assert.deepEqual(autoView(r),['4회','체결한 회차가 있어 남은 회차는 표를 따릅니다']);
+  r.type('[data-fr-field="floorPrice"]','1450');
+  assert.deepEqual(autoView(r),['6회','회차마다 1계약씩 손절']);
+});
