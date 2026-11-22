@@ -855,8 +855,8 @@ test('요약 카드: 진행 막대는 완료와 도달·부분 체결을 이어 
   assert.deepEqual(Array.from(card(r).matchAll(/<div class="bp-due-row"><div><b>([^<]+)<\/b><small>기준가 ([^ ]+) · 현재 <i>([^<]+)<\/i>/g),m=>m.slice(1)),[['25일선 1차','₩10000','+25% 위'],['25일선 2차','₩12000','+4.2% 위']]);
   assert.deepEqual(Array.from(card(r).matchAll(/data-purchase-act="a" data-key="([^"]+)"/g),m=>m[1]),['25일선:0','25일선:1']);
   assert.match(card(r),/<p class="bp-due-foot">그다음 <b>25일선 3차 ₩14000<\/b> · \+12% 남음<\/p>/);
-  assert.match(card(r),/<g class="bp-tip warn">.*?>₩10000<\/text>/,'말풍선은 첫 도달 회차를 주황으로');assert.match(card(r),/<span class="bp-x on warn"[^>]*>25일<\/span>/,'도달 회차가 든 선은 주황, ·다음 없음');
-  assert.match(card(r),/<span class="bp-x"[^>]*>32일<\/span>/);
+  assert.match(card(r),/<g class="bp-tip warn">.*?>₩10000<\/text>/,'말풍선은 첫 도달 회차를 주황으로');assert.match(card(r),/<span class="bp-x first on warn"[^>]*>25일<\/span>/,'도달 회차가 든 선은 주황, ·다음 없음');
+  assert.match(card(r),/<span class="bp-x last"[^>]*>32일<\/span>/);
   assert.equal(JSON.stringify(r.doc),before,'화면 표시만 하고 기록은 바꾸지 않는다');
   r.change('[data-purchase-buy-shares]',1);
   assert.match(card(r),/도달 1회 · 미체결/,'부분 체결 회차는 도달 수에 다시 세지 않는다');assert.match(card(r),/<small> · 부분 1<\/small>/);
@@ -2378,10 +2378,10 @@ test('곡선 카드: 말풍선과 겹치지 않게 강조 점이 시작점이면
   const labelY=(html,anchor)=>Number(html.match(new RegExp(`<text x="[\\d.]+" y="([\\d.]+)" class="bp-t (?:mint|blue)" text-anchor="${anchor}">`))[1]);
   const where=html=>{const p=ends(html);return {start:labelY(html,'start')>p.start?'아래':'위',end:labelY(html,'end')>p.end?'아래':'위'};};
   const first=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
-  assert.equal((first.html().match(/class="bp-x[ "]/g)||[]).length,2);assert.match(first.html(),/class="bp-x on"[^>]*>25일·다음/,'지점 2개, 첫 지점 강조');
+  assert.equal((first.html().match(/class="bp-x[ "]/g)||[]).length,2);assert.match(first.html(),/class="bp-x first on"[^>]*>25일·다음/,'지점 2개, 첫 지점 강조');
   assert.deepEqual(where(first.html()),{start:'아래',end:'위'},'지점 2개·첫 지점 강조: 시작 가격만 아래, 끝 가격은 위');
   const falling=setup({manual:true,price:11000});falling.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:8000,shares:8,amount:6.4}];falling.render();
-  assert.match(falling.html(),/class="bp-x on[^"]*"[^>]*>1차/,'하락형 지점 2개, 첫 지점 강조');assert.deepEqual(where(falling.html()),{start:'아래',end:'위'},'하락형에서도 끝 가격은 위');
+  assert.match(falling.html(),/class="bp-x first on[^"]*"[^>]*>1차/,'하락형 지점 2개, 첫 지점 강조');assert.deepEqual(where(falling.html()),{start:'아래',end:'위'},'하락형에서도 끝 가격은 위');
   const two=setup({manual:true,price:9000});two.item.buyPlan.stages=[{id:'s1',price:8000,shares:8,amount:8,done:true,actual:6.4},{id:'s2',price:10000,shares:8,amount:8}];two.render();
   assert.match(two.html(),/class="bp-x[^"]*on[^"]*"[^>]*>2차/,'지점 2개 중 끝이 강조');assert.deepEqual(where(two.html()),{start:'위',end:'아래'},'지점 2개의 끝 강조: 끝 가격만 아래');
   const many=setup({budget:100,end:null,names:['25일선','32일선','42일선','60일선'],price:9000,ma:{'25일선':10000,'32일선':12000,'42일선':14000,'60일선':16000}});
@@ -2427,4 +2427,37 @@ test('계좌 펼침이 열린 채 대표 계좌를 지워 계획이 옮겨 가�
   r.inputs('[data-purchase-account-delete]').find(x=>x.dataset.purchaseAccountDelete==='a').onclick();
   assert.equal(r.doc.allocation.groups[0].items.length,1);assert.ok(r.doc.allocation.groups[0].items[0].buyPlan,'계획은 남은 계좌로');
   assert.match(r.html(),/id="purchaseAccountDrawer">/,'펼침 유지');assert.equal(r.element('purchaseAccountToggle').getAttribute('aria-expanded'),'true');
+});
+test('대표 계좌를 지우면 삭제 모드·메모 편집을 끝내고 펼침만 새 대표 계좌로 이어 둔다',()=>{
+  const r=setup();r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:0});r.render();
+  r.element('purchaseAccountToggle').onclick();r.element('purchaseMemoEdit').onclick();r.element('purchaseAccountDeleteToggle').onclick();r.ctx.confirm=()=>true;
+  assert.match(r.html(),/id="purchaseMemoEditor">/);assert.equal(r.inputs('[data-purchase-account-delete]').length,2);
+  r.inputs('[data-purchase-account-delete]').find(x=>x.dataset.purchaseAccountDelete==='a').onclick();
+  assert.match(r.html(),/id="purchaseAccountDrawer">/,'펼침 유지');assert.equal(r.inputs('[data-purchase-account-delete]').length,0,'삭제 모드 종료');
+  assert.equal(r.element('purchaseAccountDeleteToggle').getAttribute('aria-pressed'),'false');assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'메모 편집 종료');
+  // 지운 id가 다시 계획을 가진 대표 계좌로 돌아와도(같은 id 재사용) 옛 메모 편집·삭제 모드가 살아나지 않는다.
+  r.doc.allocation.groups[0].items.find(x=>x.buyPlan).id='a';r.render();
+  assert.equal(r.inputs('[data-purchase-account-delete]').length,0,'옛 삭제 모드 없음');assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'옛 메모 편집 없음');
+});
+test('현재가가 기준가와 같은 도달 회차는 부호 없이 "기준가와 같음"으로 보인다',()=>{
+  const r=setup();assert.match(r.html(),/<small>기준가 ₩10000 · 현재 <i>기준가와 같음<\/i><\/small>/);assert.doesNotMatch(r.html(),/[+−-]0% (?:위|아래)/);
+  r.prices.stocks['111111'].close=10100;r.render();assert.match(r.html(),/현재 <i>\+1% 위<\/i>/);
+});
+test('곡선 카드: 끝 가격 글자와 "최종" 평단 글자가 세로로 겹치지 않게 평단 글자를 밀어낸다',()=>{
+  // 밀어내기 전 기준으로 두 글자가 세로 15 안쪽에 놓이던 가격 배치(끝 152·최종 141.1, 끝 132·최종 144)
+  for(const prices of [[10000,9000,8600],[10000,9000,9200]]){
+    const r=setup({manual:true,price:7000});r.item.buyPlan.stages=prices.map((price,i)=>({id:`s${i}`,price,shares:8,amount:8}));r.render();
+    const ys=[...r.html().matchAll(/<text x="[\d.]+" y="([\d.]+)" class="bp-t (?:mint|blue)" text-anchor="end">([^<]+)<\/text>/g)].map(m=>({y:Number(m[1]),t:m[2]}));
+    const end=ys.find(x=>/^₩/.test(x.t)),avg=ys.find(x=>/^최종/.test(x.t));assert.ok(end&&avg,'끝 가격·최종 평단 글자');
+    assert.ok(Math.abs(end.y-avg.y)>=15,`${prices}: 두 글자 세로 간격 ${Math.abs(end.y-avg.y).toFixed(1)} ≥ 15`);
+  }
+});
+test('곡선 카드 x축: 강조 → 처음 → 끝 → 나머지 순으로 겹치지 않는 글자만 두고, 처음·끝 위치 보정은 지점 번호로 붙인다',()=>{
+  const names=['5일선','10일선','20일선','25일선','40일선','60일선','120일선','42주선','60주선','25개월선'],ma=Object.fromEntries(names.map((x,i)=>[x,10000+i*600]));
+  const r=setup({budget:3000,end:null,names,price:9000,ma});
+  for(let i=0;i<3;i++){const box=r.inputs('[data-purchase-buy]').find(x=>!x.checked);box.checked=true;box.onchange();}
+  const ticks=[...r.html().matchAll(/<span class="(bp-x[^"]*)" style="left:[\d.]+%">([^<]+)<\/span>/g)].map(m=>({cls:m[1],t:m[2]}));
+  assert.ok(ticks.some(x=>/\bon\b/.test(x.cls)&&x.t==='10일·다음'),'강조(2번째 지점)는 항상');assert.ok(!ticks.some(x=>x.t.startsWith('5일')),'강조와 한 칸 차이인 첫 글자는 겹쳐서 뺌');
+  assert.ok(ticks.some(x=>/\blast\b/.test(x.cls)&&x.t==='25월'),'끝 글자는 last 보정');assert.ok(!ticks.some(x=>/\bfirst\b/.test(x.cls)),'첫 지점이 빠지면 first 보정도 없음');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/\.bp-x\.first\{transform:translateX\(-25%\)\}\.bp-x\.last\{transform:translateX\(-75%\)\}/);assert.doesNotMatch(css,/\.bp-x:(?:first|last)-child/);
 });

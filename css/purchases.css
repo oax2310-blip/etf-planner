@@ -291,7 +291,7 @@
 .bp-tip rect,.bp-tip path{fill:var(--bp-tip);stroke:var(--bp-tip-line)}.bp-tip-main{fill:var(--text);font-size:14.5px;font-weight:800}.bp-tip-sub{fill:var(--bp-mint);font-size:11.5px;font-weight:600}.bp-tip.warn .bp-tip-sub{fill:var(--bp-orange)}
 .bp-xaxis{position:relative;height:36px;margin-top:2px;border-top:1px solid var(--bp-line)}
 .bp-x{position:absolute;top:7px;transform:translateX(-50%);padding:4px 9px;border-radius:999px;font-size:12px;font-weight:600;color:var(--text-2);white-space:nowrap}
-.bp-x:first-child{transform:translateX(-25%)}.bp-x:last-child{transform:translateX(-75%)}
+.bp-x.first{transform:translateX(-25%)}.bp-x.last{transform:translateX(-75%)}
 .bp-x.done{color:var(--bp-mint)}.bp-x.on{background:color-mix(in srgb,var(--bp-blue) 22%,transparent);color:var(--bp-blue-2);font-weight:700}.bp-x.warn{color:var(--bp-orange)}.bp-x.on.warn{background:color-mix(in srgb,var(--bp-orange) 18%,transparent)}
 /* 회차표 다음 회차 강조와 하단 버튼 */
 .bp .purchase-row.next{background:color-mix(in srgb,var(--bp-blue) 11%,transparent);box-shadow:inset 3px 0 0 var(--bp-blue)}
