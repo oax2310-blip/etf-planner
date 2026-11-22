@@ -2651,9 +2651,9 @@ test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아
   const {chart}=curveFixture(),c=chart();
   assert.match(c,/<div class="bp-plot"><div class="bp-tip [lcr]"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'말풍선이 SVG보다 먼저(아래 겹)');
   assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" clip-path="url\(#bpClipDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" clip-path="url\(#bpClipNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑)');
-  assert.match(c,/<linearGradient id="bpFillDone" gradientUnits="userSpaceOnUse" x1="0" y1="[\d.]+" x2="0" y2="138"><stop offset="0" stop-color="var\(--bpc-done-top\)"\/><stop offset="1" stop-color="var\(--bpc-bg\)"\/><\/linearGradient>/);
+  assert.match(c,/<linearGradient id="bpFillDone" gradientUnits="userSpaceOnUse" x1="0" y1="[\d.]+" x2="0" y2="138"><stop offset="0\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:1"\/><stop offset="55\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:0\.45"\/><stop offset="100\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:0"\/><\/linearGradient>/,'곡선 아래 진함 → 바닥 투명(색은 style로)');assert.doesNotMatch(c,/stop-color="var\(/,'presentation 속성 var() 없음');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
-  assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
+  assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#23735a;--bpc-next-top:#2d55b0;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
   assert.match(css,/\.bp-plot\{position:relative;margin-bottom:8px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
   assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-mask\{fill:var\(--bpc-bg\)\}/);assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
@@ -2704,10 +2704,10 @@ test('곡선 카드: 그래프는 실제 폭(px)으로 1:1로 그려 어느 폭�
 test('곡선 카드: 강조 회차에 기준가가 없으면 선·면을 마지막 완료 지점(없으면 처음)에서 같이 나눈다',()=>{
   const r=setup({manual:true,price:12500});r.item.buyPlan.stages=[{id:'s0',price:11000,shares:5,amount:5.5,done:true,actual:5.5},{id:'s1',price:null,shares:3,plannedShares:10,partial:true,actual:3},{id:'s2',price:12000,shares:10,amount:12},{id:'s3',price:13000,shares:10,amount:13}];r.render();
   const c=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0],x0=Number(c.match(/<path d="M([\d.]+) /)[1]);
-  assert.match(c,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" stop-color="var\(--bpc-mint\)"\/><stop offset="0\.0%" stop-color="var\(--bpc-mint\)"\/><stop offset="6\.0%" stop-color="var\(--bpc-blue\)"\/>/,'선: 마지막 완료 지점(첫 점)까지 민트, 그 뒤 파랑');
+  assert.match(c,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" style="stop-color:var\(--bpc-mint\);stop-opacity:1"\/><stop offset="0\.0%" style="stop-color:var\(--bpc-mint\);stop-opacity:1"\/><stop offset="6\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/>/,'선: 마지막 완료 지점(첫 점)까지 민트, 그 뒤 파랑');
   assert.equal(Number(c.match(/<clipPath id="bpClipDone"><rect x="0" y="0" width="([\d.]+)"/)[1]),x0,'면: 같은 지점에서 나눔');
   r.item.buyPlan.stages[0]={id:'s0',price:11000,shares:5,amount:5.5};r.render();const d=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
-  assert.match(d,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" stop-color="var\(--bpc-blue\)"\/><stop offset="100\.0%" stop-color="var\(--bpc-blue\)"\/>/,'완료가 없으면 선도 모두 파랑(면과 같음)');
+  assert.match(d,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/><stop offset="100\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/>/,'완료가 없으면 선도 모두 파랑(면과 같음)');
 });
 test('저장된 계획 검색: 계획을 고르면 검색어를 지워 다시 열 때 모든 계획이 보인다',()=>{
   const r=setup();r.doc.allocation.groups.push({id:'g2',name:'ISA',items:[{id:'k',name:'가상 미국배당 ETF',ticker:'458730',shares:1,buyPlan:{stages:[{id:'s',price:100,shares:1,amount:0.01}]}}]});r.render();
