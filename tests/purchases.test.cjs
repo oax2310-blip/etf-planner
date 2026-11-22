@@ -2681,6 +2681,8 @@ test('곡선 카드 하락형: 평단 끝점이 기준가 끝점보다 위면 �
   const endLabel=Number(html().match(/<text x="325\.0" y="([\d.]+)" class="bp-t blue" text-anchor="end">₩10000<\/text>/)[1]),fin=Number(html().match(/<text x="325\.0" y="([\d.]+)" class="bp-t mint" text-anchor="end">최종 /)[1]);
   assert.ok(avgEnd<endY,'하락형: 평단 끝점이 위');assert.ok(endLabel>endY,`끝 가격은 끝점 아래(${endLabel} > ${endY})`);assert.ok(fin<avgEnd,`'최종'은 평단 점 위(${fin} < ${avgEnd})`);
   r.inputs('[data-curve-pick]').at(-1).onclick();assert.doesNotMatch(html(),/>최종 /,'끝 회차 말풍선이 덮으면 최종 글자 숨김');assert.match(html(),/r="3\.6" class="bp-avg-dot"/,'평단 점은 남김');
+  assert.match(html(),/<text x="2\.0" y="10\.0" class="bp-t mint" text-anchor="start">₩12000<\/text>/,'하락형 시작 가격은 점 위(22-12=10)');
+  r.inputs('[data-curve-pick]')[0].onclick();assert.doesNotMatch(html(),/text-anchor="start">₩12000</,'시작 회차 선택 시 시작 글자 숨김');
 });
 test('곡선 카드: 현재가 표식(반지름 12)이 시작·끝 가격 글자를 덮으면 그 글자를 숨긴다',()=>{
   const r=setup({manual:true,price:10300});r.item.buyPlan.stages=[10000,10600,10200,11000,10800,11500].map((price,i)=>({id:`s${i}`,price,shares:8,amount:price*8/1e4}));r.render();

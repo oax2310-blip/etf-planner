@@ -399,7 +399,7 @@ function purchaseAverages(rows,execOf,otherTicker){
 }
 // 곡선 카드(이평선·회차 기준가): 이동평균선 돌파는 선(단계)마다 점 하나(목표가는 따로), 직접 입력은 회차마다 점 하나를 회차표 순서로 같은 간격에 둔다.
 // 강조 회차(부분 체결 → 도달 미체결 → 다음)가 든 묶음은 그 회차 가격을 점으로 쓰고 나머지는 묶음의 첫 회차. 기준가가 있는 점이 둘보다 적으면 카드를 만들지 않는다.
-// 화면: 제목 한 줄 + 높이 138(곡선은 세로 40%~84%) + 아래 회차 칩. 기본은 현재가를 곡선 위(강조 회차에 가까운 구간)에 두고 현재가·그 회차의 예상 평단을,
+// 화면: 제목 한 줄 + 곡선(세로 22~83px, 높이는 아래 글자 위치에 따라 91~111px) + 아래 회차 칩. 기본은 현재가를 곡선 위(강조 회차에 가까운 구간)에 두고 현재가·그 회차의 예상 평단을,
 // 회차 칩을 누르면 그 회차 기준가·예상 평단을 말풍선(숫자 2줄)으로 보인다. 같은 칩을 다시 누르거나 제목을 누르면 기본으로 돌아간다(pick: 화면 상태).
 // 말풍선은 HTML(z-index 1)이고 곡선 SVG(z-index 2)는 카드 배경색의 불투명 면을 먼저 깔아, 곡선 뒤로 내려간 말풍선을 가린다.
 function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone,pick,plotW}){
@@ -407,7 +407,7 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   rows.forEach((r,i)=>{const key=r.line?(r.line.key==="end"?"end":r.line.line):`#${i}`;let gr=groups.at(-1);if(!gr||gr.key!==key)groups.push(gr={key,rows:[],idx:[]});gr.rows.push(r);gr.idx.push(i);});
   const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0&&gr.rows[k].price>0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:j===k};}).filter(Boolean); // 강조 회차도 기준가가 있을 때만 점
   if(pts.length<2)return "";
-  // viewBox 폭은 그래프의 실제 폭(px)이라 늘이거나 줄이지 않고 1:1로 그린다(높이 113px, 글자·말풍선 크기 그대로).
+  // viewBox 폭은 그래프의 실제 폭(px)이라 늘이거나 줄이지 않고 1:1로 그린다(곡선 22~83px, 높이는 아래 글자 위치에 따라 91~111px, 글자·말풍선 크기 그대로).
   // 그래프는 제목 바로 아래(간격 4px)에서 시작한다: 가장 높은 점의 가격 글자가 그래프 맨 위(제목 바로 밑)에 붙고(TOP=22), 곡선은 22~83. 높이 H는 '최종' 글자(또는 가장 낮은 점·끝 가격 글자)가 끝나는 곳까지라 칩 줄 선에 붙는다.
   const titleBox=[0,-22,118,-4]; // 제목(이평선 기준가) 글자 자리(그래프 좌표: 그래프 위 4px 간격 위의 18px 줄)
   const W=Math.max(240,Math.round(plotW||325)),L=24,R=24,TOP=22,BOT=83,n=pts.length,avgOf=p=>avg?.at[p.i]??null,f=v=>v.toFixed(1);
@@ -447,7 +447,7 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
       const up=["up",[tl,mk.y-17-th,tl+tw,mk.y-12]],sl=["sl",[mk.x-16-tw,mk.y-th/2,mk.x-16,mk.y+th/2]],sr=["sr",[mk.x+16,mk.y-th/2,mk.x+16+tw,mk.y+th/2]],down=["down",[tl,mk.y+12,tl+tw,mk.y+17+th]];
       return [up,...(mk.x>W/2?[sl,sr]:[sr,sl]),down].find(([,b])=>b[1]>=-34&&b[0]>=-4&&b[2]<=W+4&&!hit(b,titleBox))??down;})(),tipBox=place[1],haloBox=[mk.x-12,mk.y-12,mk.x+12,mk.y+12],clear=b=>!hit(b,tipBox)&&!hit(b,haloBox);
   const txt=(x,y,t,cls,anchor)=>`<text x="${f(x)}" y="${f(y)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
-  const startText=rowPt(pts[0].row.price),endText=rowPt(pts.at(-1).row.price),sy=hit([2,main[0].y-24,2+textW(startText),main[0].y-9],titleBox)?main[0].y+22:main[0].y-12,ey=flip?lastP.y+22:lastP.y-12;
+  const startText=rowPt(pts[0].row.price),endText=rowPt(pts.at(-1).row.price),sy=main[0].y-12,ey=flip?lastP.y+22:lastP.y-12;
   let marks="";
   if(mk.k!==0&&clear([2,sy-12,2+textW(startText),sy+3]))marks+=txt(2,sy,escA(startText),"bp-t mint","start");
   const endBox=[W-textW(endText),ey-12,W,ey+3],showEnd=mk.k!==n-1&&clear(endBox);
