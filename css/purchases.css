@@ -1,6 +1,8 @@
 /* 분할매수: 저장된 계획 목록과 선택한 종목의 회차, 창은 저장 전 복사본을 편집한다 */
 .gold-estimate{margin:8px 0;color:var(--text-2);font-size:12px;line-height:1.7;font-variant-numeric:tabular-nums}.gold-estimate b{color:var(--text)}.gold-estimate span{display:block}
-#purchaseMain{min-width:0}#purchaseList .plan-count{white-space:nowrap}.side .purchase-save-status{margin-bottom:4px}
+#purchaseMain{min-width:0}
+.plan-search{display:flex;align-items:center;gap:6px;margin:0 0 8px;padding:0 10px;height:36px;border:1px solid var(--line);border-radius:10px;background:var(--field)}.plan-search span{color:var(--text-3);font-size:15px}.plan-search input{flex:1;min-width:0;height:100%;border:0;background:none;color:var(--text);font:inherit;font-size:14px;outline:none}.plan-search:focus-within{border-color:var(--accent-line)}
+.plan-none{margin:8px 2px 0;font-size:12.5px;color:var(--text-3)}.plan-none[hidden],.plan-cell[hidden]{display:none}#purchaseList .plan-count{white-space:nowrap}.side .purchase-save-status{margin-bottom:4px}
 /* 계획 진행 카드(purchases.js statusCard): 회차 띠 위 현재가 이름표(꼬리가 다음 회차 칸 앞을 가리킴), 양 끝 기준가·선 이름, 가운데 상태·회차, 아래 카드 너비 한 줄에 체결·남은 수량.
    양 끝 칸은 가격 글자 너비 밑으로 줄지 않고(좁은 폰에서 카드 밖으로 넘치지 않게) 가운데 칩이 줄을 바꾼다. */
 .buy-track{padding:16px 18px 15px;margin-bottom:16px;font-variant-numeric:tabular-nums}.buy-track.empty{padding:14px 18px}
@@ -216,7 +218,16 @@
 @media(min-width:701px){.bp-dd{display:none}.bp-title-btn{cursor:default}}
 @media(max-width:700px){#buysView .layout.has-plans{position:relative}#buysView .layout.has-plans>.side{display:none}
   #buysView .layout.plans-open>.side{display:block;position:absolute;left:0;right:0;top:var(--plans-top,64px);z-index:30;max-height:min(60vh,460px);overflow:auto;box-shadow:0 18px 40px rgba(0,0,0,.45)}
-  #buysView .layout.plans-open>.side .plan-list{grid-template-columns:1fr}
+  #buysView .layout.plans-open>.side{max-height:min(72vh,620px);padding:10px}
+  #buysView .layout.plans-open>.side .side-head{margin-bottom:8px}#buysView .layout.plans-open>.side .side-head h2{font-size:13px}
+  /* 펼친 목록: 한 줄 행(이름 · 꼬리 글자 · 진행)으로 최대한 많이 보인다 */
+  #buysView .layout.plans-open>.side .plan-list{grid-template-columns:1fr;gap:2px}
+  #buysView .layout.plans-open>.side .plan-item{padding:8px 10px;border-radius:10px}#buysView .layout.plans-open>.side .plan-bar{display:none}
+  #buysView .layout.plans-open>.side .plan-row{flex-direction:row;align-items:baseline;gap:8px}
+  #buysView .layout.plans-open>.side .plan-item strong{flex:0 1 auto;font-size:14px}
+  #buysView .layout.plans-open>.side .plan-title{flex:0 1 auto;min-width:0;margin-left:6px}
+  #buysView .layout.plans-open>.side .plan-item{flex-direction:row;align-items:baseline}#buysView .layout.plans-open>.side .plan-row{flex:1;min-width:0;order:2}
+  #buysView .layout.plans-open>.side .plan-count{margin-left:auto}
   .bp-plans-backdrop{position:fixed;inset:0;z-index:29;border:0;padding:0;background:rgba(0,0,0,.25)}}
 @media(min-width:701px){.bp-plans-backdrop{display:none}}
 .bp-count{flex:none;font-size:13.5px;font-weight:600;color:var(--bp-blue-2);white-space:nowrap}.bp-count.done{color:var(--bp-mint)}.bp-count small{font-size:12px;color:var(--text-3);font-weight:500}
@@ -292,27 +303,37 @@
 .bp-memo-editor{display:flex;flex-direction:column;gap:6px}.bp-memo-editor textarea{width:100%;min-height:72px;padding:9px 11px;border:1px solid var(--bp-line);border-radius:12px;background:var(--field);color:var(--text);font:inherit;font-size:13px;line-height:1.5;resize:vertical}.bp-memo-editor textarea:focus{outline:2px solid color-mix(in srgb,var(--bp-blue) 55%,transparent);outline-offset:0;border-color:transparent}
 .bp-memo-foot{display:flex;align-items:center;gap:6px}.bp-memo-foot .accent{color:var(--bp-blue-2)}.bp-memo-foot .memo-count{margin-right:auto;font-size:11.5px;color:var(--text-3)}
 /* 곡선 카드 */
-.bp-chart{display:flex;flex-direction:column;gap:10px;padding:20px 18px 14px;font-variant-numeric:tabular-nums}
-.bp-chart h2{margin:0;font-size:16.5px;font-weight:700;letter-spacing:-.02em}
-.bp-chart-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--text-2)}.bp-chart-sub span b{color:var(--bp-mint);font-weight:700}.bp-chart-sub>b{color:var(--bp-blue-2);font-weight:700;white-space:nowrap}
-.bp-legend{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text-2)}.bp-legend span{display:inline-flex;align-items:center;gap:6px}.bp-legend .bp-stamp{margin-left:auto}
-.bp-legend i{display:inline-block;width:14px}.bp-legend i.solid{height:3px;border-radius:999px;background:var(--bp-blue)}.bp-legend i.mint{background:var(--bp-mint)}.bp-legend i.thin{height:2px}.bp-legend i.dash{height:0;border-top:2px dashed var(--bp-mint)}
-.bp-svg{display:block;width:100%;height:auto;overflow:visible}
-.bp-line{fill:none;stroke-width:2.6;stroke-linecap:round}.bp-avg{fill:none;stroke:var(--bp-mint);stroke-opacity:.72;stroke-width:1.5;stroke-dasharray:3.5 4.5;stroke-linecap:round}.bp-avg.solid{stroke-dasharray:none;stroke-opacity:.9;stroke-width:1.8}
-.bp-avg-dot{fill:var(--bp-mint)}.bp-halo{fill:color-mix(in srgb,var(--bp-blue) 28%,transparent)}.bp-halo.warn{fill:color-mix(in srgb,var(--bp-orange) 28%,transparent)}
-.bp-core{fill:var(--bp-blue);stroke:#fff;stroke-width:2.2}.bp-core.warn{fill:var(--bp-orange)}
-.bp-t{font-size:12px;font-weight:700}.bp-t.mint{fill:var(--bp-mint)}.bp-t.blue{fill:var(--bp-blue-2)}
-.bp-tip rect,.bp-tip path{fill:var(--bp-tip);stroke:var(--bp-tip-line)}.bp-tip-main{fill:var(--text);font-size:14.5px;font-weight:800}.bp-tip-sub{fill:var(--bp-mint);font-size:11.5px;font-weight:600}.bp-tip.warn .bp-tip-sub{fill:var(--bp-orange)}
-.bp-xaxis{position:relative;height:36px;margin-top:2px;border-top:1px solid var(--bp-line)}
-.bp-x{position:absolute;top:7px;transform:translateX(-50%);padding:4px 9px;border-radius:999px;font-size:12px;font-weight:600;color:var(--text-2);white-space:nowrap}
-.bp-x.first{transform:translateX(-25%)}.bp-x.last{transform:translateX(-75%)}
-.bp-x.done{color:var(--bp-mint)}.bp-x.on{background:color-mix(in srgb,var(--bp-blue) 22%,transparent);color:var(--bp-blue-2);font-weight:700}.bp-x.warn{color:var(--bp-orange)}.bp-x.on.warn{background:color-mix(in srgb,var(--bp-orange) 18%,transparent)}
+/* 곡선 카드(이평선 기준가): 제목 한 줄 + 곡선(높이 138, 393px 기준) + 회차 칩. 색은 --bpc-* 변수(다크는 시안 값, 라이트는 앱 토큰). */
+.bp-chart{--bpc-bg:var(--bp-card);--bpc-line:var(--bp-line);--bpc-mint:var(--bp-mint);--bpc-orange:var(--bp-orange);--bpc-blue:var(--bp-blue);--bpc-done-top:color-mix(in srgb,var(--bp-mint) 22%,var(--bp-card));--bpc-next-top:color-mix(in srgb,var(--bp-blue) 20%,var(--bp-card));--bpc-tip-top:var(--surface,#fff);--bpc-tip-bot:var(--surface-2,#f3f5f9);--bpc-tip-line:var(--line);--bpc-tip-text:var(--text);--bpc-title:var(--text);
+  display:flex;flex-direction:column;gap:9px;padding:14px 18px 11px;font-variant-numeric:tabular-nums}
+@media screen{:root[data-theme=dark] .bp .bp-chart{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba(255,255,255,.16);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc}}
+.bp .card.bp-chart{background:var(--bpc-bg);border:1px solid var(--bpc-line);border-radius:20px;padding:14px 18px 11px}
+.bp-chart h2{margin:0;line-height:1.2}
+.bp-chart-title{padding:0;border:0;background:none;color:var(--bpc-title);font:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;cursor:pointer}
+.bp-plot{position:relative;margin-bottom:8px}
+.bp-plot .bp-svg{position:relative;z-index:2;display:block;width:100%;height:auto;overflow:visible}
+.bp-mask{fill:var(--bpc-bg)}
+.bp-line{fill:none;stroke-width:2.6;stroke-linecap:round}.bp-avg{fill:none;stroke:var(--bpc-mint);stroke-width:1.8;stroke-dasharray:4 4;stroke-linecap:round}
+.bp-avg-dot{fill:var(--bpc-mint)}
+.bp-halo{fill:color-mix(in srgb,var(--bpc-blue) 30%,transparent)}.bp-halo.mint{fill:color-mix(in srgb,var(--bpc-mint) 30%,transparent)}.bp-halo.warn{fill:color-mix(in srgb,var(--bpc-orange) 30%,transparent)}
+.bp-core{fill:var(--bpc-blue);stroke:#fff;stroke-width:2.6}.bp-core.mint{fill:var(--bpc-mint)}.bp-core.warn{fill:var(--bpc-orange)}
+.bp-t{font-size:12px;font-weight:700}.bp-t.mint{fill:var(--bpc-mint)}.bp-t.blue{fill:var(--bpc-blue)}
+/* 말풍선(불투명 리퀴드 글래스): 숫자 2줄(가격 · 예상 평단). 곡선 SVG 아래(z-index 1)라 곡선 면에 가려진다. 첫 회차는 왼쪽, 끝 회차는 오른쪽 정렬 */
+.bp-tip{position:absolute;z-index:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 13px 6px;border:1px solid var(--bpc-tip-line);border-radius:12px;background:linear-gradient(180deg,var(--bpc-tip-top) 0%,var(--bpc-tip-bot) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.18);white-space:nowrap;pointer-events:none;transform:translate(-50%,calc(-100% - 17px))}
+.bp-tip b{font-size:13.5px;font-weight:800;line-height:1.15;color:var(--bpc-tip-text)}.bp-tip span{font-size:12px;font-weight:600;line-height:1.15;color:var(--bpc-mint)}
+.bp-tip i{position:absolute;left:50%;bottom:-5px;width:8px;height:8px;margin-left:-4px;background:var(--bpc-tip-bot);border-right:1px solid var(--bpc-tip-line);border-bottom:1px solid var(--bpc-tip-line);transform:rotate(45deg)}
+.bp-tip.l{transform:translate(-20px,calc(-100% - 17px))}.bp-tip.l i{left:20px}
+.bp-tip.r{transform:translate(calc(-100% + 20px),calc(-100% - 17px))}.bp-tip.r i{left:calc(100% - 20px)}
+.bp-xaxis{position:relative;height:34px;border-top:1px solid var(--bpc-line)}
+.bp .bp-x{position:absolute;top:6px;transform:translateX(-50%);min-height:0;padding:4px 10px;border:0;border-radius:999px;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--text-3);white-space:nowrap;cursor:pointer}
+.bp .bp-x.first{transform:translateX(-25%)}.bp .bp-x.last{transform:translateX(-75%)}
+.bp .bp-x.done{color:var(--bpc-mint)}.bp .bp-x.sel.mint{background:color-mix(in srgb,var(--bpc-mint) 18%,transparent)}.bp .bp-x.sel.warn{background:color-mix(in srgb,var(--bpc-orange) 20%,transparent);color:var(--bpc-orange)}.bp .bp-x.sel.blue{background:color-mix(in srgb,var(--bpc-blue) 24%,transparent);color:color-mix(in srgb,var(--bpc-blue) 70%,#fff)}
 /* 회차표 다음 회차 강조와 하단 버튼 */
 .bp .purchase-row.next{background:color-mix(in srgb,var(--bp-blue) 11%,transparent);box-shadow:inset 3px 0 0 var(--bp-blue)}
 .bp-dock{display:grid;grid-template-columns:.78fr 1.22fr;gap:10px;margin:14px 0 4px}
 .bp .bp-sub,.bp .bp-main{min-height:50px;padding:0 12px;border-radius:16px;font-size:14px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bp .bp-main{border:1px solid rgba(130,170,255,.45);background:linear-gradient(180deg,#5684ff,#3d6bf2);color:#fff;box-shadow:0 8px 24px rgba(68,114,248,.42)}
 .bp .bp-main:disabled{opacity:.5;box-shadow:none}
-@media(max-width:700px){.bp .card.bp-sum,.bp .card.bp-chart{padding-left:16px;padding-right:16px}.bp-now{font-size:29px}}
+@media(max-width:700px){.bp .card.bp-sum{padding-left:16px;padding-right:16px}.bp-now{font-size:29px}}
 :root[data-theme=dark] .bp-memo{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.07)}:root[data-theme=dark] .bp-memo-text{color:#8c96a8}
 .bp-acc-ctrl[hidden]{display:none}
