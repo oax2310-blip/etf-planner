@@ -2072,3 +2072,12 @@ test('전체 원화 합산은 원화 평균가 코인을 다시 환산하지 않
   const only=page(krw.data,krw.quotes);assert.match(profitCard(only),/\+600,000원/);assert.match(profitCard(only),/\+20%/);assert.doesNotMatch(profitCard(only),/환율 대기/);
   for(const it of krw.data.allocation.groups[0].items)it.shares=0;only.ctx.renderAlloc();assert.match(profitCard(only),/평균매수가와 보유 수량을 입력/);assert.doesNotMatch(profitCard(only),/원화 합계/);
 });
+
+test('자산 화면 종목 줄 손익률은 소수 둘째 자리 반올림 값으로 부호·색을 정해 0 근처를 "0%"(색 없음)로 보이고, 손익 금액 표시는 그대로다',()=>{
+  for(const [close,rate,tone,amount] of [[99998,'0%','','−8원'],[100004,'0%','','\\+16원'],[99994,'−0.01%','profit-loss','−24원']]){
+    const data=fixture(),q=quoteFixture();data.allocation.groups[1].items.find(x=>x.id==='domestic').averagePrice=100000;q.stocks['111111'].close=close;
+    const h=page(data,q),row=h.row('domestic');
+    assert.match(row,new RegExp(`<span class="asset-profit-result"[^>]*>손익 <b class="profit-(?:gain|loss)">${amount}</b><b class="${tone}">${rate.replace('.','\\.')}</b>`),`${close}: 손익률 ${rate}`);
+    assert.doesNotMatch(row,/[+−]0%/);
+  }
+});
