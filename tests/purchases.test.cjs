@@ -874,7 +874,7 @@ test('요약 카드: 비트코인 달러 가격은 회차표처럼 센트 없이
   const stock=setup({currency:'USD',price:90.5,budget:100,end:null,names:['25일선'],ma:{'25일선':100.25}});
   assert.match(card(stock),/<span class="bp-shares">체결 <b>0주<\/b> · 남은 <b>\d+주<\/b><\/span>/);assert.doesNotMatch(card(stock),/bp-chart/,'기준가 지점이 하나면 곡선 카드를 만들지 않는다');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
-  assert.match(css,/\.bp-now\{[^}]*white-space:nowrap/);assert.match(css,/\.bp-next\{[^}]*white-space:nowrap/);
+  assert.match(css,/\.bp-next\{[^}]*white-space:nowrap/);
 });
 test('계획 목록: 매수대기의 시세 대기·도달 상태를 표시하고 회차 수를 만들지 않는다',()=>{
   const r=setup({wait:'25일선',ma:{'25일선':10000}});
@@ -2666,10 +2666,20 @@ test('계좌 버튼 CSS: [＋ 계좌 추가]·[삭제]의 ID 규칙은 패딩·�
   assert.match(css,/\.purchase-linked #purchaseAccountDeleteToggle\.active\{background:var\(--accent-soft\);border-color:var\(--accent-line\);color:var\(--accent\)\}/);
   const dark=css.indexOf(':root[data-theme=dark] .bp .bp-pill{'),active=css.indexOf('.bp .bp-pill.purchase-account-delete-toggle.active{');assert.ok(dark>=0&&active>dark,'.bp 삭제 모드 규칙은 다크 .bp-pill 뒤(같은 명시도)');
 });
-test('좁은 폭·고액: 현재가 줄·완료 상자 칸·계좌 상자 맨 윗줄은 넘치지 않게 줄을 넘기고, 손익 금액·손익률은 한 묶음으로 넘긴다',()=>{
+test('좁은 폭·고액: 현재가와 계좌 금액도 줄바꿈하고, 손익 묶음이 가용 폭보다 크면 안에서도 줄을 넘긴다',()=>{
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/\.bp-price\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats div\{flex:1 1 0;min-width:fit-content;/);
-  assert.match(css,/\.bp-acc-sum\{[^}]*flex-wrap:wrap;/);assert.match(css,/\.bp-acc-sum-r\{display:inline-flex;[^}]*white-space:nowrap\}/);
+  const now=css.match(/\.bp-now\{[^}]*\}/)[0],sum=css.match(/\.bp-acc-sum\{[^}]*\}/)[0],profit=css.match(/\.bp-acc-sum-r\{[^}]*\}/)[0];
+  assert.match(now,/max-width:100%;/,'현재가는 카드 안쪽 폭 이내');
+  assert.match(now,/overflow-wrap:anywhere/,'긴 현재가는 숫자 안에서도 줄바꿈');
+  assert.doesNotMatch(now,/white-space:nowrap/,'현재가 줄바꿈 허용');
+  assert.match(sum,/flex-wrap:wrap;/,'계좌 요약은 항목별 줄바꿈');
+  assert.match(sum,/overflow-wrap:anywhere/,'긴 계좌 금액은 숫자 안에서도 줄바꿈');
+  assert.doesNotMatch(sum,/white-space:nowrap|overflow:hidden/,'계좌 요약 줄바꿈 허용 및 잘림 방지');
+  assert.match(profit,/display:inline-flex;/,'손익 금액과 손익률을 한 묶음으로 배치');
+  assert.match(profit,/max-width:100%;/,'손익 묶음은 계좌 요약 폭 이내');
+  assert.match(profit,/flex-wrap:wrap;/,'폭을 넘는 손익 묶음은 내부 줄바꿈');
+  assert.doesNotMatch(profit,/white-space:nowrap/,'손익 텍스트 줄바꿈 허용');
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
   assert.match(r.html(),/<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain"[^>]*>\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span>/,'손익 금액·손익률 한 묶음');
 });
