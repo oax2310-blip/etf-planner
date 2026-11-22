@@ -855,7 +855,7 @@ test('요약 카드: 진행 막대는 완료와 도달·부분 체결을 이어 
   assert.deepEqual(Array.from(card(r).matchAll(/<div class="bp-due-row"><div><b>([^<]+)<\/b><small>기준가 ([^ ]+) · 현재 <i>([^<]+)<\/i>/g),m=>m.slice(1)),[['25일선 1차','₩10000','+25% 위'],['25일선 2차','₩12000','+4.2% 위']]);
   assert.deepEqual(Array.from(card(r).matchAll(/data-purchase-act="a" data-key="([^"]+)"/g),m=>m[1]),['25일선:0','25일선:1']);
   assert.match(card(r),/<p class="bp-due-foot">그다음 <b>25일선 3차 ₩14000<\/b> · \+12% 남음<\/p>/);
-  assert.match(card(r),/<div class="bp-tip [lcr]"[^>]*><b>₩12500<\/b>/,'기본 말풍선은 현재가');assert.match(card(r),/class="bp-core warn"/,'강조 회차가 도달이면 표식은 주황');assert.match(card(r),/<button class="bp-x first"[^>]*>25일<\/button>/,'칩: ·다음 없음');
+  assert.match(card(r),/<div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*><b>₩12500<\/b>/,'기본 말풍선은 현재가');assert.match(card(r),/class="bp-core warn"/,'강조 회차가 도달이면 표식은 주황');assert.match(card(r),/<button class="bp-x first"[^>]*>25일<\/button>/,'칩: ·다음 없음');
   assert.match(card(r),/<button class="bp-x last"[^>]*>32일<\/button>/);
   assert.equal(JSON.stringify(r.doc),before,'화면 표시만 하고 기록은 바꾸지 않는다');
   r.change('[data-purchase-buy-shares]',1);
@@ -869,7 +869,7 @@ test('요약 카드: 비트코인 달러 가격은 회차표처럼 센트 없이
   const card=summaryCard,r=setup({bitcoin:true,currency:'USD',price:77432.08,budget:1000,end:null,names:['25일선','32일선'],ma:{'25일선':81359.52,'32일선':87415.25}}),before=JSON.stringify(r.doc);
   assert.match(card(r),/<strong class="bp-now">\$77,432<\/strong><span class="bp-next">다음 25일선 1차 \+5\.1%<\/span>/);
   assert.match(card(r),/<span class="bp-shares">체결 <b>0 BTC<\/b> · 남은 <b>0\.\d+ BTC<\/b><\/span>/);
-  assert.match(card(r),/<div class="bp-tip l"[^>]*><b>\$77,432<\/b>/,'현재가가 곡선 범위 밖이면 가격이 가장 가까운 점(첫 점)');assert.doesNotMatch(card(r),/text-anchor="start">\$81,360/,'첫 점에 표식이 있으면 시작 글자 숨김');assert.match(card(r),/class="bp-t blue" text-anchor="end">\$87,415<\/text>/);
+  assert.match(card(r),/<div class="bp-tip (?:l(?: below)?|s[lr])"[^>]*><b>\$77,432<\/b>/,'현재가가 곡선 범위 밖이면 가격이 가장 가까운 점(첫 점)');assert.doesNotMatch(card(r),/text-anchor="start">\$81,360/,'첫 점에 표식이 있으면 시작 글자 숨김');assert.match(card(r),/class="bp-t blue" text-anchor="end">\$87,415<\/text>/);
   assert.equal(JSON.stringify(r.doc),before,'화면 표시만 바꾼다');
   const stock=setup({currency:'USD',price:90.5,budget:100,end:null,names:['25일선'],ma:{'25일선':100.25}});
   assert.match(card(stock),/<span class="bp-shares">체결 <b>0주<\/b> · 남은 <b>\d+주<\/b><\/span>/);assert.doesNotMatch(card(stock),/bp-chart/,'기준가 지점이 하나면 곡선 카드를 만들지 않는다');
@@ -2309,9 +2309,9 @@ test('곡선 카드: 평단은 체결 회차의 실제 체결가·수량과 남�
   const box=r.inputs('[data-purchase-buy]').find(x=>x.dataset.key==='25일선:0');box.checked=true;box.onchange();r.change('[data-purchase-exec]',9500);
   const rows=r.inputs('[data-purchase-buy-shares]').map(x=>Number(x.attrs.max)),prices=[9500,12000,14000,16000];
   const end=rows.reduce((n,q,i)=>n+q*prices[i],0)/rows.reduce((n,q)=>n+q,0);
-  const last=Number(r.html().match(/>최종 ₩([\d.]+)<\/text>/)[1]);assert.ok(Math.abs(last-end)<1,`예상 최종 평단 ${last} ≈ ${end}`);
+  r.inputs('[data-curve-pick]').at(-1).onclick();const last=Number(r.html().match(/<div class="bp-tip[^"]*"[^>]*><b>[^<]+<\/b><span>₩([\d.]+)<\/span>/)[1]);r.inputs('[data-curve-pick]').at(-1).onclick();assert.ok(Math.abs(last-end)<1,`끝 회차까지의 예상 평단(최종) ${last} ≈ ${end}`);
   assert.match(r.html(),/누적 예상 평단가/);assert.match(r.html(),/class="bp-avg"/);
-  const pick=r.inputs('[data-curve-pick]').find(x=>x.dataset.curvePick==='0');pick.onclick();const [,tp,ta]=r.html().match(/<div class="bp-tip l"[^>]*><b>₩([\d.]+)<\/b><span>₩([\d.]+)<\/span>/).map(Number);
+  const pick=r.inputs('[data-curve-pick]').find(x=>x.dataset.curvePick==='0');pick.onclick();const [,tp,ta]=r.html().match(/<div class="bp-tip (?:l(?: below)?|s[lr])"[^>]*><b>₩([\d.]+)<\/b><span>₩([\d.]+)<\/span>/).map(Number);
   assert.equal(tp,12000,'25일선 지점은 그 선의 강조 회차(2차) 기준가');assert.ok(Math.abs(ta-(rows[0]*9500+rows[1]*12000)/(rows[0]+rows[1]))<1e-6,`그 지점까지의 예상 평단 ${ta}(1차는 실제 체결가 9500)`);
   const tracking=setup({tracking:true,budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
   assert.match(tracking.html(),/class="card bp-chart"/);assert.doesNotMatch(tracking.html(),/최종 |누적 예상 평단가|class="bp-avg/,'기준가와 체결가의 종목이 달라 평단을 만들지 않음');
@@ -2399,7 +2399,7 @@ test('기준가가 없는 부분 체결 회차가 강조여도 곡선 점으로 
   const r=setup({manual:true,price:10500});r.item.buyPlan.stages=[{id:'s1',price:null,shares:3,plannedShares:10,partial:true,actual:3},{id:'s2',price:12000,shares:10,amount:12}];r.render();
   assert.doesNotMatch(r.html(),/bp-chart|₩null|NaN|undefined/);
   r.item.buyPlan.stages.push({id:'s3',price:13000,shares:10,amount:13});r.render();
-  assert.match(r.html(),/class="card bp-chart"/);assert.doesNotMatch(r.html(),/₩null|NaN/);assert.match(r.html(),/<div class="bp-tip [lcr]"[^>]*><b>₩10500<\/b>/,'기준가 없는 강조 회차는 점으로 쓰지 않고, 말풍선은 현재가');
+  assert.match(r.html(),/class="card bp-chart"/);assert.doesNotMatch(r.html(),/₩null|NaN/);assert.match(r.html(),/<div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*><b>₩10500<\/b>/,'기준가 없는 강조 회차는 점으로 쓰지 않고, 말풍선은 현재가');
 });
 test('부분 체결과 도달 미체결이 함께 있으면 곡선 말풍선과 하단 버튼 모두 부분 체결 회차를 가리킨다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}});
@@ -2531,8 +2531,8 @@ test('곡선 카드: 횡보형(같은 기준가) 다회차는 누적 평단의 �
   for(const {opts,n,price,shares} of cases){
     const r=setup(opts);r.item.buyPlan.stages=Array.from({length:n},(_,i)=>({id:`s${i}`,price,shares,amount:price*shares*1400/1e4}));if(opts.currency==='USD')r.item.buyPlan.currency='USD';r.render();const html=r.html();
     const line=ys(html,'bp-line'),avg=ys(html,'bp-avg');assert.ok(avg.length,`${n}회차: 평단 곡선`);
-    for(const y of [...line,...avg])assert.equal(y.toFixed(1),'85.6',`${price}×${n}회차: y ${y}`);
-    const ty=Number(html.match(/<div class="bp-tip[^"]*" style="left:[\d.]+%;top:([\d.]+)%"/)[1]);assert.ok(ty>=40,`말풍선 기준 ${ty}% ≥ 40%(헤드룸 안)`);
+    for(const y of [...line,...avg])assert.equal(y.toFixed(1),'52.5',`${price}×${n}회차: y ${y}`);
+    const vh=Number(html.match(/<svg class="bp-svg" viewBox="0 0 \d+ (\d+)"/)[1]),ty=Number(html.match(/<div class="bp-tip[^"]*" style="left:[\d.]+%;top:([\d.]+)%"/)[1]);assert.ok(Math.abs(ty-52.5/vh*100)<.1,`말풍선 기준 ${ty}%는 표식 높이(헤드룸 안)`);
   }
 });
 test('곡선 카드 x축: 360px 화면(축 너비 296px) 기준으로도 표시한 눈금 글자가 서로 겹치지 않는다',()=>{
@@ -2603,32 +2603,33 @@ test('모바일: 저장된 계획 목록은 종목 이름(▾) 안으로 들어�
   assert.match(css,/@media\(max-width:700px\)\{#buysView \.layout\.has-plans\{position:relative\}#buysView \.layout\.has-plans>\.side\{display:none\}/);
   assert.match(css,/#buysView \.layout\.plans-open>\.side\{display:block;position:absolute;/);assert.match(css,/@media\(min-width:701px\)\{\.bp-dd\{display:none\}/);
 });
-test('계좌 목록은 음각 상자 밖(요약 카드 폭)에 펼치고, 메모 없음은 전역 .empty와 겹치지 않는 클래스를 쓰며, 곡선은 393px 기준 높이 138(viewBox 325×138)로 그린다',()=>{
+test('계좌 목록은 음각 상자 밖(요약 카드 폭)에 펼치고, 메모 없음은 전역 .empty와 겹치지 않는 클래스를 쓰며, 곡선은 실제 폭(393px이면 325)으로 그린다',()=>{
   const r=setup();r.element('purchaseAccountToggle').onclick();
   assert.match(r.html(),/<div class="bp-acc"><div class="bp-acc-main">[\s\S]*?<\/button><\/div><\/div><div class="bp-acc-drawer" id="purchaseAccountDrawer">/,'상자에는 맨 윗줄만');
   assert.match(r.html(),/<span class="bp-memo-text is-empty">메모 없음<\/span>/);assert.doesNotMatch(r.html(),/class="(?:[^"]*\s)?empty(?:\s[^"]*)?">메모 없음/,'전역 .empty 클래스 없음');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/\.bp-memo-text\.is-empty\{/);
-  const c=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});assert.match(c.html(),/<svg class="bp-svg" viewBox="0 0 325 138"/);
+  const c=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});assert.match(c.html(),/<svg class="bp-svg" viewBox="0 0 325 \d+"/);
 });
 const curveFixture=()=>{
   const r=setup({budget:100,end:null,names:['25일선','80일선','32주선','25개월선'],price:12080,ma:{'25일선':10692,'80일선':11000,'32주선':11882,'25개월선':12700}});
   for(const key of r.inputs('[data-purchase-buy]').map(x=>x.dataset.key).filter(k=>/^(25일선|80일선)/.test(k))){const x=r.inputs('[data-purchase-buy]').find(b=>b.dataset.key===key);if(!x.checked){x.checked=true;x.onchange();}}
   const chart=()=>r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0],chip=label=>r.inputs('[data-curve-pick]').find(x=>new RegExp(`^${label}`).test(r.html().match(new RegExp(`data-curve-pick="${x.dataset.curvePick}"[^>]*>([^<]+)<`))[1]));
-  const tip=()=>chart().match(/<div class="bp-tip ([lcr])" style="left:([\d.]+)%;top:([\d.]+)%"><b>([^<]+)<\/b>(?:<span>([^<]+)<\/span>)?/);
+  const tip=()=>chart().match(/<div class="bp-tip ([lcr]|s[lr])(?: below)?" style="left:([\d.]+)%;top:([\d.]+)%"><b>([^<]+)<\/b>(?:<span>([^<]+)<\/span>)?/);
   return {r,chart,chip,tip};
 };
 test('곡선 카드 머리: 제목(이평선 기준가) 한 줄만 두고 완료 시 평단·현재가·범례·시세 기준은 곡선 카드에서 뺀다',()=>{
   const {r,chart}=curveFixture();
   assert.match(chart(),/^<section class="card bp-chart" aria-label="기준가와 예상 평균단가 곡선"><h2><button class="bp-chart-title" type="button" data-curve-reset="a" aria-label="이평선 기준가 · 현재가 보기">이평선 기준가<\/button><\/h2><div class="bp-plot">/);
   assert.doesNotMatch(chart(),/완료 시 평단|현재 ₩|bp-legend|bp-stamp|bp-chart-sub|<line /,'완료 시 평단·현재가·범례·시세 기준·세로 보조선 없음');
-  assert.match(chart(),/<svg class="bp-svg" viewBox="0 0 325 138"/,'393px 기준 높이 138');
+  const vh=Number(chart().match(/<svg class="bp-svg" viewBox="0 0 325 (\d+)"/)[1]),lowY=Math.max(...chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===1)),fin=Number((chart().match(/y="([\d.]+)" class="bp-t mint" text-anchor="end">최종/)||[0,0])[1]);
+  assert.ok(vh<=Math.ceil(Math.max(83+8,fin+3))&&vh>=Math.max(lowY+8,fin+3)-.5,`높이 ${vh}: 가장 낮은 점(${lowY.toFixed(1)}) 또는 '최종' 글자(${fin}) 바로 아래까지(빈 곳 없음)`);
   const ys=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===1);
-  assert.ok(ys.every(y=>y>=55.2-.05&&y<=115.92+.05),`기준가 곡선은 세로 40%~84%(55.2~115.9): ${Math.min(...ys)}~${Math.max(...ys)}`);
+  assert.ok(ys.every(y=>y>=22-.05&&y<=83+.05),`기준가 곡선은 세로 22~83(가장 높은 점 글자는 제목 줄, '최종'은 칩 줄 선 위): ${Math.min(...ys)}~${Math.max(...ys)}`);
   const m=setup({manual:true,price:9000});m.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:9000,shares:8,amount:7.2}];m.render();assert.match(m.html(),/data-curve-reset="a"[^>]*>회차 기준가<\/button>/,'직접 입력은 회차 기준가');
 });
 test('곡선 카드 기본: 현재가를 곡선 위(강조 회차 근처 구간)에 두고 말풍선은 현재가·그 회차의 예상 평단 숫자 2줄, 도달이면 주황',()=>{
   const {r,chart,tip}=curveFixture(),[,align,left,top,price,avg]=tip();
-  assert.equal(align,'c');assert.equal(price,'₩12080','윗줄 현재가(접두어 없음)');assert.ok(avg&&!/현재|평균|평단/.test(avg),'아랫줄 예상 평단(접두어 없음)');
+  assert.ok(['c','sl','sr'].includes(align),`위(가운데) 또는 제목 줄 근처면 옆: ${align}`);assert.equal(price,'₩12080','윗줄 현재가(접두어 없음)');assert.ok(avg&&!/현재|평균|평단/.test(avg),'아랫줄 예상 평단(접두어 없음)');
   const xs=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===0),pX=[24,116.3,208.7,301].map(x=>x/325*100);
   assert.ok(Number(left)>pX[2]&&Number(left)<pX[3],`현재가 12080은 32주(11882)와 25개월(12700) 사이: ${left}%`);assert.ok(xs.length>0);
   assert.match(chart(),/class="bp-core warn"/,'강조 회차(32주)가 도달이면 주황');assert.doesNotMatch(chart(),/bp-x[^"]* sel/,'칩 강조 없음');
@@ -2641,7 +2642,7 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
   assert.match(chart(),/<button class="bp-x first done sel mint"[^>]*aria-pressed="true"[^>]*>25일✓<\/button>/,'완료 회차 칩은 민트');
   chip('32주').onclick();t=tip();assert.deepEqual([t[1],t[4]],['c','₩11882'],'중간 회차: 가운데');assert.match(chart(),/<button class="bp-x sel warn"[^>]*>32주<\/button>/,'도달 강조 회차 칩은 주황');
   assert.match(chart(),/text-anchor="start">₩10692/);assert.match(chart(),/text-anchor="end">₩12700/);
-  chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['r','₩12700'],'끝 회차: 오른쪽 정렬');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
+  chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['sl','₩12700'],'끝 회차(가장 높은 점): 위에 자리가 없어 왼쪽 옆, 꼬리는 표식 쪽');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
   chip('25월').onclick();assert.equal(tip()[4],'₩12080','같은 칩을 다시 누르면 현재가');assert.doesNotMatch(chart(),/ sel /);
   chip('80일').onclick();assert.equal(tip()[4],'₩11000');r.inputs('[data-curve-reset]')[0].onclick();assert.equal(tip()[4],'₩12080','제목을 누르면 현재가');
   assert.equal(JSON.stringify(r.doc),before,'고르기·돌아오기는 기록을 바꾸지 않음');
@@ -2649,7 +2650,7 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
 });
 test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아래이고 SVG는 카드 배경색 불투명 면을 먼저 깐 뒤 완료·예정 구간 세로 그라데이션을 자른다',()=>{
   const {chart}=curveFixture(),c=chart();
-  assert.match(c,/<div class="bp-plot"><div class="bp-tip [lcr]"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'말풍선이 SVG보다 먼저(아래 겹)');
+  assert.match(c,/<div class="bp-plot"><div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'말풍선이 SVG보다 먼저(아래 겹)');
   assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" mask="url\(#bpMaskDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" mask="url\(#bpMaskNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑), 경계는 가로 마스크');
   const [x1,x2]=c.match(/<linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="([\d.]+)" x2="([\d.]+)"/).slice(1).map(Number);assert.ok(x2-x1>=40,`초록→파랑 경계가 ${x2-x1}px에 걸쳐 이어짐`);
   assert.match(c,/<linearGradient id="bpXNext"[^>]*><stop offset="0" stop-color="#000"\/><stop offset="1" stop-color="#fff"\/>/,'예정 면은 경계 오른쪽으로 나타남');
@@ -2657,7 +2658,7 @@ test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
-  assert.match(css,/\.bp-plot\{position:relative;margin-bottom:8px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
+  assert.match(css,/\.bp-plot\{position:relative;margin-top:-27px;margin-bottom:2px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
   assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-mask\{fill:var\(--bpc-bg\)\}/);assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
   assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
 });
@@ -2695,11 +2696,11 @@ test('CSS: 분할매수 스타일시트는 괄호 짝이 맞아 모바일 전용
   assert.equal((css.match(/#buysView \.layout\.plans-open>\.side\{/g)||[]).length,1,'펼친 목록 상자 선언은 하나');
   assert.match(css,/#buysView \.layout\.plans-open>\.side \.plan-row\{display:contents\}/);assert.match(css,/\.plan-item strong\{order:1;/);assert.match(css,/\.plan-title\{order:2;[^}]*\}#buysView \.layout\.plans-open>\.side \.plan-title:empty\{display:none\}/);assert.match(css,/\.plan-count\{order:3;flex:none;margin-left:auto;/);
 });
-test('곡선 카드: 그래프는 실제 폭(px)으로 1:1로 그려 어느 폭에서나 높이 138이고, 말풍선·SVG만 .bp-plot에 들며 칩 줄은 그 밖에 둔다',()=>{
+test('곡선 카드: 그래프는 실제 폭(px)으로 1:1로 그려 어느 폭에서나 같은 높이이고, 말풍선·SVG만 .bp-plot에 들며 칩 줄은 그 밖에 둔다',()=>{
   const {r,chart}=curveFixture();assert.match(chart(),/<\/svg><\/div><div class="bp-xaxis">/,'.bp-plot은 SVG 뒤에서 닫힘');
   const view=r.element('buysView'),orig=view.querySelector;let renders=0;const html0=r.html();
   for(const w of [290,600]){view.querySelector=sel=>sel==='.bp-plot'?{clientWidth:w}:orig?.call(view,sel);r.render();
-    assert.match(chart(),new RegExp(`<svg class="bp-svg" viewBox="0 0 ${w} 138"`),`실제 폭 ${w}px로 다시 그림`);
+    assert.match(chart(),new RegExp(`<svg class="bp-svg" viewBox="0 0 ${w} \\d+"`),`실제 폭 ${w}px로 다시 그림`);
     const xs=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===0);assert.ok(Math.abs(xs.at(-1)-(w-24))<.1,'끝점은 오른쪽 24px 안');}
   view.querySelector=orig;assert.ok(html0.length>0);
 });

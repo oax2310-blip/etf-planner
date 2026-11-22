@@ -407,8 +407,10 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   rows.forEach((r,i)=>{const key=r.line?(r.line.key==="end"?"end":r.line.line):`#${i}`;let gr=groups.at(-1);if(!gr||gr.key!==key)groups.push(gr={key,rows:[],idx:[]});gr.rows.push(r);gr.idx.push(i);});
   const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0&&gr.rows[k].price>0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:j===k};}).filter(Boolean); // 강조 회차도 기준가가 있을 때만 점
   if(pts.length<2)return "";
-  // viewBox 폭은 그래프의 실제 폭(px)이라 늘이거나 줄이지 않고 1:1로 그린다: 높이는 어느 폭에서나 138px, 글자·말풍선 크기·헤드룸(40%)도 그대로.
-  const W=Math.max(240,Math.round(plotW||325)),H=138,L=24,R=24,TOP=H*.40,BOT=H*.84,n=pts.length,avgOf=p=>avg?.at[p.i]??null,f=v=>v.toFixed(1);
+  // viewBox 폭은 그래프의 실제 폭(px)이라 늘이거나 줄이지 않고 1:1로 그린다(높이 113px, 글자·말풍선 크기 그대로).
+  // 그래프는 제목 줄부터 시작한다(CSS 음수 위 여백): 가장 높은 점의 가격 글자는 제목 줄 높이(TOP=22), 곡선은 22~83. 높이 H는 '최종' 글자(또는 가장 낮은 점·끝 가격 글자)가 끝나는 곳까지라 칩 줄 선에 붙는다.
+  const titleBox=[0,0,118,19]; // 제목(이평선 기준가) 글자 자리(그래프 좌표)
+  const W=Math.max(240,Math.round(plotW||325)),L=24,R=24,TOP=22,BOT=83,n=pts.length,avgOf=p=>avg?.at[p.i]??null,f=v=>v.toFixed(1);
   const vals=pts.flatMap(p=>[p.row.price,avgOf(p)]).filter(v=>v>0),lo=Math.min(...vals),hi=Math.max(...vals),flat=!(hi-lo>Math.abs(hi)*1e-9); // 횡보형: 누적 평단의 부동소수점 오차도 같은 값으로 보아 가운데 수평선
   const X=k=>L+(W-L-R)*k/(n-1),Y=v=>flat?(TOP+BOT)/2:BOT-(BOT-TOP)*(v-lo)/(hi-lo);
   const ctrl=(list,k)=>{const a=list[Math.max(0,k-1)],b=list[k],c=list[k+1],e=list[Math.min(list.length-1,k+2)];return [b,{x:b.x+(c.x-a.x)/6,y:b.y+(c.y-a.y)/6},{x:c.x-(e.x-b.x)/6,y:c.y-(e.y-b.y)/6},c];};
@@ -417,6 +419,7 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   const yAt=(list,x)=>{let k=0;while(k<list.length-2&&x>list[k+1].x)k++;const q=ctrl(list,k);let a=0,b=1;for(let i=0;i<28;i++){const m=(a+b)/2;if(at(q,m).x<x)a=m;else b=m;}return at(q,(a+b)/2).y;}; // 매끈한 곡선의 x 위치 높이
   const main=pts.map((p,k)=>({x:X(k),y:Y(p.row.price)})),avgPts=avg?pts.map((p,k)=>avgOf(p)>0?{x:X(k),y:Y(avgOf(p))}:null):[];
   const mainD=curve(main),avgD=avg&&avgPts.every(Boolean)?curve(avgPts):"",lastP=main.at(-1);
+  const avgEnd=avgD?avgPts.at(-1):null,flip=!!avgEnd&&avgEnd.y<lastP.y-1,H=Math.ceil(Math.max(BOT+8,avgEnd&&!flip?avgEnd.y+28:0,flip?lastP.y+25:0)); // 아래 빈 곳 없이
   const ai=pts.findIndex(p=>p.focus),warn=ai>=0&&isWarn(focus),fa=ai<0?100:ai/(n-1)*100,sel=Number.isInteger(pick)&&pick>=0&&pick<n?pick:null;
   const toneOf=k=>complete||groupDone(pts[k].gr.rows)?"mint":k===ai&&warn?"warn":"blue";
   // 선·면을 나누는 지점: 강조 지점, 강조 기준가가 없으면(기준가 없는 부분 체결 등) 마지막 완료 지점(없으면 -1 = 모두 예정).
@@ -440,20 +443,22 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   // 끝 가격은 끝점 아래, '최종'은 평단 점 위로 바깥쪽에 둔다. 표식이 그 점이면(첫·끝 회차 선택) 그 글자는 숨기고, 말풍선·표식과 겹쳐도 숨긴다.
   const textW=t=>[...t].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),hit=(a,b)=>a[0]<b[2]&&b[0]<a[2]&&a[1]<b[3]&&b[1]<a[3];
   const priceText=rowPt(mk.price),avgText=mk.avg>0?rowPt(mk.avg):"",tw=Math.max(textW(priceText)*1.07,textW(avgText)*.95)+24,th=avgText?36:22;
-  const align=mk.k===0||mk.x-tw/2<0?"l":mk.k===n-1||mk.x+tw/2>W?"r":"c",tl=align==="l"?mk.x-16:align==="r"?mk.x+16-tw:mk.x-tw/2,tipBox=[tl,mk.y-17-th,tl+tw,mk.y-12],haloBox=[mk.x-12,mk.y-12,mk.x+12,mk.y+12],clear=b=>!hit(b,tipBox)&&!hit(b,haloBox);
+  const align=mk.k===0||mk.x-tw/2<0?"l":mk.k===n-1||mk.x+tw/2>W?"r":"c",tl=align==="l"?mk.x-16:align==="r"?mk.x+16-tw:mk.x-tw/2,place=(()=>{ // 말풍선 자리: 위 → 옆(오른쪽 절반이면 왼쪽 옆부터) → 반대 옆 → 아래. 제목·카드 위(−12) 밖으로 나가지 않는 첫 자리
+      const up=["up",[tl,mk.y-17-th,tl+tw,mk.y-12]],sl=["sl",[mk.x-16-tw,mk.y-th/2,mk.x-16,mk.y+th/2]],sr=["sr",[mk.x+16,mk.y-th/2,mk.x+16+tw,mk.y+th/2]],down=["down",[tl,mk.y+12,tl+tw,mk.y+17+th]];
+      return [up,...(mk.x>W/2?[sl,sr]:[sr,sl]),down].find(([,b])=>b[1]>=-12&&b[0]>=-4&&b[2]<=W+4&&!hit(b,titleBox))??down;})(),tipBox=place[1],haloBox=[mk.x-12,mk.y-12,mk.x+12,mk.y+12],clear=b=>!hit(b,tipBox)&&!hit(b,haloBox);
   const txt=(x,y,t,cls,anchor)=>`<text x="${f(x)}" y="${f(y)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
-  const avgEnd=avgD?avgPts.at(-1):null,flip=!!avgEnd&&avgEnd.y<lastP.y-1,startText=rowPt(pts[0].row.price),endText=rowPt(pts.at(-1).row.price),sy=main[0].y-12,ey=flip?lastP.y+22:lastP.y-12;
+  const startText=rowPt(pts[0].row.price),endText=rowPt(pts.at(-1).row.price),sy=hit([2,main[0].y-24,2+textW(startText),main[0].y-9],titleBox)?main[0].y+22:main[0].y-12,ey=flip?lastP.y+22:lastP.y-12;
   let marks="";
   if(mk.k!==0&&clear([2,sy-12,2+textW(startText),sy+3]))marks+=txt(2,sy,escA(startText),"bp-t mint","start");
   const endBox=[W-textW(endText),ey-12,W,ey+3],showEnd=mk.k!==n-1&&clear(endBox);
   if(showEnd)marks+=txt(W,ey,escA(endText),`bp-t ${complete?"mint":"blue"}`,"end");
-  if(avgD){const e=avgEnd,finText=`최종 ${rowPt(avg.end)}`,ys=flip?[e.y-11,Math.min(e.y+25,H+4)]:[Math.min(e.y+25,H+4),e.y-11]; // 바깥쪽 먼저, 말풍선·표식·끝 가격 글자와 겹치면 반대쪽
+  if(avgD){const e=avgEnd,finText=`최종 ${rowPt(avg.end)}`,ys=flip?[e.y-11,Math.min(e.y+25,H-3)]:[Math.min(e.y+25,H-3),e.y-11]; // 바깥쪽 먼저, 말풍선·표식·끝 가격 글자와 겹치면 반대쪽
     const fy=ys.find(y=>{const b=[W-textW(finText),y-12,W,y+3];return clear(b)&&!(showEnd&&hit(b,endBox));}); // 두 자리 모두 막히면(말풍선이 끝 쪽) 글자는 숨긴다
     marks+=`<circle cx="${f(e.x)}" cy="${f(e.y)}" r="3.6" class="bp-avg-dot"/>`+(fy===undefined?"":txt(W,fy,escA(finText),"bp-t mint","end"));
     if(mk.x>main[0].x+.5&&mk.x<lastP.x-.5)marks+=`<circle cx="${f(mk.x)}" cy="${f(yAt(avgPts,mk.x))}" r="3.6" class="bp-avg-dot"/>`;}
   marks+=`<circle cx="${f(mk.x)}" cy="${f(mk.y)}" r="12" class="bp-halo ${mk.tone}"/><circle cx="${f(mk.x)}" cy="${f(mk.y)}" r="6.5" class="bp-core ${mk.tone}"/>`;
-  const pos=align==="l"?`left:${(mk.x/W*100).toFixed(2)}%`:align==="r"?`left:${(mk.x/W*100).toFixed(2)}%`:`left:${(mk.x/W*100).toFixed(2)}%`;
-  const tip=`<div class="bp-tip ${align}" style="${pos};top:${(mk.y/H*100).toFixed(2)}%"><b>${escA(priceText)}</b>${avgText?`<span>${escA(avgText)}</span>`:""}<i aria-hidden="true"></i></div>`;
+  const pos=`left:${(mk.x/W*100).toFixed(2)}%`;
+  const tip=`<div class="bp-tip ${place[0]==="up"?align:place[0]==="down"?`${align} below`:place[0]}" style="${pos};top:${(mk.y/H*100).toFixed(2)}%"><b>${escA(priceText)}</b>${avgText?`<span>${escA(avgText)}</span>`:""}<i aria-hidden="true"></i></div>`;
   const label=p=>p.gr.key==="end"?"목표가":p.row.line?bpShort(movingLineText(p.row.line.line)):movingLineText(p.row.label);
   // x축 회차 칩(버튼): 고른 회차(없으면 강조) → 처음 → 끝 → 나머지 순으로, 그래프 실제 폭 기준 글자 너비를 어림해 이미 놓인 칩과 겹치지 않는 것만 둔다.
   const tick=k=>{const done=groupDone(pts[k].gr.rows);return {k,done,text:`${label(pts[k])}${done?"✓":""}`};};

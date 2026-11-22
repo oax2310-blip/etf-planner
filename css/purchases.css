@@ -306,10 +306,10 @@
   display:flex;flex-direction:column;gap:9px;padding:14px 18px 11px;font-variant-numeric:tabular-nums}
 @media screen{:root[data-theme=dark] .bp .bp-chart{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba(255,255,255,.16);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc}}
 .bp .card.bp-chart{background:var(--bpc-bg);border:1px solid var(--bpc-line);border-radius:20px;padding:14px 18px 11px}
-.bp-chart h2{margin:0;line-height:1.2}
+.bp-chart h2{position:relative;z-index:3;margin:0;line-height:18px}
 .bp-chart-title{padding:0;border:0;background:none;color:var(--bpc-title);font:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;cursor:pointer}
-.bp-plot{position:relative;margin-bottom:8px}
-.bp-plot .bp-svg{position:relative;z-index:2;display:block;width:100%;height:auto;overflow:visible}
+.bp-plot{position:relative;margin-top:-27px;margin-bottom:2px} /* 제목 줄(18px + 간격 9px)부터 그려 위아래 빈 곳을 없앤다 */
+.bp-plot .bp-svg{position:relative;z-index:2;display:block;width:100%;height:auto;overflow:visible;pointer-events:none}
 .bp-mask{fill:var(--bpc-bg)}
 .bp-line{fill:none;stroke-width:2.6;stroke-linecap:round}.bp-avg{fill:none;stroke:var(--bpc-mint);stroke-width:1.8;stroke-dasharray:4 4;stroke-linecap:round}
 .bp-avg-dot{fill:var(--bpc-mint)}
@@ -322,6 +322,11 @@
 .bp-tip i{position:absolute;left:50%;bottom:-4px;width:7px;height:7px;margin-left:-3.5px;background:var(--bpc-tip-bot);border-right:1px solid var(--bpc-tip-line);border-bottom:1px solid var(--bpc-tip-line);transform:rotate(45deg)}
 .bp-tip.l{transform:translate(-16px,calc(-100% - 17px))}.bp-tip.l i{left:16px}
 .bp-tip.r{transform:translate(calc(-100% + 16px),calc(-100% - 17px))}.bp-tip.r i{left:calc(100% - 16px)}
+/* 위·옆에 자리가 없으면 표식 아래로 뒤집고 곡선 면 위에 보인다 */
+.bp-tip.below{z-index:3;transform:translate(-50%,17px)}.bp-tip.l.below{transform:translate(-16px,17px)}.bp-tip.r.below{transform:translate(calc(-100% + 16px),17px)}.bp-tip.below i{bottom:auto;top:-4px;transform:rotate(225deg)}
+/* 위에 자리가 없으면 표식 옆(sl: 왼쪽, sr: 오른쪽), 꼬리는 표식 쪽 */
+.bp-tip.sl,.bp-tip.sr{z-index:3}.bp-tip.sl{transform:translate(calc(-100% - 16px),-50%)}.bp-tip.sr{transform:translate(16px,-50%)}
+.bp-tip.sl i{left:auto;right:-4px;top:50%;bottom:auto;margin:-3.5px 0 0;transform:rotate(-45deg)}.bp-tip.sr i{left:-4px;top:50%;bottom:auto;margin:-3.5px 0 0;transform:rotate(135deg)}
 .bp-xaxis{position:relative;height:34px;border-top:1px solid var(--bpc-line)}
 .bp .bp-x{position:absolute;top:6px;transform:translateX(-50%);min-height:0;padding:4px 10px;border:0;border-radius:999px;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--text-3);white-space:nowrap;cursor:pointer}
 .bp .bp-x.first{transform:translateX(-25%)}.bp .bp-x.last{transform:translateX(-75%)}
