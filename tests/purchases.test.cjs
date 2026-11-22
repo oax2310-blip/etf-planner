@@ -2650,7 +2650,9 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
 test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아래이고 SVG는 카드 배경색 불투명 면을 먼저 깐 뒤 완료·예정 구간 세로 그라데이션을 자른다',()=>{
   const {chart}=curveFixture(),c=chart();
   assert.match(c,/<div class="bp-plot"><div class="bp-tip [lcr]"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'말풍선이 SVG보다 먼저(아래 겹)');
-  assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" clip-path="url\(#bpClipDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" clip-path="url\(#bpClipNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑)');
+  assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" mask="url\(#bpMaskDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" mask="url\(#bpMaskNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑), 경계는 가로 마스크');
+  const [x1,x2]=c.match(/<linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="([\d.]+)" x2="([\d.]+)"/).slice(1).map(Number);assert.ok(x2-x1>=40,`초록→파랑 경계가 ${x2-x1}px에 걸쳐 이어짐`);
+  assert.match(c,/<linearGradient id="bpXNext"[^>]*><stop offset="0" stop-color="#000"\/><stop offset="1" stop-color="#fff"\/>/,'예정 면은 경계 오른쪽으로 나타남');
   assert.match(c,/<linearGradient id="bpFillDone" gradientUnits="userSpaceOnUse" x1="0" y1="[\d.]+" x2="0" y2="138"><stop offset="0\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:1"\/><stop offset="55\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:0\.45"\/><stop offset="100\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:0"\/><\/linearGradient>/,'곡선 아래 진함 → 바닥 투명(색은 style로)');assert.doesNotMatch(c,/stop-color="var\(/,'presentation 속성 var() 없음');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#23735a;--bpc-next-top:#2d55b0;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
@@ -2705,7 +2707,7 @@ test('곡선 카드: 강조 회차에 기준가가 없으면 선·면을 마지�
   const r=setup({manual:true,price:12500});r.item.buyPlan.stages=[{id:'s0',price:11000,shares:5,amount:5.5,done:true,actual:5.5},{id:'s1',price:null,shares:3,plannedShares:10,partial:true,actual:3},{id:'s2',price:12000,shares:10,amount:12},{id:'s3',price:13000,shares:10,amount:13}];r.render();
   const c=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0],x0=Number(c.match(/<path d="M([\d.]+) /)[1]);
   assert.match(c,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" style="stop-color:var\(--bpc-mint\);stop-opacity:1"\/><stop offset="0\.0%" style="stop-color:var\(--bpc-mint\);stop-opacity:1"\/><stop offset="6\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/>/,'선: 마지막 완료 지점(첫 점)까지 민트, 그 뒤 파랑');
-  assert.equal(Number(c.match(/<clipPath id="bpClipDone"><rect x="0" y="0" width="([\d.]+)"/)[1]),x0,'면: 같은 지점에서 나눔');
+  {const [a1,a2]=c.match(/<linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="(-?[\d.]+)" x2="([\d.]+)"/).slice(1).map(Number);assert.ok(Math.abs((a1+a2)/2-x0)<.2,'면: 같은 지점에서 나눔(경계 가운데)');}
   r.item.buyPlan.stages[0]={id:'s0',price:11000,shares:5,amount:5.5};r.render();const d=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
   assert.match(d,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/><stop offset="100\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/>/,'완료가 없으면 선도 모두 파랑(면과 같음)');
 });
