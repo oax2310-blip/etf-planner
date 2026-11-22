@@ -217,17 +217,15 @@
 .title-row h1{min-width:0}
 @media(min-width:701px){.bp-dd{display:none}.bp-title-btn{cursor:default}}
 @media(max-width:700px){#buysView .layout.has-plans{position:relative}#buysView .layout.has-plans>.side{display:none}
-  #buysView .layout.plans-open>.side{display:block;position:absolute;left:0;right:0;top:var(--plans-top,64px);z-index:30;max-height:min(60vh,460px);overflow:auto;box-shadow:0 18px 40px rgba(0,0,0,.45)}
-  #buysView .layout.plans-open>.side{max-height:min(72vh,620px);padding:10px}
+  #buysView .layout.plans-open>.side{display:block;position:absolute;left:0;right:0;top:var(--plans-top,64px);z-index:30;max-height:min(72vh,620px);overflow:auto;padding:10px;box-shadow:0 18px 40px rgba(0,0,0,.45)}
   #buysView .layout.plans-open>.side .side-head{margin-bottom:8px}#buysView .layout.plans-open>.side .side-head h2{font-size:13px}
-  /* 펼친 목록: 한 줄 행(이름 · 꼬리 글자 · 진행)으로 최대한 많이 보인다 */
+  /* 펼친 목록: 한 줄 행(이름 · 꼬리 글자(있을 때만) · 진행)으로 최대한 많이 보인다. .plan-row를 풀어(display:contents) 세 칸을 한 줄 순서로 둔다 */
   #buysView .layout.plans-open>.side .plan-list{grid-template-columns:1fr;gap:2px}
-  #buysView .layout.plans-open>.side .plan-item{padding:8px 10px;border-radius:10px}#buysView .layout.plans-open>.side .plan-bar{display:none}
-  #buysView .layout.plans-open>.side .plan-row{flex-direction:row;align-items:baseline;gap:8px}
-  #buysView .layout.plans-open>.side .plan-item strong{flex:0 1 auto;font-size:14px}
-  #buysView .layout.plans-open>.side .plan-title{flex:0 1 auto;min-width:0;margin-left:6px}
-  #buysView .layout.plans-open>.side .plan-item{flex-direction:row;align-items:baseline}#buysView .layout.plans-open>.side .plan-row{flex:1;min-width:0;order:2}
-  #buysView .layout.plans-open>.side .plan-count{margin-left:auto}
+  #buysView .layout.plans-open>.side .plan-item{flex-direction:row;align-items:baseline;gap:6px;padding:8px 10px;border-radius:10px}#buysView .layout.plans-open>.side .plan-bar{display:none}
+  #buysView .layout.plans-open>.side .plan-row{display:contents}
+  #buysView .layout.plans-open>.side .plan-item strong{order:1;flex:0 1 auto;min-width:0;font-size:14px}
+  #buysView .layout.plans-open>.side .plan-title{order:2;flex:0 1 auto;min-width:0}#buysView .layout.plans-open>.side .plan-title:empty{display:none}
+  #buysView .layout.plans-open>.side .plan-count{order:3;flex:none;margin-left:auto;padding-left:6px}
   .bp-plans-backdrop{position:fixed;inset:0;z-index:29;border:0;padding:0;background:rgba(0,0,0,.25)}}
 @media(min-width:701px){.bp-plans-backdrop{display:none}}
 .bp-count{flex:none;font-size:13.5px;font-weight:600;color:var(--bp-blue-2);white-space:nowrap}.bp-count.done{color:var(--bp-mint)}.bp-count small{font-size:12px;color:var(--text-3);font-weight:500}

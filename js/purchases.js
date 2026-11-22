@@ -9,7 +9,7 @@ const PEN=PENCIL,dlg=el;
 const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
-let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null,purchasePlansOpen=false,purchasePlanQuery=""; // purchasePlansOpen: 모바일 제목 ▾로 연 저장된 계획 목록(화면 상태)
+let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null,purchasePlansOpen=false,purchasePlanQuery="",purchasePlotW=325,purchasePlotFixing=false; // purchasePlotW: 곡선 그래프의 실제 폭(px, 렌더 뒤 잰 값) // purchasePlansOpen: 모바일 제목 ▾로 연 저장된 계획 목록(화면 상태)
 // 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
 let actPurchaseRow=null; // 가장 최근 renderPurchases의 [체결] 실행 함수(그 렌더의 rowData·fills를 쓴다)
 const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),sortingPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(),purchaseMemoDrafts=new Map(),purchaseCurvePick=new Map(); // 완료 회차 펼침·계좌 펼침·순서 바꾸기·메모 편집 열림·작성 중 메모는 화면 상태로만 둔다
@@ -402,12 +402,13 @@ function purchaseAverages(rows,execOf,otherTicker){
 // 화면: 제목 한 줄 + 높이 138(곡선은 세로 40%~84%) + 아래 회차 칩. 기본은 현재가를 곡선 위(강조 회차에 가까운 구간)에 두고 현재가·그 회차의 예상 평단을,
 // 회차 칩을 누르면 그 회차 기준가·예상 평단을 말풍선(숫자 2줄)으로 보인다. 같은 칩을 다시 누르거나 제목을 누르면 기본으로 돌아간다(pick: 화면 상태).
 // 말풍선은 HTML(z-index 1)이고 곡선 SVG(z-index 2)는 카드 배경색의 불투명 면을 먼저 깔아, 곡선 뒤로 내려간 말풍선을 가린다.
-function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone,pick}){
+function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone,pick,plotW}){
   const groups=[];
   rows.forEach((r,i)=>{const key=r.line?(r.line.key==="end"?"end":r.line.line):`#${i}`;let gr=groups.at(-1);if(!gr||gr.key!==key)groups.push(gr={key,rows:[],idx:[]});gr.rows.push(r);gr.idx.push(i);});
   const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0&&gr.rows[k].price>0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:j===k};}).filter(Boolean); // 강조 회차도 기준가가 있을 때만 점
   if(pts.length<2)return "";
-  const W=325,H=138,L=24,R=24,TOP=H*.40,BOT=H*.84,n=pts.length,avgOf=p=>avg?.at[p.i]??null,f=v=>v.toFixed(1);
+  // viewBox 폭은 그래프의 실제 폭(px)이라 늘이거나 줄이지 않고 1:1로 그린다: 높이는 어느 폭에서나 138px, 글자·말풍선 크기·헤드룸(40%)도 그대로.
+  const W=Math.max(240,Math.round(plotW||325)),H=138,L=24,R=24,TOP=H*.40,BOT=H*.84,n=pts.length,avgOf=p=>avg?.at[p.i]??null,f=v=>v.toFixed(1);
   const vals=pts.flatMap(p=>[p.row.price,avgOf(p)]).filter(v=>v>0),lo=Math.min(...vals),hi=Math.max(...vals),flat=!(hi-lo>Math.abs(hi)*1e-9); // 횡보형: 누적 평단의 부동소수점 오차도 같은 값으로 보아 가운데 수평선
   const X=k=>L+(W-L-R)*k/(n-1),Y=v=>flat?(TOP+BOT)/2:BOT-(BOT-TOP)*(v-lo)/(hi-lo);
   const ctrl=(list,k)=>{const a=list[Math.max(0,k-1)],b=list[k],c=list[k+1],e=list[Math.min(list.length-1,k+2)];return [b,{x:b.x+(c.x-a.x)/6,y:b.y+(c.y-a.y)/6},{x:c.x-(e.x-b.x)/6,y:c.y-(e.y-b.y)/6},c];};
@@ -418,6 +419,8 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   const mainD=curve(main),avgD=avg&&avgPts.every(Boolean)?curve(avgPts):"",lastP=main.at(-1);
   const ai=pts.findIndex(p=>p.focus),warn=ai>=0&&isWarn(focus),fa=ai<0?100:ai/(n-1)*100,sel=Number.isInteger(pick)&&pick>=0&&pick<n?pick:null;
   const toneOf=k=>complete||groupDone(pts[k].gr.rows)?"mint":k===ai&&warn?"warn":"blue";
+  // 선·면을 나누는 지점: 강조 지점, 강조 기준가가 없으면(기준가 없는 부분 체결 등) 마지막 완료 지점(없으면 -1 = 모두 예정).
+  const cutK=ai>=0?ai:pts.reduce((b,p,k)=>groupDone(p.gr.rows)?k:b,-1),fc=cutK<0?0:cutK/(n-1)*100;
   // 표식: 고른 회차면 그 점, 기본이면 현재가가 곡선과 만나는 자리(강조 회차에 가까운 구간). 현재가가 곡선 범위 밖이면 가격이 가장 가까운 점, 현재가가 없으면 강조(없으면 끝) 점.
   const mk=(()=>{
     if(sel!==null)return {x:main[sel].x,y:main[sel].y,k:sel,price:pts[sel].row.price,avg:avgOf(pts[sel]),tone:toneOf(sel)};
@@ -429,12 +432,12 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
     const k=pts.reduce((b,p,i)=>Math.abs(p.row.price-now)<Math.abs(pts[b].row.price-now)?i:b,0);return {x:main[k].x,y:main[k].y,k,price:now,avg:avgNow,tone};
   })();
   const st=(o,c)=>`<stop offset="${Math.max(0,Math.min(100,o)).toFixed(1)}%" stop-color="${c}"/>`;
-  const stroke=complete||ai<0?st(0,"var(--bpc-mint)")+st(100,"var(--bpc-mint)"):warn?st(0,"var(--bpc-mint)")+st(fa-14,"var(--bpc-mint)")+st(fa-5,"var(--bpc-orange)")+st(fa+5,"var(--bpc-orange)")+st(fa+12,"var(--bpc-blue)")+st(100,"var(--bpc-blue)"):st(0,"var(--bpc-mint)")+st(fa,"var(--bpc-mint)")+st(fa+6,"var(--bpc-blue)")+st(100,"var(--bpc-blue)");
-  const split=complete?W:ai>=0?main[ai].x:main[0].x,area=`${mainD} L${f(lastP.x)} ${H} L${f(main[0].x)} ${H}Z`;
+  const stroke=complete?st(0,"var(--bpc-mint)")+st(100,"var(--bpc-mint)"):ai<0?(cutK<0?st(0,"var(--bpc-blue)")+st(100,"var(--bpc-blue)"):st(0,"var(--bpc-mint)")+st(fc,"var(--bpc-mint)")+st(fc+6,"var(--bpc-blue)")+st(100,"var(--bpc-blue)")):warn?st(0,"var(--bpc-mint)")+st(fa-14,"var(--bpc-mint)")+st(fa-5,"var(--bpc-orange)")+st(fa+5,"var(--bpc-orange)")+st(fa+12,"var(--bpc-blue)")+st(100,"var(--bpc-blue)"):st(0,"var(--bpc-mint)")+st(fa,"var(--bpc-mint)")+st(fa+6,"var(--bpc-blue)")+st(100,"var(--bpc-blue)");
+  const split=complete?W:cutK>=0?main[cutK].x:main[0].x,area=`${mainD} L${f(lastP.x)} ${H} L${f(main[0].x)} ${H}Z`;
   // 고정 글자: 시작 가격(시작점 위)·끝 가격(끝점 위)·'최종' 평단(평단 끝점 아래). 평단 끝점이 기준가 끝점보다 위면(하락형) 두 선 사이에서 부딪히지 않게
   // 끝 가격은 끝점 아래, '최종'은 평단 점 위로 바깥쪽에 둔다. 표식이 그 점이면(첫·끝 회차 선택) 그 글자는 숨기고, 말풍선·표식과 겹쳐도 숨긴다.
   const textW=t=>[...t].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),hit=(a,b)=>a[0]<b[2]&&b[0]<a[2]&&a[1]<b[3]&&b[1]<a[3];
-  const priceText=rowPt(mk.price),avgText=mk.avg>0?rowPt(mk.avg):"",tw=Math.max(textW(priceText)*1.13,textW(avgText))+26,th=avgText?44:28;
+  const priceText=rowPt(mk.price),avgText=mk.avg>0?rowPt(mk.avg):"",tw=Math.max(textW(priceText)*1.2,textW(avgText)*1.05)+30,th=avgText?44:28;
   const align=mk.k===0||mk.x-tw/2<0?"l":mk.k===n-1||mk.x+tw/2>W?"r":"c",tl=align==="l"?mk.x-20:align==="r"?mk.x+20-tw:mk.x-tw/2,tipBox=[tl,mk.y-17-th,tl+tw,mk.y-12],haloBox=[mk.x-12,mk.y-12,mk.x+12,mk.y+12],clear=b=>!hit(b,tipBox)&&!hit(b,haloBox);
   const txt=(x,y,t,cls,anchor)=>`<text x="${f(x)}" y="${f(y)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
   const avgEnd=avgD?avgPts.at(-1):null,flip=!!avgEnd&&avgEnd.y<lastP.y-1,startText=rowPt(pts[0].row.price),endText=rowPt(pts.at(-1).row.price),sy=main[0].y-12,ey=flip?lastP.y+22:lastP.y-12;
@@ -450,9 +453,9 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   const pos=align==="l"?`left:${(mk.x/W*100).toFixed(2)}%`:align==="r"?`left:${(mk.x/W*100).toFixed(2)}%`:`left:${(mk.x/W*100).toFixed(2)}%`;
   const tip=`<div class="bp-tip ${align}" style="${pos};top:${(mk.y/H*100).toFixed(2)}%"><b>${escA(priceText)}</b>${avgText?`<span>${escA(avgText)}</span>`:""}<i aria-hidden="true"></i></div>`;
   const label=p=>p.gr.key==="end"?"목표가":p.row.line?bpShort(movingLineText(p.row.line.line)):movingLineText(p.row.label);
-  // x축 회차 칩(버튼): 고른 회차(없으면 강조) → 처음 → 끝 → 나머지 순으로, 360px 화면 폭(축 너비 약 296px) 기준 글자 너비를 어림해 이미 놓인 칩과 겹치지 않는 것만 둔다.
+  // x축 회차 칩(버튼): 고른 회차(없으면 강조) → 처음 → 끝 → 나머지 순으로, 그래프 실제 폭 기준 글자 너비를 어림해 이미 놓인 칩과 겹치지 않는 것만 둔다.
   const tick=k=>{const done=groupDone(pts[k].gr.rows);return {k,done,text:`${label(pts[k])}${done?"✓":""}`};};
-  const cw=296,tickW=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="✓"?10:7),0)+18;
+  const cw=W,tickW=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="✓"?10:7),0)+18;
   const span=t=>{const w=tickW(t.text),c=X(t.k)/W*cw,a=t.k===0?.25:t.k===n-1?.75:.5;return [c-w*a,c+w*(1-a)];};
   const shown=[];for(const k of [sel??ai,0,n-1,...pts.map((_,k)=>k)])if(k>=0&&!shown.some(t=>t.k===k)){const t=tick(k),[l,r]=span(t);if(shown.every(o=>{const [ol,or]=span(o);return r+4<=ol||or+4<=l;}))shown.push(t);}
   const ticks=shown.sort((a,b)=>a.k-b.k).map(t=>{
@@ -569,7 +572,7 @@ function renderPurchases(){
     // 완료 상자: 현재 수익은 체결분 평단(purchaseAverages.now) 대비 현재가, 금액은 체결 수량 × 차이(달러는 현재 환율 원화 환산). 총 매수는 회차 체결 금액 합.
     const doneBox=complete?(()=>{const total=rows.reduce((n,r)=>n+(r.actual||0),0),rate=cur==="USD"?plus(s.fx):1,ret=bpRound1(avg?.now>0&&now!==null?(now/avg.now-1)*100:null),pl=ret!==null&&rate?bpRound1((now-avg.now)*avg.filled*rate/1e4):null,toneOf=v=>v>0?' class="gain"':v<0?' class="loss"':""; // 수익률·금액은 각자의 반올림 값으로 색을 정한다
       return `<div class="bp-done"><div class="bp-done-head"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10"/><path d="M5.8 10.2l2.8 2.8 5.6-5.9"/></svg><b>분할매수 완료</b><span>${p.count}회 모두 체결</span></div>${ret!==null?`<div class="bp-ret"><small>현재 수익</small><div class="bp-ret-v"><b${toneOf(ret)}>${bpSign(ret)}${nf1.format(Math.abs(ret))}%</b>${pl!==null?`<em${toneOf(pl)}>${bpSign(pl)}${man(Math.abs(pl))}</em>`:""}</div></div>`:""}<div class="bp-done-stats"><div><small>최종 평단</small><b>${avg?.now>0?rowPt(avg.now):"—"}</b></div><div><small>총 매수</small><b>${total>0?wonAmount(total):"—"}</b></div></div></div>`;})():"";
-    const curve=purchaseCurveCard({id:it.id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done),pick:purchaseCurvePick.get(it.id)});
+    const curve=purchaseCurveCard({id:it.id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done),pick:purchaseCurvePick.get(it.id),plotW:purchasePlotW});
     const curveCard=curve;
     const summary=`<section class="card bp-sum${complete?" complete":""}" aria-label="계획 진행"><div class="bp-head"><h1 class="bp-name">${purchaseTitleButton(parts.head)}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div><div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${stamp?`<div class="bp-stamp">${stamp}</div>`:""}${bar}<div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.target!==null?`${parts.control}${parts.gapText}`:parts.control}</span></p></div>${parts.hint}${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
     const dockRow=focus,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
@@ -591,6 +594,8 @@ function renderPurchases(){
   const empty=items.length?emptyCard("아직 분할매수 계획이 없습니다","저장된 계획의 ＋ 추가를 눌러 종목과 매수 방식을 고르세요.",""):emptyCard("분할매수할 종목을 추가하세요","자산 배분에서 종목을 등록하면 목표 비중과 연결해 분할매수 계획을 만들 수 있습니다.",`<button class="btn primary" id="purchaseGoAlloc" type="button">자산 배분으로</button>`);
   view.innerHTML=`<div class="layout${selected?" has-plans":""}${selected&&purchasePlansOpen?" plans-open":""}"><aside class="side card" id="purchasePlans" aria-label="저장된 분할매수 계획"><div class="side-head"><h2>저장된 계획</h2><button class="btn primary mini" id="addPurchase" type="button" aria-label="새 분할매수 계획 추가">＋ 추가</button></div>${plans.length>1?`<label class="plan-search"><span aria-hidden="true">⌕</span><input type="search" id="purchasePlanSearch" value="${escA(purchasePlanQuery)}" placeholder="종목·계좌·코드 검색" aria-label="저장된 계획 검색" autocomplete="off" enterkeyhint="search"></label>`:""}<div id="purchaseList" class="plan-list">${list||"<div class='empty'>계획 없음</div>"}</div>${plans.length>1?'<p class="plan-none" id="purchasePlanNone" hidden>검색한 계획이 없습니다.</p>':""}<p class="hint purchase-save-status" id="purchaseSaveStatus" role="status"></p></aside>${selected&&purchasePlansOpen?'<button class="bp-plans-backdrop" type="button" id="purchasePlansBackdrop" tabindex="-1" aria-label="저장된 계획 목록 닫기"></button>':""}
     <section id="purchaseMain">${selected?card(selected):empty}</section></div>`;
+  const plotNow=view.querySelector?.(".bp-plot")?.clientWidth; // 곡선 그래프 실제 폭이 그린 폭과 다르면(첫 렌더·화면 폭 변경) 그 폭으로 한 번 다시 그린다
+  if(plotNow>0&&Math.abs(plotNow-purchasePlotW)>1&&!purchasePlotFixing){purchasePlotW=plotNow;purchasePlotFixing=true;try{return renderPurchases();}finally{purchasePlotFixing=false;}}
   updateStatus();if(typeof keepPlanListView==="function")keepPlanListView(el("purchaseList"),selectedPurchaseId); // 새로 만든 목록도 보던 위치 유지(core.js)
   el("addPurchase").onclick=()=>{if(items.length)openPurchase(null);else location.href="assets.html#alloc";};
   if(!items.length)el("purchaseGoAlloc").onclick=()=>{location.href="assets.html#alloc";};
@@ -611,7 +616,7 @@ function renderPurchases(){
   const plansBackdrop=el("purchasePlansBackdrop");if(plansBackdrop)plansBackdrop.onclick=()=>{purchasePlansOpen=false;render();}; // 목록 바깥을 누르면 닫는다
   if(purchasePlansOpen&&plansToggle?.getBoundingClientRect){const box=view.querySelector?.(".layout");if(box?.style)box.style.setProperty("--plans-top",`${Math.round(plansToggle.getBoundingClientRect().bottom-box.getBoundingClientRect().top+6)}px`);}
   all("[data-purchase-select]").forEach(b=>{
-    b.onclick=()=>{selectPurchase(b.dataset.purchaseSelect);purchasePlansOpen=false;render();[...all("[data-purchase-select]")].find(x=>x.dataset.purchaseSelect===selectedPurchaseId)?.focus?.();};
+    b.onclick=()=>{selectPurchase(b.dataset.purchaseSelect);purchasePlansOpen=false;purchasePlanQuery="";render();[...all("[data-purchase-select]")].find(x=>x.dataset.purchaseSelect===selectedPurchaseId)?.focus?.();};
     let timer=0,opened=false,x=0,y=0;const stop=()=>{clearTimeout(timer);timer=0;},open=()=>{stop();opened=true;openPurchaseName(b.dataset.purchaseSelect);};
     b.ontouchstart=e=>{({clientX:x,clientY:y}=e.touches[0]);opened=false;timer=setTimeout(open,500);};
     b.ontouchmove=e=>{const t=e.touches[0];if(opened){if(e.cancelable)e.preventDefault();}else if(timer&&Math.hypot(t.clientX-x,t.clientY-y)>10)stop();};
@@ -996,6 +1001,7 @@ function redrawIdle(){
 }
 function initialize(){
   if(initialized)return;initialized=true;
+  let resizeTimer=0;globalThis.addEventListener?.("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{const w=el("buysView")?.querySelector?.(".bp-plot")?.clientWidth;if(w>0&&Math.abs(w-purchasePlotW)>1)redrawIdle();},150);}); // 곡선 그래프 폭 맞춤
   el("purchaseDialog").querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>dlg("purchaseDialog").close());
   el("purchaseDialog").addEventListener("close",()=>{if(redrawLater)redrawIdle();});
   const f=form();picker();

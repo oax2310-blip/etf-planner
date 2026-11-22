@@ -2685,3 +2685,32 @@ test('곡선 카드: 현재가 표식(반지름 12)이 시작·끝 가격 글자
   assert.ok(cx<60,`현재가 10300은 시작점(10000) 바로 옆: ${cx}`);assert.doesNotMatch(html(),/text-anchor="start">₩10000</,'표식이 덮는 시작 글자는 숨김');
   r.prices.stocks['111111'].close=11300;r.render();assert.match(html(),/text-anchor="start">₩10000</,'표식이 멀면 시작 글자');
 });
+test('CSS: 분할매수 스타일시트는 괄호 짝이 맞아 모바일 전용 블록이 닫히고, 그 뒤 규칙(.bp-count·.bp-chart 등)은 모든 폭에 적용된다',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');let depth=0;const top=new Set();
+  for(let i=0;i<css.length;i++){const ch=css[i];if(ch==='{'){if(depth===0)top.add(css.slice(css.lastIndexOf('}',i)+1,i).trim().split('\n').pop());depth++;}else if(ch==='}'){depth--;assert.ok(depth>=0,`닫는 괄호가 많음(${i})`);}}
+  assert.equal(depth,0,'괄호 짝');
+  for(const sel of ['.bp-count','.bp-plot','.bp-tip','.bp-xaxis'])assert.ok([...top].some(s=>s===sel||s.startsWith(sel+'{')||s===sel),`${sel}은 최상위 규칙`);
+  assert.equal((css.match(/#buysView \.layout\.plans-open>\.side\{/g)||[]).length,1,'펼친 목록 상자 선언은 하나');
+  assert.match(css,/#buysView \.layout\.plans-open>\.side \.plan-row\{display:contents\}/);assert.match(css,/\.plan-item strong\{order:1;/);assert.match(css,/\.plan-title\{order:2;[^}]*\}#buysView \.layout\.plans-open>\.side \.plan-title:empty\{display:none\}/);assert.match(css,/\.plan-count\{order:3;flex:none;margin-left:auto;/);
+});
+test('곡선 카드: 그래프는 실제 폭(px)으로 1:1로 그려 어느 폭에서나 높이 138이고, 말풍선·SVG만 .bp-plot에 들며 칩 줄은 그 밖에 둔다',()=>{
+  const {r,chart}=curveFixture();assert.match(chart(),/<\/svg><\/div><div class="bp-xaxis">/,'.bp-plot은 SVG 뒤에서 닫힘');
+  const view=r.element('buysView'),orig=view.querySelector;let renders=0;const html0=r.html();
+  for(const w of [290,600]){view.querySelector=sel=>sel==='.bp-plot'?{clientWidth:w}:orig?.call(view,sel);r.render();
+    assert.match(chart(),new RegExp(`<svg class="bp-svg" viewBox="0 0 ${w} 138"`),`실제 폭 ${w}px로 다시 그림`);
+    const xs=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===0);assert.ok(Math.abs(xs.at(-1)-(w-24))<.1,'끝점은 오른쪽 24px 안');}
+  view.querySelector=orig;assert.ok(html0.length>0);
+});
+test('곡선 카드: 강조 회차에 기준가가 없으면 선·면을 마지막 완료 지점(없으면 처음)에서 같이 나눈다',()=>{
+  const r=setup({manual:true,price:12500});r.item.buyPlan.stages=[{id:'s0',price:11000,shares:5,amount:5.5,done:true,actual:5.5},{id:'s1',price:null,shares:3,plannedShares:10,partial:true,actual:3},{id:'s2',price:12000,shares:10,amount:12},{id:'s3',price:13000,shares:10,amount:13}];r.render();
+  const c=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0],x0=Number(c.match(/<path d="M([\d.]+) /)[1]);
+  assert.match(c,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" stop-color="var\(--bpc-mint\)"\/><stop offset="0\.0%" stop-color="var\(--bpc-mint\)"\/><stop offset="6\.0%" stop-color="var\(--bpc-blue\)"\/>/,'선: 마지막 완료 지점(첫 점)까지 민트, 그 뒤 파랑');
+  assert.equal(Number(c.match(/<clipPath id="bpClipDone"><rect x="0" y="0" width="([\d.]+)"/)[1]),x0,'면: 같은 지점에서 나눔');
+  r.item.buyPlan.stages[0]={id:'s0',price:11000,shares:5,amount:5.5};r.render();const d=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
+  assert.match(d,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" stop-color="var\(--bpc-blue\)"\/><stop offset="100\.0%" stop-color="var\(--bpc-blue\)"\/>/,'완료가 없으면 선도 모두 파랑(면과 같음)');
+});
+test('저장된 계획 검색: 계획을 고르면 검색어를 지워 다시 열 때 모든 계획이 보인다',()=>{
+  const r=setup();r.doc.allocation.groups.push({id:'g2',name:'ISA',items:[{id:'k',name:'가상 미국배당 ETF',ticker:'458730',shares:1,buyPlan:{stages:[{id:'s',price:100,shares:1,amount:0.01}]}}]});r.render();
+  const s=r.element('purchasePlanSearch');s.value='배당';s.oninput();r.render();assert.match(r.html(),/id="purchasePlanSearch" value="배당"/);
+  r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='k').onclick();assert.match(r.html(),/id="purchasePlanSearch" value=""/,'고르면 검색어 지움');
+});
