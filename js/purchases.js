@@ -406,8 +406,10 @@ function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,
   const line=complete||ai<0?st(0,"var(--bp-mint)")+st(100,"var(--bp-mint)"):warn?st(0,"var(--bp-mint)")+st(fa-14,"var(--bp-mint)")+st(fa-5,"var(--bp-orange)")+st(fa+5,"var(--bp-orange)")+st(fa+12,"var(--bp-blue)")+st(100,"var(--bp-blue)"):st(0,"var(--bp-mint)")+st(fa,"var(--bp-mint)")+st(fa+6,"var(--bp-blue)")+st(100,"var(--bp-blue)");
   const area=complete||ai<0?st(0,"var(--bp-mint)",.3)+st(100,"var(--bp-mint)",.26):st(0,"var(--bp-mint)",.3)+st(fa,"var(--bp-mint)",.24)+st(fa+6,"var(--bp-blue)",.3)+st(100,"var(--bp-blue)",.36);
   const lastP=main.at(-1),nearEnd=ai>0&&ai>=n-2,atStart=ai===0,txt=(x,y,t,cls,anchor="middle")=>`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
-  const endY=nearEnd?lastP.y+30:lastP.y-12;
-  let marks=txt(main[0].x-4,atStart?main[0].y+24:main[0].y-11,escA(rowPt(pts[0].row.price)),"bp-t mint","start")+txt(lastP.x+4,endY,escA(rowPt(pts.at(-1).row.price)),`bp-t ${complete?"mint":"blue"}`,"end");
+  const endY=nearEnd?Math.max(lastP.y+30,ai<n-1?main[ai].y+24:0):lastP.y-12,startText=rowPt(pts[0].row.price);
+  // 끝 쪽 강조면 끝 가격을 끝점과 강조 점(반지름 11) 아래로 둔다. 지점이 촘촘해 강조 점이 시작 가격 글자(12px, 위쪽) 가로 범위에 들고 시작점보다 낮지 않으면 글자를 점 아래로 둔다.
+  const startW=[...startText].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),startBelow=atStart||ai>0&&main[ai].x-11<main[0].x-4+startW&&main[ai].y<=main[0].y+4;
+  let marks=txt(main[0].x-4,startBelow?main[0].y+24:main[0].y-11,escA(startText),"bp-t mint","start")+txt(lastP.x+4,endY,escA(rowPt(pts.at(-1).row.price)),`bp-t ${complete?"mint":"blue"}`,"end");
   if(avgD){const e=avgPts.at(-1),near=Math.abs(e.y+20-endY)<15,avgY=near?(e.y+20>=endY?endY+15:endY-15):e.y+20; // 끝 가격 글자와 세로 15 안쪽이면 밀어낸다
     marks+=`<circle cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="3.2" class="bp-avg-dot"/>`+txt(e.x+4,avgY,`최종 ${escA(rowPt(avg.end))}`,"bp-t mint","end");}
   if(ai>=0){

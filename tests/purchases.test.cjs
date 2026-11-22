@@ -2461,3 +2461,16 @@ test('곡선 카드 x축: 강조 → 처음 → 끝 → 나머지 순으로 겹�
   assert.ok(ticks.some(x=>/\blast\b/.test(x.cls)&&x.t==='25월'),'끝 글자는 last 보정');assert.ok(!ticks.some(x=>/\bfirst\b/.test(x.cls)),'첫 지점이 빠지면 first 보정도 없음');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/\.bp-x\.first\{transform:translateX\(-25%\)\}\.bp-x\.last\{transform:translateX\(-75%\)\}/);assert.doesNotMatch(css,/\.bp-x:(?:first|last)-child/);
 });
+test('곡선 카드: 지점이 촘촘해도 시작·끝 가격 글자가 강조 점과 겹치지 않는다(시작은 가로로 겹칠 때만 아래, 끝에서 두 번째 강조면 끝 가격을 강조 점 아래로)',()=>{
+  const startAt=html=>{const y=Number(html.match(/<text x="[\d.]+" y="([\d.]+)" class="bp-t mint" text-anchor="start">/)[1]),d=html.match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number);return y>d[1]?'아래':'위';};
+  const dense=(step,fills)=>{const names=['5일선','10일선','20일선','25일선','40일선','60일선','120일선','42주선','60주선','25개월선'],ma=Object.fromEntries(names.map((x,i)=>[x,10000+i*step]));
+    const r=setup({budget:3000,end:null,names,price:step>0?9000:20000,ma});for(let i=0;i<fills;i++){const box=r.inputs('[data-purchase-buy]').find(x=>!x.checked);box.checked=true;box.onchange();}return r.html();};
+  const up=dense(600,3);assert.match(up,/class="bp-x on[^"]*"[^>]*>10일·다음/,'지점 10개, 두 번째 지점 강조');assert.equal(startAt(up),'아래','강조 점이 시작 글자 위에 오면 아래로');
+  assert.equal(startAt(dense(600,6)),'위','강조 점이 세 번째 지점(가로로 벗어남)이면 위');
+  const three=setup({budget:100,end:null,names:['25일선','32일선','42일선'],price:9000,ma:{'25일선':10000,'32일선':11000,'42일선':12000}});
+  for(let i=0;i<3;i++){const box=three.inputs('[data-purchase-buy]').find(x=>!x.checked);box.checked=true;box.onchange();}
+  assert.match(three.html(),/class="bp-x on[^"]*"[^>]*>32일·다음/,'지점 3개, 두 번째 지점 강조');assert.equal(startAt(three.html()),'위','지점이 넉넉하면 위');
+  // 끝에서 두 번째 지점 강조: 끝 가격 글자는 끝점뿐 아니라 강조 점(반지름 11)보다도 아래(글자 윗변 ≈ 기준선 − 9)
+  const near=dense(600,24),ny=Number(near.match(/<text x="[\d.]+" y="([\d.]+)" class="bp-t (?:mint|blue)" text-anchor="end">[\d,₩]/)[1]),halo=Number(near.match(/<circle cx="[\d.]+" cy="([\d.]+)" r="11" class="bp-halo/)[1]);
+  assert.match(near,/class="bp-x on[^"]*"[^>]*>60주·다음/,'지점 10개, 끝에서 두 번째 지점 강조');assert.ok(ny-9>=halo+11,`끝 가격 글자 윗변 ${ny-9} ≥ 강조 점 아래 ${halo+11}`);
+});
