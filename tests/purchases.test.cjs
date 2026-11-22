@@ -2670,6 +2670,7 @@ test('좁은 폭·고액: 현재가와 계좌 금액도 줄바꿈하고, 손익 
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/\.bp-price\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats div\{flex:1 1 0;min-width:fit-content;/);
   const now=css.match(/\.bp-now\{[^}]*\}/)[0],sum=css.match(/\.bp-acc-sum\{[^}]*\}/)[0],profit=css.match(/\.bp-acc-sum-r\{[^}]*\}/)[0];
+  assert.match(now,/min-width:\s*0\s*(?:;|\})/,'현재가는 가용 폭에 맞춰 줄일 수 있음');
   assert.match(now,/max-width:100%;/,'현재가는 카드 안쪽 폭 이내');
   assert.match(now,/overflow-wrap:anywhere/,'긴 현재가는 숫자 안에서도 줄바꿈');
   assert.doesNotMatch(now,/white-space:nowrap/,'현재가 줄바꿈 허용');
@@ -2682,4 +2683,18 @@ test('좁은 폭·고액: 현재가와 계좌 금액도 줄바꿈하고, 손익 
   assert.doesNotMatch(profit,/white-space:nowrap/,'손익 텍스트 줄바꿈 허용');
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
   assert.match(r.html(),/<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain"[^>]*>\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span>/,'손익 금액·손익률 한 묶음');
+});
+test('곡선 카드 좁은 폭·고액: 평단과 현재가는 카드 안에서 줄을 넘기고, 들어가면 한 줄 좌우에 둔다',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  const sub=css.match(/\.bp-chart-sub\s*\{([^}]*)\}/)?.[1]??'';
+  const children=css.match(/\.bp-chart-sub\s*>\s*span\s*,\s*\.bp-chart-sub\s*>\s*b\s*\{([^}]*)\}/)?.[1]??'';
+  const price=css.match(/(?:^|\})\s*\.bp-chart-sub\s*>\s*b\s*\{([^}]*)\}/m)?.[1];
+  assert.match(sub,/display:\s*flex\b/);
+  assert.match(sub,/justify-content:\s*space-between\b/);
+  assert.match(sub,/flex-wrap:\s*wrap\s*(?:;|$)/);
+  assert.match(sub,/overflow-wrap:\s*anywhere\s*(?:;|$)/);
+  assert.match(children,/min-width:\s*0\s*(?:;|$)/);
+  assert.match(children,/max-width:\s*100%\s*(?:;|$)/);
+  assert.ok(price,'.bp-chart-sub>b 규칙');
+  assert.doesNotMatch([sub,children,price].join('\n'),/white-space:\s*nowrap\b/);
 });

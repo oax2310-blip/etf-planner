@@ -211,7 +211,7 @@
 .bp-name{min-width:0;margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-name .title-tag{font-size:11px;vertical-align:.15em}
 .bp-count{flex:none;font-size:13.5px;font-weight:600;color:var(--bp-blue-2);white-space:nowrap}.bp-count.done{color:var(--bp-mint)}.bp-count small{font-size:12px;color:var(--text-3);font-weight:500}
 .bp-price{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 10px;margin-top:-2px} /* 좁은 폭·고액에서 배지가 넘치면 아래 줄로 */
-.bp-now{max-width:100%;font-size:31px;font-weight:800;letter-spacing:-.03em;line-height:1.1;overflow-wrap:anywhere}
+.bp-now{min-width:0;max-width:100%;font-size:31px;font-weight:800;letter-spacing:-.03em;line-height:1.1;overflow-wrap:anywhere}
 .bp-next{font-size:14px;font-weight:600;color:var(--bp-blue-2);letter-spacing:-.02em;white-space:nowrap}
 .bp-badge{align-self:center;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap}
 .bp-badge.due{background:color-mix(in srgb,var(--bp-orange) 15%,transparent);color:var(--bp-orange)}.bp-badge.ok{background:color-mix(in srgb,var(--bp-mint) 16%,transparent);color:var(--bp-mint)}.bp-badge.muted{background:var(--surface-2);color:var(--text-3)}
@@ -285,7 +285,9 @@
 /* 곡선 카드 */
 .bp-chart{display:flex;flex-direction:column;gap:10px;padding:20px 18px 14px;font-variant-numeric:tabular-nums}
 .bp-chart h2{margin:0;font-size:16.5px;font-weight:700;letter-spacing:-.02em}
-.bp-chart-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--text-2)}.bp-chart-sub span b{color:var(--bp-mint);font-weight:700}.bp-chart-sub>b{color:var(--bp-blue-2);font-weight:700;white-space:nowrap}
+.bp-chart-sub{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--text-2);overflow-wrap:anywhere}
+.bp-chart-sub>span,.bp-chart-sub>b{min-width:0;max-width:100%}
+.bp-chart-sub span b{color:var(--bp-mint);font-weight:700}.bp-chart-sub>b{color:var(--bp-blue-2);font-weight:700}
 .bp-legend{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text-2)}.bp-legend span{display:inline-flex;align-items:center;gap:6px}.bp-legend .bp-stamp{margin-left:auto}
 .bp-legend i{display:inline-block;width:14px}.bp-legend i.solid{height:3px;border-radius:999px;background:var(--bp-blue)}.bp-legend i.mint{background:var(--bp-mint)}.bp-legend i.thin{height:2px}.bp-legend i.dash{height:0;border-top:2px dashed var(--bp-mint)}
 .bp-svg{display:block;width:100%;height:auto;overflow:visible}
