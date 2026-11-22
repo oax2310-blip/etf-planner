@@ -346,7 +346,7 @@ function waitCard({g,it},s,notes){
 }
 // ---------- 분할매수 요약·곡선·하단 버튼(이동평균선 돌파·직접 입력) ----------
 // 매수대기 계획은 제목·연결 보유·대기 카드를 그대로 쓴다. 여기 화면은 표시만 하며 저장 기록에 필드를 만들지 않는다.
-const bpSign=v=>v>0?"+":v<0?"−":"";
+const bpSign=v=>v>0?"+":v<0?"−":"",bpRound1=v=>v===null?null:Math.sign(v)*Math.round(Math.abs(v)*10)/10||0; // 소수 첫째 자리로 보이는 값은 그 반올림 값으로 부호·색을 정한다(−0% 방지)
 const bpShort=t=>String(t||"").replace(/(\d+)(일|주|월)선$/,"$1$2"); // x축 글자: 25일선 → 25일(시선·직접 이름은 그대로)
 // 메모 한 줄(계좌 · 설정 펼침 안): 첫 줄만 '메모: …'로 보이고 [편집 ›]을 누르면 그 자리에서 입력칸이 열린다(열림은 화면 상태).
 // 입력칸·글자 수·저장 버튼은 기존 id(purchaseMemo·purchaseMemoCount·savePurchaseNote)를 그대로 써서 기존 저장(setText note)을 탄다.
@@ -362,8 +362,8 @@ function purchaseAccountBox({g,it},s){
   const id=escA(it.id),canAdd=canAddPurchaseAccount(it),ordered=targetsOf(it,it.buyPlan,s),infos=new Map(ordered.map(r=>[r.it.id,allocationHoldingInfo(r.it,s)])),total=allocationHoldingTotal(infos.values(),s);
   const deleteMode=purchaseAccountDeletingId===it.id,sortMode=!deleteMode&&sortingPurchaseAccounts.has(it.id),open=deleteMode||openPurchaseAccounts.has(it.id);
   const parts=r=>stockNames.titleParts(r.it.name),qty=r=>infos.get(r.it.id).quantityText.replace(/^보유 /,"");
-  const sum=allocLink.holdingsProfit(ordered.map(r=>r.it),s.fx);
-  const top=ordered.length?`<b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sum.rateTone}">(${sum.rate===null?"—":`${sum.rate>0?"+":sum.rate<0?"−":""}${nf1.format(Math.abs(sum.rate))}%`})</small>`:""}`:"<b>연결된 계좌 없음</b>";
+  const sum=allocLink.holdingsProfit(ordered.map(r=>r.it),s.fx),sumRate=bpRound1(sum?.rate??null),sumTone=sumRate>0?"profit-gain":sumRate<0?"profit-loss":""; // 금액은 alloc-link가 0.1만원으로 반올림한 값
+  const top=ordered.length?`<b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small>`:""}`:"<b>연결된 계좌 없음</b>";
   const profitOf=r=>{const p=allocLink.holdingProfit(r.it,s.fx);if(!p)return "";
     return `<div class="bp-acc-pl">${p.amountText?`<b class="${p.amountTone}">${p.amountText}</b>`:`<b class="bp-muted">${p.status}</b>`}${p.rateText?`<small class="${p.rateTone}">${p.rateText}</small>`:""}</div>`;};
   const rows=ordered.map((r,j)=>{
@@ -407,16 +407,25 @@ function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,
   const area=complete||ai<0?st(0,"var(--bp-mint)",.3)+st(100,"var(--bp-mint)",.26):st(0,"var(--bp-mint)",.3)+st(fa,"var(--bp-mint)",.24)+st(fa+6,"var(--bp-blue)",.3)+st(100,"var(--bp-blue)",.36);
   const lastP=main.at(-1),nearEnd=ai>0&&ai>=n-2,atStart=ai===0,txt=(x,y,t,cls,anchor="middle")=>`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
   const endY=nearEnd?Math.max(lastP.y+30,ai<n-1?main[ai].y+24:0):lastP.y-12,startText=rowPt(pts[0].row.price);
-  // 끝 쪽 강조면 끝 가격을 끝점과 강조 점(반지름 11) 아래로 둔다. 지점이 촘촘해 강조 점이 시작 가격 글자(12px, 위쪽) 가로 범위에 들고 시작점보다 낮지 않으면 글자를 점 아래로 둔다.
-  const startW=[...startText].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),startBelow=atStart||ai>0&&main[ai].x-11<main[0].x-4+startW&&main[ai].y<=main[0].y+4;
-  let marks=txt(main[0].x-4,startBelow?main[0].y+24:main[0].y-11,escA(startText),"bp-t mint","start")+txt(lastP.x+4,endY,escA(rowPt(pts.at(-1).row.price)),`bp-t ${complete?"mint":"blue"}`,"end");
-  if(avgD){const e=avgPts.at(-1),near=Math.abs(e.y+20-endY)<15,avgY=near?(e.y+20>=endY?endY+15:endY-15):e.y+20; // 끝 가격 글자와 세로 15 안쪽이면 밀어낸다
-    marks+=`<circle cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="3.2" class="bp-avg-dot"/>`+txt(e.x+4,avgY,`최종 ${escA(rowPt(avg.end))}`,"bp-t mint","end");}
-  if(ai>=0){
-    const p=main[ai],f=pts[ai].row,sub=f.recorded&&!f.done&&f.plannedShares!==null?`${qtyText(f.shares,f.tradeItem)}/${qtyText(f.plannedShares,f.tradeItem)} 체결`:avgOf(pts[ai])>0?`평단 ${rowPt(avgOf(pts[ai]))}`:"";
+  // 말풍선은 강조 점 위에 둔다(가로는 카드 안으로 당김). 시작 가격 글자를 두기 전에 상자를 먼저 잰다.
+  const tip=ai>=0?(()=>{const p=main[ai],f=pts[ai].row,sub=f.recorded&&!f.done&&f.plannedShares!==null?`${qtyText(f.shares,f.tradeItem)}/${qtyText(f.plannedShares,f.tradeItem)} 체결`:avgOf(pts[ai])>0?`평단 ${rowPt(avgOf(pts[ai]))}`:"";
+    const head=rowPt(f.price),tw=Math.max(head.length,sub.length*.95)*8.2+24,th=sub?44:28;return {p,sub,head,tw,th,tx:Math.max(4,Math.min(W-4-tw,p.x-tw/2)),ty:p.y-th-15};})():null;
+  // 끝 쪽 강조면 끝 가격을 끝점과 강조 점(반지름 11) 아래로 둔다. 시작 가격 글자(12px, 기준선 y의 상자 y−10~y+2)는
+  // 점 위 → 점 아래 → 강조 점 아래 → 말풍선 꼬리 아래 순으로, 강조 점 원·말풍선·꼬리 상자와 겹치지 않는 첫 자리에 둔다(강조 점이 시작점이면 위는 빼고, 모두 겹치면 점 아래).
+  const textW=t=>[...t].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),startW=textW(startText),hit=(a,b)=>a[0]<b[2]&&b[0]<a[2]&&a[1]<b[3]&&b[1]<a[3];
+  const blocks=tip?[[tip.p.x-11,tip.p.y-11,tip.p.x+11,tip.p.y+11],[tip.tx,tip.ty,tip.tx+tip.tw,tip.ty+tip.th],[tip.p.x-6,tip.ty+tip.th,tip.p.x+6,tip.ty+tip.th+6]]:[];
+  const startY=[...(atStart?[]:[main[0].y-11]),main[0].y+24,...(tip?[tip.p.y+22,tip.ty+tip.th+18]:[])].find(y=>y>main[0].y-12&&y<=H&&!blocks.some(b=>hit([main[0].x-4,y-10,main[0].x-4+startW,y+2],b)))??main[0].y+24;
+  let marks=txt(main[0].x-4,startY,escA(startText),"bp-t mint","start")+txt(lastP.x+4,endY,escA(rowPt(pts.at(-1).row.price)),`bp-t ${complete?"mint":"blue"}`,"end");
+  // '최종' 평단 글자: 기본은 평단 끝점 아래(끝 가격 글자와 세로 15 안쪽이면 밀어냄). 그 자리가 끝 가격 글자·강조 점 원·말풍선·꼬리와 겹치면
+  // 평단 점 위 → 끝 가격 글자 아래·위 → 강조 점 아래 → 말풍선 꼬리 아래 → 말풍선 위 순으로 겹치지 않는 첫 자리에 둔다(모두 겹치면 기본 자리).
+  if(avgD){const e=avgPts.at(-1),avgText=`최종 ${rowPt(avg.end)}`,near=Math.abs(e.y+20-endY)<15,base=near?(e.y+20>=endY?endY+15:endY-15):e.y+20;
+    const endBox=[lastP.x+4-textW(rowPt(pts.at(-1).row.price)),endY-10,lastP.x+4,endY+2],avgBox=y=>[e.x+4-textW(avgText),y-10,e.x+4,y+2];
+    const avgY=[base,e.y-10,endY+15,endY-15,...(tip?[tip.p.y+22,tip.ty+tip.th+18,tip.ty-5]:[])].find(y=>y>=10&&y<=H&&![endBox,...blocks].some(b=>hit(avgBox(y),b)))??base;
+    marks+=`<circle cx="${e.x.toFixed(1)}" cy="${e.y.toFixed(1)}" r="3.2" class="bp-avg-dot"/>`+txt(e.x+4,avgY,escA(avgText),"bp-t mint","end");}
+  if(tip){
+    const {p,sub,head,tw,th,tx,ty}=tip;
     if(avgD&&avgPts[ai])marks+=`<circle cx="${avgPts[ai].x.toFixed(1)}" cy="${avgPts[ai].y.toFixed(1)}" r="3.2" class="bp-avg-dot"/>`;
     marks+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="11" class="bp-halo${warn?" warn":""}"/><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5.5" class="bp-core${warn?" warn":""}"/>`;
-    const head=rowPt(f.price),tw=Math.max(head.length,sub.length*.95)*8.2+24,th=sub?44:28,tx=Math.max(4,Math.min(W-4-tw,p.x-tw/2)),ty=p.y-th-15;
     marks+=`<g class="bp-tip${warn?" warn":""}"><rect x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" width="${tw.toFixed(1)}" height="${th}" rx="11"/><path d="M${(p.x-6).toFixed(1)} ${(ty+th-.5).toFixed(1)}L${p.x.toFixed(1)} ${(ty+th+6).toFixed(1)}L${(p.x+6).toFixed(1)} ${(ty+th-.5).toFixed(1)}"/>${txt(tx+tw/2,ty+19,escA(head),"bp-tip-main")}${sub?txt(tx+tw/2,ty+35,escA(sub),"bp-tip-sub"):""}</g>`;
   }
   const label=p=>p.gr.key==="end"?"목표가":p.row.line?bpShort(movingLineText(p.row.line.line)):movingLineText(p.row.label);
@@ -538,7 +547,7 @@ function renderPurchases(){
     const dueBox=dueRows.length?(()=>{const sum=dueRows.reduce((n,r)=>n+(r.plannedShares||0),0),amt=dueRows.every(r=>r.fill?.actual>0)?dueRows.reduce((n,r)=>n+r.fill.actual,0):null;
       return `<div class="bp-due"><div class="bp-due-head"><i class="bp-pulse"></i><b>기준가 도달 · 체결 대기</b><span><em>${qtyOf(sum,dueRows[0].tradeItem)}</em>${amt!==null?` · 약 ${wonAmount(amt)}`:""}</span></div>${dueRows.slice(0,3).map(r=>`<div class="bp-due-row"><div><b>${label(r)}</b><small>기준가 ${rowPt(r.price)} · 현재 <i>${gapOf(r)}</i></small></div><span class="q">${qtyOf(r.plannedShares||0,r.tradeItem)}</span><button class="btn bp-act-btn" type="button" data-purchase-act="${id}" ${r.attr}${blockedOf(r)?" disabled":""}>체결</button></div>`).join("")}${dueRows.length>3?`<p class="bp-due-more">외 ${dueRows.length-3}회는 아래 회차표에서 체결하세요</p>`:""}${next&&nextGap?`<p class="bp-due-foot">그다음 <b>${escA(movingLineText(next.label))} ${rowPt(next.price)}</b> · ${nextGap.text} 남음</p>`:""}</div>`;})():"";
     // 완료 상자: 현재 수익은 체결분 평단(purchaseAverages.now) 대비 현재가, 금액은 체결 수량 × 차이(달러는 현재 환율 원화 환산). 총 매수는 회차 체결 금액 합.
-    const doneBox=complete?(()=>{const total=rows.reduce((n,r)=>n+(r.actual||0),0),rate=cur==="USD"?plus(s.fx):1,ret=avg?.now>0&&now!==null?(now/avg.now-1)*100:null,pl=ret!==null&&rate?(now-avg.now)*avg.filled*rate/1e4:null,tone=ret>0?" gain":ret<0?" loss":"";
+    const doneBox=complete?(()=>{const total=rows.reduce((n,r)=>n+(r.actual||0),0),rate=cur==="USD"?plus(s.fx):1,ret=bpRound1(avg?.now>0&&now!==null?(now/avg.now-1)*100:null),pl=ret!==null&&rate?bpRound1((now-avg.now)*avg.filled*rate/1e4):null,tone=ret>0?" gain":ret<0?" loss":"";
       return `<div class="bp-done"><div class="bp-done-head"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10"/><path d="M5.8 10.2l2.8 2.8 5.6-5.9"/></svg><b>분할매수 완료</b><span>${p.count}회 모두 체결</span></div>${ret!==null?`<div class="bp-ret"><small>현재 수익</small><div class="bp-ret-v${tone}"><b>${bpSign(ret)}${nf1.format(Math.abs(ret))}%</b>${pl!==null?`<em>${bpSign(pl)}${man(Math.abs(pl))}</em>`:""}</div></div>`:""}<div class="bp-done-stats"><div><small>최종 평단</small><b>${avg?.now>0?rowPt(avg.now):"—"}</b></div><div><small>총 매수</small><b>${total>0?wonAmount(total):"—"}</b></div></div></div>`;})():"";
     const curve=purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done)});
     const curveCard=curve?curve.replace('</div><svg',`${stamp?`<span class="bp-stamp">${stamp}</span>`:""}</div><svg`):"";
@@ -689,8 +698,9 @@ function renderPurchases(){
     const x=[...all(sel)].find(x=>owner(x)===(b.dataset.purchaseFocus??b.dataset.purchaseExecFocus)&&(x.dataset.key??x.dataset.stage)===(b.dataset.key??b.dataset.stage));
     if(x){x.scrollIntoView?.({block:"center",behavior:"smooth"});x.focus?.({preventScroll:true});}
   };
-  all("[data-purchase-focus]").forEach(b=>b.onclick=()=>focusRowInput("[data-purchase-buy-shares], [data-purchase-shares]",x=>x.dataset.purchaseBuyShares??x.dataset.purchaseShares,b));
-  all("[data-purchase-exec-focus]").forEach(b=>b.onclick=()=>focusRowInput("[data-purchase-exec]",x=>x.dataset.purchaseExec,b));
+  // 보조 버튼도 [체결]처럼 편집 입력의 blur 저장·재렌더 뒤에 실행해 클릭을 잃지 않는다. 입력은 그때의 최신 DOM에서 찾는다(all).
+  all("[data-purchase-focus]").forEach(b=>bindPurchaseAccountAction(b,()=>focusRowInput("[data-purchase-buy-shares], [data-purchase-shares]",x=>x.dataset.purchaseBuyShares??x.dataset.purchaseShares,b)));
+  all("[data-purchase-exec-focus]").forEach(b=>bindPurchaseAccountAction(b,()=>focusRowInput("[data-purchase-exec]",x=>x.dataset.purchaseExec,b)));
   all("[data-purchase-new]").forEach(b=>b.onclick=()=>openPurchase(null));
   // 체결가는 당시 실제 매수 종목(tradeTicker, 없으면 계획 종목) 1주·1 BTC의 회차 평균이며 통화는 tradeCurrency → 계획 통화다.
   // 표시는 execPrice → tradePrice → price. 입력 때만 양수를 execPrice에 저장하고 빈칸·기본값(tradePrice → price)은 delete한다.

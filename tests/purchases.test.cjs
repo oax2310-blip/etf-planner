@@ -2474,3 +2474,54 @@ test('곡선 카드: 지점이 촘촘해도 시작·끝 가격 글자가 강조 
   const near=dense(600,24),ny=Number(near.match(/<text x="[\d.]+" y="([\d.]+)" class="bp-t (?:mint|blue)" text-anchor="end">[\d,₩]/)[1]),halo=Number(near.match(/<circle cx="[\d.]+" cy="([\d.]+)" r="11" class="bp-halo/)[1]);
   assert.match(near,/class="bp-x on[^"]*"[^>]*>60주·다음/,'지점 10개, 끝에서 두 번째 지점 강조');assert.ok(ny-9>=halo+11,`끝 가격 글자 윗변 ${ny-9} ≥ 강조 점 아래 ${halo+11}`);
 });
+test('곡선 카드: 하락형에서 2번째 지점 강조면 시작 가격 글자를 말풍선·꼬리·강조 점 원과 겹치지 않는 점 아래 자리에 둔다',()=>{
+  for(const prices of [[10000,9000,8000,7000,6000],Array.from({length:10},(_,i)=>10000-i*500)]){
+    const r=setup({manual:true,price:11000});r.item.buyPlan.stages=prices.map((price,i)=>({id:`s${i}`,price,shares:8,amount:price*8/1e4,...(i===0?{done:true,actual:8}:{})}));r.render();const html=r.html();
+    assert.match(html,/class="bp-x on[^"]*"[^>]*>2차/,`${prices.length}개 하락형, 2번째 지점 강조`);
+    const d=html.match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number),[,lx,ly,text]=html.match(/<text x="([\d.]+)" y="([\d.]+)" class="bp-t mint" text-anchor="start">([^<]+)<\/text>/).map((v,i)=>i&&i<3?Number(v):v);
+    const [tx,ty,tw,th]=html.match(/<g class="bp-tip[^"]*"><rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/).slice(1).map(Number);
+    const [hx,hy]=html.match(/<circle cx="([\d.]+)" cy="([\d.]+)" r="11" class="bp-halo/).slice(1).map(Number),w=[...text].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0);
+    const box=[lx,ly-10,lx+w,ly+2],hit=b=>box[0]<b[2]&&b[0]<box[2]&&box[1]<b[3]&&b[1]<box[3];
+    assert.ok(ly>d[1],`시작 가격 글자 y ${ly} > 시작점 y ${d[1]}(점 아래)`);
+    assert.ok(!hit([tx,ty,tx+tw,ty+th]),'말풍선 상자와 겹치지 않음');assert.ok(!hit([hx-6,ty+th,hx+6,ty+th+6]),'말풍선 꼬리와 겹치지 않음');assert.ok(!hit([hx-11,hy-11,hx+11,hy+11]),'강조 점 원과 겹치지 않음');
+  }
+});
+test('0에 가까운 손익은 반올림한 값으로 부호·색을 정해 "−0%"·"−0만원"을 보이지 않는다(계좌 상자 맨 윗줄·완료 상자)',()=>{
+  const r=setup({price:9998,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
+  assert.match(r.html(),/<span class="bp-acc-sum-pl ?" title="[^"]*">0만원<\/span><small class="">\(0%\)<\/small>/,'−0.02%·−168원: 0%·0만원, 중립 색');
+  r.prices.stocks['111111'].close=9990;r.render();assert.match(r.html(),/<small class="profit-loss">\(−0\.1%\)<\/small>/,'반올림해 0이 아니면 부호와 손실 색 유지');
+  const d=setup(),x=d.input('[data-purchase-buy]');x.checked=true;x.onchange();d.change('[data-purchase-exec]',10002);
+  assert.match(d.html(),/<div class="bp-ret-v"><b>0%<\/b><em>0만원<\/em><\/div>/,'완료 상자 −0.02%·−16원: 부호·색 없음');assert.doesNotMatch(d.html(),/[+−]0%|[+−]0만원/);
+  d.change('[data-purchase-exec]',10010);assert.match(d.html(),/<div class="bp-ret-v loss"><b>−0\.1%<\/b><em>0만원<\/em><\/div>/,'−0.1%는 손실 표시, −0.08만원은 0만원');
+});
+test('편집 입력 포커스(blur 전)에서 하단 보조 버튼을 눌러도 blur 저장 뒤 최신 화면의 대상 입력으로 옮긴다',()=>{
+  const spy=found=>{Object.prototype.scrollIntoView=function(){found.push(this);};};
+  try{
+    const c=setup({realStore:true,cachedPrices:true,budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});c.doc.allocation.total=1000;c.item.target=21;c.item.buyPlan.lines.target=21;c.initialize();c.render();
+    const sub=c.input('[data-purchase-focus]'),hits=[];assert.ok(sub,'하단 부분 체결 버튼');spy(hits);
+    tapFocusedPurchaseEdit(c,sub,'[data-purchase-target]',30);
+    assert.equal(JSON.parse(c.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0].target,30,'목표 저장');
+    assert.equal(hits.length,1,'버튼 동작 한 번');assert.ok(c.inputs('[data-purchase-buy-shares]').includes(hits[0]),'최신 렌더의 수량 입력');assert.equal(hits[0].dataset.key,'25일선:0');
+    const d=setup(),x=d.input('[data-purchase-buy]');x.checked=true;x.onchange();const edit=d.input('[data-purchase-exec-focus]'),execHits=[];assert.ok(edit,'체결가 수정 버튼');spy(execHits);
+    tapFocusedPurchaseEdit(d,edit,'[data-purchase-exec]',9000);
+    assert.equal(d.item.buyPlan.buys.end.execPrice,9000,'체결가 저장');assert.equal(execHits.length,1);assert.ok(d.inputs('[data-purchase-exec]').includes(execHits[0]),'최신 렌더의 체결가 입력');
+  }finally{delete Object.prototype.scrollIntoView;}
+});
+test('부분 체결 뒤 목표 비중을 낮춘 직후(blur 전) [체결]은 기록에 저장된 계획 수량으로 잔량을 체결하고 부분 체결을 취소하지 않는다',()=>{
+  const c=setup({realStore:true,cachedPrices:true,budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});c.doc.allocation.total=1000;c.item.target=21;c.item.buyPlan.lines.target=21;c.initialize();c.render();
+  const saved=()=>JSON.parse(c.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0];c.change('[data-purchase-buy-shares]',1);
+  const start=saved().shares,planned=saved().buyPlan.buys['25일선:0'].plannedShares;assert.equal(saved().buyPlan.buys['25일선:0'].shares,1);
+  tapFocusedPurchaseEdit(c,mainButton(c),'[data-purchase-target]',1);
+  const b=saved().buyPlan.buys['25일선:0'];assert.equal(saved().target,1);assert.equal(b.plannedShares,planned,'기록의 계획 수량 유지');assert.equal(b.shares,planned,'잔량까지 체결(0주 취소 아님)');assert.equal(saved().shares,start+planned-1);
+});
+test('곡선 카드: 강조가 끝 쪽인 하락형·들쭉날쭉한 곡선에서도 "최종" 평단 글자는 말풍선·꼬리·강조 점 원·끝 가격 글자와 겹치지 않는다',()=>{
+  const w=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0);
+  for(const [prices,done] of [[[10000,9000,8000,7000,6000],4],[[10000,9000,8000,7000,6000],3],[[10000,9500,10200,9000,8800,9100],3],[[10000,9000,8000],2]]){
+    const r=setup({manual:true,price:12000});r.item.buyPlan.stages=prices.map((price,i)=>({id:`s${i}`,price,shares:8,amount:price*8/1e4,...(i<done?{done:true,actual:price*8/1e4}:{})}));r.render();const html=r.html();
+    const ends=[...html.matchAll(/<text x="([\d.]+)" y="([\d.]+)" class="bp-t (?:mint|blue)" text-anchor="end">([^<]+)<\/text>/g)].map(m=>{const x=Number(m[1]),y=Number(m[2]);return {t:m[3],box:[x-w(m[3]),y-10,x,y+2]};});
+    const avg=ends.find(x=>/^최종/.test(x.t)),end=ends.find(x=>!/^최종/.test(x.t));assert.ok(avg&&end,`${prices}: 끝 가격·최종 평단 글자`);
+    const [tx,ty,tw,th]=html.match(/<g class="bp-tip[^"]*"><rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/).slice(1).map(Number),[hx,hy]=html.match(/<circle cx="([\d.]+)" cy="([\d.]+)" r="11" class="bp-halo/).slice(1).map(Number);
+    const hit=b=>avg.box[0]<b[2]&&b[0]<avg.box[2]&&avg.box[1]<b[3]&&b[1]<avg.box[3];
+    for(const [name,b] of [['말풍선',[tx,ty,tx+tw,ty+th]],['꼬리',[hx-6,ty+th,hx+6,ty+th+6]],['강조 점',[hx-11,hy-11,hx+11,hy+11]],['끝 가격',end.box]])assert.ok(!hit(b),`${prices} 완료 ${done}회: 최종 평단 글자와 ${name} 겹치지 않음`);
+  }
+});
