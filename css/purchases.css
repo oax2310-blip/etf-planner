@@ -302,9 +302,9 @@
 .bp-memo-foot{display:flex;align-items:center;gap:6px}.bp-memo-foot .accent{color:var(--bp-blue-2)}.bp-memo-foot .memo-count{margin-right:auto;font-size:11.5px;color:var(--text-3)}
 /* 곡선 카드 */
 /* 곡선 카드(이평선 기준가): 제목 한 줄 + 곡선(높이 138, 393px 기준) + 회차 칩. 색은 --bpc-* 변수(다크는 시안 값, 라이트는 앱 토큰). */
-.bp-chart{--bpc-bg:var(--bp-card);--bpc-line:var(--bp-line);--bpc-mint:var(--bp-mint);--bpc-orange:var(--bp-orange);--bpc-blue:var(--bp-blue);--bpc-done-top:color-mix(in srgb,var(--bp-mint) 34%,var(--bp-card));--bpc-next-top:color-mix(in srgb,var(--bp-blue) 30%,var(--bp-card));--bpc-tip-top:var(--surface,#fff);--bpc-tip-bot:var(--surface-2,#f3f5f9);--bpc-tip-line:var(--line);--bpc-tip-text:var(--text);--bpc-title:var(--text);
+.bp-chart{--bpc-bg:var(--bp-card);--bpc-line:var(--bp-line);--bpc-mint:var(--bp-mint);--bpc-orange:var(--bp-orange);--bpc-blue:var(--bp-blue);--bpc-done-top:color-mix(in srgb,var(--bp-mint) 22%,var(--bp-card));--bpc-next-top:color-mix(in srgb,var(--bp-blue) 20%,var(--bp-card));--bpc-tip-top:var(--surface,#fff);--bpc-tip-bot:var(--surface-2,#f3f5f9);--bpc-tip-line:var(--line);--bpc-tip-text:var(--text);--bpc-title:var(--text);
   display:flex;flex-direction:column;gap:9px;padding:14px 18px 11px;font-variant-numeric:tabular-nums}
-@media screen{:root[data-theme=dark] .bp .bp-chart{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#23735a;--bpc-next-top:#2d55b0;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba(255,255,255,.16);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc}}
+@media screen{:root[data-theme=dark] .bp .bp-chart{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba(255,255,255,.16);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc}}
 .bp .card.bp-chart{background:var(--bpc-bg);border:1px solid var(--bpc-line);border-radius:20px;padding:14px 18px 11px}
 .bp-chart h2{margin:0;line-height:1.2}
 .bp-chart-title{padding:0;border:0;background:none;color:var(--bpc-title);font:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;cursor:pointer}
