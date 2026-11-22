@@ -401,7 +401,8 @@ function purchaseAverages(rows,execOf,otherTicker){
 // 강조 회차(부분 체결 → 도달 미체결 → 다음)가 든 묶음은 그 회차 가격을 점으로 쓰고 나머지는 묶음의 첫 회차. 기준가가 있는 점이 둘보다 적으면 카드를 만들지 않는다.
 // 화면: 제목 한 줄 + 곡선(세로 22~83px, 높이는 아래 글자 위치에 따라 91~111px) + 아래 회차 칩. 기본은 현재가를 곡선 위(강조 회차에 가까운 구간)에 두고 현재가·그 회차의 예상 평단을,
 // 회차 칩을 누르면 그 회차 기준가·예상 평단을 말풍선(숫자 2줄)으로 보인다. 같은 칩을 다시 누르거나 제목을 누르면 기본으로 돌아간다(pick: 화면 상태).
-// 말풍선은 HTML(z-index 1)이고 곡선 SVG(z-index 2)는 카드 배경색의 불투명 면을 먼저 깔아, 곡선 뒤로 내려간 말풍선을 가린다.
+// 위 자리의 HTML 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래에 놓이고, SVG가 먼저 까는 카드 배경색의 불투명 면에 겹친 부분이 가려진다.
+// 옆·아래 자리의 말풍선(z-index 3)은 곡선 SVG 위에 놓인다.
 function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone,pick,plotW}){
   const groups=[];
   rows.forEach((r,i)=>{const key=r.line?(r.line.key==="end"?"end":r.line.line):`#${i}`;let gr=groups.at(-1);if(!gr||gr.key!==key)groups.push(gr={key,rows:[],idx:[]});gr.rows.push(r);gr.idx.push(i);});
