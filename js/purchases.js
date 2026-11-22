@@ -408,8 +408,8 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0&&gr.rows[k].price>0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:j===k};}).filter(Boolean); // 강조 회차도 기준가가 있을 때만 점
   if(pts.length<2)return "";
   // viewBox 폭은 그래프의 실제 폭(px)이라 늘이거나 줄이지 않고 1:1로 그린다(높이 113px, 글자·말풍선 크기 그대로).
-  // 그래프는 제목 줄부터 시작한다(CSS 음수 위 여백): 가장 높은 점의 가격 글자는 제목 줄 높이(TOP=22), 곡선은 22~83. 높이 H는 '최종' 글자(또는 가장 낮은 점·끝 가격 글자)가 끝나는 곳까지라 칩 줄 선에 붙는다.
-  const titleBox=[0,0,118,19]; // 제목(이평선 기준가) 글자 자리(그래프 좌표)
+  // 그래프는 제목 바로 아래(간격 4px)에서 시작한다: 가장 높은 점의 가격 글자가 그래프 맨 위(제목 바로 밑)에 붙고(TOP=22), 곡선은 22~83. 높이 H는 '최종' 글자(또는 가장 낮은 점·끝 가격 글자)가 끝나는 곳까지라 칩 줄 선에 붙는다.
+  const titleBox=[0,-22,118,-4]; // 제목(이평선 기준가) 글자 자리(그래프 좌표: 그래프 위 4px 간격 위의 18px 줄)
   const W=Math.max(240,Math.round(plotW||325)),L=24,R=24,TOP=22,BOT=83,n=pts.length,avgOf=p=>avg?.at[p.i]??null,f=v=>v.toFixed(1);
   const vals=pts.flatMap(p=>[p.row.price,avgOf(p)]).filter(v=>v>0),lo=Math.min(...vals),hi=Math.max(...vals),flat=!(hi-lo>Math.abs(hi)*1e-9); // 횡보형: 누적 평단의 부동소수점 오차도 같은 값으로 보아 가운데 수평선
   const X=k=>L+(W-L-R)*k/(n-1),Y=v=>flat?(TOP+BOT)/2:BOT-(BOT-TOP)*(v-lo)/(hi-lo);
@@ -443,9 +443,9 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   // 끝 가격은 끝점 아래, '최종'은 평단 점 위로 바깥쪽에 둔다. 표식이 그 점이면(첫·끝 회차 선택) 그 글자는 숨기고, 말풍선·표식과 겹쳐도 숨긴다.
   const textW=t=>[...t].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),hit=(a,b)=>a[0]<b[2]&&b[0]<a[2]&&a[1]<b[3]&&b[1]<a[3];
   const priceText=rowPt(mk.price),avgText=mk.avg>0?rowPt(mk.avg):"",tw=Math.max(textW(priceText)*1.07,textW(avgText)*.95)+24,th=avgText?36:22;
-  const align=mk.k===0||mk.x-tw/2<0?"l":mk.k===n-1||mk.x+tw/2>W?"r":"c",tl=align==="l"?mk.x-16:align==="r"?mk.x+16-tw:mk.x-tw/2,place=(()=>{ // 말풍선 자리: 위 → 옆(오른쪽 절반이면 왼쪽 옆부터) → 반대 옆 → 아래. 제목·카드 위(−12) 밖으로 나가지 않는 첫 자리
+  const align=mk.k===0||mk.x-tw/2<0?"l":mk.k===n-1||mk.x+tw/2>W?"r":"c",tl=align==="l"?mk.x-16:align==="r"?mk.x+16-tw:mk.x-tw/2,place=(()=>{ // 말풍선 자리: 위 → 옆(오른쪽 절반이면 왼쪽 옆부터) → 반대 옆 → 아래. 제목 글자와 겹치지 않고 카드 위 여백(−34) 안의 첫 자리
       const up=["up",[tl,mk.y-17-th,tl+tw,mk.y-12]],sl=["sl",[mk.x-16-tw,mk.y-th/2,mk.x-16,mk.y+th/2]],sr=["sr",[mk.x+16,mk.y-th/2,mk.x+16+tw,mk.y+th/2]],down=["down",[tl,mk.y+12,tl+tw,mk.y+17+th]];
-      return [up,...(mk.x>W/2?[sl,sr]:[sr,sl]),down].find(([,b])=>b[1]>=-12&&b[0]>=-4&&b[2]<=W+4&&!hit(b,titleBox))??down;})(),tipBox=place[1],haloBox=[mk.x-12,mk.y-12,mk.x+12,mk.y+12],clear=b=>!hit(b,tipBox)&&!hit(b,haloBox);
+      return [up,...(mk.x>W/2?[sl,sr]:[sr,sl]),down].find(([,b])=>b[1]>=-34&&b[0]>=-4&&b[2]<=W+4&&!hit(b,titleBox))??down;})(),tipBox=place[1],haloBox=[mk.x-12,mk.y-12,mk.x+12,mk.y+12],clear=b=>!hit(b,tipBox)&&!hit(b,haloBox);
   const txt=(x,y,t,cls,anchor)=>`<text x="${f(x)}" y="${f(y)}" class="${cls}" text-anchor="${anchor}">${t}</text>`;
   const startText=rowPt(pts[0].row.price),endText=rowPt(pts.at(-1).row.price),sy=hit([2,main[0].y-24,2+textW(startText),main[0].y-9],titleBox)?main[0].y+22:main[0].y-12,ey=flip?lastP.y+22:lastP.y-12;
   let marks="";

@@ -2642,7 +2642,7 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
   assert.match(chart(),/<button class="bp-x first done sel mint"[^>]*aria-pressed="true"[^>]*>25일✓<\/button>/,'완료 회차 칩은 민트');
   chip('32주').onclick();t=tip();assert.deepEqual([t[1],t[4]],['c','₩11882'],'중간 회차: 가운데');assert.match(chart(),/<button class="bp-x sel warn"[^>]*>32주<\/button>/,'도달 강조 회차 칩은 주황');
   assert.match(chart(),/text-anchor="start">₩10692/);assert.match(chart(),/text-anchor="end">₩12700/);
-  chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['sl','₩12700'],'끝 회차(가장 높은 점): 위에 자리가 없어 왼쪽 옆, 꼬리는 표식 쪽');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
+  chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['r','₩12700'],'끝 회차: 위(오른쪽 정렬), 제목 글자와 안 겹치면 카드 위 여백까지 씀');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
   chip('25월').onclick();assert.equal(tip()[4],'₩12080','같은 칩을 다시 누르면 현재가');assert.doesNotMatch(chart(),/ sel /);
   chip('80일').onclick();assert.equal(tip()[4],'₩11000');r.inputs('[data-curve-reset]')[0].onclick();assert.equal(tip()[4],'₩12080','제목을 누르면 현재가');
   assert.equal(JSON.stringify(r.doc),before,'고르기·돌아오기는 기록을 바꾸지 않음');
@@ -2658,7 +2658,7 @@ test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
-  assert.match(css,/\.bp-plot\{position:relative;margin-top:-27px;margin-bottom:2px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
+  assert.match(css,/\.bp-plot\{position:relative;margin-top:-5px;margin-bottom:2px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
   assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-mask\{fill:var\(--bpc-bg\)\}/);assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
   assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
 });

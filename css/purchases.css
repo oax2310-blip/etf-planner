@@ -308,7 +308,7 @@
 .bp .card.bp-chart{background:var(--bpc-bg);border:1px solid var(--bpc-line);border-radius:20px;padding:14px 18px 11px}
 .bp-chart h2{position:relative;z-index:3;margin:0;line-height:18px}
 .bp-chart-title{padding:0;border:0;background:none;color:var(--bpc-title);font:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;cursor:pointer}
-.bp-plot{position:relative;margin-top:-27px;margin-bottom:2px} /* 제목 줄(18px + 간격 9px)부터 그려 위아래 빈 곳을 없앤다 */
+.bp-plot{position:relative;margin-top:-5px;margin-bottom:2px} /* 제목 바로 아래(간격 4px)부터 그려 위아래 빈 곳을 없앤다 */
 .bp-plot .bp-svg{position:relative;z-index:2;display:block;width:100%;height:auto;overflow:visible;pointer-events:none}
 .bp-mask{fill:var(--bpc-bg)}
 .bp-line{fill:none;stroke-width:2.6;stroke-linecap:round}.bp-avg{fill:none;stroke:var(--bpc-mint);stroke-width:1.8;stroke-dasharray:4 4;stroke-linecap:round}
