@@ -237,7 +237,7 @@
 .bp-done-head svg{flex:none;width:14.3px;height:14.3px;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--bp-mint) 55%,transparent))}.bp-done-head circle{fill:var(--bp-mint)}.bp-done-head path{fill:none;stroke:#04140b;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .bp-ret{display:grid;justify-items:center;margin-top:10.7px}.bp-ret small{font-size:11px;line-height:14px;color:var(--text-3)}
 .bp-ret-v{display:flex;align-items:baseline;gap:8px;margin-top:2.4px;line-height:1}.bp-ret-v b{font-size:31px;font-weight:800;letter-spacing:-.045em}.bp-ret-v em{font-style:normal;font-size:17.8px;font-weight:800;letter-spacing:-.03em}
-.bp-ret-v.gain{color:var(--bp-red)}.bp-ret-v.loss{color:var(--bp-loss)}
+.bp-ret-v .gain{color:var(--bp-red)}.bp-ret-v .loss{color:var(--bp-loss)}
 .bp-done-stats{display:grid;grid-template-columns:1fr 1fr;gap:8.2px;margin-top:10.8px}
 .bp-done-stats div{display:flex;align-items:center;justify-content:space-between;gap:6px;height:31.5px;padding:0 11.4px;border-radius:11px;background:rgba(0,0,0,.06);box-shadow:inset 0 2px 4px rgba(0,0,0,.12)}
 :root[data-theme=dark] .bp-done-stats div{background:rgba(0,0,0,.38);box-shadow:inset 0 2px 4px rgba(0,0,0,.55),inset 0 -1px 0 rgba(255,255,255,.06)}

@@ -2300,9 +2300,9 @@ test('완료 상자: 체결분 평단 대비 현재 수익률·금액과 총 매
   const r=setup(),x=r.input('[data-purchase-buy]');x.checked=true;x.onchange();r.change('[data-purchase-exec]',8000);
   const box=r.html().match(/<div class="bp-done">[\s\S]*?<\/div><\/div><\/div>/)[0];
   assert.match(box,/<b>분할매수 완료<\/b><span>1회 모두 체결<\/span>/);
-  assert.match(box,/<div class="bp-ret-v gain"><b>\+25%<\/b><em>\+1\.6만원<\/em><\/div>/,'10000 ÷ 8000 − 1, (10000 − 8000) × 8주');
+  assert.match(box,/<div class="bp-ret-v"><b class="gain">\+25%<\/b><em class="gain">\+1\.6만원<\/em><\/div>/,'10000 ÷ 8000 − 1, (10000 − 8000) × 8주');
   assert.match(box,/<small>최종 평단<\/small><b>₩8000<\/b>/);assert.match(box,/<small>총 매수<\/small><b>₩\d+<\/b>/);
-  r.prices.stocks['111111'].close=7000;r.render();assert.match(r.html(),/<div class="bp-ret-v loss"><b>−12\.5%<\/b><em>−0\.8만원<\/em>/);
+  r.prices.stocks['111111'].close=7000;r.render();assert.match(r.html(),/<div class="bp-ret-v"><b class="loss">−12\.5%<\/b><em class="loss">−0\.8만원<\/em>/);
 });
 test('곡선 카드: 평단은 체결 회차의 실제 체결가·수량과 남은 회차의 계획 수량·기준가로 누적하고, 실제 매수 코드가 다르면 평단을 그리지 않는다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});
@@ -2492,7 +2492,11 @@ test('0에 가까운 손익은 반올림한 값으로 부호·색을 정해 "−
   r.prices.stocks['111111'].close=9990;r.render();assert.match(r.html(),/<small class="profit-loss">\(−0\.1%\)<\/small>/,'반올림해 0이 아니면 부호와 손실 색 유지');
   const d=setup(),x=d.input('[data-purchase-buy]');x.checked=true;x.onchange();d.change('[data-purchase-exec]',10002);
   assert.match(d.html(),/<div class="bp-ret-v"><b>0%<\/b><em>0만원<\/em><\/div>/,'완료 상자 −0.02%·−16원: 부호·색 없음');assert.doesNotMatch(d.html(),/[+−]0%|[+−]0만원/);
-  d.change('[data-purchase-exec]',10010);assert.match(d.html(),/<div class="bp-ret-v loss"><b>−0\.1%<\/b><em>0만원<\/em><\/div>/,'−0.1%는 손실 표시, −0.08만원은 0만원');
+  d.change('[data-purchase-exec]',10010);assert.match(d.html(),/<div class="bp-ret-v"><b class="loss">−0\.1%<\/b><em>0만원<\/em><\/div>/,'−0.1%는 손실 색, 0만원(−0.08만원)은 중립 색');
+  // 평단 100,000원·현재가 100,040원(+0.04% → 0%)·10,000주(+40만원): 수익률은 중립, 금액만 이익 색
+  const g=setup({manual:true,price:100040,manualShares:10000,manualAmount:100040});const gx=g.input('[data-purchase-done]');gx.checked=true;gx.onchange();g.change('[data-purchase-exec]',100000);
+  assert.equal(g.item.buyPlan.stages[0].done,true,'1만 주 모두 체결');assert.match(g.html(),/<div class="bp-ret-v"><b>0%<\/b><em class="gain">\+40만원<\/em><\/div>/,'0%는 중립 색, +40만원은 이익 색');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/\.bp-ret-v \.gain\{color:var\(--bp-red\)\}\.bp-ret-v \.loss\{color:var\(--bp-loss\)\}/,'색은 수익률·금액 각자에');assert.doesNotMatch(css,/\.bp-ret-v\.(?:gain|loss)/);
 });
 test('편집 입력 포커스(blur 전)에서 하단 보조 버튼을 눌러도 blur 저장 뒤 최신 화면의 대상 입력으로 옮긴다',()=>{
   const spy=found=>{Object.prototype.scrollIntoView=function(){found.push(this);};};
@@ -2524,4 +2528,30 @@ test('곡선 카드: 강조가 끝 쪽인 하락형·들쭉날쭉한 곡선에�
     const hit=b=>avg.box[0]<b[2]&&b[0]<avg.box[2]&&avg.box[1]<b[3]&&b[1]<avg.box[3];
     for(const [name,b] of [['말풍선',[tx,ty,tx+tw,ty+th]],['꼬리',[hx-6,ty+th,hx+6,ty+th+6]],['강조 점',[hx-11,hy-11,hx+11,hy+11]],['끝 가격',end.box]])assert.ok(!hit(b),`${prices} 완료 ${done}회: 최종 평단 글자와 ${name} 겹치지 않음`);
   }
+});
+test('곡선 카드: 상승형 10회차에서 끝에서 세 번째 지점 강조(nearEnd 아님)여도 끝 가격 글자는 말풍선·꼬리·강조 점 원과 겹치지 않는다',()=>{
+  const w=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0);
+  const r=setup({manual:true,price:9000});r.item.buyPlan.stages=Array.from({length:10},(_,i)=>({id:`s${i}`,price:10000+i*1000,shares:8,amount:(10000+i*1000)*8/1e4,...(i<7?{done:true,actual:(10000+i*1000)*8/1e4}:{})}));r.render();const html=r.html();
+  assert.match(html,/class="bp-x on[^"]*"[^>]*>8차/,'8번째 지점(ai = n − 3) 강조');
+  const m=[...html.matchAll(/<text x="([\d.]+)" y="([\d.]+)" class="bp-t (?:mint|blue)" text-anchor="end">([^<]+)<\/text>/g)].find(m=>!/^최종/.test(m[3]));assert.ok(m,'끝 가격 글자');
+  const x=Number(m[1]),y=Number(m[2]),box=[x-w(m[3]),y-10,x,y+2],hit=b=>box[0]<b[2]&&b[0]<box[2]&&box[1]<b[3]&&b[1]<box[3];
+  const [tx,ty,tw,th]=html.match(/<g class="bp-tip[^"]*"><rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/).slice(1).map(Number),[hx,hy]=html.match(/<circle cx="([\d.]+)" cy="([\d.]+)" r="11" class="bp-halo/).slice(1).map(Number);
+  for(const [name,b] of [['말풍선',[tx,ty,tx+tw,ty+th]],['꼬리',[hx-6,ty+th,hx+6,ty+th+6]],['강조 점',[hx-11,hy-11,hx+11,hy+11]]])assert.ok(!hit(b),`끝 가격 글자와 ${name} 겹치지 않음`);
+});
+test('편집 입력 포커스(blur 전)에서 [＋ 새 분할매수 계획]·메모 [편집 ›]·[취소]·[저장]을 눌러도 입력 저장 뒤 버튼 동작을 한 번에 수행한다',()=>{
+  const a=setup(),x=a.input('[data-purchase-buy]');x.checked=true;x.onchange();const alerts=a.alerts.length;
+  tapFocusedPurchaseEdit(a,a.input('[data-purchase-new]'),'[data-purchase-target]',33);
+  assert.equal(a.item.target,33,'목표 저장');assert.equal(a.alerts.length,alerts+1);assert.match(a.alerts.at(-1),/모든 종목에 분할매수 계획이 있습니다/,'새 계획 경로 실행');
+  const b=setup();b.element('purchaseAccountToggle').onclick();
+  tapFocusedPurchaseEdit(b,b.element('purchaseMemoEdit'),'[data-purchase-target]',34);
+  assert.equal(b.item.target,34);assert.match(b.html(),/id="purchaseMemoEditor">/,'메모 편집 열림');
+  // 작성 중 메모는 다른 입력의 blur 저장으로 다시 그려도 남고, 그 상태에서 [저장]하면 작성한 메모를 저장한다.
+  const memo=b.element('purchaseMemo');memo.value='작성 중 메모';memo.oninput();b.render();assert.match(b.html(),/<textarea id="purchaseMemo"[^>]*>작성 중 메모<\/textarea>/,'재렌더 뒤에도 작성 중 메모');
+  tapFocusedPurchaseEdit(b,b.element('savePurchaseNote'),'[data-purchase-target]',35);
+  assert.equal(b.item.target,35);assert.equal(b.item.buyPlan.note,'작성 중 메모');assert.match(b.html(),/id="purchaseMemoEditor" hidden>/,'저장 뒤 닫힘');
+  b.element('purchaseMemoEdit').onclick();assert.match(b.html(),/<textarea id="purchaseMemo"[^>]*>작성 중 메모<\/textarea>/,'다시 열면 저장된 메모');
+  b.element('purchaseMemo').value='버릴 메모';b.element('purchaseMemo').oninput();
+  tapFocusedPurchaseEdit(b,b.element('purchaseMemoCancel'),'[data-purchase-target]',36);
+  assert.equal(b.item.target,36);assert.equal(b.item.buyPlan.note,'작성 중 메모','취소는 저장하지 않음');assert.match(b.html(),/id="purchaseMemoEditor" hidden>/);
+  b.element('purchaseMemoEdit').onclick();assert.match(b.html(),/<textarea id="purchaseMemo"[^>]*>작성 중 메모<\/textarea>/,'취소한 초안은 남지 않음');
 });
