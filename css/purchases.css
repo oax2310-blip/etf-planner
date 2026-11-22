@@ -199,6 +199,7 @@
 .purchase-target-inline:focus-within::before{display:none}
 .purchase-target-hint{display:none;margin:5px 0 0;font-size:11.5px;line-height:1.45;color:var(--text-3);word-break:keep-all;overflow-wrap:anywhere}
 .alloc-link:has(.purchase-target-inline:focus-within)+.purchase-target-hint{display:block}
+.bp-meta:has(.purchase-target-inline:focus-within)+.purchase-target-hint{display:block}
 /* 분할매수 요약·곡선·하단 버튼(js/purchases.js purchaseAccountBox·purchaseCurveCard·card). 색은 .bp 변수로 두고 다크는 사용자 시안 값을 쓴다. */
 .bp{--bp-blue:#3d6be0;--bp-blue-2:#2f5bd6;--bp-mint:#13a36b;--bp-orange:#c97a12;--bp-red:var(--danger);--bp-loss:var(--accent);--bp-card:var(--surface);--bp-line:var(--line);--bp-inset:var(--surface-2);--bp-inset-shadow:inset 0 2px 5px rgba(15,23,41,.12),inset 0 -1px 0 rgba(255,255,255,.7);--bp-track:var(--surface-3);--bp-btn:var(--surface-2);--bp-tip:var(--surface);--bp-tip-line:var(--line-strong)}
 @media screen{:root[data-theme=dark] .bp{--bp-blue:#5282ff;--bp-blue-2:#6694ff;--bp-mint:#46dba0;--bp-orange:#f2a541;--bp-red:#ff5a52;--bp-loss:#7e9bff;--bp-card:linear-gradient(180deg,rgba(22,27,40,.92),rgba(16,20,30,.96));--bp-line:rgba(255,255,255,.08);--bp-inset:linear-gradient(180deg,#05070b,#090c12);--bp-inset-shadow:inset 0 4px 12px rgba(0,0,0,.92),inset 0 1px 3px rgba(0,0,0,.95),inset 0 -1px 0 rgba(255,255,255,.04),0 1px 0 rgba(255,255,255,.06);--bp-track:rgba(255,255,255,.07);--bp-btn:linear-gradient(180deg,#2d3444,#1d222e);--bp-tip:rgba(20,26,39,.94);--bp-tip-line:rgba(255,255,255,.13)}}

@@ -1868,6 +1868,7 @@ test('분할매수 인라인 목표 비중과 계좌 버튼은 44px 터치 영�
   assert.match(css,/\.purchase-target-size>input::-webkit-inner-spin-button/);
   assert.equal(rule('.purchase-target-hint').display,'none');
   assert.equal(rule('.alloc-link:has(.purchase-target-inline:focus-within)+.purchase-target-hint').display,'block');
+  assert.equal(rule('.bp-meta:has(.purchase-target-inline:focus-within)+.purchase-target-hint').display,'block','돌파·직접 입력 요약 카드: 목표 입력이 .bp-meta 안에 있고 안내는 그 다음 형제');
   assert.match(css,/\.purchase-target-inline:hover \.target-display\{border-bottom-color:var\(--accent\)\}/);
   const add=rule('#purchaseAccountAdd'),addBefore=rule('#purchaseAccountAdd::before');assert.equal(add.width,'max-content');assert.equal(parseFloat(add['min-height']),32);
   assert.equal(addBefore.inset,'-7px 0','외형 32px − 위아래 테두리 2px + inset 7px×2 = 터치 영역 44px');checkTouchHeight(add,addBefore,'#purchaseAccountAdd');
@@ -2385,4 +2386,45 @@ test('곡선 카드: 말풍선과 겹치지 않게 강조 점이 시작점이면
   assert.match(two.html(),/class="bp-x[^"]*on[^"]*"[^>]*>2차/,'지점 2개 중 끝이 강조');assert.deepEqual(where(two.html()),{start:'위',end:'아래'},'지점 2개의 끝 강조: 끝 가격만 아래');
   const many=setup({budget:100,end:null,names:['25일선','32일선','42일선','60일선'],price:9000,ma:{'25일선':10000,'32일선':12000,'42일선':14000,'60일선':16000}});
   assert.deepEqual(where(many.html()),{start:'아래',end:'위'},'지점이 많을 때 첫 지점 강조: 끝 가격은 위');
+});
+test('미체결 회차에 수량을 입력한 직후(blur 전) [체결]을 누르면 blur 뒤 최신 회차 상태로 잔량만 더해 중복 가산하지 않는다',()=>{
+  const a=setup(),planned=Number(a.input('[data-purchase-buy-shares]').attrs.max),start=a.item.shares;
+  tapFocusedPurchaseEdit(a,mainButton(a),'[data-purchase-buy-shares]',3);
+  assert.equal(a.item.shares,start+planned,`보유 ${start} + 계획 ${planned}주만 더함(중복 가산 없음)`);assert.equal(a.input('[data-purchase-buy]').checked,true);
+  assert.equal(a.doc.allocation.trades['buy:a:end'].qty,planned,'자산 반영 기록도 계획 수량 한 번');
+});
+test('부분 체결 회차에 0을 입력한 직후(blur 전) [체결]을 눌러도 예외 없이 취소 뒤 계획 수량만큼 체결한다',()=>{
+  const b=setup();b.change('[data-purchase-buy-shares]',3);const startB=b.item.shares-3,plannedB=Number(b.input('[data-purchase-buy-shares]').attrs.max);
+  tapFocusedPurchaseEdit(b,mainButton(b),'[data-purchase-buy-shares]',0);
+  assert.equal(b.item.shares,startB+plannedB);assert.equal(b.input('[data-purchase-buy]').checked,true);
+});
+test('목표 비중을 바꾼 직후(blur 전) [체결]을 누르면 바뀐 목표로 다시 계산한 계획 수량만큼 체결한다',()=>{
+  const c=setup({realStore:true,cachedPrices:true,budget:200,end:null,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':20000}});c.doc.allocation.total=1000;c.item.target=21;c.item.buyPlan.lines.target=21;c.initialize();c.render();
+  const saved=()=>JSON.parse(c.storage.get('etf-planner-assets-v1')).allocation.groups[0].items[0];
+  const startC=Number(c.input('[data-purchase-buy-shares]').attrs.max)&&saved().shares,oldPlanned=Number(c.inputs('[data-purchase-buy-shares]')[0].attrs.max);
+  tapFocusedPurchaseEdit(c,mainButton(c),'[data-purchase-target]',30);
+  const item=saved(),newPlanned=item.buyPlan.buys['25일선:0'].plannedShares;assert.equal(item.target,30);assert.notEqual(newPlanned,oldPlanned,'목표가 바뀌어 계획 수량이 달라지는 경우');
+  assert.equal(item.shares,startC+newPlanned,'옛 계획 수량이 아니라 새 계획 수량으로 체결');
+});
+test('요약 카드의 목표 안내(#purchaseTargetHint)는 목표 입력을 감싼 .bp-meta의 바로 다음 형제다',()=>{
+  const r=setup();assert.match(r.html(),/<div class="bp-meta">[\s\S]*?data-purchase-target="a"[\s\S]*?<\/p><\/div><small class="purchase-target-hint" id="purchaseTargetHint">/);
+});
+test('기준가가 없는 부분 체결 회차가 강조여도 곡선 점으로 쓰지 않고, 기준가 있는 점이 둘보다 적으면 곡선 카드를 만들지 않는다',()=>{
+  const r=setup({manual:true,price:10500});r.item.buyPlan.stages=[{id:'s1',price:null,shares:3,plannedShares:10,partial:true,actual:3},{id:'s2',price:12000,shares:10,amount:12}];r.render();
+  assert.doesNotMatch(r.html(),/bp-chart|₩null|NaN|undefined/);
+  r.item.buyPlan.stages.push({id:'s3',price:13000,shares:10,amount:13});r.render();
+  assert.match(r.html(),/class="card bp-chart"/);assert.doesNotMatch(r.html(),/₩null|NaN/);assert.doesNotMatch(r.html(),/class="bp-tip/,'기준가 없는 강조 회차에는 말풍선을 달지 않음');
+});
+test('부분 체결과 도달 미체결이 함께 있으면 곡선 말풍선과 하단 버튼 모두 부분 체결 회차를 가리킨다',()=>{
+  const r=setup({budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}});
+  const x=r.inputs('[data-purchase-buy-shares]').find(x=>x.dataset.key==='25일선:0');x.value='1';x.onchange();
+  assert.equal(mainButton(r).dataset.key,'25일선:0');
+  const tip=r.html().match(/<g class="bp-tip[^"]*">[\s\S]*?<\/g>/)[0];assert.match(tip,/>₩10000<\/text>/,'부분 체결 회차(1차) 가격');assert.match(tip,/\d+주\/\d+주 체결<\/text>/);assert.doesNotMatch(tip,/₩12000/);
+});
+test('계좌 펼침이 열린 채 대표 계좌를 지워 계획이 옮겨 가도 펼침이 열려 있다',()=>{
+  const r=setup();r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:0});r.render();
+  r.element('purchaseAccountToggle').onclick();r.element('purchaseAccountDeleteToggle').onclick();r.ctx.confirm=()=>true;
+  r.inputs('[data-purchase-account-delete]').find(x=>x.dataset.purchaseAccountDelete==='a').onclick();
+  assert.equal(r.doc.allocation.groups[0].items.length,1);assert.ok(r.doc.allocation.groups[0].items[0].buyPlan,'계획은 남은 계좌로');
+  assert.match(r.html(),/id="purchaseAccountDrawer">/,'펼침 유지');assert.equal(r.element('purchaseAccountToggle').getAttribute('aria-expanded'),'true');
 });

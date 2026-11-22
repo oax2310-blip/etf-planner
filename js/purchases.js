@@ -11,6 +11,7 @@ const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null;
 // 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
+let actPurchaseRow=null; // 가장 최근 renderPurchases의 [체결] 실행 함수(그 렌더의 rowData·fills를 쓴다)
 const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),sortingPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(); // 완료 회차 펼침·계좌 펼침·순서 바꾸기·메모 편집 열림은 화면 상태로만 둔다
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
 const render=()=>renderPurchases(),saveSection=section=>assetStore.saveSection(section);
@@ -245,6 +246,7 @@ function bindPurchaseAccounts(it){
     if(!confirm(`'${found.it.name}' 계좌 항목과 현재 보유량을 자산 배분에서도 삭제할까요?\n${notes.join("\n")}`))return;
     const result=allocLink.keepBuyPlans(a,removed);allocLink.keepTargets(a,removed,result.moved);
     if(selectedPurchaseId===found.it.id)selectedPurchaseId=result.moved[0]?.to.id||null;
+    if(openPurchaseAccounts.delete(found.it.id)&&result.moved[0]?.to.id)openPurchaseAccounts.add(result.moved[0].to.id); // 계획이 옮겨 가도 계좌 펼침 유지
     found.g.items=found.g.items.filter(x=>x.id!==found.it.id);saveSection("allocation");render();
     if(purchaseAccountDeletingId&&purchaseAccountDeletingId===selectedPurchaseId)el("purchaseAccountDeleteToggle")?.focus({preventScroll:true});
   }));
@@ -390,7 +392,7 @@ function purchaseAverages(rows,execOf,otherTicker){
 function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,groupDone}){
   const groups=[];
   rows.forEach((r,i)=>{const key=r.line?(r.line.key==="end"?"end":r.line.line):`#${i}`;let gr=groups.at(-1);if(!gr||gr.key!==key)groups.push(gr={key,rows:[],idx:[]});gr.rows.push(r);gr.idx.push(i);});
-  const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:k>=0};}).filter(Boolean);
+  const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0&&gr.rows[k].price>0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:j===k};}).filter(Boolean); // 강조 회차도 기준가가 있을 때만 점
   if(pts.length<2)return "";
   const W=360,H=196,L=24,R=24,T=46,B=14,n=pts.length,avgOf=p=>avg?.at[p.i]??null;
   const vals=pts.flatMap(p=>[p.row.price,avgOf(p)]).filter(v=>v>0),lo=Math.min(...vals),hi=Math.max(...vals),pad=(hi-lo||hi*.05)*.18;
@@ -531,7 +533,7 @@ function renderPurchases(){
     const curve=purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done)});
     const curveCard=curve?curve.replace('</div><svg',`${stamp?`<span class="bp-stamp">${stamp}</span>`:""}</div><svg`):"";
     const summary=`<section class="card bp-sum${complete?" complete":""}" aria-label="계획 진행"><div class="bp-head"><h1 class="bp-name">${escA(parts.head.main)}${parts.head.tag?` <span class="title-tag">${escA(parts.head.tag)}</span>`:""}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div><div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${curveCard?"":stamp?`<div class="bp-stamp">${stamp}</div>`:""}${bar}<div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.target!==null?`${parts.control}${parts.gapText}`:parts.control}</span></p></div>${parts.hint}${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
-    const dockRow=partialRows[0]||dueRows[0]||next,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
+    const dockRow=focus,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
     const dock=complete&&lastDone?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-exec-focus="${id}" ${lastDone.attr}>체결가 수정</button><button class="btn primary bp-main" type="button" data-purchase-new="${id}">＋ 새 분할매수 계획</button></div>`
       :dockRow?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-focus="${id}" ${dockRow.attr}>부분 체결 · 체결가</button><button class="btn primary bp-main" type="button" data-purchase-act="${id}" ${dockRow.attr}${blockedOf(dockRow)?" disabled":""}>✓ ${label(dockRow)} ${dockRow.recorded?dockRow.plannedShares===null?"잔량 체결":`남은 ${qtyOf(left(dockRow),dockRow.tradeItem)} 체결`:`${qtyOf(dockRow.plannedShares||0,dockRow.tradeItem)} 체결 완료`}</button></div>`:"";
     return `<div data-purchase-item="${id}" class="bp">${summary}${curveCard}
@@ -666,11 +668,13 @@ function renderPurchases(){
   });
   all("[data-purchase-partial]").forEach(x=>{x.indeterminate=true;});
   // 요약 카드·하단 버튼의 [체결]은 그 회차 체크박스를 켠 것과 같은 경로(잔량까지 체결)다. 보조 버튼은 회차표의 체결 수량·체결가 입력으로 옮긴다.
-  all("[data-purchase-act]").forEach(b=>bindPurchaseAccountAction(b,()=>{
-    const id=b.dataset.purchaseAct,stage=b.dataset.key===undefined?planOf(id)?.stages?.[Number(b.dataset.stage)]:null;
-    const r=rowData.get(b.dataset.key!==undefined?`buy:${id}:${b.dataset.key}`:stage?`buy:${id}:${stage.id||`#${b.dataset.stage}`}`:"");if(!r||r.plannedShares===null)return render();
+  // 편집 입력의 blur 저장이 다시 그리면 이 렌더의 rowData는 옛 값이 된다. 그래서 버튼은 blur 뒤 가장 최근 렌더가 등록한 actPurchaseRow를 부른다.
+  actPurchaseRow=(id,key,stageIndex)=>{
+    const stage=key===undefined?planOf(id)?.stages?.[Number(stageIndex)]:null;
+    const r=rowData.get(key!==undefined?`buy:${id}:${key}`:stage?`buy:${id}:${stage.id||`#${stageIndex}`}`:"");if(!r||r.done||r.plannedShares===null)return render();
     fillShares(id,r,r.plannedShares);
-  }));
+  };
+  all("[data-purchase-act]").forEach(b=>bindPurchaseAccountAction(b,()=>actPurchaseRow?.(b.dataset.purchaseAct,b.dataset.key,b.dataset.stage)));
   const focusRowInput=(sel,owner,b)=>{
     const x=[...all(sel)].find(x=>owner(x)===(b.dataset.purchaseFocus??b.dataset.purchaseExecFocus)&&(x.dataset.key??x.dataset.stage)===(b.dataset.key??b.dataset.stage));
     if(x){x.scrollIntoView?.({block:"center",behavior:"smooth"});x.focus?.({preventScroll:true});}
