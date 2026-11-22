@@ -317,11 +317,11 @@
 .bp-core{fill:var(--bpc-blue);stroke:#fff;stroke-width:2.6}.bp-core.mint{fill:var(--bpc-mint)}.bp-core.warn{fill:var(--bpc-orange)}
 .bp-t{font-size:12px;font-weight:700}.bp-t.mint{fill:var(--bpc-mint)}.bp-t.blue{fill:var(--bpc-blue)}
 /* 말풍선(불투명 리퀴드 글래스): 숫자 2줄(가격 · 예상 평단). 곡선 SVG 아래(z-index 1)라 곡선 면에 가려진다. 첫 회차는 왼쪽, 끝 회차는 오른쪽 정렬 */
-.bp-tip{position:absolute;z-index:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 13px 6px;border:1px solid var(--bpc-tip-line);border-radius:12px;background:linear-gradient(180deg,var(--bpc-tip-top) 0%,var(--bpc-tip-bot) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.18);white-space:nowrap;pointer-events:none;transform:translate(-50%,calc(-100% - 17px))}
-.bp-tip b{font-size:13.5px;font-weight:800;line-height:1.15;color:var(--bpc-tip-text)}.bp-tip span{font-size:12px;font-weight:600;line-height:1.15;color:var(--bpc-mint)}
-.bp-tip i{position:absolute;left:50%;bottom:-5px;width:8px;height:8px;margin-left:-4px;background:var(--bpc-tip-bot);border-right:1px solid var(--bpc-tip-line);border-bottom:1px solid var(--bpc-tip-line);transform:rotate(45deg)}
-.bp-tip.l{transform:translate(-20px,calc(-100% - 17px))}.bp-tip.l i{left:20px}
-.bp-tip.r{transform:translate(calc(-100% + 20px),calc(-100% - 17px))}.bp-tip.r i{left:calc(100% - 20px)}
+.bp-tip{position:absolute;z-index:1;display:flex;flex-direction:column;align-items:center;gap:0;padding:3px 9px 4px;border:1px solid var(--bpc-tip-line);border-radius:10px;background:linear-gradient(180deg,var(--bpc-tip-top) 0%,var(--bpc-tip-bot) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.18);white-space:nowrap;pointer-events:none;transform:translate(-50%,calc(-100% - 17px))}
+.bp-tip b{font-size:12px;font-weight:800;line-height:1.2;color:var(--bpc-tip-text)}.bp-tip span{font-size:11px;font-weight:600;line-height:1.2;color:var(--bpc-mint)}
+.bp-tip i{position:absolute;left:50%;bottom:-4px;width:7px;height:7px;margin-left:-3.5px;background:var(--bpc-tip-bot);border-right:1px solid var(--bpc-tip-line);border-bottom:1px solid var(--bpc-tip-line);transform:rotate(45deg)}
+.bp-tip.l{transform:translate(-16px,calc(-100% - 17px))}.bp-tip.l i{left:16px}
+.bp-tip.r{transform:translate(calc(-100% + 16px),calc(-100% - 17px))}.bp-tip.r i{left:calc(100% - 16px)}
 .bp-xaxis{position:relative;height:34px;border-top:1px solid var(--bpc-line)}
 .bp .bp-x{position:absolute;top:6px;transform:translateX(-50%);min-height:0;padding:4px 10px;border:0;border-radius:999px;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--text-3);white-space:nowrap;cursor:pointer}
 .bp .bp-x.first{transform:translateX(-25%)}.bp .bp-x.last{transform:translateX(-75%)}

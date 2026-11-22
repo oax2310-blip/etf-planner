@@ -2651,13 +2651,13 @@ test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아
   const {chart}=curveFixture(),c=chart();
   assert.match(c,/<div class="bp-plot"><div class="bp-tip [lcr]"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'말풍선이 SVG보다 먼저(아래 겹)');
   assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" clip-path="url\(#bpClipDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" clip-path="url\(#bpClipNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑)');
-  assert.match(c,/<linearGradient id="bpFillDone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var\(--bpc-done-top\)"\/><stop offset="1" stop-color="var\(--bpc-bg\)"\/><\/linearGradient>/);
+  assert.match(c,/<linearGradient id="bpFillDone" gradientUnits="userSpaceOnUse" x1="0" y1="[\d.]+" x2="0" y2="138"><stop offset="0" stop-color="var\(--bpc-done-top\)"\/><stop offset="1" stop-color="var\(--bpc-bg\)"\/><\/linearGradient>/);
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
-  assert.match(css,/\.bp-plot\{position:relative;margin-bottom:8px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:12px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
+  assert.match(css,/\.bp-plot\{position:relative;margin-bottom:8px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
   assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-mask\{fill:var\(--bpc-bg\)\}/);assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
-  assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:13\.5px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:12px;font-weight:600;/);
+  assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
 });
 test('저장된 계획 검색: 계획이 둘 이상이면 검색 칸을 두고 이름·계좌·코드로 거르며(띄어 쓴 단어 모두 포함), 결과가 없으면 안내하고 다시 그려도 검색어를 유지한다',()=>{
   const r=setup();assert.doesNotMatch(r.html(),/id="purchasePlanSearch"/,'계획이 하나면 검색 칸 없음');
