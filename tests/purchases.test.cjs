@@ -2648,9 +2648,9 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
   assert.equal(JSON.stringify(r.doc),before,'고르기·돌아오기는 기록을 바꾸지 않음');
   chip('32주').onclick();r.ctx.confirm=()=>true;const plan=JSON.stringify(r.item.buyPlan);r.edit();r.element('purchaseDelete').onclick();r.item.buyPlan=JSON.parse(plan);r.render();assert.equal(tip()[4],'₩12080','같은 종목에 계획이 다시 생기면 현재가부터');assert.doesNotMatch(r.html(),/ sel (?:mint|warn|blue)/,'계획을 지우면 고른 회차도 지움');
 });
-test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아래이고 SVG는 카드 배경색 불투명 면을 먼저 깐 뒤 완료·예정 구간 세로 그라데이션을 자른다',()=>{
+test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래, 옆·아래 자리(z-index 3)는 위에 놓이고 SVG는 불투명 면 위에 그라데이션을 그린다',()=>{
   const {chart}=curveFixture(),c=chart();
-  assert.match(c,/<div class="bp-plot"><div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'말풍선이 SVG보다 먼저(아래 겹)');
+  assert.match(c,/<div class="bp-plot"><div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'DOM에서 말풍선이 SVG보다 먼저 나옴');
   assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" mask="url\(#bpMaskDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" mask="url\(#bpMaskNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑), 경계는 가로 마스크');
   const [x1,x2]=c.match(/<linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="([\d.]+)" x2="([\d.]+)"/).slice(1).map(Number);assert.ok(x2-x1>=40,`초록→파랑 경계가 ${x2-x1}px에 걸쳐 이어짐`);
   assert.match(c,/<linearGradient id="bpXNext"[^>]*><stop offset="0" stop-color="#000"\/><stop offset="1" stop-color="#fff"\/>/,'예정 면은 경계 오른쪽으로 나타남');
@@ -2658,7 +2658,12 @@ test('곡선 카드 겹: 말풍선(HTML, z-index 1)은 곡선 SVG(z-index 2) 아
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
-  assert.match(css,/\.bp-plot\{position:relative;margin-top:-5px;margin-bottom:2px\}/);assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/);assert.match(css,/\.bp-tip\{position:absolute;z-index:1;[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
+  assert.match(css,/\.bp-plot\{position:relative;margin-top:-5px;margin-bottom:2px\}/);
+  assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/,'곡선 SVG는 z-index 2');
+  assert.match(css,/\.bp-tip\{position:absolute;z-index:1;/,'위 자리 말풍선은 z-index 1');
+  assert.match(css,/\.bp-tip\.below\{z-index:3;/,'아래 자리 말풍선은 z-index 3');
+  assert.match(css,/\.bp-tip\.sl,\.bp-tip\.sr\{z-index:3\}/,'양옆 자리 말풍선은 z-index 3');
+  assert.match(css,/\.bp-tip\{[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
   assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-mask\{fill:var\(--bpc-bg\)\}/);assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
   assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
 });
