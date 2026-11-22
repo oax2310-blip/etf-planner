@@ -874,7 +874,7 @@ test('요약 카드: 비트코인 달러 가격은 회차표처럼 센트 없이
   const stock=setup({currency:'USD',price:90.5,budget:100,end:null,names:['25일선'],ma:{'25일선':100.25}});
   assert.match(card(stock),/<span class="bp-shares">체결 <b>0주<\/b> · 남은 <b>\d+주<\/b><\/span>/);assert.doesNotMatch(card(stock),/bp-chart/,'기준가 지점이 하나면 곡선 카드를 만들지 않는다');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
-  assert.match(css,/\.bp-now\{[^}]*white-space:nowrap/);assert.match(css,/\.bp-next\{[^}]*white-space:nowrap/);
+  assert.match(css,/\.bp-next\{[^}]*white-space:nowrap/);
 });
 test('계획 목록: 매수대기의 시세 대기·도달 상태를 표시하고 회차 수를 만들지 않는다',()=>{
   const r=setup({wait:'25일선',ma:{'25일선':10000}});
@@ -2668,8 +2668,27 @@ test('계좌 버튼 CSS: [＋ 계좌 추가]·[삭제]의 ID 규칙은 패딩·�
 });
 test('좁은 폭·고액: 현재가 줄·완료 상자 칸·계좌 상자 맨 윗줄은 넘치지 않게 줄을 넘기고, 손익 금액·손익률은 한 묶음으로 넘긴다',()=>{
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  const now=css.match(/\.bp-now\s*\{([^}]*)\}/)?.[1]??'';
+  assert.match(now,/min-width:\s*0\s*(?:;|$)/);
+  assert.match(now,/max-width:\s*100%\s*(?:;|$)/);
+  assert.match(now,/overflow-wrap:\s*anywhere\s*(?:;|$)/);
+  assert.doesNotMatch(now,/white-space:\s*nowrap\b/);
   assert.match(css,/\.bp-price\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats div\{flex:1 1 0;min-width:fit-content;/);
   assert.match(css,/\.bp-acc-sum\{[^}]*flex-wrap:wrap;/);assert.match(css,/\.bp-acc-sum-r\{display:inline-flex;[^}]*white-space:nowrap\}/);
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
   assert.match(r.html(),/<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain"[^>]*>\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span>/,'손익 금액·손익률 한 묶음');
+});
+test('곡선 카드 좁은 폭·고액: 평단과 현재가는 카드 안에서 줄을 넘기고, 들어가면 한 줄 좌우에 둔다',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  const sub=css.match(/\.bp-chart-sub\s*\{([^}]*)\}/)?.[1]??'';
+  const children=css.match(/\.bp-chart-sub\s*>\s*span\s*,\s*\.bp-chart-sub\s*>\s*b\s*\{([^}]*)\}/)?.[1]??'';
+  const price=css.match(/(?:^|\})\s*\.bp-chart-sub\s*>\s*b\s*\{([^}]*)\}/m)?.[1];
+  assert.match(sub,/display:\s*flex\b/);
+  assert.match(sub,/justify-content:\s*space-between\b/);
+  assert.match(sub,/flex-wrap:\s*wrap\s*(?:;|$)/);
+  assert.match(sub,/overflow-wrap:\s*anywhere\s*(?:;|$)/);
+  assert.match(children,/min-width:\s*0\s*(?:;|$)/);
+  assert.match(children,/max-width:\s*100%\s*(?:;|$)/);
+  assert.ok(price,'.bp-chart-sub>b 규칙');
+  assert.doesNotMatch([sub,children,price].join('\n'),/white-space:\s*nowrap\b/);
 });
