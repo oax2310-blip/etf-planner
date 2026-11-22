@@ -57,8 +57,10 @@ function holding(ticker){
 // 그룹 손익(assets.js)처럼 양수 보유만 합산하고, 수량 없는 금액 보유는 전체 개수에만 넣는다.
 // 달러 매입금액·손익은 화면 allocationSummary의 현재 환율로 원화 환산(환차손익 제외), 환율이 없으면 달러를 뺀다.
 // 손익률은 합산 손익 ÷ 합산 매입금액. 만원 소수 첫째 자리에서 0이 되는 금액은 부호·색을 뺀다.
-const profitColor=v=>v>0?"profit-gain":v<0?"profit-loss":"";
-const profitRate=v=>v===null?"—":`${v>0?"+":v<0?"−":""}${nf2.format(Math.abs(v))}%`;
+// 손익률은 소수 둘째 자리로 보이므로, 그 자리에서 반올림한 값으로 부호·색을 정한다(0 < |손익률| < 0.005%면 부호·색 없는 0%).
+const profitRound2=v=>typeof v==="number"?Math.sign(v)*Math.round(Math.abs(v)*100)/100||0:v;
+const profitColor=v=>{v=profitRound2(v);return v>0?"profit-gain":v<0?"profit-loss":"";};
+const profitRate=v=>{if(v===null)return "—";v=profitRound2(v);return `${v>0?"+":v<0?"−":""}${nf2.format(Math.abs(v))}%`;};
 const profitAmount=v=>Math.sign(v)*Math.round(Math.abs(v)/1e4*10)/10||0;
 const profitMoney=v=>`<b class="${profitColor(v)}">${v>0?"+":v<0?"−":""}${man(Math.abs(v))}</b>`;
 const profitPercent=v=>`<b class="${profitColor(v)}">${profitRate(v)}</b>`;

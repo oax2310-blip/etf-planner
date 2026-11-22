@@ -367,24 +367,25 @@ function purchaseAccountBox({g,it},s){
   const deleteMode=purchaseAccountDeletingId===it.id,sortMode=!deleteMode&&sortingPurchaseAccounts.has(it.id),open=deleteMode||openPurchaseAccounts.has(it.id);
   const parts=r=>stockNames.titleParts(r.it.name),qty=r=>infos.get(r.it.id).quantityText.replace(/^보유 /,"");
   const sum=allocLink.holdingsProfit(ordered.map(r=>r.it),s.fx),sumRate=bpRound1(sum?.rate??null),sumTone=sumRate>0?"profit-gain":sumRate<0?"profit-loss":""; // 금액은 alloc-link가 0.1만원으로 반올림한 값
-  const top=ordered.length?`<b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small>`:""}`:"<b>연결된 계좌 없음</b>";
-  const profitOf=r=>{const p=allocLink.holdingProfit(r.it,s.fx);if(!p)return "";
+  const top=ordered.length?`<b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small></span>`:""}`:"<b>연결된 계좌 없음</b>";
+  const profitOf=p=>{if(!p)return "";
     return `<div class="bp-acc-pl">${p.amountText?`<b class="${p.amountTone}">${p.amountText}</b>`:`<b class="bp-muted">${p.status}</b>`}${p.rateText?`<small class="${p.rateTone}">${p.rateText}</small>`:""}</div>`;};
   const rows=ordered.map((r,j)=>{
-    const t=parts(r),info=infos.get(r.it.id),who=`${escA(r.g.name)} ${escA(r.it.name)}`;
+    const t=parts(r),info=infos.get(r.it.id),who=`${escA(r.g.name)} ${escA(r.it.name)}`,p=allocLink.holdingProfit(r.it,s.fx);
+    const pending=info.pending&&!(!deleteMode&&!sortMode&&p&&!p.amountText&&p.status===info.pending)?info.pending:""; // 오른쪽 손익 자리에 같은 대기 문구가 보이면 왼쪽에서는 뺀다
     const right=deleteMode?`<div class="bp-acc-ctrl"><button class="btn bp-acc-del" type="button" data-purchase-account-delete="${escA(r.it.id)}" aria-label="${who} 계좌 삭제">삭제</button></div>`
-      :`<div class="bp-acc-ctrl"${sortMode?"":" hidden"}><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="-1"${j===0?" disabled":""} aria-label="${who} 매수 우선순위 올리기">↑</button><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="1"${j===ordered.length-1?" disabled":""} aria-label="${who} 매수 우선순위 내리기">↓</button></div>${sortMode?"":profitOf(r)}`;
-    return `<div class="bp-acc-row${j===0?" lead":""}" data-purchase-holding="${escA(r.it.id)}"><span class="bp-acc-rank" aria-label="${j+1}순위${j===0?" · 매수 반영 대상":""}">${j+1}</span><div class="bp-acc-body"><div class="bp-acc-l1"><span class="bp-acc-name">${escA(t.main||r.it.name)}</span><span class="bp-acc-tag">${escA(t.tag||r.g.name)}</span></div><div class="bp-acc-l2">${escA(qty(r))} · ${info.valueText}${info.pending?` · ${info.pending}`:""}</div></div>${right}</div>`;
+      :`<div class="bp-acc-ctrl"${sortMode?"":" hidden"}><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="-1"${j===0?" disabled":""} aria-label="${who} 매수 우선순위 올리기">↑</button><button class="btn bp-acc-move" type="button" data-purchase-priority="${escA(r.it.id)}" data-purchase-direction="1"${j===ordered.length-1?" disabled":""} aria-label="${who} 매수 우선순위 내리기">↓</button></div>${sortMode?"":profitOf(p)}`;
+    return `<div class="bp-acc-row${j===0?" lead":""}" data-purchase-holding="${escA(r.it.id)}"><span class="bp-acc-rank" aria-label="${j+1}순위${j===0?" · 매수 반영 대상":""}">${j+1}</span><div class="bp-acc-body"><div class="bp-acc-l1"><span class="bp-acc-name">${escA(t.main||r.it.name)}</span><span class="bp-acc-tag">${escA(t.tag||r.g.name)}</span></div><div class="bp-acc-l2">${escA(qty(r))} · ${info.valueText}${pending?` · ${pending}`:""}</div></div>${right}</div>`;
   }).join("");
   const drawer=`<div class="bp-acc-drawer" id="purchaseAccountDrawer"${open?"":" hidden"}>${deleteMode?'<p class="bp-acc-policy">삭제할 계좌를 누르세요. 확인 후 자산 배분에서도 삭제됩니다.</p>':sortMode?'<p class="bp-acc-policy sort">맨 위 계좌에 새 회차의 체결을 반영합니다.</p>':""}<div class="bp-acc-list" id="purchaseLinkedHoldings" aria-label="${deleteMode?"연결 계좌 삭제":"매수 우선순위"}">${rows}</div><div class="bp-acc-actions"><button class="btn bp-pill" type="button" id="purchaseAccountAdd"${canAdd?"":' disabled aria-describedby="purchaseAccountHint"'}>＋ 계좌 추가</button><button class="btn bp-pill purchase-account-delete-toggle${deleteMode?" active":""}" type="button" id="purchaseAccountDeleteToggle" aria-pressed="${deleteMode}" aria-controls="purchaseLinkedHoldings" aria-label="${deleteMode?"계좌 삭제 완료":"계좌 삭제"}">${deleteMode?"완료":"삭제"}</button><button class="btn bp-pill accent" type="button" data-purchase-edit="${id}" aria-label="${escA(leadName(it,s))} 분할매수 계획 수정">계획 수정</button></div>${canAdd?"":'<p class="hint" id="purchaseAccountHint"><a href="assets.html#alloc">자산 배분</a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하면 계좌를 추가할 수 있습니다.</p>'}${purchaseMemoLine(it)}</div>`;
   const sort=open&&!deleteMode&&ordered.length>1?`<button class="btn bp-acc-sort${sortMode?" on":""}" type="button" id="purchaseAccountSort" data-purchase-sort="${id}" aria-pressed="${sortMode}" aria-controls="purchaseLinkedHoldings" aria-label="매수 우선순위 바꾸기">⇅</button>`:"";
   return `<div class="bp-acc"><div class="bp-acc-main"><div class="bp-acc-sum">${top}</div><button class="btn bp-acc-toggle" type="button" id="purchaseAccountToggle" data-purchase-accounts="${id}" aria-expanded="${open}" aria-controls="purchaseAccountDrawer" aria-label="계좌 · 설정 ${open?"접기":"펼치기"}">설정 <span aria-hidden="true">${open?"▴":"▾"}</span></button>${sort}</div>${drawer}</div>`;
 }
 // 누적 평단(화면 전용 예상값, 기록·알림 계산에 쓰지 않음): 회차표 순서로 체결 수량×체결가(execPrice → tradePrice → price)와
-// 남은 계획 수량×기준가를 더해 나눈다. 실제 매수 코드가 계획 코드와 다른 회차가 있거나(가격 단위가 달라짐) 계획 수량을 모르면 null.
+// 남은 계획 수량×기준가를 더해 나눈다. 실제 매수 코드가 계획 코드와 다른 회차가 있거나(가격 단위가 달라짐) 계획 수량을 모르거나, 체결·완료 회차의 체결 수량을 모르면 null.
 // now는 체결분만의 평단, at[i]는 i번째 회차까지의 예상 평단, end는 마지막 회차까지의 예상 평단.
 function purchaseAverages(rows,execOf,otherTicker){
-  if(!rows.length||rows.some(r=>otherTicker(r)||r.plannedShares===null&&!r.done||!(r.price>0)))return null;
+  if(!rows.length||rows.some(r=>otherTicker(r)||r.plannedShares===null&&!r.done||(r.recorded||r.done)&&!(r.shares>0)||!(r.price>0)))return null;
   let cost=0,qty=0,fillCost=0,fillQty=0;const at=[];
   for(const r of rows){
     const filled=r.recorded?Math.max(0,r.shares||0):0,left=r.done?0:Math.max(0,(r.plannedShares??0)-filled),exec=execOf(r)??r.price;
@@ -401,7 +402,7 @@ function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,
   const pts=groups.map(gr=>{const k=gr.rows.indexOf(focus),j=k>=0&&gr.rows[k].price>0?k:gr.rows.findIndex(r=>r.price>0);return j<0?null:{gr,row:gr.rows[j],i:gr.idx[j],focus:j===k};}).filter(Boolean); // 강조 회차도 기준가가 있을 때만 점
   if(pts.length<2)return "";
   const W=360,H=196,L=24,R=24,T=46,B=14,n=pts.length,avgOf=p=>avg?.at[p.i]??null;
-  const vals=pts.flatMap(p=>[p.row.price,avgOf(p)]).filter(v=>v>0),lo=Math.min(...vals),hi=Math.max(...vals),pad=(hi-lo||hi*.05)*.18;
+  const vals=pts.flatMap(p=>[p.row.price,avgOf(p)]).filter(v=>v>0),lo=Math.min(...vals),hi=Math.max(...vals),pad=(hi-lo>Math.abs(hi)*1e-9?hi-lo:hi*.05)*.18; // 횡보형: 누적 평단의 부동소수점 오차(1 ULP 등)도 같은 값으로 보아 가운데 수평선
   const X=k=>L+(W-L-R)*k/(n-1),Y=v=>T+(H-T-B)*(1-(v-(lo-pad))/((hi+pad)-(lo-pad)));
   const curve=list=>{let d=`M${list[0].x.toFixed(1)} ${list[0].y.toFixed(1)}`;for(let k=0;k<list.length-1;k++){const a=list[Math.max(0,k-1)],b=list[k],c=list[k+1],e=list[Math.min(list.length-1,k+2)];d+=` C${(b.x+(c.x-a.x)/6).toFixed(1)} ${(b.y+(c.y-a.y)/6).toFixed(1)} ${(c.x-(e.x-b.x)/6).toFixed(1)} ${(c.y-(e.y-b.y)/6).toFixed(1)} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`;}return d;};
   const main=pts.map((p,k)=>({x:X(k),y:Y(p.row.price)})),avgPts=avg?pts.map((p,k)=>avgOf(p)>0?{x:X(k),y:Y(avgOf(p))}:null):[];
@@ -417,7 +418,8 @@ function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,
   // 가격 글자(12px)의 상자는 기준선 y의 y−10~y+2로 어림한다. 시작 가격 글자는
   // 점 위 → 점 아래 → 강조 점 아래 → 말풍선 꼬리 아래 순으로, 강조 점 원·말풍선·꼬리 상자와 겹치지 않는 첫 자리에 둔다(강조 점이 시작점이면 위는 빼고, 모두 겹치면 점 아래).
   const textW=t=>[...t].reduce((w,ch)=>w+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0),startW=textW(startText),hit=(a,b)=>a[0]<b[2]&&b[0]<a[2]&&a[1]<b[3]&&b[1]<a[3];
-  const blocks=tip?[[tip.p.x-11,tip.p.y-11,tip.p.x+11,tip.p.y+11],[tip.tx,tip.ty,tip.tx+tip.tw,tip.ty+tip.th],[tip.p.x-6,tip.ty+tip.th,tip.p.x+6,tip.ty+tip.th+6]]:[];
+  const dots=avgD?[avgPts.at(-1),...(ai>=0&&avgPts[ai]?[avgPts[ai]]:[])].map(d=>[d.x-3.5,d.y-3.5,d.x+3.5,d.y+3.5]):[]; // 평단 점 원(반지름 3.2: 끝·강조)
+  const blocks=[...(tip?[[tip.p.x-11,tip.p.y-11,tip.p.x+11,tip.p.y+11],[tip.tx,tip.ty,tip.tx+tip.tw,tip.ty+tip.th],[tip.p.x-6,tip.ty+tip.th,tip.p.x+6,tip.ty+tip.th+6]]:[]),...dots];
   // 끝 가격 글자: 기본은 끝점 위, 끝 쪽 강조면 끝점과 강조 점(반지름 11) 아래. 기본 자리가 강조 점 원·말풍선·꼬리와 겹치면
   // 끝점 위 → 끝점 아래 → 강조 점 아래 → 말풍선 꼬리 아래 → 말풍선 위 순으로 겹치지 않는 첫 자리에 둔다(모두 겹치면 기본 자리).
   const endBase=nearEnd?Math.max(lastP.y+30,ai<n-1?main[ai].y+24:0):lastP.y-12,endBox=y=>[lastP.x+4-textW(endText),y-10,lastP.x+4,y+2];
@@ -437,9 +439,9 @@ function purchaseCurveCard({rows,lines,focus,next,complete,rowPt,now,avg,isWarn,
     marks+=`<g class="bp-tip${warn?" warn":""}"><rect x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" width="${tw.toFixed(1)}" height="${th}" rx="11"/><path d="M${(p.x-6).toFixed(1)} ${(ty+th-.5).toFixed(1)}L${p.x.toFixed(1)} ${(ty+th+6).toFixed(1)}L${(p.x+6).toFixed(1)} ${(ty+th-.5).toFixed(1)}"/>${txt(tx+tw/2,ty+19,escA(head),"bp-tip-main")}${sub?txt(tx+tw/2,ty+35,escA(sub),"bp-tip-sub"):""}</g>`;
   }
   const label=p=>p.gr.key==="end"?"목표가":p.row.line?bpShort(movingLineText(p.row.line.line)):movingLineText(p.row.label);
-  // x축 글자: 강조 → 처음 → 끝 → 나머지 순으로, 폰 폭(곡선 너비 약 329px) 기준 글자 너비를 어림해 이미 놓인 글자와 겹치지 않는 것만 둔다.
+  // x축 글자: 강조 → 처음 → 끝 → 나머지 순으로, 360px 화면 폭(축 너비 약 296px) 기준 글자 너비를 어림해 이미 놓인 글자와 겹치지 않는 것만 둔다(더 넓은 화면에서도 겹치지 않음).
   const tick=k=>{const p=pts[k],done=groupDone(p.gr.rows);return {k,done,text:`${label(p)}${done?"✓":k===ai&&!warn?"·다음":""}`};};
-  const tw=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="✓"?10:ch==="·"?4:7),0)+18,cw=329;
+  const tw=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="✓"?10:ch==="·"?4:7),0)+18,cw=296;
   const span=t=>{const w=tw(t.text),c=X(t.k)/W*cw,a=t.k===0?.25:t.k===n-1?.75:.5;return [c-w*a,c+w*(1-a)];};
   const shown=[];for(const k of [ai,0,n-1,...pts.map((_,k)=>k)])if(k>=0&&!shown.some(t=>t.k===k)){const t=tick(k),[l,r]=span(t);if(shown.every(o=>{const [ol,or]=span(o);return r+4<=ol||or+4<=l;}))shown.push(t);}
   const ticks=shown.sort((a,b)=>a.k-b.k).map(t=>{
@@ -552,7 +554,7 @@ function renderPurchases(){
     const warm=dueRows.length+partialRows.reduce((n,r)=>n+(r.plannedShares>0&&r.shares>0?Math.min(1,r.shares/r.plannedShares):0),0),fillN=Math.min(p.count,p.done+warm),edge=fillN>0?p.done/fillN*100:0;
     const bar=p.count?`<div class="bp-bar" role="img" aria-label="${p.count}회 중 ${p.done}회 완료${dueRows.length?`, 도달 ${dueRows.length}회`:""}${partialRows.length?`, 부분 체결 ${partialRows.length}회`:""}"><i class="${complete?"done":warm?"warm":""}" style="width:${(fillN/p.count*100).toFixed(2)}%${warm?`;--edge:${edge.toFixed(1)}%`:""}"></i></div>`:"";
     const gapOf=r=>{const g=Math.abs((now/r.price-1)*100);return Math.round(g*10)===0?"기준가와 같음":`${up?"+":"−"}${nf1.format(g)}% ${up?"위":"아래"}`;}; // 소수 첫째 자리에서 0이면 부호 없이
-    const dueBox=dueRows.length?(()=>{const sum=dueRows.reduce((n,r)=>n+(r.plannedShares||0),0),amt=dueRows.every(r=>r.fill?.actual>0)?dueRows.reduce((n,r)=>n+r.fill.actual,0):null;
+    const dueBox=dueRows.length?(()=>{const sum=dueRows.reduce((n,r)=>n+(r.plannedShares||0),0),amtOf=r=>r.fill?.actual>0?r.fill.actual:r.amount>0?r.amount:null,amt=dueRows.every(r=>amtOf(r)!==null)?dueRows.reduce((n,r)=>n+amtOf(r),0):null; // 반영 예정액, 없으면 회차 예정액(직접 입력의 수량 있는 회차)
       return `<div class="bp-due"><div class="bp-due-head"><i class="bp-pulse"></i><b>기준가 도달 · 체결 대기</b><span><em>${qtyOf(sum,dueRows[0].tradeItem)}</em>${amt!==null?` · 약 ${wonAmount(amt)}`:""}</span></div>${dueRows.slice(0,3).map(r=>`<div class="bp-due-row"><div><b>${label(r)}</b><small>기준가 ${rowPt(r.price)} · 현재 <i>${gapOf(r)}</i></small></div><span class="q">${qtyOf(r.plannedShares||0,r.tradeItem)}</span><button class="btn bp-act-btn" type="button" data-purchase-act="${id}" ${r.attr}${blockedOf(r)?" disabled":""}>체결</button></div>`).join("")}${dueRows.length>3?`<p class="bp-due-more">외 ${dueRows.length-3}회는 아래 회차표에서 체결하세요</p>`:""}${next&&nextGap?`<p class="bp-due-foot">그다음 <b>${escA(movingLineText(next.label))} ${rowPt(next.price)}</b> · ${nextGap.text} 남음</p>`:""}</div>`;})():"";
     // 완료 상자: 현재 수익은 체결분 평단(purchaseAverages.now) 대비 현재가, 금액은 체결 수량 × 차이(달러는 현재 환율 원화 환산). 총 매수는 회차 체결 금액 합.
     const doneBox=complete?(()=>{const total=rows.reduce((n,r)=>n+(r.actual||0),0),rate=cur==="USD"?plus(s.fx):1,ret=bpRound1(avg?.now>0&&now!==null?(now/avg.now-1)*100:null),pl=ret!==null&&rate?bpRound1((now-avg.now)*avg.filled*rate/1e4):null,toneOf=v=>v>0?' class="gain"':v<0?' class="loss"':""; // 수익률·금액은 각자의 반올림 값으로 색을 정한다

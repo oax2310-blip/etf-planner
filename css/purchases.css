@@ -174,15 +174,17 @@
 /* 제목 아래 목표 비중은 평소 점선 밑줄 글자(.target-display)로 보이고, 누르면 같은 자리에서 목표 [  ] % 인라인 입력칸(.target-editor)과 1줄 안내가 열린다.
    ::before로 44px 이상 터치 영역을 확보하며 포커스 중에는 제거해 칸 내부 터치·커서 이동을 방해하지 않는다. 추가·계좌 삭제·행 삭제 버튼의 외형만 줄이고 ::before inset으로 터치 높이를 유지한다. */
 .purchase-account-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px}
-#purchaseAccountAdd{position:relative;width:max-content;max-width:100%;min-height:32px;padding:5px 10px;font-size:12px}
+#purchaseAccountAdd{position:relative;width:max-content;max-width:100%;min-height:32px;font-size:12px}
 #purchaseAccountAdd::before{content:"";position:absolute;inset:-7px 0}
-#purchaseAccountDeleteToggle{position:relative;width:max-content;min-width:48px;max-width:100%;min-height:32px;padding:5px 10px;font-size:12px;color:var(--text-2)}
+#purchaseAccountDeleteToggle{position:relative;width:max-content;min-width:48px;max-width:100%;min-height:32px;font-size:12px}
 #purchaseAccountDeleteToggle::before{content:"";position:absolute;inset:-7px 0}
-#purchaseAccountDeleteToggle.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+/* 매수대기 카드(.purchase-linked)만의 패딩·글자색. 돌파·직접 입력의 계좌 상자(.bp)는 .bp-pill 패딩·글자색을 그대로 쓴다. */
+.purchase-linked #purchaseAccountAdd,.purchase-linked #purchaseAccountDeleteToggle{padding:5px 10px}.purchase-linked #purchaseAccountDeleteToggle{color:var(--text-2)}
+.purchase-linked #purchaseAccountDeleteToggle.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
 .purchase-account-delete{position:relative;min-width:59px;min-height:28px;padding:4px 10px;border-radius:7px;font-size:12px;line-height:1.3;white-space:nowrap;background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger)}
 .purchase-account-delete::before{content:"";position:absolute;inset:-9px 0}
 .purchase-account-delete:hover{background:var(--danger-soft);border-color:var(--danger-line)}
-@media(hover:hover) and (pointer:fine){#purchaseAccountDeleteToggle:hover{color:var(--text)}#purchaseAccountDeleteToggle.active:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}.purchase-account-delete:hover{border-color:var(--danger)}.purchase-target-inline:hover .target-display{border-bottom-color:var(--accent)}}
+@media(hover:hover) and (pointer:fine){.purchase-linked #purchaseAccountDeleteToggle:hover{color:var(--text)}.purchase-linked #purchaseAccountDeleteToggle.active:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}.purchase-account-delete:hover{border-color:var(--danger)}.purchase-target-inline:hover .target-display{border-bottom-color:var(--accent)}}
 .purchase-target-inline{position:relative;display:inline-flex;align-items:baseline;vertical-align:baseline;max-width:100%;cursor:text}
 .purchase-target-inline::before{content:"";position:absolute;inset:-13px -4px}
 .purchase-target-inline .target-display{border-bottom:1px dashed var(--text-3);pointer-events:none}
@@ -208,7 +210,7 @@
 .bp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .bp-name{min-width:0;margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bp-name .title-tag{font-size:11px;vertical-align:.15em}
 .bp-count{flex:none;font-size:13.5px;font-weight:600;color:var(--bp-blue-2);white-space:nowrap}.bp-count.done{color:var(--bp-mint)}.bp-count small{font-size:12px;color:var(--text-3);font-weight:500}
-.bp-price{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:-2px}
+.bp-price{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 10px;margin-top:-2px} /* 좁은 폭·고액에서 배지가 넘치면 아래 줄로 */
 .bp-now{font-size:31px;font-weight:800;letter-spacing:-.03em;line-height:1.1;white-space:nowrap}
 .bp-next{font-size:14px;font-weight:600;color:var(--bp-blue-2);letter-spacing:-.02em;white-space:nowrap}
 .bp-badge{align-self:center;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap}
@@ -238,15 +240,16 @@
 .bp-ret{display:grid;justify-items:center;margin-top:10.7px}.bp-ret small{font-size:11px;line-height:14px;color:var(--text-3)}
 .bp-ret-v{display:flex;align-items:baseline;gap:8px;margin-top:2.4px;line-height:1}.bp-ret-v b{font-size:31px;font-weight:800;letter-spacing:-.045em}.bp-ret-v em{font-style:normal;font-size:17.8px;font-weight:800;letter-spacing:-.03em}
 .bp-ret-v .gain{color:var(--bp-red)}.bp-ret-v .loss{color:var(--bp-loss)}
-.bp-done-stats{display:grid;grid-template-columns:1fr 1fr;gap:8.2px;margin-top:10.8px}
-.bp-done-stats div{display:flex;align-items:center;justify-content:space-between;gap:6px;height:31.5px;padding:0 11.4px;border-radius:11px;background:rgba(0,0,0,.06);box-shadow:inset 0 2px 4px rgba(0,0,0,.12)}
+.bp-done-stats{display:flex;flex-wrap:wrap;gap:8.2px;margin-top:10.8px} /* 두 칸이 한 줄에 들어가면 같은 폭, 안 들어가면(좁은 폭·고액) 한 칸씩 */
+.bp-done-stats div{flex:1 1 0;min-width:fit-content;display:flex;align-items:center;justify-content:space-between;gap:6px;height:31.5px;padding:0 11.4px;border-radius:11px;background:rgba(0,0,0,.06);box-shadow:inset 0 2px 4px rgba(0,0,0,.12)}
 :root[data-theme=dark] .bp-done-stats div{background:rgba(0,0,0,.38);box-shadow:inset 0 2px 4px rgba(0,0,0,.55),inset 0 -1px 0 rgba(255,255,255,.06)}
 .bp-done-stats small{font-size:11.4px;color:var(--text-3);white-space:nowrap}.bp-done-stats b{font-size:11.45px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
 /* 계좌 줄(음각)과 펼침 목록 */
 .bp-acc{display:flex;flex-direction:column;gap:0;margin-top:3px;padding:9px 9px 9px 13px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
 .bp-acc-main{display:flex;align-items:center;justify-content:space-between;gap:6px}
-.bp-acc-sum{flex:1;min-width:0;display:flex;align-items:baseline;gap:3px;white-space:nowrap;overflow:hidden}
-.bp-acc-sum b,.bp-acc-sum .bp-acc-sum-pl{font-size:14px;font-weight:700;letter-spacing:-.02em}.bp-acc-sum .bp-acc-sum-pl{margin-left:4px}
+.bp-acc-sum{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 3px;white-space:nowrap;overflow:hidden} /* 손익 묶음이 들어가지 않으면 묶음째 다음 줄로(잘리지 않게) */
+.bp-acc-sum-r{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}.bp-acc-sum>small{margin-right:4px} /* 묶음 앞 간격은 비율 쪽 여백으로 둬 넘긴 줄이 왼쪽에 맞는다 */
+.bp-acc-sum b,.bp-acc-sum .bp-acc-sum-pl{font-size:14px;font-weight:700;letter-spacing:-.02em}
 .bp-acc-sum small{font-size:11px;font-weight:600;color:var(--text-2)}
 .bp-acc-sum .profit-gain,.bp-acc-pl .profit-gain{color:var(--bp-red)}.bp-acc-sum .profit-loss,.bp-acc-pl .profit-loss{color:var(--bp-loss)}
 .bp .bp-acc-toggle{flex:none;min-height:32px;padding:0 9px;border-radius:12px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text);font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
@@ -270,6 +273,7 @@
 .bp .bp-pill{min-height:32px;padding:0 11px;border-radius:10px;font-size:12px;font-weight:600;color:var(--text-2)}.bp .bp-pill.accent{color:var(--bp-blue-2)}
 :root[data-theme=dark] .bp .bp-pill{background:linear-gradient(180deg,#212736,#171c27);border:1px solid rgba(255,255,255,.09);color:#c7d0e0}
 :root[data-theme=dark] .bp .bp-pill.accent{color:#749eff;border-color:rgba(82,130,255,.28)}
+.bp .bp-pill.purchase-account-delete-toggle.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)} /* 삭제 모드: 다크 .bp-pill(0,4,0)과 같은 명시도, 뒤에 두어 이긴다 */
 /* 계좌 펼침 안 메모 줄 */
 .bp-memo{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px;padding:0 8px 0 13px;border-radius:12px;background:rgba(128,128,128,.05);border:1px solid var(--bp-line)}
 .bp-memo[hidden],.bp-memo-editor[hidden]{display:none}

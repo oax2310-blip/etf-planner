@@ -492,7 +492,7 @@ test('연결 보유 손익은 itemProfit의 평균가·현재가로 합산하고
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});
   r.ctx.priceText=(v,cur)=>cur==='USD'?`$${v.toFixed(2)}`:`${new Intl.NumberFormat('ko-KR').format(v)}원`;
   const before=JSON.stringify(r.doc);r.render();const card=purchaseLinkedCard(r);
-  assert.match(card,/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\([^)]+\)<\/small><span class="bp-acc-sum-pl profit-gain" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/div>/,'맨 윗줄: 평가액(비중)·합산 손익');
+  assert.match(card,/<div class="bp-acc-sum"><b>[^<]+<\/b><small>\([^)]+\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span><\/div>/,'맨 윗줄: 평가액(비중)·합산 손익');
   assert.match(card,/class="sale-linked-profit" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">손익 <b class="profit-gain">\+1.4만원<\/b> <b class="profit-gain">\+1.66%<\/b>/);
   assert.match(card,/<div class="bp-acc-pl"><b class="profit-gain">\+1.4만원<\/b><small class="profit-gain">\+1.66%<\/small><\/div>/);
   assert.equal(JSON.stringify(r.doc),before);
@@ -2319,7 +2319,7 @@ test('계좌 상자: 맨 윗줄은 평가액(비중)·합산 손익과 [설정],
   const r=setup();r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3,averagePrice:9000});r.render();
   const before=JSON.stringify(r.doc),toggle=()=>r.element('purchaseAccountToggle'),list=()=>r.html().split('id="purchaseLinkedHoldings"')[1].split('bp-acc-actions')[0];let writes=0;r.store.saveSection=()=>writes++;
   assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);assert.equal(toggle().getAttribute('aria-expanded'),'false');assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'접혀 있으면 ⇅ 없음');
-  assert.match(r.html(),/<div class="bp-acc-main"><div class="bp-acc-sum"><b>[^<]+만원<\/b><small>\(\d+%\)<\/small><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/div><button[^>]*id="purchaseAccountToggle"[^>]*>설정 /,'맨 윗줄 한 줄');
+  assert.match(r.html(),/<div class="bp-acc-main"><div class="bp-acc-sum"><b>[^<]+만원<\/b><small>\(\d+%\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/span><\/div><button[^>]*id="purchaseAccountToggle"[^>]*>설정 /,'맨 윗줄 한 줄');
   toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(toggle().getAttribute('aria-expanded'),'true');assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'false');
   assert.match(list(),/<span class="bp-acc-name">테스트 종목<\/span><span class="bp-acc-tag">연금저축<\/span><\/div><div class="bp-acc-l2">3주 · [^<]+만원<\/div><\/div><div class="bp-acc-ctrl" hidden>[\s\S]*?<\/div><div class="bp-acc-pl"><b class="profit-gain">\+0\.3만원<\/b><small class="profit-gain">\+11\.11%<\/small><\/div>/);
   assert.match(list(),/<div class="bp-acc-pl"><b class="bp-muted">평균매수가 미입력<\/b><\/div>/);assert.doesNotMatch(list(),/평균 /,'계좌 줄에는 평균가 글자를 넣지 않음');
@@ -2601,4 +2601,75 @@ test('편집 입력 포커스(blur 전)에서 [계획 수정]을 눌러도 입�
     if(selector==='[data-purchase-target]')assert.equal(r.item.target,33,'목표 저장');else assert.equal(r.item.buyPlan.buys.end.shares,1,'체결 수량 저장');
     assert.equal(dialog.open,true,'계획 수정 창 열림');assert.equal(r.element('purchaseTitle').textContent,'분할매수 계획 수정');
   }
+});
+test('곡선 카드: 횡보형(같은 기준가) 다회차는 누적 평단의 부동소수점 오차에도 가운데 수평선으로 그리고 말풍선을 SVG 안에 둔다',()=>{
+  const ys=(html,cls)=>{const d=html.match(new RegExp(`<path d="([^"]+)" class="${cls}[" ]`))[1].match(/-?[\d.]+/g).map(Number);return d.filter((_,i)=>i%2===1);};
+  const cases=[...[3,4,5,6].map(n=>({opts:{currency:'USD',manual:true,price:100.1},n,price:100.1,shares:1})),{opts:{bitcoin:true,manual:true,price:95000},n:5,price:95000,shares:0.0003}];
+  for(const {opts,n,price,shares} of cases){
+    const r=setup(opts);r.item.buyPlan.stages=Array.from({length:n},(_,i)=>({id:`s${i}`,price,shares,amount:price*shares*1400/1e4}));if(opts.currency==='USD')r.item.buyPlan.currency='USD';r.render();const html=r.html();
+    const line=ys(html,'bp-line'),avg=ys(html,'bp-avg');assert.ok(avg.length,`${n}회차: 평단 곡선`);
+    for(const y of [...line,...avg])assert.equal(y.toFixed(1),'114.0',`${price}×${n}회차: y ${y}`);
+    const ty=Number(html.match(/<g class="bp-tip[^"]*"><rect x="[\d.]+" y="(-?[\d.]+)"/)[1]);assert.ok(ty>=0,`말풍선 y ${ty} ≥ 0`);
+  }
+});
+test('곡선 카드: 끝 가격·"최종" 평단 글자는 평단 점 원(끝·강조)과도 겹치지 않는다(상승형 3·5회차)',()=>{
+  const w=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:/[,.]/.test(ch)?3.6:7.2),0);
+  for(const [prices,done] of [[[100000,104000,108000],1],[[100000,104000,108000,112000,116000],3]]){
+    const r=setup({manual:true,price:90000});r.item.buyPlan.stages=prices.map((price,i)=>({id:`s${i}`,price,shares:10,amount:price/1e3,...(i<done?{done:true,actual:price/1e3}:{})}));r.render();const html=r.html();
+    const dots=[...html.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="3.2" class="bp-avg-dot"\/>/g)].map(m=>[Number(m[1])-3.5,Number(m[2])-3.5,Number(m[1])+3.5,Number(m[2])+3.5]);assert.ok(dots.length>=2,'끝·강조 평단 점');
+    for(const m of html.matchAll(/<text x="([\d.]+)" y="([\d.]+)" class="bp-t (?:mint|blue)" text-anchor="end">([^<]+)<\/text>/g)){
+      const x=Number(m[1]),y=Number(m[2]),box=[x-w(m[3]),y-10,x,y+2];
+      for(const d of dots)assert.ok(!(box[0]<d[2]&&d[0]<box[2]&&box[1]<d[3]&&d[1]<box[3]),`${prices.length}회차: '${m[3]}'(y ${y})와 평단 점(${d.map(v=>v.toFixed(1))}) 겹치지 않음`);
+    }
+  }
+});
+test('곡선 카드 x축: 360px 화면(축 너비 296px) 기준으로도 표시한 눈금 글자가 서로 겹치지 않는다',()=>{
+  const tw=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="✓"?10:ch==="·"?4:7),0)+18;
+  const check=(html,label)=>{const ticks=[...html.matchAll(/<span class="(bp-x[^"]*)" style="left:([\d.]+)%">([^<]+)<\/span>/g)].map(m=>{const c=Number(m[2])/100*296,wd=tw(m[3]),a=/\bfirst\b/.test(m[1])?.25:/\blast\b/.test(m[1])?.75:.5;return [c-wd*a,c+wd*(1-a),m[3]];});
+    for(let i=1;i<ticks.length;i++)assert.ok(ticks[i-1][1]<=ticks[i][0],`${label}: '${ticks[i-1][2]}'·'${ticks[i][2]}' 296px에서 겹치지 않음`);return ticks.length;};
+  const five=setup({manual:true,price:12000});five.item.buyPlan.stages=Array.from({length:5},(_,i)=>({id:`s${i}`,price:10000-i*500,shares:8,amount:8}));five.render();assert.match(five.html(),/1차·다음/);check(five.html(),'5회차 1차 강조');
+  for(const done of [4,5,6,7]){const ten=setup({manual:true,price:12000});ten.item.buyPlan.stages=Array.from({length:10},(_,i)=>({id:`s${i}`,price:10000-i*300,shares:8,amount:8,...(i<done?{done:true,actual:8}:{})}));ten.render();assert.ok(check(ten.html(),`10회차 완료 ${done}`)>=2);}
+});
+test('계좌 상자 글자: 0 < |손익률| < 0.005%는 펼침 행과 합계 줄 모두 부호·색 없는 0%로 보인다',()=>{
+  for(const close of [99998,100004]){
+    const r=setup({price:close,end:120000});Object.assign(r.item,{shares:10,averagePrice:100000});r.element('purchaseAccountToggle').onclick();
+    const pl=r.html().match(/<div class="bp-acc-pl">[\s\S]*?<\/div>/)[0];assert.match(pl,/<small class="">0%<\/small>/,`${close}: 펼침 행 0%`);assert.doesNotMatch(pl,/[+−]0%|profit-(?:gain|loss)">[+−]?0%/);
+    const line=linkedProfit(r);assert.match(line,/<b class="">0%<\/b>/,`${close}: 합계 줄 0%`);assert.doesNotMatch(line,/[+−]0%/);
+  }
+  const r=setup({price:99990,end:120000});Object.assign(r.item,{shares:10,averagePrice:100000});r.element('purchaseAccountToggle').onclick();assert.match(r.html(),/<small class="profit-loss">−0\.01%<\/small>/,'반올림해 0이 아니면 부호·색 유지');
+});
+test('계좌 펼침 행: 오른쪽 손익 자리에 같은 대기 문구가 보이면 왼쪽에서 빼고, 오른쪽이 다른 안내면 왼쪽 대기 문구를 남긴다',()=>{
+  const rowOf=(r,id)=>r.html().split(`data-purchase-holding="${id}"`)[1].split('class="bp-acc-row')[0].split('bp-acc-actions')[0];
+  const quote=setup(),{other}=linkedAccounts(quote);other.averagePrice=19000;delete quote.prices.stocks['333333'];quote.element('purchaseAccountToggle').onclick();
+  const q=rowOf(quote,'b');assert.match(q,/<div class="bp-acc-l2">5주 · 평가 대기<\/div>/,'왼쪽: 시세 대기 뺌');assert.match(q,/<div class="bp-acc-pl"><b class="bp-muted">시세 대기<\/b><\/div>/);assert.equal(q.split('시세 대기').length-1,1,'한 행에 한 번');
+  delete other.averagePrice;quote.render();const n=rowOf(quote,'b');assert.match(n,/<div class="bp-acc-l2">5주 · 평가 대기 · 시세 대기<\/div>/,'오른쪽이 평균매수가 미입력이면 왼쪽 대기 문구 유지');assert.match(n,/평균매수가 미입력/);
+  const fx=setup({currency:'USD',price:110,fx:null});fx.item.averagePrice=100;fx.element('purchaseAccountToggle').onclick();
+  const f=rowOf(fx,'a');assert.equal(f.split('환율 대기').length-1,1,'환율 대기 한 번');assert.match(f,/<b class="bp-muted">환율 대기<\/b><small class="profit-gain">\+10%<\/small>/);assert.doesNotMatch(f,/bp-acc-l2">[^<]*환율 대기/);
+});
+test('도달 미체결 상자: 수량이 있는 직접 입력 회차도 회차 예정액으로 합계 예상액을 보인다',()=>{
+  const r=setup({manual:true,price:10000});r.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:9000,shares:8,amount:7.2}];r.render();
+  const head=r.html().match(/<div class="bp-due-head">[\s\S]*?<\/span><\/div>/)[0];assert.match(head,/<em>8주<\/em> · 약 [^<]*80[,]?000/,'8주 · 약 80,000원');
+  r.prices.stocks['111111'].close=9000;r.render();assert.match(r.html().match(/<div class="bp-due-head">[\s\S]*?<\/span><\/div>/)[0],/<em>16주<\/em> · 약 [^<]*152[,]?000/,'두 회차 합 15.2만원');
+});
+test('누적 평단: 체결 수량을 모르는 완료 회차가 섞이면 0주로 건너뛰지 않고 평단을 그리지 않는다',()=>{
+  const r=setup({currency:'USD',manual:true,price:130,fx:null});r.item.buyPlan.currency='USD';r.item.buyPlan.stages=[{id:'s1',price:100,amount:10,done:true},{id:'s2',price:120,shares:10,amount:12}];r.render();
+  assert.match(r.html(),/class="card bp-chart"/,'곡선 카드는 그림');assert.doesNotMatch(r.html(),/class="bp-avg|완료 시 평단|최종 /,'평단 곡선·글자 없음');
+  r.item.buyPlan.stages[0].shares=5;r.render();assert.match(r.html(),/class="bp-avg/,'수량을 알면 평단');
+});
+test('계좌 버튼 CSS: [＋ 계좌 추가]·[삭제]의 ID 규칙은 패딩·글자색을 매수대기 카드(.purchase-linked)에만 주고, 돌파·직접 입력(.bp)은 .bp-pill을 따른다',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  for(const id of ['purchaseAccountAdd','purchaseAccountDeleteToggle']){
+    const bare=[...css.matchAll(new RegExp(`(^|[},\\n])\\s*#${id}(?:[.:][\\w-]+)*\\{([^}]*)\\}`,'g'))].map(m=>m[2]);
+    assert.ok(bare.length,`#${id} 규칙`);for(const body of bare)assert.doesNotMatch(body,/(?:^|;)\s*(?:padding|color|background|border-color)\s*:/,`#${id} 단독 규칙에 패딩·색 없음`);
+  }
+  assert.match(css,/\.purchase-linked #purchaseAccountAdd,\.purchase-linked #purchaseAccountDeleteToggle\{padding:5px 10px\}/);
+  assert.match(css,/\.purchase-linked #purchaseAccountDeleteToggle\.active\{background:var\(--accent-soft\);border-color:var\(--accent-line\);color:var\(--accent\)\}/);
+  const dark=css.indexOf(':root[data-theme=dark] .bp .bp-pill{'),active=css.indexOf('.bp .bp-pill.purchase-account-delete-toggle.active{');assert.ok(dark>=0&&active>dark,'.bp 삭제 모드 규칙은 다크 .bp-pill 뒤(같은 명시도)');
+});
+test('좁은 폭·고액: 현재가 줄·완료 상자 칸·계좌 상자 맨 윗줄은 넘치지 않게 줄을 넘기고, 손익 금액·손익률은 한 묶음으로 넘긴다',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  assert.match(css,/\.bp-price\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats\{display:flex;flex-wrap:wrap;/);assert.match(css,/\.bp-done-stats div\{flex:1 1 0;min-width:fit-content;/);
+  assert.match(css,/\.bp-acc-sum\{[^}]*flex-wrap:wrap;/);assert.match(css,/\.bp-acc-sum-r\{display:inline-flex;[^}]*white-space:nowrap\}/);
+  const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
+  assert.match(r.html(),/<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain"[^>]*>\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span>/,'손익 금액·손익률 한 묶음');
 });
