@@ -350,6 +350,7 @@ const bpSign=v=>v>0?"+":v<0?"−":"",bpRound1=v=>v===null?null:Math.sign(v)*Math
 const bpShort=t=>String(t||"").replace(/(\d+)(일|주|월)선$/,"$1$2"); // x축 글자: 25일선 → 25일(시선·직접 이름은 그대로)
 // 메모 한 줄(계좌 · 설정 펼침 안): 첫 줄만 '메모: …'로 보이고 [편집 ›]을 누르면 그 자리에서 입력칸이 열린다(열림은 화면 상태).
 // 입력칸·글자 수·저장 버튼은 기존 id(purchaseMemo·purchaseMemoCount·savePurchaseNote)를 그대로 써서 기존 저장(setText note)을 탄다.
+const clearPurchaseMemoEdit=id=>{editingPurchaseMemos.delete(id);purchaseMemoDrafts.delete(id);}; // 인라인 메모 편집 상태·초안 정리(계획 삭제·계획 창 저장)
 function purchaseMemoLine(it){
   const note=String(it.buyPlan.note||""),editing=editingPurchaseMemos.has(it.id),first=note.split(/\r?\n/).find(t=>t.trim())||"";
   const text=editing&&purchaseMemoDrafts.has(it.id)?purchaseMemoDrafts.get(it.id):note; // 편집 중 다시 그려도(다른 입력의 blur 저장 등) 작성 중 메모를 잃지 않는다
@@ -909,10 +910,12 @@ function openPurchase(id){
   const names=purchaseLineNames(lines),last=names[names.length-1]||start;
   f.lineLastPeriod.value=parseInt(last);f.lineLastUnit.value=plus(lines?.end)?"":movingLineUnit(last);
   f.manualCurrency.value=purchaseDraft.currency||"KRW";
-  f.cardName.value=purchaseDraft.cardName||"";f.note.value=purchaseDraft.note||"";renderDraft();
+  // 인라인 메모 편집 중 쓴 초안(purchaseMemoDrafts)이 있으면 창의 메모 칸을 그 초안으로 시작한다. 창을 저장하면 인라인 편집을 닫고 초안을 지우며, 취소하면 그대로 둔다.
+  const inlineNote=found&&editingPurchaseMemos.has(found.it.id)&&purchaseMemoDrafts.has(found.it.id)?purchaseMemoDrafts.get(found.it.id):null;
+  f.cardName.value=purchaseDraft.cardName||"";f.note.value=inlineNote??purchaseDraft.note??"";renderDraft();
   el("purchaseDelete").hidden=!found;
-  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않고, 그 계획의 반영 기록만 함께 지운다(dropTrades).
-  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;dropTrades(k=>k.startsWith(`buy:${found.it.id}:`));saveSection("allocation");d.close();render();};
+  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않고, 그 계획의 반영 기록만 함께 지운다(dropTrades). 그 종목의 인라인 메모 편집 상태·초안도 지운다.
+  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;clearPurchaseMemoEdit(found.it.id);dropTrades(k=>k.startsWith(`buy:${found.it.id}:`));saveSection("allocation");d.close();render();};
   f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");picker().focus();return;}
     if(!editing&&linkedPlans(item,allocationSummary(doc.allocation,prices)).length){alert("같은 종목의 다른 계좌 줄에 분할매수 계획이 있습니다. 기존 계획을 수정하세요.");return;}
     const draft=purchaseDraft;
@@ -943,7 +946,7 @@ function openPurchase(id){
       delete draft.wait;delete draft.lines;delete draft.buys;delete draft.ladder;if(draft.notify){delete draft.notify.keys;if(!Object.keys(draft.notify).length)delete draft.notify;}
       if(draftCurrency()==="USD"&&draft.stages.some(x=>finite(x.price)!==null))draft.currency="USD";else delete draft.currency;
     }
-    setText(draft,"cardName",f.cardName.value);setText(draft,"note",f.note.value);item.buyPlan=draft;selectPurchase(item.id);saveSection("allocation");d.close();render();};
+    setText(draft,"cardName",f.cardName.value);setText(draft,"note",f.note.value);item.buyPlan=draft;clearPurchaseMemoEdit(item.id);if(editing)clearPurchaseMemoEdit(editing.it.id);selectPurchase(item.id);saveSection("allocation");d.close();render();};
   if(!d.open)d.showModal();
   if(!found&&matchMedia("(hover:hover) and (pointer:fine)").matches)picker().focus();
 }

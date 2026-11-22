@@ -2555,3 +2555,27 @@ test('편집 입력 포커스(blur 전)에서 [＋ 새 분할매수 계획]·메
   assert.equal(b.item.target,36);assert.equal(b.item.buyPlan.note,'작성 중 메모','취소는 저장하지 않음');assert.match(b.html(),/id="purchaseMemoEditor" hidden>/);
   b.element('purchaseMemoEdit').onclick();assert.match(b.html(),/<textarea id="purchaseMemo"[^>]*>작성 중 메모<\/textarea>/,'취소한 초안은 남지 않음');
 });
+test('계획을 삭제하면 그 종목의 인라인 메모 편집 상태·초안을 지워, 같은 종목의 새 계획은 빈 메모·닫힌 편집칸으로 시작한다',()=>{
+  const r=setup();r.element('purchaseAccountToggle').onclick();r.element('purchaseMemoEdit').onclick();
+  const memo=r.element('purchaseMemo');memo.value='옛 계획 초안';memo.oninput();assert.match(r.html(),/id="purchaseMemoEditor">/);
+  r.ctx.confirm=()=>true;r.edit();r.element('purchaseDelete').onclick();assert.equal(r.item.buyPlan,undefined);
+  r.element('addPurchase').onclick();r.element('purchaseItemList').onclick({target:{closest:sel=>sel==='[data-pick]'?{dataset:{pick:'a'}}:null}});assert.equal(r.form.item.value,'a');assert.equal(r.form.note.value,'','새 계획 창의 메모 칸은 빈칸');r.form.lineBudget.value='100';r.alerts.length=0;r.submit();assert.deepEqual(r.alerts,[]);
+  assert.ok(r.item.buyPlan,'같은 종목으로 새 계획');assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false,'새 계획 메모 없음');
+  assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'편집칸 닫힘');assert.doesNotMatch(r.html(),/옛 계획 초안/);
+  r.element('purchaseMemoEdit').onclick();assert.match(r.html(),/<textarea id="purchaseMemo"[^>]*><\/textarea>/,'다시 열어도 빈 메모');
+  // 계획 창을 거치지 않고 같은 종목에 계획이 다시 생겨도(예: 다른 기기 동기화) 옛 편집 상태·초안이 살아나지 않는다.
+  const o=setup(),plan=JSON.stringify(o.item.buyPlan);o.element('purchaseAccountToggle').onclick();o.element('purchaseMemoEdit').onclick();
+  const om=o.element('purchaseMemo');om.value='옛 계획 초안';om.oninput();o.ctx.confirm=()=>true;o.edit();o.element('purchaseDelete').onclick();
+  o.item.buyPlan=JSON.parse(plan);o.render();assert.match(o.html(),/id="purchaseMemoEditor" hidden>/,'동기화로 생긴 계획: 편집칸 닫힘');assert.doesNotMatch(o.html(),/옛 계획 초안/);
+});
+test('인라인 메모 초안이 있으면 계획 수정 창의 메모 칸이 그 초안으로 시작하고, 창 저장은 인라인 편집을 닫고 초안을 지우며, 창 취소는 초안을 남긴다',()=>{
+  const r=setup();r.element('purchaseAccountToggle').onclick();r.element('purchaseMemoEdit').onclick();
+  const memo=r.element('purchaseMemo');memo.value='인라인 초안';memo.oninput();
+  r.edit();assert.equal(r.form.note.value,'인라인 초안','창의 메모 칸이 초안으로 시작');
+  r.element('purchaseDialog').close();r.render();assert.match(r.html(),/id="purchaseMemoEditor">/,'창 취소: 인라인 편집 유지');assert.match(r.html(),/<textarea id="purchaseMemo"[^>]*>인라인 초안<\/textarea>/,'창 취소: 초안 유지');
+  assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false,'취소는 저장하지 않음');
+  r.edit();assert.equal(r.form.note.value,'인라인 초안');r.form.note.value='창에서 쓴 메모';r.submit();
+  assert.equal(r.item.buyPlan.note,'창에서 쓴 메모');assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'창 저장: 인라인 편집 닫힘');assert.match(r.html(),/메모: 창에서 쓴 메모/);
+  r.element('purchaseMemoEdit').onclick();assert.match(r.html(),/<textarea id="purchaseMemo"[^>]*>창에서 쓴 메모<\/textarea>/,'창 저장 뒤 옛 초안 없음');
+  r.edit();assert.equal(r.form.note.value,'창에서 쓴 메모','초안 없이 편집만 열려 있으면 저장된 메모');
+});
