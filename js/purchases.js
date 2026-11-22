@@ -351,6 +351,8 @@ const bpShort=t=>String(t||"").replace(/(\d+)(일|주|월)선$/,"$1$2"); // x축
 // 메모 한 줄(계좌 · 설정 펼침 안): 첫 줄만 '메모: …'로 보이고 [편집 ›]을 누르면 그 자리에서 입력칸이 열린다(열림은 화면 상태).
 // 입력칸·글자 수·저장 버튼은 기존 id(purchaseMemo·purchaseMemoCount·savePurchaseNote)를 그대로 써서 기존 저장(setText note)을 탄다.
 const clearPurchaseMemoEdit=id=>{editingPurchaseMemos.delete(id);purchaseMemoDrafts.delete(id);}; // 인라인 메모 편집 상태·초안 정리(계획 삭제·계획 창 저장)
+// 계획 삭제: 그 종목의 화면 상태(메모 편집·초안, 계좌 펼침·순서 바꾸기·삭제 모드, 완료 회차 펼침)를 모두 지워 같은 종목의 새 계획이 기본 상태로 시작하게 한다.
+const clearPurchaseScreen=id=>{clearPurchaseMemoEdit(id);openPurchaseAccounts.delete(id);sortingPurchaseAccounts.delete(id);openCompletedPurchases.delete(id);if(purchaseAccountDeletingId===id)purchaseAccountDeletingId=null;};
 function purchaseMemoLine(it){
   const note=String(it.buyPlan.note||""),editing=editingPurchaseMemos.has(it.id),first=note.split(/\r?\n/).find(t=>t.trim())||"";
   const text=editing&&purchaseMemoDrafts.has(it.id)?purchaseMemoDrafts.get(it.id):note; // 편집 중 다시 그려도(다른 입력의 blur 저장 등) 작성 중 메모를 잃지 않는다
@@ -588,7 +590,7 @@ function renderPurchases(){
     b.oncontextmenu=e=>{if(timer){e.preventDefault();open();}else if(opened)e.preventDefault();};
   });
   all("[data-purchase-rename]").forEach(b=>b.onclick=()=>openPurchaseName(b.dataset.purchaseRename));
-  all("[data-purchase-edit]").forEach(b=>b.onclick=()=>openPurchase(b.dataset.purchaseEdit));
+  all("[data-purchase-edit]").forEach(b=>bindPurchaseAccountAction(b,()=>openPurchase(b.dataset.purchaseEdit))); // 편집 입력 blur 저장 뒤 최신 기록으로 창을 연다
   all("[data-purchase-note]").forEach(b=>b.onclick=()=>{
     const id=b.dataset.purchaseNote,note=currentNotes.get(id)?.find(n=>n.kind===b.dataset.noteKind);if(!note)return;
     const dialog=el("purchaseNoteDialog");
@@ -914,8 +916,8 @@ function openPurchase(id){
   const inlineNote=found&&editingPurchaseMemos.has(found.it.id)&&purchaseMemoDrafts.has(found.it.id)?purchaseMemoDrafts.get(found.it.id):null;
   f.cardName.value=purchaseDraft.cardName||"";f.note.value=inlineNote??purchaseDraft.note??"";renderDraft();
   el("purchaseDelete").hidden=!found;
-  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않고, 그 계획의 반영 기록만 함께 지운다(dropTrades). 그 종목의 인라인 메모 편집 상태·초안도 지운다.
-  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;clearPurchaseMemoEdit(found.it.id);dropTrades(k=>k.startsWith(`buy:${found.it.id}:`));saveSection("allocation");d.close();render();};
+  // 계획 삭제는 실제 체결로 바뀐 자산 보유량을 되돌리지 않고, 그 계획의 반영 기록만 함께 지운다(dropTrades). 그 종목의 화면 상태도 지운다(clearPurchaseScreen).
+  el("purchaseDelete").onclick=()=>{if(!confirm(`'${found.it.name}' 분할매수 계획과 체결 기록을 삭제할까요?`))return;delete found.it.buyPlan;clearPurchaseScreen(found.it.id);dropTrades(k=>k.startsWith(`buy:${found.it.id}:`));saveSection("allocation");d.close();render();};
   f.onsubmit=e=>{e.preventDefault();const item=pickedItem()?.it;if(!item){alert("분할매수할 종목을 고르세요.");picker().focus();return;}
     if(!editing&&linkedPlans(item,allocationSummary(doc.allocation,prices)).length){alert("같은 종목의 다른 계좌 줄에 분할매수 계획이 있습니다. 기존 계획을 수정하세요.");return;}
     const draft=purchaseDraft;

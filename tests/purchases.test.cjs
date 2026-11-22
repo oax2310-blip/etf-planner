@@ -2579,3 +2579,26 @@ test('인라인 메모 초안이 있으면 계획 수정 창의 메모 칸이 �
   r.element('purchaseMemoEdit').onclick();assert.match(r.html(),/<textarea id="purchaseMemo"[^>]*>창에서 쓴 메모<\/textarea>/,'창 저장 뒤 옛 초안 없음');
   r.edit();assert.equal(r.form.note.value,'창에서 쓴 메모','초안 없이 편집만 열려 있으면 저장된 메모');
 });
+test('계획을 삭제하면 계좌 펼침·순서 바꾸기·완료 회차 펼침도 지워, 같은 종목의 새 계획(창으로 만들거나 동기화로 복원)은 기본 상태로 시작한다',()=>{
+  const opts={budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}};
+  const arm=r=>{r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3});r.render();
+    const box=r.inputs('[data-purchase-buy]')[0];box.checked=true;box.onchange();const fold=r.inputs('[data-purchase-fold]')[0];fold.querySelector=()=>({});fold.onclick();r.render();
+    r.element('purchaseAccountToggle').onclick();r.element('purchaseAccountSort').onclick();
+    assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'true');assert.doesNotMatch(r.html(),/hide-completed/,'완료 회차 펼침');
+    r.ctx.confirm=()=>true;r.edit();r.element('purchaseDelete').onclick();assert.equal(r.item.buyPlan,undefined);};
+  const fresh=r=>{assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/,'계좌 상자 접힘');assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'순서 바꾸기 버튼 없음(접힘)');
+    r.element('purchaseAccountToggle').onclick();assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'false','펼쳐도 순서 바꾸기 꺼짐');assert.match(r.html(),/class="bp-acc-ctrl" hidden><button[^>]*data-purchase-direction=/,'우선순위 화살표 숨김');assert.doesNotMatch(r.html(),/class="bp-acc-ctrl"><button[^>]*data-purchase-direction=/);};
+  const sync=setup(opts),plan=JSON.stringify(sync.item.buyPlan);arm(sync);sync.item.buyPlan=JSON.parse(plan);sync.render();fresh(sync);
+  const box=sync.inputs('[data-purchase-buy]')[0];box.checked=true;box.onchange();assert.match(sync.html(),/hide-completed/,'완료 회차 접힘으로 시작');
+  const made=setup(opts);arm(made);made.element('addPurchase').onclick();made.element('purchaseItemList').onclick({target:{closest:sel=>sel==='[data-pick]'?{dataset:{pick:'a'}}:null}});
+  made.form.lineBudget.value='100';made.alerts.length=0;made.submit();assert.deepEqual(made.alerts,[]);assert.ok(made.item.buyPlan,'창으로 새 계획');fresh(made);
+});
+test('편집 입력 포커스(blur 전)에서 [계획 수정]을 눌러도 입력 저장 뒤 계획 수정 창을 한 번에 연다',()=>{
+  for(const [selector,value] of [['[data-purchase-target]',33],['[data-purchase-buy-shares]',1]]){
+    const r=setup();r.element('purchaseAccountToggle').onclick();const dialog=r.element('purchaseDialog');dialog.open=false;
+    const button=r.inputs('[data-purchase-edit]').find(x=>r.element('buysView').contains(x));assert.ok(button,'[계획 수정]');
+    tapFocusedPurchaseEdit(r,button,selector,value);
+    if(selector==='[data-purchase-target]')assert.equal(r.item.target,33,'목표 저장');else assert.equal(r.item.buyPlan.buys.end.shares,1,'체결 수량 저장');
+    assert.equal(dialog.open,true,'계획 수정 창 열림');assert.equal(r.element('purchaseTitle').textContent,'분할매수 계획 수정');
+  }
+});
