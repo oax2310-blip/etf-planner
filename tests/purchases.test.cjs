@@ -578,22 +578,22 @@ test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코�
 });
 test('분할매수 제목: 이름 끝 괄호는 꼬리표로 보이고 목록·자산 종목 이름은 그대로 둔다',()=>{
   const r=setup();r.item.name='테스트 종목(연저펀)';const before=JSON.stringify(r.doc);r.render();
-  assert.match(r.html(),/<h1[^>]*>테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/h1>/);
+  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/);
   assert.match(r.html(),/<strong>테스트 종목\(연저펀\)<\/strong>/,'목록 카드는 전체 이름');
   assert.equal(JSON.stringify(r.doc),before,'화면 표시만 바꾸고 기록은 그대로');
 });
 test('분할매수 제목·목록 카드·이름 창은 매수 우선순위 첫 종목(매수 반영 대상) 이름을 따르고 카드 이름·기록은 그대로 둔다',()=>{
   const r=setup();r.item.name='테스트 종목(연저펀)';const {move}=linkedAccounts(r);r.doc.allocation.groups[1].items[0].name='테스트 종목(ISA)';r.render();
   const card=()=>/data-purchase-select="a"[^>]*>(.*?)<\/button>/.exec(r.html())?.[1]||'';
-  assert.match(r.html(),/<h1[^>]*>테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/h1>/,'순서를 바꾸지 않으면 계획을 둔 종목');
+  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'순서를 바꾸지 않으면 계획을 둔 종목');
   const items=()=>JSON.stringify(r.doc.allocation.groups.flatMap(g=>g.items.map(({buyPlan,...it})=>it))),before=items();move('b',-1);
-  assert.match(r.html(),/<h1[^>]*>테스트 종목 <span class=\"title-tag\">ISA<\/span><\/h1>/,'매수 반영 대상이 바뀌면 제목도');
+  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">ISA<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'매수 반영 대상이 바뀌면 제목도');
   assert.match(r.html(),/aria-label="테스트 종목\(ISA\) 분할매수 계획 수정"/);assert.match(card(),/<strong>테스트 종목\(ISA\)<\/strong>/,'목록 카드도 같은 이름');
   r.input('[data-purchase-rename]').onclick();assert.equal(r.names.at(-1).name,'테스트 종목(ISA)','이름 창의 기본 이름도 같은 종목');
   assert.equal(r.item.name,'테스트 종목(연저펀)');assert.equal(items(),before,'자산 종목 이름·보유량은 그대로');assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c'],'저장은 화살표의 순서뿐');
   r.item.buyPlan.cardName='내 카드';r.render();assert.match(card(),/<strong>내 카드<\/strong>.*<span class="plan-title">테스트 종목\(ISA\)<\/span>/,'카드 이름이 있으면 아래 줄에 반영 대상 종목 이름');
-  assert.match(r.html(),/<h1[^>]*>테스트 종목 <span class=\"title-tag\">ISA<\/span><\/h1>/,'제목은 카드 이름이 아니라 종목 이름');
-  move('a',-1);delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1[^>]*>테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/h1>/,'화살표로 되돌리면 원래 종목');
+  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">ISA<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'제목은 카드 이름이 아니라 종목 이름');
+  move('a',-1);delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'화살표로 되돌리면 원래 종목');
 });
 test('분할매수 요약 카드: 현재가 옆에 다음 회차까지 %를, 제목 줄에 완료/전체 회차(부분 체결 개수 따로)를 두고 매수대기는 기존 시세 줄을 쓴다',()=>{
   const price=r=>(r.html().match(/<div class="bp-price">.*?<\/div>/)||[''])[0];
@@ -848,7 +848,7 @@ test('요약 카드: 진행 막대는 완료와 도달·부분 체결을 이어 
   assert.match(card(r),/<strong class="bp-now">₩9000<\/strong><span class="bp-next">다음 25일선 1차 \+11\.1%<\/span>/);
   assert.match(card(r),/<div class="bp-bar" role="img" aria-label="4회 중 0회 완료"><i class="" style="width:0\.00%"><\/i><\/div>/);
   assert.match(card(r),countText(0,4));assert.doesNotMatch(card(r),/bp-due|buy-track-note|data-purchase-act/);
-  assert.doesNotMatch(r.html(),/계산 요약|purchase-summary|남은 매수 금액|class="card panel memo"/,'돌파 계획은 계산 요약·메모 카드 없이 계좌 펼침 안 메모 줄만 둔다');assert.match(r.html(),/<div class="bp-memo"><span class="bp-memo-text empty">메모 없음<\/span>/);
+  assert.doesNotMatch(r.html(),/계산 요약|purchase-summary|남은 매수 금액|class="card panel memo"/,'돌파 계획은 계산 요약·메모 카드 없이 계좌 펼침 안 메모 줄만 둔다');assert.match(r.html(),/<div class="bp-memo"><span class="bp-memo-text is-empty">메모 없음<\/span>/);
   const before=JSON.stringify(r.doc);r.prices.stocks['111111'].close=12500;r.render();
   assert.match(card(r),/<span class="bp-badge due"><i class="bp-pulse"><\/i>도달 2회 · 미체결<\/span>/);
   assert.match(card(r),/aria-label="4회 중 0회 완료, 도달 2회"><i class="warm" style="width:50\.00%;--edge:0\.0%"><\/i>/,'도달 2회만큼 따뜻한 구간');
@@ -2608,7 +2608,7 @@ test('곡선 카드: 횡보형(같은 기준가) 다회차는 누적 평단의 �
   for(const {opts,n,price,shares} of cases){
     const r=setup(opts);r.item.buyPlan.stages=Array.from({length:n},(_,i)=>({id:`s${i}`,price,shares,amount:price*shares*1400/1e4}));if(opts.currency==='USD')r.item.buyPlan.currency='USD';r.render();const html=r.html();
     const line=ys(html,'bp-line'),avg=ys(html,'bp-avg');assert.ok(avg.length,`${n}회차: 평단 곡선`);
-    for(const y of [...line,...avg])assert.equal(y.toFixed(1),'114.0',`${price}×${n}회차: y ${y}`);
+    for(const y of [...line,...avg])assert.equal(y.toFixed(1),'91.0',`${price}×${n}회차: y ${y}`);
     const ty=Number(html.match(/<g class="bp-tip[^"]*"><rect x="[\d.]+" y="(-?[\d.]+)"/)[1]);assert.ok(ty>=0,`말풍선 y ${ty} ≥ 0`);
   }
 });
@@ -2672,4 +2672,29 @@ test('좁은 폭·고액: 현재가 줄·완료 상자 칸·계좌 상자 맨 �
   assert.match(css,/\.bp-acc-sum\{[^}]*flex-wrap:wrap;/);assert.match(css,/\.bp-acc-sum-r\{display:inline-flex;[^}]*white-space:nowrap\}/);
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
   assert.match(r.html(),/<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain"[^>]*>\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span>/,'손익 금액·손익률 한 묶음');
+});
+test('모바일: 저장된 계획 목록은 종목 이름(▾) 안으로 들어가, 이름을 누르면 펼치고 계획 선택·바깥 탭으로 닫으며 PC에서는 옆 목록으로 초점을 옮긴다',()=>{
+  const r=setup();r.doc.allocation.groups[0].items.push({id:'k',name:'다른 종목',ticker:'222222',shares:1,buyPlan:{stages:[{id:'s',price:100,shares:1,amount:0.01}]}});r.render();
+  const layout=()=>r.html().match(/<div class="layout([^"]*)">/)[1],toggle=()=>r.element('purchasePlansToggle');
+  assert.match(r.html(),/<h1 class="bp-name"><button class="bp-title-btn" type="button" id="purchasePlansToggle" data-purchase-plans aria-expanded="false" aria-controls="purchasePlans"><span class="bp-title-text">테스트 종목<\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/);
+  assert.match(r.html(),/<aside class="side card" id="purchasePlans"/);assert.equal(layout(),' has-plans','계획이 있으면 모바일에서 옆 목록을 숨김(CSS)');
+  const before=JSON.stringify(r.doc);let focused=null;for(const b of r.inputs('[data-purchase-select]'))b.focus=()=>{focused=b.dataset.purchaseSelect;};
+  toggle().onclick();assert.equal(layout(),' has-plans','PC: 목록을 펼치지 않음');assert.equal(focused,'a','PC: 옆 목록의 선택된 계획으로 초점');
+  r.ctx.matchMedia=()=>({matches:true});toggle().onclick();assert.equal(layout(),' has-plans plans-open','모바일: 이름 아래로 펼침');assert.equal(toggle().getAttribute('aria-expanded'),'true');
+  assert.ok(r.element('purchasePlansBackdrop').onclick,'바깥 배경');r.element('purchasePlansBackdrop').onclick();assert.equal(layout(),' has-plans','바깥 탭으로 닫힘');
+  toggle().onclick();r.inputs('[data-purchase-select]').find(x=>x.dataset.purchaseSelect==='k').onclick();assert.equal(layout(),' has-plans','계획을 고르면 닫힘');assert.match(r.html(),/data-purchase-select="k"[^>]*aria-pressed="true"/);
+  toggle().onclick();toggle().onclick();assert.equal(layout(),' has-plans','다시 누르면 닫힘');
+  assert.equal(JSON.stringify(r.doc),before,'목록 열고 닫기는 기록을 바꾸지 않음');
+  const w=setup({wait:'25개월선'});assert.match(w.html(),/<div class="title-row"><h1><button class="bp-title-btn"[^>]*id="purchasePlansToggle"/,'매수대기 제목도 같은 버튼');
+  const empty=setup();delete empty.item.buyPlan;empty.render();assert.doesNotMatch(empty.html(),/has-plans/,'계획이 없으면 옆 목록(＋ 추가)을 그대로 보임');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
+  assert.match(css,/@media\(max-width:700px\)\{#buysView \.layout\.has-plans\{position:relative\}#buysView \.layout\.has-plans>\.side\{display:none\}/);
+  assert.match(css,/#buysView \.layout\.plans-open>\.side\{display:block;position:absolute;/);assert.match(css,/@media\(min-width:701px\)\{\.bp-dd\{display:none\}/);
+});
+test('계좌 목록은 음각 상자 밖(요약 카드 폭)에 펼치고, 메모 없음은 전역 .empty와 겹치지 않는 클래스를 쓰며, 곡선은 낮은 높이(viewBox 360×150)로 그린다',()=>{
+  const r=setup();r.element('purchaseAccountToggle').onclick();
+  assert.match(r.html(),/<div class="bp-acc"><div class="bp-acc-main">[\s\S]*?<\/button><\/div><\/div><div class="bp-acc-drawer" id="purchaseAccountDrawer">/,'상자에는 맨 윗줄만');
+  assert.match(r.html(),/<span class="bp-memo-text is-empty">메모 없음<\/span>/);assert.doesNotMatch(r.html(),/class="(?:[^"]*\s)?empty(?:\s[^"]*)?">메모 없음/,'전역 .empty 클래스 없음');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/\.bp-memo-text\.is-empty\{/);
+  const c=setup({budget:100,end:null,names:['25일선','32일선'],price:9000,ma:{'25일선':10000,'32일선':16000}});assert.match(c.html(),/<svg class="bp-svg" viewBox="0 0 360 150"/);
 });
