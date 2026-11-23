@@ -897,6 +897,25 @@ test('분할매수 시세 대기에도 전체 알림을 켜 두면 시세 도착
   const [off]=r.inputs('[data-purchase-alert-all]');assert.equal(off.getAttribute('aria-checked'),'true');assert.equal(off.dataset.on,'off');off.onclick();assert.equal(r.rules().length,0);
 });
 
+for(const manual of [false,true])test(`분할매수 전체 알림은 ${manual?'직접 입력':'이동평균선 돌파'}의 미완료 회차 알림에 맞춘다`,()=>{
+  const r=setup({manual,budget:60,end:17000,names:['25일선','32일선'],ma:{'25일선':10000,'32일선':16000}});
+  if(manual){r.item.buyPlan.stages.push({id:'s2',price:16000,shares:8,amount:12.8});r.render();}
+  const toggle=()=>r.input('[data-purchase-alert-all]');
+  toggle().onclick();
+  assert.equal(toggle().getAttribute('aria-checked'),'true');
+  const count=r.rules().length;assert.ok(count>1);
+  r.change('[data-purchase-alert]',false);
+  assert.equal(r.item.buyPlan.notify.stages,true);
+  assert.equal(r.rules().length,count-1);
+  assert.equal(toggle().getAttribute('aria-checked'),'false');
+  assert.equal(toggle().dataset.on,'on');
+  toggle().onclick();assert.equal(r.rules().length,count);
+  assert.equal(toggle().getAttribute('aria-checked'),'true');
+  r.change('[data-purchase-alert]',false);
+  r.change(manual?'[data-purchase-done]':'[data-purchase-buy]',true);
+  assert.equal(toggle().getAttribute('aria-checked'),'true','완료 회차의 알림은 전체 표시에서 제외');
+});
+
 test('비트코인(BTC-USD) 이동평균선 돌파: 시선 없이 일선·주선·월선으로 나누고 0.00000001 BTC 단위·달러 알림을 만들며 매수대기는 막는다',()=>{
   const ma={'25일선':70000,'32일선':72000,'25주선':80000,'25개월선':90000};
   const r=setup({bitcoin:true,currency:'USD',price:60000,ma,budget:1000,end:null,names:['25일선']}),other={id:'k',name:'국내 종목',ticker:'111111',shares:1};

@@ -516,7 +516,8 @@ function renderPurchases(){
     const done=rows.filter(r=>r.done).length, lastDone=rows.filter(r=>r.done).at(-1), completedOpen=openCompletedPurchases.has(it.id);
     // 시세 대기·회차 간격 안내는 계획 진행 카드 아래쪽에 둔다(계산 요약 카드는 두지 않음).
     const waits=currentNotes.get(it.id);
-    const alertsOn=alertable&&purchaseAlertOn(plan);
+    const alertRows=open.filter(r=>r.price>0&&(!r.line||r.plannedShares!==0));
+    const alertsOn=alertable&&(alertRows.length?alertRows.every(r=>purchaseAlertOn(plan,r.line||r.stage)):purchaseAlertOn(plan));
     const alertLine=`<button class="purchase-alert-switch" type="button" role="switch" aria-label="분할매수 전체 알림" aria-checked="${alertsOn}" ${alertable?`data-purchase-alert-all="${id}" data-on="${alertsOn?"off":"on"}"`:`disabled title="휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다"`}>알림</button>`;
     // 새 체결이 들어갈 회차(미체결 → 없으면 부분 체결 → 모두 완료면 전체)의 계좌·ETF가 같으면 회차 위에 표시한다.
     // 보유는 새 체결이 반영될 계좌의 현재 수량·평가액을 읽기만 한다.
