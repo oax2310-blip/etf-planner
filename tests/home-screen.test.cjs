@@ -30,12 +30,15 @@ test('홈 화면 앱은 전체화면으로 열고 미지원 환경에서는 독�
 });
 
 test('앱 ID는 프로젝트 시작 주소를 쓰며 같은 출처의 다른 Pages 앱과 겹치지 않는다', () => {
+  const href = tags(read(pages[0]), 'link').find(tag => tag.rel === 'manifest').href;
   for (const prefix of ['/etf-planner/', '/preview/etf-planner/']) {
-    const start = new URL(manifest.start_url, `https://example.test${prefix}manifest.webmanifest`);
+    const base = new URL(href, `https://example.test${prefix}`);
+    const start = new URL(manifest.start_url, base);
     // 명시한 id는 manifest 폴더가 아닌 출처 루트에 상대적이다. 생략하면 start_url이 ID다.
     const identity = manifest.id === undefined ? start : new URL(manifest.id, start.origin);
-    assert.equal(identity.href, start.href);
-    assert.notEqual(identity.pathname, '/');
+    assert.equal(identity.href, `https://example.test${prefix}`);
+    assert.equal(start.href, identity.href);
+    assert.equal(new URL(manifest.scope, base).href, identity.href);
   }
 });
 
@@ -67,9 +70,13 @@ test('프로젝트 하위 경로에서도 세 화면·알림 링크는 앱 안�
 });
 
 test('세 화면 모두 CSP가 허용한 같은 설치 정보를 읽고 iOS 앱 모드를 제공한다', () => {
+  const manifestHrefs = new Set();
   for (const name of pages) {
     const html = read(name), links = tags(html, 'link'), metas = tags(html, 'meta');
-    assert.deepEqual(links.filter(tag => tag.rel === 'manifest').map(tag => tag.href), ['manifest.webmanifest'], name);
+    const manifestLinks = links.filter(tag => tag.rel === 'manifest');
+    assert.equal(manifestLinks.length, 1, name);
+    assert.match(manifestLinks[0].href, /^manifest\.webmanifest\?v=\d+$/, name);
+    manifestHrefs.add(manifestLinks[0].href);
     const policy = Object.fromEntries(metas.find(tag => tag['http-equiv'] === 'Content-Security-Policy').content
       .split(';').map(s => s.trim().split(/\s+/)).map(([key, ...values]) => [key, values]));
     assert.deepEqual(policy['manifest-src'], ["'self'"], `${name}: 기본 차단 CSP에서 설치 정보만 같은 출처로 허용`);
@@ -79,6 +86,7 @@ test('세 화면 모두 CSP가 허용한 같은 설치 정보를 읽고 iOS 앱 
     assert.deepEqual(metas.filter(tag => tag.name === 'apple-mobile-web-app-status-bar-style').map(tag => tag.content), ['default'], `${name}: 상태 막대와 본문이 겹치지 않음`);
     assert.deepEqual(links.filter(tag => tag.rel === 'apple-touch-icon').map(tag => [tag.href, tag.sizes]), [['icons/apple-touch-icon.png', '180x180']], name);
   }
+  assert.equal(manifestHrefs.size, 1, '세 화면이 같은 매니페스트 버전을 읽는다');
 });
 
 for (const name of pages) test(`안전 영역: ${name}은 카메라 영역까지 viewport를 확장한다`, () => {
