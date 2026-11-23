@@ -411,16 +411,18 @@
 }
 #purchaseTable .purchase-row.line{--check-round:82px}
 #purchaseTable:not(.btc) .purchase-row{
-  grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(0,.65fr) minmax(38px,.65fr) 32px minmax(44px,.65fr);
+  grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(50px,.65fr) minmax(38px,.65fr) 32px minmax(44px,.65fr);
 }
-#purchaseTable:not(.btc) .purchase-row.done,#purchaseTable.no-alert:not(.btc) .purchase-row{
+#purchaseTable.no-alert:not(.btc) .purchase-row{
   grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(0,.65fr) minmax(38px,.65fr) minmax(44px,.65fr);
 }
+/* BTC 수량 칸은 부분 체결의 '남은'과 소수 8자리를 한 줄에 담는다. */
 #purchaseTable.btc .purchase-row{
-  grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(86px,.85fr) 32px minmax(44px,.65fr);
+  column-gap:6px;
+  grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(96px,.85fr) 32px minmax(44px,.65fr);
 }
-#purchaseTable.btc.no-alert .purchase-row,#purchaseTable.btc .purchase-row.done{
-  grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(86px,.85fr) minmax(44px,.65fr);
+#purchaseTable.btc.no-alert .purchase-row{
+  grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(96px,.85fr) minmax(44px,.65fr);
 }
 #purchaseTable.hide-completed .purchase-row.done:not(.last-done),#purchaseTable .purchase-row.done>.purchase-alert{display:none}
 #purchaseTable .purchase-row>.check{min-width:0;gap:5px;font-size:12px}
@@ -439,6 +441,7 @@
 }
 #purchaseTable .purchase-alert .trade-alert-toggle{padding:0;border:0;background:none}
 #purchaseTable .purchase-row>.status{
+  grid-column:-2/-1;
   display:flex;justify-content:flex-end;align-items:center;gap:6px;justify-self:stretch;
   padding:0;background:none;font-size:10.5px;
 }
