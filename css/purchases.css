@@ -267,7 +267,7 @@
 .bp-acc{position:relative;display:flex;flex-direction:column;gap:0;margin-top:2px;padding:6px 9px 6px 12px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
 .bp-acc-main{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .bp-acc-sum{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 3px;overflow-wrap:anywhere}
-/* 보유 라벨은 평가액의 첫 줄과 함께 두고, 긴 평가액은 묶음 안에서 줄을 넘긴다. */
+/* 긴 평가액은 평가액 묶음 안에서 줄을 넘긴다. */
 .bp-acc-value{display:inline-flex;align-items:baseline;gap:3px;min-width:0;max-width:100%}.bp-acc-value b{min-width:0}
 /* 손익은 묶음째 줄을 넘기고, 묶음이 가용 폭보다 길면 금액과 손익률 사이에서도 줄을 넘긴다. */
 .bp-acc-sum-r{display:inline-flex;flex-wrap:wrap;min-width:0;max-width:100%;align-items:baseline;gap:1px 3px}.bp-acc-sum>small{margin-right:4px} /* 묶음 앞 간격은 비율 쪽 여백으로 둬 넘긴 줄이 왼쪽에 맞는다 */
@@ -275,7 +275,9 @@
 .bp-acc-sum small{font-size:11px;font-weight:600;color:var(--text-2)}
 .bp-acc-sum .profit-gain,.bp-acc-pl .profit-gain{color:var(--bp-red)}.bp-acc-sum .profit-loss,.bp-acc-pl .profit-loss{color:var(--bp-loss)}
 .bp .bp-acc-toggle{display:flex;flex-wrap:wrap;align-items:baseline;align-content:center;min-height:32px;margin:0;padding:0;border:0;border-radius:0;background:none;color:var(--text);text-align:left;-webkit-tap-highlight-color:transparent}
+.bp-acc-toggle .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .bp .bp-acc-toggle::after{content:"";position:absolute;inset:0;border-radius:16px} /* 음각 상자 전체를 누를 자리로 */
+.bp-acc-sum-pl{position:relative;z-index:1} /* 합산 손익의 title 툴팁이 뜨도록 덮개 위에 둔다. */
 .bp-acc:has(.bp-acc-toggle:focus-visible){outline:2px solid var(--accent);outline-offset:2px}.bp .bp-acc-toggle:focus-visible{outline:0}
 .bp .bp-acc-toggle:active::after{background:rgba(128,128,128,.08)}
 .bp .bp-acc-sort{position:relative;z-index:1;flex:none;width:32px;min-height:32px;padding:0;border-radius:11px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text-2);font-size:14px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
