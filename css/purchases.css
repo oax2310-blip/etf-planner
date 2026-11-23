@@ -230,7 +230,7 @@
 @media(min-width:701px){.bp-plans-backdrop{display:none}}
 .bp-count{flex:none;font-size:13.5px;font-weight:600;color:var(--bp-blue-2);white-space:nowrap}.bp-count.done{color:var(--bp-mint)}.bp-count small{font-size:12px;color:var(--text-3);font-weight:500}
 .bp-price{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 10px;margin-top:-2px} /* 좁은 폭·고액에서 배지가 넘치면 아래 줄로 */
-.bp-now{font-size:31px;font-weight:800;letter-spacing:-.03em;line-height:1.1;white-space:nowrap}
+.bp-now{min-width:0;max-width:100%;font-size:31px;font-weight:800;letter-spacing:-.03em;line-height:1.1;overflow-wrap:anywhere}
 .bp-next{font-size:14px;font-weight:600;color:var(--bp-blue-2);letter-spacing:-.02em;white-space:nowrap}
 .bp-badge{align-self:center;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap}
 .bp-badge.due{background:color-mix(in srgb,var(--bp-orange) 15%,transparent);color:var(--bp-orange)}.bp-badge.ok{background:color-mix(in srgb,var(--bp-mint) 16%,transparent);color:var(--bp-mint)}.bp-badge.muted{background:var(--surface-2);color:var(--text-3)}
@@ -266,8 +266,9 @@
 /* 계좌 줄(음각)과 펼침 목록 */
 .bp-acc{display:flex;flex-direction:column;gap:0;margin-top:3px;padding:9px 9px 9px 13px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
 .bp-acc-main{display:flex;align-items:center;justify-content:space-between;gap:6px}
-.bp-acc-sum{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 3px;white-space:nowrap;overflow:hidden} /* 손익 묶음이 들어가지 않으면 묶음째 다음 줄로(잘리지 않게) */
-.bp-acc-sum-r{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap}.bp-acc-sum>small{margin-right:4px} /* 묶음 앞 간격은 비율 쪽 여백으로 둬 넘긴 줄이 왼쪽에 맞는다 */
+.bp-acc-sum{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 3px;overflow-wrap:anywhere}
+/* 손익은 묶음째 줄을 넘기고, 묶음이 가용 폭보다 길면 금액과 손익률 사이에서도 줄을 넘긴다. */
+.bp-acc-sum-r{display:inline-flex;flex-wrap:wrap;max-width:100%;align-items:baseline;gap:1px 3px}.bp-acc-sum>small{margin-right:4px} /* 묶음 앞 간격은 비율 쪽 여백으로 둬 넘긴 줄이 왼쪽에 맞는다 */
 .bp-acc-sum b,.bp-acc-sum .bp-acc-sum-pl{font-size:14px;font-weight:700;letter-spacing:-.02em}
 .bp-acc-sum small{font-size:11px;font-weight:600;color:var(--text-2)}
 .bp-acc-sum .profit-gain,.bp-acc-pl .profit-gain{color:var(--bp-red)}.bp-acc-sum .profit-loss,.bp-acc-pl .profit-loss{color:var(--bp-loss)}
