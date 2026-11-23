@@ -370,7 +370,7 @@ function purchaseAccountBox({g,it},s){
   const deleteMode=purchaseAccountDeletingId===it.id,sortMode=!deleteMode&&sortingPurchaseAccounts.has(it.id),open=deleteMode||openPurchaseAccounts.has(it.id);
   const parts=r=>stockNames.titleParts(r.it.name),qty=r=>infos.get(r.it.id).quantityText.replace(/^보유 /,"");
   const sum=allocLink.holdingsProfit(ordered.map(r=>r.it),s.fx),sumRate=bpRound1(sum?.rate??null),sumTone=sumRate>0?"profit-gain":sumRate<0?"profit-loss":""; // 금액은 alloc-link가 0.1만원으로 반올림한 값
-  const top=ordered.length?`<b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small></span>`:""}`:"<b>연결된 계좌 없음</b>";
+  const top=ordered.length?`<span class="bp-acc-value"><small class="bp-acc-label">보유</small><b>${total.valueText}</b></span><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small></span>`:""}`:"<b>연결된 계좌 없음</b>";
   const profitOf=p=>{if(!p)return "";
     return `<div class="bp-acc-pl">${p.amountText?`<b class="${p.amountTone}">${p.amountText}</b>`:`<b class="bp-muted">${p.status}</b>`}${p.rateText?`<small class="${p.rateTone}">${p.rateText}</small>`:""}</div>`;};
   const rows=ordered.map((r,j)=>{
@@ -387,15 +387,16 @@ function purchaseAccountBox({g,it},s){
 }
 // 누적 평단(화면 전용 예상값, 기록·알림 계산에 쓰지 않음): 회차표 순서로 체결 수량×체결가(execPrice → tradePrice → price)와
 // 남은 계획 수량×기준가를 더해 나눈다. 실제 매수 코드가 계획 코드와 다른 회차가 있거나(가격 단위가 달라짐) 계획 수량을 모르거나, 체결·완료 회차의 체결 수량을 모르면 null.
-// now는 체결분만의 평단, at[i]는 i번째 회차까지의 예상 평단, end는 마지막 회차까지의 예상 평단.
-function purchaseAverages(rows,execOf,otherTicker){
+// now는 체결분만의 평단, at[i]는 i번째 회차까지의 예상 평단, end는 마지막 회차까지의 예상 평단. usedRef는 체결분에 기준가가 포함됐는지(저장하지 않는 표시 정보).
+function purchaseAverages(rows,execOf,otherTicker,refOf){
   if(!rows.length||rows.some(r=>otherTicker(r)||r.plannedShares===null&&!r.done||(r.recorded||r.done)&&!(r.shares>0)||!(r.price>0)))return null;
-  let cost=0,qty=0,fillCost=0,fillQty=0;const at=[];
+  let cost=0,qty=0,fillCost=0,fillQty=0,usedRef=false;const at=[];
   for(const r of rows){
-    const filled=r.recorded?Math.max(0,r.shares||0):0,left=r.done?0:Math.max(0,(r.plannedShares??0)-filled),exec=execOf(r)??r.price;
+    const filled=r.recorded?Math.max(0,r.shares||0):0,left=r.done?0:Math.max(0,(r.plannedShares??0)-filled),actualExec=execOf(r),exec=actualExec??r.price;
+    if(filled>0&&(actualExec===null||actualExec===undefined||refOf?.(r)))usedRef=true;
     cost+=filled*exec+left*r.price;qty+=filled+left;fillCost+=filled*exec;fillQty+=filled;at.push(qty>0?cost/qty:null);
   }
-  return {at,end:qty>0?cost/qty:null,now:fillQty>0?fillCost/fillQty:null,filled:fillQty};
+  return {at,end:qty>0?cost/qty:null,now:fillQty>0?fillCost/fillQty:null,filled:fillQty,usedRef};
 }
 // 곡선 카드(이평선·회차 기준가): 이동평균선 돌파는 선(단계)마다 점 하나(목표가는 따로), 직접 입력은 회차마다 점 하나를 회차표 순서로 같은 간격에 둔다.
 // 강조 회차(부분 체결 → 도달 미체결 → 다음)가 든 묶음은 그 회차 가격을 점으로 쓰고 나머지는 묶음의 첫 회차. 기준가가 있는 점이 둘보다 적으면 카드를 만들지 않는다.
@@ -566,8 +567,11 @@ function renderPurchases(){
     // 요약 카드(제목·현재가·진행 막대·체결 대기/완료 상자·계좌) → 곡선 카드 → 메모 → 회차표 → 하단 버튼. 화면 표시만 하며 기록에 필드를 만들지 않는다.
     // 강조 회차는 부분 체결 → 도달 미체결 → 다음 회차 순. 하단 주 버튼과 체결 대기 상자의 [체결]은 그 회차 체크박스와 같은 fillShares 경로를 탄다.
     const complete=p.count>0&&p.done===p.count,focus=partialRows[0]||dueRows[0]||next||null,pctDone=p.count?Math.round(p.done/p.count*100):0;
-    const execOf=r=>{const b=r.line?purchaseBuys(plan)[r.line.key]:r.stage;return r.recorded?finite(b?.execPrice??execBase(b)):null;};
-    const avg=rows.length&&!mixedTickers?purchaseAverages(rows,execOf,r=>otherCode(it,r.tradeTicker)):null;
+    const recordOf=r=>r.line?purchaseBuys(plan)[r.line.key]:r.stage;
+    const execOf=r=>r.recorded?finite(recordOf(r)?.execPrice??execBase(recordOf(r))):null;
+    // execOf는 저장된 기준가(price)도 반환한다. 실제 체결가·매수 가격 없이 기준가만 남은 기록도 안내하되 계산은 그대로 둔다.
+    const refOf=r=>finite(recordOf(r)?.execPrice??recordOf(r)?.tradePrice)===null;
+    const avg=rows.length&&!mixedTickers?purchaseAverages(rows,execOf,r=>otherCode(it,r.tradeTicker),refOf):null;
     const blockedOf=r=>r.plannedShares===null||!r.recorded&&(!(r.plannedShares>0)||!(r.price>0)||!r.tradeTicker&&cur==="USD"&&!s.fx&&!(r.stage?.amount>0))||!!r.targetId&&!r.found&&!r.done&&!followsLead(r,trade.target); // 회차표 체크박스(row)의 blocked·missingTarget과 같은 조건
     const isWarn=r=>!r.done&&(r.recorded||due(r)),label=r=>escA(movingLineText(r.label)),parts=purchaseTargetParts({g,it},s,q),stamp=q?priceStamp(q):"";
     const badge=complete?'<span class="bp-badge ok">✓ 매수 완료</span>':dueRows.length?`<span class="bp-badge due"><i class="bp-pulse"></i>도달 ${dueRows.length}회 · 미체결</span>`:nextGap?`<span class="bp-next">다음 ${escA(movingLineText(next.label))} ${nextGap.text}</span>`:`<span class="bp-badge muted">${status}</span>`;
@@ -577,9 +581,9 @@ function renderPurchases(){
     const gapOf=r=>{const g=Math.abs((now/r.price-1)*100);return Math.round(g*10)===0?"기준가와 같음":`${up?"+":"−"}${nf1.format(g)}% ${up?"위":"아래"}`;}; // 소수 첫째 자리에서 0이면 부호 없이
     const dueBox=dueRows.length?(()=>{const sum=dueRows.reduce((n,r)=>n+(r.plannedShares||0),0),amtOf=r=>r.fill?.actual>0?r.fill.actual:r.amount>0?r.amount:null,amt=dueRows.every(r=>amtOf(r)!==null)?dueRows.reduce((n,r)=>n+amtOf(r),0):null; // 반영 예정액, 없으면 회차 예정액(직접 입력의 수량 있는 회차)
       return `<div class="bp-due"><div class="bp-due-head"><i class="bp-pulse"></i><b>기준가 도달 · 체결 대기</b><span><em>${qtyOf(sum,dueRows[0].tradeItem)}</em>${amt!==null?` · 약 ${wonAmount(amt)}`:""}</span></div>${dueRows.slice(0,3).map(r=>`<div class="bp-due-row"><div><b>${label(r)}</b><small>기준가 ${rowPt(r.price)} · 현재 <i>${gapOf(r)}</i></small></div><span class="q">${qtyOf(r.plannedShares||0,r.tradeItem)}</span><button class="btn bp-act-btn" type="button" data-purchase-act="${id}" ${r.attr}${blockedOf(r)?" disabled":""}>체결</button></div>`).join("")}${dueRows.length>3?`<p class="bp-due-more">외 ${dueRows.length-3}회는 아래 회차표에서 체결하세요</p>`:""}${next&&nextGap?`<p class="bp-due-foot">그다음 <b>${escA(movingLineText(next.label))} ${rowPt(next.price)}</b> · ${nextGap.text} 남음</p>`:""}</div>`;})():"";
-    // 완료 상자: 현재 수익은 체결분 평단(purchaseAverages.now) 대비 현재가, 금액은 체결 수량 × 차이(달러는 현재 환율 원화 환산). 총 매수는 회차 체결 금액 합.
+    // 완료 상자: 이번 분할매수 수익은 체결분 평단(purchaseAverages.now) 대비 현재가, 금액은 체결 수량 × 차이(달러는 현재 환율 원화 환산). 분할매수 총액은 회차 체결 금액 합.
     const doneBox=complete?(()=>{const total=rows.reduce((n,r)=>n+(r.actual||0),0),rate=cur==="USD"?plus(s.fx):1,ret=bpRound1(avg?.now>0&&now!==null?(now/avg.now-1)*100:null),pl=ret!==null&&rate?bpRound1((now-avg.now)*avg.filled*rate/1e4):null,toneOf=v=>v>0?' class="gain"':v<0?' class="loss"':""; // 수익률·금액은 각자의 반올림 값으로 색을 정한다
-      return `<div class="bp-done"><div class="bp-done-head"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10"/><path d="M5.8 10.2l2.8 2.8 5.6-5.9"/></svg><b>분할매수 완료</b><span>${p.count}회 모두 체결</span></div>${ret!==null?`<div class="bp-ret"><small>현재 수익</small><div class="bp-ret-v"><b${toneOf(ret)}>${bpSign(ret)}${nf1.format(Math.abs(ret))}%</b>${pl!==null?`<em${toneOf(pl)}>${bpSign(pl)}${man(Math.abs(pl))}</em>`:""}</div></div>`:""}<div class="bp-done-stats"><div><small>최종 평단</small><b>${avg?.now>0?rowPt(avg.now):"—"}</b></div><div><small>총 매수</small><b>${total>0?wonAmount(total):"—"}</b></div></div></div>`;})():"";
+      return `<div class="bp-done"><div class="bp-done-head"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10"/><path d="M5.8 10.2l2.8 2.8 5.6-5.9"/></svg><b>분할매수 완료</b><span>${p.count}회 모두 체결</span></div>${ret!==null?`<div class="bp-ret"><small class="bp-ret-label">이번 분할매수 수익${avg.usedRef?'<span class="bp-ret-ref">기준가 포함</span>':""}</small><div class="bp-ret-v"><b${toneOf(ret)}>${bpSign(ret)}${nf1.format(Math.abs(ret))}%</b>${pl!==null?`<em${toneOf(pl)}>${bpSign(pl)}${man(Math.abs(pl))}</em>`:""}</div></div>`:""}<div class="bp-done-stats"><div><small>체결 평단</small><b>${avg?.now>0?rowPt(avg.now):"—"}</b></div><div><small>분할매수 총액</small><b>${total>0?wonAmount(total):"—"}</b></div></div></div>`;})():"";
     const curve=purchaseCurveCard({id:it.id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done),pick:purchaseCurvePick.get(it.id),plotW:purchasePlotW});
     const curveCard=curve;
     const summary=`<section class="card bp-sum${complete?" complete":""}" aria-label="계획 진행"><div class="bp-head"><h1 class="bp-name">${purchaseTitleButton(parts.head)}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div><div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${stamp?`<div class="bp-stamp">${stamp}</div>`:""}${bar}<div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.target!==null?`${parts.control}${parts.gapText}`:parts.control}</span></p></div>${parts.hint}${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
