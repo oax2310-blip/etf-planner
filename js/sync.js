@@ -32,7 +32,15 @@ const isBlank = json => {const d=JSON.parse(json),f=d.futures||{},a=d.actions||{
 function syncStatus(message){$("syncStatus").textContent=message;$("syncDialogStatus").textContent=message;const btn=$("syncBtn");btn.title=message;syncBadge();}
 // 동기화 버튼 아이콘 상태: off(연결 안 됨, 회전 아이콘 대신 빨간 ! 표시) · busy(도는 중) · ok(초록 점) · warn(주황 점, 확인 필요)
 function syncBadge(){$("syncBtn").className="btn mini sync-btn "+(!connected()?"off":sync.failed||sync.blocked?"warn":sync.busy?"busy":"ok");priceRefreshControls();if(typeof renderPushConnectionStatus==="function")renderPushConnectionStatus();if(typeof splitDialog==="object")splitDialog.updateStatus();}
-function priceRefreshControls(){for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=$(key);btn.disabled=sync.busy||priceRefreshBusy;btn.ariaBusy=String(priceRefreshBusy);btn.textContent=priceRefreshBusy?"시세 불러오는 중…":"시세 즉시 불러오기";}}
+function priceRefreshControls(){
+  for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=$(key);btn.disabled=sync.busy||priceRefreshBusy;btn.ariaBusy=String(priceRefreshBusy);}
+  const label=priceRefreshBusy?"시세 불러오는 중…":"시세 즉시 불러오기";
+  $("priceRefreshLabel").textContent=label;$("refreshPricesDialogBtn").textContent=label;
+}
+function showPriceRefreshStatus(message,tone=""){
+  const status=$("priceRefreshStatus");status.className=tone;status.textContent=message;
+  $("priceRefreshDot").className=tone?"price-refresh-dot warn":"price-refresh-dot";
+}
 function scheduleSync(delay=1500){if(!connected()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),delay);}
 // 같은 브라우저의 여러 페이지(탭·창·뒤로 가기로 복원한 화면·알림으로 다시 연 화면)는 state를 따로 들고 기기 기록(STORAGE_KEY)과 동기화 기준(SYNC_BASE_KEY)은 함께 쓴다.
 // 옛 state를 가진 페이지가 그대로 덮어쓰면 다른 페이지의 체결·알림 삭제가 기기 기록에서 사라지고, 다음에 열 때 더 새 동기화 기준과 비교해 이 기기에서 지운 수정으로 보고
@@ -180,29 +188,37 @@ async function refreshPrices(){
   if(sync.busy||priceRefreshBusy)return;
   if(!connected()){priceStatus("먼저 동기화 설정에서 데이터 저장소와 토큰을 연결해 주세요.");$("syncDialog").showModal();return;}
   const repo=sync.repo,token=sync.token;
-  priceRefreshBusy=true;priceRefreshControls();$("priceRefreshStatus").className="";$("priceRefreshStatus").textContent="시세 수집 준비 중…";
+  priceRefreshBusy=true;priceRefreshControls();showPriceRefreshStatus("시세 수집 준비 중…");
   try{
     if(dataSnapshot()!==sync.base&&!sync.blocked)await syncNow(true);
     if(sync.blocked||sync.failed)throw Error("먼저 기록 동기화를 완료한 뒤 시세를 수집해 주세요.");
     if(typeof assetStore!=="undefined"&&assetStore.status?.state==="pending"){
       await assetStore.sync();if(assetStore.status.state==="error")throw Error("먼저 분할매수·자산 기록 동기화를 완료한 뒤 시세를 수집해 주세요.");
     }
-    const result=await collectPricesNow({repo,token},message=>{$("priceRefreshStatus").textContent=message;},()=>sync.repo===repo&&sync.token===token);
+    const result=await collectPricesNow({repo,token},showPriceRefreshStatus,()=>sync.repo===repo&&sync.token===token);
     if(sync.repo!==repo||sync.token!==token){priceStatus("연결 설정이 바뀌었습니다. 다시 시세를 불러와 주세요.");return;}
     if(acceptPlannerPrices({repo,token},result.doc,result.etag))sync.redraw=true;
     if(fillPrices(state,priceData)){save();sync.redraw=true;}
     if(!priceReadMessage){
-      const missing=typeof assetStore!=="undefined"?assetStore.missingPriceMessage:"";
-      if(missing||result.message)priceStatus(missing||result.message);
-      else $("priceRefreshStatus").textContent=`시세 불러오기 완료${priceData?.updatedAt?` · 최근 수집 ${new Date(priceData.updatedAt).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:""}`;
+      const message=(typeof assetStore!=="undefined"?assetStore.missingPriceMessage:"")||result.message;
+      priceStatus(message,!message);
     }
   }catch(error){priceStatus(`시세 확인 실패 · ${error.message}`);}
   finally{priceRefreshBusy=false;syncBadge();if(sync.redraw)redrawIdle();if(sync.again&&!sync.blocked)scheduleSync(300);}
 }
 // 시세 줄: 종목 수(비트코인 제외)·달러선물 월물 수·현물 환율·비트코인(BTC-USD, 달러) 현재가
-function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt),fx=fxEntry(d),btc=btcEntry(d),stocks=Object.values(d?.stocks||{}).filter(e=>e?.kind!=="코인").length;
-  const late=!message&&connected()&&priceCollectionLate(d?.updatedAt); // 정기 수집이 늦어짐(예약 실행 누락·지연) — price-collection.js
-  priceReadMessage=message||"";$("priceRefreshStatus").className=message?"warning":late?"late":"";$("priceRefreshStatus").textContent=message||(at?`최근 수집 ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}${late?" · 수집 지연":""}`:connected()?"시세를 바로 수집한 뒤 불러옵니다.":"동기화를 연결하면 시세를 불러올 수 있습니다.");
+function priceStatus(message,completed=false){const d=priceData,at=Date.parse(d?.updatedAt),fx=fxEntry(d),btc=btcEntry(d),stocks=Object.values(d?.stocks||{}).filter(e=>e?.kind!=="코인").length;
+  const now=new Date(),updated=Number.isFinite(at)?new Date(at):null;
+  const late=!message&&connected()&&priceCollectionLate(d?.updatedAt,now); // 정기 수집이 늦어짐(예약 실행 누락·지연) — price-collection.js
+  const day=updated&&updated.toDateString()!==now.toDateString()?`${updated.toLocaleDateString("ko-KR",{month:"numeric",day:"numeric"})} `:"";
+  const time=updated?.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+  $("priceRefreshTime").textContent=updated?`${day}${time} 시세 기준`:"시세 기준 대기";
+  $("refreshPricesBtn").title=message||(late?"시세 즉시 불러오기 · 수집 지연":"시세 즉시 불러오기");
+  priceReadMessage=message||"";
+  const recent=updated?` · 최근 수집 ${updated.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:"";
+  const success=completed?`시세 불러오기 완료${recent}`:"";
+  const notice=message||(late?`${success?`${success} · `:""}수집 지연`:success||(priceRefreshBusy?"시세 수집 준비 중…":""));
+  showPriceRefreshStatus(notice,message?"warning":late?"late":"");
   $("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${stocks}개 · 달러선물 ${Object.keys(d.futures).length}개 월물 · ${fx?`현물 환율 ${priceRound(fx.close,2)}원 (${fx.asOf}${fx.stale?" · 조회 실패":""}${priceOld(fx)?" · 지난 시세":""})`:"현물 환율 없음(기존 값 유지)"}${btc?` · 비트코인 $${priceRound(btc.close,2).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} (${btc.asOf} UTC${btc.stale?" · 조회 실패":""}${priceOld(btc)?" · 지난 시세":""})`:""}. 현재가·이동평균선 기준가·달러 계획 환율을 자동으로 채웁니다.${late?" 정기 수집이 예정보다 늦어지고 있습니다(GitHub 예약 실행 지연·누락). 그동안 시세와 알림도 늦을 수 있으며, 시세 즉시 불러오기로 바로 받을 수 있습니다.":""}`:"");}
 // 입력 중인 칸(글자·숫자·선택, 동기화 창의 연결 칸은 제외). 다른 기기 기록을 적용하면 화면을 다시 그리며 저장하지 않은 입력이 지워지고
 // 그 칸의 저장 버튼도 바뀌기 전 기록에 묶이므로, 적용(자동 병합·충돌 창 포함)은 칸에서 나올 때까지 미루고 focusout에서 다시 동기화한다.
@@ -329,7 +345,7 @@ $("connectRepo").onclick=()=>{
 };
 $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncStatus("먼저 저장소와 토큰으로 연결해 주세요.");};
 $("refreshPricesBtn").onclick=refreshPrices;$("refreshPricesDialogBtn").onclick=refreshPrices;
-$("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");};
+$("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");priceStatus();};
 // 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 주기 동기화를 멈춘다.
 // 숨기거나 떠날 때(앱 전환·화면 끔·다른 페이지로 이동)는 대기 중인 이 기기 수정을 바로 올린다(flushPlanner). 입력 칸을 강제로 확정하지는 않는다
 // (일부 칸은 확정할 때 확인·계좌 선택 창을 열어, 숨긴 화면에서 입력이 취소될 수 있음).

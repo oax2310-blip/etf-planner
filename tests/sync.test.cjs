@@ -863,6 +863,58 @@ test('시세 파일을 읽지 못해도 기록 동기화는 그대로 하고 알
   assert.match(h.elements.get('priceStatus').textContent, /시세 확인 실패/);
 });
 
+test('플래너 시세 실패·경고는 숨기지 않고 상태 줄과 주황 점으로 표시한다', () => {
+  const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8');
+  assert.match(html,/<div class="planner-price-refresh">\s*<button[\s\S]*?<\/button>\s*<p id="priceRefreshStatus" role="status"><\/p>\s*<\/div>/);
+  const h=harness({connect:false}),status=h.elements.get('priceRefreshStatus'),dot=h.elements.get('priceRefreshDot');
+  for(const message of ['시세 확인 실패 · 테스트 오류','데이터 저장소에 시세 파일이 없어 현재가를 채우지 않습니다.']){
+    h.context.testMessage=message;vm.runInContext('priceStatus(testMessage)',h.context);
+    assert.equal(status.hidden,false);assert.equal(status.className,'warning');assert.equal(status.textContent,message);
+    assert.equal(dot.className,'price-refresh-dot warn');
+  }
+  vm.runInContext('priceStatus()',h.context);
+  assert.equal(status.textContent,'');assert.equal(dot.className,'price-refresh-dot');
+});
+
+test('플래너 시세 수집 지연은 숨기지 않고 상태 줄과 주황 점으로 표시한다', () => {
+  const h=harness({connect:false}),status=h.elements.get('priceRefreshStatus'),dot=h.elements.get('priceRefreshDot');
+  vm.runInContext(`sync.repo='me/fake-data';sync.token='fake-token';
+    priceData={updatedAt:new Date(Date.now()-10*3600000).toISOString(),stocks:{},futures:{}};priceStatus()`,h.context);
+  assert.equal(status.hidden,false);assert.equal(status.className,'late');assert.equal(status.textContent,'수집 지연');
+  assert.equal(dot.className,'price-refresh-dot warn');
+});
+
+test('동기화 연결 해제는 시세 기준 시각을 유지하고 수집 지연 문구와 주황 점을 지운다', async () => {
+  const prices = {updatedAt: new Date(Date.now() - 10 * 3600000).toISOString(), stocks: {}, futures: {}};
+  const h = harness({remote: empty(), prices});
+  await h.restored();
+
+  const time = h.elements.get('priceRefreshTime');
+  const status = h.elements.get('priceRefreshStatus');
+  const dot = h.elements.get('priceRefreshDot');
+  const displayedTime = time.textContent;
+  assert.match(displayedTime, /\d{2}:\d{2} 시세 기준$/);
+  assert.equal(status.textContent, '수집 지연');
+  assert.equal(dot.className, 'price-refresh-dot warn');
+
+  h.elements.get('disconnectRepo').click();
+
+  assert.equal(time.textContent, displayedTime);
+  assert.equal(status.textContent, '');
+  assert.equal(dot.className, 'price-refresh-dot');
+});
+
+for(const [title,day,expected] of [['오늘',23,'10:24 시세 기준'],['지난 날짜',20,'11. 20. 10:24 시세 기준']]){
+  test(`플래너 시세 기준 시각은 기기 기준 ${title}에 맞춰 날짜를 표시한다`, () => {
+    const h=harness({connect:false}),now=new Date(2026,10,23,12).getTime();
+    h.context.Date=class extends Date{constructor(...args){super(...(args.length?args:[now]));}};
+    h.context.testUpdatedAt=new Date(2026,10,day,10,24).toISOString();
+    vm.runInContext('priceData={updatedAt:testUpdatedAt,stocks:{},futures:{}};priceStatus()',h.context);
+    assert.equal(h.elements.get('priceRefreshTime').textContent,expected);
+    assert.equal(h.elements.get('priceRefreshStatus').textContent,'','경고가 없으면 시세 기준 한 줄만 표시');
+  });
+}
+
 test('시세 즉시 불러오기는 수집을 요청한 뒤 새 결과로 기준가와 공유 시세를 반영한다', async () => {
   const local=withPlan(plan()),h=harness({local,remote:local,base:snap(local),prices:PRICES});
   await h.restored();
@@ -928,7 +980,10 @@ test('시세 즉시 불러오기 중 중복 클릭과 자동 동기화는 조회
   const work=h.elements.get('refreshPricesBtn').onclick();
   assert.equal(h.elements.get('refreshPricesBtn').disabled,true);
   assert.equal(h.elements.get('refreshPricesDialogBtn').disabled,true);
-  assert.match(h.elements.get('refreshPricesBtn').textContent,/불러오는 중/);
+  assert.equal(h.elements.get('refreshPricesBtn').ariaBusy,'true');
+  assert.match(h.elements.get('priceRefreshLabel').textContent,/불러오는 중/);
+  assert.equal(h.elements.get('priceRefreshStatus').hidden,false);
+  assert.match(h.elements.get('priceRefreshStatus').textContent,/시세 수집 요청 중/);
   await h.elements.get('refreshPricesDialogBtn').onclick();await h.run();
   assert.equal(h.server.requests,requests);
   release();await work;
