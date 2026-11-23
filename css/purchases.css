@@ -264,7 +264,7 @@
 :root[data-theme=dark] .bp-done-stats div{background:rgba(0,0,0,.38);box-shadow:inset 0 2px 4px rgba(0,0,0,.55),inset 0 -1px 0 rgba(255,255,255,.06)}
 .bp-done-stats small{font-size:11.4px;color:var(--text-3);white-space:nowrap}.bp-done-stats b{font-size:11.45px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
 /* 계좌 줄(음각)과 펼침 목록 */
-.bp-acc{display:flex;flex-direction:column;gap:0;margin-top:2px;padding:6px 9px 6px 12px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
+.bp-acc{position:relative;display:flex;flex-direction:column;gap:0;margin-top:2px;padding:6px 9px 6px 12px;border-radius:16px;background:var(--bp-inset);box-shadow:var(--bp-inset-shadow)}
 .bp-acc-main{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .bp-acc-sum{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 3px;overflow-wrap:anywhere}
 /* 보유 라벨은 평가액의 첫 줄과 함께 두고, 긴 평가액은 묶음 안에서 줄을 넘긴다. */
@@ -275,7 +275,11 @@
 .bp-acc-sum small{font-size:11px;font-weight:600;color:var(--text-2)}
 .bp-acc-sum .bp-acc-label{flex:none;color:var(--text-3);font-weight:500}
 .bp-acc-sum .profit-gain,.bp-acc-pl .profit-gain{color:var(--bp-red)}.bp-acc-sum .profit-loss,.bp-acc-pl .profit-loss{color:var(--bp-loss)}
-.bp .bp-acc-toggle{flex:none;min-height:32px;padding:0 9px;border-radius:12px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text);font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
+.bp .bp-acc-toggle{display:flex;flex-wrap:wrap;align-items:baseline;align-content:center;min-height:32px;margin:0;padding:0;border:0;border-radius:0;background:none;color:var(--text);text-align:left;-webkit-tap-highlight-color:transparent}
+.bp .bp-acc-toggle::after{content:"";position:absolute;inset:0;border-radius:16px} /* 음각 상자 전체를 누를 자리로 */
+.bp-acc:has(.bp-acc-toggle:focus-visible){outline:2px solid var(--accent);outline-offset:2px}.bp .bp-acc-toggle:focus-visible{outline:0}
+.bp .bp-acc-toggle:active::after{background:rgba(128,128,128,.08)}
+.bp-acc-chev{align-self:center;margin-left:auto;padding-left:6px;font-size:12px;line-height:1;color:var(--text-2);transition:transform .15s}.bp-acc-toggle[aria-expanded=true] .bp-acc-chev{transform:rotate(180deg)}
 .bp .bp-acc-sort{flex:none;width:32px;min-height:32px;padding:0;border-radius:11px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text-2);font-size:14px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
 .bp .bp-acc-sort.on{color:var(--bp-blue-2);border-color:color-mix(in srgb,var(--bp-blue) 45%,transparent);background:color-mix(in srgb,var(--bp-blue) 16%,transparent)}
 .bp-acc-drawer{display:flex;flex-direction:column;gap:10px;margin-top:8px;padding:0 2px}.bp-acc-drawer[hidden]{display:none}
