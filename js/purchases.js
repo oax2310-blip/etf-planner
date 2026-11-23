@@ -455,8 +455,8 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   if(showEnd)marks+=txt(W,ey,escA(endText),`bp-t ${complete?"mint":"blue"}`,"end");
   if(avgD){const e=avgEnd,finText=`최종 ${rowPt(avg.end)}`,ys=flip?[e.y-11,Math.min(e.y+25,H-3)]:[Math.min(e.y+25,H-3),e.y-11]; // 바깥쪽 먼저, 말풍선·표식·끝 가격 글자와 겹치면 반대쪽
     const fy=ys.find(y=>{const b=[W-textW(finText),y-12,W,y+3];return clear(b)&&!(showEnd&&hit(b,endBox));}); // 두 자리 모두 막히면(말풍선이 끝 쪽) 글자는 숨긴다
-    marks+=`<circle cx="${f(e.x)}" cy="${f(e.y)}" r="3.6" class="bp-avg-dot"/>`+(fy===undefined?"":txt(W,fy,escA(finText),"bp-t mint","end"));
-    if(mk.x>main[0].x+.5&&mk.x<lastP.x-.5)marks+=`<circle cx="${f(mk.x)}" cy="${f(yAt(avgPts,mk.x))}" r="3.6" class="bp-avg-dot"/>`;}
+    marks+=`<circle cx="${f(e.x)}" cy="${f(e.y)}" r="3.6" class="bp-avg-dot"/>`+(fy===undefined?"":txt(W,fy,escA(finText),"bp-t mint","end"));}
+  if(avgD&&mk.x>main[0].x+.5&&mk.x<lastP.x-.5)marks+=`<circle cx="${f(mk.x)}" cy="${f(yAt(avgPts,mk.x))}" r="3.6" class="bp-avg-dot"/>`;
   marks+=`<circle cx="${f(mk.x)}" cy="${f(mk.y)}" r="12" class="bp-halo ${mk.tone}"/><circle cx="${f(mk.x)}" cy="${f(mk.y)}" r="6.5" class="bp-core ${mk.tone}"/>`;
   const pos=`left:${(mk.x/W*100).toFixed(2)}%`;
   const tip=`<div class="bp-tip ${place[0]==="up"?align:place[0]==="down"?`${align} below`:place[0]}" style="${pos};top:${(mk.y/H*100).toFixed(2)}%"><b>${escA(priceText)}</b>${avgText?`<span>${escA(avgText)}</span>`:""}<i aria-hidden="true"></i></div>`;

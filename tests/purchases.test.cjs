@@ -2568,6 +2568,24 @@ test('누적 평단: 체결 수량을 모르는 완료 회차가 섞이면 0주�
   assert.match(r.html(),/class="card bp-chart"/,'곡선 카드는 그림');assert.doesNotMatch(r.html(),/class="bp-avg|완료 시 평단|최종 /,'평단 곡선·글자 없음');
   r.item.buyPlan.stages[0].shares=5;r.render();assert.match(r.html(),/class="bp-avg/,'수량을 알면 평단');
 });
+for(const missing of ['전체','일부'])test(`곡선 카드 평단 ${missing} 누락: 중간 현재가·회차를 예외 없이 그리고 평단 점은 생략한다`,()=>{
+  const r=setup({currency:'USD',manual:true,price:130,fx:null});
+  r.item.buyPlan.stages=[100,120,140].map((price,i)=>({id:`s${i}`,price,shares:1,amount:price/1e4}));
+  if(missing==='전체')r.item.buyPlan.stages[0]={id:'s0',price:100,amount:1,done:true}; // 체결 수량 불명: avg 없음
+  else Object.assign(r.item.buyPlan.stages[0],{shares:0,amount:0}); // 첫 회차 누적 수량 0: avg.at[0]만 null
+  const before=JSON.stringify(r.doc),chart=()=>r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
+  const check=()=>{
+    assert.match(chart(),/class="bp-line"/,'기준가 곡선은 렌더링');
+    assert.doesNotMatch(chart(),/class="bp-avg(?:-dot)?"|NaN|undefined/,'평단 곡선·점과 잘못된 좌표 없음');
+    const x=Number(chart().match(/<circle cx="([\d.]+)" cy="[\d.]+" r="12" class="bp-halo/)[1]);
+    assert.ok(x>24.5&&x<300.5,`표식은 시작·끝점 사이: ${x}`);
+  };
+  assert.doesNotThrow(()=>r.render());check();assert.match(chart(),/<b>\$130<\/b>/,'중간 현재가 말풍선');
+  const middle=r.inputs('[data-curve-pick]').find(x=>x.dataset.curvePick==='1');assert.ok(middle,'중간 회차 칩');
+  assert.doesNotThrow(()=>middle.onclick());check();assert.match(chart(),/<b>\$120<\/b>/,'중간 회차 말풍선');
+  assert.equal(JSON.stringify(r.doc),before,'렌더링·회차 선택은 기록을 바꾸지 않음');
+  r.item.buyPlan.stages[0].shares=1;r.render();assert.match(chart(),/class="bp-avg-dot"/,'평단을 모두 알면 점을 그림');
+});
 test('계좌 버튼 CSS: [＋ 계좌 추가]·[삭제]의 ID 규칙은 패딩·글자색을 매수대기 카드(.purchase-linked)에만 주고, 돌파·직접 입력(.bp)은 .bp-pill을 따른다',()=>{
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   for(const id of ['purchaseAccountAdd','purchaseAccountDeleteToggle']){
@@ -2593,6 +2611,11 @@ test('좁은 폭·고액: 현재가와 계좌 금액도 줄바꿈하고, 손익 
   assert.match(profit,/max-width:100%;/,'손익 묶음은 계좌 요약 폭 이내');
   assert.match(profit,/flex-wrap:wrap;/,'폭을 넘는 손익 묶음은 내부 줄바꿈');
   assert.doesNotMatch(profit,/white-space:nowrap/,'손익 텍스트 줄바꿈 허용');
+  const ret=css.match(/\.bp-ret\{[^}]*\}/)[0],value=css.match(/\.bp-ret-v\{[^}]*\}/)[0],parts=css.match(/\.bp-ret-v b,\s*\.bp-ret-v em\{[^}]*\}/)?.[0]||'';
+  assert.match(ret,/min-width:0(?:;|\})/,'완료 수익 영역은 가용 폭에 맞춰 줄어듦');
+  for(const rule of ['flex-wrap:wrap','justify-content:center','row-gap:4px','max-width:100%','min-width:0'])assert.ok(value.includes(rule),`완료 수익 묶음: ${rule}`);
+  for(const rule of ['min-width:0','max-width:100%','overflow-wrap:anywhere'])assert.ok(parts.includes(rule),`완료 수익률·금액: ${rule}`);
+  assert.doesNotMatch(ret+value+parts,/white-space:nowrap|overflow:hidden/,'완료 수익은 줄바꿈하고 자르지 않음');
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});r.render();
   assert.match(r.html(),/<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain"[^>]*>\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span>/,'손익 금액·손익률 한 묶음');
 });
