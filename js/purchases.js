@@ -370,7 +370,7 @@ function purchaseAccountBox({g,it},s){
   const deleteMode=purchaseAccountDeletingId===it.id,sortMode=!deleteMode&&sortingPurchaseAccounts.has(it.id),open=deleteMode||openPurchaseAccounts.has(it.id);
   const parts=r=>stockNames.titleParts(r.it.name),qty=r=>infos.get(r.it.id).quantityText.replace(/^보유 /,"");
   const sum=allocLink.holdingsProfit(ordered.map(r=>r.it),s.fx),sumRate=bpRound1(sum?.rate??null),sumTone=sumRate>0?"profit-gain":sumRate<0?"profit-loss":""; // 금액은 alloc-link가 0.1만원으로 반올림한 값
-  const top=ordered.length?`<small class="bp-acc-label">보유</small><b>${total.valueText}</b><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small></span>`:""}`:"<b>연결된 계좌 없음</b>";
+  const top=ordered.length?`<span class="bp-acc-value"><small class="bp-acc-label">보유</small><b>${total.valueText}</b></span><small>(${total.pctText})</small>${sum?`<span class="bp-acc-sum-r"><span class="bp-acc-sum-pl ${sum.amountTone}" title="${escA(sum.tip)}">${sum.amountText}</span><small class="${sumTone}">(${sumRate===null?"—":`${bpSign(sumRate)}${nf1.format(Math.abs(sumRate))}%`})</small></span>`:""}`:"<b>연결된 계좌 없음</b>";
   const profitOf=p=>{if(!p)return "";
     return `<div class="bp-acc-pl">${p.amountText?`<b class="${p.amountTone}">${p.amountText}</b>`:`<b class="bp-muted">${p.status}</b>`}${p.rateText?`<small class="${p.rateTone}">${p.rateText}</small>`:""}</div>`;};
   const rows=ordered.map((r,j)=>{
@@ -393,7 +393,7 @@ function purchaseAverages(rows,execOf,otherTicker,refOf){
   let cost=0,qty=0,fillCost=0,fillQty=0,usedRef=false;const at=[];
   for(const r of rows){
     const filled=r.recorded?Math.max(0,r.shares||0):0,left=r.done?0:Math.max(0,(r.plannedShares??0)-filled),actualExec=execOf(r),exec=actualExec??r.price;
-    if(filled>0&&(actualExec===null||actualExec===undefined||refOf(r)))usedRef=true;
+    if(filled>0&&(actualExec===null||actualExec===undefined||refOf?.(r)))usedRef=true;
     cost+=filled*exec+left*r.price;qty+=filled+left;fillCost+=filled*exec;fillQty+=filled;at.push(qty>0?cost/qty:null);
   }
   return {at,end:qty>0?cost/qty:null,now:fillQty>0?fillCost/fillQty:null,filled:fillQty,usedRef};

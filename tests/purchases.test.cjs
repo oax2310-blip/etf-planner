@@ -472,11 +472,11 @@ test('연결 보유 목록은 추종 ETF·실제 코드 보유 계좌 모두를 
   r.doc.allocation.groups.push({id:'g2',name:'다른 계좌',items:[other,direct,unrelated]});r.prices.stocks['333333']={kind:'국내',close:30000,asOf:'2026-01-02'};r.prices.stocks.A222222={kind:'국내',close:10000,asOf:'2026-01-02'};
   const before=JSON.stringify(r.doc);r.render();r.initialize();
   const ids=()=>Array.from(r.html().matchAll(/data-purchase-holding="([^"]+)"/g),m=>m[1]);assert.deepEqual(ids(),['a','b','c']);
-  assert.equal((r.html().match(/data-purchase-holding=/g)||[]).length,3);assert.match(r.html(),/다른 계좌 &lt;보유&gt;/);assert.match(r.html(),/<div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><small>\(45%\)<\/small>/);assert.equal(JSON.stringify(r.doc),before);
-  r.change('[data-purchase-buy-shares]',7);assert.match(r.html(),/<div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><small>\(52%\)<\/small>/);assert.match(r.html(),/보유 17주/);assert.equal(other.shares,5);assert.equal(direct.shares,20);
+  assert.equal((r.html().match(/data-purchase-holding=/g)||[]).length,3);assert.match(r.html(),/다른 계좌 &lt;보유&gt;/);assert.match(r.html(),/<div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><\/span><small>\(45%\)<\/small>/);assert.equal(JSON.stringify(r.doc),before);
+  r.change('[data-purchase-buy-shares]',7);assert.match(r.html(),/<div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><\/span><small>\(52%\)<\/small>/);assert.match(r.html(),/보유 17주/);assert.equal(other.shares,5);assert.equal(direct.shares,20);
   r.change('[data-purchase-buy-shares]',0);assert.equal(JSON.stringify(r.doc),before);
-  other.shares=10;r.emit();assert.match(r.html(),/<div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><small>\(60%\)<\/small>/);
-  r.prices.stocks['333333'].close=40000;r.emit();assert.match(r.html(),/<div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><small>\(70%\)<\/small>/);
+  other.shares=10;r.emit();assert.match(r.html(),/<div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><\/span><small>\(60%\)<\/small>/);
+  r.prices.stocks['333333'].close=40000;r.emit();assert.match(r.html(),/<div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><\/span><small>\(70%\)<\/small>/);
 });
 test('연결 보유 목록은 금액 보유를 주수로 오인하지 않고 0주·시세 누락·매수대기에서도 조회만 한다',()=>{
   const r=setup({wait:'25일선'});delete r.item.shares;r.item.amount=7;r.prices.stocks={};
@@ -492,7 +492,7 @@ test('연결 보유 손익은 itemProfit의 평균가·현재가로 합산하고
   const r=setup({price:10166,end:12000});Object.assign(r.item,{shares:84,averagePrice:10000});
   r.ctx.priceText=(v,cur)=>cur==='USD'?`$${v.toFixed(2)}`:`${new Intl.NumberFormat('ko-KR').format(v)}원`;
   const before=JSON.stringify(r.doc);r.render();const card=purchaseLinkedCard(r);
-  assert.match(card,/<div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><small>\([^)]+\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span><\/div>/,'맨 윗줄: 평가액(비중)·합산 손익');
+  assert.match(card,/<div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>[^<]+<\/b><\/span><small>\([^)]+\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">\+1.4만원<\/span><small class="profit-gain">\(\+1\.7%\)<\/small><\/span><\/div>/,'맨 윗줄: 평가액(비중)·합산 손익');
   assert.match(card,/class="sale-linked-profit" title="평균매수가·수량·현재가가 있는 보유 1개 중 1개 합산">손익 <b class="profit-gain">\+1.4만원<\/b> <b class="profit-gain">\+1.66%<\/b>/);
   assert.match(card,/<div class="bp-acc-pl"><b class="profit-gain">\+1.4만원<\/b><small class="profit-gain">\+1.66%<\/small><\/div>/);
   assert.equal(JSON.stringify(r.doc),before);
@@ -2334,9 +2334,13 @@ test('누적 평단: 체결가가 없을 때의 기준가 대체만 표시하고
   assert.equal(fallback.usedRef,true);assert.equal(fallback.now,10000);assert.equal(fallback.end,11200);
   const actual=averages(rows,r=>r.recorded?8000:null,()=>false,r=>!r.recorded);
   assert.equal(actual.usedRef,false);assert.equal(actual.now,8000);assert.equal(actual.end,10400);
+  const legacy=averages(rows,r=>r.recorded?8000:null,()=>false);
+  assert.equal(legacy.usedRef,false);assert.equal(legacy.now,8000);assert.equal(legacy.end,10400);
+  assert.equal(legacy.filled,2,'선택 인자 없이 호출해도 체결 수량과 평단 유지');
+  assert.equal(averages(rows,()=>null,()=>false).usedRef,true,'3인자 호출도 기준가 대체 표시 유지');
 });
 test('계좌 상자: 연결 대상이 있을 때만 보유 라벨을 붙이고 없으면 기존 안내를 유지한다',()=>{
-  const r=setup();assert.match(r.html(),/<div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>/);
+  const r=setup();assert.match(r.html(),/<div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>/);
   // 자산에 있는 계획은 자기 계좌도 연결 대상이다. 대상이 비어 있는 방어 분기를 따로 재현한다.
   r.ctx.purchaseTargets=()=>[];r.render();
   assert.match(r.html(),/<div class="bp-acc-sum"><b>연결된 계좌 없음<\/b><\/div>/);
@@ -2358,7 +2362,7 @@ test('계좌 상자: 맨 윗줄은 평가액(비중)·합산 손익과 [설정],
   const r=setup();r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3,averagePrice:9000});r.render();
   const before=JSON.stringify(r.doc),toggle=()=>r.element('purchaseAccountToggle'),list=()=>r.html().split('id="purchaseLinkedHoldings"')[1].split('bp-acc-actions')[0];let writes=0;r.store.saveSection=()=>writes++;
   assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);assert.equal(toggle().getAttribute('aria-expanded'),'false');assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'접혀 있으면 ⇅ 없음');
-  assert.match(r.html(),/<div class="bp-acc-main"><div class="bp-acc-sum"><small class="bp-acc-label">보유<\/small><b>[^<]+만원<\/b><small>\(\d+%\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/span><\/div><button[^>]*id="purchaseAccountToggle"[^>]*>설정 /,'맨 윗줄 한 줄');
+  assert.match(r.html(),/<div class="bp-acc-main"><div class="bp-acc-sum"><span class="bp-acc-value"><small class="bp-acc-label">보유<\/small><b>[^<]+만원<\/b><\/span><small>\(\d+%\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/span><\/div><button[^>]*id="purchaseAccountToggle"[^>]*>설정 /,'맨 윗줄 한 줄');
   toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(toggle().getAttribute('aria-expanded'),'true');assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'false');
   assert.match(list(),/<span class="bp-acc-name">테스트 종목<\/span><span class="bp-acc-tag">연금저축<\/span><\/div><div class="bp-acc-l2">3주 · [^<]+만원<\/div><\/div><div class="bp-acc-ctrl" hidden>[\s\S]*?<\/div><div class="bp-acc-pl"><b class="profit-gain">\+0\.3만원<\/b><small class="profit-gain">\+11\.11%<\/small><\/div>/);
   assert.match(list(),/<div class="bp-acc-pl"><b class="bp-muted">평균매수가 미입력<\/b><\/div>/);assert.doesNotMatch(list(),/평균 /,'계좌 줄에는 평균가 글자를 넣지 않음');
