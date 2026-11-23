@@ -77,11 +77,13 @@ function setup({currency='KRW',budget=8.9,price=10000,end=price,legacy=false,man
 
 for(const completed of [[],[2],[0,2]])test(`분할매수 완료 ${completed.length}회: 부분 체결과 마지막 완료 회차 표시를 유지하고 기록은 바꾸지 않는다`,()=>{
   const r=setup({manual:true,price:20000});
-  r.item.buyPlan.stages=Array.from({length:5},(_,i)=>({id:`fake-${i}`,price:10000+i*100,shares:8,amount:8,
+  r.item.buyPlan.stages=Array.from({length:5},(_,i)=>({id:`fake-${i}`,price:10000+i*100,shares:8,amount:8,date:`2026-01-0${i+1}`,
     ...(completed.includes(i)?{done:true,actual:8}:i===3?{shares:3,plannedShares:8,partial:true,actual:3}:{})}));
   const before=JSON.stringify(r.doc);r.render();
   const rows=renderedRows(r.html(),'purchaseTable','data-stage');
   assert.equal(rows.length,5);assertLastDone(rows,completed.length?'2':null);
+  for(const row of rows.filter(row=>row.classes.includes('done')))assert.doesNotMatch(row.html,/<time\b|2026-01-/);
+  assert.match(rows.find(row=>row.key==='4').html,/2026-01-05/,'미체결 회차의 예정일 유지');
   assert.ok(rows.find(x=>x.key==='3').classes.includes('partial'));
   assert.equal(JSON.stringify(r.doc),before,'회차를 다시 그려도 자산·체결 JSON은 같다');
 });
@@ -2586,7 +2588,7 @@ test('곡선 카드: 횡보형(같은 기준가) 다회차는 누적 평단의 �
   }
 });
 test('곡선 카드 x축: 360px 화면(축 너비 296px) 기준으로도 표시한 눈금 글자가 서로 겹치지 않는다',()=>{
-  const tw=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="✓"?10:ch==="·"?4:7),0)+18;
+  const tw=t=>[...t].reduce((n,ch)=>n+(/[가-힣]/.test(ch)?12:ch==="·"?4:7),0)+18;
   const check=(html,label)=>{const ticks=[...html.matchAll(/<button class="(bp-x[^"]*)"[^>]* style="left:([\d.]+)%">([^<]+)<\/button>/g)].map(m=>{const c=Number(m[2])/100*296,wd=tw(m[3]),a=/\bfirst\b/.test(m[1])?.25:/\blast\b/.test(m[1])?.75:.5;return [c-wd*a,c+wd*(1-a),m[3]];});
     for(let i=1;i<ticks.length;i++)assert.ok(ticks[i-1][1]<=ticks[i][0],`${label}: '${ticks[i-1][2]}'·'${ticks[i][2]}' 296px에서 겹치지 않음`);return ticks.length;};
   const five=setup({manual:true,price:12000});five.item.buyPlan.stages=Array.from({length:5},(_,i)=>({id:`s${i}`,price:10000-i*500,shares:8,amount:8}));five.render();assert.match(five.html(),/>1차<\/button>/);check(five.html(),'5회차 1차 강조');
@@ -2723,7 +2725,7 @@ test('곡선 카드 기본: 현재가를 곡선 위(강조 회차 근처 구간)
 test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이고(첫 회차 왼쪽·끝 회차 오른쪽 정렬, 그 쪽 고정 글자 숨김), 같은 칩·제목을 누르면 현재가로 돌아온다',()=>{
   const {r,chart,chip,tip}=curveFixture(),before=JSON.stringify(r.doc);
   chip('25일').onclick();let t=tip();assert.deepEqual([t[1],t[4]],['l','₩10692'],'첫 회차: 왼쪽 정렬');assert.doesNotMatch(chart(),/text-anchor="start">₩10692/,'시작 글자 숨김');assert.match(chart(),/text-anchor="end">₩12700/);
-  assert.match(chart(),/<button class="bp-x first done sel mint"[^>]*aria-pressed="true"[^>]*>25일✓<\/button>/,'완료 회차 칩은 민트');
+  assert.match(chart(),/<button class="bp-x first done sel mint"[^>]*aria-pressed="true" aria-label="25일 기준가 보기 · 매수 완료"[^>]*>25일<\/button>/,'완료 회차 칩은 민트');
   chip('32주').onclick();t=tip();assert.deepEqual([t[1],t[4]],['c','₩11882'],'중간 회차: 가운데');assert.match(chart(),/<button class="bp-x sel warn"[^>]*>32주<\/button>/,'도달 강조 회차 칩은 주황');
   assert.match(chart(),/text-anchor="start">₩10692/);assert.match(chart(),/text-anchor="end">₩12700/);
   chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['r','₩12700'],'끝 회차: 위(오른쪽 정렬), 제목 글자와 안 겹치면 카드 위 여백까지 씀');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
