@@ -10,7 +10,7 @@ const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null,purchasePlansOpen=false,purchasePlanQuery="",purchasePlotW=325,purchasePlotFixing=false; // purchasePlotW: 곡선 그래프의 실제 폭(px, 렌더 뒤 잰 값) // purchasePlansOpen: 모바일 제목 ▾로 연 저장된 계획 목록(화면 상태)
-// 완료 회차는 기본으로 접는다. 하단 [체결가 수정]은 표 순서의 마지막 완료 회차(last-done)를 펼쳐 입력을 찾는다.
+// 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 체결가 수정을 위해 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
 let actPurchaseRow=null; // 가장 최근 renderPurchases의 [체결] 실행 함수(그 렌더의 rowData·fills를 쓴다)
 const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),sortingPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(),purchaseMemoDrafts=new Map(),purchaseCurvePick=new Map(); // 완료 회차 펼침·계좌 펼침·순서 바꾸기·메모 편집 열림·작성 중 메모는 화면 상태로만 둔다
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
@@ -513,7 +513,9 @@ function renderPurchases(){
     const nextGap=now!==null&&next?{label:`다음 ${escA(movingLineText(next.label))}까지`,text:`${gap>0?"+":""}${(Math.abs(gap)<1?nf2:nf1).format(gap)}%`,dir:gap>0?"up":gap<0?"down":""}:null;
     const names=lines?purchaseLineNames(lines):[],waitingLast=!!lines&&!plus(lines.end)&&!lineKnown(lines,entry).includes(names.at(-1));
     const partialCount=rows.filter(r=>r.recorded&&!r.done).length;
-    const done=rows.filter(r=>r.done).length, lastDone=rows.filter(r=>r.done).at(-1), completedOpen=openCompletedPurchases.has(it.id);
+    const completed=rows.filter(r=>r.done), lastDone=completed.at(-1), canFold=completed.length>1;
+    if(!canFold)openCompletedPurchases.delete(it.id);
+    const completedOpen=openCompletedPurchases.has(it.id);
     // 시세 대기·회차 간격 안내는 계획 진행 카드 아래쪽에 둔다(계산 요약 카드는 두지 않음).
     const waits=currentNotes.get(it.id);
     const alertRows=open.filter(r=>r.price>0&&(!r.line||r.plannedShares!==0));
@@ -556,7 +558,7 @@ function renderPurchases(){
       const sub=[fallback,track,note].filter(Boolean).map(escA).join(" · "), left=btcTable&&partial&&remaining!==null,flag=partial?remaining!==null&&!left?`남은 ${qtyText(remaining,actualItem)}`:"부분 체결":reached?"도달":"";
       // 이동평균선 돌파 회차는 재매수처럼 단계 이름 + 회차 번호 칩(25선 [2]), 한 줄로 촘촘하게
       const tag=r.line?(r.line.key==="end"?"목표가":`${escA(movingLineText(r.line.line))}<span class="tr-no">${r.line.t+1}</span>`):escA(r.label);
-      // 표 열: 회차(아래 도달·남은 수량) · 기준가(아래 체결가, 미체결 달러는 원화 환산) · 매수 수량 · 누적 체결 입력 · 알림 · 상태(PC). 입력·알림의 저장 키는 그대로 쓴다.
+      // 표 열: 회차(아래 도달·남은 수량) · 기준가(아래 체결가, 미체결 달러는 원화 환산) · 매수 수량 · 누적 체결 입력 · 알림(완료는 빈 칸) · 상태. 입력·알림의 저장 키는 그대로 쓴다.
       return `<div class="purchase-row${r.line?" line":""}${r.done?" done":partial?" partial":reached?" due":""}${r===lastDone?" last-done":""}${r===next?" next":""}"><label class="check" title="잔량까지 매수 완료"><input type="checkbox" ${r.line?"data-purchase-buy":"data-purchase-done"}="${id}" ${r.attr}${r.done?" checked":""}${partial?' data-purchase-partial="true" aria-checked="mixed"':""}${blocked||missingTarget&&!r.done&&!follows?" disabled":""} aria-label="${escA(name)} 매수 완료"><span class="purchase-round"><b>${tag}</b>${flag?`<small>${escA(flag)}</small>`:""}</span></label>
         <div class="stage-price">${(t=>`<span class="price${t.length>9?" xlong":t.length>7?" long":""}">${escA(t)}</span>`)(r.price>0?rowPt(r.price):"—")}${exec||krw}</div>
         <div class="purchase-qty">${left?`<small class="qty-left">남은</small>${escA(qtyNum(remaining,actualItem))}`:shown===null?"—":escA(btcTable?qtyNum(shown,actualItem):qtyText(shown,actualItem))}</div>
@@ -605,10 +607,10 @@ function renderPurchases(){
       <div class="section-heading"><h2 id="purchaseCheckTitle">분할매수 체크</h2>${alertLine}</div>
       <section class="purchase-table${completedOpen?"":" hide-completed"}${alertable?"":" no-alert"}${btcTable?" btc":""}" id="purchaseTable" aria-labelledby="purchaseCheckTitle">
         ${buyTarget}
-        ${p.count?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"${done?"":" disabled"}>
+        ${p.count?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"${canFold?"":" disabled"}>
           <span class="purchase-fold-fill" style="width:${pctDone}%" aria-hidden="true"></span>
           <span class="purchase-fold-label">매수 완료 <b>${p.done} / ${p.count}회</b></span>
-          <span class="purchase-fold-end"><b>${pctDone}%</b><span class="purchase-fold-arrow" aria-hidden="true"></span><span class="sync-status" data-completed-action>${completedOpen?"접기":"펼치기"}</span></span>
+          <span class="purchase-fold-end"><b>${pctDone}%</b><span class="purchase-fold-arrow" aria-hidden="true"></span>${canFold?`<span class="sync-status" data-completed-action>${completedOpen?"접기":"펼치기"}</span>`:""}</span>
         </button>`:`<p class="purchase-fold-wait">${budgetMissing?"예산 입력 대기":targetReached?"목표 도달":"회차 시세 대기"}</p>`}
         <div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${emptyText}</div>`}${complete?'<p class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</p>':""}</div>
       </section>${dock}
@@ -700,6 +702,7 @@ function renderPurchases(){
   }
   const planOf=id=>findItem(id)?.it.buyPlan, stageOf=x=>planOf(x.dataset.purchaseDone||x.dataset.purchaseShares||x.dataset.purchaseAlert)?.stages?.[Number(x.dataset.stage)];
   all("[data-purchase-fold]").forEach(b=>b.onclick=()=>{
+    if(b.disabled)return;
     const id=b.dataset.purchaseFold,open=!openCompletedPurchases.has(id);if(open)openCompletedPurchases.add(id);else openCompletedPurchases.delete(id);
     el("purchaseTable").classList.toggle("hide-completed",!open);b.setAttribute("aria-expanded",String(open));b.querySelector("[data-completed-action]").textContent=open?"접기":"펼치기";
   });
@@ -772,7 +775,7 @@ function renderPurchases(){
   all("[data-purchase-act]").forEach(b=>bindPurchaseAccountAction(b,()=>actPurchaseRow?.(b.dataset.purchaseAct,b.dataset.key,b.dataset.stage)));
   const focusRowInput=(sel,owner,b)=>{
     const x=[...all(sel)].find(x=>owner(x)===(b.dataset.purchaseFocus??b.dataset.purchaseExecFocus)&&(x.dataset.key??x.dataset.stage)===(b.dataset.key??b.dataset.stage));
-    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done")){
+    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done:not(.last-done)")){ // 접혀서 숨은 완료 회차만 펼친다(last-done은 접혀도 보임)
       x.closest("#purchaseTable")?.querySelector("[data-purchase-fold]")?.onclick?.();
     }
     if(x){x.scrollIntoView?.({block:"center",behavior:"smooth"});x.focus?.({preventScroll:true});}

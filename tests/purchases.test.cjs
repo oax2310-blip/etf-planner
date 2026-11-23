@@ -2407,8 +2407,33 @@ test('메모는 계좌 · 설정 펼침 안의 한 줄로 첫 줄만 보이고 [
   assert.equal(r.item.buyPlan.note,'바뀐 메모');assert.equal(writes,1);assert.match(r.html(),/<span class="bp-memo-text">메모: 바뀐 메모<\/span>/);assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'저장하면 닫힘');
   r.element('purchaseMemoEdit').onclick();r.element('purchaseMemo').value='  ';r.element('savePurchaseNote').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false,'비우면 필드를 지움');
 });
+test('분할매수 완료 회차를 접고 펼치는 버튼은 완료 회차가 2개 이상일 때만 활성화된다',()=>{
+  const r=setup({manual:true});
+  const stages=r.item.buyPlan.stages,selector='[data-purchase-done]',fold=()=>r.input('[data-purchase-fold]');
+  stages.push({...stages[0],id:'s2'},{...stages[0],id:'s3'});r.render();
+  assert.equal(fold().disabled,true,'완료 0회');
+  r.change(selector,true);
+  assert.equal(fold().disabled,true,'완료 1회');
+  assert.equal(fold().getAttribute('aria-expanded'),'false');
+  fold().onclick();
+  assert.equal(fold().getAttribute('aria-expanded'),'false','직접 호출해도 빈 토글이 일어나지 않음');
+  r.change(`${selector}[data-stage="1"]`,true);
+  assert.equal(fold().disabled,false,'완료 2회, 미완료 1회');
+  assert.equal(fold().getAttribute('aria-expanded'),'false');
+  fold().querySelector=()=>({});fold().onclick();
+  assert.equal(fold().getAttribute('aria-expanded'),'true');
+  r.change(selector,false);
+  assert.equal(fold().disabled,true,'완료 취소 후 1회');
+  assert.equal(fold().getAttribute('aria-expanded'),'false');
+  r.change(selector,true);
+  assert.equal(fold().disabled,false,'다시 완료 2회');
+  assert.equal(fold().getAttribute('aria-expanded'),'false','다시 접힌 상태에서 시작');
+});
 test('분할매수 전 회차 완료: 접힌 본문에 완료 안내를 두고 펼침 상태는 화면에만 유지한다',()=>{
-  const r=setup({manual:true});r.change('[data-purchase-done]',true);
+  const r=setup({manual:true});
+  r.item.buyPlan.stages.push({...r.item.buyPlan.stages[0],id:'s2'});r.render();
+  r.change('[data-purchase-done]',true);
+  r.change('[data-purchase-done][data-stage="1"]',true);
   const before=JSON.stringify(r.doc),fold=r.input('[data-purchase-fold]');
   assert.equal(fold.getAttribute('aria-expanded'),'false');
   assert.match(r.html(),/class="purchase-table hide-completed/);
@@ -2438,28 +2463,30 @@ test('분할매수 시세 대기: 회차 시세 대기를 표시하고 기준가
   r.prices.stocks['111111'].ma={'25일선':10000,'32일선':16000};r.render();
   assert.doesNotMatch(r.html(),/purchase-fold-wait/);
   assert.match(r.html(),/매수 완료 <b>0 \/ [1-9]\d*회/);
-  assert.equal(r.input('[data-purchase-fold]').disabled,true,'완료 회차가 생기면 펼칠 수 있음');
+  assert.equal(r.input('[data-purchase-fold]').disabled,true,'완료 0회에는 비활성화');
 });
-test('완료 뒤 [체결가 수정]은 입력이 속한 표를 펼쳐 마지막 체결가 입력에 포커스를 맞춘다',()=>{
+test('완료 뒤 [체결가 수정]은 접혀도 보이는 마지막 완료 회차(last-done)의 체결가 입력에 포커스를 맞추고, 숨은 완료 회차만 그 표를 펼친다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:20000,ma:{'25일선':10000,'32일선':16000}});
   for(const x of r.inputs('[data-purchase-buy]')){const box=r.inputs('[data-purchase-buy]').find(y=>y.dataset.key===x.dataset.key);box.checked=true;box.onchange();}
   assert.match(r.html(),/class="purchase-table hide-completed/,'완료 회차는 접힌 기본 상태');
   const target=r.input('[data-purchase-exec-focus]').dataset.key;
   const last=r.html().match(/<div class="purchase-row[^"]*\blast-done\b[^"]*">[\s\S]*?data-purchase-exec="a" data-key="([^"]+)"/);
-  assert.ok(last,'last-done 회차에 체결가 입력이 있음');assert.equal(target,last[1],'마지막 완료 회차를 고름');
-  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/#purchaseTable\.hide-completed \.purchase-row\.done,.*\{display:none\}/);
+  assert.ok(last,'last-done 회차에 체결가 입력이 있음');assert.equal(target,last[1],'접혀도 보이는(last-done) 회차를 고름');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/#purchaseTable\.hide-completed \.purchase-row\.done:not\(\.last-done\),/,'접어도 마지막 완료 회차는 보임');assert.doesNotMatch(css,/hide-completed \.purchase-row\.done[,{]/,'완료 회차 전체를 숨기는 규칙 없음');
   const fold=r.input('[data-purchase-fold]');
   assert.equal(fold.getAttribute('aria-expanded'),'false');fold.querySelector=()=>({});
   const table=r.element('purchaseTable');table.querySelector=selector=>selector==='[data-purchase-fold]'?fold:null;
   const document=r.ctx.document,queryAll=document.querySelectorAll;
   const otherFold={onclick:()=>assert.fail('다른 표의 접힘 버튼은 호출하지 않는다')};
   document.querySelectorAll=selector=>selector==='[data-purchase-fold]'?[otherFold,...queryAll(selector)]:queryAll(selector);
-  const focused=[];for(const e of r.inputs('[data-purchase-exec]')){
-    e.closest=selector=>selector==='#purchaseTable'?table:selector==='#purchaseTable.hide-completed .purchase-row.done'?{}:null;
+  let hidden=false;const focused=[];for(const e of r.inputs('[data-purchase-exec]')){
+    e.closest=selector=>selector==='#purchaseTable'?table:selector==='#purchaseTable.hide-completed .purchase-row.done:not(.last-done)'&&hidden?{}:null;
     e.focus=()=>focused.push(e.dataset.key);
   }
   r.input('[data-purchase-exec-focus]').onclick();
-  assert.equal(fold.getAttribute('aria-expanded'),'true');assert.deepEqual(focused,[target]);
+  assert.equal(fold.getAttribute('aria-expanded'),'false','last-done은 접힌 채로 보이므로 펼치지 않음');assert.deepEqual(focused,[target]);
+  hidden=true;r.input('[data-purchase-exec-focus]').onclick();
+  assert.equal(fold.getAttribute('aria-expanded'),'true','숨은 완료 회차면 그 표를 펼침');assert.deepEqual(focused,[target,target]);
 });
 test('반영 계좌가 없어진 부분 체결 회차는 회차표 체크박스처럼 하단 [체결] 버튼도 끄고, 계획 수량을 모르는 부분 체결은 음수 없이 잔량 체결로 보인다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}}),{move}=linkedAccounts(r);move('b',-1);
@@ -2612,15 +2639,21 @@ test('인라인 메모 초안이 있으면 계획 수정 창의 메모 칸이 �
 });
 test('계획을 삭제하면 계좌 펼침·순서 바꾸기·완료 회차 펼침도 지워, 같은 종목의 새 계획(창으로 만들거나 동기화로 복원)은 기본 상태로 시작한다',()=>{
   const opts={budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}};
+  const completeFirstTwo=r=>{
+    const keys=r.inputs('[data-purchase-buy]').slice(0,2).map(x=>x.dataset.key);
+    for(const key of keys)r.change(`[data-purchase-buy][data-key="${key}"]`,true);
+    assert.equal(r.input('[data-purchase-fold]').disabled,false);
+  };
   const arm=r=>{r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3});r.render();
-    const box=r.inputs('[data-purchase-buy]')[0];box.checked=true;box.onchange();const fold=r.inputs('[data-purchase-fold]')[0];fold.querySelector=()=>({});fold.onclick();r.render();
+    completeFirstTwo(r);
+    const fold=r.input('[data-purchase-fold]');fold.querySelector=()=>({});fold.onclick();r.render();
     r.element('purchaseAccountToggle').onclick();r.element('purchaseAccountSort').onclick();
     assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'true');assert.doesNotMatch(r.html(),/hide-completed/,'완료 회차 펼침');
     r.ctx.confirm=()=>true;r.edit();r.element('purchaseDelete').onclick();assert.equal(r.item.buyPlan,undefined);};
   const fresh=r=>{assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/,'계좌 상자 접힘');assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'순서 바꾸기 버튼 없음(접힘)');
     r.element('purchaseAccountToggle').onclick();assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'false','펼쳐도 순서 바꾸기 꺼짐');assert.match(r.html(),/class="bp-acc-ctrl" hidden><button[^>]*data-purchase-direction=/,'우선순위 화살표 숨김');assert.doesNotMatch(r.html(),/class="bp-acc-ctrl"><button[^>]*data-purchase-direction=/);};
   const sync=setup(opts),plan=JSON.stringify(sync.item.buyPlan);arm(sync);sync.item.buyPlan=JSON.parse(plan);sync.render();fresh(sync);
-  const box=sync.inputs('[data-purchase-buy]')[0];box.checked=true;box.onchange();assert.match(sync.html(),/hide-completed/,'완료 회차 접힘으로 시작');
+  completeFirstTwo(sync);assert.match(sync.html(),/hide-completed/,'완료 회차 접힘으로 시작');
   const made=setup(opts);arm(made);made.element('addPurchase').onclick();made.element('purchaseItemList').onclick({target:{closest:sel=>sel==='[data-pick]'?{dataset:{pick:'a'}}:null}});
   made.form.lineBudget.value='100';made.alerts.length=0;made.submit();assert.deepEqual(made.alerts,[]);assert.ok(made.item.buyPlan,'창으로 새 계획');fresh(made);
 });
