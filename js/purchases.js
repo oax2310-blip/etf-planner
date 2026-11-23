@@ -516,10 +516,10 @@ function renderPurchases(){
     const done=rows.filter(r=>r.done).length, lastDone=rows.filter(r=>r.done).at(-1), completedOpen=openCompletedPurchases.has(it.id);
     // 시세 대기·회차 간격 안내는 계획 진행 카드 아래쪽에 둔다(계산 요약 카드는 두지 않음).
     const waits=currentNotes.get(it.id);
-    const alertLine=alertable?`<span class="trade-alert-actions"><span>알림</span><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="on">전체 ON</button><button class="btn mini ghost" type="button" data-purchase-alert-all="${id}" data-on="off">OFF</button></span>`
-      :`<span class="purchase-alert-off">휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다</span>`;
-    // 회차별 반영 계좌·실제 ETF·예상액. 새 체결이 들어갈 회차(미체결 → 없으면 부분 체결 → 모두 완료면 전체)의 계좌·ETF가 모두 같으면 회차표 위 '매수 종목' 한 줄로 올리고,
-    // 이름 옆 보유는 새 체결이 반영될 계좌(base[0].found.it)의 현재 수량·평가액을 읽기만 한다. 아래 설명은 그룹만 줄이고 코드·회당 예상액·잔액과 구분점은 한 줄로 유지한다.
+    const alertsOn=alertable&&purchaseAlertOn(plan);
+    const alertLine=`<button class="purchase-alert-switch" type="button" role="switch" aria-label="분할매수 전체 알림" aria-checked="${alertsOn}" ${alertable?`data-purchase-alert-all="${id}" data-on="${alertsOn?"off":"on"}"`:`disabled title="휴대폰 알림은 자산 배분에서 시세 종목 코드를 넣으면 켤 수 있습니다"`}>알림</button>`;
+    // 새 체결이 들어갈 회차(미체결 → 없으면 부분 체결 → 모두 완료면 전체)의 계좌·ETF가 같으면 회차 위에 표시한다.
+    // 보유는 새 체결이 반영될 계좌의 현재 수량·평가액을 읽기만 한다.
     // 미체결 회차의 예상액·잔액까지 같으면 '회당'으로 함께 올린다. 예상액·잔액은 실제 매수 코드가 계획 코드와 다를 때만 둔다(otherCode). 다른 계좌·ETF로 체결한 완료·부분 체결 회차만 회차 아래 작은 줄에 계좌를 둔다(실제 ETF 코드를 넣기 전에 같은 계좌로 체결한 옛 기록은 같은 계좌로 본다). 부분 체결의 남은 예상액은 회차마다 다르므로 회차 아래에 둔다.
     const remainingOf=r=>r.plannedShares!==null?Number(Math.max(0,r.plannedShares-(r.shares||0)).toFixed(8)):null;
     const detailOf=r=>{
@@ -530,14 +530,24 @@ function renderPurchases(){
     const details=new Map(rows.map(r=>[r,detailOf(r)])),base=[rows.filter(r=>!r.recorded),open,rows].find(x=>x.length)||[],lead=base.length?details.get(base[0]):null;
     const sameTarget=(d,l)=>d.group===l.group&&d.name===l.name&&d.ticker===l.ticker,shared=lead&&(lead.name||lead.ticker)&&base.every(r=>sameTarget(details.get(r),lead))?lead:null;
     const openAmounts=new Set(rows.filter(r=>!r.recorded).map(r=>details.get(r).amount)),sharedAmount=shared&&openAmounts.size===1?[...openAmounts][0]:"";
-    const heldItem=base[0]?.found?.it,heldInfo=heldItem?allocationHoldingInfo(heldItem,s):null,heldText=heldInfo?heldInfo.shares!==null?heldInfo.quantityText:heldInfo.valuePending?"":`평가 ${heldInfo.valueText}`:"";
-    const buyTarget=shared?`<div class="purchase-buy-target"><span>매수 종목</span><div><div class="buy-target-name"><b>${escA(shared.name||shared.ticker)}</b>${heldText?`<span class="buy-target-held">${escA(heldText)}</span>`:""}</div>${(parts=>parts.length?`<small class="buy-target-info">${parts.map((t,i)=>`<span${i===0&&shared.group?' class="cut"':""}>${escA(t)}</span>`).join("<span> · </span>")}</small>`:"")([shared.group,shared.name?shared.ticker:"",...sharedAmount.replace(/^예상 /,"회당 ").split(" · ")].filter(Boolean))}</div></div>`:"";
+    const summaryTarget=base.length?shared&&base[0].found:target;
+    const heldItem=summaryTarget?.it,heldInfo=heldItem?allocationHoldingInfo(heldItem,s):null,heldText=heldInfo?heldInfo.shares!==null?heldInfo.quantityText:heldInfo.valuePending?"":`평가 ${heldInfo.valueText}`:"";
+    const [expected, balance]=sharedAmount.replace(/^예상 /,"회당 ").split(" · ");
+    const rowAmounts=new Set(base.map(r=>r.amount)),commonAmount=base[0]?.amount;
+    const targetGroup=shared?shared.group:summaryTarget?.g.name||g.name;
+    const targetCode=shared&&!shared.name?"":shared?.ticker||(heldItem?assetTradeTicker(heldItem):it.ticker);
+    const targetMeta=[targetGroup,targetCode,expected||(shared&&rowAmounts.size===1&&commonAmount>0&&base.every(r=>r.plannedShares!==null)?`회당 ${wonAmount(commonAmount)}`:"")].filter(Boolean);
+    const buyTarget=`<div class="purchase-check-target">
+      <b class="purchase-target-name">${escA(shared?.name||shared?.ticker||heldItem?.name||it.name||it.ticker)}</b>${heldText?`<b class="buy-target-held">${escA(heldText)}</b>`:""}
+      ${targetMeta.length?`<small class="buy-target-info">${targetMeta.map((t,i)=>`<span${i===0&&targetGroup?' class="cut"':""}>${escA(t)}</span>`).join("<span>·</span>")}</small>`:""}${balance?`<small class="purchase-target-balance">${escA(balance)}</small>`:""}
+    </div>`;
     const btcTable=rows.length>0&&rows.every(r=>unitOf(r.tradeItem)<1); // 모든 회차가 비트코인일 때만 수량·체결을 한 칸으로 쌓는다
     const row=r=>{
       const actualItem=r.tradeItem,reached=due(r), partial=r.recorded&&!r.done,missingTarget=!!r.targetId&&!r.found,follows=followsLead(r,trade.target),missingFx=!r.recorded&&!r.tradeTicker&&cur==="USD"&&!s.fx&&!(r.stage?.amount>0), blocked=!r.recorded&&(!(r.plannedShares>0)||!(r.price>0)||missingFx), remaining=remainingOf(r);
       const shown=r.done?r.shares:r.plannedShares, fallback=shown!==null?"":r.done?"체결 수량 미입력":r.stage?.condition||"수량 계산 불가";
       const krw=cur==="USD"?`<span class="krw">${r.price>0?s.fx?`≈ ₩${nf1.format(Math.round(r.price*s.fx))}`:"환율 대기":"시세 대기"}</span>`:"";
-      const note=missingTarget?r.done?"삭제한 계좌에서 체결":follows?"삭제한 계좌에서 일부 체결":"반영 계좌가 없어졌습니다. 0을 입력하면 이 회차의 체결을 취소합니다.":partial?remaining===null?"계획에 매수 가격·수량을 입력하세요.":"":blocked?missingFx?"자산 배분에 원/달러 환율을 입력하거나 현물 시세를 불러오세요.":r.plannedShares===0?`${r.line?"남은 총예산":"회차 예산"}으로 ${qtyText(unitOf(actualItem),actualItem)}를 살 수 없습니다.`:otherCode(it,assetTradeTicker(actualItem))?"실제 매수 ETF의 현재가와 필요한 환율을 확인하세요.":"계획에 매수 가격·수량을 입력하세요.":r.line?"":r.price!==null?[r.stage.condition,r.stage.date].filter(Boolean).join(" · "):r.stage.date||"날짜 미정", name=movingLineText(`${it.name} ${r.label}`);
+      const date=r.done&&/^\d{4}-\d{2}-\d{2}$/.test(r.stage?.date)?r.stage.date:"";
+      const note=missingTarget?r.done?"삭제한 계좌에서 체결":follows?"삭제한 계좌에서 일부 체결":"반영 계좌가 없어졌습니다. 0을 입력하면 이 회차의 체결을 취소합니다.":partial?remaining===null?"계획에 매수 가격·수량을 입력하세요.":"":blocked?missingFx?"자산 배분에 원/달러 환율을 입력하거나 현물 시세를 불러오세요.":r.plannedShares===0?`${r.line?"남은 총예산":"회차 예산"}으로 ${qtyText(unitOf(actualItem),actualItem)}를 살 수 없습니다.`:otherCode(it,assetTradeTicker(actualItem))?"실제 매수 ETF의 현재가와 필요한 환율을 확인하세요.":"계획에 매수 가격·수량을 입력하세요.":r.line?"":r.price!==null?[r.stage.condition,date?"":r.stage.date].filter(Boolean).join(" · "):date?"":r.stage.date||"날짜 미정", name=movingLineText(`${it.name} ${r.label}`);
       const b=r.line?purchaseBuys(plan)[r.line.key]:r.stage,execPrice=finite(b?.execPrice??execBase(b)),execCurrency=b?.tradeCurrency||cur;
       const execTicker=b?.tradeTicker||it.ticker,execTitle=`${name} · ${execTicker} ${linkTicker(execTicker)==="BTC-USD"?"1 BTC":"1주"} 회차 평균 체결가`;
       const exec=r.recorded?`<label class="future-tap-price purchase-exec-price" title="${escA(execTitle)} 수정"><span class="price" aria-hidden="true">체결 ${escA(execPrice===null?"—":priceText(execPrice,execCurrency))}</span><input data-purchase-exec="${id}" ${r.attr} type="text" inputmode="decimal" autocomplete="off" data-money data-money-min="0" data-money-step="any" value="${escA(moneyInputText(execPrice))}" aria-label="${escA(execTitle)} (${escA(execCurrency)})"></label>`:"";
@@ -551,7 +561,7 @@ function renderPurchases(){
         <div class="purchase-qty">${left?`<small class="qty-left">남은</small>${escA(qtyNum(remaining,actualItem))}`:shown===null?"—":escA(btcTable?qtyNum(shown,actualItem):qtyText(shown,actualItem))}</div>
         <div class="purchase-fill">${r.plannedShares!==null||r.recorded&&!r.stage?.partial?`<input type="number" min="0" ${r.plannedShares!==null?`max="${r.plannedShares}"`:""} step="${unitOf(actualItem)}" inputmode="${unitOf(actualItem)<1?"decimal":"numeric"}" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${escA(r.shares??"")}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 누적 체결 수량 (${qtyUnit(actualItem).trim()})">`:""}</div>
         ${alertable?`<div class="purchase-alert">${(r.done||!blocked)&&r.price>0?tradeAlertToggle(purchaseAlertOn(plan,r.line||r.stage),`data-purchase-alert="${id}" ${r.attr}`,name,r.done):""}</div>`:""}
-        <div class="status${r.done?" done":partial?" partial":reached?" due":""}">${r.done?"매수 완료":partial?"부분 체결":reached?"도달":"대기"}</div>${sub?`<small class="purchase-sub">${sub}</small>`:""}</div>`;
+        <div class="status${r.done?" done":partial?" partial":reached?" due":""}">${date?`<time datetime="${date}" title="매수 예정일 ${date}">${date.slice(5).replace("-",".")}</time>`:""}${r.done?"체결 ✓":partial?"부분 체결":reached?"도달":"대기"}</div>${sub?`<small class="purchase-sub">${sub}</small>`:""}</div>`;
     };
     const bounds=lines?availableLevels:rows,first=rows.find(r=>r.recorded)||bounds[0],last=waitingLast?null:bounds.at(-1);
     const mixedTickers=new Set(rows.map(r=>linkTicker(r.tradeTicker||assetTradeTicker(r.tradeItem)))).size>1;
@@ -591,7 +601,16 @@ function renderPurchases(){
     const dock=complete&&lastDone?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-exec-focus="${id}" ${lastDone.attr}>체결가 수정</button><button class="btn primary bp-main" type="button" data-purchase-new="${id}">＋ 새 분할매수 계획</button></div>`
       :dockRow?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-focus="${id}" ${dockRow.attr}>부분 체결 · 체결가</button><button class="btn primary bp-main" type="button" data-purchase-act="${id}" ${dockRow.attr}${blockedOf(dockRow)?" disabled":""}>✓ ${label(dockRow)} ${dockRow.recorded?dockRow.plannedShares===null?"잔량 체결":`남은 ${qtyOf(left(dockRow),dockRow.tradeItem)} 체결`:`${qtyOf(dockRow.plannedShares||0,dockRow.tradeItem)} 체결 완료`}</button></div>`:"";
     return `<div data-purchase-item="${id}" class="bp">${summary}${curveCard}
-      <div class="section-heading"><h2>분할매수 체크</h2>${alertLine}<span>${p.count?`${p.done} / ${p.count}회 완료`:budgetMissing?"예산 입력 대기":"회차 시세 대기"}</span></div><section class="card table-card purchase-table${completedOpen?"":" hide-completed"}${alertable?"":" no-alert"}${btcTable?" btc":""}" id="purchaseTable">${buyTarget}<div class="purchase-table-head${lines?" line":""}"><span>회차</span><span>기준가</span>${btcTable?"<span>매수 / 체결 <small>BTC</small></span>":"<span>매수</span><span>체결</span>"}${alertable?"<span>알림</span>":""}<span>상태</span></div>${done?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"><span>매수 완료 <b>${done}회</b></span><span class="completed-fold-action" data-completed-action>${completedOpen?"접기":"펼치기"}</span></button>`:""}<div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${emptyText}</div>`}</div>${rows.length&&done===rows.length?'<div class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</div>':""}</section>${dock}
+      <div class="section-heading"><h2 id="purchaseCheckTitle">분할매수 체크</h2>${alertLine}</div>
+      <section class="purchase-table${completedOpen?"":" hide-completed"}${alertable?"":" no-alert"}${btcTable?" btc":""}" id="purchaseTable" aria-labelledby="purchaseCheckTitle">
+        ${buyTarget}
+        <button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"${done?"":" disabled"}>
+          <span class="purchase-fold-fill" style="width:${pctDone}%" aria-hidden="true"></span>
+          <span class="purchase-fold-label">매수 완료 <b>${p.done} / ${p.count}회</b></span>
+          <span class="purchase-fold-end"><b>${pctDone}%</b><span class="purchase-fold-arrow" aria-hidden="true"></span><span class="sync-status" data-completed-action>${completedOpen?"접기":"펼치기"}</span></span>
+        </button>
+        <div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${emptyText}</div>`}</div>
+      </section>${dock}
       </div>`;
   };
   // 카드 이름이 없으면 제목과 같은 종목 이름(leadName)을 굵게, PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 이름이 다른 코드에도 있을 때만 코드 줄을 보인다(.show-code).
@@ -752,6 +771,7 @@ function renderPurchases(){
   all("[data-purchase-act]").forEach(b=>bindPurchaseAccountAction(b,()=>actPurchaseRow?.(b.dataset.purchaseAct,b.dataset.key,b.dataset.stage)));
   const focusRowInput=(sel,owner,b)=>{
     const x=[...all(sel)].find(x=>owner(x)===(b.dataset.purchaseFocus??b.dataset.purchaseExecFocus)&&(x.dataset.key??x.dataset.stage)===(b.dataset.key??b.dataset.stage));
+    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done"))all("[data-purchase-fold]")[0]?.onclick();
     if(x){x.scrollIntoView?.({block:"center",behavior:"smooth"});x.focus?.({preventScroll:true});}
   };
   // 보조 버튼도 [체결]처럼 편집 입력의 blur 저장·재렌더 뒤에 실행해 클릭을 잃지 않는다. 입력은 그때의 최신 DOM에서 찾는다(all).

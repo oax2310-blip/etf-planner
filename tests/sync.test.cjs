@@ -928,7 +928,8 @@ test('시세 즉시 불러오기 중 중복 클릭과 자동 동기화는 조회
   const work=h.elements.get('refreshPricesBtn').onclick();
   assert.equal(h.elements.get('refreshPricesBtn').disabled,true);
   assert.equal(h.elements.get('refreshPricesDialogBtn').disabled,true);
-  assert.match(h.elements.get('refreshPricesBtn').textContent,/불러오는 중/);
+  assert.equal(h.elements.get('refreshPricesBtn').ariaBusy,'true');
+  assert.match(h.elements.get('priceRefreshLabel').textContent,/불러오는 중/);
   await h.elements.get('refreshPricesDialogBtn').onclick();await h.run();
   assert.equal(h.server.requests,requests);
   release();await work;

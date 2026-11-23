@@ -32,7 +32,11 @@ const isBlank = json => {const d=JSON.parse(json),f=d.futures||{},a=d.actions||{
 function syncStatus(message){$("syncStatus").textContent=message;$("syncDialogStatus").textContent=message;const btn=$("syncBtn");btn.title=message;syncBadge();}
 // 동기화 버튼 아이콘 상태: off(연결 안 됨, 회전 아이콘 대신 빨간 ! 표시) · busy(도는 중) · ok(초록 점) · warn(주황 점, 확인 필요)
 function syncBadge(){$("syncBtn").className="btn mini sync-btn "+(!connected()?"off":sync.failed||sync.blocked?"warn":sync.busy?"busy":"ok");priceRefreshControls();if(typeof renderPushConnectionStatus==="function")renderPushConnectionStatus();if(typeof splitDialog==="object")splitDialog.updateStatus();}
-function priceRefreshControls(){for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=$(key);btn.disabled=sync.busy||priceRefreshBusy;btn.ariaBusy=String(priceRefreshBusy);btn.textContent=priceRefreshBusy?"시세 불러오는 중…":"시세 즉시 불러오기";}}
+function priceRefreshControls(){
+  for(const key of ["refreshPricesBtn","refreshPricesDialogBtn"]){const btn=$(key);btn.disabled=sync.busy||priceRefreshBusy;btn.ariaBusy=String(priceRefreshBusy);}
+  const label=priceRefreshBusy?"시세 불러오는 중…":"시세 즉시 불러오기";
+  $("priceRefreshLabel").textContent=label;$("refreshPricesDialogBtn").textContent=label;
+}
 function scheduleSync(delay=1500){if(!connected()||sync.blocked)return;clearTimeout(sync.timer);sync.timer=setTimeout(()=>syncNow(),delay);}
 // 같은 브라우저의 여러 페이지(탭·창·뒤로 가기로 복원한 화면·알림으로 다시 연 화면)는 state를 따로 들고 기기 기록(STORAGE_KEY)과 동기화 기준(SYNC_BASE_KEY)은 함께 쓴다.
 // 옛 state를 가진 페이지가 그대로 덮어쓰면 다른 페이지의 체결·알림 삭제가 기기 기록에서 사라지고, 다음에 열 때 더 새 동기화 기준과 비교해 이 기기에서 지운 수정으로 보고
@@ -202,6 +206,8 @@ async function refreshPrices(){
 // 시세 줄: 종목 수(비트코인 제외)·달러선물 월물 수·현물 환율·비트코인(BTC-USD, 달러) 현재가
 function priceStatus(message){const d=priceData,at=Date.parse(d?.updatedAt),fx=fxEntry(d),btc=btcEntry(d),stocks=Object.values(d?.stocks||{}).filter(e=>e?.kind!=="코인").length;
   const late=!message&&connected()&&priceCollectionLate(d?.updatedAt); // 정기 수집이 늦어짐(예약 실행 누락·지연) — price-collection.js
+  $("priceRefreshTime").textContent=Number.isFinite(at)?`${new Date(at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"})} 시세 기준`:"시세 기준 대기";
+  $("refreshPricesBtn").title=message||(late?"시세 즉시 불러오기 · 수집 지연":"시세 즉시 불러오기");
   priceReadMessage=message||"";$("priceRefreshStatus").className=message?"warning":late?"late":"";$("priceRefreshStatus").textContent=message||(at?`최근 수집 ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}${late?" · 수집 지연":""}`:connected()?"시세를 바로 수집한 뒤 불러옵니다.":"동기화를 연결하면 시세를 불러올 수 있습니다.");
   $("priceStatus").textContent=message||(d?`시세 파일${at?` ${new Date(at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})} 갱신`:""} · 종목 ${stocks}개 · 달러선물 ${Object.keys(d.futures).length}개 월물 · ${fx?`현물 환율 ${priceRound(fx.close,2)}원 (${fx.asOf}${fx.stale?" · 조회 실패":""}${priceOld(fx)?" · 지난 시세":""})`:"현물 환율 없음(기존 값 유지)"}${btc?` · 비트코인 $${priceRound(btc.close,2).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} (${btc.asOf} UTC${btc.stale?" · 조회 실패":""}${priceOld(btc)?" · 지난 시세":""})`:""}. 현재가·이동평균선 기준가·달러 계획 환율을 자동으로 채웁니다.${late?" 정기 수집이 예정보다 늦어지고 있습니다(GitHub 예약 실행 지연·누락). 그동안 시세와 알림도 늦을 수 있으며, 시세 즉시 불러오기로 바로 받을 수 있습니다.":""}`:"");}
 // 입력 중인 칸(글자·숫자·선택, 동기화 창의 연결 칸은 제외). 다른 기기 기록을 적용하면 화면을 다시 그리며 저장하지 않은 입력이 지워지고
