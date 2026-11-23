@@ -2440,26 +2440,28 @@ test('분할매수 시세 대기: 회차 시세 대기를 표시하고 기준가
   assert.match(r.html(),/매수 완료 <b>0 \/ [1-9]\d*회/);
   assert.equal(r.input('[data-purchase-fold]').disabled,true,'완료 회차가 생기면 펼칠 수 있음');
 });
-test('완료 뒤 [체결가 수정]은 입력이 속한 표를 펼쳐 마지막 체결가 입력에 포커스를 맞춘다',()=>{
+test('완료 뒤 [체결가 수정]은 접혀도 보이는 마지막 완료 회차(last-done)의 체결가 입력에 포커스를 맞추고, 숨은 완료 회차만 그 표를 펼친다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:20000,ma:{'25일선':10000,'32일선':16000}});
   for(const x of r.inputs('[data-purchase-buy]')){const box=r.inputs('[data-purchase-buy]').find(y=>y.dataset.key===x.dataset.key);box.checked=true;box.onchange();}
   assert.match(r.html(),/class="purchase-table hide-completed/,'완료 회차는 접힌 기본 상태');
   const target=r.input('[data-purchase-exec-focus]').dataset.key;
   const last=r.html().match(/<div class="purchase-row[^"]*\blast-done\b[^"]*">[\s\S]*?data-purchase-exec="a" data-key="([^"]+)"/);
-  assert.ok(last,'last-done 회차에 체결가 입력이 있음');assert.equal(target,last[1],'마지막 완료 회차를 고름');
-  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/#purchaseTable\.hide-completed \.purchase-row\.done,.*\{display:none\}/);
+  assert.ok(last,'last-done 회차에 체결가 입력이 있음');assert.equal(target,last[1],'접혀도 보이는(last-done) 회차를 고름');
+  const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/#purchaseTable\.hide-completed \.purchase-row\.done:not\(\.last-done\),/,'접어도 마지막 완료 회차는 보임');assert.doesNotMatch(css,/hide-completed \.purchase-row\.done[,{]/,'완료 회차 전체를 숨기는 규칙 없음');
   const fold=r.input('[data-purchase-fold]');
   assert.equal(fold.getAttribute('aria-expanded'),'false');fold.querySelector=()=>({});
   const table=r.element('purchaseTable');table.querySelector=selector=>selector==='[data-purchase-fold]'?fold:null;
   const document=r.ctx.document,queryAll=document.querySelectorAll;
   const otherFold={onclick:()=>assert.fail('다른 표의 접힘 버튼은 호출하지 않는다')};
   document.querySelectorAll=selector=>selector==='[data-purchase-fold]'?[otherFold,...queryAll(selector)]:queryAll(selector);
-  const focused=[];for(const e of r.inputs('[data-purchase-exec]')){
-    e.closest=selector=>selector==='#purchaseTable'?table:selector==='#purchaseTable.hide-completed .purchase-row.done'?{}:null;
+  let hidden=false;const focused=[];for(const e of r.inputs('[data-purchase-exec]')){
+    e.closest=selector=>selector==='#purchaseTable'?table:selector==='#purchaseTable.hide-completed .purchase-row.done:not(.last-done)'&&hidden?{}:null;
     e.focus=()=>focused.push(e.dataset.key);
   }
   r.input('[data-purchase-exec-focus]').onclick();
-  assert.equal(fold.getAttribute('aria-expanded'),'true');assert.deepEqual(focused,[target]);
+  assert.equal(fold.getAttribute('aria-expanded'),'false','last-done은 접힌 채로 보이므로 펼치지 않음');assert.deepEqual(focused,[target]);
+  hidden=true;r.input('[data-purchase-exec-focus]').onclick();
+  assert.equal(fold.getAttribute('aria-expanded'),'true','숨은 완료 회차면 그 표를 펼침');assert.deepEqual(focused,[target,target]);
 });
 test('반영 계좌가 없어진 부분 체결 회차는 회차표 체크박스처럼 하단 [체결] 버튼도 끄고, 계획 수량을 모르는 부분 체결은 음수 없이 잔량 체결로 보인다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:12500,ma:{'25일선':10000,'32일선':16000}}),{move}=linkedAccounts(r);move('b',-1);

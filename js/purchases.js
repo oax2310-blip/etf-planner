@@ -10,7 +10,7 @@ const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null,purchasePlansOpen=false,purchasePlanQuery="",purchasePlotW=325,purchasePlotFixing=false; // purchasePlotW: 곡선 그래프의 실제 폭(px, 렌더 뒤 잰 값) // purchasePlansOpen: 모바일 제목 ▾로 연 저장된 계획 목록(화면 상태)
-// 완료 회차는 기본으로 접는다. 하단 [체결가 수정]은 표 순서의 마지막 완료 회차(last-done)를 펼쳐 입력을 찾는다.
+// 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 체결가 수정을 위해 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
 let actPurchaseRow=null; // 가장 최근 renderPurchases의 [체결] 실행 함수(그 렌더의 rowData·fills를 쓴다)
 const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),sortingPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(),purchaseMemoDrafts=new Map(),purchaseCurvePick=new Map(); // 완료 회차 펼침·계좌 펼침·순서 바꾸기·메모 편집 열림·작성 중 메모는 화면 상태로만 둔다
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
@@ -772,7 +772,7 @@ function renderPurchases(){
   all("[data-purchase-act]").forEach(b=>bindPurchaseAccountAction(b,()=>actPurchaseRow?.(b.dataset.purchaseAct,b.dataset.key,b.dataset.stage)));
   const focusRowInput=(sel,owner,b)=>{
     const x=[...all(sel)].find(x=>owner(x)===(b.dataset.purchaseFocus??b.dataset.purchaseExecFocus)&&(x.dataset.key??x.dataset.stage)===(b.dataset.key??b.dataset.stage));
-    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done")){
+    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done:not(.last-done)")){ // 접혀서 숨은 완료 회차만 펼친다(last-done은 접혀도 보임)
       x.closest("#purchaseTable")?.querySelector("[data-purchase-fold]")?.onclick?.();
     }
     if(x){x.scrollIntoView?.({block:"center",behavior:"smooth"});x.focus?.({preventScroll:true});}

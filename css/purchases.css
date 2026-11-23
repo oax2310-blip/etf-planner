@@ -422,7 +422,7 @@
 #purchaseTable.btc.no-alert .purchase-row,#purchaseTable.btc .purchase-row.done{
   grid-template-columns:minmax(var(--check-round),1fr) minmax(0,1.25fr) minmax(86px,.85fr) minmax(44px,.65fr);
 }
-#purchaseTable.hide-completed .purchase-row.done,#purchaseTable .purchase-row.done>.purchase-alert{display:none}
+#purchaseTable.hide-completed .purchase-row.done:not(.last-done),#purchaseTable .purchase-row.done>.purchase-alert{display:none}
 #purchaseTable .purchase-row>.check{min-width:0;gap:5px;font-size:12px}
 #purchaseTable .purchase-row>.check input{width:14px;height:14px}
 #purchaseTable .purchase-row.done>.check{position:relative;color:var(--planner-mint)}
