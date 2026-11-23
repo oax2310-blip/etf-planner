@@ -270,17 +270,15 @@
 /* 보유 라벨은 평가액의 첫 줄과 함께 두고, 긴 평가액은 묶음 안에서 줄을 넘긴다. */
 .bp-acc-value{display:inline-flex;align-items:baseline;gap:3px;min-width:0;max-width:100%}.bp-acc-value b{min-width:0}
 /* 손익은 묶음째 줄을 넘기고, 묶음이 가용 폭보다 길면 금액과 손익률 사이에서도 줄을 넘긴다. */
-.bp-acc-sum-r{display:inline-flex;flex-wrap:wrap;min-width:0;max-width:100%;align-items:baseline;gap:1px 3px}.bp-acc-sum>small:not(.bp-acc-label){margin-right:4px} /* 묶음 앞 간격은 비율 쪽 여백으로 둬 넘긴 줄이 왼쪽에 맞는다 */
+.bp-acc-sum-r{display:inline-flex;flex-wrap:wrap;min-width:0;max-width:100%;align-items:baseline;gap:1px 3px}.bp-acc-sum>small{margin-right:4px} /* 묶음 앞 간격은 비율 쪽 여백으로 둬 넘긴 줄이 왼쪽에 맞는다 */
 .bp-acc-sum b,.bp-acc-sum .bp-acc-sum-pl{font-size:14px;font-weight:700;letter-spacing:-.02em}
 .bp-acc-sum small{font-size:11px;font-weight:600;color:var(--text-2)}
-.bp-acc-sum .bp-acc-label{flex:none;color:var(--text-3);font-weight:500}
 .bp-acc-sum .profit-gain,.bp-acc-pl .profit-gain{color:var(--bp-red)}.bp-acc-sum .profit-loss,.bp-acc-pl .profit-loss{color:var(--bp-loss)}
 .bp .bp-acc-toggle{display:flex;flex-wrap:wrap;align-items:baseline;align-content:center;min-height:32px;margin:0;padding:0;border:0;border-radius:0;background:none;color:var(--text);text-align:left;-webkit-tap-highlight-color:transparent}
 .bp .bp-acc-toggle::after{content:"";position:absolute;inset:0;border-radius:16px} /* 음각 상자 전체를 누를 자리로 */
 .bp-acc:has(.bp-acc-toggle:focus-visible){outline:2px solid var(--accent);outline-offset:2px}.bp .bp-acc-toggle:focus-visible{outline:0}
 .bp .bp-acc-toggle:active::after{background:rgba(128,128,128,.08)}
-.bp-acc-chev{align-self:center;margin-left:auto;padding-left:6px;font-size:12px;line-height:1;color:var(--text-2);transition:transform .15s}.bp-acc-toggle[aria-expanded=true] .bp-acc-chev{transform:rotate(180deg)}
-.bp .bp-acc-sort{flex:none;width:32px;min-height:32px;padding:0;border-radius:11px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text-2);font-size:14px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
+.bp .bp-acc-sort{position:relative;z-index:1;flex:none;width:32px;min-height:32px;padding:0;border-radius:11px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text-2);font-size:14px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
 .bp .bp-acc-sort.on{color:var(--bp-blue-2);border-color:color-mix(in srgb,var(--bp-blue) 45%,transparent);background:color-mix(in srgb,var(--bp-blue) 16%,transparent)}
 .bp-acc-drawer{display:flex;flex-direction:column;gap:10px;margin-top:8px;padding:0 2px}.bp-acc-drawer[hidden]{display:none}
 .bp-acc-policy{margin:8px 1px 0;font-size:11.5px;color:var(--danger)}.bp-acc-policy.sort{color:var(--text-3)}
