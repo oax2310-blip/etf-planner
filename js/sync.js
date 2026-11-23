@@ -345,7 +345,7 @@ $("connectRepo").onclick=()=>{
 };
 $("syncNow").onclick=()=>{sync.blocked=false;if(connected())syncNow();else syncStatus("먼저 저장소와 토큰으로 연결해 주세요.");};
 $("refreshPricesBtn").onclick=refreshPrices;$("refreshPricesDialogBtn").onclick=refreshPrices;
-$("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");};
+$("disconnectRepo").onclick=()=>{clearTimeout(sync.timer);localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(repoSecurity.tokenKey);localStorage.removeItem(repoSecurity.repoKey);loadConfig();refreshTokenField();refreshCollectionTokenField();syncStatus("이 기기에만 저장 중");priceStatus();};
 // 열 때(startSync)·45초마다·탭 복귀 시 동기화. 숨긴 화면과 미해결 충돌은 주기 동기화를 멈춘다.
 // 숨기거나 떠날 때(앱 전환·화면 끔·다른 페이지로 이동)는 대기 중인 이 기기 수정을 바로 올린다(flushPlanner). 입력 칸을 강제로 확정하지는 않는다
 // (일부 칸은 확정할 때 확인·계좌 선택 창을 열어, 숨긴 화면에서 입력이 취소될 수 있음).

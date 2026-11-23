@@ -884,6 +884,26 @@ test('플래너 시세 수집 지연은 숨기지 않고 상태 줄과 주황 �
   assert.equal(dot.className,'price-refresh-dot warn');
 });
 
+test('동기화 연결 해제는 시세 기준 시각을 유지하고 수집 지연 문구와 주황 점을 지운다', async () => {
+  const prices = {updatedAt: new Date(Date.now() - 10 * 3600000).toISOString(), stocks: {}, futures: {}};
+  const h = harness({remote: empty(), prices});
+  await h.restored();
+
+  const time = h.elements.get('priceRefreshTime');
+  const status = h.elements.get('priceRefreshStatus');
+  const dot = h.elements.get('priceRefreshDot');
+  const displayedTime = time.textContent;
+  assert.match(displayedTime, /\d{2}:\d{2} 시세 기준$/);
+  assert.equal(status.textContent, '수집 지연');
+  assert.equal(dot.className, 'price-refresh-dot warn');
+
+  h.elements.get('disconnectRepo').click();
+
+  assert.equal(time.textContent, displayedTime);
+  assert.equal(status.textContent, '');
+  assert.equal(dot.className, 'price-refresh-dot');
+});
+
 for(const [title,day,expected] of [['오늘',23,'10:24 시세 기준'],['지난 날짜',20,'11. 20. 10:24 시세 기준']]){
   test(`플래너 시세 기준 시각은 기기 기준 ${title}에 맞춰 날짜를 표시한다`, () => {
     const h=harness({connect:false}),now=new Date(2026,10,23,12).getTime();
