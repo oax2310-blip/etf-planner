@@ -2388,7 +2388,40 @@ test('메모는 계좌 · 설정 펼침 안의 한 줄로 첫 줄만 보이고 [
   assert.equal(r.item.buyPlan.note,'바뀐 메모');assert.equal(writes,1);assert.match(r.html(),/<span class="bp-memo-text">메모: 바뀐 메모<\/span>/);assert.match(r.html(),/id="purchaseMemoEditor" hidden>/,'저장하면 닫힘');
   r.element('purchaseMemoEdit').onclick();r.element('purchaseMemo').value='  ';r.element('savePurchaseNote').onclick();assert.equal(Object.hasOwn(r.item.buyPlan,'note'),false,'비우면 필드를 지움');
 });
-test('완료 뒤 [체결가 수정]은 완료 회차를 펼쳐 마지막 체결가 입력에 포커스를 맞춘다',()=>{
+test('분할매수 전 회차 완료: 접힌 본문에 완료 안내를 두고 펼침 상태는 화면에만 유지한다',()=>{
+  const r=setup({manual:true});r.change('[data-purchase-done]',true);
+  const before=JSON.stringify(r.doc),fold=r.input('[data-purchase-fold]');
+  assert.equal(fold.getAttribute('aria-expanded'),'false');
+  assert.match(r.html(),/class="purchase-table hide-completed/);
+  assert.match(r.html(),/<p class="completed-fold-empty">모든 회차의 매수가 완료되었습니다\.<\/p><\/div>/);
+  const css=fs.readFileSync(path.join(__dirname,'../css/app.css'),'utf8');
+  assert.match(css,/\.completed-fold-empty\{display:none/);
+  assert.match(css,/\.purchase-table\.hide-completed \.completed-fold-empty\{display:block\}/);
+  fold.querySelector=()=>({});fold.onclick();r.render();
+  assert.equal(r.input('[data-purchase-fold]').getAttribute('aria-expanded'),'true');
+  assert.doesNotMatch(r.html(),/class="purchase-table hide-completed/);
+  assert.equal(JSON.stringify(r.doc),before);
+});
+test('분할매수 예산 미입력: 진행률 대신 예산 입력 대기와 입력 안내를 표시한다',()=>{
+  const r=setup({budget:0,end:12000,ma:{'25일선':10000}});
+  delete r.item.buyPlan.lines.budget;r.render();
+  assert.match(r.html(),/<p class="purchase-fold-wait">예산 입력 대기<\/p>/);
+  assert.match(r.html(),/id="purchaseRows"><div class="empty">계획에 매수 금액을 입력하면 회차가 표시됩니다\./);
+  assert.equal(r.input('[data-purchase-fold]'),undefined);
+  assert.doesNotMatch(r.html(),/매수 완료 <b>0 \/ 0회/);
+});
+test('분할매수 시세 대기: 회차 시세 대기를 표시하고 기준가가 들어오면 진행률을 표시한다',()=>{
+  const r=setup({budget:60,end:null,names:['25일선','32일선']});
+  assert.match(r.html(),/<p class="purchase-fold-wait">회차 시세 대기<\/p>/);
+  assert.match(r.html(),/id="purchaseRows"><div class="empty">기준가가 준비되면 매수 회차가 표시됩니다\./);
+  assert.equal(r.input('[data-purchase-fold]'),undefined);
+  assert.doesNotMatch(r.html(),/매수 완료 <b>0 \/ 0회/);
+  r.prices.stocks['111111'].ma={'25일선':10000,'32일선':16000};r.render();
+  assert.doesNotMatch(r.html(),/purchase-fold-wait/);
+  assert.match(r.html(),/매수 완료 <b>0 \/ [1-9]\d*회/);
+  assert.equal(r.input('[data-purchase-fold]').disabled,true,'완료 회차가 생기면 펼칠 수 있음');
+});
+test('완료 뒤 [체결가 수정]은 입력이 속한 표를 펼쳐 마지막 체결가 입력에 포커스를 맞춘다',()=>{
   const r=setup({budget:100,end:null,names:['25일선','32일선'],price:20000,ma:{'25일선':10000,'32일선':16000}});
   for(const x of r.inputs('[data-purchase-buy]')){const box=r.inputs('[data-purchase-buy]').find(y=>y.dataset.key===x.dataset.key);box.checked=true;box.onchange();}
   assert.match(r.html(),/class="purchase-table hide-completed/,'완료 회차는 접힌 기본 상태');
@@ -2398,8 +2431,12 @@ test('완료 뒤 [체결가 수정]은 완료 회차를 펼쳐 마지막 체결�
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');assert.match(css,/#purchaseTable\.hide-completed \.purchase-row\.done,.*\{display:none\}/);
   const fold=r.input('[data-purchase-fold]');
   assert.equal(fold.getAttribute('aria-expanded'),'false');fold.querySelector=()=>({});
+  const table=r.element('purchaseTable');table.querySelector=selector=>selector==='[data-purchase-fold]'?fold:null;
+  const document=r.ctx.document,queryAll=document.querySelectorAll;
+  const otherFold={onclick:()=>assert.fail('다른 표의 접힘 버튼은 호출하지 않는다')};
+  document.querySelectorAll=selector=>selector==='[data-purchase-fold]'?[otherFold,...queryAll(selector)]:queryAll(selector);
   const focused=[];for(const e of r.inputs('[data-purchase-exec]')){
-    e.closest=selector=>selector==='#purchaseTable.hide-completed .purchase-row.done'?{}:null;
+    e.closest=selector=>selector==='#purchaseTable'?table:selector==='#purchaseTable.hide-completed .purchase-row.done'?{}:null;
     e.focus=()=>focused.push(e.dataset.key);
   }
   r.input('[data-purchase-exec-focus]').onclick();

@@ -10,7 +10,7 @@ const numIn=moneyInputNumber;
 const setNum=(obj,key,v)=>{const n=numIn(v);if(n===null)delete obj[key];else obj[key]=n;};
 const setText=(obj,key,v)=>{const t=String(v??"").trim();if(t)obj[key]=t;else delete obj[key];};
 let doc=assetStore.doc,prices=assetStore.prices,redrawLater=false,initialized=false,selectedPurchaseId=null,purchasePointerDown=false,purchaseEditRejected=false,purchaseAccountDeletingId=null,purchasePlansOpen=false,purchasePlanQuery="",purchasePlotW=325,purchasePlotFixing=false; // purchasePlotW: 곡선 그래프의 실제 폭(px, 렌더 뒤 잰 값) // purchasePlansOpen: 모바일 제목 ▾로 연 저장된 계획 목록(화면 상태)
-// 완료 회차는 기본 접기하되 표 순서의 마지막 완료 1개(last-done)는 남긴다. 마지막 완료는 그릴 때마다 고르고, 종목별 펼침 상태도 자산·체결·동기화 기록에는 저장하지 않는다.
+// 완료 회차는 기본으로 접는다. 하단 [체결가 수정]은 표 순서의 마지막 완료 회차(last-done)를 펼쳐 입력을 찾는다.
 let actPurchaseRow=null; // 가장 최근 renderPurchases의 [체결] 실행 함수(그 렌더의 rowData·fills를 쓴다)
 const openCompletedPurchases=new Set(),openPurchaseAccounts=new Set(),sortingPurchaseAccounts=new Set(),editingPurchaseMemos=new Set(),purchaseMemoDrafts=new Map(),purchaseCurvePick=new Map(); // 완료 회차 펼침·계좌 펼침·순서 바꾸기·메모 편집 열림·작성 중 메모는 화면 상태로만 둔다
 function findItem(id){for(const g of doc.allocation?.groups||[]){const it=g.items.find(x=>x.id===id);if(it)return {g,it};}return null;}
@@ -604,12 +604,12 @@ function renderPurchases(){
       <div class="section-heading"><h2 id="purchaseCheckTitle">분할매수 체크</h2>${alertLine}</div>
       <section class="purchase-table${completedOpen?"":" hide-completed"}${alertable?"":" no-alert"}${btcTable?" btc":""}" id="purchaseTable" aria-labelledby="purchaseCheckTitle">
         ${buyTarget}
-        <button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"${done?"":" disabled"}>
+        ${p.count?`<button class="completed-fold-bar" type="button" data-purchase-fold="${id}" aria-expanded="${completedOpen}" aria-controls="purchaseRows"${done?"":" disabled"}>
           <span class="purchase-fold-fill" style="width:${pctDone}%" aria-hidden="true"></span>
           <span class="purchase-fold-label">매수 완료 <b>${p.done} / ${p.count}회</b></span>
           <span class="purchase-fold-end"><b>${pctDone}%</b><span class="purchase-fold-arrow" aria-hidden="true"></span><span class="sync-status" data-completed-action>${completedOpen?"접기":"펼치기"}</span></span>
-        </button>
-        <div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${emptyText}</div>`}</div>
+        </button>`:`<p class="purchase-fold-wait">${budgetMissing?"예산 입력 대기":targetReached?"목표 도달":"회차 시세 대기"}</p>`}
+        <div id="purchaseRows">${rows.map(row).join("")||`<div class="empty">${emptyText}</div>`}${complete?'<p class="completed-fold-empty">모든 회차의 매수가 완료되었습니다.</p>':""}</div>
       </section>${dock}
       </div>`;
   };
@@ -771,7 +771,9 @@ function renderPurchases(){
   all("[data-purchase-act]").forEach(b=>bindPurchaseAccountAction(b,()=>actPurchaseRow?.(b.dataset.purchaseAct,b.dataset.key,b.dataset.stage)));
   const focusRowInput=(sel,owner,b)=>{
     const x=[...all(sel)].find(x=>owner(x)===(b.dataset.purchaseFocus??b.dataset.purchaseExecFocus)&&(x.dataset.key??x.dataset.stage)===(b.dataset.key??b.dataset.stage));
-    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done"))all("[data-purchase-fold]")[0]?.onclick();
+    if(x?.closest?.("#purchaseTable.hide-completed .purchase-row.done")){
+      x.closest("#purchaseTable")?.querySelector("[data-purchase-fold]")?.onclick?.();
+    }
     if(x){x.scrollIntoView?.({block:"center",behavior:"smooth"});x.focus?.({preventScroll:true});}
   };
   // 보조 버튼도 [체결]처럼 편집 입력의 blur 저장·재렌더 뒤에 실행해 클릭을 잃지 않는다. 입력은 그때의 최신 DOM에서 찾는다(all).

@@ -381,11 +381,13 @@
 .purchase-target-balance{
   grid-column:2;grid-row:2;text-align:right;white-space:nowrap;color:var(--purchase-balance);font-size:10px;
 }
-#purchaseTable .completed-fold-bar{
-  position:relative;isolation:isolate;height:29px;min-height:0;overflow:hidden;
+#purchaseTable :is(.completed-fold-bar,.purchase-fold-wait){
+  height:29px;min-height:0;overflow:hidden;
   padding:0 13px;border:1px solid var(--planner-rule);border-radius:9999px;
-  background:var(--purchase-track);color:var(--text);white-space:nowrap;
+  background:var(--purchase-track);white-space:nowrap;
 }
+#purchaseTable .completed-fold-bar{position:relative;isolation:isolate;color:var(--text)}
+#purchaseTable .purchase-fold-wait{display:flex;align-items:center;margin:0;color:var(--planner-meta);font-size:12.5px;font-weight:600}
 #purchaseTable .completed-fold-bar:disabled{opacity:1;cursor:default}
 .purchase-fold-fill{
   position:absolute;inset:0 auto 0 0;z-index:-1;border-radius:9999px;
@@ -395,10 +397,13 @@
 .purchase-fold-label,.purchase-fold-end{display:flex;align-items:center;gap:5px}
 .purchase-fold-end{color:var(--planner-mint)}
 .purchase-fold-arrow{width:10px;text-align:center;color:var(--text-2);font-size:10px;line-height:1}
-.purchase-fold-arrow::before{content:"⌄"}
+.purchase-fold-arrow::before{content:"▼"}
 .completed-fold-bar[aria-expanded=true] .purchase-fold-arrow::before{content:"▲"}
 .completed-fold-bar:disabled .purchase-fold-arrow{visibility:hidden}
 #purchaseRows{margin-top:6px}
+#purchaseTable .completed-fold-empty{
+  margin:0;padding:7px 2px;border-top:1px solid var(--purchase-row-line);background:none;color:var(--planner-mint);font-size:11.5px;
+}
 #purchaseTable .purchase-row{
   --check-round:60px;
   min-height:38px;gap:3px 7px;padding:5px 2px;border:0;border-top:1px solid var(--purchase-row-line);
