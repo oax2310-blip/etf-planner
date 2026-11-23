@@ -561,7 +561,7 @@ function renderPurchases(){
         <div class="purchase-qty">${left?`<small class="qty-left">남은</small>${escA(qtyNum(remaining,actualItem))}`:shown===null?"—":escA(btcTable?qtyNum(shown,actualItem):qtyText(shown,actualItem))}</div>
         <div class="purchase-fill">${r.plannedShares!==null||r.recorded&&!r.stage?.partial?`<input type="number" min="0" ${r.plannedShares!==null?`max="${r.plannedShares}"`:""} step="${unitOf(actualItem)}" inputmode="${unitOf(actualItem)<1?"decimal":"numeric"}" ${r.line?"data-purchase-buy-shares":"data-purchase-shares"}="${id}" ${r.attr} value="${escA(r.shares??"")}" placeholder="0"${blocked?" disabled":""} aria-label="${escA(name)} 누적 체결 수량 (${qtyUnit(actualItem).trim()})">`:""}</div>
         ${alertable?`<div class="purchase-alert">${(r.done||!blocked)&&r.price>0?tradeAlertToggle(purchaseAlertOn(plan,r.line||r.stage),`data-purchase-alert="${id}" ${r.attr}`,name,r.done):""}</div>`:""}
-        <div class="status${r.done?" done":partial?" partial":reached?" due":""}">${date?`<time datetime="${date}" title="매수 예정일 ${date}">${date.slice(5).replace("-",".")}</time>`:""}${r.done?"체결 ✓":partial?"부분 체결":reached?"도달":"대기"}</div>${sub?`<small class="purchase-sub">${sub}</small>`:""}</div>`;
+        <div class="status${r.done?" done":partial?" partial":reached?" due":""}">${date?`<time datetime="${date}" title="매수 예정일 ${date}">${date.slice(5).replace("-",".")}</time>`:""}${r.done?"체결":partial?"부분 체결":reached?"도달":"대기"}</div>${sub?`<small class="purchase-sub">${sub}</small>`:""}</div>`;
     };
     const bounds=lines?availableLevels:rows,first=rows.find(r=>r.recorded)||bounds[0],last=waitingLast?null:bounds.at(-1);
     const mixedTickers=new Set(rows.map(r=>linkTicker(r.tradeTicker||assetTradeTicker(r.tradeItem)))).size>1;

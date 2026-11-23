@@ -422,6 +422,9 @@
 #purchaseTable.hide-completed .purchase-row.done,#purchaseTable .purchase-row.done>.purchase-alert{display:none}
 #purchaseTable .purchase-row>.check{min-width:0;gap:5px;font-size:12px}
 #purchaseTable .purchase-row>.check input{width:14px;height:14px}
+#purchaseTable .purchase-row.done>.check{position:relative;color:var(--planner-mint)}
+#purchaseTable .purchase-row.done>.check input{position:absolute;width:1px;height:1px;clip-path:inset(50%)}
+#purchaseTable .purchase-row.done>.check:has(input:focus-visible){outline:2px solid var(--planner-mint);outline-offset:2px}
 #purchaseTable .purchase-round small{font-size:10px}
 #purchaseTable .stage-price .price{font-size:13px;line-height:1.3}
 #purchaseTable .stage-price :is(.price.long,.price.xlong){font-size:12px}
