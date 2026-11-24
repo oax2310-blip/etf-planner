@@ -2009,6 +2009,40 @@ test('모바일 요약의 비중 트랙과 배지는 같은 전체 계좌 비중
   assert.equal(r.inputs('[data-purchase-target]').length,1);
 });
 
+test('모바일 비중이 목표와 같은 금액이면 비중 환산 오차와 무관하게 민트·100%·목표 도달로 표시한다',()=>{
+  const r=setup({manual:true});
+  r.doc.allocation.total=1000;
+  for(const target of [7,14,28,29,55,56,57,58]){
+    r.item.target=target;
+    r.item.shares=target*10; // 1주가 1만원인 시세
+    r.render();
+    const html=summaryCard(r);
+    assert.match(html,/class="card bp-sum weight-near"/,`목표 ${target}% 색`);
+    assert.match(html,/--bp-weight-progress:100%"/,`목표 ${target}% 달성률`);
+    assert.match(html,/<span class="bp-gap">목표 도달<\/span>/,`목표 ${target}% 문구`);
+    assert.match(html,/<span class="bp-gap-desktop"> · 목표 도달<\/span>/);
+  }
+});
+
+test('모바일 비중의 실제 소액 미달은 0만원 없이, 소액 초과는 초과로 표시한다',()=>{
+  const r=setup({manual:true});
+  r.doc.allocation.total=1000;
+  r.item.target=20;
+  delete r.item.shares;
+  for(const [amount,tone,gap] of [
+    [199.96,'weight-near','목표까지 <b>0.1만원 미만</b>'],
+    [199.6,'weight-near','목표까지 <b>0.4만원</b>'],
+    [200.04,'weight-over','목표 0.1% 미만 초과'],
+  ]){
+    r.item.amount=amount;
+    r.render();
+    const html=summaryCard(r);
+    assert.ok(html.includes(`class="card bp-sum ${tone}"`),`보유액 ${amount}만원 색`);
+    assert.ok(html.includes(`<span class="bp-gap">${gap}</span>`),`보유액 ${amount}만원 문구`);
+    assert.match(html,/<span class="bp-gap-desktop"> · 목표 도달<\/span>/);
+  }
+});
+
 test('제목의 목표 인라인 입력은 추가 버튼·중복 문구 없이 그 자리에서 열리고 입력·Enter·Escape를 처리한다',()=>{
   const r=setup();r.item.target=18.75;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
   const src=fs.readFileSync(path.join(__dirname,'../js/purchases.js'),'utf8');

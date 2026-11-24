@@ -240,7 +240,7 @@
 .bp-bar i.warm{background:linear-gradient(90deg,#4b7bff,#44dba0 var(--edge),#f39a3c);background:linear-gradient(in oklab 90deg,#4b7bff 0%,#3fb2d6 calc(var(--edge) * .5),#44dba0 calc(var(--edge) - 6%),#f2c766 calc(var(--edge) + 4%),#f39a3c 100%);box-shadow:0 0 12px rgba(242,165,65,.4)}
 .bp-meta{display:flex;align-items:center;justify-content:space-between;gap:4px 10px;flex-wrap:wrap;font-size:12.5px;color:var(--text-2)}.bp-meta b{color:var(--text);font-weight:600}
 .bp-meta .bp-goal{margin:0 0 0 auto;font-size:12.5px;color:var(--text-2);text-align:right}
-.bp-overview{display:contents}
+.bp-overview,.bp-meta-line{display:contents}
 .bp-weight-track,.bp-weight,.bp-gap{display:none}
 .bp-sum>.buy-track-note{margin:0}.bp-overview>.purchase-target-hint{margin-top:-6px;text-align:right}
 @media(max-width:700px){
@@ -275,9 +275,10 @@
   }
   .bp-goal .purchase-target-inline:focus-within .bp-weight{display:none}
   .bp-overview .bp-price{grid-column:1/-1}
+  .bp-meta-line{grid-column:1/-1;display:flex;align-items:center;gap:10px}
   .bp-shares,.bp-gap{font-size:12.5px;color:var(--text-2);word-break:keep-all;overflow-wrap:anywhere}
-  .bp-meta:not(:has(.bp-gap)) .bp-shares{grid-column:1/-1}
-  .bp-gap{display:block;max-width:100%;text-align:right}
+  .bp-shares{flex:1;min-width:0}
+  .bp-gap{display:block;min-width:0;text-align:right}
   .bp-gap b{color:var(--bp-weight-gap)}
   .weight-over .bp-gap{color:var(--bp-weight-color);font-weight:700}
   .bp-overview>.purchase-target-hint{grid-column:1/-1}

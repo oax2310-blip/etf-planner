@@ -351,15 +351,17 @@ function waitCard({g,it},s,notes){
 // 매수대기 계획은 제목·연결 보유·대기 카드를 그대로 쓴다. 여기 화면은 표시만 하며 저장 기록에 필드를 만들지 않는다.
 const bpSign=v=>v>0?"+":v<0?"−":"",bpRound1=v=>v===null?null:Math.sign(v)*Math.round(Math.abs(v)*10)/10||0; // 소수 첫째 자리로 보이는 값은 그 반올림 값으로 부호·색을 정한다(−0% 방지)
 const bpShort=t=>String(t||"").replace(/(\d+)(일|주|월)선$/,"$1$2"); // x축 글자: 25일선 → 25일(시선·직접 이름은 그대로)
-// 모바일 요약: 실제 현재 비중이 목표를 넘으면 초과, 목표의 90%부터는 근접 색. 목표 0%는 보유가 있을 때만 트랙을 채운다.
+// 모바일 요약: 비중 환산 오차만 도달로 보고, 실제 초과는 로즈, 90%부터는 민트. 목표 0%는 보유가 있을 때만 트랙을 채운다.
+// 데스크톱의 0.5만원 도달 범위는 유지한다. 모바일에서 미달액이 소수 첫째 자리에서 0만원이 되면 0.1만원 미만으로 표시한다.
 function purchaseWeightStatus({pct,target,gap}){
   if(gap===null)return {tone:"",progress:0,text:""};
-  const excess=pct-target,over=excess>0;
-  const progress=over?100:target>0?Math.max(0,Math.min(pct/target*100,100)):0;
-  const tone=over?" weight-over":(progress>=90-1e-9||excess===0)?" weight-near":"";
-  const text=over
-    ?(excess<.05?"목표 0.1% 미만 초과":`목표 +${fixed1.format(excess)}% 초과`)
-    :excess===0?"목표 도달":`목표까지 <b>${man(Math.max(0,gap))}</b>`;
+  const excess=pct-target,atTarget=Math.abs(excess)<=1e-12*Math.max(Math.abs(pct),Math.abs(target));
+  const over=excess>0&&!atTarget;
+  const progress=target>0?(atTarget?100:Math.max(0,Math.min(pct/target*100,100))):over?100:0;
+  const tone=over?" weight-over":(progress>=90-1e-9||atTarget)?" weight-near":"";
+  const text=atTarget?"목표 도달"
+    :over?(excess<.05?"목표 0.1% 미만 초과":`목표 +${fixed1.format(excess)}% 초과`)
+    :`목표까지 <b>${gap<.05?"0.1만원 미만":man(gap)}</b>`;
   return {tone,progress,text};
 }
 // 메모 한 줄(계좌 · 설정 펼침 안): 첫 줄만 '메모: …'로 보이고 [편집 ›]을 누르면 그 자리에서 입력칸이 열린다(열림은 화면 상태).
@@ -622,7 +624,7 @@ function renderPurchases(){
       <div class="bp-overview">
         <div class="bp-head"><h1 class="bp-name">${purchaseTitleButton(parts.head)}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div>
         <div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${bar}
-        <div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.control}<span class="bp-gap-desktop">${parts.gapText}</span></span></p>${weight.text?`<span class="bp-gap">${weight.text}</span>`:""}</div>${parts.hint}
+        <div class="bp-meta"><div class="bp-meta-line"><span class="bp-shares">${shareLine}</span>${weight.text?`<span class="bp-gap">${weight.text}</span>`:""}</div><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.control}<span class="bp-gap-desktop">${parts.gapText}</span></span></p></div>${parts.hint}
       </div>${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
     const dockRow=focus,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
     const dock=complete&&lastDone?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-exec-focus="${id}" ${lastDone.attr}>체결가 수정</button><button class="btn primary bp-main" type="button" data-purchase-new="${id}">＋ 새 분할매수 계획</button></div>`
