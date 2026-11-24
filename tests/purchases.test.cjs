@@ -590,10 +590,23 @@ test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코�
   r.item.name='내 매수 카드';r.doc.allocation.groups[1].items[0].name='내 매수 카드';r.render();
   assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'사례 C: 카드 이름과 종목명이 모두 같아도 종목 코드로 구분');
   assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
-  // 코드 대체 후 재충돌: A(111111, 종목명=카드 이름) → 111111 대체, B(222222, 종목명=111111) → 222222로 재구분
-  r.doc.allocation.groups[1].items[0].name='111111';r.render();
-  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'재충돌 시에도 각자의 종목 코드로 구분');
-  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
+  // 코드 대체 후 연쇄 재충돌(3개·4개, 정순·역순): 개수·순서와 무관하게 각자의 종목 코드로 구분, 비충돌 종목은 종목명 유지
+  r.doc.allocation.groups[1].items[0].name='111111';
+  r.doc.allocation.groups[1].items[1]={id:'c',name:'222222',ticker:'333333',amount:5,buyPlan:{cardName:'내 매수 카드',lines:{names:['25선'],budget:5}}};
+  r.doc.allocation.groups[1].items.push({id:'d',name:'333333',ticker:'444444',amount:5,buyPlan:{cardName:'내 매수 카드',lines:{names:['25선'],budget:5}}},{id:'e',name:'구분되는 ETF',ticker:'555555',amount:5,buyPlan:{cardName:'내 매수 카드',lines:{names:['25선'],budget:5}}});
+  r.render();
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'4개 연쇄 충돌 A');
+  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/,'4개 연쇄 충돌 B');
+  assert.match(card('c'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">333333<\/span>/,'4개 연쇄 충돌 C');
+  assert.match(card('d'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">444444<\/span>/,'4개 연쇄 충돌 D');
+  assert.match(card('e'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">구분되는 ETF<\/span>/,'같은 카드 이름이라도 종목명으로 구분되면 종목명 유지');
+  r.doc.allocation.groups.reverse();r.doc.allocation.groups[0].items.reverse();r.render();
+  assert.match(card('a'),/<span class="plan-title">111111<\/span>/,'역순 배치 A');
+  assert.match(card('b'),/<span class="plan-title">222222<\/span>/,'역순 배치 B');
+  assert.match(card('c'),/<span class="plan-title">333333<\/span>/,'역순 배치 C');
+  assert.match(card('d'),/<span class="plan-title">444444<\/span>/,'역순 배치 D');
+  assert.match(card('e'),/<span class="plan-title">구분되는 ETF<\/span>/,'역순 배치 비충돌 E');
+  r.doc.allocation.groups[0].items.reverse();r.doc.allocation.groups.reverse();r.doc.allocation.groups[1].items.splice(1);
   // 카드 이름이 있는 항목과 없는 항목 사이의 표시 이름 충돌
   r.doc.allocation.groups[1].items[0].name='내 매수 카드';delete r.doc.allocation.groups[1].items[0].buyPlan.cardName;r.render();
   assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'카드 이름 있는 항목과 없는 항목이 같은 표시 이름이면 둘 다 구분');

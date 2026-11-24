@@ -648,10 +648,13 @@ function renderPurchases(){
   // 카드 이름이 있으면 제목·목록 카드 모두 카드 이름을 굵게 보이고, 없으면 매수 반영 대상 종목 이름(leadName)을 쓴다. PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 표시 이름이 다른 코드에도 있을 때만 보조 줄을 보인다(.show-code). 중복 카드 이름에서 종목명으로도 구분되지 않으면 종목 코드를 보조 표시로 쓴다.
   const leads=new Map(plans.map(({it})=>[it.id,leadName(it,s)])),autoName=it=>leads.get(it.id);
   const displayRows=plans.map(({it})=>{const card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?autoName(it):code;return {card,code,name,sub};});
-  const clash=stockNames.clashes(displayRows.map(({name,code})=>({name,code}))),subClash=stockNames.clashes(displayRows.map(({name,sub,code})=>({name:`${name}\0${sub}`,code})));
-  displayRows.forEach(r=>{r.clashed=clash(r.name);if(r.card&&r.clashed&&r.code&&(r.sub===r.name||subClash(`${r.name}\0${r.sub}`)))r.sub=r.code;});
-  const finalSubClash=stockNames.clashes(displayRows.map(({name,sub,code})=>({name:`${name}\0${sub}`,code})));
-  displayRows.forEach(r=>{if(r.card&&r.clashed&&r.code&&finalSubClash(`${r.name}\0${r.sub}`))r.sub=r.code;});
+  const clash=stockNames.clashes(displayRows.map(({name,code})=>({name,code})));
+  displayRows.forEach(r=>{r.clashed=clash(r.name);if(r.card&&r.clashed&&r.code&&r.sub===r.name)r.sub=r.code;});
+  for(let changed=true;changed;){
+    changed=false;
+    const subClash=stockNames.clashes(displayRows.map(({name,sub,code})=>({name:`${name}\0${sub}`,code})));
+    displayRows.forEach(r=>{if(r.card&&r.clashed&&r.code&&r.sub!==r.code&&subClash(`${r.name}\0${r.sub}`)){r.sub=r.code;changed=true;}});
+  }
   const list=plans.map(({g,it},i)=>{
     const p=summaries[i],wait=it.buyPlan.wait?purchaseWaitInfo(it.buyPlan,waitEntry(it)):null;
     const progress=wait?wait.gapPct===null?"시세 대기":wait.reached?"도달":"대기":p.count?`${p.done}/${p.count}`:it.buyPlan.lines&&purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s).buyable===0?"목표 도달":it.buyPlan.lines&&!(it.buyPlan.lines.budget>0)?"예산 대기":"시세 대기",reached=!!wait?.reached;
