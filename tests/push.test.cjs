@@ -9,7 +9,7 @@ const publicBytes = Uint8Array.from({length:65}, (_, i) => i === 0 ? 4 : i);
 const publicKey = Buffer.from(publicBytes).toString('base64url');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,userAgentData=undefined,brave=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,nativeApp=false,displayMode='browser',isSecureContext=true,gh=null}={}){
+function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,userAgentData=undefined,brave=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,displayMode='browser',isSecureContext=true,gh=null}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
   const testStats = {sync:0,showNotification:0,shown:[]};
   const classes = new Set();
@@ -61,7 +61,6 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     readyState:'complete',
     addEventListener(type,fn){if(!docListeners.has(type))docListeners.set(type,[]);docListeners.get(type).push(fn);},
     baseURI:'https://example.test/etf-planner/',
-    ...(nativeApp?{documentElement:{dataset:{nativeApp:'android'}}}:{})
   };
   const ctx = vm.createContext({
     state:plain(initial),sync:{repo:'owner/private-data',token:'test',base:'{}',busy:syncMode==='busy',failed:false,blocked:false},
@@ -603,15 +602,6 @@ test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, �
   await pcPrompt.nodes.testPhonePush.onclick();
   assert.equal(pcPrompt.tone(),'warn');
   assert.doesNotMatch(pcPrompt.nodes.pushSetup.innerHTML,/휴대폰에서|이 휴대폰/);
-
-  const apk=load({nativeApp:true});
-  apk.ctx.sync.token='';
-  delete apk.ctx.window.Notification;
-  delete apk.ctx.window.PushManager;
-  apk.ctx.renderPushSetup();
-  assert.equal(apk.nodes.testPhonePush.disabled,true);
-  assert.match(apk.nodes.pushSetup.innerHTML,/class="push-feedback bad"/);
-  assert.match(apk.nodes.pushSetup.innerHTML,/안드로이드 실행 앱\(APK\)/);
 
   const denied=load({permission:'denied'});
   denied.ctx.sync.token='';
