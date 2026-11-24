@@ -290,10 +290,11 @@ test('Android 설치용 192·512px와 iOS용 180px 아이콘의 실제 PNG가 �
     assert.equal(icon.type, 'image/png');
     assert.equal(pngSize(icon.src), size);
   }
-  const maskable = manifest.icons.find(icon => icon.purpose.split(' ').includes('maskable'));
-  assert.ok(maskable, '기기별 원형·둥근 사각형 아이콘');
-  assert.equal(pngSize(maskable.src), '512x512');
+  // 사용자 결정: 홈 화면 아이콘도 투명 바탕 로고. maskable은 꽉 찬 바탕이 필요하므로 선언하지 않는다(바탕은 기기·런처가 채움).
+  assert.ok(!manifest.icons.some(icon => icon.purpose.split(' ').includes('maskable')), '투명 아이콘을 maskable로 선언하지 않는다');
   assert.equal(pngSize('icons/apple-touch-icon.png'), '180x180');
+  for (const file of [...manifest.icons.map(icon => icon.src), 'icons/apple-touch-icon.png'])
+    assert.equal(fs.readFileSync(path.join(root, file))[25], 6, `${file}: 투명도(RGBA) PNG`);
 });
 
 test('푸시 알림 아이콘은 홈 화면 아이콘과 따로 둔 투명 바탕 192px PNG다', () => {
