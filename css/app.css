@@ -366,8 +366,8 @@ details.future-roll>.future-roll-head::before{content:"";width:6px;height:6px;bo
 .planner-page .planner-brand{display:flex;align-items:center;gap:8px;min-width:0}
 .planner-page .top .brand{gap:9px;font-size:17px;font-weight:800;letter-spacing:-.04em}
 /* 로고(플래너·자산 상단 공통): 앱 아이콘(push-icon.svg)의 파란 마름모 3겹(아래 두 겹은 반투명)만 투명 바탕에 표시 */
-:is(.planner-page,.assets-page) .top .brand b{flex:none;width:28px;height:28px;border-radius:0;background:none;box-shadow:none}
-:is(.planner-page,.assets-page) .top .brand svg{width:28px;height:28px}
+:is(.planner-page,.assets-page) .top .brand b{flex:none;width:25px;height:25px;border-radius:0;background:none;box-shadow:none}
+:is(.planner-page,.assets-page) .top .brand svg{width:25px;height:25px}
 .planner-page .top .sync-head{gap:8px;margin:0}
 .planner-page .sync-head .btn.mini{
   height:28px;margin:0;border:0;border-radius:9999px;background:var(--planner-soft);color:var(--text);
