@@ -2383,7 +2383,7 @@ test('계좌 상자: 맨 윗줄은 평가액(비중)·합산 손익을 보여 �
   const r=setup();r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3,averagePrice:9000});r.render();
   const before=JSON.stringify(r.doc),toggle=()=>r.element('purchaseAccountToggle'),list=()=>r.html().split('id="purchaseLinkedHoldings"')[1].split('bp-acc-actions')[0];let writes=0;r.store.saveSection=()=>writes++;
   assert.match(r.html(),/id="purchaseAccountDrawer" hidden>/);assert.equal(toggle().getAttribute('aria-expanded'),'false');assert.doesNotMatch(r.html(),/id="purchaseAccountSort"/,'접혀 있으면 ⇅ 없음');
-  assert.match(r.html(),/<div class="bp-acc-main"><button class="bp-acc-sum bp-acc-toggle" type="button" id="purchaseAccountToggle" data-purchase-accounts="[^"]+" aria-expanded="false" aria-controls="purchaseAccountDrawer"><span class="sr-only">연결 계좌 및 설정<\/span><span class="bp-acc-value"><b>[^<]+만원<\/b><\/span><small>\(\d+%\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/span><\/button><\/div>/,'맨 윗줄 한 줄 전체가 펼침 버튼(설정 버튼 없음)');assert.doesNotMatch(r.html(),/>설정 <span|bp-acc-label|bp-acc-chev|>보유<\/small>/,'설정 버튼·보유 라벨·펼침 표시 없음');
+  assert.match(r.html(),/<div class="bp-acc-main"><button class="bp-acc-sum bp-acc-toggle" type="button" id="purchaseAccountToggle" data-purchase-accounts="[^"]+" aria-expanded="false" aria-controls="purchaseAccountDrawer"[^>]*><span class="sr-only">연결 계좌 및 설정<\/span><span class="bp-acc-value"><b>[^<]+만원<\/b><\/span><small>\(\d+%\)<\/small><span class="bp-acc-sum-r"><span class="bp-acc-sum-pl profit-gain" title="[^"]*보유 2개 중 1개 합산">\+0\.3만원<\/span><small class="profit-gain">\(\+11\.1%\)<\/small><\/span><\/button><\/div>/,'맨 윗줄 한 줄 전체가 펼침 버튼(설정 버튼 없음)');assert.doesNotMatch(r.html(),/>설정 <span|bp-acc-label|bp-acc-chev|>보유<\/small>/,'설정 버튼·보유 라벨·펼침 표시 없음');
   toggle().onclick();assert.match(r.html(),/id="purchaseAccountDrawer">/);assert.equal(toggle().getAttribute('aria-expanded'),'true');assert.equal(r.element('purchaseAccountSort').getAttribute('aria-pressed'),'false');
   assert.match(r.html(),/<button[^>]*id="purchaseAccountToggle"[^>]*><span class="sr-only">연결 계좌 및 설정<\/span>/,'펼쳐도 같은 접근성 이름으로 시작');
   assert.match(list(),/<span class="bp-acc-name">테스트 종목<\/span><span class="bp-acc-tag">연금저축<\/span><\/div><div class="bp-acc-l2">3주 · [^<]+만원<\/div><\/div><div class="bp-acc-ctrl" hidden>[\s\S]*?<\/div><div class="bp-acc-pl"><b class="profit-gain">\+0\.3만원<\/b><small class="profit-gain">\+11\.11%<\/small><\/div>/);
@@ -2397,6 +2397,20 @@ test('계좌 상자: 맨 윗줄은 평가액(비중)·합산 손익을 보여 �
   r.element('purchaseAccountDeleteToggle').onclick();toggle().onclick();r.element('purchaseAccountToggle').onclick();
   assert.equal(r.inputs('[data-purchase-account-delete]').length,0,'접으면 삭제 모드도 끝남');
   assert.equal(JSON.stringify(r.doc),before);assert.equal(writes,0,'펼침·모드는 저장하지 않음');
+});
+test('계좌 상자: 포커스 설명은 손익 툴팁과 같고 합산할 보유가 없으면 설명 연결도 없다',()=>{
+  const r=setup();r.item.averagePrice=9000;
+  r.doc.allocation.groups[0].items.push({id:'b',name:'테스트 종목 (연금저축)',ticker:r.item.ticker,shares:3});r.render();
+  const toggle=()=>r.element('purchaseAccountToggle'),tip='평균매수가·수량·현재가가 있는 보유 2개 중 1개 합산';
+  const assertDescription=()=>{
+    assert.equal(toggle().getAttribute('aria-describedby'),'purchaseAccountProfitDescription');
+    assert.equal(r.html().match(/id="purchaseAccountProfitDescription">([^<]+)<\/p>/)?.[1],tip);
+    assert.equal(r.html().match(/class="bp-acc-sum-pl[^"]*" title="([^"]+)"/)?.[1],tip);
+  };
+  assertDescription();toggle().onclick();assertDescription();
+  delete r.item.averagePrice;r.render();
+  assert.equal(toggle().getAttribute('aria-describedby'),null);
+  assert.doesNotMatch(r.html(),/purchaseAccountProfitDescription|bp-acc-sum-pl/);
 });
 test('메모는 계좌 · 설정 펼침 안의 한 줄로 첫 줄만 보이고 [편집 ›]에서 그 자리에서 고쳐 저장하며, 취소는 저장하지 않는다',()=>{
   const r=setup();r.item.buyPlan.note='<첫> 줄\n둘째 줄';r.render();let writes=0;const save=r.store.saveSection;r.store.saveSection=x=>{writes++;return save(x);};

@@ -279,6 +279,8 @@
 .bp .bp-acc-toggle::after{content:"";position:absolute;inset:0;border-radius:16px} /* 음각 상자 전체를 누를 자리로 */
 .bp-acc-sum-pl{position:relative;z-index:1} /* 합산 손익의 title 툴팁이 뜨도록 덮개 위에 둔다. */
 .bp-acc:has(.bp-acc-toggle:focus-visible){outline:2px solid var(--accent);outline-offset:2px}.bp .bp-acc-toggle:focus-visible{outline:0}
+.bp-acc-profit-description{display:none}
+.bp-acc:has(.bp-acc-toggle:focus-visible)+.bp-acc-profit-description{display:block}
 .bp .bp-acc-toggle:active::after{background:rgba(128,128,128,.08)}
 .bp .bp-acc-sort{position:relative;z-index:1;flex:none;width:32px;min-height:32px;padding:0;border-radius:11px;border:1px solid rgba(128,128,128,.25);background:var(--bp-btn);color:var(--text-2);font-size:14px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.14)}
 .bp .bp-acc-sort.on{color:var(--bp-blue-2);border-color:color-mix(in srgb,var(--bp-blue) 45%,transparent);background:color-mix(in srgb,var(--bp-blue) 16%,transparent)}
