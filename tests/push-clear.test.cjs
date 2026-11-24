@@ -207,7 +207,7 @@ test('kind가 없는 일반 푸시는 지금처럼 tag가 eventId인 알림을 �
   assert.equal(options.tag, 'event-reg-1');
   assert.ok(title);
   assert.ok(options.body);
-  assert.equal(options.icon, scope + 'icons/planner-192.png');
+  assert.equal(options.icon, scope + 'icons/push-192.png');
   assert.ok(!options.icon.includes('push-icon.svg'));
 });
 
@@ -230,7 +230,7 @@ test('알림 아이콘 표시가 실패하면 아이콘 없이 다시 표시해 
 
   assert.equal(attempt, 2);
   assert.equal(calls.shown.length, 2);
-  assert.equal(calls.shown[0][1].icon, scope + 'icons/planner-192.png');
+  assert.equal(calls.shown[0][1].icon, scope + 'icons/push-192.png');
   assert.equal('icon' in calls.shown[1][1], false);
   assert.equal(calls.shown[1][1].tag, 'event-icon-fallback');
   assert.equal(calls.shown[1][0], calls.shown[0][0]);

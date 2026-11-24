@@ -295,3 +295,16 @@ test('Android 설치용 192·512px와 iOS용 180px 아이콘의 실제 PNG가 �
   assert.equal(pngSize(maskable.src), '512x512');
   assert.equal(pngSize('icons/apple-touch-icon.png'), '180x180');
 });
+
+test('푸시 알림 아이콘은 홈 화면 아이콘과 따로 둔 투명 바탕 192px PNG다', () => {
+  const file = 'icons/push-192.png';
+  for (const source of ['push-sw.js', 'js/push.js']) {
+    const code = fs.readFileSync(path.join(root, source), 'utf8');
+    assert.ok(code.includes(`"${file}"`), source);
+    assert.ok(!code.includes('icons/planner-192.png'), `${source}: 홈 화면 아이콘(남색 바탕)을 알림에 쓰지 않는다`);
+  }
+  assert.equal(pngSize(file), '192x192');
+  const data = fs.readFileSync(path.join(root, file));
+  assert.equal(data[25], 6, `${file}: 투명도(RGBA) PNG`);
+  assert.ok(!manifest.icons.some(icon => icon.src === file), '홈 화면 설치 아이콘으로는 쓰지 않는다');
+});
