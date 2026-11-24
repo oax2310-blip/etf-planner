@@ -13,7 +13,7 @@
 - 실기기 검증은 사실상 불가능하므로 하지 않는다. 화면·동작 확인은 위 조건의 브라우저 재현까지로 하고, 실기기에서만 드러나는 동작(홈 화면 앱 설치·갱신, 상태바·펀치홀 표시, 삼성 인터넷 강제 다크, 실제 푸시 수신 등)은 점검 보고·PR에 미검증으로 적는다. 실기기 확인을 요청받아도 기기 연결을 시도하지 않고 같은 방식으로 보고한다.
 - 빌드·외부 라이브러리 추가 금지(기존 Pretendard CSS 제외). 일반 script 전역 이름은 중복 금지.
 - CSS·JS 변경 시 세 HTML의 로컬 참조 ?v=를 함께 +1. push-sw.js의 importScripts ?v=도 같은 값으로 맞춘다. node scripts/bump-asset-version.cjs로 올린다. 로딩 순서는 script 태그·tests/files.test.cjs가 기준. theme.js만 head의 CSS 앞에서 바로 실행, 나머지 script는 defer(CSP meta가 미리 받기를 꺼서), 인라인 script 금지.
-- 검증: node --test --test-reporter=dot tests/*.cjs(성공은 점, 실패만 상세. 파일만 집계되면 --experimental-test-isolation=none 추가. tests/android-*.test.cjs는 JDK의 javac·java 또는 ETF_ANDROID_JDK가 없으면 실패). 수정 중에는 grep -l 파일명 tests/*.cjs로 찾은 관련 테스트부터. 계산 규칙은 담당 함수 주석에만 두고 변경 시 같이 수정.
+- 검증: node --test --test-reporter=dot tests/*.cjs(성공은 점, 실패만 상세. 파일만 집계되면 --experimental-test-isolation=none 추가). 수정 중에는 grep -l 파일명 tests/*.cjs로 찾은 관련 테스트부터. 계산 규칙은 담당 함수 주석에만 두고 변경 시 같이 수정.
 - 수집기 고정 실행 파일(js/ma-ladder.js·prices.js·rebuy.js·trade-alerts.js·assets-calc.js)은 이름·위치·분리를 바꾸지 않고, DOM 없는 최상위 실행과 전역 진입점 buildTradeAlertRules·purchaseAlertRules를 유지. 수정하면 CLAUDE.md의 SHA 갱신 검토 대상.
 - 큰 파일은 통째로 읽지 않는다: README는 grep -n '^## ' README.md로 절 위치부터, Actions가 갱신하는 data/currency-pressure.json(검색 제외: .ignore)·sp500-tr.json은 필요한 키만.
 - 날짜별 변경 기록은 git log/PR에만. 자료 조회일·출처는 유지.

@@ -96,21 +96,18 @@ function schedulePendingPushAlert(){
 }
 function pushOnPc(){try{return typeof matchMedia==="function"&&matchMedia("(hover:hover) and (pointer:fine)").matches;}catch{return false;}}
 function pushSupported(){return window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;}
-const pushNativeApp = () => typeof document!=="undefined"&&document.documentElement?.dataset?.nativeApp==="android";
 function pushIsIos(){
   if(pushOnPc())return false;
   const ua=String(navigator.userAgent||""),platform=String(navigator.platform||"");
   return !/Android/i.test(ua)&&(/iPhone|iPad|iPod/i.test(ua)||(/Mac/i.test(platform)&&(navigator.maxTouchPoints||0)>1));
 }
 function pushIsAndroid(){
-  if(pushNativeApp())return true;
   if(pushOnPc()||pushIsIos())return false;
   return /Android|SamsungBrowser/i.test(String(navigator.userAgent||""));
 }
 function pushIsSamsungBrowser(){return pushIsAndroid()&&/SamsungBrowser/i.test(String(navigator.userAgent||""));}
 function pushIsFirefoxAndroid(){return pushIsAndroid()&&/Firefox|Fennec/i.test(String(navigator.userAgent||""));}
 function pushIsAndroidWebView(){
-  if(pushNativeApp())return true;
   if(!pushIsAndroid())return false;
   const ua=String(navigator.userAgent||"");
   if(/[;(]\s*wv(?:\s*[);]|$)|\bVersion\/\d+\.\d+\b/i.test(ua))return true;
@@ -349,10 +346,10 @@ async function readPushConfig(){
 function renderPushSetup(){
   renderPushConnectionStatus();
   const target=$("pushSetup");if(!target)return;
-  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),changed=pushConnectionChanged(),pc=pushOnPc(),ios=pushIsIos(),android=pushIsAndroid(),webview=pushIsAndroidWebView(),browserLabel=pushAndroidBrowserLabel(),device=pc?"PC":"휴대폰",nativeApp=pushNativeApp(),mode=pushDisplayMode();
+  const supported=pushSupported(),saved=pushIsSaved(),ready=pushReady(),changed=pushConnectionChanged(),pc=pushOnPc(),ios=pushIsIos(),android=pushIsAndroid(),webview=pushIsAndroidWebView(),browserLabel=pushAndroidBrowserLabel(),device=pc?"PC":"휴대폰",mode=pushDisplayMode();
   if(!connected())pushConfigError="";
   let message=!connected()?`동기화를 연결하면 알림 조건과 이 ${device}의 연결 정보를 비공개 저장소에 저장합니다.`:
-    !supported?(nativeApp?"안드로이드 실행 앱(APK)은 웹 푸시를 지원하지 않습니다. 알림은 삼성 인터넷·Chrome에서 추가한 웹앱을 이용해 주세요.":webview?"현재 앱 화면에서는 웹 푸시를 지원하지 않습니다. 설치한 브라우저에서 사이트를 열어 주세요.":ios?"iPhone·iPad Safari에서는 공유 → ‘홈 화면에 추가’로 설치한 웹앱에서 열어 알림을 받아 주세요.":pc?"이 브라우저는 웹 푸시를 지원하지 않습니다. Chrome·Edge·Firefox·Safari에서 사이트를 열어 주세요.":android&&browserLabel?`${browserLabel}의 현재 환경에서는 웹 푸시를 지원하지 않습니다. HTTPS 주소의 일반 창이나 지원 브라우저에서 열어 주세요.`:android?"현재 앱 또는 설치한 브라우저의 현재 화면에서는 웹 푸시를 지원하지 않습니다. HTTPS 주소의 지원 브라우저에서 열어 주세요.":"이 브라우저는 웹 푸시를 지원하지 않습니다. 지원 브라우저에서 사이트를 열어 주세요."):
+    !supported?(webview?"현재 앱 화면에서는 웹 푸시를 지원하지 않습니다. 설치한 브라우저에서 사이트를 열어 주세요.":ios?"iPhone·iPad Safari에서는 공유 → ‘홈 화면에 추가’로 설치한 웹앱에서 열어 알림을 받아 주세요.":pc?"이 브라우저는 웹 푸시를 지원하지 않습니다. Chrome·Edge·Firefox·Safari에서 사이트를 열어 주세요.":android&&browserLabel?`${browserLabel}의 현재 환경에서는 웹 푸시를 지원하지 않습니다. HTTPS 주소의 일반 창이나 지원 브라우저에서 열어 주세요.`:android?"현재 앱 또는 설치한 브라우저의 현재 화면에서는 웹 푸시를 지원하지 않습니다. HTTPS 주소의 지원 브라우저에서 열어 주세요.":"이 브라우저는 웹 푸시를 지원하지 않습니다. 지원 브라우저에서 사이트를 열어 주세요."):
     Notification.permission==="denied"?(ios&&mode!=="browser"?"알림이 차단되어 있습니다. 아이폰·iPad 설정 → 알림에서 이 홈 화면 웹앱의 알림을 허용해 주세요.":webview?"알림이 차단되어 있습니다. 현재 앱 또는 설치한 브라우저의 알림 설정에서 알림을 허용해 주세요.":android&&mode!=="browser"?`알림이 차단되어 있습니다. ${browserLabel||"설치한 브라우저"} 또는 휴대폰 알림 설정에서 이 웹앱의 알림을 허용해 주세요.`:android?`알림이 차단되어 있습니다. ${browserLabel||"설치한 브라우저"}의 이 사이트 설정에서 알림을 허용해 주세요.`:"알림이 차단되어 있습니다. 브라우저의 이 사이트 설정에서 알림을 허용해 주세요."):
     !ready?`알림 연결을 준비 중입니다. 발송 설정이 적용된 뒤 동기화하고 이 ${device}에서 알림을 허용해 주세요.`:
     changed?"이 기기의 알림 연결이 끊겼거나 바뀌었습니다. 알림 연결 확인을 눌러 다시 연결해 주세요.":
@@ -375,8 +372,8 @@ function renderPushSetup(){
     feedbackTone="bad";
     feedbackLabel="알림 미지원";
     const missing=pushMissingFeatures();
-    feedbackMain=nativeApp?"안드로이드 실행 앱(APK) 화면에서는 알림 받기·알림 테스트를 쓸 수 없습니다.":webview?"현재 앱 화면(WebView)에서는 알림 받기·알림 테스트를 쓸 수 없습니다.":ios?"현재 화면에서는 웹 푸시와 알림 테스트를 사용할 수 없습니다.":android&&!browserLabel?"현재 앱 또는 설치한 브라우저의 현재 화면에서는 웹 푸시와 알림 테스트를 사용할 수 없습니다.":"현재 브라우저 환경에서 웹 푸시와 알림 테스트를 사용할 수 없습니다.";
-    feedbackDetail=nativeApp?`WebView 환경(${missing.join(" · ")||"Notification"} 미지원) · 기존 삼성 인터넷·Chrome에서 추가한 웹앱에서 열어 주세요.`:webview?`WebView 환경(${missing.join(" · ")||"Notification"} 미지원) · 설치한 브라우저에서 사이트를 열어 주세요.`:ios?`홈 화면에 추가한 웹앱에서만 지원됩니다(${missing.join(" · ")||"Notification"} 미지원) · Safari 공유 → ‘홈 화면에 추가’로 열어 주세요.`:`미지원 항목: ${missing.join(" · ")||"알림 API"} · HTTPS 주소의 지원 브라우저에서 열어 주세요.`;
+    feedbackMain=webview?"현재 앱 화면(WebView)에서는 알림 받기·알림 테스트를 쓸 수 없습니다.":ios?"현재 화면에서는 웹 푸시와 알림 테스트를 사용할 수 없습니다.":android&&!browserLabel?"현재 앱 또는 설치한 브라우저의 현재 화면에서는 웹 푸시와 알림 테스트를 사용할 수 없습니다.":"현재 브라우저 환경에서 웹 푸시와 알림 테스트를 사용할 수 없습니다.";
+    feedbackDetail=webview?`WebView 환경(${missing.join(" · ")||"Notification"} 미지원) · 설치한 브라우저에서 사이트를 열어 주세요.`:ios?`홈 화면에 추가한 웹앱에서만 지원됩니다(${missing.join(" · ")||"Notification"} 미지원) · Safari 공유 → ‘홈 화면에 추가’로 열어 주세요.`:`미지원 항목: ${missing.join(" · ")||"알림 API"} · HTTPS 주소의 지원 브라우저에서 열어 주세요.`;
     if(connected()&&pushConfigError)feedbackExtra=pushConfigError;
   }else if(blockedPermission){
     feedbackTone="bad";

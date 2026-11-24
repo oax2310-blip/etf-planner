@@ -9,7 +9,7 @@ const publicBytes = Uint8Array.from({length:65}, (_, i) => i === 0 ? 4 : i);
 const publicKey = Buffer.from(publicBytes).toString('base64url');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,userAgentData=undefined,brave=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,nativeApp=false,displayMode='browser',isSecureContext=true,gh=null}={}){
+function load({initial={},permission='granted',ready=true,syncMode='complete',existing=true,pc=false,userAgent='',platform='',maxTouchPoints=0,standalone=undefined,userAgentData=undefined,brave=undefined,onShowNotification=null,getNotifications=null,activeState=undefined,displayMode='browser',isSecureContext=true,gh=null}={}){
   const calls = {permission:0,register:0,subscribe:0,unsubscribe:0,save:0,order:[]};
   const testStats = {sync:0,showNotification:0,shown:[]};
   const classes = new Set();
@@ -61,7 +61,6 @@ function load({initial={},permission='granted',ready=true,syncMode='complete',ex
     readyState:'complete',
     addEventListener(type,fn){if(!docListeners.has(type))docListeners.set(type,[]);docListeners.get(type).push(fn);},
     baseURI:'https://example.test/etf-planner/',
-    ...(nativeApp?{documentElement:{dataset:{nativeApp:'android'}}}:{})
   };
   const ctx = vm.createContext({
     state:plain(initial),sync:{repo:'owner/private-data',token:'test',base:'{}',busy:syncMode==='busy',failed:false,blocked:false},
@@ -586,7 +585,7 @@ test('알림 테스트는 이전 테스트 알림을 정리한 뒤 활성 알림
   assert.equal(JSON.stringify(dropped.ctx.state),before);
 });
 
-test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, 차단(denied) 상태를 버튼 클릭 전·후로 진단한다',async()=>{
+test('웹앱 무응답(default 권한), 차단(denied) 상태를 버튼 클릭 전·후로 진단한다',async()=>{
   const chromeAndroidUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
   const chromeUserAgentData={brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'};
   const silentPrompt=load({permission:()=> 'default',displayMode:'fullscreen',userAgent:chromeAndroidUa,userAgentData:chromeUserAgentData});
@@ -603,15 +602,6 @@ test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, �
   await pcPrompt.nodes.testPhonePush.onclick();
   assert.equal(pcPrompt.tone(),'warn');
   assert.doesNotMatch(pcPrompt.nodes.pushSetup.innerHTML,/휴대폰에서|이 휴대폰/);
-
-  const apk=load({nativeApp:true});
-  apk.ctx.sync.token='';
-  delete apk.ctx.window.Notification;
-  delete apk.ctx.window.PushManager;
-  apk.ctx.renderPushSetup();
-  assert.equal(apk.nodes.testPhonePush.disabled,true);
-  assert.match(apk.nodes.pushSetup.innerHTML,/class="push-feedback bad"/);
-  assert.match(apk.nodes.pushSetup.innerHTML,/안드로이드 실행 앱\(APK\)/);
 
   const denied=load({permission:'denied'});
   denied.ctx.sync.token='';
