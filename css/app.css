@@ -365,12 +365,12 @@ details.future-roll>.future-roll-head::before{content:"";width:6px;height:6px;bo
 }
 .planner-page .planner-brand{display:flex;align-items:center;gap:8px;min-width:0}
 .planner-page .top .brand{gap:9px;font-size:17px;font-weight:800;letter-spacing:-.04em}
-/* 로고: 초록(왼쪽 위)→파랑(오른쪽 아래) 둥근 사각형 안에 높아지는 흰 막대 3개(앞의 두 막대는 반투명) */
+/* 로고: 앱 아이콘(push-icon.svg)과 같은 남색 둥근 사각형 안에 파란 마름모 3겹(아래 두 겹은 반투명) */
 .planner-page .top .brand b{
-  flex:none;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#6fd69a 0%,#4aa6c8 48%,#3c6ee6 100%);color:#fff;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 6px rgba(0,0,0,.22);
+  flex:none;width:30px;height:30px;border-radius:9px;background:linear-gradient(180deg,#243f78 0%,#0d1b42 100%);color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(74,111,184,.45),0 2px 6px rgba(0,0,0,.22);
 }
-.planner-page .brand svg{width:21px;height:21px}
+.planner-page .brand svg{width:22px;height:22px}
 .planner-page .top .sync-head{gap:8px;margin:0}
 .planner-page .sync-head .btn.mini{
   height:28px;margin:0;border:0;border-radius:9999px;background:var(--planner-soft);color:var(--text);
