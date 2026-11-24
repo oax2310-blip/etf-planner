@@ -289,6 +289,7 @@ const purchaseMode = plan => plan?.wait?"wait":plan?.lines?"lines":Array.isArray
 const selectPurchase=id=>{selectedPurchaseId=id;};
 // 분할매도와 같은 제목·시세·자산 배분 순서. 자산 배분 줄은 연결된 전체 계좌 합계 비중(아래 보유 목록 요약과 같은 값)이라 꼬리표·계좌 글자 없이 쓰고, 목표 도달·까지·초과 글자는 분할매도·재매수 줄(alloc-link.js line)과 같다. 계획 선택·화면 표시로 저장 필드를 만들지 않는다. 목표 출처 표시는 alloc-link.js 줄과 같다(옛 계획 목표만 '계획 목표').
 const TARGET_SCOPE={section:" (소분류)",plan:" (계획 목표)"};
+const MOBILE_TARGET_SCOPE={item:"종목 목표",section:"소분류 목표",plan:"계획 목표"};
 const targetSum=list=>Math.round(list.reduce((n,v)=>n+v,0)*1e8)/1e8;
 // 목표를 누르면 같은 자리에서 곧바로 목표 [  ] % 인라인 입력칸과 1줄 안내가 열린다(추가·완료 버튼 없음).
 // 한 계좌에만 목표가 있으면 그 항목(holder)을 수정하고, 비어 있으면 계획 항목(it)에 저장한다. 이미 두 계좌 이상에 나뉜 기존 기록은 합계를 표시하며 수정·비우기 전에 확인 후 holder 한 곳에 합치고 나머지 target을 지운다. 소분류·옛 목표를 임의로 바꾸지 않는다.
@@ -322,11 +323,12 @@ function purchaseTargetParts({g,it},s,entry=quoteOf(it),mobileWeight=false){
   const name=leadName(it,s),head=stockNames.titleParts(name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   const twin=linkedPlans(it,s).filter(r=>r.it!==it); // 새 계획 창이 막기 전에 만든 같은 종목의 중복 계획은 합치지 않고 알리기만 한다.
   const weight=mobileWeight?`<span class="bp-weight">${fixed1.format(pct)}% / ${pc(target)}</span>`:"";
+  const weightScope=mobileWeight?MOBILE_TARGET_SCOPE[scope]:"";
   const {control,hint}=purchaseTargetInline(it,s,target,scope,weight);
   const gapText=target===null?"":gap===null?"":Math.abs(gap)<.5?" · 목표 도달":gap>0?` · 목표까지 ${man(gap)}`:` · 목표 초과 ${man(-gap)}`;
   const targetText=target!==null?` / ${control}${gapText}`:` · ${control}`;
   const warnings=`${entry?priceWarning(entry,escA(it.ticker||it.name)):""}${twin.length?`<div class="warning">같은 종목의 다른 계좌 줄(${twin.map(r=>escA(r.it.name)).join(", ")})에도 분할매수 계획이 있어 예산과 알림이 겹칩니다. 하나만 남기고 삭제하세요.</div>`:""}`;
-  return {pct,target,gap,name,head,control,hint,gapText,targetText,warnings};
+  return {pct,target,gap,name,head,control,hint,gapText,targetText,warnings,weightScope};
 }
 function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,name,head,hint,targetText,warnings}=purchaseTargetParts({g,it},s,entry);
@@ -624,7 +626,7 @@ function renderPurchases(){
       <div class="bp-overview">
         <div class="bp-head"><h1 class="bp-name">${purchaseTitleButton(parts.head)}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div>
         <div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${bar}
-        <div class="bp-meta"><div class="bp-meta-line"><span class="bp-shares">${shareLine}</span>${weight.text?`<span class="bp-gap">${weight.text}</span>`:""}</div><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.control}<span class="bp-gap-desktop">${parts.gapText}</span></span></p></div>${parts.hint}
+        <div class="bp-meta"><div class="bp-meta-line"><span class="bp-shares">${shareLine}</span>${weight.text?`<span class="bp-gap">${weight.text}</span>`:""}</div><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.control}<span class="bp-gap-desktop">${parts.gapText}</span></span></p>${parts.weightScope?`<small class="bp-weight-scope">${parts.weightScope}</small>`:""}</div>${parts.hint}
       </div>${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
     const dockRow=focus,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
     const dock=complete&&lastDone?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-exec-focus="${id}" ${lastDone.attr}>체결가 수정</button><button class="btn primary bp-main" type="button" data-purchase-new="${id}">＋ 새 분할매수 계획</button></div>`

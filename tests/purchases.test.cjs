@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {renderedRows,assertLastDone}=require('./helpers/last-done.cjs');
+const {cssRule}=require('./helpers/css-rule.cjs');
 const visibleText=html=>html.replace(/<[^>]*>/g,'');
 
 // 실제 렌더·입력 핸들러와 자산 반영 코드를 함께 실행한다. DOM은 입력값·이벤트를 담는 최소 대역이다.
@@ -2021,6 +2022,40 @@ test('모바일 비중이 목표와 같은 금액이면 비중 환산 오차와 
     assert.match(html,/--bp-weight-progress:100%"/,`목표 ${target}% 달성률`);
     assert.match(html,/<span class="bp-gap">목표 도달<\/span>/,`목표 ${target}% 문구`);
     assert.match(html,/<span class="bp-gap-desktop"> · 목표 도달<\/span>/);
+  }
+});
+
+test('모바일 목표 범위는 종목·소분류·기존 계획 순으로 표시하고 목표 미입력에는 표시하지 않는다',()=>{
+  assert.equal(cssRule('css/purchases.css','.bp-weight-track,.bp-weight,.bp-weight-scope,.bp-gap').display,'none');
+  assert.equal(cssRule('css/purchases.css','.bp-weight-scope','@media(max-width:700px)').display,'block');
+  for(const manual of [true,false]){
+    const r=setup({manual});
+    r.doc.allocation.total=1000;
+    const group=r.doc.allocation.groups[0];
+    r.item.section='가상 소분류';
+    group.sections=[{name:r.item.section,target:5}];
+    if(!manual)r.item.buyPlan.lines.target=5;
+
+    r.item.target=5;
+    r.render();
+    assert.match(summaryCard(r),/<small class="bp-weight-scope">종목 목표<\/small>/);
+    assert.match(summaryCard(r),/<span class="target-display">목표 5%<\/span>/);
+
+    delete r.item.target;
+    r.render();
+    assert.match(summaryCard(r),/<small class="bp-weight-scope">소분류 목표<\/small>/);
+    assert.match(summaryCard(r),/<span class="target-display">목표 5% \(소분류\)<\/span>/);
+
+    delete group.sections;
+    if(!manual){
+      r.render();
+      assert.match(summaryCard(r),/<small class="bp-weight-scope">계획 목표<\/small>/);
+      assert.match(summaryCard(r),/<span class="target-display">목표 5% \(계획 목표\)<\/span>/);
+      delete r.item.buyPlan.lines.target;
+    }
+    r.render();
+    assert.doesNotMatch(summaryCard(r),/class="bp-weight-scope"/);
+    assert.match(summaryCard(r),/<span class="bp-weight">1\.0% \/ —<\/span>/);
   }
 });
 
