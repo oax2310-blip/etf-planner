@@ -595,8 +595,13 @@ test('분할매수 제목·목록 카드·이름 창은 매수 우선순위 첫 
   r.input('[data-purchase-rename]').onclick();assert.equal(r.names.at(-1).name,'테스트 종목(ISA)','이름 창의 기본 이름도 같은 종목');
   assert.equal(r.item.name,'테스트 종목(연저펀)');assert.equal(items(),before,'자산 종목 이름·보유량은 그대로');assert.deepEqual(Array.from(r.item.buyPlan.buyPriority),['b','a','c'],'저장은 화살표의 순서뿐');
   r.item.buyPlan.cardName='내 카드';r.render();assert.match(card(),/<strong>내 카드<\/strong>.*<span class="plan-title">테스트 종목\(ISA\)<\/span>/,'카드 이름이 있으면 아래 줄에 반영 대상 종목 이름');
-  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">ISA<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'제목은 카드 이름이 아니라 종목 이름');
-  move('a',-1);delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'화살표로 되돌리면 원래 종목');
+  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">내 카드<\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'카드 이름이 있으면 제목도 계획 이름');
+  assert.match(r.html(),/aria-label="내 카드 분할매수 계획 수정"/);
+  r.item.buyPlan.cardName='미국방산(ITA)';r.render();
+  assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">미국방산 <span class=\"title-tag\">ITA<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'계획 이름 끝 괄호도 제목 꼬리표로');
+  move('a',-1);delete r.item.buyPlan.cardName;r.render();assert.match(r.html(),/<h1[^>]*><button class="bp-title-btn"[^>]*><span class="bp-title-text">테스트 종목 <span class=\"title-tag\">연저펀<\/span><\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'카드 이름을 비우면 매수 반영 대상 종목 이름');
+  const w=setup({wait:'25개월선'});w.item.buyPlan.cardName='미국30년국채';w.render();
+  assert.match(w.html(),/<div class="title-row"><h1><button class="bp-title-btn"[^>]*><span class="bp-title-text">미국30년국채<\/span><span class="bp-dd" aria-hidden="true">▾<\/span><\/button><\/h1>/,'매수대기 제목도 카드 이름 우선');
 });
 test('분할매수 요약 카드: 현재가 옆에 다음 회차까지 %를, 제목 줄에 완료/전체 회차(부분 체결 개수 따로)를 두고 매수대기는 기존 시세 줄을 쓴다',()=>{
   const price=r=>(r.html().match(/<div class="bp-price">.*?<\/div>/)||[''])[0];
