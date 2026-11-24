@@ -1980,11 +1980,41 @@ test('분할매수 본문 밖 입력은 같은 data 속성이 있어도 계좌 �
 });
 
 
+test('모바일 요약의 비중 트랙과 배지는 같은 전체 계좌 비중을 읽고 목표 차이를 표시한다',()=>{
+  const r=setup();
+  r.doc.allocation.total=1000;
+  r.item.target=20;
+  const other={id:'b',name:'가상 연결 계좌',ticker:r.item.ticker,shares:0,amount:0};
+  r.doc.allocation.groups[0].items.push(other);
+  for(const [shares,target,tone,progress,badge,gap] of [
+    [110,20,'',60,'12.0% / 20%','목표까지 <b>80만원</b>'],
+    [170,20,' weight-near',90,'18.0% / 20%','목표까지 <b>20만원</b>'],
+    [179,21,' weight-near',90,'18.9% / 21%','목표까지 <b>21만원</b>'],
+    [190,20,' weight-near',100,'20.0% / 20%','목표 도달'],
+    [205,20,' weight-over',100,'21.5% / 20%','목표 +1.5% 초과'],
+    [0,0,' weight-over',100,'1.0% / 0%','목표 +1.0% 초과'],
+  ]){
+    other.shares=shares;r.item.target=target;r.render();
+    const html=r.html();
+    assert.ok(html.includes(`class="card bp-sum${tone}"`));
+    const fill=html.match(/class="bp-weight-track has-target" style="--bp-weight-progress:([\d.]+)%"/);
+    assert.ok(fill&&Math.abs(Number(fill[1])-progress)<1e-9);
+    assert.ok(html.includes(`<span class="bp-weight">${badge}</span>`));
+    assert.ok(html.includes(`<span class="bp-gap">${gap}</span>`));
+  }
+  delete r.item.target;r.render();
+  assert.match(r.html(),/class="bp-weight-track" style="--bp-weight-progress:0%"/);
+  assert.match(r.html(),/<span class="bp-weight">1\.0% \/ —<\/span>/);
+  assert.doesNotMatch(r.html(),/<span class="bp-gap">/);
+  assert.equal(r.inputs('[data-purchase-target]').length,1);
+});
+
 test('제목의 목표 인라인 입력은 추가 버튼·중복 문구 없이 그 자리에서 열리고 입력·Enter·Escape를 처리한다',()=>{
   const r=setup();r.item.target=18.75;r.render();const before=JSON.stringify(r.doc);let writes=0;r.store.saveSection=()=>writes++;
   const src=fs.readFileSync(path.join(__dirname,'../js/purchases.js'),'utf8');
   for(const legacy of ['purchaseTargetToggle','purchaseTargetFields','purchaseTargetDone','purchaseTargetEditingId'])assert.equal(src.includes(legacy),false,legacy);
-  assert.match(r.html(),/<p class="alloc-link bp-goal"[^>]*><span><label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">목표 18\.8%<\/span><span class="target-editor"><span class="purchase-target-size" data-value="18\.75"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="a" value="18\.75" placeholder="0~100" aria-label="테스트 종목 목표 비중 \(%\)" aria-describedby="purchaseTargetHint"><\/span><\/span><\/label>[^<]*<\/span><\/p><\/div><small class="purchase-target-hint" id="purchaseTargetHint">0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장<\/small>/);
+  assert.match(r.html(),/<p class="alloc-link bp-goal"[^>]*><span><label class="purchase-target-inline" title="목표 비중 수정"><span class="bp-weight">10\.0% \/ 18\.8%<\/span><span class="target-display">목표 18\.8%<\/span><span class="target-editor"><span class="purchase-target-size" data-value="18\.75"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="a" value="18\.75" placeholder="0~100" aria-label="테스트 종목 목표 비중 \(%\)" aria-describedby="purchaseTargetHint">/);
+  assert.match(r.html(),/<small class="purchase-target-hint" id="purchaseTargetHint">0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장<\/small>/);
   assert.match(visibleText(r.html()),/목표 18\.8% · (?:목표까지|목표 도달|목표 초과)/);
   assert.doesNotMatch(visibleText(r.html()),/목표 18\.8%목표|%%/);
   assert.doesNotMatch(r.html().split('id="purchaseLinkedHoldings"')[1],/data-purchase-target=/,'연결 계좌 줄에는 비중 입력을 중복 표시하지 않는다');

@@ -3,6 +3,7 @@ const purchasePlanner = (()=>{
 const el=id=>document.getElementById(id), all=sel=>document.querySelectorAll(sel);
 const escA=v=>String(v??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 const nf1=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:1}),nf2=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:2}),nf8=new Intl.NumberFormat("ko-KR",{maximumFractionDigits:8});
+const fixed1=new Intl.NumberFormat("ko-KR",{minimumFractionDigits:1,maximumFractionDigits:1});
 const man=v=>`${nf1.format(Math.round((Number(v)||0)*10)/10)}만원`;
 const pc=v=>v===null||v===undefined||!Number.isFinite(Number(v))?"—":`${(Math.abs(v)<1?nf2:nf1).format(Number(v))}%`;
 const PEN=PENCIL,dlg=el;
@@ -298,9 +299,10 @@ function targetEditorState(it,s=allocationSummary(doc.allocation,prices)){
   const value=own.length?String(targetSum(own.map(r=>finite(r.it.target)))):"";
   return {rows,own,holder,value};
 }
-function purchaseTargetInline(it,s,target,scope){
+function purchaseTargetInline(it,s,target,scope,weight=""){
   const {rows,own,holder,value}=targetEditorState(it,s),display=target!==null?`목표 ${pc(target)}${TARGET_SCOPE[scope]||""}`:"목표 미입력";
-  if(!holder)return {control:display,hint:""};
+  const displayHtml=`${weight}<span class="target-display">${display}</span>`;
+  if(!holder)return {control:weight?displayHtml:display,hint:""};
   const holderName=itemName(holder.it),itemTitle=stockNames.titleParts(holderName).main||holderName;
   const aria=rows.length>1?`${itemTitle} 전체 목표 비중 (%)`:`${holderName} 목표 비중 (%)`;
   const scopeLabel={section:"소분류",plan:"계획"}[scope];
@@ -310,20 +312,21 @@ function purchaseTargetInline(it,s,target,scope){
     :scope==="section"?"0~100% · 비우면 표시된 소분류 목표 유지 · 바깥 탭·Enter 저장"
     :"0~100% · 비우면 종목 목표 비움 · 바깥 탭·Enter 저장";
   return {
-    control:`<label class="purchase-target-inline" title="목표 비중 수정"><span class="target-display">${display}</span><span class="target-editor"><span class="purchase-target-size" data-value="${escA(value||placeholder)}"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="${escA(it.id)}" value="${escA(value)}" placeholder="${escA(placeholder)}" aria-label="${escA(aria)}" aria-describedby="purchaseTargetHint"></span></span></label>`,
+    control:`<label class="purchase-target-inline" title="목표 비중 수정">${displayHtml}<span class="target-editor"><span class="purchase-target-size" data-value="${escA(value||placeholder)}"><input type="number" min="0" max="100" step="any" inputmode="decimal" enterkeyhint="done" data-purchase-target="${escA(it.id)}" value="${escA(value)}" placeholder="${escA(placeholder)}" aria-label="${escA(aria)}" aria-describedby="purchaseTargetHint"></span></span></label>`,
     hint:`<small class="purchase-target-hint" id="purchaseTargetHint">${hintText}</small>`
   };
 }
 // 제목의 목표 줄·안내·경고 조각. 제목(매수대기)과 요약 카드(돌파·직접 입력)가 같은 값을 쓴다.
-function purchaseTargetParts({g,it},s,entry=quoteOf(it)){
+function purchaseTargetParts({g,it},s,entry=quoteOf(it),mobileWeight=false){
   const {pct,target,gap,scope}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
   const name=leadName(it,s),head=stockNames.titleParts(name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   const twin=linkedPlans(it,s).filter(r=>r.it!==it); // 새 계획 창이 막기 전에 만든 같은 종목의 중복 계획은 합치지 않고 알리기만 한다.
-  const {control,hint}=purchaseTargetInline(it,s,target,scope);
+  const weight=mobileWeight?`<span class="bp-weight">${fixed1.format(pct)}% / ${pc(target)}</span>`:"";
+  const {control,hint}=purchaseTargetInline(it,s,target,scope,weight);
   const gapText=target===null?"":gap===null?"":Math.abs(gap)<.5?" · 목표 도달":gap>0?` · 목표까지 ${man(gap)}`:` · 목표 초과 ${man(-gap)}`;
   const targetText=target!==null?` / ${control}${gapText}`:` · ${control}`;
   const warnings=`${entry?priceWarning(entry,escA(it.ticker||it.name)):""}${twin.length?`<div class="warning">같은 종목의 다른 계좌 줄(${twin.map(r=>escA(r.it.name)).join(", ")})에도 분할매수 계획이 있어 예산과 알림이 겹칩니다. 하나만 남기고 삭제하세요.</div>`:""}`;
-  return {pct,target,name,head,control,hint,gapText,targetText,warnings};
+  return {pct,target,gap,name,head,control,hint,gapText,targetText,warnings};
 }
 function purchaseHeading({g,it},s,quote,entry=quoteOf(it)){
   const {pct,name,head,hint,targetText,warnings}=purchaseTargetParts({g,it},s,entry);
@@ -348,6 +351,17 @@ function waitCard({g,it},s,notes){
 // 매수대기 계획은 제목·연결 보유·대기 카드를 그대로 쓴다. 여기 화면은 표시만 하며 저장 기록에 필드를 만들지 않는다.
 const bpSign=v=>v>0?"+":v<0?"−":"",bpRound1=v=>v===null?null:Math.sign(v)*Math.round(Math.abs(v)*10)/10||0; // 소수 첫째 자리로 보이는 값은 그 반올림 값으로 부호·색을 정한다(−0% 방지)
 const bpShort=t=>String(t||"").replace(/(\d+)(일|주|월)선$/,"$1$2"); // x축 글자: 25일선 → 25일(시선·직접 이름은 그대로)
+// 모바일 요약: 실제 현재 비중이 목표를 넘으면 초과, 목표의 90%부터는 근접 색. 목표 0%는 보유가 있을 때만 트랙을 채운다.
+function purchaseWeightStatus({pct,target,gap}){
+  if(gap===null)return {tone:"",progress:0,text:""};
+  const excess=pct-target,over=excess>0;
+  const progress=over?100:target>0?Math.max(0,Math.min(pct/target*100,100)):0;
+  const tone=over?" weight-over":(progress>=90-1e-9||excess===0)?" weight-near":"";
+  const text=over
+    ?(excess<.05?"목표 0.1% 미만 초과":`목표 +${fixed1.format(excess)}% 초과`)
+    :excess===0?"목표 도달":`목표까지 <b>${man(Math.max(0,gap))}</b>`;
+  return {tone,progress,text};
+}
 // 메모 한 줄(계좌 · 설정 펼침 안): 첫 줄만 '메모: …'로 보이고 [편집 ›]을 누르면 그 자리에서 입력칸이 열린다(열림은 화면 상태).
 // 입력칸·글자 수·저장 버튼은 기존 id(purchaseMemo·purchaseMemoCount·savePurchaseNote)를 그대로 써서 기존 저장(setText note)을 탄다.
 // 모바일(700px 이하)에서는 저장된 계획 목록을 따로 두지 않고 종목 이름 안으로 넣는다: 이름(▾)을 누르면 이름 바로 아래에 목록을 펼친다.
@@ -589,7 +603,8 @@ function renderPurchases(){
     const refOf=r=>finite(recordOf(r)?.execPrice??recordOf(r)?.tradePrice)===null;
     const avg=rows.length&&!mixedTickers?purchaseAverages(rows,execOf,r=>otherCode(it,r.tradeTicker),refOf):null;
     const blockedOf=r=>r.plannedShares===null||!r.recorded&&(!(r.plannedShares>0)||!(r.price>0)||!r.tradeTicker&&cur==="USD"&&!s.fx&&!(r.stage?.amount>0))||!!r.targetId&&!r.found&&!r.done&&!followsLead(r,trade.target); // 회차표 체크박스(row)의 blocked·missingTarget과 같은 조건
-    const isWarn=r=>!r.done&&(r.recorded||due(r)),label=r=>escA(movingLineText(r.label)),parts=purchaseTargetParts({g,it},s,q);
+    const isWarn=r=>!r.done&&(r.recorded||due(r)),label=r=>escA(movingLineText(r.label)),parts=purchaseTargetParts({g,it},s,q,true);
+    const weight=purchaseWeightStatus(parts);
     const badge=complete?'<span class="bp-badge ok">✓ 매수 완료</span>':dueRows.length?`<span class="bp-badge due"><i class="bp-pulse"></i>도달 ${dueRows.length}회 · 미체결</span>`:nextGap?`<span class="bp-next">다음 ${escA(movingLineText(next.label))} ${nextGap.text}</span>`:`<span class="bp-badge muted">${status}</span>`;
     // 진행 막대: 완료 + (도달 미체결 회차 수 + 부분 체결 비율). 완료 구간은 파랑→민트, 도달·부분 구간은 노랑→주황으로 이어진다(--edge가 경계).
     const warm=dueRows.length+partialRows.reduce((n,r)=>n+(r.plannedShares>0&&r.shares>0?Math.min(1,r.shares/r.plannedShares):0),0),fillN=Math.min(p.count,p.done+warm),edge=fillN>0?p.done/fillN*100:0;
@@ -602,7 +617,13 @@ function renderPurchases(){
       return `<div class="bp-done"><div class="bp-done-head"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10"/><path d="M5.8 10.2l2.8 2.8 5.6-5.9"/></svg><b>분할매수 완료</b><span>${p.count}회 모두 체결</span></div>${ret!==null?`<div class="bp-ret"><small class="bp-ret-label">이번 분할매수 수익${avg.usedRef?'<span class="bp-ret-ref">기준가 포함</span>':""}</small><div class="bp-ret-v"><b${toneOf(ret)}>${bpSign(ret)}${nf1.format(Math.abs(ret))}%</b>${pl!==null?`<em${toneOf(pl)}>${bpSign(pl)}${man(Math.abs(pl))}</em>`:""}</div></div>`:""}<div class="bp-done-stats"><div><small>체결 평단</small><b>${avg?.now>0?rowPt(avg.now):"—"}</b></div><div><small>분할매수 총액</small><b>${total>0?wonAmount(total):"—"}</b></div></div></div>`;})():"";
     const curve=purchaseCurveCard({id:it.id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone:list=>list.every(r=>r.done),pick:purchaseCurvePick.get(it.id),plotW:purchasePlotW});
     const curveCard=curve;
-    const summary=`<section class="card bp-sum${complete?" complete":""}" aria-label="계획 진행"><div class="bp-head"><h1 class="bp-name">${purchaseTitleButton(parts.head)}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div><div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${bar}<div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.target!==null?`${parts.control}${parts.gapText}`:parts.control}</span></p></div>${parts.hint}${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
+    const summary=`<section class="card bp-sum${complete?" complete":""}${weight.tone}" aria-label="계획 진행">
+      <div class="bp-weight-track${parts.gap!==null?" has-target":""}" style="--bp-weight-progress:${weight.progress}%" aria-hidden="true"></div>
+      <div class="bp-overview">
+        <div class="bp-head"><h1 class="bp-name">${purchaseTitleButton(parts.head)}</h1>${p.count?`<span class="bp-count${complete?" done":""}">${p.done} / ${p.count}회 완료 (${pctDone}%)${partialCount?`<small> · 부분 ${partialCount}</small>`:""}</span>`:""}</div>
+        <div class="bp-price"><strong class="bp-now">${now!==null?rowPt(now):"시세 대기"}</strong>${badge}</div>${bar}
+        <div class="bp-meta"><span class="bp-shares">${shareLine}</span><p class="alloc-link bp-goal" title="자산 배분 · 연결된 전체 계좌 합계 비중"><span>${parts.control}<span class="bp-gap-desktop">${parts.gapText}</span></span></p>${weight.text?`<span class="bp-gap">${weight.text}</span>`:""}</div>${parts.hint}
+      </div>${goldNote(it)}${notes.map(t=>`<p class="buy-track-note">${t}</p>`).join("")}${purchaseNoteButtons(it,waits)}${dueBox}${doneBox}${purchaseAccountBox({g,it},s)}</section>${parts.warnings}`;
     const dockRow=focus,left=r=>(r.plannedShares??0)-(r.shares||0); // qtyOf가 음수를 0으로 막는다. 계획 수량을 모르는 부분 체결은 숫자 없이 잔량 체결
     const dock=complete&&lastDone?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-exec-focus="${id}" ${lastDone.attr}>체결가 수정</button><button class="btn primary bp-main" type="button" data-purchase-new="${id}">＋ 새 분할매수 계획</button></div>`
       :dockRow?`<div class="bp-dock"><button class="btn bp-sub" type="button" data-purchase-focus="${id}" ${dockRow.attr}>부분 체결 · 체결가</button><button class="btn primary bp-main" type="button" data-purchase-act="${id}" ${dockRow.attr}${blockedOf(dockRow)?" disabled":""}>✓ ${label(dockRow)} ${dockRow.recorded?dockRow.plannedShares===null?"잔량 체결":`남은 ${qtyOf(left(dockRow),dockRow.tradeItem)} 체결`:`${qtyOf(dockRow.plannedShares||0,dockRow.tradeItem)} 체결 완료`}</button></div>`:"";
