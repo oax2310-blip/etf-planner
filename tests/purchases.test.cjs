@@ -576,8 +576,13 @@ test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코�
   r.render();assert.match(card('a'),/^plan-item active show-code \| <span class="plan-row"><strong>테스트 종목<\/strong>.*<span class="plan-title">111111<\/span>/);assert.match(card('b'),/^plan-item show-code \|.*<span class="plan-title">222222<\/span>/);
   assert.match(card('c'),/^plan-item \| <span class="plan-row"><strong>333333<\/strong><span class="plan-count/,'종목 이름이 없으면 코드');
   r.item.buyPlan.cardName='내 매수 카드';const before=JSON.stringify(r.doc);r.render();
-  assert.match(card('a'),/<strong>내 매수 카드<\/strong><span class="plan-count[^"]*">.*<span class="plan-title">테스트 종목<\/span>/,'카드 이름이 있으면 기존처럼 아래 줄에 종목 이름');
+  assert.match(card('a'),/^plan-item active \|.*<strong>내 매수 카드<\/strong><span class="plan-count[^"]*">.*<span class="plan-title">테스트 종목<\/span>/,'카드 이름이 중복되지 않으면 모바일 보조 줄은 숨김');
   assert.equal(JSON.stringify(r.doc),before,'목록을 그려도 기록은 그대로');
+  r.doc.allocation.groups[1].items[0].name='다른 ETF 종목';r.doc.allocation.groups[1].items[0].buyPlan.cardName='내 매수 카드';r.render();
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">테스트 종목<\/span>/,'다른 코드에 같은 카드 이름이 있으면 모바일에도 종목 이름 표시');
+  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">다른 ETF 종목<\/span>/);
+  delete r.doc.allocation.groups[1].items[0].buyPlan.cardName;r.render();
+  assert.doesNotMatch(card('a'),/show-code/,'중복이 해소되면 다시 숨김');
 });
 test('분할매수 제목: 이름 끝 괄호는 꼬리표로 보이고 목록·자산 종목 이름은 그대로 둔다',()=>{
   const r=setup();r.item.name='테스트 종목(연저펀)';const before=JSON.stringify(r.doc);r.render();
