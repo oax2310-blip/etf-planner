@@ -585,7 +585,7 @@ test('알림 테스트는 이전 테스트 알림을 정리한 뒤 활성 알림
   assert.equal(JSON.stringify(dropped.ctx.state),before);
 });
 
-test('웹앱 무응답(default 권한), 안드로이드 APK WebView 미지원, 차단(denied) 상태를 버튼 클릭 전·후로 진단한다',async()=>{
+test('웹앱 무응답(default 권한), 차단(denied) 상태를 버튼 클릭 전·후로 진단한다',async()=>{
   const chromeAndroidUa='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
   const chromeUserAgentData={brands:[{brand:'Chromium',version:'130'},{brand:'Google Chrome',version:'130'}],mobile:true,platform:'Android'};
   const silentPrompt=load({permission:()=> 'default',displayMode:'fullscreen',userAgent:chromeAndroidUa,userAgentData:chromeUserAgentData});
