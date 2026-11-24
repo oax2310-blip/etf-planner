@@ -578,11 +578,26 @@ test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코�
   r.item.buyPlan.cardName='내 매수 카드';const before=JSON.stringify(r.doc);r.render();
   assert.match(card('a'),/^plan-item active \|.*<strong>내 매수 카드<\/strong><span class="plan-count[^"]*">.*<span class="plan-title">테스트 종목<\/span>/,'카드 이름이 중복되지 않으면 모바일 보조 줄은 숨김');
   assert.equal(JSON.stringify(r.doc),before,'목록을 그려도 기록은 그대로');
+  // 사례 A: 중복 카드 이름 + 서로 다른 종목명 → 실제 종목명으로 구분
   r.doc.allocation.groups[1].items[0].name='다른 ETF 종목';r.doc.allocation.groups[1].items[0].buyPlan.cardName='내 매수 카드';r.render();
-  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">테스트 종목<\/span>/,'다른 코드에 같은 카드 이름이 있으면 모바일에도 종목 이름 표시');
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">테스트 종목<\/span>/,'사례 A: 다른 코드에 같은 카드 이름이면 종목명으로 구분');
   assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">다른 ETF 종목<\/span>/);
+  // 사례 B: 중복 카드 이름 + 동일한 종목명 → 종목 코드로 구분
+  r.doc.allocation.groups[1].items[0].name='테스트 종목';r.render();
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'사례 B: 중복 카드 이름에 종목명까지 같으면 종목 코드로 구분');
+  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
+  // 사례 C: 중복 카드 이름 + 종목명도 카드 이름과 동일 → 종목 코드로 구분
+  r.item.name='내 매수 카드';r.doc.allocation.groups[1].items[0].name='내 매수 카드';r.render();
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'사례 C: 카드 이름과 종목명이 모두 같아도 종목 코드로 구분');
+  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
+  // 카드 이름이 있는 항목과 없는 항목 사이의 표시 이름 충돌
   delete r.doc.allocation.groups[1].items[0].buyPlan.cardName;r.render();
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'카드 이름 있는 항목과 없는 항목이 같은 표시 이름이면 둘 다 구분');
+  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
+  // 중복 해소 시 불필요한 보조 표시 제거
+  r.item.name='테스트 종목';r.doc.allocation.groups[1].items[0].name='다른 ETF 종목';r.render();
   assert.doesNotMatch(card('a'),/show-code/,'중복이 해소되면 다시 숨김');
+  assert.match(card('a'),/<span class="plan-title">테스트 종목<\/span>/,'중복 해소 후 PC 보조 줄은 원래 종목명');
 });
 test('분할매수 제목: 이름 끝 괄호는 꼬리표로 보이고 목록·자산 종목 이름은 그대로 둔다',()=>{
   const r=setup();r.item.name='테스트 종목(연저펀)';const before=JSON.stringify(r.doc);r.render();

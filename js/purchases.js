@@ -645,12 +645,14 @@ function renderPurchases(){
       </section>${dock}
       </div>`;
   };
-  // 카드 이름이 있으면 제목·목록 카드 모두 카드 이름을 굵게 보이고, 없으면 매수 반영 대상 종목 이름(leadName)을 쓴다. PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 표시 이름이 다른 코드에도 있을 때만 보조 줄을 보인다(.show-code).
-  const leads=new Map(plans.map(({it})=>[it.id,leadName(it,s)])),autoName=it=>leads.get(it.id),clash=stockNames.clashes(plans.map(({it})=>({name:String(it.buyPlan.cardName||"").trim()||autoName(it),code:it.ticker})));
+  // 카드 이름이 있으면 제목·목록 카드 모두 카드 이름을 굵게 보이고, 없으면 매수 반영 대상 종목 이름(leadName)을 쓴다. PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 표시 이름이 다른 코드에도 있을 때만 보조 줄을 보인다(.show-code). 중복 카드 이름에서 종목명으로도 구분되지 않으면 종목 코드를 보조 표시로 쓴다.
+  const leads=new Map(plans.map(({it})=>[it.id,leadName(it,s)])),autoName=it=>leads.get(it.id);
+  const displayRows=plans.map(({it})=>{const card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?autoName(it):code;return {name,sub,code};});
+  const clash=stockNames.clashes(displayRows.map(({name,code})=>({name,code}))),subClash=stockNames.clashes(displayRows.map(({name,sub,code})=>({name:`${name}\0${sub}`,code})));
   const list=plans.map(({g,it},i)=>{
     const p=summaries[i],wait=it.buyPlan.wait?purchaseWaitInfo(it.buyPlan,waitEntry(it)):null;
     const progress=wait?wait.gapPct===null?"시세 대기":wait.reached?"도달":"대기":p.count?`${p.done}/${p.count}`:it.buyPlan.lines&&purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s).buyable===0?"목표 도달":it.buyPlan.lines&&!(it.buyPlan.lines.budget>0)?"예산 대기":"시세 대기",reached=!!wait?.reached;
-    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?autoName(it):code,showCode=!!sub&&sub!==name&&clash(name);
+    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),baseSub=card?autoName(it):code,clashed=clash(name),sub=card&&clashed&&code&&(baseSub===name||subClash(`${name}\0${baseSub}`))?code:baseSub,showCode=!!sub&&sub!==name&&clashed;
     const words=[name,sub,autoName(it),g.name,it.section,it.ticker,it.name,mode].filter(Boolean).join(" ").toLowerCase();
     return `<div class="plan-cell" data-plan-search="${escA(words)}"><button class="plan-item${it.id===selectedPurchaseId?" active":""}${showCode?" show-code":""}" type="button" data-purchase-select="${escA(it.id)}" aria-pressed="${it.id===selectedPurchaseId}" aria-controls="purchaseMain" title="${escA(`${name}${card&&sub?` · ${sub}`:""} · ${context} · ${mode} · ${progress}${!wait&&p.count?"회 완료":""}`)}"><span class="plan-row"><strong>${escA(name)}</strong><span class="plan-count${reached?" due":""}">${progress}${!wait&&p.count?'<span class="plan-unit">회</span>':""}</span></span><span class="plan-title">${sub&&sub!==name?escA(sub):""}</span>${wait?"":`<span class="plan-bar"><i style="width:${Math.round(p.done/Math.max(p.count,1)*100)}%"></i></span>`}</button><button class="plan-rename" type="button" data-purchase-rename="${escA(it.id)}" aria-label="${escA(name)} 카드 이름 변경" title="카드 이름 변경">${PEN}</button></div>`;
   }).join("");
