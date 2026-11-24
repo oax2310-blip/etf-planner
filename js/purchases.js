@@ -28,9 +28,10 @@ const quoteOf=it=>assetQuote(prices,it?.ticker);
 const planCurrency=(plan,it)=>plan?.currency||quoteOf(it)?.currency||(tracksETF(it)&&purchaseQuoteKind(it?.ticker)==="해외"?"USD":"KRW");
 const execBase=b=>b?.tradePrice??b?.price;
 const targetsOf=(it,plan=it.buyPlan,s)=>purchaseTargets(doc.allocation,prices,it,plan,s);
-// 화면 제목·목록 카드에 보일 종목 이름: 매수 우선순위 첫 항목(매수 반영 대상·매수대기의 계획 종목). 순서를 바꾸지 않았으면 계획을 둔 종목, 이름이 없으면 종목 코드. 계획·자산 이름은 바꾸지 않는다.
+// 화면 제목·목록 카드에 보일 이름: 카드 이름(cardName)이 있으면 우선 쓰고, 없으면 매수 우선순위 첫 항목(매수 반영 대상·매수대기의 계획 종목)의 이름(leadName). 계획·자산 이름은 바꾸지 않는다.
 const itemName=it=>String(it?.name||"").trim()||String(it?.ticker||"").trim();
 const leadName=(it,s)=>itemName(targetsOf(it,it.buyPlan,s)[0]?.it||it);
+const planTitleName=(it,s)=>String(it?.buyPlan?.cardName||"").trim()||leadName(it,s);
 // 매수 1순위 계좌. 기록한 회차의 이어 사기·되팔기(수량 늘리기·줄이기·0·체크 해제)도 처음 반영한 계좌가 아니라 이 계좌에 바뀐 양만 반영한다(alloc-link.js shift).
 // 1순위 계좌의 실제 매수 코드가 회차 코드와 같을 때만 따르며(주수 단위가 같음), 다르거나 이미 반영한 수량을 모르는 옛 기록은 처음 반영한 계좌를 그대로 고친다.
 const leadOf=(it,plan=it.buyPlan)=>targetsOf(it,plan)[0]?.it||it;
@@ -320,7 +321,7 @@ function purchaseTargetInline(it,s,target,scope,weight=""){
 // 제목의 목표 줄·안내·경고 조각. 제목(매수대기)과 요약 카드(돌파·직접 입력)가 같은 값을 쓴다.
 function purchaseTargetParts({g,it},s,entry=quoteOf(it),mobileWeight=false){
   const {pct,target,gap,scope}=purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s);
-  const name=leadName(it,s),head=stockNames.titleParts(name); // 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
+  const name=planTitleName(it,s),head=stockNames.titleParts(name); // 카드 이름이 있으면 계획 이름으로, 없으면 매수 반영 대상 종목 이름. 이름 끝 괄호는 제목 꼬리표로(규칙은 stock-names.js titleParts)
   const twin=linkedPlans(it,s).filter(r=>r.it!==it); // 새 계획 창이 막기 전에 만든 같은 종목의 중복 계획은 합치지 않고 알리기만 한다.
   const weight=mobileWeight?`<span class="bp-weight">${fixed1.format(pct)}% / ${pc(target)}</span>`:"";
   const weightScope=mobileWeight?MOBILE_TARGET_SCOPE[scope]:"";
@@ -400,7 +401,7 @@ function purchaseAccountBox({g,it},s){
     return `<div class="bp-acc-row${j===0?" lead":""}" data-purchase-holding="${escA(r.it.id)}"><span class="bp-acc-rank" aria-label="${j+1}순위${j===0?" · 매수 반영 대상":""}">${j+1}</span><div class="bp-acc-body"><div class="bp-acc-l1"><span class="bp-acc-name">${escA(t.main||r.it.name)}</span><span class="bp-acc-tag">${escA(t.tag||r.g.name)}</span></div><div class="bp-acc-l2">${escA(qty(r))} · ${info.valueText}${pending?` · ${pending}`:""}</div></div>${right}</div>`;
   }).join("");
   const sort=open&&!deleteMode&&ordered.length>1?`<button class="btn bp-acc-sort${sortMode?" on":""}" type="button" id="purchaseAccountSort" data-purchase-sort="${id}" aria-pressed="${sortMode}" aria-controls="purchaseLinkedHoldings" aria-label="매수 우선순위 바꾸기">⇅</button>`:"";
-  const drawer=`<div class="bp-acc-drawer" id="purchaseAccountDrawer"${open?"":" hidden"}>${deleteMode?'<p class="bp-acc-policy">삭제할 계좌를 누르세요. 확인 후 자산 배분에서도 삭제됩니다.</p>':sortMode?'<p class="bp-acc-policy sort">맨 위 계좌에 새 회차의 체결을 반영합니다.</p>':""}<div class="bp-acc-list" id="purchaseLinkedHoldings" aria-label="${deleteMode?"연결 계좌 삭제":"매수 우선순위"}">${rows}</div><div class="bp-acc-actions"><button class="btn bp-pill" type="button" id="purchaseAccountAdd"${canAdd?"":' disabled aria-describedby="purchaseAccountHint"'}>＋ 계좌 추가</button><button class="btn bp-pill purchase-account-delete-toggle${deleteMode?" active":""}" type="button" id="purchaseAccountDeleteToggle" aria-pressed="${deleteMode}" aria-controls="purchaseLinkedHoldings" aria-label="${deleteMode?"계좌 삭제 완료":"계좌 삭제"}">${deleteMode?"완료":"삭제"}</button><button class="btn bp-pill accent" type="button" data-purchase-edit="${id}" aria-label="${escA(leadName(it,s))} 분할매수 계획 수정">계획 수정</button></div>${canAdd?"":'<p class="hint" id="purchaseAccountHint"><a href="assets.html#alloc">자산 배분</a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하면 계좌를 추가할 수 있습니다.</p>'}${purchaseMemoLine(it)}</div>`;
+  const drawer=`<div class="bp-acc-drawer" id="purchaseAccountDrawer"${open?"":" hidden"}>${deleteMode?'<p class="bp-acc-policy">삭제할 계좌를 누르세요. 확인 후 자산 배분에서도 삭제됩니다.</p>':sortMode?'<p class="bp-acc-policy sort">맨 위 계좌에 새 회차의 체결을 반영합니다.</p>':""}<div class="bp-acc-list" id="purchaseLinkedHoldings" aria-label="${deleteMode?"연결 계좌 삭제":"매수 우선순위"}">${rows}</div><div class="bp-acc-actions"><button class="btn bp-pill" type="button" id="purchaseAccountAdd"${canAdd?"":' disabled aria-describedby="purchaseAccountHint"'}>＋ 계좌 추가</button><button class="btn bp-pill purchase-account-delete-toggle${deleteMode?" active":""}" type="button" id="purchaseAccountDeleteToggle" aria-pressed="${deleteMode}" aria-controls="purchaseLinkedHoldings" aria-label="${deleteMode?"계좌 삭제 완료":"계좌 삭제"}">${deleteMode?"완료":"삭제"}</button><button class="btn bp-pill accent" type="button" data-purchase-edit="${id}" aria-label="${escA(planTitleName(it,s))} 분할매수 계획 수정">계획 수정</button></div>${canAdd?"":'<p class="hint" id="purchaseAccountHint"><a href="assets.html#alloc">자산 배분</a>에서 종목 코드 또는 실제 매수 ETF 코드를 먼저 입력하면 계좌를 추가할 수 있습니다.</p>'}${purchaseMemoLine(it)}</div>`;
   // 펼친 계좌 목록은 음각 상자 밖(요약 카드 폭 그대로)에 둔다. 상자에는 맨 윗줄만.
   // 맨 윗줄 전체가 펼침 버튼이다(따로 [설정] 버튼 없음). 버튼의 ::after가 음각 상자 전체를 덮어 상자 어디를 눌러도 펼치고, [⇅]은 그 위에 둔다.
   const profitDescription=sum?`<p class="hint bp-acc-profit-description" id="purchaseAccountProfitDescription">${profitTip}</p>`:"";
@@ -644,12 +645,20 @@ function renderPurchases(){
       </section>${dock}
       </div>`;
   };
-  // 카드 이름이 없으면 제목과 같은 종목 이름(leadName)을 굵게, PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 이름이 다른 코드에도 있을 때만 코드 줄을 보인다(.show-code).
-  const leads=new Map(plans.map(({it})=>[it.id,leadName(it,s)])),autoName=it=>leads.get(it.id),clash=stockNames.clashes(plans.filter(({it})=>!String(it.buyPlan.cardName||"").trim()).map(({it})=>({name:autoName(it),code:it.ticker})));
+  // 카드 이름이 있으면 제목·목록 카드 모두 카드 이름을 굵게 보이고, 없으면 매수 반영 대상 종목 이름(leadName)을 쓴다. PC 아래 줄에 종목 코드(카드 이름이 있으면 종목 이름). 모바일은 같은 표시 이름이 다른 코드에도 있을 때만 보조 줄을 보인다(.show-code). 중복 카드 이름에서 종목명으로도 구분되지 않으면 종목 코드를 보조 표시로 쓴다.
+  const leads=new Map(plans.map(({it})=>[it.id,leadName(it,s)])),autoName=it=>leads.get(it.id);
+  const displayRows=plans.map(({it})=>{const card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?autoName(it):code;return {card,code,name,sub};});
+  const clash=stockNames.clashes(displayRows.map(({name,code})=>({name,code})));
+  displayRows.forEach(r=>{r.clashed=clash(r.name);if(r.card&&r.clashed&&r.code&&r.sub===r.name)r.sub=r.code;});
+  for(let changed=true;changed;){
+    changed=false;
+    const subClash=stockNames.clashes(displayRows.map(({name,sub,code})=>({name:`${name}\0${sub}`,code})));
+    displayRows.forEach(r=>{if(r.card&&r.clashed&&r.code&&r.sub!==r.code&&subClash(`${r.name}\0${r.sub}`)){r.sub=r.code;changed=true;}});
+  }
   const list=plans.map(({g,it},i)=>{
     const p=summaries[i],wait=it.buyPlan.wait?purchaseWaitInfo(it.buyPlan,waitEntry(it)):null;
     const progress=wait?wait.gapPct===null?"시세 대기":wait.reached?"도달":"대기":p.count?`${p.done}/${p.count}`:it.buyPlan.lines&&purchaseAllocationSummary(doc.allocation,prices,it,it.buyPlan,s).buyable===0?"목표 도달":it.buyPlan.lines&&!(it.buyPlan.lines.budget>0)?"예산 대기":"시세 대기",reached=!!wait?.reached;
-    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",card=String(it.buyPlan.cardName||"").trim(),code=String(it.ticker||"").trim(),name=card||autoName(it),sub=card?autoName(it):code,showCode=!card&&code&&code!==name&&clash(name);
+    const context=[g.name,it.section,it.ticker].filter(Boolean).join(" · "),mode=wait?"매수대기":it.buyPlan.lines?"이동평균선 돌파":"직접 입력",{card,code,name,sub,clashed}=displayRows[i],showCode=!!sub&&sub!==name&&clashed;
     const words=[name,sub,autoName(it),g.name,it.section,it.ticker,it.name,mode].filter(Boolean).join(" ").toLowerCase();
     return `<div class="plan-cell" data-plan-search="${escA(words)}"><button class="plan-item${it.id===selectedPurchaseId?" active":""}${showCode?" show-code":""}" type="button" data-purchase-select="${escA(it.id)}" aria-pressed="${it.id===selectedPurchaseId}" aria-controls="purchaseMain" title="${escA(`${name}${card&&sub?` · ${sub}`:""} · ${context} · ${mode} · ${progress}${!wait&&p.count?"회 완료":""}`)}"><span class="plan-row"><strong>${escA(name)}</strong><span class="plan-count${reached?" due":""}">${progress}${!wait&&p.count?'<span class="plan-unit">회</span>':""}</span></span><span class="plan-title">${sub&&sub!==name?escA(sub):""}</span>${wait?"":`<span class="plan-bar"><i style="width:${Math.round(p.done/Math.max(p.count,1)*100)}%"></i></span>`}</button><button class="plan-rename" type="button" data-purchase-rename="${escA(it.id)}" aria-label="${escA(name)} 카드 이름 변경" title="카드 이름 변경">${PEN}</button></div>`;
   }).join("");
