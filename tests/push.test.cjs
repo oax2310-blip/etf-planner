@@ -449,7 +449,7 @@ test('알림 테스트는 클릭 시 권한을 먼저 확인하고 PNG 아이콘
   assert.equal(options.tag,'etf-planner-push-test');
   assert.equal(options.renotify,true);
   assert.equal(options.data.url,'https://example.test/etf-planner/');
-  assert.equal(options.icon,'https://example.test/etf-planner/icons/planner-192.png');
+  assert.equal(options.icon,'https://example.test/etf-planner/icons/push-192.png');
   assert.match(message(),/이 휴대폰에 테스트 알림을 보냈습니다/);
   assert.match(message(),/웹사이트·기타 알림/);
   assert.equal(vm.runInContext('pushSubscription',ctx),initialSub);

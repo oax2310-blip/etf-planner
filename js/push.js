@@ -615,7 +615,7 @@ async function testPhonePush(){
       renotify:true,
       data:{url:new URL("./",document.baseURI).href}
     };
-    const icon=new URL("icons/planner-192.png",document.baseURI).href;
+    const icon=new URL("icons/push-192.png",document.baseURI).href;
     let usedIcon=true;
     await waitPushStage(
       Promise.resolve()
