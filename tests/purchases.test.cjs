@@ -590,8 +590,12 @@ test('분할매수 목록: 카드 이름이 없으면 종목명을 굵게·코�
   r.item.name='내 매수 카드';r.doc.allocation.groups[1].items[0].name='내 매수 카드';r.render();
   assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'사례 C: 카드 이름과 종목명이 모두 같아도 종목 코드로 구분');
   assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
+  // 코드 대체 후 재충돌: A(111111, 종목명=카드 이름) → 111111 대체, B(222222, 종목명=111111) → 222222로 재구분
+  r.doc.allocation.groups[1].items[0].name='111111';r.render();
+  assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'재충돌 시에도 각자의 종목 코드로 구분');
+  assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
   // 카드 이름이 있는 항목과 없는 항목 사이의 표시 이름 충돌
-  delete r.doc.allocation.groups[1].items[0].buyPlan.cardName;r.render();
+  r.doc.allocation.groups[1].items[0].name='내 매수 카드';delete r.doc.allocation.groups[1].items[0].buyPlan.cardName;r.render();
   assert.match(card('a'),/^plan-item active show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">111111<\/span>/,'카드 이름 있는 항목과 없는 항목이 같은 표시 이름이면 둘 다 구분');
   assert.match(card('b'),/^plan-item show-code \|.*<strong>내 매수 카드<\/strong>.*<span class="plan-title">222222<\/span>/);
   // 중복 해소 시 불필요한 보조 표시 제거
