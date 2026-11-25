@@ -164,7 +164,6 @@ details .controls { margin-top:14px; }
 .nav-save > button { border:1px solid var(--accent); background:var(--accent); color:var(--on-accent); border-radius:9px; padding:6px 13px; font-size:.82rem; font-weight:600; line-height:1.4; }
 .nav-save > button:hover { background:var(--accent-hover); border-color:var(--accent-hover); }
 .theme-pick { display:none; }
-.theme-pick[data-theme-mobile] { display:inline-flex; }
 @media (hover:hover) and (pointer:fine) { .theme-pick { display:inline-flex; } }
 .theme-btn { display:grid; place-items:center; width:32px; height:31px; padding:0; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--text-2); }
 .theme-btn:hover { background:var(--surface-2); color:var(--text); }

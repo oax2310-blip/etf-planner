@@ -21,33 +21,32 @@ test('PC에서 기기 설정 따름(또는 모르는 값)이면 기기 설정을
   assert.equal(themeOf(null, true, false), 'light');
 });
 
-test('직접 선택을 제공하지 않는 터치 브라우저는 기기 설정을 따른다', () => {
+test('일반 터치 브라우저는 PC에서 고른 값이 있어도 기기 설정을 따른다', () => {
   assert.equal(themeOf('dark', false, false), 'light');
   assert.equal(themeOf('light', false, true), 'dark');
 });
 
-test('삼성 인터넷 터치 화면은 시스템이 밝게 보고되어도 직접 고른 다크 테마와 상태바 요청 색을 쓴다', () => {
-  for (const samsung of [true, false]) {
-    let choice = 'dark';
-    const events = {}, meta = {content:'#f5f6f8'};
-    const document = {
-      documentElement:{dataset:{}},
-      querySelectorAll:() => [meta],
-      addEventListener() {},
-    };
+test('삼성 인터넷 터치 화면은 기기 설정과 기존 선택에 관계없이 자체 다크 테마로 열린다', () => {
+  for (const choice of [null, 'light']) {
+    const events = {}, meta = {content:'#f5f6f8'}, desktop = {matches:false, addEventListener:(name, fn) => events.desktop = fn};
+    const dark = {matches:false, addEventListener:(name, fn) => events.dark = fn};
+    const document = {documentElement:{dataset:{}}, querySelectorAll:() => [meta], addEventListener() {}};
     vm.runInNewContext(source, {
       document,
-      navigator:{userAgent:samsung ? 'Mozilla/5.0 (Linux; Android 16) SamsungBrowser/30.0 Chrome/143.0.0.0 Mobile Safari/537.36' : 'Mozilla/5.0 (Linux; Android 16) Chrome/143.0.0.0 Mobile Safari/537.36'},
-      matchMedia:() => ({matches:false}),
+      navigator:{userAgent:'Mozilla/5.0 (Linux; Android 16) SamsungBrowser/30.0 Chrome/143.0.0.0 Mobile Safari/537.36'},
+      matchMedia:q => q.includes('hover') ? desktop : dark,
       localStorage:{getItem:() => choice},
       addEventListener:(name, fn) => events[name] = fn,
     });
-    assert.equal(document.documentElement.dataset.theme, samsung ? 'dark' : 'light');
-    assert.equal(meta.content, samsung ? '#0a0c10' : '#f5f6f8');
-    choice = null;
-    events.storage({key:'etf-planner-theme'});
-    assert.equal(document.documentElement.dataset.theme, 'light');
-    assert.equal(meta.content, '#f5f6f8');
+    const check = (theme, color) => {
+      assert.equal(document.documentElement.dataset.theme, theme);
+      assert.equal(meta.content, color);
+    };
+    check('dark', '#0a0c10');
+    dark.matches = true; events.dark(); check('dark', '#0a0c10');
+    dark.matches = false; events.dark(); check('dark', '#0a0c10');
+    desktop.matches = true; events.desktop(); check('light', '#f5f6f8');
+    desktop.matches = false; events.desktop(); check('dark', '#0a0c10');
   }
 });
 
