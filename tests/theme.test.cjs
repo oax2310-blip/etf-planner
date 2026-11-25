@@ -21,9 +21,33 @@ test('PC에서 기기 설정 따름(또는 모르는 값)이면 기기 설정을
   assert.equal(themeOf(null, true, false), 'light');
 });
 
-test('휴대폰(터치)은 PC에서 고른 값이 있어도 늘 기기 설정을 따른다', () => {
+test('일반 터치 브라우저는 PC에서 고른 값이 있어도 기기 설정을 따른다', () => {
   assert.equal(themeOf('dark', false, false), 'light');
   assert.equal(themeOf('light', false, true), 'dark');
+});
+
+test('삼성 인터넷 터치 화면은 기기 설정과 기존 선택에 관계없이 자체 다크 테마로 열린다', () => {
+  for (const choice of [null, 'light']) {
+    const events = {}, meta = {content:'#f5f6f8'}, desktop = {matches:false, addEventListener:(name, fn) => events.desktop = fn};
+    const dark = {matches:false, addEventListener:(name, fn) => events.dark = fn};
+    const document = {documentElement:{dataset:{}}, querySelectorAll:() => [meta], addEventListener() {}};
+    vm.runInNewContext(source, {
+      document,
+      navigator:{userAgent:'Mozilla/5.0 (Linux; Android 16) SamsungBrowser/30.0 Chrome/143.0.0.0 Mobile Safari/537.36'},
+      matchMedia:q => q.includes('hover') ? desktop : dark,
+      localStorage:{getItem:() => choice},
+      addEventListener:(name, fn) => events[name] = fn,
+    });
+    const check = (theme, color) => {
+      assert.equal(document.documentElement.dataset.theme, theme);
+      assert.equal(meta.content, color);
+    };
+    check('dark', '#0a0c10');
+    dark.matches = true; events.dark(); check('dark', '#0a0c10');
+    dark.matches = false; events.dark(); check('dark', '#0a0c10');
+    desktop.matches = true; events.desktop(); check('light', '#f5f6f8');
+    desktop.matches = false; events.desktop(); check('dark', '#0a0c10');
+  }
 });
 
 test('상태바 요청 색은 처음 열기·기기 모드 변경·다른 탭 선택 모두 실제 본문 배경색을 따른다', () => {

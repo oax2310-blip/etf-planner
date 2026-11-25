@@ -1,6 +1,6 @@
 // index.html·valuation.html·assets.html의 화면 모드. 색 토큰은 app.css·valuation.css, 버튼 자리는 [data-theme-pick]과 연결된다.
 const THEME_KEY = "etf-planner-theme";
-// PC(hover:hover·pointer:fine)는 윗줄 버튼으로 고른 auto·light·dark를 적용한다. 휴대폰·태블릿(터치)은 고른 값과 상관없이 기기 설정을 따른다.
+// PC(hover:hover·pointer:fine)는 화면 모드를 고를 수 있다. 삼성 인터넷의 터치 화면은 어둡게, 다른 터치 브라우저는 기기 설정을 따른다.
 // choice: 고른 값, desktop: 마우스 기기, systemDark: 기기가 어두운 모드 → "light" 또는 "dark"
 // themeOf는 DOM 없이 검증하는 화면 모드 계산 함수로 유지한다.
 function themeOf(choice, desktop, systemDark){ return desktop && (choice === "light" || choice === "dark") ? choice : systemDark ? "dark" : "light"; }
@@ -8,6 +8,8 @@ function themeOf(choice, desktop, systemDark){ return desktop && (choice === "li
 (function(){
   if (typeof document === "undefined" || typeof matchMedia !== "function") return;
   const desktopQ = matchMedia("(hover:hover) and (pointer:fine)"), darkQ = matchMedia("(prefers-color-scheme: dark)"), CHOICES = ["auto","light","dark"];
+  // 삼성 인터넷의 강제 다크에서 밝은 모드가 보고되어도 플래너는 자체 다크 테마로 연다.
+  const samsung = /\bSamsungBrowser\//i.test(globalThis.navigator?.userAgent || "");
   const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const ICON = {auto:svg('<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>'), light:svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), dark:svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>')};
   const LABEL = {auto:"기기 설정 따름", light:"밝게", dark:"어둡게"};
@@ -15,7 +17,9 @@ function themeOf(choice, desktop, systemDark){ return desktop && (choice === "li
   const read = () => { try { const v = localStorage.getItem(THEME_KEY); return CHOICES.includes(v) ? v : "auto"; } catch { return "auto"; } };
   let picks = [];
   // 설치 앱의 상태바에 실제 화면 모드의 본문 배경색을 요청한다. OS의 최종 색 적용·스크롤에 따른 숨김은 웹앱이 제어하지 못한다.
-  function apply(){ const choice = read(), theme = themeOf(choice, desktopQ.matches, darkQ.matches); document.documentElement.dataset.theme = theme;
+  function apply(){ const choice = read(), desktop = desktopQ.matches;
+    const theme = samsung && !desktop ? "dark" : themeOf(choice, desktop, darkQ.matches);
+    document.documentElement.dataset.theme = theme;
     document.querySelectorAll('meta[name="theme-color"]').forEach(meta => meta.content = theme === "dark" ? "#0a0c10" : "#f5f6f8");
     picks.forEach(p => p(choice)); }
   apply();
