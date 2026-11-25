@@ -2947,8 +2947,8 @@ const curveFixture=()=>{
   const tip=()=>chart().match(/<div class="bp-tip ([lcr]|s[lr])(?: below)?" style="left:([\d.]+)%;top:([\d.]+)%"><b>([^<]+)<\/b>(?:<span>([^<]+)<\/span>)?/);
   return {r,chart,chip,tip};
 };
-test('이동평균선 곡선 카드는 제목을 숨기고, 직접 입력 카드에는 회차 기준가 제목을 둔다',()=>{
-  const {r,chart}=curveFixture();
+test('이동평균선 곡선 카드는 제목을 숨긴다',()=>{
+  const {chart}=curveFixture();
   assert.match(chart(),/^<section class="card bp-chart" aria-label="기준가와 예상 평균단가 곡선"><button class="bp-chart-reset" type="button" data-curve-reset="a" aria-label="현재가 보기"><\/button><div class="bp-plot">/);
   assert.doesNotMatch(chart(),/이평선 기준가|<h2\b/);
   assert.doesNotMatch(chart(),/완료 시 평단|현재 ₩|bp-legend|bp-stamp|bp-chart-sub|<line /,'완료 시 평단·현재가·범례·시세 기준·세로 보조선 없음');
@@ -2956,7 +2956,6 @@ test('이동평균선 곡선 카드는 제목을 숨기고, 직접 입력 카드
   assert.ok(vh<=Math.ceil(Math.max(83+8,fin+3))&&vh>=Math.max(lowY+8,fin+3)-.5,`높이 ${vh}: 가장 낮은 점(${lowY.toFixed(1)}) 또는 '최종' 글자(${fin}) 바로 아래까지(빈 곳 없음)`);
   const ys=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===1);
   assert.ok(ys.every(y=>y>=22-.05&&y<=83+.05),`기준가 곡선은 세로 22~83: ${Math.min(...ys)}~${Math.max(...ys)}`);
-  const m=setup({manual:true,price:9000});m.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:9000,shares:8,amount:7.2}];m.render();assert.match(m.html(),/<h2 class="bp-chart-title">회차 기준가<\/h2>/);
 });
 test('곡선 카드 기본: 현재가를 곡선 위(강조 회차 근처 구간)에 두고 말풍선은 현재가·그 회차의 예상 평단 숫자 2줄, 도달이면 주황',()=>{
   const {r,chart,tip}=curveFixture(),[,align,left,top,price,avg]=tip();
@@ -2978,6 +2977,47 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
   chip('80일').onclick();assert.equal(tip()[4],'₩11000');r.input('[data-curve-reset]').onclick();assert.equal(tip()[4],'₩12080','카드의 다른 곳을 누르면 현재가');assert.doesNotMatch(chart(),/aria-pressed="true"/);
   assert.equal(JSON.stringify(r.doc),before,'고르기·돌아오기는 기록을 바꾸지 않음');
   chip('32주').onclick();r.ctx.confirm=()=>true;const plan=JSON.stringify(r.item.buyPlan);r.edit();r.element('purchaseDelete').onclick();r.item.buyPlan=JSON.parse(plan);r.render();assert.equal(tip()[4],'₩12080','같은 종목에 계획이 다시 생기면 현재가부터');assert.doesNotMatch(r.html(),/ sel (?:mint|warn|blue)/,'계획을 지우면 고른 회차도 지움');
+});
+test('직접 입력 곡선 카드에서 회차를 바꾸거나 현재가로 돌아가도 제목과 저장 기록을 유지한다',()=>{
+  const r=setup({manual:true,price:9500});
+  r.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:9000,shares:8,amount:7.2}];
+  r.doc.allocation.trades={'buy:previous:s1':{qty:1,price:8000,value:0.8,items:[{id:'a',shares:1}]}};
+  const before=JSON.stringify(r.doc),storageKey='etf-planner-assets-v1';
+  r.storage.set(storageKey,before);
+  let saves=0;
+  r.store.saveSection=()=>{saves++;};
+  r.render();
+
+  const chip=k=>r.input(`[data-curve-pick="${k}"]`);
+  const view=r.element('buysView'),query=view.querySelector;
+  view.querySelector=selector=>{
+    const button=query(selector);
+    if(button)button.focus=()=>{r.ctx.document.activeElement=button;};
+    return button;
+  };
+  const assertState=(price,pressed,average)=>{
+    const chart=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
+    assert.match(chart,/<h2 class="bp-chart-title">회차 기준가<\/h2>/);
+    const tip=chart.match(/<div class="bp-tip [^"]+"[^>]*><b>([^<]+)<\/b><span>([^<]+)<\/span>/);
+    assert.equal(tip?.[1],`₩${price}`);
+    if(average!==undefined)assert.equal(tip?.[2],`₩${average}`);
+    assert.deepEqual(r.inputs('[data-curve-pick]').map(b=>b.attrs['aria-pressed']),pressed);
+  };
+
+  assertState(9500,['false','false']);
+  r.ctx.document.activeElement=chip(0);
+  chip(0).onclick();assertState(10000,['true','false'],10000);
+  assert.equal(r.ctx.document.activeElement,chip(0),'다시 그린 뒤 같은 회차 칩에 초점 유지');
+  chip(1).onclick();assertState(9000,['false','true'],9500);
+  chip(1).onclick();assertState(9500,['false','false']);
+  chip(0).onclick();
+  const reset=()=>r.input('[data-curve-reset]');
+  r.ctx.document.activeElement=reset();
+  reset().onclick();assertState(9500,['false','false']);
+  assert.equal(r.ctx.document.activeElement,reset(),'현재가 버튼에 초점 유지');
+  assert.equal(saves,0);
+  assert.equal(r.storage.get(storageKey),before);
+  assert.equal(JSON.stringify(r.doc),before);
 });
 test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래, 옆·아래 자리(z-index 3)는 위에 놓이고 곡선 면은 카드 배경 위에 완료·예정 색을 그린다',()=>{
   const {chart}=curveFixture(),c=chart();

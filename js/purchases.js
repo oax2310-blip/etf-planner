@@ -689,8 +689,19 @@ function renderPurchases(){
     const none=el("purchasePlanNone");if(none)none.hidden=shown>0;};
   if(planSearch){planSearch.oninput=()=>{purchasePlanQuery=planSearch.value;filterPlans();};filterPlans();}
   // 곡선 카드: 회차 칩을 누르면 그 회차를 보고, 같은 칩을 다시 누르거나 카드의 다른 곳을 누르면 현재가로 돌아간다(화면 상태).
-  all("[data-curve-pick]").forEach(b=>bindPurchaseAccountAction(b,()=>{const id=b.dataset.curvePlan,k=Number(b.dataset.curvePick);if(purchaseCurvePick.get(id)===k)purchaseCurvePick.delete(id);else purchaseCurvePick.set(id,k);render();}));
-  all("[data-curve-reset]").forEach(b=>bindPurchaseAccountAction(b,()=>{if(purchaseCurvePick.delete(b.dataset.curveReset))render();}));
+  const renderCurveSelection=(button,selector)=>{
+    const hadFocus=document.activeElement===button;
+    render();
+    if(hadFocus)(view.querySelector(selector)??view.querySelector("[data-curve-reset]"))?.focus({preventScroll:true});
+  };
+  all("[data-curve-pick]").forEach(b=>bindPurchaseAccountAction(b,()=>{
+    const id=b.dataset.curvePlan,k=Number(b.dataset.curvePick);
+    if(purchaseCurvePick.get(id)===k)purchaseCurvePick.delete(id);else purchaseCurvePick.set(id,k);
+    renderCurveSelection(b,`[data-curve-pick="${k}"]`);
+  }));
+  all("[data-curve-reset]").forEach(b=>bindPurchaseAccountAction(b,()=>{
+    if(purchaseCurvePick.delete(b.dataset.curveReset))renderCurveSelection(b,"[data-curve-reset]");
+  }));
   const plansBackdrop=el("purchasePlansBackdrop");if(plansBackdrop)plansBackdrop.onclick=()=>{purchasePlansOpen=false;render();}; // 목록 바깥을 누르면 닫는다
   if(purchasePlansOpen&&plansToggle?.getBoundingClientRect){const box=view.querySelector?.(".layout");if(box?.style)box.style.setProperty("--plans-top",`${Math.round(plansToggle.getBoundingClientRect().bottom-box.getBoundingClientRect().top+6)}px`);}
   all("[data-purchase-select]").forEach(b=>{
