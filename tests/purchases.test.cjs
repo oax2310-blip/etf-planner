@@ -2067,7 +2067,7 @@ test('모바일 비중이 목표와 같은 금액이면 비중 환산 오차와 
   }
 });
 
-test('모바일 목표 범위는 종목·소분류·기존 계획 순으로 표시하고 목표 미입력에는 표시하지 않는다',()=>{
+test('모바일 목표 범위는 소분류·기존 계획만 표시하고 종목 목표와 목표 미입력에는 표시하지 않는다',()=>{
   assert.equal(cssRule('css/purchases.css','.bp-weight-track,.bp-weight,.bp-weight-scope,.bp-gap').display,'none');
   assert.equal(cssRule('css/purchases.css','.bp-weight-scope','@media(max-width:700px)').display,'block');
   for(const manual of [true,false]){
@@ -2080,7 +2080,7 @@ test('모바일 목표 범위는 종목·소분류·기존 계획 순으로 표�
 
     r.item.target=5;
     r.render();
-    assert.match(summaryCard(r),/<small class="bp-weight-scope">종목 목표<\/small>/);
+    assert.doesNotMatch(summaryCard(r),/class="bp-weight-scope"/);
     assert.match(summaryCard(r),/<span class="target-display">목표 5%<\/span>/);
 
     delete r.item.target;
