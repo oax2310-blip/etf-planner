@@ -23,20 +23,20 @@
   <meta name="apple-mobile-web-app-title" content="매매 플래너" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <script src="js/theme.js?v=559"></script>
+  <script src="js/theme.js?v=560"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="css/safe-area.css?v=559" />
-  <link rel="stylesheet" href="css/app.css?v=559" />
-  <link rel="stylesheet" href="css/purchases.css?v=559" />
-  <link rel="stylesheet" href="css/page-leave.css?v=559" />
-  <script src="js/repo-security.js?v=559" defer></script>
-  <script src="js/gold-estimate.js?v=559" defer></script>
-  <script src="js/money-input.js?v=559" defer></script>
+  <link rel="stylesheet" href="css/safe-area.css?v=560" />
+  <link rel="stylesheet" href="css/app.css?v=560" />
+  <link rel="stylesheet" href="css/purchases.css?v=560" />
+  <link rel="stylesheet" href="css/page-leave.css?v=560" />
+  <script src="js/repo-security.js?v=560" defer></script>
+  <script src="js/gold-estimate.js?v=560" defer></script>
+  <script src="js/money-input.js?v=560" defer></script>
 </head>
 <body class="planner-page">
   <header class="top">
     <div class="planner-brand">
-      <div class="brand"><img src="push-icon.svg" width="24" height="24" alt="" /> 매매 플래너</div>
+      <button class="brand" id="themeSettingsBtn" type="button" aria-haspopup="dialog" aria-controls="themeSettingsDialog" title="화면 설정"><img src="push-icon.svg" width="24" height="24" alt="" /> 매매 플래너</button>
       <span data-theme-pick></span>
     </div>
     <div class="sync-head">
@@ -91,6 +91,18 @@
       </div>
     </section>
   </main>
+
+  <dialog id="themeSettingsDialog" aria-labelledby="themeSettingsTitle">
+    <form class="dialog-inner" method="dialog">
+      <div class="dialog-head"><h2 id="themeSettingsTitle">화면 설정</h2><button class="btn mini ghost" type="submit">닫기</button></div>
+      <fieldset class="theme-settings-options" aria-label="화면 모드">
+        <label class="check"><input type="radio" name="themeMode" value="auto" />기기 설정 따름</label>
+        <label class="check"><input type="radio" name="themeMode" value="light" />밝게</label>
+        <label class="check"><input type="radio" name="themeMode" value="dark" />어둡게</label>
+      </fieldset>
+      <p class="hint" id="themeSettingsSamsungHint" hidden>삼성 인터넷의 강제 다크가 켜져 있으면 화면 색이 달라질 수 있습니다.</p>
+    </form>
+  </dialog>
 
   <dialog id="purchaseAccountDialog" aria-labelledby="purchaseAccountTitle"><form class="dialog-inner" id="purchaseAccountForm">
     <div class="dialog-head"><h2 id="purchaseAccountTitle">매수 계좌 추가</h2></div>
@@ -360,36 +372,36 @@
   <dialog id="futureRebuyStartDialog" aria-labelledby="futureRebuyStartTitle"></dialog>
   <dialog id="rebuyRuleDialog" aria-labelledby="rebuyRuleTitle"></dialog>
 
-  <script src="js/ma-ladder.js?v=559" defer></script>
-  <script src="js/split-auto.js?v=559" defer></script>
-  <script src="js/data-validation.js?v=559" defer></script>
-  <script src="js/core.js?v=559" defer></script>
-  <script src="js/price-collection.js?v=559" defer></script>
-  <script src="js/page-leave.js?v=559" defer></script>
-  <script src="js/sync.js?v=559" defer></script>
-  <script src="js/prices.js?v=559" defer></script>
-  <script src="js/assets-calc.js?v=559" defer></script>
-  <script src="js/assets-store.js?v=559" defer></script>
-  <script src="js/alloc-link.js?v=559" defer></script>
-  <script src="js/stock-names.js?v=559" defer></script>
-  <script src="js/item-search.js?v=559" defer></script>
-  <script src="js/purchases.js?v=559" defer></script>
-  <script src="js/trade-alerts.js?v=559" defer></script>
-  <script src="js/plans.js?v=559" defer></script>
-  <script src="js/futures.js?v=559" defer></script>
-  <script src="js/futures-plan.js?v=559" defer></script>
-  <script src="js/futures-rebuy.js?v=559" defer></script>
-  <script src="js/rebuy.js?v=559" defer></script>
-  <script src="js/alerts.js?v=559" defer></script>
-  <script src="js/alert-target.js?v=559" defer></script>
-  <script src="js/alert-history-store.js?v=559" defer></script>
-  <script src="js/alert-history.js?v=559" defer></script>
-  <script src="js/push.js?v=559" defer></script>
-  <script src="js/member-link.js?v=559" defer></script>
-  <script src="js/member-go.js?v=559" defer></script>
-  <script src="js/split-adjust.js?v=559" defer></script>
-  <script src="js/split-dialog.js?v=559" defer></script>
-  <script src="js/split-notices.js?v=559" defer></script>
-  <script src="js/start.js?v=559" defer></script>
+  <script src="js/ma-ladder.js?v=560" defer></script>
+  <script src="js/split-auto.js?v=560" defer></script>
+  <script src="js/data-validation.js?v=560" defer></script>
+  <script src="js/core.js?v=560" defer></script>
+  <script src="js/price-collection.js?v=560" defer></script>
+  <script src="js/page-leave.js?v=560" defer></script>
+  <script src="js/sync.js?v=560" defer></script>
+  <script src="js/prices.js?v=560" defer></script>
+  <script src="js/assets-calc.js?v=560" defer></script>
+  <script src="js/assets-store.js?v=560" defer></script>
+  <script src="js/alloc-link.js?v=560" defer></script>
+  <script src="js/stock-names.js?v=560" defer></script>
+  <script src="js/item-search.js?v=560" defer></script>
+  <script src="js/purchases.js?v=560" defer></script>
+  <script src="js/trade-alerts.js?v=560" defer></script>
+  <script src="js/plans.js?v=560" defer></script>
+  <script src="js/futures.js?v=560" defer></script>
+  <script src="js/futures-plan.js?v=560" defer></script>
+  <script src="js/futures-rebuy.js?v=560" defer></script>
+  <script src="js/rebuy.js?v=560" defer></script>
+  <script src="js/alerts.js?v=560" defer></script>
+  <script src="js/alert-target.js?v=560" defer></script>
+  <script src="js/alert-history-store.js?v=560" defer></script>
+  <script src="js/alert-history.js?v=560" defer></script>
+  <script src="js/push.js?v=560" defer></script>
+  <script src="js/member-link.js?v=560" defer></script>
+  <script src="js/member-go.js?v=560" defer></script>
+  <script src="js/split-adjust.js?v=560" defer></script>
+  <script src="js/split-dialog.js?v=560" defer></script>
+  <script src="js/split-notices.js?v=560" defer></script>
+  <script src="js/start.js?v=560" defer></script>
 </body>
 </html>

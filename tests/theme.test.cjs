@@ -9,33 +9,29 @@ const context = vm.createContext({});
 vm.runInContext(source, context);
 const themeOf = context.themeOf;
 
-test('PC(마우스)는 고른 화면 모드를 쓴다', () => {
-  assert.equal(themeOf('dark', true, false), 'dark');
-  assert.equal(themeOf('light', true, true), 'light');
+test('직접 고른 화면 모드는 기기의 밝고 어두운 모드보다 우선한다', () => {
+  assert.equal(themeOf('dark', false), 'dark');
+  assert.equal(themeOf('light', true), 'light');
 });
 
-test('PC에서 기기 설정 따름(또는 모르는 값)이면 기기 설정을 따른다', () => {
-  assert.equal(themeOf('auto', true, true), 'dark');
-  assert.equal(themeOf('auto', true, false), 'light');
-  assert.equal(themeOf('sepia', true, true), 'dark');
-  assert.equal(themeOf(null, true, false), 'light');
+test('기기 설정 따름 또는 모르는 값이면 기기 설정을 따른다', () => {
+  assert.equal(themeOf('auto', true), 'dark');
+  assert.equal(themeOf('auto', false), 'light');
+  assert.equal(themeOf('sepia', true), 'dark');
+  assert.equal(themeOf(null, false), 'light');
 });
 
-test('일반 터치 브라우저는 PC에서 고른 값이 있어도 기기 설정을 따른다', () => {
-  assert.equal(themeOf('dark', false, false), 'light');
-  assert.equal(themeOf('light', false, true), 'dark');
-});
-
-test('삼성 인터넷 터치 화면은 기기 설정과 기존 선택에 관계없이 자체 다크 테마로 열린다', () => {
+test('삼성 인터넷 터치는 자체 다크가 기본이며 사용자가 고른 터치 설정은 PC 설정과 따로 적용한다', () => {
   for (const choice of [null, 'light']) {
     const events = {}, meta = {content:'#f5f6f8'}, desktop = {matches:false, addEventListener:(name, fn) => events.desktop = fn};
     const dark = {matches:false, addEventListener:(name, fn) => events.dark = fn};
     const document = {documentElement:{dataset:{}}, querySelectorAll:() => [meta], addEventListener() {}};
+    const saved = new Map([['etf-planner-theme', choice]]);
     vm.runInNewContext(source, {
       document,
       navigator:{userAgent:'Mozilla/5.0 (Linux; Android 16) SamsungBrowser/30.0 Chrome/143.0.0.0 Mobile Safari/537.36'},
       matchMedia:q => q.includes('hover') ? desktop : dark,
-      localStorage:{getItem:() => choice},
+      localStorage:{getItem:key => saved.get(key)},
       addEventListener:(name, fn) => events[name] = fn,
     });
     const check = (theme, color) => {
@@ -43,10 +39,16 @@ test('삼성 인터넷 터치 화면은 기기 설정과 기존 선택에 관계
       assert.equal(meta.content, color);
     };
     check('dark', '#0a0c10');
+    saved.set('etf-planner-touch-theme','auto');
+    events.storage({key:'etf-planner-touch-theme'}); check('light', '#f5f6f8');
     dark.matches = true; events.dark(); check('dark', '#0a0c10');
-    dark.matches = false; events.dark(); check('dark', '#0a0c10');
+    saved.set('etf-planner-touch-theme','light');
+    events.storage({key:'etf-planner-touch-theme'}); check('light', '#f5f6f8');
+    dark.matches = false; events.dark();
     desktop.matches = true; events.desktop(); check('light', '#f5f6f8');
-    desktop.matches = false; events.desktop(); check('dark', '#0a0c10');
+    desktop.matches = false; events.desktop(); check('light', '#f5f6f8');
+    saved.delete('etf-planner-touch-theme');
+    events.storage({key:null}); check('dark', '#0a0c10');
   }
 });
 
@@ -57,7 +59,7 @@ test('상태바 요청 색은 처음 열기·기기 모드 변경·다른 탭 �
   const dark = {matches:true, addEventListener:(name, fn) => events.dark = fn};
   const doc = {documentElement:{dataset:{}}, querySelectorAll:selector => { assert.equal(selector, 'meta[name="theme-color"]'); return metas; }, addEventListener() {}};
   const ctx = vm.createContext({document:doc, matchMedia:q => q.includes('hover') ? desktop : dark,
-    localStorage:{getItem:() => choice}, addEventListener:(name, fn) => events[name] = fn});
+    localStorage:{getItem:key => key === 'etf-planner-theme' ? choice : null}, addEventListener:(name, fn) => events[name] = fn});
   vm.runInContext(source, ctx);
   const check = (theme, color) => {
     assert.equal(doc.documentElement.dataset.theme, theme);
