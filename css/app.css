@@ -24,7 +24,7 @@ button,input,select,textarea{font:inherit;letter-spacing:inherit} button{cursor:
 input[type=number],input[inputmode=numeric],input[data-money]{font-variant-numeric:tabular-nums}
 /* 윗줄: 로고·탭·오른쪽 버튼 */
 .top{--top-pad:11px;position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:calc(var(--top-pad) + env(safe-area-inset-top,0px)) max(clamp(16px,4vw,48px),env(safe-area-inset-right,0px)) 11px max(clamp(16px,4vw,48px),env(safe-area-inset-left,0px));background:var(--top);border-bottom:1px solid var(--line);-webkit-backdrop-filter:saturate(1.6) blur(16px);backdrop-filter:saturate(1.6) blur(16px)}
-.brand{font-weight:700;font-size:17px;letter-spacing:-.03em;display:flex;align-items:center;gap:10px;white-space:nowrap}.brand b{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--accent);color:var(--on-accent)}.brand svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.brand svg rect{fill:currentColor;stroke:none}
+.brand{font-weight:700;font-size:17px;letter-spacing:-.03em;display:flex;align-items:center;gap:10px;white-space:nowrap}
 .tabs{display:flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.tab{border:0;background:transparent;color:var(--text-2);border-radius:9px;padding:6px 18px;font-size:14px;font-weight:600;white-space:nowrap;transition:color .12s,background .12s}.tab:hover{color:var(--text)}.tab.active{background:var(--tab-on);color:var(--text);box-shadow:0 1px 2px rgba(15,23,41,.1),0 0 0 1px var(--line)}.tab-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 /* 화면 틀·카드 */
 main{max-width:1320px;margin:auto;padding:28px max(clamp(16px,4vw,48px),env(safe-area-inset-right,0px)) max(80px,env(safe-area-inset-bottom,0px)) max(clamp(16px,4vw,48px),env(safe-area-inset-left,0px))}.layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:28px}.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -215,7 +215,7 @@ dialog{border:1px solid var(--line);border-radius:18px;background:var(--surface)
 .push-feedback-head{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px;font-weight:700;color:var(--text-2)}.push-feedback.busy .push-feedback-head{color:var(--accent)}.push-feedback.ok .push-feedback-head{color:var(--good)}.push-feedback.warn .push-feedback-head{color:var(--warn)}.push-feedback.bad .push-feedback-head{color:var(--danger)}.push-feedback p{margin:0;color:var(--text);font-size:13px;line-height:1.55}.push-feedback small{display:block;margin-top:5px;color:var(--text-2);font-size:12px;line-height:1.55;font-variant-numeric:tabular-nums}
 .kr-open-reminder{border-top:1px solid var(--line);margin-top:18px;padding-top:16px}.kr-open-reminder .alert-section-head{margin:0 0 8px}.kr-open-reminder .hint{word-break:keep-all}
 @media(min-width:701px) and (max-width:900px){.top{flex-wrap:wrap;gap:10px}.tabs{order:3;width:100%}.tab{flex:1}}
-@media(max-width:700px){.top .brand{font-size:16px;gap:8px}.top .brand b{width:28px;height:28px;border-radius:9px}.top .brand svg{width:17px;height:17px}.top .sync-head{margin-left:auto;gap:2px}.top .sync-head .btn.mini{padding:5px 8px;font-size:12px}#alertsDialog .dialog-inner{padding:18px}.alert-prices{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.alert-prices>div:last-child{grid-column:1/-1}.alert-prices>div:last-child b{display:flex;align-items:baseline;gap:8px}.alert-editor{padding:12px}.alert-rule{padding:12px}.alert-rule-head>div{display:block}.alert-rule-head span{display:block}.alert-explanation{font-size:11.5px}
+@media(max-width:700px){.top .brand{font-size:16px;gap:8px}.top .sync-head{margin-left:auto;gap:2px}.top .sync-head .btn.mini{padding:5px 8px;font-size:12px}#alertsDialog .dialog-inner{padding:18px}.alert-prices{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.alert-prices>div:last-child{grid-column:1/-1}.alert-prices>div:last-child b{display:flex;align-items:baseline;gap:8px}.alert-editor{padding:12px}.alert-rule{padding:12px}.alert-rule-head>div{display:block}.alert-rule-head span{display:block}.alert-explanation{font-size:11.5px}
   .section-heading{margin-top:24px}}
 /* 매매 기준 옆의 알림 스위치(거래 완료 체크와 따로 저장). 체크박스를 작은 켜기/끄기 스위치로 그린다 */
 .trade-alert-toggle{display:inline-flex;align-items:center;gap:6px;min-height:26px;width:max-content;max-width:100%;padding:3px 9px 3px 4px;border:1px solid transparent;border-radius:999px;color:var(--text-3);font-size:11.5px;font-weight:600;white-space:nowrap;cursor:pointer;vertical-align:middle;transition:background .12s,color .12s}
@@ -362,8 +362,7 @@ details.future-roll>.future-roll-head::before{content:"";width:6px;height:6px;bo
 .planner-page .planner-brand{display:flex;align-items:center;gap:8px;min-width:0}
 .planner-page .top .brand{gap:9px;font-size:17px;font-weight:800;letter-spacing:-.04em}
 /* 로고(플래너·자산 상단 공통): 앱 아이콘(push-icon.svg)의 파란 마름모 3겹(아래 두 겹은 반투명)만 투명 바탕에 표시 */
-:is(.planner-page,.assets-page) .top .brand b{flex:none;width:24px;height:24px;border-radius:0;background:none;box-shadow:none}
-:is(.planner-page,.assets-page) .top .brand svg{width:24px;height:24px}
+.top .brand img{flex:none;width:24px;height:24px}
 .planner-page .top .sync-head{gap:8px;margin:0}
 .planner-page .sync-head .btn.mini{
   height:28px;margin:0;border:0;border-radius:9999px;background:var(--planner-soft);color:var(--text);

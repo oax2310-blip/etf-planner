@@ -424,7 +424,7 @@ function purchaseAverages(rows,execOf,otherTicker,refOf){
 // 강조 회차(부분 체결 → 도달 미체결 → 다음)가 든 묶음은 그 회차 가격을 점으로 쓰고 나머지는 묶음의 첫 회차. 기준가가 있는 점이 둘보다 적으면 카드를 만들지 않는다.
 // 화면: 제목 한 줄 + 곡선(세로 22~83px, 높이는 아래 글자 위치에 따라 91~111px) + 아래 회차 칩. 기본은 현재가를 곡선 위(강조 회차에 가까운 구간)에 두고 현재가·그 회차의 예상 평단을,
 // 회차 칩을 누르면 그 회차 기준가·예상 평단을 말풍선(숫자 2줄)으로 보인다. 같은 칩을 다시 누르거나 제목을 누르면 기본으로 돌아간다(pick: 화면 상태).
-// 위 자리의 HTML 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래에 놓이고, SVG가 먼저 까는 카드 배경색의 불투명 면에 겹친 부분이 가려진다.
+// 위 자리의 HTML 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래에 놓이고, 곡선 모양으로 자른 카드 배경의 불투명 면에 겹친 부분이 가려진다.
 // 옆·아래 자리의 말풍선(z-index 3)은 곡선 SVG 위에 놓인다.
 function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,groupDone,pick,plotW}){
   const groups=[];
@@ -461,7 +461,8 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
   const st=(o,c,a=1)=>`<stop offset="${Math.max(0,Math.min(100,o)).toFixed(1)}%" style="stop-color:${c};stop-opacity:${a}"/>`; // 색은 style(CSS)로 넣어 var()를 모든 브라우저가 읽게 한다
   const stroke=complete?st(0,"var(--bpc-mint)")+st(100,"var(--bpc-mint)"):ai<0?(cutK<0?st(0,"var(--bpc-blue)")+st(100,"var(--bpc-blue)"):st(0,"var(--bpc-mint)")+st(fc,"var(--bpc-mint)")+st(fc+6,"var(--bpc-blue)")+st(100,"var(--bpc-blue)")):warn?st(0,"var(--bpc-mint)")+st(fa-14,"var(--bpc-mint)")+st(fa-5,"var(--bpc-orange)")+st(fa+5,"var(--bpc-orange)")+st(fa+12,"var(--bpc-blue)")+st(100,"var(--bpc-blue)"):st(0,"var(--bpc-mint)")+st(fa,"var(--bpc-mint)")+st(fa+6,"var(--bpc-blue)")+st(100,"var(--bpc-blue)");
   const split=complete?W:cutK>=0?main[cutK].x:main[0].x,area=`${mainD} L${f(lastP.x)} ${H} L${f(main[0].x)} ${H}Z`;
-  // 면은 위(완료 #1d4d40·예정 #223e7a) → 아래(카드 배경색) 세로 그라데이션. 완료·예정 면은 나누는 지점 좌우 blend(px) 구간에서 서로 옅어지며 이어진다(가로 마스크).
+  // 브라우저 다크 색 변환이 카드와 곡선 아래 바탕을 모두 CSS 배경으로 처리하게 한다.
+  // 완료·예정 색은 투명하게 옅어지며 경계 좌우 blend(px)에 걸쳐 이어진다.
   const blend=Math.min(36,(W-L-R)/(n-1)*.45);
   // 고정 글자: 시작 가격(시작점 위)·끝 가격(끝점 위)·'최종' 평단(평단 끝점 아래). 평단 끝점이 기준가 끝점보다 위면(하락형) 두 선 사이에서 부딪히지 않게
   // 끝 가격은 끝점 아래, '최종'은 평단 점 위로 바깥쪽에 둔다. 표식이 그 점이면(첫·끝 회차 선택) 그 글자는 숨기고, 말풍선·표식과 겹쳐도 숨긴다.
@@ -493,7 +494,12 @@ function purchaseCurveCard({id,rows,lines,focus,complete,rowPt,now,avg,isWarn,gr
     const cls=["bp-x",t.k===0&&"first",t.k===n-1&&"last",t.done&&"done",t.k===sel&&`sel ${toneOf(t.k)}`].filter(Boolean).join(" ");
     return `<button class="${cls}" type="button" data-curve-pick="${t.k}" data-curve-plan="${escA(id)}" aria-pressed="${t.k===sel}" aria-label="${escA(t.text)} 기준가 보기${t.done?" · 매수 완료":""}" style="left:${(X(t.k)/W*100).toFixed(2)}%">${escA(t.text)}</button>`;
   }).join("");
-  return `<section class="card bp-chart" aria-label="기준가와 예상 평균단가 곡선"><h2><button class="bp-chart-title" type="button" data-curve-reset="${escA(id)}" aria-label="${lines?"이평선":"회차"} 기준가 · 현재가 보기">${lines?"이평선":"회차"} 기준가</button></h2><div class="bp-plot">${tip}<svg class="bp-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${n}개 지점의 기준가 곡선${avgD?"과 누적 예상 평단가":""}"><defs><linearGradient id="bpStroke" gradientUnits="userSpaceOnUse" x1="${L}" x2="${W-R}" y1="0" y2="0">${stroke}</linearGradient><linearGradient id="bpFillDone" x1="0" y1="0" x2="0" y2="1">${st(0,"var(--bpc-done-top)")}${st(100,"var(--bpc-bg)")}</linearGradient><linearGradient id="bpFillNext" x1="0" y1="0" x2="0" y2="1">${st(0,"var(--bpc-next-top)")}${st(100,"var(--bpc-bg)")}</linearGradient><linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="${f(split-blend)}" x2="${f(split+blend)}" y1="0" y2="0"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient><linearGradient id="bpXNext" gradientUnits="userSpaceOnUse" x1="${f(split-blend)}" x2="${f(split+blend)}" y1="0" y2="0"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient><mask id="bpMaskDone" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="url(#bpXDone)"/></mask><mask id="bpMaskNext" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="url(#bpXNext)"/></mask></defs><path d="${area}" class="bp-mask"/>${split>main[0].x+.5?`<path d="${area}" fill="url(#bpFillDone)" mask="url(#bpMaskDone)"/>`:""}${split<lastP.x-.5?`<path d="${area}" fill="url(#bpFillNext)" mask="url(#bpMaskNext)"/>`:""}${avgD?`<path d="${avgD}" class="bp-avg"/>`:""}<path d="${mainD}" class="bp-line" stroke="url(#bpStroke)"/>${marks}</svg></div><div class="bp-xaxis">${ticks}</div></section>`;
+  const areaTop=f(Math.min(...main.map(p=>p.y))/H*100),areaStart=f((split-blend)/W*100),areaEnd=f((split+blend)/W*100);
+  const areaFill=`<div class="bp-area" aria-hidden="true" style="clip-path:url(#bpAreaClip);--bp-area-top:${areaTop}%;--bp-area-start:${areaStart}%;--bp-area-end:${areaEnd}%">
+    ${split>main[0].x+.5?'<span class="bp-area-done"></span>':""}
+    ${split<lastP.x-.5?'<span class="bp-area-next"></span>':""}
+  </div>`;
+  return `<section class="card bp-chart" aria-label="기준가와 예상 평균단가 곡선"><h2><button class="bp-chart-title" type="button" data-curve-reset="${escA(id)}" aria-label="${lines?"이평선":"회차"} 기준가 · 현재가 보기">${lines?"이평선":"회차"} 기준가</button></h2><div class="bp-plot">${tip}${areaFill}<svg class="bp-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${n}개 지점의 기준가 곡선${avgD?"과 누적 예상 평단가":""}"><defs><linearGradient id="bpStroke" gradientUnits="userSpaceOnUse" x1="${L}" x2="${W-R}" y1="0" y2="0">${stroke}</linearGradient><clipPath id="bpAreaClip" clipPathUnits="objectBoundingBox"><path transform="scale(${1/W} ${1/H})" d="${area}"/></clipPath></defs>${avgD?`<path d="${avgD}" class="bp-avg"/>`:""}<path d="${mainD}" class="bp-line" stroke="url(#bpStroke)"/>${marks}</svg></div><div class="bp-xaxis">${ticks}</div></section>`;
 }
 function renderPurchases(){
   if(typeof goldEstimate==="object")goldEstimate.check();
