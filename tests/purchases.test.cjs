@@ -2978,23 +2978,32 @@ test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이
   assert.equal(JSON.stringify(r.doc),before,'고르기·돌아오기는 기록을 바꾸지 않음');
   chip('32주').onclick();r.ctx.confirm=()=>true;const plan=JSON.stringify(r.item.buyPlan);r.edit();r.element('purchaseDelete').onclick();r.item.buyPlan=JSON.parse(plan);r.render();assert.equal(tip()[4],'₩12080','같은 종목에 계획이 다시 생기면 현재가부터');assert.doesNotMatch(r.html(),/ sel (?:mint|warn|blue)/,'계획을 지우면 고른 회차도 지움');
 });
-test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래, 옆·아래 자리(z-index 3)는 위에 놓이고 SVG는 불투명 면 위에 그라데이션을 그린다',()=>{
+test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래, 옆·아래 자리(z-index 3)는 위에 놓이고 곡선 면은 카드 배경 위에 완료·예정 색을 그린다',()=>{
   const {chart}=curveFixture(),c=chart();
-  assert.match(c,/<div class="bp-plot"><div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*>[\s\S]*?<\/div><svg class="bp-svg"/,'DOM에서 말풍선이 SVG보다 먼저 나옴');
-  assert.match(c,/<\/defs><path d="[^"]+" class="bp-mask"\/><path d="[^"]+" fill="url\(#bpFillDone\)" mask="url\(#bpMaskDone\)"\/><path d="[^"]+" fill="url\(#bpFillNext\)" mask="url\(#bpMaskNext\)"\/>/,'불투명 면 → 완료(초록) → 예정(파랑), 경계는 가로 마스크');
-  const [x1,x2]=c.match(/<linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="([\d.]+)" x2="([\d.]+)"/).slice(1).map(Number);assert.ok(x2-x1>=40,`초록→파랑 경계가 ${x2-x1}px에 걸쳐 이어짐`);
-  assert.match(c,/<linearGradient id="bpXNext"[^>]*><stop offset="0" stop-color="#000"\/><stop offset="1" stop-color="#fff"\/>/,'예정 면은 경계 오른쪽으로 나타남');
-  assert.match(c,/<linearGradient id="bpFillDone" x1="0" y1="0" x2="0" y2="1"><stop offset="0\.0%" style="stop-color:var\(--bpc-done-top\);stop-opacity:1"\/><stop offset="100\.0%" style="stop-color:var\(--bpc-bg\);stop-opacity:1"\/><\/linearGradient>/,'위 #1d4d40 → 아래 카드 배경(색은 style로)');assert.doesNotMatch(c,/stop-color="var\(/,'presentation 속성 var() 없음');
+  assert.match(c,/<div class="bp-plot"><div class="bp-tip (?:[lcr](?: below)?|s[lr])"[^>]*>[\s\S]*?<\/div><div class="bp-area"/,'DOM에서 말풍선이 곡선 면보다 먼저 나옴');
+  const area = c.match(/<div class="bp-area" aria-hidden="true" style="clip-path:url\(#bpAreaClip\);--bp-area-top:[\d.]+%;--bp-area-start:([\d.]+)%;--bp-area-end:([\d.]+)%">([\s\S]*?)<\/div><svg/);
+  assert.ok(area,'곡선 아래 배경은 SVG 앞의 별도 HTML 면');
+  assert.match(area[3],/<span class="bp-area-done"><\/span>\s*<span class="bp-area-next"><\/span>/,'완료 면과 예정 면을 차례로 그림');
+  assert.ok((Number(area[2])-Number(area[1]))*325/100>=40,'두 면이 최소 40px에 걸쳐 이어짐');
+  const areaPath=c.match(/<clipPath id="bpAreaClip" clipPathUnits="objectBoundingBox"><path transform="scale\(([^ ]+) ([^ ]+)\)" d="([^"]+)"/);
+  const [width,height]=c.match(/viewBox="0 0 (\d+) (\d+)"/).slice(1).map(Number);
+  assert.deepEqual(areaPath.slice(1,3).map(Number),[1/width,1/height],'그래프 폭·높이로 잘라낸 면을 맞춤');
+  const curve=c.match(/<path d="([^"]+)" class="bp-line"/)[1];
+  assert.ok(areaPath[3].startsWith(curve+' L'),'차트 면은 실제 기준가 곡선을 따라 잘림');
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
-  assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:#1d4d40;--bpc-next-top:#223e7a;--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
+  assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:rgba\(57,208,139,\.30\);--bpc-next-top:rgba\(57,119,246,\.42\);--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
   assert.match(css,/\.bp-plot\{position:relative;margin-top:-5px;margin-bottom:2px\}/);
   assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/,'곡선 SVG는 z-index 2');
+  assert.match(css,/\.bp-area\{position:absolute;inset:0;z-index:2;pointer-events:none;background:var\(--bpc-bg\)\}/,'밑면은 카드와 같은 CSS 배경');
+  assert.match(css,/\.bp-area>span\{[^}]+background:linear-gradient\(var\(--bp-area-color\),transparent\);[^}]+mask-image:var\(--bp-area-mask\)/);
+  assert.match(css,/\.bp-area-done\{[^}]+linear-gradient\(to right,#000 var\(--bp-area-start\),transparent var\(--bp-area-end\)\)/);
+  assert.match(css,/\.bp-area-next\{[^}]+linear-gradient\(to right,transparent var\(--bp-area-start\),#000 var\(--bp-area-end\)\)/);
   assert.match(css,/\.bp-tip\{position:absolute;z-index:1;/,'위 자리 말풍선은 z-index 1');
   assert.match(css,/\.bp-tip\.below\{z-index:3;/,'아래 자리 말풍선은 z-index 3');
   assert.match(css,/\.bp-tip\.sl,\.bp-tip\.sr\{z-index:3\}/,'양옆 자리 말풍선은 z-index 3');
   assert.match(css,/\.bp-tip\{[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
-  assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-mask\{fill:var\(--bpc-bg\)\}/);assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
+  assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
   assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
 });
 test('저장된 계획 검색: 계획이 둘 이상이면 검색 칸을 두고 이름·계좌·코드로 거르며(띄어 쓴 단어 모두 포함), 결과가 없으면 안내하고 다시 그려도 검색어를 유지한다',()=>{
@@ -3033,7 +3042,7 @@ test('CSS: 분할매수 스타일시트는 괄호 짝이 맞아 모바일 전용
   assert.equal((css.match(/#buysView \.layout\.plans-open>\.side\{/g)||[]).length,1,'펼친 목록 상자 선언은 하나');
   assert.match(css,/#buysView \.layout\.plans-open>\.side \.plan-row\{display:contents\}/);assert.match(css,/\.plan-item strong\{order:1;/);assert.match(css,/\.plan-title\{order:2;[^}]*\}#buysView \.layout\.plans-open>\.side \.plan-title:empty\{display:none\}/);assert.match(css,/\.plan-count\{order:3;flex:none;margin-left:auto;/);
 });
-test('곡선 카드: 그래프는 실제 폭(px)으로 1:1로 그려 어느 폭에서나 같은 높이이고, 말풍선·SVG만 .bp-plot에 들며 칩 줄은 그 밖에 둔다',()=>{
+test('곡선 카드: 그래프는 실제 폭(px)으로 그리며, 말풍선·곡선 면·SVG 아래의 칩 줄은 .bp-plot 밖에 둔다',()=>{
   const {r,chart}=curveFixture();assert.match(chart(),/<\/svg><\/div><div class="bp-xaxis">/,'.bp-plot은 SVG 뒤에서 닫힘');
   const view=r.element('buysView'),orig=view.querySelector;let renders=0;const html0=r.html();
   for(const w of [290,600]){view.querySelector=sel=>sel==='.bp-plot'?{clientWidth:w}:orig?.call(view,sel);r.render();
@@ -3043,9 +3052,10 @@ test('곡선 카드: 그래프는 실제 폭(px)으로 1:1로 그려 어느 폭�
 });
 test('곡선 카드: 강조 회차에 기준가가 없으면 선·면을 마지막 완료 지점(없으면 처음)에서 같이 나눈다',()=>{
   const r=setup({manual:true,price:12500});r.item.buyPlan.stages=[{id:'s0',price:11000,shares:5,amount:5.5,done:true,actual:5.5},{id:'s1',price:null,shares:3,plannedShares:10,partial:true,actual:3},{id:'s2',price:12000,shares:10,amount:12},{id:'s3',price:13000,shares:10,amount:13}];r.render();
-  const c=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0],x0=Number(c.match(/<path d="M([\d.]+) /)[1]);
+  const c=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0],x0=Number(c.match(/<path d="M([\d.]+) [^"]+" class="bp-line"/)[1]);
   assert.match(c,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" style="stop-color:var\(--bpc-mint\);stop-opacity:1"\/><stop offset="0\.0%" style="stop-color:var\(--bpc-mint\);stop-opacity:1"\/><stop offset="6\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/>/,'선: 마지막 완료 지점(첫 점)까지 민트, 그 뒤 파랑');
-  {const [a1,a2]=c.match(/<linearGradient id="bpXDone" gradientUnits="userSpaceOnUse" x1="(-?[\d.]+)" x2="([\d.]+)"/).slice(1).map(Number);assert.ok(Math.abs((a1+a2)/2-x0)<.2,'면: 같은 지점에서 나눔(경계 가운데)');}
+  {const [a1,a2]=c.match(/--bp-area-start:(-?[\d.]+)%;--bp-area-end:([\d.]+)%/).slice(1).map(Number),width=Number(c.match(/viewBox="0 0 (\d+) \d+"/)[1]);
+    assert.ok(Math.abs((a1+a2)*width/200-x0)<.2,'면: 같은 지점에서 나눔(경계 가운데)');}
   r.item.buyPlan.stages[0]={id:'s0',price:11000,shares:5,amount:5.5};r.render();const d=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
   assert.match(d,/<linearGradient id="bpStroke"[^>]*><stop offset="0\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/><stop offset="100\.0%" style="stop-color:var\(--bpc-blue\);stop-opacity:1"\/>/,'완료가 없으면 선도 모두 파랑(면과 같음)');
 });
