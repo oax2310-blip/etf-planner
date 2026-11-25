@@ -357,14 +357,16 @@
 .bp-memo-editor{display:flex;flex-direction:column;gap:6px}.bp-memo-editor textarea{width:100%;min-height:72px;padding:9px 11px;border:1px solid var(--bp-line);border-radius:12px;background:var(--field);color:var(--text);font:inherit;font-size:13px;line-height:1.5;resize:vertical}.bp-memo-editor textarea:focus{outline:2px solid color-mix(in srgb,var(--bp-blue) 55%,transparent);outline-offset:0;border-color:transparent}
 .bp-memo-foot{display:flex;align-items:center;gap:6px}.bp-memo-foot .accent{color:var(--bp-blue-2)}.bp-memo-foot .memo-count{margin-right:auto;font-size:11.5px;color:var(--text-3)}
 /* 곡선 카드 */
-/* 곡선 카드(이평선 기준가): 제목 한 줄 + 곡선(세로 22~83px, 높이 91~111px) + 회차 칩. 색은 --bpc-* 변수(다크는 시안 값, 라이트는 앱 토큰). */
+/* 곡선 카드: 곡선(세로 22~83px, 높이 91~111px)과 회차 칩. 직접 입력은 제목 한 줄을 둔다. 색은 --bpc-* 변수(다크는 시안 값, 라이트는 앱 토큰). */
 .bp-chart{--bpc-bg:var(--bp-card);--bpc-line:var(--bp-line);--bpc-mint:var(--bp-mint);--bpc-orange:var(--bp-orange);--bpc-blue:var(--bp-blue);--bpc-done-top:color-mix(in srgb,var(--bp-mint) 22%,transparent);--bpc-next-top:color-mix(in srgb,var(--bp-blue) 20%,transparent);--bpc-tip-top:var(--surface,#fff);--bpc-tip-bot:var(--surface-2,#f3f5f9);--bpc-tip-line:var(--line);--bpc-tip-text:var(--text);--bpc-title:var(--text);
-  display:flex;flex-direction:column;gap:9px;padding:14px 18px 11px;font-variant-numeric:tabular-nums}
+  position:relative;display:flex;flex-direction:column;gap:9px;padding:14px 18px 11px;font-variant-numeric:tabular-nums}
 @media screen{:root[data-theme=dark] .bp .bp-chart{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:rgba(57,208,139,.30);--bpc-next-top:rgba(57,119,246,.42);--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba(255,255,255,.16);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc}}
 .bp .card.bp-chart{background:var(--bpc-bg);border:1px solid var(--bpc-line);border-radius:20px;padding:14px 18px 11px}
-.bp-chart h2{position:relative;z-index:3;margin:0;line-height:18px}
-.bp-chart-title{padding:0;border:0;background:none;color:var(--bpc-title);font:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;cursor:pointer}
-.bp-plot{position:relative;margin-top:-5px;margin-bottom:2px} /* 제목 바로 아래(간격 4px)부터 그려 위아래 빈 곳을 없앤다 */
+.bp-chart-title{margin:0;color:var(--bpc-title);font-size:15px;font-weight:700;line-height:18px;letter-spacing:-.02em}
+/* 현재가 버튼은 카드 전체를 덮고 회차 칩은 그 위에서 각각 누를 수 있게 둔다. */
+.bp-chart-reset{position:absolute;inset:0;z-index:4;padding:0;border:0;border-radius:inherit;background:none;outline-offset:-3px}
+.bp-plot{position:relative;margin-top:10px;margin-bottom:2px}
+.bp-chart-title+.bp-plot{margin-top:-5px}
 .bp-plot .bp-svg{position:relative;z-index:2;display:block;width:100%;height:auto;overflow:visible;pointer-events:none}
 .bp-area{position:absolute;inset:0;z-index:2;pointer-events:none;background:var(--bpc-bg)}
 .bp-area>span{position:absolute;inset:var(--bp-area-top) 0 0;background:linear-gradient(var(--bp-area-color),transparent);-webkit-mask-image:var(--bp-area-mask);mask-image:var(--bp-area-mask)}
@@ -387,7 +389,7 @@
 .bp-tip.sl,.bp-tip.sr{z-index:3}.bp-tip.sl{transform:translate(calc(-100% - 16px),-50%)}.bp-tip.sr{transform:translate(16px,-50%)}
 .bp-tip.sl i{left:auto;right:-4px;top:50%;bottom:auto;margin:-3.5px 0 0;transform:rotate(-45deg)}.bp-tip.sr i{left:-4px;top:50%;bottom:auto;margin:-3.5px 0 0;transform:rotate(135deg)}
 .bp-xaxis{position:relative;height:34px;border-top:1px solid var(--bpc-line)}
-.bp .bp-x{position:absolute;top:6px;transform:translateX(-50%);min-height:0;padding:4px 10px;border:0;border-radius:999px;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--text-3);white-space:nowrap;cursor:pointer}
+.bp .bp-x{position:absolute;z-index:5;top:6px;transform:translateX(-50%);min-height:0;padding:4px 10px;border:0;border-radius:999px;background:none;font:inherit;font-size:12.5px;font-weight:700;color:var(--text-3);white-space:nowrap;cursor:pointer}
 .bp .bp-x.first{transform:translateX(-25%)}.bp .bp-x.last{transform:translateX(-75%)}
 .bp .bp-x.done{color:var(--bpc-mint)}.bp .bp-x.sel.mint{background:color-mix(in srgb,var(--bpc-mint) 18%,transparent)}.bp .bp-x.sel.warn{background:color-mix(in srgb,var(--bpc-orange) 20%,transparent);color:var(--bpc-orange)}.bp .bp-x.sel.blue{background:color-mix(in srgb,var(--bpc-blue) 24%,transparent);color:color-mix(in srgb,var(--bpc-blue) 70%,#fff)}
 /* 하단 버튼 */

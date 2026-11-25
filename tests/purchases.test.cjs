@@ -2947,36 +2947,77 @@ const curveFixture=()=>{
   const tip=()=>chart().match(/<div class="bp-tip ([lcr]|s[lr])(?: below)?" style="left:([\d.]+)%;top:([\d.]+)%"><b>([^<]+)<\/b>(?:<span>([^<]+)<\/span>)?/);
   return {r,chart,chip,tip};
 };
-test('곡선 카드 머리: 제목(이평선 기준가) 한 줄만 두고 완료 시 평단·현재가·범례·시세 기준은 곡선 카드에서 뺀다',()=>{
-  const {r,chart}=curveFixture();
-  assert.match(chart(),/^<section class="card bp-chart" aria-label="기준가와 예상 평균단가 곡선"><h2><button class="bp-chart-title" type="button" data-curve-reset="a" aria-label="이평선 기준가 · 현재가 보기">이평선 기준가<\/button><\/h2><div class="bp-plot">/);
+test('이동평균선 곡선 카드는 제목을 숨긴다',()=>{
+  const {chart}=curveFixture();
+  assert.match(chart(),/^<section class="card bp-chart" aria-label="기준가와 예상 평균단가 곡선"><button class="bp-chart-reset" type="button" data-curve-reset="a" aria-label="현재가 보기"><\/button><div class="bp-plot">/);
+  assert.doesNotMatch(chart(),/이평선 기준가|<h2\b/);
   assert.doesNotMatch(chart(),/완료 시 평단|현재 ₩|bp-legend|bp-stamp|bp-chart-sub|<line /,'완료 시 평단·현재가·범례·시세 기준·세로 보조선 없음');
   const vh=Number(chart().match(/<svg class="bp-svg" viewBox="0 0 325 (\d+)"/)[1]),lowY=Math.max(...chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===1)),fin=Number((chart().match(/y="([\d.]+)" class="bp-t mint" text-anchor="end">최종/)||[0,0])[1]);
   assert.ok(vh<=Math.ceil(Math.max(83+8,fin+3))&&vh>=Math.max(lowY+8,fin+3)-.5,`높이 ${vh}: 가장 낮은 점(${lowY.toFixed(1)}) 또는 '최종' 글자(${fin}) 바로 아래까지(빈 곳 없음)`);
   const ys=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===1);
-  assert.ok(ys.every(y=>y>=22-.05&&y<=83+.05),`기준가 곡선은 세로 22~83(가장 높은 점 글자는 제목 줄, '최종'은 칩 줄 선 위): ${Math.min(...ys)}~${Math.max(...ys)}`);
-  const m=setup({manual:true,price:9000});m.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:9000,shares:8,amount:7.2}];m.render();assert.match(m.html(),/data-curve-reset="a"[^>]*>회차 기준가<\/button>/,'직접 입력은 회차 기준가');
+  assert.ok(ys.every(y=>y>=22-.05&&y<=83+.05),`기준가 곡선은 세로 22~83: ${Math.min(...ys)}~${Math.max(...ys)}`);
 });
 test('곡선 카드 기본: 현재가를 곡선 위(강조 회차 근처 구간)에 두고 말풍선은 현재가·그 회차의 예상 평단 숫자 2줄, 도달이면 주황',()=>{
   const {r,chart,tip}=curveFixture(),[,align,left,top,price,avg]=tip();
-  assert.ok(['c','sl','sr'].includes(align),`위(가운데) 또는 제목 줄 근처면 옆: ${align}`);assert.equal(price,'₩12080','윗줄 현재가(접두어 없음)');assert.ok(avg&&!/현재|평균|평단/.test(avg),'아랫줄 예상 평단(접두어 없음)');
+  assert.ok(['c','sl','sr'].includes(align),`위(가운데) 또는 카드 상단 근처면 옆: ${align}`);assert.equal(price,'₩12080','윗줄 현재가(접두어 없음)');assert.ok(avg&&!/현재|평균|평단/.test(avg),'아랫줄 예상 평단(접두어 없음)');
   const xs=chart().match(/<path d="([^"]+)" class="bp-line"/)[1].match(/-?[\d.]+/g).map(Number).filter((_,i)=>i%2===0),pX=[24,116.3,208.7,301].map(x=>x/325*100);
   assert.ok(Number(left)>pX[2]&&Number(left)<pX[3],`현재가 12080은 32주(11882)와 25개월(12700) 사이: ${left}%`);assert.ok(xs.length>0);
   assert.match(chart(),/class="bp-core warn"/,'강조 회차(32주)가 도달이면 주황');assert.doesNotMatch(chart(),/bp-x[^"]* sel/,'칩 강조 없음');
   assert.equal((chart().match(/class="bp-avg-dot"/g)||[]).length,2,'평단 점: 끝 + 표식 위치');
   assert.match(chart(),/text-anchor="start">₩10692<\/text>/);assert.match(chart(),/text-anchor="end">₩12700<\/text>/);assert.match(chart(),/>최종 ₩[\d.]+<\/text>/);
 });
-test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이고(첫 회차 왼쪽·끝 회차 오른쪽 정렬, 그 쪽 고정 글자 숨김), 같은 칩·제목을 누르면 현재가로 돌아온다',()=>{
+test('곡선 카드 칩: 누르면 그 회차 기준가·예상 평단을 보이고, 같은 칩이나 카드의 다른 곳을 누르면 현재가로 돌아온다',()=>{
   const {r,chart,chip,tip}=curveFixture(),before=JSON.stringify(r.doc);
   chip('25일').onclick();let t=tip();assert.deepEqual([t[1],t[4]],['l','₩10692'],'첫 회차: 왼쪽 정렬');assert.doesNotMatch(chart(),/text-anchor="start">₩10692/,'시작 글자 숨김');assert.match(chart(),/text-anchor="end">₩12700/);
   assert.match(chart(),/<button class="bp-x first done sel mint"[^>]*aria-pressed="true" aria-label="25일 기준가 보기 · 매수 완료"[^>]*>25일<\/button>/,'완료 회차 칩은 민트');
   chip('32주').onclick();t=tip();assert.deepEqual([t[1],t[4]],['c','₩11882'],'중간 회차: 가운데');assert.match(chart(),/<button class="bp-x sel warn"[^>]*>32주<\/button>/,'도달 강조 회차 칩은 주황');
   assert.match(chart(),/text-anchor="start">₩10692/);assert.match(chart(),/text-anchor="end">₩12700/);
-  chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['r','₩12700'],'끝 회차: 위(오른쪽 정렬), 제목 글자와 안 겹치면 카드 위 여백까지 씀');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
+  chip('25월').onclick();t=tip();assert.deepEqual([t[1],t[4]],['sl','₩12700'],'끝 회차: 위쪽 여백이 좁아 표식 왼쪽에 둠');assert.doesNotMatch(chart(),/text-anchor="end">₩12700/,'끝 글자 숨김');assert.match(chart(),/<button class="bp-x last sel blue"[^>]*>25월<\/button>/,'예정 회차 칩은 파랑');
   chip('25월').onclick();assert.equal(tip()[4],'₩12080','같은 칩을 다시 누르면 현재가');assert.doesNotMatch(chart(),/ sel /);
-  chip('80일').onclick();assert.equal(tip()[4],'₩11000');r.inputs('[data-curve-reset]')[0].onclick();assert.equal(tip()[4],'₩12080','제목을 누르면 현재가');
+  chip('80일').onclick();assert.equal(tip()[4],'₩11000');r.input('[data-curve-reset]').onclick();assert.equal(tip()[4],'₩12080','카드의 다른 곳을 누르면 현재가');assert.doesNotMatch(chart(),/aria-pressed="true"/);
   assert.equal(JSON.stringify(r.doc),before,'고르기·돌아오기는 기록을 바꾸지 않음');
   chip('32주').onclick();r.ctx.confirm=()=>true;const plan=JSON.stringify(r.item.buyPlan);r.edit();r.element('purchaseDelete').onclick();r.item.buyPlan=JSON.parse(plan);r.render();assert.equal(tip()[4],'₩12080','같은 종목에 계획이 다시 생기면 현재가부터');assert.doesNotMatch(r.html(),/ sel (?:mint|warn|blue)/,'계획을 지우면 고른 회차도 지움');
+});
+test('직접 입력 곡선 카드에서 회차를 바꾸거나 현재가로 돌아가도 제목과 저장 기록을 유지한다',()=>{
+  const r=setup({manual:true,price:9500});
+  r.item.buyPlan.stages=[{id:'s1',price:10000,shares:8,amount:8},{id:'s2',price:9000,shares:8,amount:7.2}];
+  r.doc.allocation.trades={'buy:previous:s1':{qty:1,price:8000,value:0.8,items:[{id:'a',shares:1}]}};
+  const before=JSON.stringify(r.doc),storageKey='etf-planner-assets-v1';
+  r.storage.set(storageKey,before);
+  let saves=0;
+  r.store.saveSection=()=>{saves++;};
+  r.render();
+
+  const chip=k=>r.input(`[data-curve-pick="${k}"]`);
+  const view=r.element('buysView'),query=view.querySelector;
+  view.querySelector=selector=>{
+    const button=query(selector);
+    if(button)button.focus=()=>{r.ctx.document.activeElement=button;};
+    return button;
+  };
+  const assertState=(price,pressed,average)=>{
+    const chart=r.html().match(/<section class="card bp-chart"[\s\S]*?<\/section>/)[0];
+    assert.match(chart,/<h2 class="bp-chart-title">회차 기준가<\/h2>/);
+    const tip=chart.match(/<div class="bp-tip [^"]+"[^>]*><b>([^<]+)<\/b><span>([^<]+)<\/span>/);
+    assert.equal(tip?.[1],`₩${price}`);
+    if(average!==undefined)assert.equal(tip?.[2],`₩${average}`);
+    assert.deepEqual(r.inputs('[data-curve-pick]').map(b=>b.attrs['aria-pressed']),pressed);
+  };
+
+  assertState(9500,['false','false']);
+  r.ctx.document.activeElement=chip(0);
+  chip(0).onclick();assertState(10000,['true','false'],10000);
+  assert.equal(r.ctx.document.activeElement,chip(0),'다시 그린 뒤 같은 회차 칩에 초점 유지');
+  chip(1).onclick();assertState(9000,['false','true'],9500);
+  chip(1).onclick();assertState(9500,['false','false']);
+  chip(0).onclick();
+  const reset=()=>r.input('[data-curve-reset]');
+  r.ctx.document.activeElement=reset();
+  reset().onclick();assertState(9500,['false','false']);
+  assert.equal(r.ctx.document.activeElement,reset(),'현재가 버튼에 초점 유지');
+  assert.equal(saves,0);
+  assert.equal(r.storage.get(storageKey),before);
+  assert.equal(JSON.stringify(r.doc),before);
 });
 test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2) 아래, 옆·아래 자리(z-index 3)는 위에 놓이고 곡선 면은 카드 배경 위에 완료·예정 색을 그린다',()=>{
   const {chart}=curveFixture(),c=chart();
@@ -2993,7 +3034,7 @@ test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2
   const css=fs.readFileSync(path.join(__dirname,'../css/purchases.css'),'utf8');
   assert.match(css,/:root\[data-theme=dark\] \.bp \.bp-chart\{--bpc-bg:#111520;--bpc-line:#22293d;--bpc-mint:#34d399;--bpc-orange:#f59e0b;--bpc-blue:#5b8cff;--bpc-done-top:rgba\(57,208,139,\.30\);--bpc-next-top:rgba\(57,119,246,\.42\);--bpc-tip-top:#252f49;--bpc-tip-bot:#161d30;--bpc-tip-line:rgba\(255,255,255,\.16\);--bpc-tip-text:#f8fafc;--bpc-title:#f8fafc\}/);
   assert.match(css,/\.bp \.card\.bp-chart\{background:var\(--bpc-bg\);border:1px solid var\(--bpc-line\);border-radius:20px;padding:14px 18px 11px\}/);
-  assert.match(css,/\.bp-plot\{position:relative;margin-top:-5px;margin-bottom:2px\}/);
+  assert.match(css,/\.bp-plot\{position:relative;margin-top:10px;margin-bottom:2px\}/);
   assert.match(css,/\.bp-plot \.bp-svg\{position:relative;z-index:2;/,'곡선 SVG는 z-index 2');
   assert.match(css,/\.bp-area\{position:absolute;inset:0;z-index:2;pointer-events:none;background:var\(--bpc-bg\)\}/,'밑면은 카드와 같은 CSS 배경');
   assert.match(css,/\.bp-area>span\{[^}]+background:linear-gradient\(var\(--bp-area-color\),transparent\);[^}]+mask-image:var\(--bp-area-mask\)/);
@@ -3004,7 +3045,7 @@ test('곡선 카드 겹: 위 자리 말풍선(z-index 1)은 곡선 SVG(z-index 2
   assert.match(css,/\.bp-tip\.sl,\.bp-tip\.sr\{z-index:3\}/,'양옆 자리 말풍선은 z-index 3');
   assert.match(css,/\.bp-tip\{[^}]*border-radius:10px;background:linear-gradient\(180deg,var\(--bpc-tip-top\) 0%,var\(--bpc-tip-bot\) 100%\);box-shadow:inset 0 1px 0 rgba\(255,255,255,\.18\)/);
   assert.doesNotMatch(css.match(/\.bp-tip\{[^}]*\}/)[0],/opacity|backdrop-filter/,'반투명 없음');assert.match(css,/\.bp-avg\{[^}]*stroke-dasharray:4 4;/);
-  assert.match(css,/\.bp-chart-title\{[^}]*font-size:15px;font-weight:700;[^}]*cursor:pointer\}/);assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
+  assert.match(css,/\.bp-tip b\{font-size:12px;font-weight:800;/);assert.match(css,/\.bp-tip span\{font-size:11px;font-weight:600;/);
 });
 test('저장된 계획 검색: 계획이 둘 이상이면 검색 칸을 두고 이름·계좌·코드로 거르며(띄어 쓴 단어 모두 포함), 결과가 없으면 안내하고 다시 그려도 검색어를 유지한다',()=>{
   const r=setup();assert.doesNotMatch(r.html(),/id="purchasePlanSearch"/,'계획이 하나면 검색 칸 없음');
