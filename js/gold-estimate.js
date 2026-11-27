@@ -82,12 +82,14 @@ const goldEstimate=(()=>{
   function notice(data,it,allocation){
     if(!applies(it,allocation))return null;
     const s=status(data);if(!s)return null;
-    if(s.lastError)return {kind:'error',text:`한국장 금 추정 오류(${s.lastError.code==='refresh'?'수집 계산':'알림 계산'}) · ${clock(s.lastError.at)}(한국 시간) · 금 추정 없이 GLDM 종가로 판정합니다. 수집 기록을 확인하세요.`};
+    const label=code(it?.ticker)||'기준 ETF';
+    if(s.lastError)return {kind:'error',text:`한국장 금 추정 오류(${s.lastError.code==='refresh'?'수집 계산':'알림 계산'}) · ${clock(s.lastError.at)}(한국 시간) · 금 추정 없이 ${label} 종가로 판정합니다. 수집 기록을 확인하세요.`};
     const last=lastOf(s);
     if(s.streak>=3)return {kind:'streak',text:`한국장 금 추정 ${s.streak}회 연속 보류 · 마지막 사유: ${reason(last.code)} · ${clock(last.at)}`};
     if(s.ran&&s.computed===0)return {kind:'hold',text:`이번 수집 금 추정 보류 · ${reason(last.code)}`};
     return null;
   }
+  const targetTickers=allocation=>[...new Set(groupsOf(allocation).flatMap(g=>Array.isArray(g?.items)?g.items.filter(eligible).map(x=>code(x.ticker)):[]))];
   function problems(data,allocation){
     const s=status(data);if(!hasTargets(allocation)||!s)return [];
     const out=[];
@@ -109,13 +111,15 @@ const goldEstimate=(()=>{
     const remember=keys=>{acknowledged=[...new Set([...acknowledged,...read(),...keys])].slice(-20);};
     const check=()=>{
       remember([]);
-      const pending=problems(prices?.(),allocation?.()).filter(p=>!acknowledged.includes(p.key));
+      const alloc=allocation?.();
+      const pending=problems(prices?.(),alloc).filter(p=>!acknowledged.includes(p.key));
       if(!pending.length){shown=[];if(dialog.open)dialog.close();return;}
       if(document.querySelector('dialog[open]:not(#goldEstimateDialog)'))return;
       shown=pending.map(p=>p.key);
       const rows=pending.map(p=>{const row=document.createElement('p');row.className='warning';row.textContent=p.text;return row;});
       byId('goldEstimateProblems').replaceChildren(...rows);
-      byId('goldEstimateFallback').textContent='지금은 금 추정 없이 GLDM 종가로 판정·알림합니다';
+      const names=targetTickers(alloc);
+      byId('goldEstimateFallback').textContent=`지금은 금 추정 없이 ${names.length?names.join('·'):'기준 ETF'} 종가로 판정·알림합니다`;
       byId('goldEstimateHelp').textContent="GitHub Actions 'KIS 시세 수집' 기록에서 '금 추정' 줄을 확인하세요";
       if(!dialog.open)try{dialog.showModal();}catch{}
     };
