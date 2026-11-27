@@ -10,9 +10,10 @@ function maKey(label){ const m=/(\d{1,3})\s*(일|주|개월|월|달)\s*선/.exec
 function hourKey(label){ const m=/^\s*([1-9]\d{0,2})\s*(?:선|시선|분봉)\s*$/.exec(String(label||"")); return m?`${Number(m[1])}선`:""; }
 const autoKey = label => maKey(label)||hourKey(label); // 시세로 채우는 기준선(N일선·N주선·N개월선·N선)
 const autoMark = name => autoKey(name)||String(name); // 시선·월선 별칭도 같은 자동 기준가 키를 사용한다.
+const positiveQuote = v => { if(typeof v==="boolean"||v===""||v==null)return null; const n=Number(v); return Number.isFinite(n)&&n>0?n:null; };
 const priceEntry = e => e&&typeof e==="object"&&/^\d{4}-\d{2}-\d{2}$/.test(e.asOf)&&e.ma&&typeof e.ma==="object" ? e : null;
 const stockEntry = (prices, ticker) => priceEntry(prices?.stocks?.[String(ticker||"").trim().toUpperCase()]);
-const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&Number.isFinite(Number(e.close))&&Number(e.close)>0?e:null; };
+const fxEntry = prices => { const e=priceEntry(prices?.fx?.USDKRW); return e?.kind==="현물환율"&&positiveQuote(e.close)!=null?e:null; };
 const BTC_KEY = "BTC-USD";
 // 분할매도에서 '비트코인'도 받되 저장할 때는 수집 스크립트와 같은 BTC-USD로 둔다. BTC는 미국 ETF 심볼이므로 바꾸지 않는다.
 const planTicker = ticker => { const t=String(ticker||"").trim().toUpperCase();return t==="비트코인"?BTC_KEY:t; };
@@ -26,7 +27,7 @@ const isBitcoinTicker = ticker => planTicker(ticker)===BTC_KEY;
 const planQuoteKind = (ticker, currency) => currency==="KRW"?"국내":isBitcoinTicker(ticker)?"코인":"해외";
 // BTC-USD: Coinbase 달러·UTC 일봉, 주말 포함 매 수집(kind '코인', kis_prices.py CRYPTO).
 // 동기화 시세 줄·직접 추가 알림·달러 분할매도에 사용; ETF 재매수 자동 채우기는 제외.
-const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&Number(e.close)>0?e:null; };
+const btcEntry = prices => { const e=stockEntry(prices,BTC_KEY); return e?.kind==="코인"&&positiveQuote(e.close)!=null?e:null; };
 // 시세 통화: 해외 종목·비트코인은 달러, 그 밖(국내)은 원화
 const quoteCurrency = e => e?.kind==="해외"||e?.kind==="코인" ? "USD" : "KRW";
 // 달러선물 시세·알림 월물: 보유 근월물(계약 수 > 0인 가장 가까운 월물, futures.js nearestMonth와 같음).
@@ -53,7 +54,7 @@ const futuresEntry = (prices, f) => priceEntry(prices?.futures?.[priceMonth(f,pr
 // 일봉을 주(월~일)마다 묶어 그 주 마지막 종가로 만든다. cols는 시세 파일 columns(없으면 스크립트 기본 date·open·high·low·close·volume).
 function barCloses(e, cols){
   const at=(name,i)=>Array.isArray(cols)&&cols.includes(name)?cols.indexOf(name):i, ci=at("close",4), di=at("date",0);
-  const rows=key=>(Array.isArray(e[key])?e[key]:[]).filter(b=>Array.isArray(b)&&Number(b[ci])>0), out={};
+  const rows=key=>(Array.isArray(e[key])?e[key]:[]).filter(b=>Array.isArray(b)&&positiveQuote(b[ci])!=null), out={};
   const daily=rows("daily"), weekly=rows("weekly"), monthly=rows("monthly");
   if(daily.length)out.D=daily.map(b=>Number(b[ci]));
   if(weekly.length)out.W=weekly.map(b=>Number(b[ci]));
@@ -68,8 +69,9 @@ function fxMonthCloses(e, cols){
   const at=(name,i)=>Array.isArray(cols)&&cols.includes(name)?cols.indexOf(name):i, ci=at("close",4), di=at("date",0);
   const month=s=>{const m=/^(\d{4})-(\d{2})-\d{2}$/.exec(String(s));return m?Number(m[1])*12+Number(m[2]):NaN;};
   const rows=Array.isArray(e.monthly)?e.monthly:[], out=[];let want=month(e.asOf);
-  for(let i=rows.length-1;i>=0;i--){const b=rows[i];if(!Array.isArray(b)||month(b[di])!==want||!(Number(b[ci])>0))break;out.unshift(Number(b[ci]));want--;}
-  if(out.length&&Number(e.close)>0)out[out.length-1]=Number(e.close);
+  for(let i=rows.length-1;i>=0;i--){const b=rows[i];const close=Array.isArray(b)?positiveQuote(b[ci]):null;if(month(b?.[di])!==want||close==null)break;out.unshift(close);want--;}
+  const current=positiveQuote(e.close);
+  if(out.length&&current!=null)out[out.length-1]=current;
   return out.length?{M:out}:null;
 }
 // 채우기·표시 값만 남김(종목/선물 D·W·M 종가와 현물 환율 월봉 종가는 closes, 원본 봉은 버림). 형식이 다르면 오류.
@@ -79,16 +81,18 @@ function slimPrices(doc){
     .map(([k,e])=>{const closes=bars&&bars(e,doc.columns);return [k,{kind:e.kind,asOf:e.asOf,close:e.close,ma:e.ma,...(closes?{closes}:{}),...(e.stale?{stale:true}:{})}];}));
   return {format:PRICE_FORMAT,updatedAt:String(doc.updatedAt||""),stocks:pick(doc.stocks,barCloses),futures:pick(doc.futures,barCloses),fx:pick(doc.fx,fxMonthCloses)};
 }
-// N일·N주·N개월선: ma 우선, 없으면 closes 단순평균(진행 중 주·월 봉 포함, 스크립트처럼 소수 넷째 자리). 봉 부족은 null.
+// N일·N주·N개월선: ma 우선, 없으면 closes 단순평균(진행 중 주·월 봉 포함, 스크립트처럼 소수 넷째 자리). 봉 부족·비유한 합산/반올림은 null.
 // N선(60분봉)은 시세 파일 ma 값만(이 기기에는 60분봉을 두지 않음).
 function maValue(e, label){
-  const hour=hourKey(label);if(e&&hour)return Number(e.ma[hour])>0?Number(e.ma[hour]):null;
+  const hour=hourKey(label);if(e&&hour)return positiveQuote(e.ma?.[hour]);
   const key=maKey(label);if(!e||!key)return null;
-  if(Number(e.ma[key])>0)return Number(e.ma[key]);
+  const direct=positiveQuote(e.ma?.[key]);if(direct!=null)return direct;
   const n=parseInt(key),c=e.closes?.[{일선:"D",주선:"W",개월선:"M"}[key.slice(String(n).length)]];
   if(!Array.isArray(c)||c.length<n)return null;
-  let sum=0;for(const v of c.slice(-n))sum+=Number(v);
-  return sum>0?Math.round(sum/n*1e4)/1e4:null;
+  let sum=0;
+  for(const raw of c.slice(-n)){const v=positiveQuote(raw);if(v==null)return null;sum+=v;if(!Number.isFinite(sum))return null;}
+  const avg=Math.round(sum/n*1e4)/1e4;
+  return Number.isFinite(avg)&&avg>0?avg:null;
 }
 // 달러선물 분할매수 이동평균 종료선 값 {value, spot}: 보유 근월물(fe) 이동평균이 먼저이고, 그 월물의 봉이 모자라 비는 N개월선만
 // 현물 환율 월봉(fxMonthCloses) N개 평균으로 채운다(spot=true, 화면에 '현물'로 표시). 시세 조회·수집은 늘리지 않는다. 둘 다 없으면 null.
@@ -98,7 +102,7 @@ function futureEndLineValue(prices, fe, line){
   const key=maKey(line),spot=fe&&key.endsWith("개월선")?maValue(fxEntry(prices),key):null;
   return spot>0?{value:spot,spot:true}:null;
 }
-const priceRound = (v, digits) => Number(v)>0 ? Math.round(Number(v)*10**digits)/10**digits : null;
+const priceRound = (v, digits) => { const n=positiveQuote(v); if(n==null)return null; const r=Math.round(n*10**digits)/10**digits; return Number.isFinite(r)&&r>0?r:null; };
 // rows = [auto 키, 값, 넣기]. null·지난 자동값과 같은 시세는 건너뛰고 새 시세만 직접 입력값을 덮어쓴다.
 // auto.at보다 오래된 시세는 거부. 같은 기록 + 같은 시세는 기기와 무관하게 같은 결과(syncNow 충돌 비교의 전제).
 function fillMarked(obj, at, rows){

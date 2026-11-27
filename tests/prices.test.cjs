@@ -349,3 +349,45 @@ test('비트코인 분할매도의 새 주·개월선도 종가 캐시에서 계
   assert.equal(ctx.fillPrices({plans: [p]}, doc), true);
   assert.deepEqual([p.startPrice, p.endPrice], [14, 25]);
 });
+
+test('비유한수·합산/반올림 오버플로·불리언 시세는 null로 격리해 fillPrices에 Infinity를 쓰지 않는다', () => {
+  const ctx = load();
+  const priceRound = vm.runInContext('priceRound', ctx);
+  const btcEntry = vm.runInContext('btcEntry', ctx);
+  for (const bad of [
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {'2일선': Infinity}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {'2일선': true}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {}, closes: {D: [1e308, 1e308]}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {}, closes: {D: [1e306, 1e306]}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {}, closes: {D: [100, Infinity]}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {}, closes: {D: [100, 0]}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {}, closes: {D: [100, -5]}},
+    {kind: '해외', asOf: '2026-09-30', close: 100, ma: {}, closes: {D: [100, true]}},
+  ]) {
+    assert.equal(ctx.maValue(bad, '2일선'), null, JSON.stringify(bad));
+  }
+  assert.equal(ctx.maValue({kind: '국내', asOf: '2026-09-30', close: 100, ma: {'25선': Infinity}}, '25선'), null);
+  assert.equal(ctx.maValue({kind: '국내', asOf: '2026-09-30', close: 100, ma: {'25선': true}}, '25선'), null);
+  for (const [v, d] of [[Infinity, 2], [1e307, 2], [true, 0], [0, 2], [-1, 2], [NaN, 2]]) {
+    assert.equal(priceRound(v, d), null);
+  }
+  assert.equal(btcEntry({stocks: {'BTC-USD': {kind: '코인', asOf: '2026-09-30', close: Infinity, ma: {}}}}), null);
+  assert.equal(btcEntry({stocks: {'BTC-USD': {kind: '코인', asOf: '2026-09-30', close: true, ma: {}}}}), null);
+  const slimBad = plain(ctx.slimPrices({
+    updatedAt: AT, columns: COLUMNS,
+    stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 15, ma: {}, daily: [bar('2026-09-29', Infinity), bar('2026-09-30', true)]}},
+    fx: {USDKRW: {kind: '현물환율', asOf: '2026-09-30', close: Infinity, ma: {}, monthly: [bar('2026-09-30', Infinity)]}},
+  }));
+  assert.equal(slimBad.stocks.AAA.closes, undefined);
+  assert.equal(slimBad.fx.USDKRW.closes, undefined);
+  const p = {ticker: 'AAA', currency: 'USD', startAuto: true, startLabel: '2일선', endLabel: '2일선', startPrice: 50, endPrice: 40, fx: 1350};
+  const r = {ticker: 'AAA', currentPrice: 45, stages: [{name: '2일선', price: 35}]};
+  const overflowDoc = {
+    updatedAt: AT,
+    stocks: {AAA: {kind: '해외', asOf: '2026-09-30', close: 1e307, ma: {'2일선': Infinity}, closes: {D: [1e308, 1e308]}}},
+    fx: {USDKRW: {kind: '현물환율', asOf: '2026-09-30', close: 1e307, ma: {}}},
+  };
+  assert.equal(ctx.fillPrices({plans: [p], rebuy: {items: [r]}}, overflowDoc), false);
+  assert.deepEqual(plain([p.startPrice, p.endPrice, p.fx, 'auto' in p, r.currentPrice, r.stages[0].price, 'auto' in r]),
+    [50, 40, 1350, false, 45, 35, false]);
+});

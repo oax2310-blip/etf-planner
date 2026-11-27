@@ -111,3 +111,31 @@ test('두 페이지의 dialog·초기화가 있고 확인 버튼 하나와 고�
     assert.match(fs.readFileSync(path.join(__dirname,'..',start),'utf8'),/goldEstimate\.initialize\(/);
   }
 });
+
+test('IAUM 단독·복수 실물 금 ETF 설정에서는 카드 오류와 팝업 안내에 실제 대상 티커를 표시한다',()=>{
+  const api=vm.runInNewContext(source+';goldEstimate');
+  const error=state({lastError:{code:'refresh',at}});
+  const iaum={ticker:' iaum ',section:'금'}, iaumAlloc={groups:[{items:[iaum]}]};
+  const iaumNotice=api.notice(documentOf(error),iaum,iaumAlloc);
+  assert.equal(iaumNotice.kind,'error');
+  assert.match(iaumNotice.text,/금 추정 없이 IAUM 종가로 판정합니다/);
+  assert.doesNotMatch(iaumNotice.text,/GLDM/);
+
+  for(const [alloc,expected] of [
+    [iaumAlloc,'지금은 금 추정 없이 IAUM 종가로 판정·알림합니다'],
+    [{groups:[{items:[{ticker:'GLDM',section:'금'},{ticker:'iaum',section:'골드'},{ticker:'IAUM',section:'금'}]}]},
+      '지금은 금 추정 없이 GLDM·IAUM 종가로 판정·알림합니다'],
+  ]){
+    for(const page of ['planner','assets']){
+      const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,new Node());return nodes.get(id);};
+      const dialog=node('goldEstimateDialog'),data=documentOf(error);
+      const context={localStorage:{getItem:()=>null,setItem:()=>{}},
+        document:{getElementById:node,createElement:()=>new Node(),querySelector:()=>null,addEventListener:()=>{}},
+        addEventListener:()=>{},setTimeout:fn=>fn()};
+      const pageApi=vm.runInNewContext(source+';goldEstimate',context);
+      pageApi.initialize({prices:()=>data,allocation:()=>alloc});
+      assert.equal(dialog.open,true,page);
+      assert.equal(node('goldEstimateFallback').textContent,expected,`${page}:${expected}`);
+    }
+  }
+});
